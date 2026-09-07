@@ -1,0 +1,144 @@
+/* Arca v0.1 design tokens. Light is the default; dark overrides on [data-theme="dark"]. */
+:root {
+  /* motion and notification geometry */
+  --motion-fast: 120ms;
+  --motion-enter: 200ms;
+  --motion-exit: 140ms;
+  --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --motion-distance: 8px;
+  --motion-dialog-scale: 0.985;
+  --notice-width: 380px;
+  --toast-bg: #121a16;
+  --toast-fg: #f4f6f1;
+  --toast-accent: #accb80;
+  --notice-inset: 20px;
+  --notice-radius: 10px;
+  /* Shared sizing, rhythm and interaction layers (CSS pixels). */
+  --text-caption: 11px;
+  --text-body: 12px;
+  --text-control: 13px;
+  --text-row: 14px;
+  --text-title: 20px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --sidebar-width: 200px;
+  --dialog-width: 480px;
+  --control-height: 32px;
+  --motion-loop: 1200ms;
+  --layer-menu: 10;
+  --layer-notice: 100;
+  --layer-progress: 110;
+  --backdrop: rgba(18, 26, 22, 0.32);
+  /* surfaces */
+  --paper: #f4f6f1; /* window / canvas */
+  --surface: #ffffff; /* cards, rows, inputs */
+  --side: #eef1ec; /* sidebar */
+  --hover: #ecf0ec; /* hover fill, segmented track */
+  --track: #ecf0ec; /* progress track */
+  --desk: #e3e8e2; /* only behind the window in the prototype */
+  /* lines */
+  --line: #c6cfc9; /* control borders */
+  --div: #dee4e0; /* card borders, dividers */
+  /* ink */
+  --ink: #121a16;
+  --soft: #3e4b45; /* secondary text */
+  --mute: #627168; /* captions, labels, 4.6:1 on white */
+  /* brand */
+  --green: #2e6350; /* primary action, links, active icons */
+  --deep: #244d3e; /* icon tile, active nav text */
+  --tint: #dce9d6; /* selected, ok pill bg */
+  --onGreen: #ffffff;
+  /* states: fill / pill bg / pill fg */
+  --ok: #2e6350;
+  --okBg: #dce9d6;
+  --okFg: #244d3e;
+  --sy: #3b6fb0;
+  --syBg: #e1eaf5;
+  --syFg: #2a507f;
+  --wa: #b8791c;
+  --waBg: #f6ebd4;
+  --waFg: #7a4e0e;
+  --er: #b7463a;
+  --erBg: #f7e2df;
+  --erFg: #86302a;
+  --id: #7a857f;
+  --idBg: #ecf0ec;
+  --idFg: #3e4b45;
+  /* brand mark only */
+  --mark-tile: #244d3e;
+  --mark-arch: #eff5df;
+  --mark-door: #accb80;
+  /* type */
+  --font-ui: "Instrument Sans", system-ui, sans-serif;
+  --font-mono: "Fragment Mono", ui-monospace, monospace;
+  /* radius */
+  --r-tag: 6px;
+  --r-control: 8px;
+  --r-card: 12px;
+  --r-window: 12px;
+  --r-dialog: 14px;
+  --r-pill: 999px;
+  /* elevation */
+  --shadow-menu:
+    0 8px 24px rgba(18, 26, 22, 0.12), 0 0 0 1px rgba(18, 26, 22, 0.08);
+  --shadow-dialog:
+    0 24px 64px rgba(18, 26, 22, 0.28), 0 0 0 1px rgba(18, 26, 22, 0.1);
+  --shadow-window:
+    0 24px 64px rgba(18, 26, 22, 0.24), 0 0 0 1px rgba(18, 26, 22, 0.1);
+  --focus-ring: 0 0 0 3px var(--tint);
+}
+[data-theme="dark"] {
+  --paper: #0f1512;
+  --surface: #161e19;
+  --side: #131a16;
+  --hover: #1c2620;
+  --track: #26332c;
+  --desk: #080b09;
+  --line: #2e3b34;
+  --div: #26332c;
+  --ink: #e8ede7;
+  --soft: #a3afa8;
+  --mute: #8b9a90;
+  --green: #7fb893;
+  --deep: #accb80;
+  --tint: #1e3328;
+  --onGreen: #0f1512;
+  --ok: #7fb893;
+  --okBg: #1e3328;
+  --okFg: #accb80;
+  --sy: #6c9bd6;
+  --syBg: #1c2a3b;
+  --syFg: #9dbee6;
+  --wa: #d9a24a;
+  --waBg: #332a18;
+  --waFg: #e3b86a;
+  --er: #d0655a;
+  --erBg: #3a2321;
+  --erFg: #f0a39a;
+  --id: #6f7d75;
+  --idBg: #1c2620;
+  --idFg: #a3afa8;
+}
+@keyframes arca-busy {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-enter: 0ms;
+    --motion-exit: 0ms;
+    --motion-distance: 0px;
+    --motion-dialog-scale: 1;
+  }
+}

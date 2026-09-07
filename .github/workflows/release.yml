@@ -1,0 +1,279 @@
+name: Release alpha
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the prerelease and Docker Hub/GHCR images
+        type: boolean
+        default: false
+      sign_macos:
+        description: Optional Developer ID signing and notarization (Apple account required)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: arca-release
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
+      publish: ${{ steps.gate.outputs.publish }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+      - id: version
+        run: node scripts/check-release.js
+      - name: Check whether the version needs publishing
+        id: gate
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+          SIGN: ${{ inputs.sign_macos }}
+          TAG: ${{ steps.version.outputs.tag }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLISH" == true ]]; then
+            test "$GITHUB_REF" = refs/heads/main || { echo 'Publish from main only'; exit 1; }
+            set +e
+            git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null
+            status=$?
+            set -e
+            if [[ "$status" == 0 ]]; then
+              echo 'Version already tagged; skipping builds and publication.'
+              echo 'build=false' >> "$GITHUB_OUTPUT"
+              echo 'publish=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            elif [[ "$status" != 2 ]]; then
+              echo 'Remote tag lookup failed. Publication stopped.'; exit 1
+            fi
+            for key in DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
+              test -n "${!key}" || { echo "Missing secret: $key"; exit 1; }
+            done
+          fi
+          if [[ "$SIGN" == true ]]; then
+            for key in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              test -n "${!key}" || { echo "Missing secret: $key"; exit 1; }
+            done
+          fi
+          echo 'build=true' >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+  desktop:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            name: macos-arm64
+          - os: macos-15-intel
+            name: macos-x64
+          - os: windows-2022
+            name: windows-x64
+          - os: ubuntu-22.04
+            name: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+      - run: npm test
+      - name: Import Apple signing identity
+        if: runner.os == 'macOS' && inputs.sign_macos
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/arca-signing.keychain-db"
+          password=$(openssl rand -hex 24)
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/arca.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/arca.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+          rm "$RUNNER_TEMP/arca.p12"
+      - name: Build unsigned installers
+        if: runner.os != 'macOS' || !inputs.sign_macos
+        run: npm run desktop:release
+      - name: Build signed macOS installers
+        if: runner.os == 'macOS' && inputs.sign_macos
+        env:
+          ARCA_SIGN_MACOS: "true"
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run desktop:release
+      - name: Verify runtime inside macOS installer
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict apps/desktop/src-tauri/target/release/bundle/macos/Arca.app
+          mount="$RUNNER_TEMP/arca-dmg"
+          mkdir -p "$mount"
+          hdiutil attach apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg -readonly -nobrowse -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          node scripts/verify-bundle.js "$mount/Arca.app/Contents/Resources/runtime"
+      - name: Verify runtimes inside Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          dpkg-deb -x apps/desktop/src-tauri/target/release/bundle/deb/*.deb "$RUNNER_TEMP/arca-deb"
+          runtime=$(find "$RUNNER_TEMP/arca-deb" -type f -path '*/runtime/node' -print -quit)
+          test -n "$runtime"
+          node scripts/verify-bundle.js "$(dirname "$runtime")"
+          appimage=$(realpath apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage)
+          mkdir "$RUNNER_TEMP/arca-appimage"
+          (cd "$RUNNER_TEMP/arca-appimage" && "$appimage" --appimage-extract >/dev/null)
+          runtime=$(find "$RUNNER_TEMP/arca-appimage" -type f -path '*/runtime/node' -print -quit)
+          test -n "$runtime"
+          node scripts/verify-bundle.js "$(dirname "$runtime")"
+      - name: Install Windows package and verify runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem apps/desktop/src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          $destination = Join-Path $env:RUNNER_TEMP 'arca-installed'
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList '/S',"/D=$destination" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'NSIS installation failed' }
+          $runtime = Get-ChildItem $destination -Recurse -Filter node.exe | Select-Object -First 1
+          if (!$runtime) { throw 'Installed Node runtime missing' }
+          node scripts/verify-bundle.js $runtime.DirectoryName
+          if ($LASTEXITCODE -ne 0) { throw 'Installed runtime failed' }
+      - name: Verify notarization
+        if: runner.os == 'macOS' && inputs.sign_macos
+        run: |
+          xcrun stapler validate apps/desktop/src-tauri/target/release/bundle/macos/Arca.app
+          spctl --assess --type execute --verbose apps/desktop/src-tauri/target/release/bundle/macos/Arca.app
+      - name: Collect installers
+        env:
+          PLATFORM: ${{ matrix.name }}
+        run: node scripts/collect-release.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.name }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove signing keychain
+        if: always() && runner.os == 'macOS' && inputs.sign_macos
+        run: |
+          security delete-keychain "$RUNNER_TEMP/arca-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/arca.p12"
+  docker:
+    needs: [prepare, desktop]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: arca-smoke:local
+      - run: node scripts/verify-docker.js arca-smoke:local
+      - name: Build ARM image for smoke verification
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/arm64
+          load: true
+          tags: arca-smoke:arm64
+      - run: node scripts/verify-docker.js arca-smoke:arm64
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          outputs: type=oci,dest=${{ runner.temp }}/arca-image.tar
+          tags: ghcr.io/satoshi-ltd/arca:${{ needs.prepare.outputs.version }}
+          provenance: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}/arca-image.tar
+          retention-days: 14
+  publish:
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, desktop, docker]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: assets
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: image
+      - name: Publish versioned image and alpha release
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          SIGN: ${{ inputs.sign_macos }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+          printf '%s' "$GH_TOKEN" | skopeo login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$DOCKERHUB_TOKEN" | skopeo login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin
+          registry="ghcr.io/${GITHUB_REPOSITORY,,}"
+          skopeo copy --all oci-archive:image/arca-image.tar "docker://$registry:$VERSION"
+          skopeo copy --all oci-archive:image/arca-image.tar "docker://docker.io/satoshiltd/arca:$VERSION"
+          skopeo copy --all "docker://$registry:$VERSION" "docker://$registry:latest"
+          skopeo copy --all "docker://docker.io/satoshiltd/arca:$VERSION" "docker://docker.io/satoshiltd/arca:latest"
+          (cd assets && sha256sum * > SHA256SUMS)
+          macos_status="ad-hoc signed, not notarized (macOS may block downloaded apps)"
+          if [[ "$SIGN" == true ]]; then macos_status="Developer ID signed and notarized"; fi
+          gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Arca $TAG alpha" --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION and $registry:$VERSION (amd64/arm64; also tagged latest). No automatic updates or pilot deployment."
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

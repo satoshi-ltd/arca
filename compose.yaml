@@ -1,0 +1,26 @@
+services:
+  arca:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      ARCA_HOME: /data/state
+    ports:
+      - "${ARCA_BIND:-127.0.0.1}:47831:47831"
+    volumes:
+      - arca-state:/data/state
+      - arca-files:/data/files
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "packages/cli/arca.js", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  arca-state:
+  arca-files:

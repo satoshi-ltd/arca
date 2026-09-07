@@ -1,0 +1,11 @@
+node_modules/
+target/
+.arca/
+.demo/
+dist/
+.DS_Store
+*.log
+apps/desktop/src-tauri/runtime/
+.cache/
+release-assets/
+apps/desktop/src-tauri/gen/

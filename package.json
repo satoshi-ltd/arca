@@ -1,0 +1,33 @@
+{
+  "name": "arca",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "arca": "packages/cli/arca.js"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "arca": "node packages/cli/arca.js",
+    "desktop": "node scripts/stage-runtime.js && cd apps/desktop && tauri dev",
+    "desktop:release": "node scripts/build-release.js",
+    "desktop:build": "node scripts/stage-runtime.js && cd apps/desktop && tauri build",
+    "verify:bundle": "node scripts/verify-bundle.js",
+    "format": "prettier --write packages apps/desktop/src scripts tests README.md package.json compose.yaml",
+    "postdesktop:build": "node scripts/sign-local.js",
+    "dev": "npm run desktop",
+    "desktop:ui": "vite --config apps/desktop/vite.config.js"
+  },
+  "devDependencies": {
+    "@fontsource-variable/instrument-sans": "^5.3.0",
+    "@fontsource/fragment-mono": "^5.3.0",
+    "@tauri-apps/cli": "^2.0.0",
+    "jsdom": "^30.0.1",
+    "lucide": "^0.460.0",
+    "prettier": "^3.9.6",
+    "vite": "^7.3.6"
+  }
+}

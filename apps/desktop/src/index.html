@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arca</title>
+    <link rel="icon" href="assets/arca-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="window-drag"></div>
+        <a class="brand" href="#" data-view="folders"
+          ><img
+            src="assets/arca-icon.svg"
+            width="28"
+            height="28"
+            alt="Arca"
+          /><span><b>arca</b></span></a
+        >
+        <div class="managing">
+          <span data-icon="monitor"></span
+          ><strong id="managed-name">This machine</strong
+          ><span id="managed-role" class="machine-role"></span>
+        </div>
+        <nav aria-label="Main navigation">
+          <button class="nav-item active" data-view="folders">
+            <span data-icon="folder"></span>Folders
+          </button>
+          <button class="nav-item" data-view="devices">
+            <span data-icon="monitor-smartphone"></span>Machines
+          </button>
+          <button class="nav-item" data-view="history">
+            <span data-icon="history"></span>History<span
+              id="conflict-count"
+              class="count"
+              hidden
+            ></span>
+          </button>
+          <button class="nav-item" data-view="settings">
+            <span data-icon="settings"></span>Settings
+          </button>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="status-card">
+            <strong id="connection">Connecting…</strong
+            ><span id="last-sync">Checking your daemon</span
+            ><button
+              class="backup-link"
+              data-action="backup-settings"
+              id="backup-summary"
+            >
+              Hub backup status unknown
+            </button>
+          </div>
+          <button class="ghost sign-out" data-action="logout" hidden>
+            <span data-icon="log-out"></span>Sign out
+          </button>
+        </div>
+      </aside>
+      <main>
+        <div id="notice" role="status" hidden></div>
+        <section id="content">
+          <div class="loading">Preparing your space…</div>
+        </section>
+      </main>
+    </div>
+    <dialog id="dialog" aria-labelledby="dialog-title">
+      <form id="dialog-form">
+        <div id="dialog-content"></div>
+        <p id="dialog-error" class="dialog-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="cancel-dialog">
+            Cancel</button
+          ><button class="primary" type="submit" id="submit-dialog">
+            Save
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <script src="vendor/lucide.js"></script>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

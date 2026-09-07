@@ -1,0 +1,11 @@
+node_modules
+apps/desktop/src-tauri
+apps/desktop/node_modules
+apps/mobile
+.demo
+.git
+state
+files
+.cache
+
+tailscale-status

@@ -1,0 +1,1 @@
+{"identifier":"default","description":"Local Arca windows: events and native window dragging","windows":["main","tray"],"permissions":["core:default","core:window:allow-start-dragging"]}

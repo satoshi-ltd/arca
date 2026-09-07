@@ -1,0 +1,25 @@
+# Arca working-copy exclusions. Edit this file to customize this share.
+# Gitignore syntax: *, **, ?, [abc], /root-path, directory/, and !exceptions.
+# Rules are case-insensitive. Ignored files stay on disk and in existing history.
+# This root .arcaignore always synchronizes; nested .arcaignore files are ordinary files.
+
+# System metadata and trash
+.DS_Store
+Thumbs.db
+desktop.ini
+.Trash/
+.Trash-*/
+.Trashes/
+$RECYCLE.BIN/
+.Spotlight-V100/
+.TemporaryItems/
+.fseventsd/
+
+# Regenerable caches and environments
+cache/
+.cache/
+node_modules/
+.venv/
+
+# Local Git data (including worktree pointer files)
+.git
