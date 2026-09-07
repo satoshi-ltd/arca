@@ -1366,7 +1366,7 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   const diagnostics = w.document.querySelector('[data-action="diagnostics"]');
   diagnostics.click();
   await until(() => diagnostics.textContent.includes("Copied"));
-  assert.equal(JSON.parse(copied.at(-1)).version, "0.2.2");
+  assert.equal(JSON.parse(copied.at(-1)).version, "0.2.3");
   await new Promise((resolve) => setTimeout(resolve, 2100));
   assert.ok(diagnostics.textContent.includes("Copy diagnostics"));
 });

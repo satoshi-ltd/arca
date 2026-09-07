@@ -45,7 +45,48 @@ test("template seeds once; empty custom rules, legacy exceptions and safe file r
   ensureIgnore(root);
   assert.equal(readIgnore(root), "");
   assert.equal(compileIgnore(DEFAULT_IGNORE)("nested/.git/config"), true);
-  fs.unlinkSync(path.join(root, ".arcaignore"));
-  fs.symlinkSync("/missing", path.join(root, ".arcaignore"));
+});
+
+for (const ending of ["LF", "CRLF"]) {
+  test(`template migration preserves exceptions with ${ending} line endings`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-ignore-lines-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const read = fs.readFileSync;
+    const mock = t.mock.method(fs, "readFileSync", function (file, ...args) {
+      const content = read.call(this, file, ...args);
+      if (file instanceof URL && file.pathname.endsWith("/default.arcaignore"))
+        return content.replace(/\r?\n/g, ending === "CRLF" ? "\r\n" : "\n");
+      return content;
+    });
+    const { ensureIgnore: seed } = await import(
+      `../packages/daemon/exclusions.js?line-ending=${ending}`
+    );
+    mock.mock.restore();
+    seed(root, ["cache"]);
+    const rules = compileIgnore(readIgnore(root));
+    assert.equal(rules("cache/keep"), false);
+    assert.equal(rules("node_modules/package"), true);
+    fs.writeFileSync(path.join(root, ".arcaignore"), "custom/\r\n");
+    seed(root, ["custom"]);
+    assert.equal(readIgnore(root), "custom/\r\n");
+  });
+}
+
+test("ignore reads reject a dangling symlink", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-ignore-link-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  try {
+    fs.symlinkSync(
+      path.join(root, "missing"),
+      path.join(root, ".arcaignore"),
+      "file",
+    );
+  } catch (error) {
+    if (process.platform === "win32" && error.code === "EPERM") {
+      t.skip("Creating symlinks requires Windows privileges");
+      return;
+    }
+    throw error;
+  }
   assert.throws(() => readIgnore(root));
 });

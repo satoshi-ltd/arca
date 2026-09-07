@@ -16,7 +16,7 @@ export function ensureIgnore(root, includes = []) {
     // Preserve the old exact-component exceptions when migrating an existing share.
     const names = new Set(includes.map((n) => String(n).toLowerCase()));
     text = text
-      .split("\n")
+      .split(/\r?\n/)
       .filter((line) => !names.has(line.replace(/\/$/, "").toLowerCase()))
       .join("\n");
   }

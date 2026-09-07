@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3 — 2026-09-07
+
+- Fix legacy `.arcaignore` exceptions when the template uses Windows CRLF line endings. Preserve existing user rules.
+- Cover LF/CRLF migration and isolate the symlink check with an explicit skip when Windows denies symlink creation privileges.
+- Local validation: 108 tests passed, one skipped. Hosted Windows confirmation remains pending.
+
 ## 0.2.2 — 2026-09-07
 
 ### Fixed

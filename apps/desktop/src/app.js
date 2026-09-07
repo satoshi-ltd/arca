@@ -1370,7 +1370,7 @@ async function renderSettings() {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.2.2 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.2.3 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
@@ -2031,7 +2031,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.2.2",
+          version: "0.2.3",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
