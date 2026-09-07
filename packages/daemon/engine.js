@@ -690,18 +690,48 @@ export class Engine {
     if (this.config.role !== "replica")
       fail("Only a replica can become a replacement hub", 409);
     const catalog = this.config.catalog || [];
-    const missing = catalog.filter(
-      (v) =>
-        !this.store
-          .volumes()
-          .some(
-            (local) => local.id === v.id && local.selected && local.last_sync,
-          ),
-    );
+    const localVolumes = this.store.volumes();
+    const folders = catalog.map((v) => {
+      const local = localVolumes.find((item) => item.id === v.id);
+      const state = this.folderStates.get(v.id);
+      const pending = this.store.db
+        .prepare("SELECT 1 FROM pending WHERE volume=? LIMIT 1")
+        .get(v.id);
+      let reason = null;
+      if (!local?.selected) reason = "Select a complete local copy first.";
+      else if (!local.last_sync) reason = "No completed synchronization yet.";
+      else if (pending) reason = "Finish pending file transfers first.";
+      else if (state && state.state !== "synced")
+        reason =
+          state.state === "error"
+            ? "Resolve this folder’s synchronization error first."
+            : "Wait for this folder’s synchronization to finish.";
+      else {
+        try {
+          if (!fs.statSync(local.path).isDirectory())
+            reason = "Local folder is unavailable.";
+        } catch {
+          reason = "Local folder is unavailable.";
+        }
+      }
+      return {
+        ...v,
+        selected: Boolean(local?.selected),
+        lastSync: local?.last_sync || null,
+        reason,
+      };
+    });
+    const missing = folders.filter((v) => v.reason);
+    const backupEnabled = Boolean(this.config.backup?.enabled);
     return {
-      ready: catalog.length > 0 && !missing.length,
+      ready:
+        Boolean(this.config.hub) &&
+        catalog.length > 0 &&
+        !missing.length &&
+        !backupEnabled,
+      backupEnabled,
       missing,
-      catalog,
+      catalog: folders,
       lastSync: this.lastSync,
       warning:
         "The old hub must remain stopped. This device becomes a new hub identity; other devices must reconnect. Only current local files are retained here; old hub history is not reconstructed.",
@@ -709,6 +739,7 @@ export class Engine {
   }
   async promote(confirmed) {
     const plan = this.promotionPlan();
+    if (plan.backupEnabled) fail("Disable hub backup before promotion.", 409);
     if (!confirmed || !plan.ready)
       fail(
         "Confirm recovery and obtain complete copies of every known folder first",

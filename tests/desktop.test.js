@@ -561,7 +561,11 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
   await until(
     () =>
       w.document.querySelector("#access-name")?.textContent ===
-      daemon.engine.config.name,
+      `${daemon.engine.config.name} ·`,
+  );
+  assert.equal(
+    w.document.querySelector(".access-brand h1").textContent,
+    "arca",
   );
 });
 
@@ -1072,6 +1076,8 @@ for (const surface of ["web", "desktop"]) {
               });
               const body = await response.json();
               if (!response.ok) throw new Error(body.error);
+              if (args.route === "/v1/status")
+                body.platform = role === "hub" ? "win32" : "linux";
               return body;
             },
           },
@@ -1091,6 +1097,11 @@ for (const surface of ["web", "desktop"]) {
         Boolean(w.document.querySelector("#notifications-enabled")),
         surface === "desktop",
       );
+      if (surface === "desktop") {
+        assert.equal(w.document.querySelector("#service-control"), null);
+        assert.equal(w.document.body.textContent.includes("this Mac"), false);
+        assert.ok(w.document.body.textContent.includes("System notifications"));
+      }
       assert.equal(
         Boolean(w.document.querySelector('[data-action="retention"]')),
         role === "hub",
@@ -1352,7 +1363,7 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   const diagnostics = w.document.querySelector('[data-action="diagnostics"]');
   diagnostics.click();
   await until(() => diagnostics.textContent.includes("Copied"));
-  assert.equal(JSON.parse(copied.at(-1)).version, "0.2.0");
+  assert.equal(JSON.parse(copied.at(-1)).version, "0.2.1");
   await new Promise((resolve) => setTimeout(resolve, 2100));
   assert.ok(diagnostics.textContent.includes("Copy diagnostics"));
 });
@@ -1420,4 +1431,24 @@ test("Machines refreshes backup acknowledgements without navigation", async (t) 
   menu.open = false;
   await poll();
   assert.match(w.document.querySelector("#devices-list").textContent, /rev 43/);
+  assert.match(
+    w.document.querySelector("#devices-list").textContent,
+    /Reported/,
+  );
+  assert.doesNotMatch(
+    w.document.querySelector("#devices-list").textContent,
+    /Acknowledged/,
+  );
+  daemon.engine.store.db
+    .prepare("UPDATE backup_ack SET updated=NULL WHERE device=?")
+    .run(device.id);
+  await poll();
+  assert.match(
+    w.document.querySelector("#devices-list").textContent,
+    /Waiting for the first backup report/,
+  );
+  assert.match(
+    w.document.querySelector("#devices-list").textContent,
+    /Pending/,
+  );
 });

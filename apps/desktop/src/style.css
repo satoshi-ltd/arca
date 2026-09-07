@@ -807,9 +807,11 @@ main {
   gap: 2px;
 }
 .setting-row .row-main strong {
+  overflow-wrap: anywhere;
   font-size: var(--text-control);
 }
 .setting-row .row-main p {
+  overflow-wrap: anywhere;
   font-size: var(--text-body);
   line-height: 1.45;
 }
@@ -1081,6 +1083,9 @@ dialog::backdrop {
   margin-top: 6px;
 }
 .access-brand p {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
   font-size: var(--text-caption);
   color: var(--soft);
 }
@@ -1292,10 +1297,10 @@ progress::-webkit-progress-bar {
   background: var(--track);
 }
 progress::-webkit-progress-value {
-  background: var(--sy);
+  background: var(--green);
 }
 progress::-moz-progress-bar {
-  background: var(--sy);
+  background: var(--green);
 }
 .pagination {
   display: flex;

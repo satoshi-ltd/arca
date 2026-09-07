@@ -1,0 +1,6 @@
+{
+  "identifier": "main-zoom",
+  "description": "Bounded zoom shortcuts in the main desktop window",
+  "windows": ["main"],
+  "permissions": ["core:webview:allow-set-webview-zoom"]
+}

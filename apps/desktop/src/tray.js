@@ -30,7 +30,7 @@ async function refresh() {
     };
     const label = labels[state.phase] || state.phase;
     document.querySelector("#tray-content").innerHTML =
-      `<div class="tray-heading tray-tone-${state.phase === "error" ? "error" : state.phase === "unlinked" ? "conflict" : state.phase === "paused" ? "paused" : state.phase === "syncing" ? "syncing" : "synced"}">${state.phase === "syncing" ? busy() : icon(state.phase === "error" ? "circle-alert" : state.phase === "unlinked" ? "unlink" : state.phase === "paused" ? "pause" : "circle-check")}<div class="tray-title"><strong>${escape(label)}</strong><p>${escape(state.name)} · ${state.lastSync ? "last completed " + new Date(state.lastSync).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" }) : "Not yet verified"}</p></div><span class="tray-role">${escape(state.role)}</span></div><div class="tray-folders">${state.volumes
+      `<div class="tray-heading tray-tone-${state.phase === "error" ? "error" : state.phase === "unlinked" ? "conflict" : state.phase === "paused" ? "paused" : state.phase === "syncing" ? "syncing" : "synced"}">${state.phase === "syncing" ? busy() : icon(state.phase === "error" ? "circle-alert" : state.phase === "unlinked" ? "unlink" : state.phase === "paused" ? "pause" : "circle-check")}<div class="tray-title"><strong>${escape(label)}</strong><p>${state.lastSync ? "Last completed " + new Date(state.lastSync).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "Not yet verified"}</p></div><span class="tray-role">${escape(state.role)}</span></div><div class="tray-folders">${state.volumes
         .filter((v) => v.selected)
         .map((v) => {
           const phase =

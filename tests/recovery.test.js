@@ -130,3 +130,50 @@ test("promotion survives configuration-write failure after committed history tra
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("promotion rejects active backup and stale success with errors or pending transfers", async () => {
+  const { Engine } = await import("../packages/daemon/engine.js");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-promotion-guards-"));
+  init(home, { role: "replica", port: 0 });
+  const engine = new Engine(home);
+  try {
+    const v = engine.store.addVolume("Docs");
+    const file = path.join(v.path, "keep.txt");
+    fs.writeFileSync(file, "preserve me");
+    engine.config.hub = {
+      id: "lost",
+      url: "http://127.0.0.1:1",
+      token: "unused",
+    };
+    engine.config.catalog = [{ id: v.id, name: v.name }];
+    engine.store.db
+      .prepare("UPDATE volumes SET last_sync=? WHERE id=?")
+      .run("2020-01-01T00:00:00.000Z", v.id);
+    assert.equal(
+      engine.promotionPlan().catalog[0].lastSync,
+      "2020-01-01T00:00:00.000Z",
+    );
+    engine.config.backup = { enabled: true };
+    assert.equal(engine.promotionPlan().ready, false);
+    await assert.rejects(engine.promote(true), /Disable hub backup/);
+    assert.equal(engine.config.backup.enabled, true);
+    engine.config.backup.enabled = false;
+    engine.folderStates.set(v.id, { state: "error", error: "Read failed" });
+    assert.equal(engine.promotionPlan().ready, false);
+    await assert.rejects(engine.promote(true), /complete copies/);
+    engine.folderStates.set(v.id, { state: "synced" });
+    engine.store.db
+      .prepare("INSERT INTO pending(volume,path,row) VALUES(?,?,?)")
+      .run(v.id, "keep.txt", "{}");
+    assert.equal(engine.promotionPlan().ready, false);
+    await assert.rejects(engine.promote(true), /complete copies/);
+    assert.equal(engine.config.role, "replica");
+    assert.equal(fs.existsSync(path.join(home, "promotion.json")), false);
+    assert.equal(fs.readFileSync(file, "utf8"), "preserve me");
+    engine.store.db.prepare("DELETE FROM pending").run();
+    assert.equal(engine.promotionPlan().ready, true);
+  } finally {
+    engine.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

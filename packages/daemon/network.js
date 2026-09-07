@@ -70,7 +70,7 @@ export class Network {
       service: "arca",
       discoveryVersion: 1,
       protocol: 1,
-      version: "0.2.0",
+      version: "0.2.1",
       id: c.id,
       name: c.name,
       role: c.role,

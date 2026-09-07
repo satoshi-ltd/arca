@@ -23,10 +23,11 @@ try {
     ["-p", 'process.platform + "/" + process.arch'],
     { encoding: "utf8" },
   );
-  if (
-    architecture.status !== 0 ||
-    architecture.stdout.trim() !== `${process.platform}/${process.arch}`
-  )
+  if (architecture.status !== 0)
+    throw new Error(
+      `Packaged Node could not start (${architecture.error?.code || architecture.signal || architecture.status}): ${architecture.stderr?.trim() || "no diagnostic output"}`,
+    );
+  if (architecture.stdout.trim() !== `${process.platform}/${process.arch}`)
     throw new Error("Packaged Node does not match the runner architecture");
   if (!fs.existsSync(path.join(runtime, "LICENSE.node")))
     throw new Error("Packaged Node license missing");

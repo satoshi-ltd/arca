@@ -1,6 +1,6 @@
 {
   "name": "arca",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,7 +16,7 @@
     "desktop:release": "node scripts/build-release.js",
     "desktop:build": "node scripts/stage-runtime.js && cd apps/desktop && tauri build",
     "verify:bundle": "node scripts/verify-bundle.js",
-    "format": "prettier --write packages apps/desktop/src scripts tests README.md package.json compose.yaml",
+    "format": "prettier --write packages apps/desktop/src scripts tests README.md changelog.md package.json compose.yaml",
     "postdesktop:build": "node scripts/sign-local.js",
     "dev": "npm run desktop",
     "desktop:ui": "vite --config apps/desktop/vite.config.js"
