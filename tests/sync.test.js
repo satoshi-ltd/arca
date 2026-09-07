@@ -1661,3 +1661,47 @@ test("backup size includes retained versions and counts duplicate content once",
     initial + Buffer.byteLength("new version"),
   );
 });
+
+test("content flushes use writable handles for Windows compatibility", async (t) => {
+  const open = fs.openSync;
+  const flush = fs.fsyncSync;
+  const handles = new Map();
+  let contentFlushes = 0;
+  t.mock.method(fs, "openSync", function (file, flags, ...args) {
+    const fd = open.call(this, file, flags, ...args);
+    handles.set(fd, flags);
+    return fd;
+  });
+  t.mock.method(fs, "fsyncSync", function (fd) {
+    if (fs.fstatSync(fd).isFile()) {
+      contentFlushes++;
+      if (handles.get(fd) === "r")
+        throw Object.assign(new Error("EPERM: read-only file flush"), {
+          code: "EPERM",
+        });
+    }
+    return flush.call(this, fd);
+  });
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("Windows replica");
+  const source = path.join(
+    replica.engine.store.volume(volume.id).path,
+    "flush.txt",
+  );
+  fs.writeFileSync(source, "replica upload");
+  fs.chmodSync(source, 0o400);
+  await replica.sync();
+  assert.equal(fs.statSync(source).mode & 0o200, 0);
+  fs.chmodSync(source, 0o600);
+  await hub.sync();
+  const destination = path.join(
+    hub.engine.store.volume(volume.id).path,
+    "flush.txt",
+  );
+  assert.equal(fs.readFileSync(destination, "utf8"), "replica upload");
+  fs.writeFileSync(destination, "hub update");
+  await hub.sync();
+  await replica.sync();
+  assert.equal(fs.readFileSync(source, "utf8"), "hub update");
+  assert.ok(contentFlushes > 0);
+});

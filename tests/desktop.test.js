@@ -22,7 +22,7 @@ async function until(check) {
   throw new Error("UI did not reach expected state");
 }
 
-test("desktop DOM uses real API: folders, history, restore and pause", async () => {
+test("desktop DOM uses real API: folders, history, restore and pause", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-desktop-test-"));
   init(home, { port: 0, name: "Test hub" });
   const daemon = await start(home, {
@@ -70,6 +70,10 @@ test("desktop DOM uses real API: folders, history, restore and pause", async () 
           ),
       },
     },
+  });
+  t.after(async () => {
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
   });
   const v = daemon.engine.store.addVolume("Documents");
   const file = path.join(v.path, "note.txt");
@@ -361,9 +365,8 @@ test("desktop DOM uses real API: folders, history, restore and pause", async () 
       0,
     );
   } finally {
+    releaseRestore();
     w.close();
-    await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
@@ -1363,7 +1366,7 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   const diagnostics = w.document.querySelector('[data-action="diagnostics"]');
   diagnostics.click();
   await until(() => diagnostics.textContent.includes("Copied"));
-  assert.equal(JSON.parse(copied.at(-1)).version, "0.2.1");
+  assert.equal(JSON.parse(copied.at(-1)).version, "0.2.2");
   await new Promise((resolve) => setTimeout(resolve, 2100));
   assert.ok(diagnostics.textContent.includes("Copy diagnostics"));
 });

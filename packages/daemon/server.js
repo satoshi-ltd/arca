@@ -534,7 +534,7 @@ export async function start(home, options = {}) {
                   fs.unlinkSync(tmp);
                   fail("Upload hash mismatch", 409);
                 }
-                const fd = fs.openSync(tmp, "r");
+                const fd = fs.openSync(tmp, "r+");
                 try {
                   fs.fsyncSync(fd);
                 } finally {

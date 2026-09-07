@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2 — 2026-09-07
+
+### Fixed
+
+- Open temporary content files with write access before flushing them to disk, fixing Windows EPERM errors during scans, uploads and materialization.
+- Register desktop test server cleanup before initial synchronization so setup failures do not leave the test process running.
+
+### Validation status
+
+Local suite: 105 passed, one skipped; the regression covers bidirectional transfers under Windows flush restrictions and read-only source files. Windows hosted CI must confirm the fix. Native installer qualification remains open.
+
 ## 0.2.1 — 2026-09-07
 
 ### Changed

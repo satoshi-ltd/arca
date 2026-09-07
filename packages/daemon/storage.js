@@ -404,13 +404,15 @@ export class Store {
     const tmp = path.join(this.objects, `${crypto.randomUUID()}.tmp`);
     try {
       fs.copyFileSync(file, tmp);
+      // Only the owned temporary copy needs write access for Windows flushing.
+      fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
       if (before !== signature())
         fail("File changed during scan; retrying", 409);
       const hash = hashFile(tmp),
         size = fs.statSync(tmp).size;
       const object = this.blob(hash);
       if (!fs.existsSync(object) || hashFile(object) !== hash) {
-        const fd = fs.openSync(tmp, "r");
+        const fd = fs.openSync(tmp, "r+");
         try {
           fs.fsyncSync(fd);
         } finally {
@@ -590,7 +592,8 @@ export class Store {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       const tmp = path.join(path.dirname(file), `.arca-${crypto.randomUUID()}`);
       fs.copyFileSync(this.blob(row.hash), tmp);
-      const fd = fs.openSync(tmp, "r");
+      fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
+      const fd = fs.openSync(tmp, "r+");
       try {
         fs.fsyncSync(fd);
       } finally {
