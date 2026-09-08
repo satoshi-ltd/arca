@@ -148,6 +148,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS pending(volume TEXT NOT NULL,path TEXT NOT NULL,row TEXT NOT NULL,expected TEXT,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL,role TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,last_seen TEXT);
+      CREATE TABLE IF NOT EXISTS conflict_resolutions(volume TEXT NOT NULL,path TEXT NOT NULL,conflict_rev INTEGER NOT NULL,resolution_rev INTEGER NOT NULL,choice TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS transitions(id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS snapshot_sessions(id TEXT PRIMARY KEY,owner TEXT NOT NULL,volume TEXT NOT NULL,expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS snapshot_files(session TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,row TEXT NOT NULL,PRIMARY KEY(session,path));
@@ -618,7 +619,34 @@ export class Store {
     for (const p of this.db.prepare("SELECT * FROM pending").all())
       this.materialize(JSON.parse(p.row), p.expected);
   }
-  commit(volume, name, item, author, write = false, expected = null) {
+  unresolvedConflicts(volume) {
+    return this.db
+      .prepare(
+        "SELECT count(*) AS n FROM files f LEFT JOIN conflict_resolutions c ON c.volume=f.volume AND c.path=f.path WHERE f.volume=? AND f.deleted=0 AND instr(f.path,'.conflict-')>0 AND (c.conflict_rev IS NULL OR c.conflict_rev<f.rev)",
+      )
+      .get(volume).n;
+  }
+  conflictStatus(row) {
+    const resolution = this.db
+      .prepare(
+        "SELECT conflict_rev,resolution_rev,choice FROM conflict_resolutions WHERE volume=? AND path=?",
+      )
+      .get(row.volume, row.path);
+    return {
+      ...row,
+      resolved: !!resolution && row.rev <= resolution.conflict_rev,
+      resolutionRev: resolution?.resolution_rev || null,
+    };
+  }
+  commit(
+    volume,
+    name,
+    item,
+    author,
+    write = false,
+    expected = null,
+    resolution = null,
+  ) {
     validPath(name);
     write = write && Boolean(this.volume(volume).selected);
     if (write) {
@@ -662,6 +690,18 @@ export class Store {
           created,
         );
       row = { ...values, rev: Number(result.lastInsertRowid) };
+      if (resolution)
+        this.db
+          .prepare(
+            "INSERT INTO conflict_resolutions(volume,path,conflict_rev,resolution_rev,choice) VALUES(?,?,?,?,?) ON CONFLICT(volume,path) DO UPDATE SET conflict_rev=excluded.conflict_rev,resolution_rev=excluded.resolution_rev,choice=excluded.choice",
+          )
+          .run(
+            volume,
+            resolution.path,
+            resolution.rev,
+            row.rev,
+            resolution.choice,
+          );
       if (write) this.queue(row, expected);
       else this.setFile(row);
       this.db.exec("COMMIT");

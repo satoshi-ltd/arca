@@ -1,0 +1,45 @@
+export async function verifyPrivateURL(value, native, nativeFetch) {
+  if (!native)
+    throw new Error(
+      "Use an Arca development build. Expo Go does not include the network check.",
+    );
+  const url = new URL(value);
+  const parts = url.hostname.split(".").map(Number);
+  const lan =
+    parts.length === 4 &&
+    parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
+    (parts[0] === 10 ||
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && parts[1] === 168));
+  if (lan) {
+    if (!native.resolveLanHost)
+      throw new Error(
+        "Install the updated Arca development build to connect over the local network.",
+      );
+    await native.resolveLanHost(url.hostname);
+    // Check permission without sending a pairing code or saved credential.
+    const response = await nativeFetch(`${url.origin}/.well-known/arca`);
+    const info = response.ok ? await response.json() : null;
+    if (info?.access?.allowLanHttp !== true)
+      throw new Error(
+        "Enable Allow HTTP on local network in the hub's Settings first.",
+      );
+    return url.origin;
+  }
+  let address;
+  try {
+    address = await native.resolvePrivateHost(url.hostname);
+  } catch {
+    throw new Error(
+      "Cannot connect using this address. For local Wi-Fi, enter the hub’s private IP address. To use a Tailscale name or address, connect Tailscale on this device and the hub.",
+    );
+  }
+  if (
+    !/^100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.(?:\d{1,3})\.(?:\d{1,3})$/.test(
+      address,
+    )
+  )
+    throw new Error("The hub is not on the private network");
+  url.hostname = address;
+  return url.origin;
+}

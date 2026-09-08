@@ -114,9 +114,11 @@ export class Engine {
         },
         files: s.rows(v.id).filter((r) => !r.deleted).length,
         bytes: s.rows(v.id).reduce((n, r) => n + (r.deleted ? 0 : r.size), 0),
-        conflicts: s
-          .rows(v.id)
-          .filter((r) => !r.deleted && r.path.includes(".conflict-")).length,
+        conflicts:
+          this.config.role === "hub"
+            ? s.unresolvedConflicts(v.id)
+            : (this.config.catalog?.find((row) => row.id === v.id)?.conflicts ??
+              s.unresolvedConflicts(v.id)),
       })),
       devices: s.db
         .prepare(
@@ -353,6 +355,9 @@ export class Engine {
         this.config.catalog = catalog.volumes.map((v) => ({
           id: v.id,
           name: v.name,
+          conflicts: Number.isSafeInteger(v.conflicts)
+            ? v.conflicts
+            : undefined,
         }));
         this.store.saveConfig();
         if (this.config.role === "backup")

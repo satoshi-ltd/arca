@@ -1,0 +1,105 @@
+{
+  "expo": {
+    "name": "arca",
+    "slug": "arca",
+    "version": "0.3.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.satoshilimited.arca",
+      "buildNumber": "2",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true,
+        "NSLocalNetworkUsageDescription": "Connect to your Arca hub over your private network."
+      }
+    },
+    "android": {
+      "package": "com.satoshilimited.arca",
+      "versionCode": 2,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#244d3e",
+        "monochromeImage": "./assets/monochrome-icon.png"
+      }
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-font",
+      "expo-dev-client",
+      "expo-background-task",
+      [
+        "expo-notifications",
+        {
+          "color": "#244d3e",
+          "icon": "./assets/notification-icon.png"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose photos to upload to your Arca hub.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "expo-sharing",
+        {
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": ["*/*"],
+            "multipleShareMimeTypes": ["*/*"]
+          },
+          "ios": {
+            "enabled": true,
+            "activationRule": {
+              "supportsFileWithMaxCount": 20,
+              "supportsImageWithMaxCount": 20,
+              "supportsMovieWithMaxCount": 20,
+              "supportsAttachmentsWithMaxCount": 20
+            }
+          }
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon-light.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#f4f6f1",
+          "dark": {
+            "image": "./assets/splash-icon-dark.png",
+            "backgroundColor": "#0f1512"
+          }
+        }
+      ]
+    ],
+    "icon": "./assets/icon.png",
+    "scheme": "arca",
+    "owner": "satoshi-ltd",
+    "extra": {
+      "eas": {
+        "projectId": "797cbf21-73d8-4d82-bdf6-42c05e2cdff2"
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+# Upload the mobile app, shared core and vendored dependency.
+/*
+!/package.json
+!/package-lock.json
+!/apps
+/apps/*
+!/apps/mobile
+!/packages
+/packages/*
+!/packages/vendor
+!/packages/core
+node_modules/
+dist/
+.expo/
+.env
+.env.*
+*.log
+.DS_Store
+/apps/mobile/android/
+/apps/mobile/ios/
+/apps/mobile/modules/**/android/build/
+/apps/mobile/modules/**/android/.gradle/

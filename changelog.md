@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.0 — 2026-09-08
+
+### Added
+
+- Expo iOS/Android replica with secure pairing, persistent whole-folder synchronization, resumable verified transfers, offline files and independent portable backup.
+- Mobile file/photo import, incoming-share inbox and destination selection, existing-text editing, history/restore and OS background/notification integration.
+- Desktop/web file explorer with scoped search, breadcrumbs and Files/Recent navigation; shared mobile file detail across explorer and history.
+- Bounded blob downloads, explicit local-network HTTP opt-in and native mobile LAN/Tailscale routing.
+
+### Fixed and refined
+
+- Persist conflict resolution and propagate resolved state across clients while preserving both copies; guard unselected folders and stale decisions.
+- Protect unsynced mobile content during explicit removal, recover interrupted cleanup and remove obsolete retained-copy states.
+- Share built-in system-metadata exclusions across daemon and mobile.
+- Align responsive phone/Fold layouts, typography, role chips, Lucide icons, machine identity, sheets and action feedback with the design system.
+- Preserve incoming files when dismissing their destination sheet; update mobile icon and splash assets.
+- Consolidate project documentation into AGENTS.md, README.md and SPEC.md (including the design system); retain changelog as the version ledger. Expose the private Casa-only deployment helper through npm.
+- Remove unused generated Tauri icon variants, the empty root Expo placeholder, old demo/live-smoke helpers and the superseded Ubuntu test Dockerfile; retain active assets and maintained isolated checks.
+
+### Version and qualification
+
+- Align desktop, mobile, native modules and Docker runtime to 0.3.0; advance mobile build numbers to 2.
+- Functional alpha: physical-device/native integration, installer acceptance, sustained load and independent recovery qualification remain open. No release or deployment is implied by this entry.
+
 ## 0.2.3 — 2026-09-07
 
 - Fix legacy `.arcaignore` exceptions when the template uses Windows CRLF line endings. Preserve existing user rules.

@@ -1,0 +1,22 @@
+// Mirrors the canonical desktop tokens.css; parity is checked automatically.
+export const geometry = {
+  tagHeight: 20,
+  tagFont: 10,
+  tagLine: 14,
+  tagRadius: 6,
+  tagX: 5,
+  tagY: 2,
+  pillFont: 12,
+  pillLine: 16,
+  pillRadius: 999,
+  pillLeft: 8,
+  pillRight: 10,
+  pillY: 4,
+  pillGap: 6,
+  pillIcon: 13,
+  controlRadius: 8,
+  cardRadius: 12,
+  segmentRadius: 6,
+  iconStroke: 1.75,
+  touchHeight: 44,
+};

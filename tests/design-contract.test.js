@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { init } from "../packages/daemon/storage.js";
+import { init, digest } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 import { issueWebCode } from "../packages/daemon/web.js";
 test("design APIs: bounded filtered history, permissions, session revocation and local assets", async (t) => {
@@ -195,7 +195,33 @@ test("conflict review restores chosen content and rejects stale decisions withou
       },
       body: JSON.stringify(b),
     });
-  assert.equal((await request(body)).status, 200);
+  s.db
+    .prepare("INSERT INTO devices(id,name,token_hash,role) VALUES(?,?,?,?)")
+    .run("test-replica", "Test replica", digest("test-credential"), "replica");
+  const replicaChoice = () =>
+    fetch(`http://127.0.0.1:${d.port}/v1/conflict-choice`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-credential",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  assert.equal(
+    (await replicaChoice()).status,
+    409,
+    "A replica without a selected-folder report cannot resolve",
+  );
+  assert.equal(s.current(v.id, "note.txt").rev, original.rev);
+  assert.equal(s.unresolvedConflicts(v.id), 1);
+  s.db
+    .prepare("INSERT INTO machine_reports VALUES(?,?)")
+    .run("test-replica", JSON.stringify({ folderIds: [v.id] }));
+  assert.equal(
+    (await replicaChoice()).status,
+    200,
+    "A replica selecting the folder can resolve",
+  );
   assert.equal(
     fs.readFileSync(path.join(v.path, "note.txt"), "utf8"),
     "alternative",
@@ -204,9 +230,21 @@ test("conflict review restores chosen content and rejects stale decisions withou
     fs.readFileSync(path.join(v.path, conflict), "utf8"),
     "alternative",
   );
+  assert.equal(s.unresolvedConflicts(v.id), 0);
+  assert.equal(s.conflictStatus(s.current(v.id, conflict)).resolved, true);
+  assert.equal(
+    s.conflictStatus(s.current(v.id, conflict)).resolutionRev,
+    s.current(v.id, "note.txt").rev,
+  );
   assert.equal(s.history(v.id, "note.txt").length, 2);
   assert.equal((await request(body)).status, 409);
   assert.equal((await request({ ...body, path: "note.txt" })).status, 400);
+  const originalBefore = s.current(v.id, "note.txt").rev;
+  fs.writeFileSync(path.join(v.path, conflict), "a different later edit");
+  await d.engine.cycle();
+  assert.equal(s.unresolvedConflicts(v.id), 1);
+  assert.equal(s.conflictStatus(s.current(v.id, conflict)).resolved, false);
+  assert.equal(s.current(v.id, "note.txt").rev, originalBefore);
 });
 
 test("background sync acknowledges before completion, coalesces requests and exposes failures", async (t) => {
@@ -246,4 +284,74 @@ test("background sync acknowledges before completion, coalesces requests and exp
   await d.engine.tail;
   const status = await (await request("/v1/status")).json();
   assert.equal(status.error, "Test transfer failure");
+});
+
+test("replica and backup credentials cannot administer the hub; replica administrators cannot create hub resources", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-role-boundary-"));
+  init(home, { port: 0 });
+  const hub = await start(home, { timer: false });
+  t.after(async () => {
+    await hub.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const call = (route, token, body) =>
+    fetch(`http://127.0.0.1:${hub.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const admin = hub.engine.config.adminToken;
+  const before = hub.engine.config.name;
+  for (const role of ["replica", "backup"]) {
+    const device = await (
+      await call("/v1/devices", admin, { name: role, role })
+    ).json();
+    for (const route of [
+      "/v1/volumes",
+      "/v1/delete-share",
+      "/v1/rename-share",
+      "/v1/ignore-policy",
+      "/v1/pairing",
+      "/v1/devices",
+      "/v1/revoke",
+      "/v1/settings",
+      "/v1/network",
+      "/v1/network/lan",
+      "/v1/retention",
+      "/v1/promote",
+      "/v1/backup",
+      "/v1/pause",
+    ]) {
+      const response = await call(route, device.token, {});
+      assert.equal(
+        response.status,
+        403,
+        `${role} ${route}: ${await response.text()}`,
+      );
+    }
+    assert.equal((await call("/v1/machines", device.token)).status, 200);
+    assert.equal((await call("/v1/status", device.token)).status, 403);
+    if (role === "backup")
+      for (const route of ["/v1/propose", "/v1/restore", "/v1/conflict-choice"])
+        assert.equal((await call(route, device.token, {})).status, 403, route);
+  }
+  assert.equal(hub.engine.config.name, before);
+  assert.equal(hub.engine.store.volumes().length, 0);
+  hub.engine.config.role = "replica";
+  for (const route of [
+    "/v1/volumes",
+    "/v1/pairing",
+    "/v1/delete-share",
+    "/v1/rename-share",
+    "/v1/devices",
+    "/v1/revoke",
+    "/v1/retention",
+  ])
+    assert.ok(
+      [403, 409].includes((await call(route, admin, {})).status),
+      route,
+    );
 });

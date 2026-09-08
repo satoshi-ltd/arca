@@ -14,6 +14,20 @@
   --notice-inset: 20px;
   --notice-radius: 10px;
   /* Shared sizing, rhythm and interaction layers (CSS pixels). */
+  --tag-height: 20px;
+  --tag-font: 10px;
+  --tag-line: 14px;
+  --tag-x: 5px;
+  --tag-y: 2px;
+  --pill-font: 12px;
+  --pill-line: 16px;
+  --pill-left: 8px;
+  --pill-right: 10px;
+  --pill-y: 4px;
+  --pill-gap: 6px;
+  --pill-icon: 13px;
+  --r-segment: 6px;
+  --icon-stroke: 1.75;
   --text-caption: 11px;
   --text-body: 12px;
   --text-control: 13px;

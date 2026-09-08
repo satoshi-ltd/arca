@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import ignore from "../vendor/ignore/index.cjs";
 
+import { builtinExcluded } from "../core/builtin-exclusions.js";
+
 export const IGNORE_FILE = ".arcaignore";
 export const MAX_IGNORE_BYTES = 64 * 1024;
 export const DEFAULT_IGNORE = fs.readFileSync(
@@ -9,7 +11,7 @@ export const DEFAULT_IGNORE = fs.readFileSync(
   "utf8",
 );
 
-// Seed once; never replace user rules. An empty file deliberately includes everything.
+// Seed once; never replace user rules. An empty file disables user exclusions, not built-in metadata exclusions.
 export function ensureIgnore(root, includes = []) {
   let text = DEFAULT_IGNORE;
   if (Array.isArray(includes) && includes.length) {
@@ -54,6 +56,7 @@ export function compileIgnore(text) {
     throw new Error(".arcaignore exceeds 64 KiB");
   const rules = ignore({ ignorecase: true }).add(text);
   return (name, directory = false) => {
+    if (builtinExcluded(name)) return true;
     // Internal bookkeeping and unsupported file types remain safety invariants.
     if (name.split("/").some((part) => part.startsWith(".arca-"))) return true;
     if (name === IGNORE_FILE) return false;

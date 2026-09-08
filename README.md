@@ -1,29 +1,31 @@
 # arca
 
-A personal drive for your own machines: full files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
+A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.2.3 · Phase 1 functional alpha. Stabilization and release qualification are still in progress.** macOS desktop and Docker/server web administration work; mobile is planned for phase 2, localization for phase 3.
+**v0.3.0 · Functional alpha. Current mobile/core/UI changes are uncommitted and not release-qualified.** The hosted v0.2.3 desktop/Docker pipeline succeeded; that does not include later checkout changes.
 
-## Model
+## How it works
 
-The hub creates shares and keeps their catalog, content and history. Each replica selects whole shares and chooses its own local paths. Existing local files join the sync. An optional replica backup keeps all received folders/history separately from working copies.
+- The **hub** creates shared folders and owns their catalog and history. Each **replica** selects whole folders independently. Desktop copies use chosen local paths; mobile copies live in persistent app-owned storage. Existing edits synchronize in both directions; there are no placeholders.
+- **Web** administers the server it connects to. **Tauri** manages its local daemon, which does not serve a web panel. **Mobile** is always a replica. Pairing never grants remote hub administration.
+- **Pause** keeps copies linked. Desktop **Unlink** keeps files on disk. Mobile **Stop syncing** removes the app-owned copy after confirmation and blocks unsynced changes. Hub **Delete share** removes catalog/history while retaining physical files. These operations are distinct.
+- Conflicts preserve both files and their histories. Choosing a version records the resolution; editing the conflict copy again reopens it. Replicas resolve only selected folders. Restore creates a new revision.
+- Optional **full backup** is independent of working copies and requires explicit enablement. Quit leaves the desktop daemon running.
 
-Automatic sync reviews local changed paths and fetches remote changes incrementally (15 seconds while active, 60 seconds when idle), with periodic full reconciliation.
+Desktop/server sync uses incremental remote changes, changed local paths and periodic reconciliation: 15-second active checks, 60-second idle checks. Mobile resumes durable work on launch/resume and through OS-scheduled background tasks; it is not a continuously running daemon.
 
-Web and desktop share UI components. Desktop installs the native app, tray and an API-only daemon; only server installations serve the web panel. Installation type is independent of hub/replica role. A hub manages shared folders and authorized machines; a replica manages its hub connection and local copies. Browser Sign out ends web access only. Desktop replicas use Machines → Disconnect / Reconnect, preserving local files and destinations. Disconnect removes the pairing on both sides (an offline replica updates on next contact); reconnect requires a new pairing code.
-
-Pause keeps a folder linked. Replica unlink removes the local mapping and retains files. Hub Delete share removes catalog/history and retains physical files. `.arcaignore` is an editable, synchronized policy; its starter is optional when creating a new hub directory.
+`.arcaignore` is synchronized and editable. Creating a hub folder can optionally seed it; selection does not. `.DS_Store`, `Thumbs.db` and `desktop.ini` are always excluded by the shared core.
 
 ## Development
 
-Requires Node.js 24+, Rust and the platform's Tauri prerequisites.
+Requires Node.js 24+. Desktop also requires Rust and the platform's Tauri prerequisites.
 
 ```sh
 npm ci
-npm run dev
+npm run desktop
 ```
 
-Development uses the real local `~/.arca` daemon by default. Tests use isolated temporary state.
+`npm run dev` is an alias. Development normally uses the real `~/.arca`; automated tests use isolated state. Vite serves development UI on port 1425. The daemon uses 47831; Docker/server installations also serve web there.
 
 ```sh
 npm test
@@ -31,60 +33,78 @@ npm run desktop:build
 npm run verify:bundle
 ```
 
-Desktop and web share `apps/desktop/src`. Vite hot reload is for development; distributing a change requires rebuilding the desktop bundle or Docker image.
+Web/Tauri share `apps/desktop/src`. Vite reloads frontend changes; daemon changes require deployment/restart. Building a bundle does not replace an already running app. macOS local bundles are ad-hoc signed, not notarized.
 
-The macOS bundle is locally ad-hoc signed, not notarized. Closing or quitting the app leaves the daemon running. The daemon API uses port 47831; server installations also serve web on that port. Vite development uses 1425 and is not part of the installed desktop service.
+## Mobile
 
-## Build and publish an alpha
+Expo/React Native JavaScript lives in `apps/mobile`. Expo Go cannot load its local native networking module.
 
-The **Arca** workflow runs automatically on pushes to `main` and builds macOS Apple Silicon (arm64) DMGs, Windows x64 NSIS, Linux x64 AppImage/deb and an amd64/arm64 Docker image. All jobs use the same checkout and version. The single workflow first runs version checks and the JavaScript suite on macOS, Windows and Linux. Pull requests stop there. Only after every test job passes do desktop packaging and Docker builds start in parallel. Each build verifies its packages: installer runtimes and Docker startup, web/API access and persistence on both architectures (ARM via emulation). Publication waits for every build and package check to pass.
+```sh
+npm ci --prefix apps/mobile
+npm run mobile
+npm run check --prefix apps/mobile
+```
 
-Unsigned builds need no custom secrets. Direct-download publication does not require an Apple account or App Store submission. macOS uses an ad-hoc signature by default and is not notarized; Windows is currently unsigned. macOS may block downloaded apps without Developer ID signing/notarization. Artifact generation is not full interactive installation, tray or sync qualification on every OS. Launch-at-login currently supports macOS only. There is no automatic updater or pilot deployment in this workflow.
+`mobile` starts Metro for the installed development client over LAN with the `arca` scheme; it does not build or launch an emulator. `check` exports Android/iOS JavaScript, not native installers. Do not restart a user-managed Metro session just to refresh JavaScript.
 
-### Automatic release on push
+Implemented locally: secure pairing, persistent whole-folder sync with verified resumable transfers, offline files, imports and existing-text-file editing, history/restore/conflicts, optional independent backup, themes and OS background/notification integration. Files, Recent and History lead to one file-detail view. Phone uses bottom navigation and stacked content; wide/Fold uses a sidebar and desktop-style composition with touch-sized controls.
 
-1. Configure the Docker Hub secrets described below before pushing to `main`.
-2. After all three test jobs pass, a push to `main` checks whether the version needs publishing. If `vX.Y.Z` already exists remotely, the release workflow skips builds and publication successfully. Remote lookup errors stop the run.
-3. For a new version, tests and package checks must pass before publishing installers to GitHub Releases and images to Docker Hub/GHCR. macOS uses an ad-hoc signature; no Apple secrets are required for automatic releases.
-4. Follow **Actions → Arca** for results. A commit alone does not run CI: it must be pushed. With the current manifests, the next release target is `v0.2.3`.
-5. To build without publishing, use **Run workflow** with **publish** and **sign_macos** unchecked. Before the first release, this can be run from a development branch once the workflow is available on the default branch. A push to `main` itself always uses automatic publication for a new version.
+**Receiving files:** Share → Arca → selected folder → subfolder → Save. A persistent inbox holds incoming files until saved or explicitly discarded; closing keeps them. **Save a copy** exports local folder files outside Arca; it does not export synchronized history or create another syncing copy. Native picker/export and background behavior still require real-device qualification. Android incoming intent reception has been exercised; the iOS share extension is experimental.
 
-The `desktop-*` and `docker-image` artifacts expire after 14 days. The Docker tar is an OCI archive, not a `docker load` archive. Installer filenames include version and architecture. Default macOS artifacts are ad-hoc signed, not notarized; package tests do not replace interactive qualification.
+Native modules, incoming-share registration and icon/splash changes require a new binary. Metro does not install them. The hub needs the bounded-download `blobRanges` capability; Casa has received it, but the published v0.2.3 image predates these mobile-support changes.
 
-### Optional macOS signing (skip for the current release)
+### EAS builds
 
-Only if Developer ID signing/notarization is wanted later, in **Settings → Secrets and variables → Actions → New repository secret**, add:
+Project: [satoshi-ltd/arca](https://expo.dev/accounts/satoshi-ltd/projects/arca).
 
-| Secret                       | Value                                                                               |
-| ---------------------------- | ----------------------------------------------------------------------------------- |
-| `APPLE_CERTIFICATE`          | Base64 of the Developer ID Application `.p12` certificate **with its private key**. |
-| `APPLE_CERTIFICATE_PASSWORD` | Password used to export that `.p12`.                                                |
-| `APPLE_SIGNING_IDENTITY`     | Full certificate identity, e.g. `Developer ID Application: Your Name (TEAMID)`.     |
-| `APPLE_ID`                   | Apple account used for notarization.                                                |
-| `APPLE_PASSWORD`             | An Apple **app-specific password**, not your normal account password.               |
-| `APPLE_TEAM_ID`              | The Apple Developer team ID.                                                        |
+```sh
+cd apps/mobile
+npm run build:dev      # Android development client; uses Metro
+npm run build:preview  # Internal standalone Android APK
+npm run build:prod     # Production-profile Android APK; no store submission
+```
 
-If Alf uses organization secrets, grant this repository access to them. If they are repository secrets, configure the same values from the original certificate/credential source: GitHub does not reveal saved secret values. The Developer ID identity can be shared by apps belonging to the same developer/team. Export the certificate plus private key through Keychain Access; encode it locally with `base64 -i /path/to/certificate.p12 | pbcopy`, then paste into the GitHub secret. Never put the certificate or passwords in source control or chat.
+EAS manages Android signing. Root aliases `mobile:build` and `mobile:build:preview` invoke development and preview builds. Build profiles currently use Node 24.14.1 and APK output. Increasing native build numbers and store distribution remain release work. The installed pilot APK predates the latest icon/splash and other native refinements; do not infer native acceptance from a successful export.
 
-Run **Arca** again with **sign_macos** checked and **publish** unchecked. This verifies signing, notarization and the packages before public distribution. See [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/) for certificate and notarization setup.
+## Connect over the local network
 
-### Configure Docker Hub (same as Alf)
+Enable the hub's **Settings → Local network → Allow HTTP connections**, then use its private IPv4 address. The listener and Docker binding must also be reachable. This is unencrypted local traffic, not public Internet hosting. Tailscale/HTTPS remain alternatives. A Tailscale hostname/address requires Tailscale connectivity on the mobile device itself.
 
-Create `satoshiltd/arca` in Docker Hub, with the intended visibility. Add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` to this repository's Actions secrets, matching Alf's names. The token must belong to an account authorized to push to `satoshiltd/arca`; grant read/write access, not delete access. Existing organization secrets can be shared with Arca if their account/token has that repository permission. Do not put the token in source or chat. These secrets are only needed when publication is selected.
+Casa's pilot LAN endpoint is `http://192.168.1.190:47831`; Tailscale is `http://casa:47831`. Android LAN pairing and sync have been exercised on the existing emulator. Pairing and browser access use separate six-digit, single-use, ten-minute codes.
 
-### Publish
+## Update the Casa pilot
 
-1. Ensure `package.json`, `package-lock.json`, Tauri configuration, `Cargo.toml` and `Cargo.lock` agree on an unused version (`node scripts/check-release.js`). The current version is `0.2.3`; existing release tags cannot be overwritten.
-2. Push the new version to `main`. Publication runs automatically after all build/test jobs succeed. Manual publication remains available via **Run workflow → publish**, with **sign_macos** unchecked.
-3. The final job publishes `satoshiltd/arca:0.2.3` on Docker Hub and `ghcr.io/satoshi-ltd/arca:0.2.3` and the GitHub prerelease `v0.2.3`, with installers and `SHA256SUMS`. Both registries also receive `latest`, matching Alf. During this phase, `latest` is an alpha, not a stable-release guarantee. GHCR authentication uses the built-in `GITHUB_TOKEN` with `packages: write`.
-4. If anonymous Docker pulls are wanted, open the organization's **Packages → arca → Package settings** and set the package visibility to public when organization policy permits. Otherwise consumers need registry authentication.
+From this Mac checkout:
 
-The two registry uploads, latest aliases and GitHub release creation are separate operations: if the last step fails after the image upload, that versioned image can already exist. Inspect the failed run before retrying; do not change source and reuse that version. No installed daemon is restarted by publishing.
+```sh
+npm run update-docker -- --check  # Read-only SSH, Compose and hub checks
+npm run update-docker            # Tests, build current source, recreate Casa only
+```
 
-Local packaging: `npm run desktop:release` creates platform installers, while `npm run desktop:build` retains the existing local macOS app workflow. The release script signs embedded Node on macOS before signing the app. Windows signing and automatic updating remain separate, unimplemented work.
+This command uses the **private, Git-ignored** `scripts/local/update-docker.js` and the existing SSH alias `casa`. Copy the helper separately for another checkout. It includes uncommitted source and preserves Casa's Compose, `.env`, state and mounted files. It refuses a paused hub, retains the previous image and verifies deployed source hashes and configuration. It does not update Mac/mobile, publish images or restart Metro. Full procedure and failure/rollback commands: [spec operations](SPEC.md#update-casa-docker-from-this-checkout).
 
-## Change policy
+```sh
+ssh casa 'docker exec arca node packages/cli/arca.js status'
+ssh casa 'docker exec arca node packages/cli/arca.js web-code'
+ssh casa 'docker logs --tail 50 arca'
+```
 
-Every commit must bump the project version and add its changes to [changelog.md](changelog.md). Keep package/lockfiles, Tauri manifests and displayed/reported versions aligned. Use a patch bump unless another version is explicitly selected. Commits and pushes require explicit authorization.
+A deployment invalidates web sessions; reload and sign in again if requested. Preparing/checking this helper does not deploy changes.
 
-Repository: [satoshi-ltd/arca](https://github.com/satoshi-ltd/arca).
+## Release and remaining work
+
+The single **Arca** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub/GHCR versioned images plus `latest`. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` is alpha, not a stable-release guarantee.
+
+macOS is ad-hoc signed and Windows unsigned by default; Developer ID signing/notarization is optional. No automatic updater, store submission or pilot deployment is part of publication. Detailed registry/signing setup belongs in [release operations](SPEC.md#release-setup-and-publication).
+
+Before distribution: complete cross-client/offline/conflict workflows; real iOS/Android networking, background, import/export/share and launch acceptance; actual desktop installer/upgrade testing; accessibility and long-content visual review; sustained load and independent backup/recovery; mobile CI and native build-number policy. See [remaining tasks](SPEC.md#remaining-work-and-task-candidates) for scope and evidence. Passing tests or producing packages does not close those gates.
+
+## Documentation and change policy
+
+- [README.md](README.md): orientation and entry commands.
+- [AGENTS.md](AGENTS.md): contributor instructions and operational boundaries.
+- [SPEC.md](SPEC.md): current state, remaining work, contracts, operations and shared design system.
+
+`AGENTS.md` contains contributor instructions; `changelog.md` records versions. The original visual assets are references, not another specification. Third-party documentation/licenses remain with their dependencies.
+
+Every commit requires a version bump and matching changelog entry, with package/lockfiles and Tauri manifests aligned. **No commit or push without explicit authorization.**

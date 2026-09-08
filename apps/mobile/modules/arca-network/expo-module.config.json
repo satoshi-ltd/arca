@@ -1,0 +1,1 @@
+{"platforms":["apple","android"],"apple":{"modules":["ArcaNetworkModule"]},"android":{"modules":["expo.modules.arcanetwork.ArcaNetworkModule"]}}

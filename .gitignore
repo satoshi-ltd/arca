@@ -9,3 +9,15 @@ apps/desktop/src-tauri/runtime/
 .cache/
 release-assets/
 apps/desktop/src-tauri/gen/
+apps/mobile/.expo/
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/modules/**/android/build/
+apps/mobile/modules/**/android/.gradle/
+
+# Private pilot configuration and local-only maintenance helpers.
+/deploy/local/
+/scripts/local/
+
+# Original visual references (used when reviewing design parity).
+/design_handoff_arca_v0.1/

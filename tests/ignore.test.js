@@ -90,3 +90,29 @@ test("ignore reads reject a dangling symlink", (t) => {
   }
   assert.throws(() => readIgnore(root));
 });
+
+test("Finder metadata is always excluded, without user rules or despite negation", () => {
+  for (const text of [
+    "",
+    "!.DS_Store\n!**/.DS_Store\n!Thumbs.db\n!desktop.ini\n",
+  ]) {
+    const excluded = compileIgnore(text);
+    for (const name of [
+      ".DS_Store",
+      "photos/.DS_Store",
+      "photos/.ds_store",
+      "Thumbs.db",
+      "photos/THUMBS.DB",
+      "desktop.ini",
+      "nested/Desktop.ini",
+    ])
+      assert.equal(excluded(name), true, name);
+    for (const name of [
+      ".env",
+      "notes/.DS_Store.txt",
+      "node_modules/package.json",
+      ".arcaignore",
+    ])
+      assert.equal(excluded(name), false, name);
+  }
+});

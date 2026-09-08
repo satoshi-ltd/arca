@@ -169,7 +169,7 @@ async fn open_folder(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn open_file(volume: String, path: String) -> Result<(), String> {
+async fn open_file(volume: String, path: String, reveal: Option<bool>) -> Result<(), String> {
     let status=request("/v1/status","GET",None).await?;
     let root=status["volumes"].as_array().and_then(|vs|vs.iter().find(|v|v["id"].as_str()==Some(&volume))).and_then(|v|v["path"].as_str()).ok_or("Unknown local folder")?;
     let root=fs::canonicalize(root).map_err(|e|e.to_string())?;
@@ -178,6 +178,10 @@ async fn open_file(volume: String, path: String) -> Result<(), String> {
     #[cfg(target_os="macos")] let mut command=Command::new("open");
     #[cfg(target_os="windows")] let mut command=Command::new("explorer");
     #[cfg(target_os="linux")] let mut command=Command::new("xdg-open");
+    if reveal.unwrap_or(false) {
+        #[cfg(target_os="macos")] command.arg("-R");
+        #[cfg(not(target_os="macos"))] return Err("Reveal in Finder is only available on macOS".into());
+    }
     command.arg(file).spawn().map_err(|e|e.to_string())?;Ok(())
 }
 fn preferences() -> Value {

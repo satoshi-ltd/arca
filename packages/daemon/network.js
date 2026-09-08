@@ -4,6 +4,25 @@ import { isIP } from "node:net";
 import fs from "node:fs";
 import { Tailscale, discoverPeers, tailAddress } from "./tailscale.js";
 import { fail } from "./storage.js";
+export function lanAddress(address) {
+  if (isIP(address || "") !== 4) return false;
+  const [a, b] = address.split(".").map(Number);
+  return (
+    a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  );
+}
+export async function verifiedLanURL(remote, fetcher = fetch) {
+  if (!lanAddress(remote.hostname))
+    fail("Use the hub's private IPv4 address", 400);
+  const response = await fetcher(`${remote.origin}/.well-known/arca`, {
+    redirect: "error",
+    signal: AbortSignal.timeout(10000),
+  });
+  const info = response.ok ? await response.json() : null;
+  if (info?.access?.allowLanHttp !== true)
+    fail("Enable Allow HTTP on local network in the hub's Settings first", 412);
+  return remote;
+}
 export async function verifiedTailnetURL(remote, state, resolveHost = lookup) {
   if (state.state !== "connected")
     fail(
@@ -70,7 +89,7 @@ export class Network {
       service: "arca",
       discoveryVersion: 1,
       protocol: 1,
-      version: "0.2.3",
+      version: "0.3.0",
       id: c.id,
       name: c.name,
       role: c.role,
@@ -96,6 +115,7 @@ export class Network {
     const tailscale = await this.detector.read();
     return {
       mode: this.engine.config.network?.mode || "standalone",
+      allowLanHttp: this.engine.config.network?.allowLanHttp === true,
       tailscale,
       publishing:
         Boolean(this.listener) ||
@@ -139,9 +159,21 @@ export class Network {
       (await this.detector.read(true)).state !== "connected"
     )
       fail("Connect Tailscale before enabling Tailscale mode", 409);
-    this.engine.config.network = { mode };
+    this.engine.config.network = { ...this.engine.config.network, mode };
     this.engine.store.saveConfig();
     await this.maintain();
+    return this.status();
+  }
+  async setLanHttp(enabled) {
+    if (this.engine.config.role !== "hub")
+      fail("Only a hub can allow LAN connections", 403);
+    if (typeof enabled !== "boolean")
+      fail("Expected enabled to be a boolean", 400);
+    this.engine.config.network = {
+      ...this.engine.config.network,
+      allowLanHttp: enabled,
+    };
+    this.engine.store.saveConfig();
     return this.status();
   }
   maintain() {

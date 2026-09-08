@@ -93,7 +93,7 @@ export function machines(engine) {
       },
       ...s.db
         .prepare(
-          "SELECT d.id,d.name,d.role,d.revoked,d.last_seen,a.enabled,a.revision,a.updated,r.report FROM devices d LEFT JOIN backup_ack a ON a.device=d.id LEFT JOIN machine_reports r ON r.device=d.id",
+          "SELECT d.id,d.name,d.role,d.revoked,d.last_seen,d.last_address,a.enabled,a.revision,a.updated,r.report FROM devices d LEFT JOIN backup_ack a ON a.device=d.id LEFT JOIN machine_reports r ON r.device=d.id",
         )
         .all()
         .map((row) => {
@@ -106,6 +106,7 @@ export function machines(engine) {
             isHub: false,
             revoked: !!row.revoked,
             lastContact: row.last_seen,
+            lastAddress: row.last_address,
             linkState: row.revoked
               ? "revoked"
               : row.last_seen

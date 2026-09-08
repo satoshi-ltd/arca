@@ -97,9 +97,14 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
   const restoreGate = new Promise((resolve) => {
     releaseRestore = resolve;
   });
+  const openedFiles = [];
   w.__TAURI__ = {
     core: {
       invoke: async (command, args) => {
+        if (command === "open_file") {
+          openedFiles.push(args);
+          return;
+        }
         if (command === "bootstrap")
           return { setup: false, status: daemon.engine.status() };
         if (command !== "api") throw new Error("Unexpected native command");
@@ -126,6 +131,19 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
     w.document.querySelector('[data-action="folder-detail"]').click();
     await until(
       () =>
+        w.document.querySelector(".browser-file-row") &&
+        w.document.body.getAttribute("aria-busy") === "false",
+    );
+    assert.ok(
+      [...w.document.querySelectorAll(".browser-file-row strong")].some(
+        (el) => el.textContent === "note.txt",
+      ),
+    );
+    w.document
+      .querySelector('[data-action="folder-tab"][data-id="recent"]')
+      .click();
+    await until(
+      () =>
         w.document.querySelector('[data-action="folder-history"]') &&
         w.document.body.getAttribute("aria-busy") === "false",
     );
@@ -135,12 +153,56 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
         w.document.querySelector('[data-action="activity-file"]') &&
         w.document.body.getAttribute("aria-busy") === "false",
     );
-    w.document.querySelector('[data-action="activity-file"]').click();
+    w.document.querySelector('[data-action="activity-file"] strong').click();
     await until(
-      () => w.document.querySelectorAll('[data-action="restore"]').length === 2,
+      () => w.document.querySelectorAll('[data-action="restore"]').length === 1,
     );
     const controls = w.document.querySelectorAll('[data-action="restore"]');
-    controls[1].click();
+    assert.equal(w.document.querySelector("#history-share"), null);
+    assert.equal(
+      w.document.querySelector('[data-action="history-filter"]'),
+      null,
+    );
+    assert.ok(w.document.querySelector(".detail-head h1"));
+    assert.ok(w.document.querySelector('[data-action="history-open-file"]'));
+    const selectedPath = new URLSearchParams(w.location.hash.split("?")[1]).get(
+      "path",
+    );
+    w.document.querySelector('[data-action="history-open-file"]').click();
+    await until(
+      () =>
+        openedFiles.length === 1 &&
+        w.document.body.getAttribute("aria-busy") === "false",
+    );
+    assert.equal(openedFiles[0].path, selectedPath);
+    assert.equal(openedFiles[0].reveal, false);
+    const finder = w.document.querySelector(
+      '[data-action="history-reveal-file"]',
+    );
+    if (process.platform === "darwin") {
+      assert.ok(finder);
+      finder.click();
+      await until(
+        () =>
+          openedFiles.length === 2 &&
+          w.document.body.getAttribute("aria-busy") === "false",
+      );
+      assert.deepEqual(
+        { ...openedFiles[1] },
+        { ...openedFiles[0], reveal: true },
+      );
+    } else {
+      assert.equal(finder, null);
+    }
+    assert.equal(
+      openedFiles[0].volume,
+      new URLSearchParams(w.location.hash.split("?")[1]).get("volume"),
+    );
+    assert.match(
+      w.document.querySelector("#history-list").textContent,
+      /Current/,
+    );
+    controls[0].click();
     await until(
       () =>
         w.document.querySelector("#dialog").open &&
@@ -185,6 +247,22 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
       () =>
         w.document.querySelector('[data-action="pause"]') &&
         w.document.body.getAttribute("aria-busy") === "false",
+    );
+    const lanToggle = w.document.querySelector("#allow-lan-http");
+    assert.equal(lanToggle.checked, false);
+    lanToggle.checked = true;
+    lanToggle.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await until(
+      () =>
+        daemon.engine.config.network?.allowLanHttp === true &&
+        !lanToggle.disabled,
+    );
+    lanToggle.checked = false;
+    lanToggle.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await until(
+      () =>
+        daemon.engine.config.network?.allowLanHttp === false &&
+        !lanToggle.disabled,
     );
     const themeGroup = w.document.querySelector(
       '[role="group"][aria-label="Theme"]',
@@ -810,6 +888,8 @@ test("share web routes survive reload and history navigation; hub edits use real
     fs.readFileSync(path.join(v.path, ".arcaignore"), "utf8"),
     "*.tmp\n",
   );
+  q('[data-action="folder-tab"][data-id="recent"]').click();
+  await until(() => q('[data-action="folder-history"]') && idle());
   q('[data-action="folder-history"]').click();
   await until(() => w.location.hash.startsWith("#/history?") && idle());
   assert.equal(
@@ -830,6 +910,31 @@ test("share web routes survive reload and history navigation; hub edits use real
   );
   const reloaded = await open(w.location.hash);
   assert.ok(reloaded.document.querySelector("#history-list"));
+  const forward = q('[data-action="activity-file"]');
+  assert.ok(forward.getAttribute("aria-label").startsWith("View history for "));
+  assert.equal(forward.getAttribute("role"), "button");
+  assert.equal(forward.getAttribute("tabindex"), "0");
+  assert.equal(forward.querySelector(".icon-button"), null);
+  forward.focus();
+  forward.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+  );
+  await until(() => q('[data-action="history-back"]') && idle());
+  assert.equal(q("#history-share"), null);
+  assert.equal(q('[data-action="history-filter"]'), null);
+  assert.ok(q(".file-history-summary .stats"));
+  const download = q(".file-header-actions a[download]");
+  assert.ok(download);
+  const blob = await request(download.getAttribute("href"));
+  assert.equal(blob.status, 200);
+  const fileURL = w.location.hash;
+  const fileReload = await open(fileURL);
+  assert.ok(fileReload.document.querySelector(".detail-head h1"));
+  q('[data-action="history-back"]').click();
+  await until(() => q("#history-share") && idle());
+  assert.ok(!w.location.hash.includes("path="));
+  assert.ok(w.location.hash.includes("volume=" + v.id));
+
   const historyWindow = await open("#/history");
   const historyQuery = (selector) =>
     historyWindow.document.querySelector(selector);
@@ -1095,6 +1200,10 @@ for (const surface of ["web", "desktop"]) {
       assert.equal(
         Boolean(w.document.querySelector('[data-action="logout-all"]')),
         surface === "web",
+      );
+      assert.equal(
+        Boolean(w.document.querySelector("#allow-lan-http")),
+        role === "hub",
       );
       assert.equal(
         Boolean(w.document.querySelector("#notifications-enabled")),
@@ -1366,7 +1475,7 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   const diagnostics = w.document.querySelector('[data-action="diagnostics"]');
   diagnostics.click();
   await until(() => diagnostics.textContent.includes("Copied"));
-  assert.equal(JSON.parse(copied.at(-1)).version, "0.2.3");
+  assert.equal(JSON.parse(copied.at(-1)).version, "0.3.0");
   await new Promise((resolve) => setTimeout(resolve, 2100));
   assert.ok(diagnostics.textContent.includes("Copy diagnostics"));
 });
@@ -1454,4 +1563,191 @@ test("Machines refreshes backup acknowledgements without navigation", async (t) 
     w.document.querySelector("#devices-list").textContent,
     /Pending/,
   );
+});
+
+test("LAN mobile metadata appears on hub and other machines appear read-only on desktop replicas", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-mobile-roster-ui-"));
+  init(home, { port: 0, name: "Casa" });
+  const hub = await start(home, { timer: false });
+  const call = async (route, body) => {
+    const r = await fetch(`http://127.0.0.1:${hub.port}${route}`, {
+      method: body ? "POST" : "GET",
+      headers: {
+        Authorization: `Bearer ${hub.engine.config.adminToken}`,
+        "Content-Type": "application/json",
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    return r.json();
+  };
+  const device = await call("/v1/devices", {
+    name: "Android emulator",
+    role: "replica",
+  });
+  hub.engine.store.db
+    .prepare("UPDATE devices SET last_address=?, last_seen=? WHERE id=?")
+    .run("192.168.1.171", new Date().toISOString(), device.id);
+  hub.engine.store.db
+    .prepare("INSERT OR REPLACE INTO machine_reports VALUES(?,?)")
+    .run(
+      device.id,
+      JSON.stringify({
+        machineId: device.id,
+        name: "Android emulator",
+        platform: "android",
+        reportedAt: new Date().toISOString(),
+      }),
+    );
+  const doms = [];
+  t.after(async () => {
+    doms.forEach((d) => d.window.close());
+    await hub.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  for (const role of ["hub", "replica"]) {
+    const dom = new JSDOM(html, {
+      runScripts: "outside-only",
+      url: "http://tauri.localhost/#/machines",
+    });
+    doms.push(dom);
+    const w = dom.window;
+    w.setInterval = () => 0;
+    w.__TAURI__ = {
+      core: {
+        invoke: async (command, args) => {
+          if (command === "bootstrap") return { setup: false };
+          if (command !== "api") return {};
+          if (args.route === "/v1/status") {
+            const s = hub.engine.status();
+            return role === "hub"
+              ? s
+              : {
+                  ...s,
+                  id: "local-mac",
+                  role,
+                  name: "Mac",
+                  hub: "http://casa:47831",
+                  devices: [],
+                };
+          }
+          if (args.route === "/v1/discovery")
+            return { peers: [], tailscale: { state: "not-installed" } };
+          return call(args.route, args.body);
+        },
+      },
+    };
+    await w.eval(`(async()=>{${script}\n})()`);
+    await until(() => w.document.body.textContent.includes("Android emulator"));
+    const row = [...w.document.querySelectorAll(".device-row")].find((r) =>
+      r.textContent.includes("Android emulator"),
+    );
+    assert.match(row.textContent, /192\.168\.1\.171/);
+    assert.match(row.textContent, /Android/i);
+    assert.equal(
+      row.textContent.includes("Connection details unavailable"),
+      false,
+    );
+    assert.equal(
+      Boolean(row.querySelector('[data-action="revoke"]')),
+      role === "hub",
+    );
+  }
+});
+
+test("conflict file detail opens a guarded version choice and restores the selected content", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-conflict-ui-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Documents");
+  const conflict = "note.txt.conflict-test-version";
+  fs.writeFileSync(path.join(volume.path, "note.txt"), "original");
+  fs.writeFileSync(path.join(volume.path, conflict), "alternative");
+  await daemon.engine.cycle();
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: `http://tauri.localhost/#history?volume=${volume.id}&path=${conflict}`,
+  });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap")
+          return { setup: false, status: daemon.engine.status() };
+        if (command !== "api") return;
+        const response = await fetch(
+          `http://127.0.0.1:${daemon.port}${args.route}`,
+          {
+            method: args.method,
+            headers: {
+              Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+              "Content-Type": "application/json",
+            },
+            ...(args.method === "POST"
+              ? { body: JSON.stringify(args.body) }
+              : {}),
+          },
+        );
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error);
+        return value;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  const q = (selector) => w.document.querySelector(selector);
+  assert.ok(q('.file-header-actions [data-action="review-conflict"]'));
+  q('[data-action="review-conflict"]').click();
+  await until(() => q('#dialog[open] input[value="conflict"]'));
+  assert.equal(q('input[name="choice"]:checked').value, "original");
+  q('input[value="conflict"]').checked = true;
+  q("#dialog-form").dispatchEvent(
+    new w.Event("submit", { bubbles: true, cancelable: true }),
+  );
+  await until(
+    () =>
+      !q("#dialog[open]") &&
+      fs.readFileSync(path.join(volume.path, "note.txt"), "utf8") ===
+        "alternative",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(volume.path, conflict), "utf8"),
+    "alternative",
+  );
+});
+
+test("numeric Lucide names render deletion and restore icons", () => {
+  const dom = new JSDOM(
+    '<span data-icon="trash-2"></span><span data-icon="undo-2"></span>',
+    { runScripts: "outside-only" },
+  );
+  try {
+    dom.window.eval(
+      fs.readFileSync(
+        new URL("../apps/desktop/src/vendor/lucide.js", import.meta.url),
+        "utf8",
+      ),
+    );
+    dom.window.eval(
+      script.slice(
+        script.indexOf("function icons()"),
+        script.indexOf("function pill("),
+      ) + "\nicons();",
+    );
+    assert.equal(dom.window.document.querySelectorAll("svg.icon").length, 2);
+    assert.equal(dom.window.document.querySelectorAll("[data-icon]").length, 0);
+  } finally {
+    dom.window.close();
+  }
 });

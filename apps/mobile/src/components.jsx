@@ -1,0 +1,617 @@
+import { geometry as g } from "./design-tokens.js";
+import React, { createContext, useContext } from "react";
+import {
+  View,
+  Text,
+  Pressable,
+  ActivityIndicator,
+  TextInput,
+  Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from "react-native";
+import * as Clipboard from "expo-clipboard";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, {
+  Path,
+  Rect,
+  Circle,
+  Line,
+  Polyline,
+  Polygon,
+  Ellipse,
+} from "react-native-svg";
+import { icons } from "./icons";
+export const Design = createContext(null);
+export const useDesign = () => useContext(Design);
+const shapes = {
+  path: Path,
+  rect: Rect,
+  circle: Circle,
+  line: Line,
+  polyline: Polyline,
+  polygon: Polygon,
+  ellipse: Ellipse,
+};
+export function Icon({ name, color, size = 20 }) {
+  const { c } = useDesign();
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color || c.accent}
+      strokeWidth={g.iconStroke}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {(icons[name] || icons.folders).map(([kind, props], index) => {
+        const Shape = shapes[kind];
+        return <Shape key={index} {...props} />;
+      })}
+    </Svg>
+  );
+}
+export function Logo({ size = 76 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 512 512">
+      <Rect x="8" y="8" width="496" height="496" rx="116" fill="#244d3e" />
+      <Path
+        d="M136 370V232a120 120 0 0 1 240 0v138h-58V232a62 62 0 0 0-124 0v138z"
+        fill="#eff5df"
+      />
+      <Rect x="224" y="276" width="64" height="94" rx="8" fill="#accb80" />
+    </Svg>
+  );
+}
+export function Button({
+  label,
+  onPress,
+  primary = false,
+  iconOnly = false,
+  disabled = false,
+  busy = false,
+  icon,
+  quiet = false,
+  danger = false,
+}) {
+  const { s, c } = useDesign();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: disabled || busy, busy }}
+      disabled={disabled || busy}
+      onPress={onPress}
+      style={[
+        s.button,
+        iconOnly && s.iconButton,
+        primary && s.primary,
+        quiet && s.quietButton,
+        danger && s.dangerButton,
+        (disabled || busy) && s.disabled,
+      ]}
+    >
+      {busy ? (
+        <ActivityIndicator
+          color={primary ? c.onAccent : danger ? c.danger : c.ink}
+        />
+      ) : icon ? (
+        <Icon
+          name={icon}
+          color={primary ? c.onAccent : danger ? c.danger : c.ink}
+        />
+      ) : null}
+      {!iconOnly && (
+        <Text
+          style={[
+            s.buttonLabel,
+            primary && s.primaryLabel,
+            quiet && s.active,
+            danger && s.errorText,
+          ]}
+        >
+          {label}
+        </Text>
+      )}
+    </Pressable>
+  );
+}
+export function Field({ label, ...props }) {
+  const { s, c } = useDesign();
+  return (
+    <View style={s.section}>
+      <Text style={s.heading}>{label}</Text>
+      <TextInput
+        accessibilityLabel={label}
+        placeholderTextColor={c.mute}
+        style={s.input}
+        autoCapitalize="none"
+        autoCorrect={false}
+        {...props}
+      />
+    </View>
+  );
+}
+export function Card({
+  title,
+  children,
+  available = false,
+  grouped = false,
+  divider = false,
+}) {
+  const { s } = useDesign();
+  return (
+    <View
+      style={[
+        grouped ? s.settingRow : s.card,
+        available && s.available,
+        divider && s.separator,
+      ]}
+    >
+      {title ? <Text style={s.heading}>{title}</Text> : null}
+      {children}
+    </View>
+  );
+}
+export function Tag({ children, variant }) {
+  const { s } = useDesign();
+  return (
+    <View
+      style={[
+        s.machineTag,
+        variant === "hub" && s.hubTag,
+        variant === "self" && s.selfTag,
+      ]}
+    >
+      <Text
+        style={[
+          s.machineTagText,
+          variant === "hub" && s.hubTagText,
+          variant === "self" && s.selfTagText,
+        ]}
+      >
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+export function Badge({ children }) {
+  const { s, c } = useDesign();
+  const error = ["Needs attention", "Revoked"].includes(children);
+  const warning = ["Incomplete", "Paused", "Not yet synced"].includes(children);
+  const success = children === "Up to date";
+  return (
+    <View
+      style={[
+        s.badge,
+        !success && s.badgeNeutral,
+        warning && s.badgeWarning,
+        error && s.badgeError,
+      ]}
+    >
+      {success && <Icon name="check-circle" size={g.pillIcon} color={c.okFg} />}
+      {children === "Current" && (
+        <Icon name="check" size={g.pillIcon} color={c.soft} />
+      )}
+      {children === "Linked" && (
+        <Icon name="link" size={g.pillIcon} color={c.soft} />
+      )}
+      {children === "Syncing" && (
+        <ActivityIndicator size="small" color={c.accent} />
+      )}
+      <Text
+        style={[
+          s.badgeText,
+          !success && s.badgeNeutralText,
+          warning && s.badgeWarningText,
+          error && s.errorText,
+        ]}
+      >
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+export function Toggle({
+  label,
+  description,
+  value,
+  onChange,
+  disabled = false,
+}) {
+  const { s, c } = useDesign();
+  return (
+    <View style={s.row}>
+      <View style={s.flex}>
+        <Text style={s.heading}>{label}</Text>
+        {description && <Text style={s.text}>{description}</Text>}
+      </View>
+      <Pressable
+        accessibilityRole="switch"
+        accessibilityLabel={label}
+        accessibilityState={{ checked: value, disabled }}
+        disabled={disabled}
+        onPress={() => onChange(!value)}
+        style={[s.switchTarget, disabled && s.disabled]}
+      >
+        <View style={[s.switchTrack, value && s.switchOn]}>
+          <View style={[s.switchThumb, value && s.switchThumbOn]} />
+        </View>
+      </Pressable>
+    </View>
+  );
+}
+export function CopyButton({ label, value }) {
+  const [copied, setCopied] = React.useState(false);
+  const timer = React.useRef();
+  React.useEffect(() => () => clearTimeout(timer.current), []);
+  return (
+    <Button
+      label={copied ? "Copied" : label}
+      onPress={async () => {
+        try {
+          await Clipboard.setStringAsync(value);
+          setCopied(true);
+          clearTimeout(timer.current);
+          timer.current = setTimeout(() => setCopied(false), 2000);
+        } catch {
+          Alert.alert("Could not copy", "Try again.");
+        }
+      }}
+    />
+  );
+}
+export function Progress({ done, total }) {
+  const { c, s } = useDesign();
+  const ratio = total > 0 ? Math.min(1, Math.max(0, done / total)) : 0;
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(ratio * 100) }}
+      style={s.section}
+    >
+      <Svg
+        width="100%"
+        height={6}
+        viewBox="0 0 100 6"
+        preserveAspectRatio="none"
+      >
+        <Rect width={100} height={6} rx={3} fill={c.divider} />
+        <Rect width={100 * ratio} height={6} rx={3} fill={c.accent} />
+      </Svg>
+    </View>
+  );
+}
+export function Breadcrumbs({ name, directory, onChange }) {
+  const { s, c } = useDesign();
+  const parts = directory.split("/").filter(Boolean);
+  const crumbs = [
+    { label: name, path: "" },
+    ...parts.map((label, i) => ({
+      label,
+      path: parts.slice(0, i + 1).join("/") + "/",
+    })),
+  ];
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={s.breadcrumb}
+    >
+      <Icon name="folders" size={12} color={c.mute} />
+      {crumbs.map((crumb, i) => (
+        <React.Fragment key={crumb.path}>
+          {i > 0 && <Icon name="chevron" size={12} color={c.mute} />}
+          {i === crumbs.length - 1 ? (
+            <Text accessibilityRole="text" style={s.caption}>
+              {crumb.label}
+            </Text>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${crumb.label}`}
+              style={s.breadcrumbButton}
+              onPress={() => onChange(crumb.path)}
+            >
+              <Text style={[s.caption, s.active]}>{crumb.label}</Text>
+            </Pressable>
+          )}
+        </React.Fragment>
+      ))}
+    </ScrollView>
+  );
+}
+
+export function Sheet({
+  title,
+  onClose,
+  children,
+  busy = false,
+  busyLabel = "",
+}) {
+  const { s, wide } = useDesign();
+  return (
+    <Modal
+      visible
+      animationType={wide ? "fade" : "slide"}
+      supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
+      transparent
+      presentationStyle="overFullScreen"
+      onRequestClose={busy ? () => {} : onClose}
+    >
+      <KeyboardAvoidingView
+        style={s.modalOverlay}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <SafeAreaView style={s.modalPanel}>
+          <View style={s.sheetHeader}>
+            <Text accessibilityRole="header" style={[s.heading, s.flex]}>
+              {title}
+            </Text>
+            <Button
+              label="Close"
+              quiet
+              icon="close"
+              iconOnly
+              disabled={busy}
+              onPress={onClose}
+            />
+          </View>
+          <ScrollView
+            contentContainerStyle={s.content}
+            keyboardShouldPersistTaps="handled"
+          >
+            {busy && !!busyLabel && (
+              <View style={s.row} accessibilityLiveRegion="polite">
+                <ActivityIndicator />
+                <Text style={s.text}>{busyLabel}</Text>
+              </View>
+            )}
+            {children}
+          </ScrollView>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+export function ActionRow({ label, icon, onPress, disabled, danger, divider }) {
+  const { s, c } = useDesign();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[s.actionRow, divider && s.separator, disabled && s.disabled]}
+    >
+      <Icon name={icon} size={20} color={danger ? c.danger : c.soft} />
+      <Text style={[s.buttonLabel, s.flex, danger && s.errorText]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+export function FolderRow({
+  grouped = false,
+  divider = false,
+  name,
+  description,
+  status,
+  available,
+  onPress,
+  disabled,
+}) {
+  const { s, c } = useDesign();
+  const contents = (
+    <>
+      <View style={[s.tile, available && s.tileAvailable]}>
+        <Icon name="folders" size={16} color={available ? c.mute : c.accent} />
+      </View>
+      <View style={[s.flex, s.stack]}>
+        <Text style={s.rowTitle}>{name}</Text>
+        {!!description && <Text style={s.caption}>{description}</Text>}
+      </View>
+      {available ? (
+        <Button
+          label="Select"
+          icon="download"
+          disabled={disabled}
+          onPress={onPress}
+        />
+      ) : (
+        <View style={s.rowAction}>
+          {status && <Badge>{status}</Badge>}
+          <Icon name="chevron" color={c.mute} />
+        </View>
+      )}
+    </>
+  );
+  return available ? (
+    <View style={[s.card, s.available, s.folderRow]}>{contents}</View>
+  ) : (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${name}`}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        !grouped && s.card,
+        s.folderRow,
+        grouped && s.groupedFolderRow,
+        divider && s.separator,
+      ]}
+    >
+      {contents}
+    </Pressable>
+  );
+}
+export function Navigation({ wide, compact, view, onSelect, name, hub }) {
+  const { s, c } = useDesign();
+  const Container = wide ? SafeAreaView : View;
+  return (
+    <Container
+      edges={["top", "bottom", "left"]}
+      style={wide ? s.navigation : s.tabs}
+    >
+      {wide && (
+        <>
+          <View style={[s.brand, compact && s.compactBrand]}>
+            <Logo size={32} />
+            {!compact && <Text style={s.heading}>arca</Text>}
+          </View>
+          {!compact && (
+            <View style={s.identity}>
+              <Icon name="phone" size={16} />
+              <Text numberOfLines={1} style={[s.flex, s.caption]}>
+                {name}
+              </Text>
+              <Text style={s.caption}>Replica</Text>
+            </View>
+          )}
+        </>
+      )}
+      {["Folders", "Machines", "History", "Settings"].map((tab) => (
+        <Pressable
+          key={tab}
+          accessibilityRole="tab"
+          accessibilityLabel={tab}
+          accessibilityState={{ selected: view === tab }}
+          onPress={() => onSelect(tab)}
+          style={
+            wide
+              ? [
+                  s.navItem,
+                  compact && s.compactNav,
+                  view === tab && s.navSelected,
+                ]
+              : [s.tab, view === tab && s.navSelected]
+          }
+        >
+          <Icon
+            name={tab.toLowerCase()}
+            color={view === tab ? c.accent : c.mute}
+          />
+          {!compact && (
+            <Text
+              style={[
+                wide ? s.navLabel : s.caption,
+                view === tab && s.active,
+                !wide && view === tab && s.tabSelectedLabel,
+              ]}
+            >
+              {tab}
+            </Text>
+          )}
+        </Pressable>
+      ))}
+      {wide && !compact && (
+        <View style={s.navFooter}>
+          <Text style={s.caption}>
+            {hub ? "Hub connected" : "Disconnected"}
+          </Text>
+        </View>
+      )}
+    </Container>
+  );
+}
+
+export function MachineRow({
+  name,
+  description,
+  role = "Replica",
+  totals,
+  self,
+  hub,
+  state,
+  actions,
+}) {
+  const { s, c, wide } = useDesign();
+  return (
+    <View
+      style={[s.card, s.machineRow]}
+      accessibilityLabel={`${name}, ${role}${self ? ", this machine" : ""}, ${description}${state ? `, ${state}` : ""}`}
+    >
+      <View style={s.row}>
+        <View style={[s.tile, s.machineTile, hub && s.hubTile]}>
+          <Icon
+            color={hub ? c.paper : undefined}
+            name={
+              hub
+                ? "server"
+                : /android|ios|iphone/i.test(description)
+                  ? "phone"
+                  : "monitor"
+            }
+          />
+        </View>
+        <View style={[s.flex, s.stack]}>
+          <View style={s.machineIdentity}>
+            <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
+              {name}
+            </Text>
+            <Tag variant={hub ? "hub" : undefined}>{role.toUpperCase()}</Tag>
+            {self && <Tag variant="self">THIS MACHINE</Tag>}
+          </View>
+          <Text numberOfLines={1} style={wide ? s.mono : s.caption}>
+            {description}
+          </Text>
+        </View>
+        {wide && (
+          <View style={s.machineEnd}>
+            {!!state && <Badge>{state}</Badge>}
+            {!!totals && <Text style={s.caption}>{totals}</Text>}
+          </View>
+        )}
+        {actions}
+      </View>
+    </View>
+  );
+}
+
+export function SettingsGroup({ children }) {
+  const { s } = useDesign();
+  return (
+    <View style={s.group}>
+      {React.Children.toArray(children).map((child, index) =>
+        React.cloneElement(child, { grouped: true, divider: index > 0 }),
+      )}
+    </View>
+  );
+}
+
+export function SegmentedControl({ options, value, onChange }) {
+  const { s } = useDesign();
+  return (
+    <View style={s.segments}>
+      {options.map((option) => (
+        <Pressable
+          key={option.value}
+          accessibilityRole="button"
+          accessibilityState={{ selected: value === option.value }}
+          onPress={() => onChange(option.value)}
+          style={[s.segment, value === option.value && s.segmentSelected]}
+        >
+          <Text
+            style={[
+              s.buttonLabel,
+              s.segmentText,
+              value === option.value && s.segmentTextSelected,
+            ]}
+          >
+            {option.label}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}

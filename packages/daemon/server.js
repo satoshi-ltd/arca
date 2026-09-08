@@ -2,7 +2,7 @@ import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
 import { folderPreview } from "./folder-preview.js";
 import { acceptReport, machines } from "./machines.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
-import { listPage } from "./pages.js";
+import { listPage, browsePage } from "./pages.js";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -11,7 +11,12 @@ import { moveFolder, retentionPlan, applyRetention } from "./maintenance.js";
 import { snapshotPage } from "./snapshots.js";
 import { Web } from "./web.js";
 import { Engine } from "./engine.js";
-import { Network, verifiedTailnetURL } from "./network.js";
+import {
+  Network,
+  verifiedTailnetURL,
+  verifiedLanURL,
+  lanAddress,
+} from "./network.js";
 import {
   runtimeInstallation,
   digest,
@@ -93,10 +98,25 @@ export async function start(home, options = {}) {
     };
     try {
       const remote = req.socket.remoteAddress?.replace(/^::ffff:/, "");
+      const pathname = new URL(req.url, "http://localhost").pathname;
+      const lanHttp = !req.socket.encrypted && lanAddress(remote);
+      const lanAllowed =
+        config.role === "hub" && config.network?.allowLanHttp === true;
+      const discovery =
+        req.method === "GET" && pathname === "/.well-known/arca";
+      const requireLanAccess = () => {
+        if (lanHttp && !lanAllowed)
+          fail(
+            "Enable Allow HTTP on local network in the hub's Settings to connect from this address",
+            412,
+          );
+      };
       if (
         config.network?.mode === "tailscale" &&
+        !(lanHttp && (lanAllowed || discovery)) &&
         !["127.0.0.1", "::1"].includes(remote)
       ) {
+        requireLanAccess();
         const state = await network.detector.read();
         if (
           state.state !== "connected" ||
@@ -106,7 +126,6 @@ export async function start(home, options = {}) {
         )
           fail("Tailscale access unavailable", 403);
       }
-      const pathname = new URL(req.url, "http://localhost").pathname;
       if (
         !webEnabled &&
         (pathname.startsWith("/auth/") ||
@@ -122,6 +141,7 @@ export async function start(home, options = {}) {
         fail("Invalid browser origin", 403);
       if (req.method === "POST" && req.url === "/pair") {
         if (config.role !== "hub") fail("Pair with a hub", 409);
+        requireLanAccess();
         if (req.headers.origin) fail("Use the local Arca client to pair", 403);
         pairingAttempts.check(remote);
         let b;
@@ -188,6 +208,7 @@ export async function start(home, options = {}) {
           access: {
             daemonTransport: req.socket.encrypted ? "https" : "http",
             networkMode: config.network?.mode || "standalone",
+            allowLanHttp: lanAllowed,
             codeDigits: 6,
             codeExpiresInSeconds: 600,
           },
@@ -208,6 +229,7 @@ export async function start(home, options = {}) {
             .prepare("SELECT * FROM devices WHERE token_hash=? AND revoked=0")
             .get(digest(credential));
       if (!device) fail("Unauthorized", 401);
+      if (!admin) requireLanAccess();
       if (!admin)
         s.db
           .prepare("UPDATE devices SET last_seen=?,last_address=? WHERE id=?")
@@ -284,12 +306,15 @@ export async function start(home, options = {}) {
         return send(200, {
           protocol: 1,
           changes: true,
+          conflictResolution: true,
+          blobRanges: true,
           id: config.id,
           name: config.name,
           ready: s.volumes().length > 0,
           volumes: s.volumes().map((v) => ({
             id: v.id,
             name: v.name,
+            conflicts: s.unresolvedConflicts(v.id),
             files: s.rows(v.id).filter((r) => !r.deleted).length,
             bytes: s
               .rows(v.id)
@@ -435,11 +460,11 @@ export async function start(home, options = {}) {
         if (volume) s.volume(volume);
         const rows = s.db
           .prepare(
-            `SELECT r.*, v.name AS folder FROM revisions r JOIN volumes v ON v.id=r.volume WHERE r.rev<? ${volume ? "AND r.volume=?" : ""} ${filter === "deleted" ? "AND r.deleted=1" : filter === "conflicts" ? "AND instr(r.path,'.conflict-')>0" : ""} ORDER BY r.rev DESC LIMIT ?`,
+            `SELECT r.*, v.name AS folder FROM revisions r JOIN volumes v ON v.id=r.volume WHERE r.rev<? ${volume ? "AND r.volume=?" : ""} ${filter === "deleted" ? "AND r.deleted=1" : filter === "conflicts" ? "AND instr(r.path,'.conflict-')>0 AND r.deleted=0 AND NOT EXISTS (SELECT 1 FROM conflict_resolutions c WHERE c.volume=r.volume AND c.path=r.path AND c.conflict_rev>=r.rev) AND EXISTS (SELECT 1 FROM files f WHERE f.volume=r.volume AND f.path=r.path AND f.deleted=0)" : ""} ORDER BY r.rev DESC LIMIT ?`,
           )
           .all(...[before, ...(volume ? [volume] : []), limit + 1]);
         return send(200, {
-          versions: rows.slice(0, limit),
+          versions: rows.slice(0, limit).map((row) => s.conflictStatus(row)),
           next: rows.length > limit ? rows[limit - 1].rev : null,
         });
       }
@@ -455,8 +480,17 @@ export async function start(home, options = {}) {
           200,
           url.searchParams.has("limit")
             ? listPage(s, volume, url.searchParams, name)
-            : { versions: s.history(volume, name) },
+            : {
+                versions: s
+                  .history(volume, name)
+                  .map((row) => s.conflictStatus(row)),
+              },
         );
+      }
+      if (req.method === "GET" && route === "/v1/browse") {
+        requireAdmin();
+        const volume = s.volume(url.searchParams.get("volume")).id;
+        return send(200, browsePage(s, volume, url.searchParams));
       }
       if (req.method === "GET" && route === "/v1/files") {
         requireAdmin();
@@ -474,22 +508,32 @@ export async function start(home, options = {}) {
         const file = s.blob(hash);
         if (!fs.existsSync(file)) fail("Object not found", 404);
         const size = fs.statSync(file).size;
-        let offset = 0;
+        let offset = 0,
+          end = size - 1;
         if (req.headers.range) {
-          const match = /^bytes=(\d+)-$/.exec(req.headers.range);
+          const match = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range);
           if (!match) fail("Invalid range", 416);
           offset = Number(match[1]);
-          if (offset >= size) fail("Range exceeds content", 416);
+          end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+          if (
+            ![offset, end].every(Number.isSafeInteger) ||
+            offset >= size ||
+            end < offset
+          )
+            fail("Range exceeds content", 416);
         }
-        res.writeHead(offset ? 206 : 200, {
+        res.writeHead(req.headers.range ? 206 : 200, {
           "Content-Type": "application/octet-stream",
-          "Content-Length": size - offset,
+          "Content-Length": req.headers.range ? end - offset + 1 : size,
           "Accept-Ranges": "bytes",
-          ...(offset
-            ? { "Content-Range": `bytes ${offset}-${size - 1}/${size}` }
+          ...(req.headers.range
+            ? { "Content-Range": `bytes ${offset}-${end}/${size}` }
             : {}),
         });
-        const stream = fs.createReadStream(file, { start: offset });
+        const stream = fs.createReadStream(file, {
+          start: offset,
+          ...(req.headers.range ? { end } : {}),
+        });
         stream.on("error", () => res.destroy());
         res.on("close", () => stream.destroy());
         stream.pipe(res);
@@ -634,10 +678,29 @@ export async function start(home, options = {}) {
         if (route === "/v1/conflict-choice") {
           if (config.role !== "hub") {
             requireAdmin();
+            if (!s.volume(b.volume).selected)
+              fail(
+                "Select this folder for synchronization before resolving conflicts.",
+                409,
+              );
+            await engine.reportMachine(true);
             return send(200, await engine.json("/v1/conflict-choice", b));
           }
           if (device?.role === "backup")
             fail("Backup cannot restore upstream", 403);
+          if (!admin) {
+            const report = s.db
+              .prepare("SELECT report FROM machine_reports WHERE device=?")
+              .get(device.id);
+            if (
+              !report ||
+              !JSON.parse(report.report).folderIds?.includes(b.volume)
+            )
+              fail(
+                "Select this folder for synchronization before resolving conflicts.",
+                409,
+              );
+          }
           const marker =
             typeof b.path === "string" ? b.path.lastIndexOf(".conflict-") : -1;
           if (marker < 1 || !["original", "conflict"].includes(b.choice))
@@ -666,6 +729,7 @@ export async function start(home, options = {}) {
                 device?.id || config.id,
                 true,
                 original.hash,
+                { path: b.path, rev: conflict.rev, choice: b.choice },
               );
             }),
           );
@@ -753,6 +817,8 @@ export async function start(home, options = {}) {
               engine.configureBackup(b.enabled, b.path),
             ),
           );
+        if (route === "/v1/network/lan")
+          return send(200, await network.setLanHttp(b.enabled));
         if (route === "/v1/network")
           return send(200, await network.setMode(b.mode));
         if (route === "/v1/client") {
@@ -1000,10 +1066,12 @@ export async function start(home, options = {}) {
             !["localhost", "127.0.0.1", "[::1]"].includes(remote.hostname) &&
             !b.privateNetwork
           )
-            remote = await verifiedTailnetURL(
-              remote,
-              await network.detector.read(true),
-            );
+            remote = lanAddress(remote.hostname)
+              ? await verifiedLanURL(remote)
+              : await verifiedTailnetURL(
+                  remote,
+                  await network.detector.read(true),
+                );
           if (b.code) {
             const paired = await fetch(`${remote.origin}/pair`, {
               redirect: "error",
@@ -1133,7 +1201,7 @@ export async function start(home, options = {}) {
     engine.close();
     fs.unlinkSync(lock);
     fail(
-      "Non-loopback binding requires --private-network (encrypted network or TLS proxy)",
+      "Non-loopback binding requires --private-network (Tailscale, TLS proxy, or explicitly enabled local network HTTP)",
     );
   }
   try {

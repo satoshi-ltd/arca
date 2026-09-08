@@ -84,7 +84,7 @@ const busyIcon = () =>
   "</span>";
 function icons() {
   document.querySelectorAll("[data-icon]").forEach((el) => {
-    const name = el.dataset.icon.replace(/(^|-)([a-z])/g, (_, a, b) =>
+    const name = el.dataset.icon.replace(/(^|-)([a-z0-9])/g, (_, a, b) =>
       b.toUpperCase(),
     );
     const node = window.lucide?.icons[name];
@@ -112,7 +112,7 @@ function selectFolderButton(id) {
   return button("Select", "add", id, "secondary small-button", "download");
 }
 function segmented(label, items, cls = "") {
-  return `<div class="segmented ${cls}" role="group" aria-label="${escape(label)}">${items.map((item) => `<button type="button" data-action="${item.action}" data-id="${escape(item.id || "")}" class="${item.active ? "active" : ""}" aria-pressed="${Boolean(item.active)}" ${item.disabled ? "disabled" : ""}>${item.symbol ? icon(item.symbol) : ""}${escape(item.label)}</button>`).join("")}</div>`;
+  return `<div class="segmented ${cls}" role="group" aria-label="${escape(label)}">${items.map((item) => `<button type="button" data-action="${item.action}" data-id="${escape(item.id || "")}" class="${item.active ? "active" : ""}" aria-pressed="${Boolean(item.active)}" ${item.disabled ? "disabled" : ""}>${item.symbol ? icon(item.symbol) : ""}${escape(item.label)}${item.count ? `<span class="filter-count">${Number(item.count)}</span>` : ""}</button>`).join("")}</div>`;
 }
 function toggleControl(id, label, checked = false, attributes = "") {
   return `<label class="toggle"><input type="checkbox" id="${id}" aria-label="${escape(label)}" ${checked ? "checked" : ""} ${attributes}><span></span></label>`;
@@ -233,6 +233,12 @@ let status,
   historyVolume = "",
   historyPath = null,
   historyFilter = "all",
+  fileOriginFolder = null,
+  folderTab = "files",
+  folderPrefix = "",
+  folderSearch = "",
+  folderSearchOpen = false,
+  folderAfter = "",
   historyRows = [],
   historyNext = null,
   historyVersions = [],
@@ -511,7 +517,7 @@ function updateShell() {
   $("#last-sync").textContent =
     status.role !== "hub" && !status.hub
       ? "Local files are kept on this machine"
-      : `${status.role === "hub" ? "This hub" : `Hub ${hubName()}`} · ${status.lastSync ? `verified ${relative(status.lastSync)}` : "not yet verified"}`;
+      : `${status.role === "hub" ? "This hub" : "Hub"} · ${status.lastSync ? `verified ${relative(status.lastSync)}` : "not yet verified"}`;
   let backupText =
     status.role === "hub"
       ? "Hub backup"
@@ -596,7 +602,7 @@ async function refresh(renderView = true) {
     const headline = revoked
       ? "Hub access needs attention"
       : offline
-        ? `Hub ${escape(hubName())} unreachable`
+        ? "Hub unreachable"
         : "Synchronization needs attention";
     const description = revoked
       ? "Local files are retained. Pair again with a code from the hub."
@@ -694,7 +700,7 @@ function folderRow(v, available = false) {
             )
           : "";
   let meta = available
-    ? `${v.files || 0} ${v.files ? "files" : "files indexed"} · ${bytes(v.bytes)} on hub ${escape(hubName())} · not selected here`
+    ? `${countLabel(v.files || 0, "file")} · ${bytes(v.bytes)}`
     : `${countLabel(v.files, "file")} · ${bytes(v.bytes)} · ${escape(v.path || "No visible copy selected")}`;
   if (p) meta = escape(progressLabel(p));
   if (v.sync?.error) meta = escape(v.sync.error);
@@ -749,11 +755,7 @@ async function renderView(refreshCatalog = true) {
       available = catalog.filter((v) => !selected.some((x) => x.id === v.id));
     let html = title(
       "Folders",
-      status.role === "hub"
-        ? `${countLabel(status.volumes.length, "shared folder")} on this hub · ${bytes(status.volumes.reduce((n, v) => n + v.bytes, 0))} in catalog`
-        : !status.hub
-          ? `Disconnected · ${selected.length} saved local copies on ${escape(status.name)}`
-          : `${selected.length} selected on ${machineLabel()} · ${countLabel(catalog.length, "shared folder")} on hub ${escape(hubName())} · ${bytes(selected.reduce((n, v) => n + v.bytes, 0))} local`,
+      status.role !== "hub" && !status.hub ? "Disconnected" : "",
       syncControls() +
         (status.role !== "hub" && !status.hub
           ? button("Connect to hub…", "connect", "", "primary", "link")
@@ -844,7 +846,8 @@ async function renderView(refreshCatalog = true) {
       .reduce((n, v) => n + (v.conflicts || 0), 0);
     const filters = [
       {
-        label: `Conflicts${conflictCount ? `<span class="filter-count">${conflictCount}</span>` : ""}`,
+        label: "Conflicts",
+        count: conflictCount,
         action: "history-filter",
         id: "conflicts",
         active: historyFilter === "conflicts",
@@ -859,21 +862,162 @@ async function renderView(refreshCatalog = true) {
     const historyPanel = document.createElement("div");
     await renderHistory("", false, historyPanel);
     if (serial !== renderSerial) return;
-    content.innerHTML =
-      title(
-        "History",
-        `Accepted revisions on hub ${escape(hubName())}. Restoring creates a new revision.`,
-        `${dropdown("history-share", "Shared folder", [{ id: "", name: "All" }, ...status.volumes], historyVolume, "history-folder")}${segmented("History filters", filters, "history-filters")}`,
-      ) +
-      `<div class="page"><div id="history-list">${historyPanel.innerHTML}</div></div>`;
+    content.innerHTML = historyPath
+      ? fileHistoryHeader() +
+        `<div class="page"><div class="detail-grid"><div id="history-list" class="detail-revisions">${historyPanel.innerHTML}</div>${fileHistorySide()}</div></div>`
+      : title(
+          "History",
+          "",
+          `${dropdown("history-share", "Shared folder", [{ id: "", name: "All" }, ...status.volumes], historyVolume, "history-folder")}${segmented("History filters", filters, "history-filters")}`,
+        ) +
+        `<div class="page"><div id="history-list">${historyPanel.innerHTML}</div></div>`;
   } else await renderSettings();
   icons();
 }
 function revisionRow(v, compact = false) {
   const deleted = Boolean(v.deleted),
     conflict = v.path.includes(".conflict-");
-  return `<div class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict ? "conflict" : ""}">${icon(deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal")}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? "Conflict copy retained" : `${bytes(v.size)} · accepted revision`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span>${compact ? "" : button(deleted ? "Recover" : conflict ? "Review" : "Show", conflict && status.role !== "backup" ? "review-conflict" : "activity-file", JSON.stringify({ volume: v.volume, path: v.path, rev: v.rev, deleted }), "text-button", deleted ? "undo-2" : conflict ? "git-branch" : "external-link")}</div>`;
+  const target = JSON.stringify({
+    volume: v.volume,
+    path: v.path,
+    rev: v.rev,
+    deleted,
+  });
+  const action =
+    conflict &&
+    !v.resolved &&
+    !deleted &&
+    status.role !== "backup" &&
+    (status.role === "hub" ||
+      status.volumes.find((x) => x.id === v.volume)?.selected)
+      ? "review-conflict"
+      : "activity-file";
+  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button" aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${icon(deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal")}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)} · accepted revision`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
 }
+function fileHistoryHeader() {
+  const volume = status.volumes.find((v) => v.id === historyVolume);
+  const current = historyVersions[0];
+  const filename = historyPath.split("/").at(-1);
+  const available = current && !current.deleted;
+  const access =
+    available && native && volume?.path
+      ? button(
+          "Open file",
+          "history-open-file",
+          "",
+          "secondary",
+          "external-link",
+        )
+      : available && !native && status.role === "hub"
+        ? `<a class="secondary" href="/v1/blobs/${escape(current.hash)}" download="${escape(filename)}">${icon("download")}Download file</a>`
+        : "";
+  const conflictAction =
+    available &&
+    !current.resolved &&
+    historyPath.includes(".conflict-") &&
+    status.role !== "backup" &&
+    (status.role === "hub" || volume?.selected)
+      ? button(
+          "Resolve conflict…",
+          "review-conflict",
+          JSON.stringify({ volume: historyVolume, path: historyPath }),
+          "secondary",
+          "git-branch",
+        )
+      : "";
+  const finder =
+    available && native && volume?.path && status.platform === "darwin"
+      ? button(
+          "Open in Finder",
+          "history-reveal-file",
+          "",
+          "secondary",
+          "folder-search",
+        )
+      : "";
+  return `<div class="detail-head file-detail-head">${button(fileOriginFolder ? "Folder" : "History", fileOriginFolder ? "file-back-folder" : "history-back", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("file")}</div><div><h1>${escape(filename)}</h1><p class="path">${escape(volume?.name || "Shared folder")}</p></div></div><div class="file-header-actions">${conflictAction}${finder}${access}</div></div></div><div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : "No retained revisions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
+}
+
+function fileHistorySide() {
+  const volume = status.volumes.find((v) => v.id === historyVolume);
+  const folderLink = volume
+    ? button(
+        "View folder",
+        "history-view-folder",
+        volume.id,
+        "secondary",
+        "folder",
+      )
+    : "";
+  return `<aside class="detail-side">${section("File location", `<div class="panel"><strong>${escape(volume?.name || "Shared folder")}</strong><p class="path">${escape(historyPath)}</p>${folderLink}</div>`)}</aside>`;
+}
+
+async function folderBrowser(v, recent) {
+  const tools = `<div class="folder-browser-tools">${segmented(
+    "Folder content",
+    [
+      {
+        label: "Files",
+        action: "folder-tab",
+        id: "files",
+        active: folderTab === "files",
+      },
+      {
+        label: "Recent",
+        action: "folder-tab",
+        id: "recent",
+        active: folderTab === "recent",
+      },
+    ],
+  )}<div>${folderTab === "files" ? `<button class="icon-button" data-action="folder-search-toggle" aria-label="${folderSearchOpen ? "Close search" : "Search files"}">${icon(folderSearchOpen ? "x" : "search")}</button>` : button("All history", "folder-history", v.id, "text-button")}</div></div>`;
+  if (folderTab === "recent")
+    return (
+      tools +
+      (recent.length
+        ? `<div class="history-group">${recent.map((r) => revisionRow(r, true)).join("")}</div>`
+        : empty("No revisions yet", "History appears after the first sync."))
+    );
+  const parts = folderPrefix.split("/").filter(Boolean);
+  const trail = `<nav class="folder-breadcrumb" aria-label="File location">${icon("folder")}${parts.length ? button(escape(v.name), "browse-directory", "", "text-button") : `<span aria-current="location">${escape(v.name)}</span>`}${parts.map((part, i) => `${icon("chevron-right")}${i === parts.length - 1 ? `<span aria-current="location">${escape(part)}</span>` : button(escape(part), "browse-directory", parts.slice(0, i + 1).join("/"), "text-button")}`).join("")}</nav>`;
+  const search = folderSearchOpen
+    ? `<div class="folder-browser-search"><input id="folder-search-input" type="search" aria-label="Search files" placeholder="Search files" value="${escape(folderSearch)}" maxlength="256">${button("Search", "folder-search-apply", "", "secondary")}</div>`
+    : "";
+  try {
+    const data = await api(
+      "/v1/browse?" +
+        new URLSearchParams({
+          volume: v.id,
+          prefix: folderPrefix,
+          search: folderSearch,
+          after: folderAfter,
+          limit: "100",
+        }),
+    );
+    return (
+      tools +
+      search +
+      `<div class="history-group folder-explorer">${trail}` +
+      (data.entries.length
+        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}" aria-label="${escape(`Open ${row.name}`)}">${icon(row.directory ? "folder" : "file")}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
+        : empty(folderSearch ? "No matching files" : "No files yet", "")) +
+      "</div>" +
+      `<div class="folder-browser-pages">${folderAfter ? button("First files", "browse-page", "", "secondary") : ""}${data.next ? button("Next files", "browse-page", data.next, "secondary") : ""}</div>`
+    );
+  } catch (error) {
+    return (
+      tools +
+      search +
+      `<div class="history-group folder-explorer">${trail}` +
+      empty(
+        "Files unavailable",
+        "The daemon must support file browsing. Update it and try again.",
+        button("Retry", "browse-page", folderAfter, "secondary"),
+      ) +
+      "</div>"
+    );
+  }
+}
+
 async function renderDetail() {
   const serial = renderSerial;
   const v = status.volumes.find((v) => v.id === detailId);
@@ -883,7 +1027,7 @@ async function renderDetail() {
   }
   if (status.role !== "hub" && !status.hub) {
     $("#content").innerHTML =
-      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), escape(v.path || "Saved local copy"), native && v.path ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "")}</div><div class="page">${section("Hub connection", hubConnection())}${empty("Local copy kept", "Reconnect to view hub history and continue syncing this folder.")}</div>`;
+      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), escape(v.path || "Saved local copy"), native && v.path ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "")}</div><div class="page">${section("Hub connection", hubConnection())}${await folderBrowser(v, [])}</div>`;
     icons();
     return;
   }
@@ -894,6 +1038,9 @@ async function renderDetail() {
     ).versions;
   } catch {}
   if (view !== "folders" || detailId !== v.id || serial !== renderSerial)
+    return;
+  const browser = await folderBrowser(v, recent);
+  if (serial !== renderSerial || view !== "folders" || detailId !== v.id)
     return;
   const state = stateFor(v);
   const maxRev = recent[0]?.rev;
@@ -916,9 +1063,9 @@ async function renderDetail() {
       ? backupRecord
         ? `By ${escape(backupRecord.name)} · ${relative(backupRecord.backup_updated)}`
         : "See Machines for hub records"
-      : `Other machines: see hub ${escape(hubName())}`;
+      : `Other machines: see the hub`;
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("folder")}</div><div><h1>${escape(v.name)}</h1><p class="path">${escape(v.path || "Catalog only")}</p></div></div><div class="heading-actions">${syncControls(true)}${status.role === "hub" ? button("Rename", "rename-share", v.id, "secondary", "pencil") + (v.selected ? button("Edit .arcaignore…", "edit-ignore", v.id, "secondary", "file-pen-line") : "") : ""}${native && v.path ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}</div></div></div><div class="page"><div class="stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? "Waiting for the first scan" : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${maxRev ? `rev ${maxRev}` : "Not yet"}</strong><p>Accepted by the hub</p></div><div class="stat"><span>${backupTitle}</span><strong class="stat-backup">${icon(backupRecord || status.backup?.enabled ? "shield-check" : "shield")}${escape(backupValue)}</strong><p>${backupNote}</p></div></div><div class="detail-grid"><div class="detail-revisions"><div class="section-heading"><span class="section-label">Recent revisions</span>${button("All history", "folder-history", v.id, "text-button")}</div>${recent.length ? `<div class="history-group">${recent.map((r) => revisionRow(r, true)).join("")}</div>` : empty("No revisions yet", unscanned ? "Resolve the scan error to start recording history." : "History appears after the first sync.")}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p><p>${status.role === "hub" ? "Files stay on this hub’s disk. Other machines choose their own local destinations." : "Choose a location on this machine. Moving verifies the new copy and keeps the original."}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role !== "backup" ? `<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. Files stay on disk and history is retained."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>` : ""}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("folder")}</div><div><h1>${escape(v.name)}</h1><p class="path">${escape(v.path || "Catalog only")}</p></div></div><div class="heading-actions">${syncControls(true)}${status.role === "hub" ? button("Rename", "rename-share", v.id, "secondary", "pencil") + (v.selected ? button("Edit .arcaignore…", "edit-ignore", v.id, "secondary", "file-pen-line") : "") : ""}${native && v.path ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}</div></div></div><div class="page"><div class="stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? "Waiting for the first scan" : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${maxRev ? `rev ${maxRev}` : "Not yet"}</strong><p>Accepted by the hub</p></div><div class="stat"><span>${backupTitle}</span><strong class="stat-backup">${icon(backupRecord || status.backup?.enabled ? "shield-check" : "shield")}${escape(backupValue)}</strong><p>${backupNote}</p></div></div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p><p>${status.role === "hub" ? "Files stay on this hub’s disk. Other machines choose their own local destinations." : "Choose a location on this machine. Moving verifies the new copy and keeps the original."}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role !== "backup" ? `<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. Files stay on disk and history is retained."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>` : ""}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   refreshCopies();
 }
 async function renderHistory(cursor = "", append = false, target = null) {
@@ -933,7 +1080,17 @@ async function renderHistory(cursor = "", append = false, target = null) {
     historyVersions = append
       ? [...historyVersions, ...data.versions]
       : data.versions;
-    list.innerHTML = `${button("All history", "history-back", "", "back", "chevron-left")}<h2>${escape(historyPath)}</h2><div class="history-group">${historyVersions.map((v) => `<div class="history-row"><span>${icon(v.deleted ? "trash-2" : "git-commit-horizontal")}</span><div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)}</p></div><span class="history-folder">${escape(status.volumes.find((x) => x.id === historyVolume)?.name || "")}</span><span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span>${v.deleted || status.role === "backup" ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div>`).join("")}</div>${data.next ? `<div class="pagination">${button("Load more", "history-page", data.next)}</div>` : ""}`;
+    list.innerHTML =
+      section(
+        "File revisions",
+        historyVersions.length
+          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${icon(v.deleted ? "trash-2" : "git-commit-horizontal")}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted || status.role === "backup" ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
+          : empty(
+              "No retained revisions",
+              "This file has no history available on the hub.",
+            ),
+      ) +
+      `<p class="hint history-note">Restoring creates a new revision. Existing revisions stay in history.</p>${data.next ? `<div class="pagination">${button("Load more", "history-page", data.next)}</div>` : ""}`;
     icons();
     return;
   }
@@ -968,6 +1125,21 @@ async function renderHistory(cursor = "", append = false, target = null) {
       );
   icons();
 }
+const machineRow = (
+  name,
+  tags,
+  description,
+  sub,
+  state,
+  controls = "",
+  self = false,
+  hub = false,
+  dashed = false,
+  metadata = "",
+  totals = "",
+) =>
+  `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This machine</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
+
 async function renderMachines(serial = renderSerial) {
   let issue = "";
   try {
@@ -990,55 +1162,37 @@ async function renderMachines(serial = renderSerial) {
     if (p) consumed.add(p.id);
     return p;
   };
-  const connection = (p) =>
+  const connection = (p, address) =>
     p
-      ? `Tailscale · ${escape(p.addresses?.[0] || "")} · ${p.online ? "Online" : "Offline"}`
-      : "Connection details unavailable";
+      ? `Tailscale · ${escape(p.addresses?.[0] || "")}`
+      : address
+        ? escape(address)
+        : "";
   const platform = (p) =>
-    p
-      ? `${escape(platformLabel(p.os || p.arca.platform))} · Arca ${escape(p.arca.version || "")}`
-      : "";
-  const row = (
-    name,
-    tags,
-    description,
-    sub,
-    state,
-    controls = "",
-    self = false,
-    hub = false,
-    dashed = false,
-    metadata = "",
-    totals = "",
-  ) =>
-    `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : /linux|windows/i.test(metadata) ? "laptop" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This machine</span>' : ""}${metadata ? `<span class="machine-platform">${metadata}</span>` : ""}</div><p class="connection-line">${icon(description.includes("Tailscale") ? "shield-check" : "cable")}${description}</p>${sub ? `<p>${sub}</p>` : ""}</div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
-  const summary =
-    status.role === "hub"
-      ? `Machines authorized by ${escape(status.name)}`
-      : `Connection and local status · ${escape(status.name)}`;
+    p ? escape(platformLabel(p.os || p.arca.platform)) : "";
+  const row = machineRow;
+  const summary = "";
+  let machineRows = "";
   let html =
     status.role === "replica" ? section("Hub connection", hubConnection()) : "";
   const selfAddress = discovered?.tailscale?.self?.addresses?.[0];
   if (status.role === "hub")
-    html += section(
-      "Hub",
-      row(
-        status.name,
-        '<span class="tag hub">Hub</span>',
-        `${selfAddress ? `Tailscale · ${escape(selfAddress)}:${status.port || 47831}` : "Local daemon"}`,
-        "",
-        pill(
-          status.phase === "paused" ? "Paused" : "Running",
-          status.phase === "paused" ? "id" : "ok",
-          status.phase === "paused" ? "pause" : "circle-check",
-        ),
-        "",
-        true,
-        true,
-        false,
-        escape(platformLabel(status.platform)),
-        `${status.volumes.length} shared folders · ${bytes(status.volumes.reduce((n, v) => n + v.bytes, 0))} in catalog`,
+    machineRows += row(
+      status.name,
+      '<span class="tag hub">Hub</span>',
+      selfAddress ? `Tailscale · ${escape(selfAddress)}` : "",
+      "",
+      pill(
+        status.phase === "paused" ? "Paused" : "Running",
+        status.phase === "paused" ? "id" : "ok",
+        status.phase === "paused" ? "pause" : "circle-check",
       ),
+      "",
+      true,
+      true,
+      false,
+      escape(platformLabel(status.platform)),
+      `${status.volumes.length} shared folders · ${bytes(status.volumes.reduce((n, v) => n + v.bytes, 0))} in catalog`,
     );
   else if (status.hub && status.role !== "replica") {
     const hubError =
@@ -1050,29 +1204,26 @@ async function renderMachines(serial = renderSerial) {
         p.arca.id === status.hubId ||
         p.addresses.includes(new URL(status.hub).hostname),
     );
-    html += section(
-      "Hub",
-      row(
-        p?.name || hubName(),
-        '<span class="tag hub">Hub</span>',
-        p ? connection(p) : escape(status.hub),
-        status.lastSync ? `Last sync ${relative(status.lastSync)}` : "",
-        pill(
-          status.lastSync && !hubError
-            ? "Connected"
-            : hubError
-              ? "Needs attention"
-              : "Linked",
-          hubError ? "wa" : "id",
-          hubError ? "circle-alert" : "link",
-        ),
-        "",
-        false,
-        true,
-        false,
-        platform(p),
-        `${countLabel(catalog.length, "shared folder")} in catalog`,
+    machineRows += row(
+      p?.name || hubName(),
+      '<span class="tag hub">Hub</span>',
+      p ? connection(p) : escape(status.hub),
+      status.lastSync ? `Last sync ${relative(status.lastSync)}` : "",
+      pill(
+        status.lastSync && !hubError
+          ? "Connected"
+          : hubError
+            ? "Needs attention"
+            : "Linked",
+        hubError ? "wa" : "id",
+        hubError ? "circle-alert" : "link",
       ),
+      "",
+      false,
+      true,
+      false,
+      platform(p),
+      `${countLabel(catalog.length, "shared folder")} in catalog`,
     );
   } else if (status.role !== "replica")
     html += section(
@@ -1084,49 +1235,46 @@ async function renderMachines(serial = renderSerial) {
       ),
     );
   if (status.role !== "hub")
-    html += section(
-      "This machine",
-      row(
-        status.name,
-        `<span class="tag">${escape(status.role)}</span>${status.backup?.enabled ? '<span class="tag backup">Backs up hub</span>' : ""}`,
-        `${selfAddress ? `Tailscale · ${escape(selfAddress)} · ` : ""}loopback · 127.0.0.1:${status.port || 47831}`,
-        "",
-        pill(
-          !status.hub
-            ? "Disconnected"
-            : status.phase === "idle"
-              ? "Up to date"
+    machineRows += row(
+      status.name,
+      `<span class="tag">${escape(status.role)}</span>${status.backup?.enabled ? '<span class="tag backup">Backs up hub</span>' : ""}`,
+      selfAddress ? `Tailscale · ${escape(selfAddress)}` : "",
+      "",
+      pill(
+        !status.hub
+          ? "Disconnected"
+          : status.phase === "idle"
+            ? "Up to date"
+            : status.phase === "paused"
+              ? "Paused"
+              : status.phase === "error"
+                ? "Needs attention"
+                : "Syncing",
+        !status.hub
+          ? "wa"
+          : status.phase === "idle"
+            ? "ok"
+            : status.phase === "error"
+              ? "er"
               : status.phase === "paused"
-                ? "Paused"
-                : status.phase === "error"
-                  ? "Needs attention"
-                  : "Syncing",
-          !status.hub
-            ? "wa"
-            : status.phase === "idle"
-              ? "ok"
-              : status.phase === "error"
-                ? "er"
-                : status.phase === "paused"
-                  ? "id"
-                  : "sy",
-          !status.hub
-            ? "unlink"
-            : status.phase === "idle"
-              ? "circle-check"
-              : status.phase === "error"
-                ? "circle-alert"
-                : status.phase === "paused"
-                  ? "pause"
-                  : "busy",
-        ),
-        "",
-        true,
-        false,
-        false,
-        escape(platformLabel(status.platform)),
-        `${status.volumes.filter((v) => v.selected).length} folders · ${bytes(status.volumes.filter((v) => v.selected).reduce((n, v) => n + v.bytes, 0))} local`,
+                ? "id"
+                : "sy",
+        !status.hub
+          ? "unlink"
+          : status.phase === "idle"
+            ? "circle-check"
+            : status.phase === "error"
+              ? "circle-alert"
+              : status.phase === "paused"
+                ? "pause"
+                : "busy",
       ),
+      "",
+      true,
+      false,
+      false,
+      escape(platformLabel(status.platform)),
+      `${status.volumes.filter((v) => v.selected).length} folders · ${bytes(status.volumes.filter((v) => v.selected).reduce((n, v) => n + v.bytes, 0))} local`,
     );
   if (status.role === "hub" && status.devices.length) {
     let records = "";
@@ -1139,17 +1287,17 @@ async function renderMachines(serial = renderSerial) {
       );
       const state = d.revoked
         ? pill("Revoked", "er", "unlink")
-        : !d.last_seen
-          ? pill("Invitation only", "wa", "clock")
-          : p?.online === false
-            ? pill("Offline", "id", "circle-dashed")
+        : p?.online === false
+          ? pill("Offline", "id", "circle-dashed")
+          : !d.last_seen
+            ? pill("Invitation only", "wa", "clock")
             : pill("Linked", "id", "link");
       const tags = `<span class="tag">${escape(d.role)}</span>${d.backup_enabled ? '<span class="tag backup">Backs up hub</span>' : ""}`;
       records += row(
         report?.name || d.name,
         tags,
-        connection(p),
-        `Last contact ${relative(d.last_seen)}${d.backup_enabled ? ` · Backup ack rev ${d.backup_revision || 0} at ${date(d.backup_updated)}` : ""}`,
+        connection(p, d.last_address),
+        "",
         state,
         d.revoked
           ? ""
@@ -1157,11 +1305,51 @@ async function renderMachines(serial = renderSerial) {
         false,
         false,
         !d.last_seen,
-        platform(p),
+        p ? platform(p) : escape(platformLabel(report?.platform || "")),
       );
     }
-    html += section("Machines", records);
+    machineRows += records;
   }
+  if (status.role !== "hub" && status.hub) {
+    const others =
+      roster?.machines?.filter((m) => !m.isHub && m.machineId !== status.id) ||
+      [];
+    machineRows += others.length
+      ? others
+          .map((m) =>
+            row(
+              m.name,
+              `<span class="tag">${escape(m.role)}</span>`,
+              connection(
+                peers.find(
+                  (p) =>
+                    p.arca.id === m.machineId ||
+                    p.addresses?.includes(m.lastAddress),
+                ),
+                m.lastAddress,
+              ),
+              "",
+              pill(
+                m.revoked ? "Revoked" : "Linked",
+                m.revoked ? "er" : "id",
+                m.revoked ? "unlink" : "link",
+              ),
+              "",
+              false,
+              false,
+              false,
+              escape(platformLabel(m.platform || "")),
+            ),
+          )
+          .join("")
+      : roster
+        ? ""
+        : empty(
+            "Machine list unavailable",
+            "Reconnect to the hub to see its machines.",
+          );
+  }
+  html += section("Machines", machineRows);
   const found = peers.filter(
     (p) =>
       !consumed.has(p.id) &&
@@ -1207,7 +1395,7 @@ async function renderMachines(serial = renderSerial) {
             false,
             false,
             true,
-            platform(p),
+            `${platform(p)} · Arca ${escape(p.arca.version || "")}`,
           ),
         )
         .join(""),
@@ -1261,7 +1449,36 @@ function backupSummary() {
 }
 function hubConnection() {
   const connected = Boolean(status.hub);
-  return `<div class="settings-card">${setting(connected ? `Connected to ${escape(hubName())}` : "Not connected", connected ? `<span class="path">${escape(status.hub)}</span><br>${status.role === "backup" ? "Receives a full backup without publishing local edits." : "This machine syncs only the folders you choose."}` : "Your local files and saved destinations are kept. Enter a new pairing code to connect.", connected ? (status.role === "replica" ? button("Disconnect…", "disconnect-hub", "", "secondary small-button danger", "unlink") : pill("Backup connection", "id", "shield")) : button(status.disconnectedHub ? "Reconnect…" : "Connect to hub…", "connect", "", "primary", "link"))}</div>`;
+  if (connected) {
+    const hub = roster?.machines?.find((m) => m.isHub);
+    const address = new URL(status.hub);
+    const vpn = discovered?.peers?.some((peer) =>
+      peer.addresses?.includes(address.hostname),
+    );
+    return machineRow(
+      hubName(),
+      '<span class="tag hub">Hub</span>',
+      escape(
+        [vpn ? "Tailscale" : "", address.host].filter(Boolean).join(" · "),
+      ),
+      "",
+      "",
+      status.role === "replica"
+        ? button(
+            "Disconnect…",
+            "disconnect-hub",
+            "",
+            "secondary small-button danger",
+            "unlink",
+          )
+        : "",
+      false,
+      true,
+      false,
+      hub?.platform ? escape(platformLabel(hub.platform)) : "",
+    );
+  }
+  return `<div class="settings-card">${setting(connected ? `Connected to ${escape(hubName())}` : "Not connected", connected ? `<span class="path">${escape(status.hub)}</span>${status.role === "backup" ? "<br>Receives a full backup without publishing local edits." : ""}` : "Your local files and saved destinations are kept. Enter a new pairing code to connect.", connected ? (status.role === "replica" ? button("Disconnect…", "disconnect-hub", "", "secondary small-button danger", "unlink") : pill("Backup connection", "id", "shield")) : button(status.disconnectedHub ? "Reconnect…" : "Connect to hub…", "connect", "", "primary", "link"))}</div>`;
 }
 async function renderSettings() {
   try {
@@ -1280,11 +1497,7 @@ async function renderSettings() {
           status.phase === "paused" ? "play" : "pause",
         ) +
         button("Sync now", "sync", "", "secondary small-button", "refresh-cw");
-  let html =
-    title(
-      "Settings",
-      `${status.role === "hub" ? "Hub" : status.role === "backup" ? "Backup" : "Replica"} · ${escape(status.name)}`,
-    ) + '<div class="page">';
+  let html = title("Settings", "") + '<div class="page">';
   if (status.role !== "hub") html += section("Hub connection", hubConnection());
   html += section(
     "This machine",
@@ -1317,7 +1530,7 @@ async function renderSettings() {
         ? '<div class="panel"><p>This legacy backup machine receives all shared folders and retained history. It never publishes local edits.</p></div>'
         : !status.hub
           ? '<div class="panel"><p>Connect to a hub first.</p></div>'
-          : `<div class="settings-card">${setting(`Keep a full backup of hub ${escape(hubName())} here`, "Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.", toggleControl("backup-enabled", "Enable hub backup", status.backup?.enabled, "data-backup-toggle"))}${setting("Backup location", `<span class="path">${escape(status.backup?.path || "Not configured")}</span>`, status.backup?.path ? button("Copy path", "copy", status.backup.path, "secondary small-button", "copy") : button("Choose…", "enable-backup", "", "secondary small-button", "folder-input"))}${backupCompletionSetting()}</div>`,
+          : `<div class="settings-card">${setting(`Keep a full backup of the hub here`, "Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.", toggleControl("backup-enabled", "Enable hub backup", status.backup?.enabled, "data-backup-toggle"))}${setting("Backup location", `<span class="path">${escape(status.backup?.path || "Not configured")}</span>`, status.backup?.path ? button("Copy path", "copy", status.backup.path, "secondary small-button", "copy") : button("Choose…", "enable-backup", "", "secondary small-button", "folder-input"))}${backupCompletionSetting()}</div>`,
   );
   if (status.role === "hub")
     html += section(
@@ -1325,13 +1538,13 @@ async function renderSettings() {
       `<div class="settings-card">${setting("Kept", `${status.historyRevisions} accepted revisions. No scheduled cleanup exists.`, button("Preview cleanup…", "retention", "", "secondary small-button", "history"))}${setting("Limits", "Preview always precedes applying. Current versions, pending writes and history not yet received by backups are protected.", `<span class="mono">${status.retention.days || 0} days · ${status.retention.versions || 0} versions</span>`)}</div>`,
     );
   html += section(
-    "Network",
+    "Tailscale",
     `<div class="settings-card">${setting(
-      "Mode",
+      "Connection mode",
       network
         ? network.mode === "tailscale"
-          ? "Makes this machine reachable on its encrypted Tailscale network. Pairing is still required."
-          : "Uses the configured listening address. LAN access needs network configuration; use HTTPS or an encrypted private network."
+          ? "Encrypted access through your Tailscale network. Pairing is still required."
+          : "Uses the configured server address without adding a Tailscale listener."
         : "Network information unavailable.",
       segmented(
         "Network mode",
@@ -1344,7 +1557,16 @@ async function renderSettings() {
             m === "tailscale" && network?.tailscale.state !== "connected",
         })),
       ),
-    )}${setting("Addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No tailnet address")} · port ${status.port || 47831}</span>`, pill(network?.publishing ? "Discoverable" : "Local access", "id", "wifi"))}${setting("Discovery", "Arca probes connected tailnet peers on demand and caches results for 15 seconds.", button("Refresh", "network-refresh", "", "secondary small-button", "refresh-cw"))}</div>`,
+    )}${setting("Tailscale addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No Tailscale address")} · port ${status.port || 47831}</span>`, pill(network?.publishing ? "Discoverable" : "Not advertised", "id", "wifi"))}</div>`,
+  );
+  if (status.role === "hub")
+    html += section(
+      "Local network",
+      `<div class="settings-card">${setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Files and credentials are not encrypted.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))}</div><p class="hint">Can be used alongside Tailscale. The hub’s port must be reachable on your LAN; do not forward it to the Internet.</p>`,
+    );
+  html += section(
+    "Machine discovery",
+    `<div class="settings-card">${setting("Find machines on Tailscale", "Look for Arca on connected machines. Finding a machine does not link it.", button("Refresh", "network-refresh", "", "secondary small-button", "refresh-cw"))}</div>`,
   );
   html += section(
     "Service",
@@ -1370,7 +1592,7 @@ async function renderSettings() {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.2.3 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.3.0 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
@@ -1615,7 +1837,7 @@ document.addEventListener("keydown", (e) => {
     }
   }
   if (
-    el.matches('.folder-card[role="button"]') &&
+    el.matches('.folder-card[role="button"], .history-row[role="button"]') &&
     ["Enter", " "].includes(e.key)
   ) {
     e.preventDefault();
@@ -1634,7 +1856,7 @@ function connectModal(endpoint = "", recovery = false) {
       "Detection does not link a machine. Enter the code issued by the hub administrator.",
       "key-round",
     ) +
-      `<label for="hub-address">Hub address</label><input id="hub-address" name="url" class="mono" value="${escape(endpoint)}" placeholder="https://arca.your-network" required><label>Pairing code</label>${codeFields("pair")}<p class="hint">Six digits, leading zeroes included. Works once; expires ten minutes after the hub generated it. Generating a new code invalidates the previous one.</p><p class="hint">Arca verifies Tailscale automatically. Otherwise, use an HTTPS hub address.</p>${recovery ? '<p class="hint">Replacing the hub reconnects existing folders, keeps local files and preserves differences as conflicts.</p>' : ""}`,
+      `<label for="hub-address">Hub address</label><input id="hub-address" name="url" class="mono" value="${escape(endpoint)}" placeholder="https://arca.your-network" required><label>Pairing code</label>${codeFields("pair")}<p class="hint">Six digits, leading zeroes included. Works once; expires ten minutes after the hub generated it. Generating a new code invalidates the previous one.</p><p class="hint">Use HTTPS, verified Tailscale, or a private IPv4 address when the hub allows local network HTTP.</p>${recovery ? '<p class="hint">Replacing the hub reconnects existing folders, keeps local files and preserves differences as conflicts.</p>' : ""}`,
     async (f) => {
       const code = readCode("pair");
       if (code.length !== 6) throw new Error("Enter all six digits.");
@@ -1712,12 +1934,12 @@ async function pairModal(name = "") {
       "key-round",
     ) +
       addressPanel +
-      `<p class="hint">Include the full address, with http:// or https:// and its port. A hostname works when the new machine can resolve it; otherwise use the IP address. For HTTP over Tailscale, connect both machines to the same tailnet. Arca verifies the connection automatically.</p><div class="section-label">Pairing code</div><div class="code-display" id="pair-code">··· — ···</div><div class="code-toolbar"><p class="code-expiry" id="pair-validity">Generating code…</p><div class="form-actions">${button("Copy code", "copy-pair", "", "secondary small-button", "copy")}${button("New code", "new-pair", "", "secondary small-button", "refresh-cw")}</div></div><p>After connecting, choose the folders to sync and their local destinations.</p><div class="callout">${icon("info")}<p>Issuing a code does not mean a machine has connected. This code never grants web administration.</p></div>`,
+      `<p class="hint">Include the full address, with http:// or https:// and its port. A hostname works when the new machine can resolve it; otherwise use the IP address. For HTTP, use Tailscale on both machines or enable local network HTTP in the hub’s Settings and use its private IPv4 address.</p><div class="section-label">Pairing code</div><div class="code-display" id="pair-code">··· — ···</div><div class="code-toolbar"><p class="code-expiry" id="pair-validity">Generating code…</p><div class="form-actions">${button("Copy code", "copy-pair", "", "secondary small-button", "copy")}${button("New code", "new-pair", "", "secondary small-button", "refresh-cw")}</div></div><p>After connecting, choose the folders to sync and their local destinations.</p><div class="callout">${icon("info")}<p>Issuing a code does not mean a machine has connected. This code never grants web administration.</p></div>`,
     async () => {},
     "Done",
   );
   $("#dialog").classList.add("pair-dialog");
-  $("#cancel-dialog").hidden = true;
+  $("#cancel-dialog").hidden = false;
   $("#dialog").addEventListener(
     "close",
     () => {
@@ -1799,6 +2021,13 @@ function authorName(id) {
   );
 }
 async function reviewConflict(item) {
+  if (
+    status.role !== "hub" &&
+    !status.volumes.find((v) => v.id === item.volume)?.selected
+  )
+    throw new Error(
+      "Select this folder for synchronization before resolving conflicts.",
+    );
   const conflictPath = item.path,
     originalPath = conflictPath.slice(
       0,
@@ -1814,12 +2043,14 @@ async function reviewConflict(item) {
   ]);
   const original = originalData.versions[0],
     conflict = conflictData.versions[0];
+  if (conflict?.resolved)
+    throw new Error("This conflict is already resolved. Refresh History.");
   if (!original || !conflict || conflict.deleted)
     throw new Error("The conflict has changed. Refresh History.");
   modal(
     modalHeader(
-      "Review conflict",
-      "Both versions are retained. Choose content to restore to the original path as a new revision. No merge or diff is performed.",
+      "Resolve conflict",
+      "Choose which version to use for the original file. Restoring creates a new revision; both source versions and the conflict copy are kept.",
       "git-branch",
     ) +
       `<div class="conflict-options">${[
@@ -1828,11 +2059,32 @@ async function reviewConflict(item) {
       ]
         .map(
           ([choice, path, v]) =>
-            `<label class="role-card"><input name="choice" type="radio" value="${choice}" ${choice === "conflict" ? "checked" : ""} ${v.deleted ? "disabled" : ""}><strong class="path">${escape(path)}</strong><p>${bytes(v.size)} · ${date(v.created)} · rev ${v.rev}</p><p class="path">${escape(authorName(v.author))}</p></label>`,
+            `<label class="role-card"><input name="choice" type="radio" value="${choice}" ${choice === "original" && !original.deleted ? "checked" : choice === "conflict" && original.deleted ? "checked" : ""} ${v.deleted ? "disabled" : ""}><strong>${choice === "original" ? "Original file" : "Conflict copy"}</strong><p class="path">${escape(path)}</p><p>${v.deleted ? "Deleted" : bytes(v.size)} · ${date(v.created)} · rev ${v.rev}</p><p class="path">${escape(authorName(v.author))}</p></label>`,
         )
-        .join(
-          "",
-        )}</div><div class="form-actions">${native ? button("Open both", "open-conflict", JSON.stringify({ volume: item.volume, paths: [originalPath, conflictPath] }), "text-button", "external-link") : ""}${button("Keep both as they are", "keep-conflict", "", "text-button")}</div>`,
+        .join("")}</div><div class="form-actions">${
+        native &&
+        status.volumes.some((v) => v.id === item.volume && v.path) &&
+        !original.deleted
+          ? button(
+              "Open both",
+              "open-conflict",
+              JSON.stringify({
+                volume: item.volume,
+                paths: [originalPath, conflictPath],
+              }),
+              "text-button",
+              "external-link",
+            )
+          : !native
+            ? [original, conflict]
+                .filter((v) => !v.deleted)
+                .map(
+                  (v) =>
+                    `<a class="secondary" href="/v1/blobs/${escape(v.hash)}" download="${escape(v.path.split("/").at(-1))}">${icon("download")}Download ${v === original ? "original" : "conflict copy"}</a>`,
+                )
+                .join("")
+            : ""
+      }${button("Keep both as they are", "keep-conflict", "", "text-button")}</div>`,
     async (f) => {
       await api("/v1/conflict-choice", {
         volume: item.volume,
@@ -1853,7 +2105,7 @@ async function reviewConflict(item) {
   const extra = $("#dialog-content .form-actions");
   extra.id = "dialog-extra-actions";
   $("#dialog-form > .dialog-actions").prepend(extra);
-  $("#cancel-dialog").hidden = true;
+  $("#cancel-dialog").hidden = false;
   $("#submit-dialog").innerHTML =
     icon("undo-2") + "Restore selected as new revision";
   icons();
@@ -1938,12 +2190,43 @@ async function handle(name, id, control) {
     updateShell();
     return;
   }
+  if (
+    name === "folder-tab" ||
+    name === "browse-directory" ||
+    name === "browse-page" ||
+    name === "folder-search-toggle" ||
+    name === "folder-search-apply"
+  ) {
+    if (name === "folder-tab") folderTab = id;
+    if (name === "browse-directory") {
+      folderPrefix = id;
+      folderSearch = "";
+    }
+    if (name === "folder-search-toggle") {
+      folderSearchOpen = !folderSearchOpen;
+      if (!folderSearchOpen) folderSearch = "";
+    }
+    if (name === "folder-search-apply")
+      folderSearch = $("#folder-search-input").value.trim();
+    folderAfter = name === "browse-page" ? id : "";
+    await render();
+    if (name === "folder-search-toggle" && folderSearchOpen)
+      $("#folder-search-input")?.focus();
+    return;
+  }
   if (name === "back-folders") {
     detailId = null;
     await render();
     return;
   }
   if (name === "folder-detail") {
+    if (detailId !== id) {
+      folderTab = "files";
+      folderPrefix = "";
+      folderSearch = "";
+      folderSearchOpen = false;
+      folderAfter = "";
+    }
     detailId = id;
     await render();
     return;
@@ -1973,21 +2256,47 @@ async function handle(name, id, control) {
     await renderHistory(id, true);
     return;
   }
+  if (name === "history-open-file" || name === "history-reveal-file") {
+    await invoke("open_file", {
+      volume: historyVolume,
+      path: historyPath,
+      reveal: name === "history-reveal-file",
+    });
+    return;
+  }
+  if (name === "history-view-folder") {
+    view = "folders";
+    detailId = id;
+    await render();
+    updateShell();
+    return;
+  }
   if (name === "history-back") {
     historyPath = null;
-    await renderHistory();
+    await render();
+    return;
+  }
+  if (name === "file-back-folder") {
+    view = "folders";
+    detailId = fileOriginFolder;
+    fileOriginFolder = null;
+    await render();
+    updateShell();
     return;
   }
   if (name === "activity-file") {
+    fileOriginFolder = view === "folders" ? detailId : null;
     const item = JSON.parse(id);
+    view = "history";
     historyVolume = item.volume;
     historyPath = item.path;
-    await renderHistory();
+    await render();
+    updateShell();
     return;
   }
   if (name === "versions") {
     historyPath = id;
-    await renderHistory();
+    await render();
     return;
   }
   if (name === "restore") {
@@ -2031,7 +2340,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.2.3",
+          version: "0.3.0",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -2096,7 +2405,7 @@ async function handle(name, id, control) {
   if (name === "disconnect-hub" && status.role === "replica") {
     modal(
       modalHeader(
-        `Disconnect from ${escape(hubName())}?`,
+        `Disconnect from hub?`,
         "Stops synchronization and any full backup on this machine. Local files, saved destinations and hub history are kept. Reconnecting requires a new pairing code.",
         "unlink",
       ) +
@@ -2359,7 +2668,7 @@ async function handle(name, id, control) {
         ? `${remote.files.toLocaleString("en")} ${remote.files === 1 ? "file" : "files"}`
         : null,
       Number.isFinite(remote.bytes) ? bytes(remote.bytes) : null,
-      `on hub ${escape(hubName())}`,
+      `on the hub`,
     ]
       .filter(Boolean)
       .join(" · ");
@@ -2542,6 +2851,24 @@ document.addEventListener("click", (e) => {
   action(() => handle(control.dataset.action, control.dataset.id, control));
 });
 document.addEventListener("change", (e) => {
+  if (e.target.id === "allow-lan-http")
+    action(async () => {
+      const enabled = e.target.checked;
+      e.target.disabled = true;
+      try {
+        network = await api("/v1/network/lan", { enabled });
+        notice(
+          enabled
+            ? "Local network HTTP enabled."
+            : "Local network HTTP disabled.",
+        );
+      } catch (error) {
+        e.target.checked = !enabled;
+        throw error;
+      } finally {
+        e.target.disabled = false;
+      }
+    });
   if (e.target.matches("[data-backup-toggle]")) {
     const enabled = e.target.checked;
     e.target.checked = Boolean(status.backup?.enabled);
@@ -2651,7 +2978,7 @@ function renderOnboarding() {
         "",
       )}<p class="hint">A replica can also keep a full backup of the hub. That is switched on later in Settings, not a separate kind of machine.</p>`;
   if (o.step === 2)
-    body = `<h1>Pair with your hub</h1><p>Enter the code issued on your hub. ${escape(o.name)} then receives its own credential, kept until it is revoked on the hub.</p>${textField("Hub address", "url", o.url, "server", "https://arca.your-network", "mono")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">Six digits, leading zeroes included. Works once; expires ten minutes after the hub generated it. Ask the hub administrator for a new one if it fails.</p><p class="hint">Arca verifies Tailscale automatically. Otherwise, use an HTTPS hub address.</p><div class="callout">${icon("fingerprint")}<p>No password or code is needed to open Arca on this machine. This code only links it to the hub.</p></div>`;
+    body = `<h1>Pair with your hub</h1><p>Enter the code issued on your hub. ${escape(o.name)} then receives its own credential, kept until it is revoked on the hub.</p>${textField("Hub address", "url", o.url, "server", "https://arca.your-network", "mono")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">Six digits, leading zeroes included. Works once; expires ten minutes after the hub generated it. Ask the hub administrator for a new one if it fails.</p><p class="hint">Use HTTPS, verified Tailscale, or a private IPv4 address when the hub allows local network HTTP.</p><div class="callout">${icon("fingerprint")}<p>No password or code is needed to open Arca on this machine. This code only links it to the hub.</p></div>`;
   if (o.step === 3)
     body = `<h1>Pick a folder root</h1><p>A default location for the folders you choose to synchronize.</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>${escape(o.root.split("/").filter(Boolean).pop() || "Folder root")}</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${button("Change…", "pick-path", "root", "secondary small-button", "folder-input")}</div><div class="callout">${icon("info")}<p>The root must be empty or new. Arca’s index stays outside synchronized folders. Nothing is downloaded until you select folders.</p></div>`;
   $("#content").innerHTML =
@@ -2854,4 +3181,19 @@ document.addEventListener("focusin", (event) => {
   document.querySelectorAll(".dropdown").forEach((root) => {
     if (!root.contains(event.target)) closeDropdown(root);
   });
+});
+
+document.addEventListener("keydown", (event) => {
+  if (
+    event.target.matches(".browser-file-row") &&
+    ["Enter", " "].includes(event.key)
+  ) {
+    event.preventDefault();
+    event.target.click();
+    return;
+  }
+  if (event.target.id === "folder-search-input" && event.key === "Enter") {
+    event.preventDefault();
+    document.querySelector('[data-action="folder-search-apply"]')?.click();
+  }
 });
