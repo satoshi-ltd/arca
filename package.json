@@ -25,7 +25,8 @@
     "mobile:build:preview": "npm --prefix apps/mobile run build:preview",
     "update-docker": "node scripts/local/update-docker.js",
     "site:build": "node site/scripts/build.mjs",
-    "site:preview": "node site/scripts/build.mjs --preview"
+    "build:site": "npm run site:build",
+    "site:release": "node site/scripts/read-release.mjs"
   },
   "devDependencies": {
     "@fontsource-variable/instrument-sans": "^5.3.0",

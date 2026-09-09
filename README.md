@@ -116,19 +116,19 @@ Every commit requires a version bump and matching changelog entry, with package/
 The single page in `site/` is static HTML/CSS with local brand fonts and no navigation menu, client-side framework, telemetry or runtime API. A small local script adds pointer-responsive illustration motion, respecting reduced-motion preferences. It follows `../alf`'s Node-build → GitHub Actions → Cloudflare Pages direct-upload approach.
 
 ```sh
-npm run site:preview
+npm run build:site
 python3 -m http.server --directory site/dist 4178
 ```
 
-Preview deliberately has no working installer links. Production `npm run site:build` reads `site/release.json` by default, or the file specified by `RELEASE_JSON`; version and buttons come from actual release assets, including alpha prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive in the local preview, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. At the user’s request, unconfigured stores link to their generic home pages for now; these are not Arca listing links.
+`npm run site:build` (alias `npm run build:site`) works locally without GitHub access: it reads `site/release.json`, or the file specified by `RELEASE_JSON`, and otherwise derives the version from `package.json` with the expected desktop installer URLs for tag `v<version>` and no APK link. With published metadata, version and buttons come from actual release assets, including alpha prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. At the user’s request, unconfigured stores link to their generic home pages for now; these are not Arca listing links.
 
-To prepare production metadata locally, use an authenticated GitHub CLI with repository access:
+To build from published metadata locally, provide `GH_TOKEN` or `GITHUB_TOKEN` (or an authenticated GitHub CLI; the repository is private) and run:
 
 ```sh
-GITHUB_REPOSITORY=satoshi-ltd/arca node site/scripts/read-release.mjs
+npm run site:release
 npm run site:build
 ```
 
-The lookup writes `site/release.json`. A missing metadata file stops production builds with setup instructions; it never silently publishes a preview. Use `npm run site:preview` for local design work without GitHub access.
+The lookup calls the GitHub REST API and writes `site/release.json`. CI always sets `RELEASE_JSON`, and an explicitly configured file that is missing stops the build, so production never deploys the package.json fallback.
 
-`.github/workflows/publish-site.yml` runs after a successful Arca workflow, on site changes on main, or manually. It reads published release metadata with GitHub authentication, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. This is prepared locally, not deployed. Cloudflare/DNS configuration and the first end-to-end release remain to be verified. See SPEC's website publication section for required configuration.
+`.github/workflows/publish-site.yml` runs after a successful Arca workflow, on site changes on main, or manually. It reads published release metadata through the GitHub REST API with the workflow token, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. This is prepared locally, not deployed. Cloudflare/DNS configuration and the first end-to-end release remain to be verified. See SPEC's website publication section for required configuration.

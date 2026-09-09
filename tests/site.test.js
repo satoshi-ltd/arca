@@ -27,7 +27,7 @@ const release = {
   draft: false,
   assets: [asset("macos-arm64.dmg")],
 };
-test("site build reads site/release.json by default and explains missing metadata", async (t) => {
+test("site build uses package.json version without metadata, release.json when present, and requires an explicit RELEASE_JSON", async (t) => {
   const root = await realpath(
     await mkdtemp(path.join(os.tmpdir(), "arca-site-build-")),
   );
@@ -70,12 +70,25 @@ test("site build reads site/release.json by default and explains missing metadat
       [path.join(root, "site/scripts/build.mjs"), ...args],
       { cwd: os.tmpdir(), env: { ...env, ...extra }, encoding: "utf8" },
     );
-  const missing = build();
-  assert.notEqual(missing.status, 0);
-  assert.match(missing.stderr, /Published release metadata not found/);
-  assert.match(missing.stderr, /npm run site:preview/);
-  const preview = build({}, ["--preview"]);
-  assert.equal(preview.status, 0, preview.stderr);
+  const fallback = build();
+  assert.equal(fallback.status, 0, fallback.stderr);
+  assert.match(fallback.stdout, /expected assets for v0\.3\.1/);
+  const fallbackHtml = await readFile(
+    path.join(root, "site/dist/index.html"),
+    "utf8",
+  );
+  for (const suffix of [
+    "macos-arm64.dmg",
+    "windows-x64.exe",
+    "linux-x64.AppImage",
+  ])
+    assert.match(
+      fallbackHtml,
+      new RegExp(
+        `href="https://github.com/satoshi-ltd/arca/releases/download/v0\\.3\\.1/arca-0\\.3\\.1-${suffix.replace(".", "\\.")}"`,
+      ),
+    );
+  assert.doesNotMatch(fallbackHtml, /href="[^"]+\.apk"/);
   await writeFile(
     path.join(root, "site/release.json"),
     JSON.stringify(release),
@@ -102,6 +115,7 @@ test("site build reads site/release.json by default and explains missing metadat
   });
   assert.notEqual(missingOverride.status, 0);
   assert.match(missingOverride.stderr, /Published release metadata not found/);
+  assert.match(missingOverride.stderr, /npm run site:release/);
 });
 test("downloads use actual GitHub release assets and Linux appears once", () => {
   const html = render(template, {
@@ -146,4 +160,69 @@ test("reject drafts, malformed versions and mismatched asset destinations", () =
   assert.throws(() =>
     render(template, release, { playStore: "https://example.com/store" }),
   );
+});
+test("read-release picks the newest complete release via the GitHub API", async () => {
+  const { readRelease, resolveToken } =
+    await import("../site/scripts/read-release.mjs");
+  const complete = (version) => ({
+    tag_name: `v${version}`,
+    draft: false,
+    assets: ["macos-arm64.dmg", "windows-x64.exe", "linux-x64.AppImage"].map(
+      (suffix) => ({ name: `arca-${version}-${suffix}`, size: 100 }),
+    ),
+  });
+  const calls = [];
+  const fetch =
+    (releases, ok = true) =>
+    async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok,
+        status: ok ? 200 : 401,
+        statusText: ok ? "OK" : "Unauthorized",
+        json: async () => releases,
+      };
+    };
+  const release = await readRelease({
+    repo: "satoshi-ltd/arca",
+    token: "t0ken",
+    fetch: fetch([
+      complete("0.3.4"),
+      { ...complete("0.3.10"), draft: true },
+      { ...complete("1.0.0"), tag_name: "latest" },
+    ]),
+  });
+  assert.equal(release.tag_name, "v0.3.4");
+  assert.equal(
+    calls[0].url,
+    "https://api.github.com/repos/satoshi-ltd/arca/releases?per_page=100",
+  );
+  assert.equal(calls[0].init.headers.Authorization, "Bearer t0ken");
+  await assert.rejects(
+    readRelease({
+      repo: "satoshi-ltd/arca",
+      token: "t",
+      fetch: fetch([], false),
+    }),
+    /401 Unauthorized/,
+  );
+  await assert.rejects(
+    readRelease({
+      repo: "satoshi-ltd/arca",
+      token: "t",
+      fetch: fetch(
+        [complete("0.3.4")].map((r) => ({
+          ...r,
+          assets: r.assets.slice(0, 2),
+        })),
+      ),
+    }),
+    /Missing desktop installer: linux-x64.AppImage/,
+  );
+  await assert.rejects(
+    readRelease({ repo: "not a repo", token: "t", fetch: fetch([]) }),
+    /Repository is required/,
+  );
+  assert.equal(resolveToken({ GITHUB_TOKEN: "from-env" }), "from-env");
+  assert.equal(resolveToken({ GH_TOKEN: "gh", GITHUB_TOKEN: "x" }), "gh");
 });

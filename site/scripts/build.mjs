@@ -25,6 +25,23 @@ export function publicUrl(value) {
     );
   return url.href.replace(/\/$/, "");
 }
+export function expectedRelease(version, repository = "satoshi-ltd/arca") {
+  const tag_name = `v${version}`;
+  return {
+    tag_name,
+    draft: false,
+    assets: ["macos-arm64.dmg", "windows-x64.exe", "linux-x64.AppImage"].map(
+      (suffix) => {
+        const name = `arca-${version}-${suffix}`;
+        return {
+          name,
+          size: 1,
+          browser_download_url: `https://github.com/${repository}/releases/download/${tag_name}/${name}`,
+        };
+      },
+    ),
+  };
+}
 export function render(template, release, config = {}) {
   if (!/^v\d+\.\d+\.\d+$/.test(release.tag_name) || release.draft)
     throw new Error("Expected a published versioned release");
@@ -71,12 +88,8 @@ export function render(template, release, config = {}) {
   const play = `<a class="store" href="${escape(playUrl.href)}">${icon("android")}<span>Google Play<small>Android ↗</small></span></a>`;
   const tokens = {
     VERSION: escape(version),
-    PREVIEW_NOTICE: config.preview
-      ? '<p class="preview-notice wrap">Local design preview · Download destinations are not connected.</p>'
-      : "",
     RELEASE_NOTES: escape(
-      release.body ||
-        "Local preview. Published release notes appear here after deployment.",
+      release.body || "Published release notes appear here after deployment.",
     ),
     MAC_DOWNLOAD: link("macos-arm64.dmg", "Download for macOS", "apple", true),
     WINDOWS_DOWNLOAD: link("windows-x64.exe", "Windows · x64", "windows"),
@@ -99,23 +112,23 @@ if (
   process.argv[1] &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const preview = process.argv.includes("--preview");
+  const version = JSON.parse(
+    await readFile(path.join(root, "package.json"), "utf8"),
+  ).version;
+  const repository = process.env.GITHUB_REPOSITORY || "satoshi-ltd/arca";
   const releasePath =
     process.env.RELEASE_JSON || path.join(root, "site/release.json");
-  const release = preview
-    ? {
-        tag_name: `v${JSON.parse(await readFile(path.join(root, "package.json"))).version}`,
-        draft: false,
-        assets: [],
-      }
-    : JSON.parse(
-        await readFile(releasePath, "utf8").catch((error) => {
-          if (error.code !== "ENOENT") throw error;
-          throw new Error(
-            `Published release metadata not found: ${releasePath}. Run node site/scripts/read-release.mjs first (with GITHUB_REPOSITORY=satoshi-ltd/arca and GitHub CLI access), or set RELEASE_JSON to an existing release file. For a local preview without installer links, run npm run site:preview.`,
-          );
-        }),
+  const published = await readFile(releasePath, "utf8").catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+    if (process.env.RELEASE_JSON)
+      throw new Error(
+        `Published release metadata not found: ${releasePath}. Run npm run site:release first (with GH_TOKEN or GitHub CLI access), or unset RELEASE_JSON to build from the package.json version.`,
       );
+    return null;
+  });
+  const release = published
+    ? JSON.parse(published)
+    : expectedRelease(version, repository);
   const output = path.resolve(
     process.env.SITE_OUTPUT || path.join(root, "site/dist"),
   );
@@ -123,8 +136,7 @@ if (
     await readFile(path.join(root, "site/index.html"), "utf8"),
     release,
     {
-      preview,
-      repository: process.env.GITHUB_REPOSITORY,
+      repository,
       siteUrl: process.env.SITE_URL,
       appStore: process.env.APP_STORE_URL,
       playStore: process.env.PLAY_STORE_URL,
@@ -152,6 +164,6 @@ if (
     "/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n  Content-Security-Policy: default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\n",
   );
   console.log(
-    `Built static site: ${output}${preview ? " (preview: downloads unavailable)" : ""}`,
+    `Built static site: ${output}${published ? "" : ` (expected assets for ${release.tag_name}; run npm run site:release for published metadata)`}`,
   );
 }

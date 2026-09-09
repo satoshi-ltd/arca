@@ -793,12 +793,6 @@ footer .brand {
   }
 }
 
-.preview-notice {
-  font-size: 12px;
-  color: var(--muted);
-  padding-block: 10px;
-  border-block: 1px solid var(--line);
-}
 .button.link-pending {
   color: var(--ink);
 }
@@ -947,34 +941,69 @@ footer .brand {
   .network-device {
     animation: replica-float 7s ease-in-out infinite;
   }
-  .network-device:nth-of-type(2) { animation-delay: -2.5s; }
-  .network-device:nth-of-type(3) { animation-delay: -4.5s; }
-  .network-hub { animation: replica-float 9s ease-in-out infinite reverse; }
+  .network-device:nth-of-type(2) {
+    animation-delay: -2.5s;
+  }
+  .network-device:nth-of-type(3) {
+    animation-delay: -4.5s;
+  }
+  .network-hub {
+    animation: replica-float 9s ease-in-out infinite reverse;
+  }
   .network-orbit {
     transform-origin: 200px 215px;
     animation: ring-breathe 9s ease-in-out infinite;
   }
-  .network-orbit-outer { animation-delay: -4.5s; }
+  .network-orbit-outer {
+    animation-delay: -4.5s;
+  }
 }
 @keyframes hub-float {
-  0%, 100% { transform: translateY(5px) rotate(-4deg); }
-  50% { transform: translateY(-7px) rotate(-3deg); }
+  0%,
+  100% {
+    transform: translateY(5px) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(-3deg);
+  }
 }
 @keyframes phone-float {
-  0%, 100% { transform: translateY(-5px) rotate(4deg); }
-  50% { transform: translateY(8px) rotate(3deg); }
+  0%,
+  100% {
+    transform: translateY(-5px) rotate(4deg);
+  }
+  50% {
+    transform: translateY(8px) rotate(3deg);
+  }
 }
 @keyframes window-float {
-  0%, 100% { transform: translateY(3px) rotate(-2deg); }
-  50% { transform: translateY(-4px) rotate(-1.6deg); }
+  0%,
+  100% {
+    transform: translateY(3px) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(-1.6deg);
+  }
 }
 @keyframes replica-float {
-  0%, 100% { translate: 0 3px; }
-  50% { translate: 0 -4px; }
+  0%,
+  100% {
+    translate: 0 3px;
+  }
+  50% {
+    translate: 0 -4px;
+  }
 }
 @keyframes ring-breathe {
-  0%, 100% { scale: 1; opacity: .7; }
-  50% { scale: 1.025; opacity: 1; }
+  0%,
+  100% {
+    scale: 1;
+    opacity: 0.7;
+  }
+  50% {
+    scale: 1.025;
+    opacity: 1;
+  }
 }
 
 .network {
