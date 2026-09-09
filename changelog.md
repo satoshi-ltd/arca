@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3 — 2026-09-09
+
+- Fix Windows incoming-share integration fixtures by converting file URLs with Node URL helpers; cover source names containing spaces, `#` and `%`.
+- Read production website release metadata from `site/release.json` by default, matching the release lookup. Explain missing metadata and document production preparation and local preview commands.
+- Add isolated site-build coverage for default metadata, explicit overrides, missing files and preview mode.
+- Align desktop, mobile, native modules and runtime versions at 0.3.3; advance mobile native build numbers to 5.
+
 ## 0.3.2 — 2026-09-09
 
 - Add the first static Arca landing page, with responsive product illustrations, accessible CSS motion, macOS-first desktop downloads, mobile store destinations/direct APK and Docker setup.

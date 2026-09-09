@@ -100,6 +100,8 @@ if (
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   const preview = process.argv.includes("--preview");
+  const releasePath =
+    process.env.RELEASE_JSON || path.join(root, "site/release.json");
   const release = preview
     ? {
         tag_name: `v${JSON.parse(await readFile(path.join(root, "package.json"))).version}`,
@@ -107,7 +109,12 @@ if (
         assets: [],
       }
     : JSON.parse(
-        await readFile(process.env.RELEASE_JSON || "release.json", "utf8"),
+        await readFile(releasePath, "utf8").catch((error) => {
+          if (error.code !== "ENOENT") throw error;
+          throw new Error(
+            `Published release metadata not found: ${releasePath}. Run node site/scripts/read-release.mjs first (with GITHUB_REPOSITORY=satoshi-ltd/arca and GitHub CLI access), or set RELEASE_JSON to an existing release file. For a local preview without installer links, run npm run site:preview.`,
+          );
+        }),
       );
   const output = path.resolve(
     process.env.SITE_OUTPUT || path.join(root, "site/dist"),

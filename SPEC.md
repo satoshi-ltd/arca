@@ -1,6 +1,6 @@
 # Arca — specification and roadmap
 
-Updated 2026-09-09. **v0.3.1 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+Updated 2026-09-09. **v0.3.3 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AGENTS.md) for contributor instructions. This document owns implementation status, remaining work, technical contracts, operations and the shared design system. Original visual references are not competing specifications.
 
@@ -1201,3 +1201,21 @@ Download-card notes use the full card content width, wrapping naturally on narro
 September 9 CI correction: the v0.3.1 macOS log failed the conflict-restore DOM test with an unhandled rejection after JSDOM teardown. The test observed dialog closure and restored bytes before the subsequent refresh/action finalization completed. It now also waits for body aria-busy=false before teardown. The full local CI test command passes (169 passed, one platform skip); GitHub runner verification remains pending. No production error guard or timing sleep was added.
 
 Release v0.3.2: user approved the single commit and push, including the first landing release, and confirmed arca.satoshi-ltd.com as its domain. Mobile build numbers advance to 4. Publication requires Cloudflare account/token/project configuration and EXPO_TOKEN in GitHub; actual deployment remains unverified until the workflows complete.
+
+### Windows CI incoming-share fixtures — September 9
+
+The v0.3.2 Windows test job in run 34323012768 failed the two incoming-share integration tests in `tests/mobile-replica.test.js`. Their Node filesystem adapters stripped `file://` from normalized URLs, leaving `/D:/...` on Windows; constructing URLs by concatenating native paths also failed to encode filenames correctly. The fixtures now use `pathToFileURL` and `fileURLToPath`, preserving native paths for other adapter calls. Both source filenames include spaces, `#` and `%` so the URL-decoding regression is exercised on Unix runners too. The single-slash file URI case remains covered. Production mobile code is unchanged.
+
+Validation: both focused tests reproduced the same missing-file failure locally with encoded filenames before the adapter fix and passed afterward. The full local CI test command passes (169 passed, one platform skip), release manifests agree at v0.3.2, and explicit Windows-mode URL conversion checks pass. Windows runner verification remains pending; this fix is included in the v0.3.3 release preparation below.
+
+### Static-site release metadata path — September 9
+
+The production site builder now defaults to repository-root `site/release.json`, matching `site/scripts/read-release.mjs`, instead of looking for `release.json` in the working directory. `RELEASE_JSON` remains an explicit override. Missing metadata produces setup instructions and the local preview command; production does not silently fall back to preview or invent installer destinations. The existing publication workflow already sets `RELEASE_JSON: site/release.json`.
+
+Validation: four site tests pass, including an isolated CLI build from another working directory, missing metadata, explicit overrides, and preview without release metadata. These checks do not verify GitHub or Cloudflare deployment.
+
+### Release v0.3.3 — September 9
+
+The user authorized release preparation, commit and push to main. This release includes the Windows incoming-share test fixture corrections and the static-site release metadata path fix described above. Desktop, mobile, native modules, runtime reporting and package/lockfile versions are aligned at 0.3.3; Android versionCode, iOS buildNumber and the Android native module versionCode advance to 5. The existing workflow owns artifact builds and publication after the push; Casa and installed clients are not updated by this operation.
+
+Release validation: the full local CI test command passes (170 passed, one platform skip); Android/iOS JavaScript exports, desktop frontend build, static-site preview and version agreement pass. Hosted cross-platform tests, native artifact builds and publication remain pending the release workflow.

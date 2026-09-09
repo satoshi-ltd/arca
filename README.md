@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.3.2 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
+**v0.3.3 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -120,6 +120,15 @@ npm run site:preview
 python3 -m http.server --directory site/dist 4178
 ```
 
-Preview deliberately has no working installer links. Production `npm run site:build` takes `RELEASE_JSON` from the published-release lookup; version and buttons come from actual release assets, including alpha prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive in the local preview, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. At the user’s request, unconfigured stores link to their generic home pages for now; these are not Arca listing links.
+Preview deliberately has no working installer links. Production `npm run site:build` reads `site/release.json` by default, or the file specified by `RELEASE_JSON`; version and buttons come from actual release assets, including alpha prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive in the local preview, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. At the user’s request, unconfigured stores link to their generic home pages for now; these are not Arca listing links.
+
+To prepare production metadata locally, use an authenticated GitHub CLI with repository access:
+
+```sh
+GITHUB_REPOSITORY=satoshi-ltd/arca node site/scripts/read-release.mjs
+npm run site:build
+```
+
+The lookup writes `site/release.json`. A missing metadata file stops production builds with setup instructions; it never silently publishes a preview. Use `npm run site:preview` for local design work without GitHub access.
 
 `.github/workflows/publish-site.yml` runs after a successful Arca workflow, on site changes on main, or manually. It reads published release metadata with GitHub authentication, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. This is prepared locally, not deployed. Cloudflare/DNS configuration and the first end-to-end release remain to be verified. See SPEC's website publication section for required configuration.

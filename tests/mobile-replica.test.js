@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { Replica, CHUNK } from "../apps/mobile/src/replica.js";
 import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
@@ -394,19 +395,21 @@ test("incoming workout files are transient until saved to a nested selected fold
   const f = await fixture(t),
     r = f.replica;
   f.files.incoming = (key) => path.join(f.root, "incoming", key);
-  const source = path.join(f.root, "workout.fit");
+  const source = path.join(f.root, "workout #1%.fit");
   const workout = crypto.randomBytes(2048);
   fs.writeFileSync(source, workout);
   const stat = f.files.stat,
     copy = f.files.copy;
-  f.files.stat = (uri) => stat(uri.replace(/^file:\/\//, ""));
-  f.files.copy = (a, b) => copy(a.replace(/^file:\/\//, ""), b);
+  f.files.stat = (uri) =>
+    stat(uri.startsWith("file:") ? fileURLToPath(uri) : uri);
+  f.files.copy = (a, b) =>
+    copy(a.startsWith("file:") ? fileURLToPath(a) : a, b);
   const queued = await stageIncoming(
     r,
     [
       {
         shareType: "file",
-        contentUri: `file://${source}`,
+        contentUri: pathToFileURL(source).href,
         originalName: "workout.fit",
       },
     ],
@@ -421,7 +424,7 @@ test("incoming workout files are transient until saved to a nested selected fold
       [
         {
           shareType: "file",
-          contentUri: `file://${source}`,
+          contentUri: pathToFileURL(source).href,
           originalName: "../escape.fit",
         },
       ],
@@ -431,7 +434,7 @@ test("incoming workout files are transient until saved to a nested selected fold
   assert.equal((await f.store.get("incomingFiles", [])).length, 0);
   const payload = {
     shareType: "file",
-    contentUri: `file:${source}`,
+    contentUri: pathToFileURL(source).href.replace("file://", "file:"),
     originalName: "workout.fit",
     contentSize: workout.length,
   };
@@ -446,7 +449,10 @@ test("incoming workout files are transient until saved to a nested selected fold
   await assert.rejects(
     stageIncoming(
       r,
-      [payload, { ...payload, contentUri: `file://${source}.missing` }],
+      [
+        payload,
+        { ...payload, contentUri: pathToFileURL(`${source}.missing`).href },
+      ],
       "rollback",
     ),
   );
@@ -714,20 +720,22 @@ test("shared binary with a non-portable name imports after renaming and syncs by
   await f.replica.select(f.volume);
   await sync(f);
   const data = crypto.randomBytes(4096);
-  const source = path.join(f.root, "activity.fit");
+  const source = path.join(f.root, "activity #1%.fit");
   fs.writeFileSync(source, data);
   f.files.incoming = (key) => path.join(f.root, "incoming", key);
   const stat = f.files.stat,
     copy = f.files.copy;
-  f.files.stat = (uri) => stat(uri.replace(/^file:\/\//, ""));
-  f.files.copy = (from, to) => copy(from.replace(/^file:\/\//, ""), to);
+  f.files.stat = (uri) =>
+    stat(uri.startsWith("file:") ? fileURLToPath(uri) : uri);
+  f.files.copy = (from, to) =>
+    copy(from.startsWith("file:") ? fileURLToPath(from) : from, to);
   const [item] = await stageIncoming(
     f.replica,
     [
       {
         shareType: "file",
         originalName: "Activity 07:35.fit",
-        contentUri: new URL("file://" + source).href,
+        contentUri: pathToFileURL(source).href,
         contentSize: data.length,
       },
     ],
