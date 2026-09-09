@@ -16,32 +16,39 @@ export function moveFolder(engine, id, location) {
     fail("Original and destination folders cannot overlap", 409);
   if (fs.existsSync(destination))
     fail("Destination must be a new directory", 409);
-  // Use the normal overlap/ownership validation before copying.
-  s.db.exec("BEGIN IMMEDIATE");
-  try {
-    s.addVolume(v.name, destination, id);
-    s.db.exec("ROLLBACK");
-  } catch (e) {
-    s.db.exec("ROLLBACK");
-    throw e;
-  }
+  // Validate without creating files, then verify a private staging copy.
+  s.addVolume(v.name, destination, id, false, true);
   const sourceScan = s.scan(v);
-  fs.cpSync(v.path, destination, {
-    recursive: true,
-    errorOnExist: false,
-    force: false,
-  });
-  const target = { ...v, path: destination };
-  const copied = s.scan(target),
-    after = s.scan(v);
-  const same = (a, b) =>
-    a.size === b.size &&
-    [...a].every(([key, val]) => b.get(key)?.hash === val.hash);
-  if (!same(sourceScan, copied) || !same(sourceScan, after))
-    fail(
-      "Files changed during relocation. Original mapping retained; inspect the destination copy.",
-      409,
-    );
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  const staging = fs.mkdtempSync(
+    path.join(path.dirname(destination), ".arca-move-"),
+  );
+  try {
+    fs.cpSync(v.path, staging, { recursive: true, force: false });
+    const copied = s.scan({ ...v, path: fs.realpathSync(staging) });
+    const after = s.scan(v);
+    const same = (a, b) =>
+      a.size === b.size &&
+      [...a].every(
+        ([key, val]) =>
+          b.get(key)?.hash === val.hash &&
+          b.get(key)?.directory === val.directory,
+      );
+    if (!same(sourceScan, copied) || !same(sourceScan, after))
+      fail(
+        "Files changed during relocation. Original mapping retained; retry the move.",
+        409,
+      );
+    if (fs.existsSync(destination))
+      fail(
+        "Destination was created during relocation; original mapping retained",
+        409,
+      );
+    fs.renameSync(staging, destination);
+  } finally {
+    if (fs.existsSync(staging))
+      fs.rmSync(staging, { recursive: true, force: true });
+  }
   s.db.prepare("UPDATE volumes SET path=? WHERE id=?").run(destination, id);
   return { ...s.volume(id), originalRetained: v.path };
 }

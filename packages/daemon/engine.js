@@ -53,13 +53,31 @@ export class Engine {
       this.config.role !== "hub" && !this.config.hub ? "unlinked" : "idle";
     this.error = null;
     this.lastSync = null;
-    this.paused = false;
+    this.paused = Boolean(this.config.paused);
+    this.pauseUntil = this.config.pauseUntil || null;
     this.stopVolumes = new Set();
     this.transferred = 0;
     this.tail = Promise.resolve();
     this.store.db.exec(
       "CREATE TABLE IF NOT EXISTS proposals(id TEXT PRIMARY KEY,response TEXT NOT NULL)",
     );
+  }
+  setPaused(paused, until = null) {
+    const previous = {
+      paused: this.config.paused,
+      pauseUntil: this.config.pauseUntil,
+    };
+    this.config.paused = Boolean(paused);
+    this.config.pauseUntil = paused ? until : null;
+    try {
+      this.store.saveConfig();
+    } catch (error) {
+      Object.assign(this.config, previous);
+      throw error;
+    }
+    this.paused = this.config.paused;
+    this.pauseUntil = this.config.pauseUntil;
+    if (this.paused) this.interruptCycle();
   }
   interruptCycle() {
     this.syncAbort?.abort(
@@ -117,19 +135,24 @@ export class Engine {
       hubId: this.config.hub?.id || null,
       hubName: this.config.hub?.name || null,
       disconnectedHub: this.config.disconnectedHub || null,
-      volumes: s.volumes().map((v) => ({
-        ...v,
-        sync: this.folderStates.get(v.id) || {
-          state: v.selected ? "pending" : "unselected",
-          lastCompleted: v.last_sync,
-        },
-        ...s.visibleTotals(v.id),
-        conflicts:
-          this.config.role === "hub"
-            ? s.unresolvedConflicts(v.id)
-            : (this.config.catalog?.find((row) => row.id === v.id)?.conflicts ??
-              s.unresolvedConflicts(v.id)),
-      })),
+      volumes: s.volumes().map((v) => {
+        const totals = s.visibleTotals(v.id);
+        return {
+          ...v,
+          sync: totals.policyError
+            ? { state: "error", error: totals.policyError, lastCompleted: null }
+            : this.folderStates.get(v.id) || {
+                state: v.selected ? "pending" : "unselected",
+                lastCompleted: v.last_sync,
+              },
+          ...totals,
+          conflicts:
+            this.config.role === "hub"
+              ? s.unresolvedConflicts(v.id)
+              : (this.config.catalog?.find((row) => row.id === v.id)
+                  ?.conflicts ?? s.unresolvedConflicts(v.id)),
+        };
+      }),
       devices: s.db
         .prepare(
           "SELECT d.id,d.name,d.role,d.revoked,d.last_seen,d.last_address,a.enabled AS backup_enabled,a.revision AS backup_revision,a.updated AS backup_updated FROM devices d LEFT JOIN backup_ack a ON a.device=d.id",
@@ -153,6 +176,7 @@ export class Engine {
       headers: {
         Authorization: `Bearer ${hub.token}`,
         "X-Arca-Directories": "1",
+        "X-Arca-Path-Transitions": "1",
         ...options.headers,
       },
       signal: AbortSignal.any([
@@ -222,7 +246,7 @@ export class Engine {
     const file = this.store.blob(hash);
     if (fs.existsSync(file)) {
       if (hashFile(file) === hash) return;
-      fail("Local object corruption detected", 409);
+      // Keep the damaged object until a verified replacement is ready.
     }
     if (this.progress)
       Object.assign(this.progress, {
@@ -301,17 +325,30 @@ export class Engine {
       (!fs.existsSync(s.blob(hash)) || fs.statSync(s.blob(hash)).size !== size)
     )
       fail("Upload content before proposing", 409);
+    await this.scanHub(volume, {
+      paths: s.caseAlias(volume, name) ? null : [name, IGNORE_FILE],
+    });
+    const revision = () =>
+      Number(
+        s.db
+          .prepare(
+            "SELECT COALESCE(MAX(rev),0) n FROM revisions WHERE volume=?",
+          )
+          .get(volume).n,
+      );
     const op = digest(
       JSON.stringify([device.id, volume, name, base, hash, directory]),
     );
     const cached = s.db
       .prepare("SELECT response FROM proposals WHERE id=?")
       .get(op);
-    if (cached) return JSON.parse(cached.response);
-    await this.scanHub(volume, { paths: [name, IGNORE_FILE] });
-    const old = s.current(volume, name);
+    if (cached) {
+      const saved = JSON.parse(cached.response);
+      if (saved.revision === revision()) return saved.result;
+    }
+    const old = s.pathHead(volume, name);
     let result;
-    if (entryKey(old) === entryKey(item))
+    if (old?.path === name && entryKey(old) === entryKey(item))
       result = { row: old || null, conflict: false };
     else if ((old?.rev ?? 0) !== base && (directory || old?.directory)) {
       if (old?.directory && directory && old.deleted)
@@ -338,7 +375,7 @@ export class Engine {
           reason: "Remote edit preserved; stale deletion rejected",
         };
       else {
-        const conflictName = `${name}.conflict-${device.id.slice(0, 8)}-${op.slice(0, 8)}`;
+        const conflictName = `${name}.conflict-${device.id.slice(0, 8)}-${op.slice(0, 8)}-${old?.rev || 0}`;
         const existing = s.current(volume, conflictName);
         const row =
           existing?.hash === hash
@@ -348,18 +385,29 @@ export class Engine {
       }
     } else
       result = {
-        row: s.commit(volume, name, item, device.id, true, old?.hash),
+        row: s.commit(
+          volume,
+          name,
+          item,
+          device.id,
+          true,
+          old?.hash,
+          null,
+          old?.path !== name ? old?.path : null,
+        ),
         conflict: false,
       };
     s.db
       .prepare("INSERT OR REPLACE INTO proposals VALUES(?,?)")
-      .run(op, JSON.stringify(result));
+      .run(op, JSON.stringify({ volume, revision: revision(), result }));
+    s.db.exec(
+      "DELETE FROM proposals WHERE rowid NOT IN (SELECT rowid FROM proposals ORDER BY rowid DESC LIMIT 10000)",
+    );
     return result;
   }
   async cycle({ incremental = false } = {}) {
     if (this.paused && this.pauseUntil && Date.now() >= this.pauseUntil) {
-      this.paused = false;
-      this.pauseUntil = null;
+      this.setPaused(false);
     }
     if (this.paused) {
       await this.reportMachine();
@@ -383,12 +431,15 @@ export class Engine {
       }
       const s = this.store;
       const folderErrors = [];
-      s.recover();
       if (this.config.role === "hub")
         await this.scanHub(undefined, { incremental });
       else if (this.config.hub) {
         const catalog = await this.json("/v1/catalog");
-        if (!catalog.directories || !catalog.changes)
+        if (
+          !catalog.directories ||
+          !catalog.changes ||
+          !catalog.pathTransitions
+        )
           fail(
             "Hub does not support the current synchronization protocol",
             412,
@@ -430,6 +481,12 @@ export class Engine {
               lastCompleted: v.last_sync,
             });
             this.progress = { volume: v.id, path: null };
+            s.recover(v.id);
+            if (catalog.volumes.find((row) => row.id === v.id)?.policyError)
+              fail(
+                catalog.volumes.find((row) => row.id === v.id)?.policyError,
+                409,
+              );
             if (this.config.role !== "backup") await this.syncIgnore(v);
             const policy = digest(readIgnore(v.path));
             if (this.work.state(v.id).policy !== policy) {
@@ -448,6 +505,9 @@ export class Engine {
               const known = new Map(
                 s.rowsInScope(v.id, plan.paths).map((r) => [r.path, r]),
               );
+              const diskNames = new Set(
+                [...disk.keys()].map((name) => name.toLowerCase()),
+              );
               const changed = [...disk]
                 .sort(([a], [b]) =>
                   a === IGNORE_FILE ? -1 : b === IGNORE_FILE ? 1 : 0,
@@ -463,11 +523,32 @@ export class Engine {
                 filesDone: 0,
                 filesTotal: changed.length,
               });
+              for (const row of [...known.values()].sort((a, b) =>
+                b.path.localeCompare(a.path),
+              ))
+                if (
+                  !row.deleted &&
+                  covers(plan.paths, row.path) &&
+                  !s.excluded(v.id, row.path, row.directory) &&
+                  !disk.has(row.path) &&
+                  !diskNames.has(row.path.toLowerCase())
+                )
+                  await this.json("/v1/propose", {
+                    volume: v.id,
+                    path: row.path,
+                    base: row.rev,
+                    hash: null,
+                  });
               for (const [name, item] of changed) {
                 this.checkSyncInterrupted();
                 if (s.excluded(v.id, name, item.directory)) continue;
-                const old = known.get(name);
-                if (!old || old.deleted || entryKey(old) !== entryKey(item)) {
+                const old = s.pathHead(v.id, name);
+                if (
+                  !old ||
+                  old.path !== name ||
+                  old.deleted ||
+                  entryKey(old) !== entryKey(item)
+                ) {
                   this.progress.path = name;
                   if (item.hash) await this.upload(item.hash);
                   this.checkSyncInterrupted();
@@ -480,21 +561,6 @@ export class Engine {
                   this.progress.filesDone++;
                 }
               }
-              for (const row of [...known.values()].sort((a, b) =>
-                b.path.localeCompare(a.path),
-              ))
-                if (
-                  !row.deleted &&
-                  covers(plan.paths, row.path) &&
-                  !s.excluded(v.id, row.path, row.directory) &&
-                  !disk.has(row.path)
-                )
-                  await this.json("/v1/propose", {
-                    volume: v.id,
-                    path: row.path,
-                    base: row.rev,
-                    hash: null,
-                  });
             }
             Object.assign(this.progress, {
               stage: "receive",
@@ -509,6 +575,7 @@ export class Engine {
             let cursor = plan.full ? 0 : this.work.state(v.id).cursor;
             let through;
             const directoryDeletes = [];
+            const deferredFiles = [];
             let page,
               session,
               after = "";
@@ -593,6 +660,16 @@ export class Engine {
                   directoryDeletes.push(row);
                   continue;
                 }
+                const target = path.join(v.path, row.path);
+                if (
+                  !row.deleted &&
+                  !row.directory &&
+                  fs.existsSync(target) &&
+                  fs.lstatSync(target).isDirectory()
+                ) {
+                  deferredFiles.push(row);
+                  continue;
+                }
                 this.checkSyncInterrupted();
                 if (
                   (row.deleted && !local) ||
@@ -618,6 +695,10 @@ export class Engine {
             for (const row of directoryDeletes.sort((a, b) =>
               b.path.localeCompare(a.path),
             )) {
+              s.queue(row);
+              s.materialize(row);
+            }
+            for (const row of deferredFiles) {
               s.queue(row);
               s.materialize(row);
             }
@@ -815,7 +896,8 @@ export class Engine {
       const r = await fetch(`${this.config.hub.url}/.well-known/arca`, {
         signal: AbortSignal.timeout(3000),
       });
-      reachable = r.ok;
+      reachable = true;
+      await r.body?.cancel();
     } catch {}
     if (reachable)
       fail(
@@ -994,7 +1076,6 @@ export class Engine {
   }
   async scanHub(volume, { incremental = false, paths } = {}) {
     const s = this.store;
-    s.recover();
     const errors = [];
     const checkpoint = () => {
       // Release the current cycle for queued destructive controls, even when
@@ -1012,19 +1093,13 @@ export class Engine {
         lastCompleted: v.last_sync,
       });
       try {
+        s.recover(v.id);
         const disk = await this.scanner.scan(v, plan.paths);
         checkpoint();
         const known = s.rowsInScope(v.id, plan.paths);
-        for (const [name, item] of disk) {
-          // Let status and control requests run between durable file commits.
-          await new Promise((resolve) => setImmediate(resolve));
-          checkpoint();
-          const old = s.current(v.id, name);
-          if (!old || old.deleted || entryKey(old) !== entryKey(item)) {
-            s.commit(v.id, name, item, this.config.id);
-            this.activity++;
-          }
-        }
+        const diskNames = new Set(
+          [...disk.keys()].map((name) => name.toLowerCase()),
+        );
         for (const row of known.sort((a, b) => b.path.localeCompare(a.path))) {
           await new Promise((resolve) => setImmediate(resolve));
           checkpoint();
@@ -1032,9 +1107,29 @@ export class Engine {
             !row.deleted &&
             covers(plan.paths, row.path) &&
             !s.excluded(v.id, row.path, row.directory) &&
-            !disk.has(row.path)
+            !disk.has(row.path) &&
+            !diskNames.has(row.path.toLowerCase())
           )
             s.commit(v.id, row.path, null, this.config.id);
+        }
+        for (const [name, item] of disk) {
+          // Let status and control requests run between durable file commits.
+          await new Promise((resolve) => setImmediate(resolve));
+          checkpoint();
+          const old = s.current(v.id, name);
+          if (!old || old.deleted || entryKey(old) !== entryKey(item)) {
+            s.commit(
+              v.id,
+              name,
+              item,
+              this.config.id,
+              false,
+              null,
+              null,
+              s.caseAlias(v.id, name)?.path,
+            );
+            this.activity++;
+          }
         }
         this.work.complete(v, plan);
         const time = new Date().toISOString();
@@ -1128,12 +1223,28 @@ export class Engine {
   }
   async syncIgnore(v) {
     const s = this.store;
-    s.ignoreRules(v); // Create defaults for existing shares before the first scan.
+    s.ignoreRules(v); // Validate the local policy before touching ordinary files.
     const { versions } = await this.json(
       `/v1/history?volume=${encodeURIComponent(v.id)}&path=${IGNORE_FILE}&limit=1`,
     );
     const remote = versions[0];
-    if (!remote || remote.deleted) return;
+    if (!remote) return;
+    if (remote.deleted) {
+      const known = s.current(v.id, IGNORE_FILE);
+      const file = path.join(v.path, IGNORE_FILE);
+      if (known && !known.deleted) {
+        if (fs.existsSync(file) && digest(readIgnore(v.path)) !== known.hash)
+          fail(
+            "Sync paused: .arcaignore was edited locally while deleted on the hub. Resolve the policy before retrying.",
+            409,
+          );
+        s.queue(remote, known.hash);
+        s.materialize(remote, known.hash);
+        this.work.mark(v.id);
+        this.work.cursor(v.id, 0);
+      }
+      return;
+    }
     if (remote.size > MAX_IGNORE_BYTES)
       fail("Remote .arcaignore exceeds 64 KiB", 409);
     const localText = readIgnore(v.path);
@@ -1251,13 +1362,14 @@ export class Engine {
     try {
       local = s.addVolume(v.name, existing?.path || location, v.id, false);
       if (this.config.role === "hub")
-        for (const row of s.rows(id)) s.queue(row, null);
+        for (const row of s.rows(id).filter((row) => !row.deleted))
+          s.queue(row, null);
       s.db.exec("COMMIT");
     } catch (e) {
       s.db.exec("ROLLBACK");
       throw e;
     }
-    if (this.config.role === "hub") s.recover();
+    if (this.config.role === "hub") s.recover(id);
     this.work.mark(id);
     await this.reportMachine(true);
     this.lastReport = null;

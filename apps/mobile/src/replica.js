@@ -238,6 +238,13 @@ export class Replica {
       folder.id,
       ".arcaignore",
     );
+    if (remote?.deleted && known && !known.deleted) {
+      if (present && local !== known.hash)
+        throw new Error(
+          ".arcaignore was edited locally while deleted on the hub. Resolve the policy before retrying.",
+        );
+      await this.apply(validRow(remote, folder.id));
+    }
     if (
       remote &&
       !remote.deleted &&
@@ -288,9 +295,15 @@ export class Replica {
   }
   async scan(folder) {
     const root = this.files.folder(this.scope, folder.id);
-    const rows = await this.store.rows(this.scope, folder.id),
-      indexed = new Map(rows.map((r) => [r.path, r]));
+    const rows = await this.store.rows(this.scope, folder.id);
     const names = new Set();
+    const foldedNames = new Set();
+    const heads = new Map();
+    for (const row of [...rows].sort(
+      (a, b) => b.deleted - a.deleted || a.rev - b.rev,
+    ))
+      heads.set(row.path.toLowerCase(), row);
+    const queued = new Set();
     const policyPath = this.files.work(this.scope, folder.id, ".arcaignore");
     const policy = ignore().add(
       (await this.files.exists(policyPath))
@@ -304,35 +317,56 @@ export class Replica {
       throw new Error("Local folder is unavailable");
     for await (const entry of this.files.walk(root)) {
       this.check();
-      validPath(entry.path);
+      try {
+        validPath(entry.path);
+      } catch {
+        throw new Error(
+          `Rename "${entry.path}" using a portable composed Unicode (NFC) name, then retry.`,
+        );
+      }
       names.add(entry.path);
+      foldedNames.add(entry.path.toLowerCase());
       if (excluded(entry.path + (entry.directory ? "/" : ""))) continue;
-      const previous = indexed.get(entry.path);
+      const previous = heads.get(entry.path.toLowerCase());
       const hash = entry.directory
         ? "directory"
         : await this.localHash(entry.uri);
       if (entry.directory) {
-        if (entryKey(previous) !== "directory")
+        if (
+          previous?.path !== entry.path ||
+          entryKey(previous) !== "directory"
+        ) {
+          queued.add(entry.path);
           await this.store.queue(this.scope, {
             volume: folder.id,
             path: entry.path,
             base: previous?.rev || 0,
             ...directoryItem(),
           });
-      } else if (!previous || previous.deleted || previous.hash !== hash)
+        }
+      } else if (
+        !previous ||
+        previous.path !== entry.path ||
+        previous.deleted ||
+        previous.hash !== hash
+      ) {
+        queued.add(entry.path);
         await this.snapshotLocal(
           folder.id,
           entry.path,
           entry.uri,
           previous?.rev || 0,
         );
+      }
     }
     for (const row of rows.sort((a, b) => b.path.localeCompare(a.path)))
       if (
         !row.deleted &&
         !excluded(row.path + (row.directory ? "/" : "")) &&
-        !names.has(row.path)
-      )
+        !names.has(row.path) &&
+        !foldedNames.has(row.path.toLowerCase())
+      ) {
+        queued.add(row.path);
         await this.store.queue(this.scope, {
           volume: folder.id,
           path: row.path,
@@ -340,6 +374,11 @@ export class Replica {
           hash: null,
           size: 0,
         });
+      }
+    // Only discard superseded operations after a complete successful inventory.
+    for (const op of await this.store.pending(this.scope, folder.id))
+      if (!queued.has(op.path))
+        await this.store.dequeue(this.scope, folder.id, op.path);
   }
   async upload(op) {
     const object = this.files.object(this.scope, op.hash);
@@ -378,7 +417,7 @@ export class Replica {
         const da = !a.hash && !a.directory,
           db = !b.hash && !b.directory;
         return da !== db
-          ? Number(da) - Number(db)
+          ? Number(db) - Number(da)
           : da
             ? b.path.localeCompare(a.path)
             : a.path.localeCompare(b.path);
@@ -416,8 +455,60 @@ export class Replica {
       return;
     const current = await this.store.current(this.scope, row.volume, row.path);
     const target = this.files.work(this.scope, row.volume, row.path);
-    const exists = await this.files.exists(target);
-    const info = exists ? await this.files.stat(target) : null;
+    if (row.deleted && row.replacementPath) {
+      await this.store.applied(this.scope, row);
+      return;
+    }
+    if (!row.deleted) {
+      const alias = (await this.store.rows(this.scope, row.volume)).find(
+        (r) =>
+          r.path !== row.path &&
+          r.path.toLowerCase() === row.path.toLowerCase(),
+      );
+      if (alias) {
+        const source = this.files.work(this.scope, row.volume, alias.path);
+        if (await this.files.exists(source)) {
+          const root = this.files.folder(this.scope, row.volume);
+          let oldExact = false,
+            newExact = false;
+          for await (const entry of this.files.walk(root)) {
+            oldExact ||= entry.path === alias.path;
+            newExact ||= entry.path === row.path;
+          }
+          if (oldExact && newExact)
+            throw new Error(
+              `Both spellings exist: ${alias.path} and ${row.path}. Rename one before retrying.`,
+            );
+          if (oldExact) {
+            await this.files.mkdir(this.files.parent(target));
+            await this.files.move(source, target);
+          }
+        }
+      }
+    }
+    let exists = await this.files.exists(target);
+    let info = exists ? await this.files.stat(target) : null;
+    if (!row.deleted && exists && !!row.directory !== !!info?.directory) {
+      if (
+        !current ||
+        current.deleted ||
+        !!current.directory === !!row.directory
+      )
+        throw new Error(`Path type conflicts with local content: ${row.path}`);
+      if (info.directory) await this.files.removeDirectory(target);
+      else {
+        const actual = await this.files.hash(target);
+        if (actual !== (current.localHash ?? current.hash)) {
+          const conflict = `${row.path}.conflict-mobile-${actual.slice(0, 12)}`;
+          const kept = this.files.work(this.scope, row.volume, conflict);
+          await this.files.copy(target, kept);
+          await this.snapshotLocal(row.volume, conflict, kept, 0);
+        }
+        await this.files.remove(target);
+      }
+      exists = false;
+      info = null;
+    }
     if (row.directory) {
       if (exists && !info?.directory)
         throw new Error(
@@ -462,9 +553,20 @@ export class Replica {
   async pull(folder) {
     let through;
     const directoryDeletes = [];
+    const deferredFiles = [];
     const apply = async (row) => {
       validRow(row, folder.id);
       if (row.directory && row.deleted) directoryDeletes.push(row);
+      else if (
+        !row.deleted &&
+        !row.directory &&
+        (
+          await this.files.stat(
+            this.files.work(this.scope, row.volume, row.path),
+          )
+        )?.directory
+      )
+        deferredFiles.push(row);
       else await this.apply(row);
     };
     if (!folder.initialized) {
@@ -517,6 +619,7 @@ export class Replica {
       b.path.localeCompare(a.path),
     ))
       await this.apply(row);
+    for (const row of deferredFiles) await this.apply(row);
     if (!Number.isSafeInteger(through) || through < 0)
       throw new Error("Invalid synchronization cursor");
     if ((await this.store.pending(this.scope, folder.id)).length)
@@ -594,8 +697,11 @@ export class Replica {
         return;
       }
       const catalog = this.client.state().catalog;
-      if (!catalog.directories)
-        throw new Error("Update the hub to synchronize directories.");
+      if (!catalog.directories || !catalog.pathTransitions)
+        throw new Error(
+          "Update the hub to synchronize directories and path changes safely.",
+        );
+      const errors = [];
       for (const folder of (await this.store.folders(this.scope)).filter(
         (f) => f.selected,
       )) {
@@ -611,6 +717,8 @@ export class Replica {
           continue;
         }
         try {
+          const remote = catalog.volumes.find((v) => v.id === folder.id);
+          if (remote.policyError) throw new Error(remote.policyError);
           this.policy = null;
           for (const row of (
             await this.store.applying(this.scope, folder.id)
@@ -623,8 +731,14 @@ export class Replica {
         } catch (e) {
           if (e.code !== "SYNC_INTERRUPTED")
             await this.store.issue(this.scope, folder.id, e.message);
-          throw e;
+          if (e.code === "SYNC_INTERRUPTED") throw e;
+          errors.push(`${folder.name}: ${e.message}`);
         }
+      }
+      if (errors.length) {
+        this.error = errors.join("; ");
+        await this.report();
+        throw new Error(this.error);
       }
       if (this.force) this.lastFullScan = Date.now();
       await this.store.set(`lastSync:${this.scope}`, new Date().toISOString());

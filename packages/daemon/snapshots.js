@@ -30,7 +30,7 @@ export function snapshotPage(
         Date.now() + 600000,
       );
       db.prepare(
-        `INSERT INTO snapshot_files(session,path,hash,row) SELECT ?,path,hash,json_object('volume',volume,'path',path,'hash',hash,'size',size,'deleted',deleted,'rev',rev,'directory',directory) FROM files WHERE volume=?`,
+        `INSERT INTO snapshot_files(session,path,hash,row) SELECT ?,path,hash,json_object('volume',volume,'path',path,'hash',hash,'size',size,'deleted',deleted,'rev',rev,'directory',directory,'replacementPath',(SELECT next.path FROM files next WHERE files.deleted=1 AND next.volume=files.volume AND next.path_key=files.path_key AND next.path<>files.path AND next.deleted=0 AND next.rev>files.rev LIMIT 1)) FROM files WHERE volume=?`,
       ).run(session, volume);
       db.exec("COMMIT");
     } catch (e) {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.5 — 2026-09-10
+
+- Fix stale proposal retries, incomplete backup restoration, hub local-copy reselection and corrupt object repair while preserving local edits and retained backup content.
+- Isolate pending failures by folder on desktop/server and mobile; prevent incremental cursors from skipping unpublished revisions.
+- Support safe file/directory transitions and case-only renames, including repeated renames, history and excluded local content. Require the new `pathTransitions` capability: update hub and replicas together.
+- Persist pause and its optional deadline across daemon restarts. Report invalid exclusion policies per folder, bound failed watcher retries and identify nonportable filenames without accepting incomplete inventories.
+- Reconcile removed remote exclusion policies, discard obsolete mobile pending deletions, flush desktop conflict copies before removing originals, and verify folder relocation through private staging with failure cleanup.
+- Prevent promotion while the previous hub returns any HTTP response. Consolidate the audit into SPEC and regression coverage; remove the duplicate findings report.
+- Align desktop, mobile, native modules, runtime versions and lockfiles at 0.3.5; advance mobile native build numbers to 7. Release pipeline remains desktop/Docker; Expo builds remain manual.
+- Validation: 207 tests passed, one platform skip; desktop web build and Android/iOS JavaScript exports passed before the version-only bump. Native-device, cross-platform and sustained-operation qualification remain open. These local changes have not been deployed.
+
 ## 0.3.4 — 2026-09-09
 
 - Remove automatic Expo/Android builds and the required APK artifact from release publication. Keep macOS, Windows, Linux and Docker builds; mobile EAS builds remain manual.

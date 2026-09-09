@@ -135,7 +135,7 @@ export class ReplicaStore {
   }
   async queue(scope, op) {
     await this.db.runAsync(
-      "INSERT OR IGNORE INTO pending VALUES(?,?,?,?)",
+      "INSERT OR REPLACE INTO pending VALUES(?,?,?,?)",
       scope,
       op.volume,
       op.path,

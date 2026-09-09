@@ -232,7 +232,7 @@ export class Store {
         this.db.prepare(`DELETE FROM ${table} WHERE volume=?`).run(id);
       this.db
         .prepare(
-          "DELETE FROM proposals WHERE json_extract(response, '$.row.volume')=?",
+          "DELETE FROM proposals WHERE json_extract(response, '$.volume')=?",
         )
         .run(id);
       this.db.prepare("DELETE FROM volumes WHERE id=?").run(id);
@@ -266,7 +266,13 @@ export class Store {
     }
     return path.join(fs.realpathSync(ancestor), ...missing);
   }
-  addVolume(name, location, id = crypto.randomUUID(), createIgnore = true) {
+  addVolume(
+    name,
+    location,
+    id = crypto.randomUUID(),
+    createIgnore = true,
+    checkOnly = false,
+  ) {
     validPath(name);
     if (name.includes("/")) fail("Folder name must be a single segment");
     if (
@@ -311,9 +317,10 @@ export class Store {
         location,
         fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK,
       );
-    } else {
+    } else if (!checkOnly) {
       fs.mkdirSync(location, { recursive: true });
     }
+    if (checkOnly) return { id, name, path: location };
     if (fs.lstatSync(location).isSymbolicLink())
       fail("Symlink volume paths are not supported");
     location = fs.realpathSync(location);
@@ -338,6 +345,41 @@ export class Store {
         "Volume unavailable or marker missing; synchronization stopped",
         409,
       );
+  }
+  hasExactPath(v, name) {
+    let current = v.path;
+    for (const part of name.split("/")) {
+      try {
+        if (!fs.readdirSync(current).includes(part)) return false;
+        current = path.join(current, part);
+        if (fs.lstatSync(current).isSymbolicLink()) return false;
+      } catch (e) {
+        if (["ENOENT", "ENOTDIR"].includes(e.code)) return false;
+        throw e;
+      }
+    }
+    return true;
+  }
+  caseAlias(volume, name) {
+    return this.db
+      .prepare(
+        "SELECT * FROM files WHERE volume=? AND path_key=? AND path<>? ORDER BY deleted, rev DESC LIMIT 1",
+      )
+      .get(volume, name.toLowerCase(), name);
+  }
+  pathHead(volume, name) {
+    return this.db
+      .prepare(
+        "SELECT * FROM files WHERE volume=? AND path_key=? ORDER BY deleted, rev DESC LIMIT 1",
+      )
+      .get(volume, name.toLowerCase());
+  }
+  syncRow(row) {
+    if (!row.deleted) return row;
+    const next = this.caseAlias(row.volume, row.path);
+    return next && !next.deleted && next.rev > row.rev
+      ? { ...row, replacementPath: next.path }
+      : row;
   }
   filePath(v, relative) {
     validPath(relative);
@@ -435,7 +477,12 @@ export class Store {
     );
   }
   visibleTotals(volume) {
-    const excluded = this.visibleRules(volume);
+    let excluded;
+    try {
+      excluded = this.visibleRules(volume);
+    } catch (error) {
+      return { files: null, bytes: null, policyError: error.message };
+    }
     return this.rows(volume).reduce(
       (totals, row) => {
         if (!row.deleted && !row.directory && !excluded(row.path, false)) {
@@ -478,12 +525,19 @@ export class Store {
           );
         return;
       }
-      validPath(name);
+      try {
+        validPath(name);
+      } catch {
+        fail(
+          `Folder scan stopped: "${name}" is not a portable NFC path. Rename it using a composed Unicode name without reserved characters, then retry. Files have not been changed.`,
+          409,
+        );
+      }
       const folded = name.toLowerCase();
       if (
         names.has(folded) &&
         names.get(folded) !== name &&
-        fs.existsSync(path.join(v.path, names.get(folded)))
+        this.hasExactPath(v, names.get(folded))
       )
         fail(
           `Folder scan stopped: "${names.get(folded)}" and "${name}" differ only by letter case. These names cannot coexist on a case-insensitive disk. Rename one of them to a distinct name, then retry. Files have not been changed.`,
@@ -516,6 +570,7 @@ export class Store {
           )
         )
           continue;
+        if (!this.hasExactPath(v, name)) continue;
         const file = this.filePath(v, name);
         let stat;
         try {
@@ -571,7 +626,21 @@ export class Store {
       .prepare("INSERT OR REPLACE INTO pending VALUES(?,?,?,?)")
       .run(row.volume, row.path, JSON.stringify(row), expected ?? null);
   }
+  preserveFile(file) {
+    const kept = `${file}.conflict-local-${crypto.randomUUID().slice(0, 8)}`;
+    fs.copyFileSync(file, kept);
+    fs.chmodSync(kept, fs.statSync(kept).mode | 0o200);
+    const fd = fs.openSync(kept, "r+");
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    syncDirectory(path.dirname(kept));
+    return kept;
+  }
   materialize(row, expected = null) {
+    validPath(row.path);
     const v = this.volume(row.volume);
     if (this.ignoreRules(v)(row.path, !!row.directory)) {
       this.db
@@ -579,7 +648,62 @@ export class Store {
         .run(row.volume, row.path);
       return;
     }
+    // A case-only rename keeps the physical entry until its new spelling arrives.
+    let absent = false;
+    if (row.deleted) {
+      try {
+        absent = !fs.lstatSync(path.join(v.path, row.path), {
+          throwIfNoEntry: false,
+        });
+      } catch (error) {
+        if (error.code !== "ENOTDIR") throw error;
+        absent = true;
+      }
+    }
+    if (row.deleted && (row.replacementPath || absent)) {
+      this.setFile(row);
+      this.db
+        .prepare("DELETE FROM pending WHERE volume=? AND path=?")
+        .run(row.volume, row.path);
+      return;
+    }
+    if (!row.deleted) {
+      const alias = this.caseAlias(row.volume, row.path);
+      if (alias && this.hasExactPath(v, alias.path)) {
+        if (this.hasExactPath(v, row.path))
+          fail(
+            `Both spellings exist: ${alias.path} and ${row.path}. Rename one before retrying.`,
+            409,
+          );
+        const source = this.filePath(v, alias.path);
+        const destination = this.filePath(v, row.path);
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        fs.renameSync(source, destination);
+        syncDirectory(path.dirname(destination));
+      }
+    }
     const file = this.filePath(v, row.path);
+    const previous = this.current(row.volume, row.path);
+    if (
+      !row.deleted &&
+      fs.existsSync(file) &&
+      !!row.directory !== fs.lstatSync(file).isDirectory()
+    ) {
+      if (
+        !previous ||
+        previous.deleted ||
+        !!previous.directory === !!row.directory
+      )
+        fail(`Path type conflicts with local content: ${row.path}`, 409);
+      if (previous.directory) fs.rmdirSync(file);
+      else {
+        const actual = hashFile(file);
+        if (actual !== expected && actual !== previous.hash)
+          this.preserveFile(file);
+        fs.unlinkSync(file);
+      }
+      syncDirectory(path.dirname(file));
+    }
     if (row.directory) {
       if (fs.existsSync(file) && !fs.lstatSync(file).isDirectory())
         fail(`Directory conflicts with a local file: ${row.path}`, 409);
@@ -597,10 +721,7 @@ export class Store {
         const actual = hashFile(file);
         if (actual !== expected && actual !== row.hash) {
           // Preserve edits made by another process since the scan (also on crash recovery).
-          fs.copyFileSync(
-            file,
-            `${file}.conflict-local-${crypto.randomUUID().slice(0, 8)}`,
-          );
+          this.preserveFile(file);
         }
       }
       if (row.deleted) {
@@ -635,11 +756,19 @@ export class Store {
       throw e;
     }
   }
-  recover() {
-    for (const p of this.db
-      .prepare("SELECT * FROM pending ORDER BY path DESC")
-      .all())
-      this.materialize(JSON.parse(p.row), p.expected);
+  recover(volume) {
+    const rows = this.db
+      .prepare("SELECT * FROM pending WHERE (? IS NULL OR volume=?)")
+      .all(volume ?? null, volume ?? null)
+      .map((p) => ({ row: JSON.parse(p.row), expected: p.expected }));
+    rows.sort((a, b) => {
+      if (!!a.row.deleted !== !!b.row.deleted) return a.row.deleted ? -1 : 1;
+      if (a.row.deleted) return b.row.path.localeCompare(a.row.path);
+      if (!!a.row.directory !== !!b.row.directory)
+        return a.row.directory ? -1 : 1;
+      return a.row.path.localeCompare(b.row.path);
+    });
+    for (const p of rows) this.materialize(p.row, p.expected);
   }
   unresolvedConflicts(volume) {
     return this.db
@@ -668,6 +797,7 @@ export class Store {
     write = false,
     expected = null,
     resolution = null,
+    renameFrom = null,
   ) {
     validPath(name);
     write = write && Boolean(this.volume(volume).selected);
@@ -679,7 +809,13 @@ export class Store {
           ? fs.lstatSync(file).isDirectory()
           : fs.lstatSync(file).isFile())
       )
-        fail("Target type differs; synchronize its removal first", 409);
+        if (
+          !item ||
+          !this.current(volume, name) ||
+          this.current(volume, name).deleted ||
+          !!this.current(volume, name).directory === !!item.directory
+        )
+          fail("Target type differs; synchronize its removal first", 409);
     }
     if (!item && this.current(volume, name)?.directory) {
       if (
@@ -700,13 +836,8 @@ export class Store {
       }
     }
     const key = name.toLowerCase();
-    if (
-      this.db
-        .prepare(
-          "SELECT 1 FROM files WHERE volume=? AND path_key=? AND path<>? AND deleted=0 LIMIT 1",
-        )
-        .get(volume, key, name)
-    )
+    const alias = this.caseAlias(volume, name);
+    if (alias && !alias.deleted && (!item || renameFrom !== alias.path))
       fail("Case-insensitive path collision", 409);
     if (item) {
       if (
@@ -744,8 +875,23 @@ export class Store {
       ),
     };
     this.db.exec("BEGIN IMMEDIATE");
-    let row;
+    let row, pendingFrom;
     try {
+      if (item && alias && !alias.deleted) {
+        const removed = this.db
+          .prepare(
+            "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,NULL,0,1,?,?,?)",
+          )
+          .run(volume, alias.path, author, created, alias.directory);
+        pendingFrom = Number(removed.lastInsertRowid);
+        this.setFile({
+          ...alias,
+          hash: null,
+          size: 0,
+          deleted: 1,
+          rev: Number(removed.lastInsertRowid),
+        });
+      }
       const result = this.db
         .prepare(
           "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,?,?,?,?)",
@@ -773,7 +919,11 @@ export class Store {
             row.rev,
             resolution.choice,
           );
-      if (write) this.queue(row, expected);
+      if (write)
+        this.queue(
+          { ...row, ...(pendingFrom ? { pendingFrom } : {}) },
+          expected,
+        );
       else this.setFile(row);
       this.db.exec("COMMIT");
     } catch (e) {

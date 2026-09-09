@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.3.4 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
+**v0.3.5 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -14,7 +14,9 @@ A personal drive for your own machines: complete files on disk, bidirectional sy
 
 Desktop/server sync uses incremental remote changes, changed local paths and periodic reconciliation: 15-second active checks, 60-second idle checks. Mobile resumes durable work on launch/resume and through OS-scheduled background tasks; it is not a continuously running daemon.
 
-Files and directories, including empty nested directories, are synchronized in the current checkout. Directory support requires updated hub and replica clients, including a new mobile binary for safe directory removal; older clients stop with an upgrade message instead of interpreting directories as deleted files. File counts exclude directories.
+Files and directories, including empty nested directories, are synchronized in the current checkout. Safe file/directory replacements and case-only renames require updated hub and replica clients advertising `pathTransitions`; older clients receive an upgrade error. File counts exclude directories.
+
+The September 10 checkout includes synchronization-integrity fixes: pause/deadline persist across daemon restarts; failed folders do not block healthy ones; recovery preserves the archive's exclusion policy; stale proposal retries cannot silently delete recreated files. These changes are verified locally, not deployed by changing source. Full audit closure and remaining qualification are in SPEC.
 
 `.arcaignore` is synchronized and editable. Creating a hub folder can optionally seed it; selection does not. `.DS_Store`, `Thumbs.db` and `desktop.ini` are always excluded by the shared core.
 

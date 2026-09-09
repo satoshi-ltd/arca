@@ -328,6 +328,18 @@ export async function start(home, options = {}) {
         req.headers["x-arca-directories"] !== "1"
       )
         fail("Update this client to synchronize directories", 412);
+      if (
+        !admin &&
+        ["/v1/snapshot", "/v1/changes", "/v1/archive", "/v1/propose"].includes(
+          route,
+        ) &&
+        req.headers["x-arca-path-transitions"] !== "1"
+      )
+        fail(
+          "Update this client to synchronize directories and path changes safely",
+          412,
+        );
+
       if (req.method === "GET" && route === "/v1/catalog") {
         requireHub();
         return send(200, {
@@ -336,6 +348,7 @@ export async function start(home, options = {}) {
           conflictResolution: true,
           blobRanges: true,
           directories: true,
+          pathTransitions: true,
           id: config.id,
           name: config.name,
           ready: s.volumes().length > 0,
@@ -368,11 +381,18 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/changes") {
         requireHub();
         const volume = s.volume(url.searchParams.get("volume")).id;
-        const latest = Number(
+        const committed = Number(
           s.db
             .prepare("SELECT seq FROM sqlite_sequence WHERE name='revisions'")
             .get()?.seq || 0,
         );
+        const pending = s.db
+          .prepare(
+            "SELECT MIN(COALESCE(json_extract(row, '$.pendingFrom'), json_extract(row, '$.rev'))) n FROM pending WHERE volume=?",
+          )
+          .get(volume).n;
+        const latest =
+          pending === null ? committed : Math.min(committed, pending - 1);
         const after = Number(url.searchParams.get("after") || 0);
         const through = Number(url.searchParams.get("through") ?? latest);
         if (
@@ -387,7 +407,7 @@ export async function start(home, options = {}) {
           )
           .all(volume, after, through);
         return send(200, {
-          files,
+          files: files.map((row) => s.syncRow(row)),
           through,
           next: files.length === 500 ? files.at(-1).rev : null,
         });
@@ -579,7 +599,7 @@ export async function start(home, options = {}) {
         const tmp = path.join(s.uploads, `${device.id}-${hash}.part`);
         if (req.method === "GET")
           return send(200, {
-            complete: fs.existsSync(file),
+            complete: fs.existsSync(file) && hashFile(file) === hash,
             offset: fs.existsSync(tmp) ? fs.statSync(tmp).size : 0,
           });
         if (req.method === "PUT") {
@@ -598,7 +618,12 @@ export async function start(home, options = {}) {
           return send(
             200,
             await authorizedWork(() => {
-              if (fs.existsSync(file)) return { complete: true, offset: size };
+              if (
+                fs.existsSync(file) &&
+                fs.statSync(file).size === size &&
+                hashFile(file) === hash
+              )
+                return { complete: true, offset: size };
               const actual = fs.existsSync(tmp) ? fs.statSync(tmp).size : 0;
               if (offset !== actual)
                 fail("Upload offset mismatch; query upload status", 409);
@@ -883,10 +908,10 @@ export async function start(home, options = {}) {
               b.seconds > 86400)
           )
             fail("Invalid pause duration");
-          engine.paused = Boolean(b.paused);
-          if (engine.paused) engine.scanner.interrupt();
-          engine.pauseUntil =
-            engine.paused && b.seconds ? Date.now() + b.seconds * 1000 : null;
+          engine.setPaused(
+            Boolean(b.paused),
+            b.seconds ? Date.now() + b.seconds * 1000 : null,
+          );
           return send(200, engine.status());
         }
         if (route === "/v1/path-check") {
@@ -1259,6 +1284,7 @@ export async function start(home, options = {}) {
   network.mainHost = host;
   await network.start();
   const watchers = new Map();
+  const watcherRetry = new Map();
   const events = new Map();
   const flushEvents = () => {
     if (!events.size) return;
@@ -1294,12 +1320,18 @@ export async function start(home, options = {}) {
       if (!paths.has(folder)) {
         w.close();
         watchers.delete(folder);
+        watcherRetry.delete(folder);
       }
     for (const folder of paths)
-      if (!watchers.has(folder)) {
+      if (
+        !watchers.has(folder) &&
+        Date.now() >= (watcherRetry.get(folder) || 0)
+      ) {
         try {
           const volume = selected.find((v) => v.path === folder);
-          engine.work.mark(volume.id); // Startup/new selections may have missed events.
+          // A failed watcher gets a bounded full-scan fallback, not a hot loop.
+          watcherRetry.set(folder, Date.now() + IDLE_POLL_MS);
+          engine.work.mark(volume.id);
           let ignored = s.ignoreRules(volume);
           const w = fs.watch(
             folder,
@@ -1333,6 +1365,7 @@ export async function start(home, options = {}) {
             schedule(1000);
             w.close();
             watchers.delete(folder);
+            watcherRetry.set(folder, Date.now() + IDLE_POLL_MS);
           });
           watchers.set(folder, w);
         } catch {

@@ -752,3 +752,123 @@ test("shared binary with a non-portable name imports after renaming and syncs by
   );
   assert.deepEqual(fs.readFileSync(source), data);
 });
+
+test("mobile continues healthy folders after another folder fails verification", async (t) => {
+  const f = await fixture(t),
+    s = f.daemon.engine.store;
+  const beta = s.addVolume("Zeta", null, undefined, false);
+  await f.replica.select(f.volume);
+  await f.replica.select(beta);
+  await sync(f);
+  fs.writeFileSync(path.join(f.volume.path, "bad.txt"), "correct");
+  fs.writeFileSync(path.join(beta.path, "good.txt"), "healthy");
+  await f.daemon.engine.cycle();
+  const row = s.current(f.volume.id, "bad.txt");
+  fs.writeFileSync(s.blob(row.hash), "damaged");
+  await f.replica.sync();
+  assert.match(f.replica.error, /verification/);
+  assert.equal(
+    fs.readFileSync(f.files.work(f.replica.scope, beta.id, "good.txt"), "utf8"),
+    "healthy",
+  );
+  assert.equal((await f.store.folder(f.replica.scope, beta.id)).issue, null);
+});
+
+test("mobile replaces stale queued deletion when a local file is recreated", async (t) => {
+  const f = await fixture(t);
+  const r = f.replica;
+  fs.writeFileSync(path.join(f.volume.path, "note"), "initial");
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  const name = f.files.work(r.scope, f.volume.id, "note");
+  fs.unlinkSync(name);
+  await r.scan(await f.store.folder(r.scope, f.volume.id));
+  assert.equal((await f.store.pending(r.scope, f.volume.id)).length, 1);
+  fs.writeFileSync(name, "recreated");
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(path.join(f.volume.path, "note"), "utf8"),
+    "recreated",
+  );
+  assert.equal(fs.readFileSync(name, "utf8"), "recreated");
+});
+
+test("mobile discards a queued deletion even when recreated bytes match the previous revision", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  fs.writeFileSync(path.join(f.volume.path, "note"), "same");
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  const name = f.files.work(r.scope, f.volume.id, "note");
+  fs.unlinkSync(name);
+  await r.scan(await f.store.folder(r.scope, f.volume.id));
+  fs.writeFileSync(name, "same");
+  await sync(f);
+  assert.equal(fs.readFileSync(name, "utf8"), "same");
+  assert.equal(f.daemon.engine.store.current(f.volume.id, "note").deleted, 0);
+});
+
+for (const origin of ["hub", "mobile"])
+  test(`mobile file/directory transitions and case rename (${origin})`, async (t) => {
+    const f = await fixture(t),
+      r = f.replica;
+    fs.writeFileSync(path.join(f.volume.path, "item"), "file");
+    await f.daemon.engine.cycle();
+    await r.select(f.volume);
+    await sync(f);
+    const root =
+      origin === "hub" ? f.volume.path : f.files.folder(r.scope, f.volume.id);
+    fs.unlinkSync(path.join(root, "item"));
+    fs.mkdirSync(path.join(root, "item"));
+    fs.writeFileSync(path.join(root, "item", "child"), "nested");
+    if (origin === "hub") await f.daemon.engine.cycle();
+    await sync(f);
+    assert.equal(
+      fs.readFileSync(path.join(f.volume.path, "item", "child"), "utf8"),
+      "nested",
+    );
+    assert.equal(
+      fs.readFileSync(f.files.work(r.scope, f.volume.id, "item/child"), "utf8"),
+      "nested",
+    );
+    fs.rmSync(path.join(root, "item"), { recursive: true });
+    fs.writeFileSync(path.join(root, "item"), "last");
+    if (origin === "hub") await f.daemon.engine.cycle();
+    await sync(f);
+    assert.equal(
+      fs.readFileSync(f.files.work(r.scope, f.volume.id, "item"), "utf8"),
+      "last",
+    );
+    fs.renameSync(path.join(root, "item"), path.join(root, "Item"));
+    if (origin === "hub") await f.daemon.engine.cycle();
+    await sync(f);
+    assert.ok(
+      fs.readdirSync(f.files.folder(r.scope, f.volume.id)).includes("Item"),
+    );
+    assert.ok(fs.readdirSync(f.volume.path).includes("Item"));
+  });
+
+test("mobile receives removed ignore policy before scanning newly included content", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  await r.select(f.volume);
+  await sync(f);
+  fs.writeFileSync(path.join(f.volume.path, ".arcaignore"), "hidden/\n");
+  await f.daemon.engine.cycle();
+  await sync(f);
+  fs.mkdirSync(path.join(f.volume.path, "hidden"));
+  fs.writeFileSync(path.join(f.volume.path, "hidden", "a"), "included");
+  fs.unlinkSync(path.join(f.volume.path, ".arcaignore"));
+  await f.daemon.engine.cycle();
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(f.files.work(r.scope, f.volume.id, "hidden/a"), "utf8"),
+    "included",
+  );
+  assert.equal(
+    fs.existsSync(f.files.work(r.scope, f.volume.id, ".arcaignore")),
+    false,
+  );
+});

@@ -59,7 +59,9 @@ export const files = {
     new File(from).copy(new File(to));
   },
   async move(from, to) {
-    new File(from).move(new File(to));
+    if (Paths.info(from).isDirectory)
+      new Directory(from).move(new Directory(to));
+    else new File(from).move(new File(to));
   },
   // Callers journal replacements before entering this operation.
   async replace(from, to) {

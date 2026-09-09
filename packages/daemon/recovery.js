@@ -25,7 +25,8 @@ export function recoverBackup(sourceHome, targetHome) {
         fail("Backup object missing or corrupt");
     init(targetHome, { role: "hub", name: "Recovered Arca" });
     target = new Store(targetHome);
-    for (const v of source.volumes()) target.addVolume(v.name, null, v.id);
+    for (const v of source.volumes())
+      target.addVolume(v.name, null, v.id, false);
     for (const row of history) {
       if (row.hash && !fs.existsSync(target.blob(row.hash)))
         fs.copyFileSync(source.blob(row.hash), target.blob(row.hash));

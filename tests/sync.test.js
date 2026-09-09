@@ -26,6 +26,7 @@ async function setup(t, options = { timer: false }) {
         headers: {
           Authorization: `Bearer ${credential}`,
           "X-Arca-Directories": "1",
+          "X-Arca-Path-Transitions": "1",
           "Content-Type": "application/json",
         },
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),

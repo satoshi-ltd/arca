@@ -56,6 +56,7 @@ export function createClient({
       headers: {
         ...options.headers,
         "X-Arca-Directories": "1",
+        "X-Arca-Path-Transitions": "1",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
