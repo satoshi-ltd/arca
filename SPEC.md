@@ -1,6 +1,6 @@
 # Arca — specification and roadmap
 
-Updated 2026-09-09. **v0.3.3 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+Updated 2026-09-09. **v0.3.4 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AGENTS.md) for contributor instructions. This document owns implementation status, remaining work, technical contracts, operations and the shared design system. Original visual references are not competing specifications.
 
@@ -1170,9 +1170,9 @@ Implemented locally: one responsive English landing page in `site/`, using the A
 
 The implementation follows `~/git/alf`'s static build and Cloudflare Pages direct upload. GitHub Actions reads the highest published versioned release (including alpha prereleases) and the builder uses the actual browser_download_url of each matched asset. Desktop has three builds: macOS, Windows and Linux. The Linux build produces AppImage and deb; the landing exposes one Linux CTA (AppImage), with deb remaining available in the GitHub release. No R2 bucket or download mirror is used. A missing release/desktop artifact, mismatched asset URL or missing deployment configuration stops publication. GitHub visibility still determines who can download; anonymous access was not verified (lookup returned 404), so public accessibility must be checked before launch rather than inferred. This updates the website, not installed apps or Casa.
 
-Required GitHub secrets: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (Pages Edit), and `EXPO_TOKEN` for Android builds. Required variable: `CLOUDFLARE_PAGES_PROJECT_NAME`. The canonical origin is https://arca.satoshi-ltd.com. Optional variables: `APP_STORE_URL`, `PLAY_STORE_URL`. Create a separate Arca Pages project and attach the confirmed site domain. Disable Cloudflare Git auto-deploys so Pages cannot race the release workflow. Do not replace Alpi's Pages project or DNS: the confirmed Arca domain is arca.satoshi-ltd.com.
+Required GitHub secrets: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (Pages Edit). Required variable: `CLOUDFLARE_PAGES_PROJECT_NAME`. The canonical origin is https://arca.satoshi-ltd.com. Optional variables: `APP_STORE_URL`, `PLAY_STORE_URL`. Create a separate Arca Pages project and attach the confirmed site domain. Disable Cloudflare Git auto-deploys so Pages cannot race the release workflow. Do not replace Alpi's Pages project or DNS: the confirmed Arca domain is arca.satoshi-ltd.com.
 
-The Arca release workflow now includes mobile dependency installation, Android/iOS bundle validation, and a production Android APK build through EAS. It waits for FINISHED, validates the app version and archive, and includes the APK in the same release/checksum manifest. EAS project/signing credentials must already be configured; missing EXPO_TOKEN fails publication rather than silently omitting mobile. Native build numbers remain explicit in app.json and must increase with release preparation. Store submission, store account setup/review and physical-device qualification are still separate; there are no store URLs or automatic store submissions configured yet.
+The Arca release workflow builds desktop installers and Docker only. Android remains a manual EAS build through the mobile package commands; Expo credentials and APK generation are not prerequisites for desktop/server publication. The automatic Android job introduced in v0.3.2 was removed following the user's September 9 correction. Native build numbers remain explicit in app.json and must increase with release preparation. Store submission and physical-device qualification remain separate. A standalone APK link on the site is enabled only when the selected release actually contains that asset.
 
 The website builder requires Node 24 and no build dependencies. CI installs Wrangler 4 for uploads. Publication runs after the successful Arca workflow or manual dispatch, using published release metadata, never an unreleased package version. Local preview (`npm run site:preview`) intentionally disables downloads. Cloudflare resources and live deployment have not yet been verified.
 
@@ -1200,7 +1200,7 @@ Download-card notes use the full card content width, wrapping naturally on narro
 
 September 9 CI correction: the v0.3.1 macOS log failed the conflict-restore DOM test with an unhandled rejection after JSDOM teardown. The test observed dialog closure and restored bytes before the subsequent refresh/action finalization completed. It now also waits for body aria-busy=false before teardown. The full local CI test command passes (169 passed, one platform skip); GitHub runner verification remains pending. No production error guard or timing sleep was added.
 
-Release v0.3.2: user approved the single commit and push, including the first landing release, and confirmed arca.satoshi-ltd.com as its domain. Mobile build numbers advance to 4. Publication requires Cloudflare account/token/project configuration and EXPO_TOKEN in GitHub; actual deployment remains unverified until the workflows complete.
+Release v0.3.2: user approved the single commit and push, including the first landing release, and confirmed arca.satoshi-ltd.com as its domain. Mobile build numbers advance to 4. At that release, publication required Cloudflare account/token/project configuration and EXPO_TOKEN in GitHub; the automatic Android requirement was subsequently removed as described below.
 
 ### Windows CI incoming-share fixtures — September 9
 
@@ -1219,3 +1219,15 @@ Validation: four site tests pass, including an isolated CLI build from another w
 The user authorized release preparation, commit and push to main. This release includes the Windows incoming-share test fixture corrections and the static-site release metadata path fix described above. Desktop, mobile, native modules, runtime reporting and package/lockfile versions are aligned at 0.3.3; Android versionCode, iOS buildNumber and the Android native module versionCode advance to 5. The existing workflow owns artifact builds and publication after the push; Casa and installed clients are not updated by this operation.
 
 Release validation: the full local CI test command passes (170 passed, one platform skip); Android/iOS JavaScript exports, desktop frontend build, static-site preview and version agreement pass. Hosted cross-platform tests, native artifact builds and publication remain pending the release workflow.
+
+### Release pipeline scope correction — September 9
+
+Run 34324732885 failed its Android job at Verify Expo credentials with Missing EXPO_TOKEN for Android release, before dependency installation or compilation. The user clarified that Android must not be a job in this pipeline. Removed the Android/EAS job, its publish dependency, the APK artifact download, the release-note APK claim and the unused APK collector. Desktop macOS/Windows/Linux and Docker builds remain required for publication. Manual mobile EAS commands and optional actual-release APK links remain available. This correction is included in v0.3.4; rerunning the previous commit would still use its old workflow.
+
+The user confirmed Expo builds are manual for now. Local validation passes: workflow YAML parses, publication requires prepare/desktop/docker, all three desktop platform entries remain present, version agreement passes, and all four site tests pass. Hosted execution of this correction remains pending.
+
+### Release v0.3.4 — September 9
+
+Version 0.3.4 removes automatic Expo/Android builds from the release pipeline and restores desktop/Docker-only publication. All package and lockfile versions, Tauri manifests, native mobile module versions, runtime reports and displayed versions are aligned at 0.3.4. Mobile Android versionCode and iOS buildNumber advance to 6, including the Android module versionCode. EAS builds remain user-managed. The user authorized this version bump and commit; hosted publication and installed-client deployment are separate.
+
+Validation for v0.3.4: full local CI test command passes (170 passed, one platform skip); version/build-number agreement, workflow YAML and desktop/Docker dependency checks, desktop frontend build and site preview pass. No Expo native build, pilot deployment or hosted publication was performed during this preparation.

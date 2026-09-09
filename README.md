@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.3.3 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
+**v0.3.4 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -95,7 +95,7 @@ A deployment invalidates web sessions; reload and sign in again if requested. Pr
 
 ## Release and remaining work
 
-The single **Arca** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb, an EAS standalone Android APK and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub/GHCR versioned images plus `latest`. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` is alpha, not a stable-release guarantee.
+The single **Arca** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub/GHCR versioned images plus `latest`. Android builds remain manual through the EAS commands above and do not block this workflow. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` is alpha, not a stable-release guarantee.
 
 macOS is ad-hoc signed and Windows unsigned by default; Developer ID signing/notarization is optional. No automatic updater, store submission or pilot deployment is part of publication. Detailed registry/signing setup belongs in [release operations](SPEC.md#release-setup-and-publication).
 

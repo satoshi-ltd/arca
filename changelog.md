@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.4 — 2026-09-09
+
+- Remove automatic Expo/Android builds and the required APK artifact from release publication. Keep macOS, Windows, Linux and Docker builds; mobile EAS builds remain manual.
+- Remove the unused APK collector and correct release notes and documentation so publication no longer requires Expo credentials.
+- Align desktop, mobile, native modules, runtime versions and lockfiles at 0.3.4; advance mobile native build numbers to 6.
+
 ## 0.3.3 — 2026-09-09
 
 - Fix Windows incoming-share integration fixtures by converting file URLs with Node URL helpers; cover source names containing spaces, `#` and `%`.

@@ -260,41 +260,9 @@ jobs:
           name: docker-image
           path: ${{ runner.temp }}/arca-image.tar
           retention-days: 14
-  android:
-    needs: prepare
-    if: needs.prepare.outputs.build == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24.14.0"
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
-      - name: Verify Expo credentials
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: test -n "$EXPO_TOKEN" || { echo '::error::Missing EXPO_TOKEN for Android release'; exit 1; }
-      - run: npm ci --prefix apps/mobile
-      - run: npm run check --prefix apps/mobile
-      - uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      - name: Build standalone Android APK
-        working-directory: apps/mobile
-        run: eas build --platform android --profile production --non-interactive --wait --json > ../../android-build.json
-      - run: node scripts/collect-mobile-release.js android-build.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android-release
-          path: release-assets/*.apk
-          if-no-files-found: error
-          retention-days: 14
   publish:
     if: needs.prepare.outputs.publish == 'true'
-    needs: [prepare, desktop, docker, android]
+    needs: [prepare, desktop, docker]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -305,10 +273,6 @@ jobs:
           pattern: desktop-*
           path: assets
           merge-multiple: true
-      - uses: actions/download-artifact@v4
-        with:
-          name: android-release
-          path: assets
       - uses: actions/download-artifact@v4
         with:
           name: docker-image
@@ -335,5 +299,5 @@ jobs:
           (cd assets && sha256sum * > SHA256SUMS)
           macos_status="ad-hoc signed, not notarized (macOS may block downloaded apps)"
           if [[ "$SIGN" == true ]]; then macos_status="Developer ID signed and notarized"; fi
-          gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Arca $TAG alpha" --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned; Android standalone APK. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION and $registry:$VERSION (amd64/arm64; also tagged latest). No automatic updates or pilot deployment."
+          gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Arca $TAG alpha" --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION and $registry:$VERSION (amd64/arm64; also tagged latest). No automatic updates or pilot deployment."
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
