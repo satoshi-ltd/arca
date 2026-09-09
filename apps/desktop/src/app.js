@@ -232,7 +232,7 @@ let status,
   catalogHubName = "",
   historyVolume = "",
   historyPath = null,
-  historyFilter = "all",
+  historyFilter = "revisions",
   fileOriginFolder = null,
   folderTab = "files",
   folderPrefix = "",
@@ -254,7 +254,7 @@ function routeURL() {
     const query = new URLSearchParams();
     if (historyVolume) query.set("volume", historyVolume);
     if (historyPath) query.set("path", historyPath);
-    if (historyFilter !== "all") query.set("filter", historyFilter);
+    if (historyFilter !== "revisions") query.set("filter", historyFilter);
     return "#/history" + (query.size ? "?" + query : "");
   }
   return view === "devices" ? "#/machines" : "#/settings";
@@ -278,9 +278,11 @@ function readRoute() {
   const params = new URLSearchParams(query);
   historyVolume = params.get("volume") || "";
   historyPath = params.get("path") || null;
-  historyFilter = ["all", "conflicts", "deleted"].includes(params.get("filter"))
+  historyFilter = ["revisions", "conflicts", "deleted"].includes(
+    params.get("filter"),
+  )
     ? params.get("filter")
-    : "all";
+    : "revisions";
 }
 readRoute();
 window.addEventListener("hashchange", () => {
@@ -512,7 +514,7 @@ function updateShell() {
   $("#last-sync").textContent =
     status.role !== "hub" && !status.hub
       ? "Local files are kept on this machine"
-      : `${status.role === "hub" ? "This hub" : "Hub"} · ${status.lastSync ? `verified ${relative(status.lastSync)}` : "not yet verified"}`;
+      : `${status.role === "hub" ? "This hub" : "Hub"}${status.lastSync ? ` · verified ${relative(status.lastSync)}` : ""}`;
   let backupText =
     status.role === "hub"
       ? "Hub backup"
@@ -1592,7 +1594,7 @@ async function renderSettings() {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.3.1 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.3.2 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
@@ -2224,7 +2226,7 @@ async function handle(name, id, control) {
     view = "history";
     historyVolume = id;
     historyPath = null;
-    historyFilter = name === "folder-conflicts" ? "conflicts" : "all";
+    historyFilter = name === "folder-conflicts" ? "conflicts" : "revisions";
     await render();
     updateShell();
     return;
@@ -2236,7 +2238,7 @@ async function handle(name, id, control) {
     return;
   }
   if (name === "history-filter") {
-    historyFilter = historyFilter === id ? "all" : id;
+    historyFilter = historyFilter === id ? "revisions" : id;
     historyPath = null;
     await render();
     return;
@@ -2354,7 +2356,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.3.1",
+          version: "0.3.2",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,

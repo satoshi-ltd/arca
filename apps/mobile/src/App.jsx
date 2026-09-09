@@ -144,7 +144,7 @@ export default function App() {
     [historyLoading, setHistoryLoading] = useState(false),
     [historyError, setHistoryError] = useState(""),
     [historyVolume, setHistoryVolume] = useState(""),
-    [historyFilter, setHistoryFilter] = useState("all"),
+    [historyFilter, setHistoryFilter] = useState("revisions"),
     [dismissedError, setDismissedError] = useState("");
   const historyRequest = useRef(0);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -650,7 +650,7 @@ export default function App() {
         ]}
         value={historyFilter}
         onChange={(value) =>
-          setHistoryFilter(value === historyFilter ? "all" : value)
+          setHistoryFilter(value === historyFilter ? "revisions" : value)
         }
       />
     </View>
@@ -916,7 +916,7 @@ export default function App() {
                                   label="All history"
                                   onPress={() => {
                                     setHistoryVolume(folder.id);
-                                    setHistoryFilter("all");
+                                    setHistoryFilter("revisions");
                                     setFolder(null);
                                     setView("History");
                                   }}
@@ -1033,9 +1033,11 @@ export default function App() {
                               <Text style={s.eyebrow}>LOCAL COPY</Text>
                               <Card>
                                 <Text style={s.text}>
-                                  {currentFolder?.completed
-                                    ? "Files are stored on this device and available offline."
-                                    : "The local copy is incomplete. Keep Arca open to finish syncing."}
+                                  {currentFolder?.issue
+                                    ? "Synchronization needs attention. Review the error to continue."
+                                    : currentFolder?.completed
+                                      ? "Files are stored on this device and available offline."
+                                      : "The local copy is incomplete. Keep Arca open to finish syncing."}
                                 </Text>
                               </Card>
                               <Text style={s.eyebrow}>COPIES</Text>
@@ -1110,7 +1112,7 @@ export default function App() {
                               <FolderRow
                                 key={f.id}
                                 name={f.name}
-                                description={`${f.files} files · ${bytes(f.bytes)} local${f.completed ? "" : " · Not yet verified"}`}
+                                description={`${f.files} files · ${bytes(f.bytes)} local`}
                                 status={
                                   status.paused
                                     ? "Paused"
@@ -1401,7 +1403,7 @@ export default function App() {
                         !history.versions.length && (
                           <Card
                             title={
-                              historyFilter !== "all" || historyVolume
+                              historyFilter !== "revisions" || historyVolume
                                 ? "No matching revisions"
                                 : "No history yet"
                             }
@@ -1804,7 +1806,7 @@ export default function App() {
                         disabled={locked}
                         onPress={() => {
                           setHistoryVolume(folder.id);
-                          setHistoryFilter("all");
+                          setHistoryFilter("revisions");
                           setSheet(null);
                           setView("History");
                         }}

@@ -1487,7 +1487,10 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   const diagnostics = w.document.querySelector('[data-action="diagnostics"]');
   diagnostics.click();
   await until(() => diagnostics.textContent.includes("Copied"));
-  assert.equal(JSON.parse(copied.at(-1)).version, "0.3.1");
+  assert.equal(
+    JSON.parse(copied.at(-1)).version,
+    JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version,
+  );
   await new Promise((resolve) => setTimeout(resolve, 2100));
   assert.ok(diagnostics.textContent.includes("Copy diagnostics"));
 });
@@ -1730,6 +1733,7 @@ test("conflict file detail opens a guarded version choice and restores the selec
   await until(
     () =>
       !q("#dialog[open]") &&
+      w.document.body.getAttribute("aria-busy") === "false" &&
       fs.readFileSync(path.join(volume.path, "note.txt"), "utf8") ===
         "alternative",
   );

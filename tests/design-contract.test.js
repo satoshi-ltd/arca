@@ -61,7 +61,9 @@ test("design APIs: bounded filtered history, permissions, session revocation and
   const next = await (
     await request("/v1/activity?limit=2&before=" + page.next)
   ).json();
-  assert.equal(next.versions.length, 2);
+  assert.equal(next.versions.length, 1);
+  assert.equal(next.next, null);
+  assert.ok([...page.versions, ...next.versions].every((row) => !row.deleted));
   assert.ok(next.versions[0].rev < page.next);
   const deleted = await (await request("/v1/activity?filter=deleted")).json();
   assert.equal(deleted.versions.length, 1);

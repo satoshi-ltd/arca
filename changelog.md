@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 — 2026-09-09
+
+- Add the first static Arca landing page, with responsive product illustrations, accessible CSS motion, macOS-first desktop downloads, mobile store destinations/direct APK and Docker setup.
+- Generate download links and release notes from published GitHub assets; add automatic Cloudflare Pages publication after successful releases and an EAS Android release artifact. Store URLs currently use user-requested generic destinations until configured.
+- Show ordinary revisions by default in desktop/mobile History, with separate conflicts and deleted filters. Simplify unverified-state copy and clarify mobile synchronization errors.
+- Fix a macOS CI test teardown race by waiting for conflict restoration and its UI refresh to finish.
+- Align versions at 0.3.2 and mobile native build numbers at 4. Cloudflare deployment and the new EAS release workflow still require live qualification.
+
 ## 0.3.1 — 2026-09-09
 
 ### Synchronization and file operations

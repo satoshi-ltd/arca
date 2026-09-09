@@ -1,0 +1,47 @@
+name: publish-site
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Arca]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: arca-site
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SITE_URL: https://arca.satoshi-ltd.com
+      APP_STORE_URL: ${{ vars.APP_STORE_URL }}
+      PLAY_STORE_URL: ${{ vars.PLAY_STORE_URL }}
+      CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+      - name: Verify deployment configuration
+        run: |
+          for key in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN SITE_URL CLOUDFLARE_PAGES_PROJECT_NAME; do
+            test -n "${!key}" || { echo "::error::Missing $key"; exit 1; }
+          done
+      - run: npm install --no-save --package-lock=false --ignore-scripts wrangler@4
+      - run: node --test tests/site.test.js
+      - name: Read published GitHub release
+        run: node site/scripts/read-release.mjs
+      - name: Build static page from published assets
+        env:
+          RELEASE_JSON: site/release.json
+        run: npm run site:build
+      - name: Deploy to Cloudflare Pages
+        run: npx --no-install wrangler pages deploy site/dist --project-name="$CLOUDFLARE_PAGES_PROJECT_NAME" --branch=main

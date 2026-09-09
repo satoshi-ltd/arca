@@ -21,3 +21,5 @@ apps/mobile/modules/**/android/.gradle/
 
 # Original visual references (used when reviewing design parity).
 /design_handoff_arca_v0.1/
+
+/site/release.json

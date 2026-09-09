@@ -1981,3 +1981,78 @@ test(
     assert.equal(read(replica, volume, "action.txt"), "recoverable");
   },
 );
+
+test("activity separates revisions, pending conflicts and deletions before pagination", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.md", "first");
+  await hub.sync();
+  write(hub, volume, "note.md", "second");
+  write(hub, volume, "note.md.conflict-test", "conflict");
+  write(hub, volume, "removed.md", "retained");
+  await hub.sync();
+  const s = hub.engine.store;
+  await hub.api("/v1/delete-file", {
+    volume: volume.id,
+    path: "removed.md",
+    rev: s.current(volume.id, "removed.md").rev,
+  });
+  const replica = await connect("history-filters");
+  await replica.sync();
+  const expected = s.db
+    .prepare(
+      "SELECT rev FROM revisions WHERE volume=? AND directory=0 AND deleted=0 AND instr(path,'.conflict-')=0 ORDER BY rev DESC",
+    )
+    .all(volume.id)
+    .map((r) => r.rev);
+  for (const node of [hub, replica]) {
+    const seen = [];
+    let before = "";
+    do {
+      const page = await node.api(
+        `/v1/activity?volume=${volume.id}&limit=1${before ? `&before=${before}` : ""}`,
+      );
+      seen.push(...page.versions.map((r) => r.rev));
+      before = page.next;
+    } while (before);
+    assert.deepEqual(seen, expected);
+    const conflicts = await node.api(
+      `/v1/activity?volume=${volume.id}&filter=conflicts`,
+    );
+    assert.deepEqual(
+      conflicts.versions.map((r) => r.path),
+      ["note.md.conflict-test"],
+    );
+    const deleted = await node.api(
+      `/v1/activity?volume=${volume.id}&filter=deleted`,
+    );
+    assert.deepEqual(
+      deleted.versions.map((r) => r.path),
+      ["removed.md"],
+    );
+    const history = await node.api(
+      `/v1/history?volume=${volume.id}&path=removed.md`,
+    );
+    assert.deepEqual(
+      history.versions.map((r) => r.deleted),
+      [1, 0],
+    );
+  }
+  const conflict = s.current(volume.id, "note.md.conflict-test");
+  const original = s.current(volume.id, "note.md");
+  await hub.api("/v1/conflict-choice", {
+    volume: volume.id,
+    path: conflict.path,
+    choice: "original",
+    originalRev: original.rev,
+    conflictRev: conflict.rev,
+  });
+  assert.deepEqual(
+    (await hub.api(`/v1/activity?volume=${volume.id}&filter=conflicts`))
+      .versions,
+    [],
+  );
+  assert.ok(
+    (await hub.api(`/v1/history?volume=${volume.id}&path=${conflict.path}`))
+      .versions.length,
+  );
+});

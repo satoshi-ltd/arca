@@ -478,20 +478,20 @@ export async function start(home, options = {}) {
           url.searchParams.get("before") || Number.MAX_SAFE_INTEGER,
         );
         const volume = url.searchParams.get("volume");
-        const filter = url.searchParams.get("filter") || "all";
+        const filter = url.searchParams.get("filter") || "revisions";
         if (
           !Number.isSafeInteger(limit) ||
           limit < 1 ||
           limit > 100 ||
           !Number.isSafeInteger(before) ||
           before < 1 ||
-          !["all", "conflicts", "deleted"].includes(filter)
+          !["revisions", "conflicts", "deleted"].includes(filter)
         )
           fail("Invalid activity query");
         if (volume) s.volume(volume);
         const rows = s.db
           .prepare(
-            `SELECT r.*, v.name AS folder FROM revisions r JOIN volumes v ON v.id=r.volume WHERE r.directory=0 AND r.rev<? ${volume ? "AND r.volume=?" : ""} ${filter === "deleted" ? "AND r.deleted=1" : filter === "conflicts" ? "AND instr(r.path,'.conflict-')>0 AND r.deleted=0 AND NOT EXISTS (SELECT 1 FROM conflict_resolutions c WHERE c.volume=r.volume AND c.path=r.path AND c.conflict_rev>=r.rev) AND EXISTS (SELECT 1 FROM files f WHERE f.volume=r.volume AND f.path=r.path AND f.deleted=0)" : ""} ORDER BY r.rev DESC LIMIT ?`,
+            `SELECT r.*, v.name AS folder FROM revisions r JOIN volumes v ON v.id=r.volume WHERE r.directory=0 AND r.rev<? ${volume ? "AND r.volume=?" : ""} ${filter === "deleted" ? "AND r.deleted=1" : filter === "conflicts" ? "AND instr(r.path,'.conflict-')>0 AND r.deleted=0 AND NOT EXISTS (SELECT 1 FROM conflict_resolutions c WHERE c.volume=r.volume AND c.path=r.path AND c.conflict_rev>=r.rev) AND EXISTS (SELECT 1 FROM files f WHERE f.volume=r.volume AND f.path=r.path AND f.deleted=0)" : "AND r.deleted=0 AND instr(r.path,'.conflict-')=0"} ORDER BY r.rev DESC LIMIT ?`,
           )
           .all(...[before, ...(volume ? [volume] : []), limit + 1]);
         return send(200, {

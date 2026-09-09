@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f6ef" />
+    <title>Arca — Your files. Your machines.</title>
+    <meta
+      name="description"
+      content="A personal drive on your own machines. Sync complete folders, work offline and restore earlier versions with a hub you control."
+    />
+    {{CANONICAL}}
+    <link rel="icon" href="assets/arca-icon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="assets/instrument-sans.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="masthead wrap">
+      <a class="brand" href="#" aria-label="Arca home"
+        ><img src="assets/arca-icon.svg" width="40" height="40" alt="" />arca</a
+      >
+      <span class="eyebrow release"
+        ><span class="dot"></span> {{VERSION}} · Early access</span
+      >
+    </header>
+    {{PREVIEW_NOTICE}}
+    <main>
+      <section class="hero wrap">
+        <div class="hero-copy">
+          <p class="eyebrow">Your personal drive, on your own machines.</p>
+          <h1>Many devices.<br /><em>One space.</em></h1>
+          <p class="intro">
+            Your laptop, tablet and phone each have a place in your day. Arca
+            keeps the folders you choose in sync across them, with complete
+            local copies and a hub you run yourself.
+          </p>
+          <div class="hero-download">
+            {{MAC_DOWNLOAD}}<a class="setup-link" href="#setup"
+              >How to set up your hub <span aria-hidden="true">→</span></a
+            >
+          </div>
+          <p class="fine">
+            Apple Silicon · macOS<br />Your storage. No cloud storage account
+            required.
+          </p>
+        </div>
+        <div
+          class="product-scene"
+          aria-label="Illustration of a folder synchronized between your devices"
+        >
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="scene-label eyebrow">Your devices, working together</div>
+          <div class="device-note">
+            <span class="device-icon">⌂</span>
+            <div>Home server<small>Your hub</small></div>
+            <span class="dot"></span>
+          </div>
+          <div class="preview-window">
+            <div class="window-bar">
+              <span class="window-dots">● ● ●</span><span>arca</span
+              ><span>↗</span>
+            </div>
+            <div class="preview-body">
+              <div class="preview-heading">
+                <span class="folder-symbol"></span>
+                <div>
+                  <strong>Everyday</strong
+                  ><small>All the things worth keeping.</small>
+                </div>
+                <span class="status">✓ Up to date</span>
+              </div>
+              <div class="breadcrumb">Everyday <span>›</span> Files</div>
+              <div class="file-row">
+                <span class="folder-symbol small"></span
+                ><strong>Projects</strong><span>12 files</span><b>›</b>
+              </div>
+              <div class="file-row">
+                <span class="folder-symbol small"></span
+                ><strong>Documents</strong><span>28 files</span><b>›</b>
+              </div>
+              <div class="file-row">
+                <span class="folder-symbol small"></span
+                ><strong>Adventures</strong><span>16 files</span><b>›</b>
+              </div>
+              <div class="preview-footer">
+                <span class="dot"></span> Complete folders on your laptop.
+              </div>
+            </div>
+          </div>
+          <div class="phone-note">
+            <span class="phone-icon"></span>
+            <div>
+              Phone &amp; tablet<small>Your selected folders, offline</small>
+            </div>
+            <span class="check">✓</span>
+          </div>
+          <p class="scene-caption">Choose what belongs on each device.</p>
+        </div>
+      </section>
+      <div class="principles wrap">
+        <span>Complete local copies</span><span>Sync in both directions</span
+        ><span>Restore earlier versions</span><span>A hub you control</span>
+      </div>
+      <section class="section wrap">
+        <div class="section-heading">
+          <p class="eyebrow">01 / One person. More than one device.</p>
+          <h2>Move between devices.<br />Keep your files with you.</h2>
+          <p>
+            Work on your laptop. Take documents on your tablet. Save a file from
+            your phone. Your shared folders connect those moments without
+            sending yourself another attachment.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <span class="feature-number">↔</span>
+            <h3>Edit here. Pick up there.</h3>
+            <p>
+              Edit a document on your laptop or import a file from your phone.
+              Changes travel through your hub to the other devices that keep
+              that folder. Each device chooses its own folders.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number">↓</span>
+            <h3>Offline is a normal day.</h3>
+            <p>
+              Once a folder has finished syncing, its files are on your device.
+              Open them without a connection. Offline edits wait until Arca can
+              reach your hub and sync again.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number">↶</span>
+            <h3>A way back.</h3>
+            <p>
+              Browse retained revisions and restore an earlier version. When
+              edits conflict, Arca keeps both versions for you to review. Your
+              hub holds the history.
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="ownership wrap">
+        <div>
+          <p class="eyebrow">02 / Keep the storage in your hands</p>
+          <h2>Your files need a home.<br />You can provide it.</h2>
+        </div>
+        <div class="ownership-copy">
+          <p>
+            Keeping devices in sync doesn’t have to mean putting your files in a
+            provider’s storage account. With Arca, you supply the storage,
+            choose the devices and decide which folders each one keeps.
+          </p>
+          <p>
+            Your capacity comes from your own disks. Your files remain ordinary
+            files. Arca needs no external account and runs without a public
+            relay or telemetry.
+          </p>
+          <p class="ownership-tradeoff">
+            You also run the hub and look after its storage and backups. Devices
+            need to reach it to exchange changes; completed local copies remain
+            usable while it’s offline.
+          </p>
+        </div>
+      </section>
+      <section class="how-section" id="setup">
+        <div class="wrap how-layout">
+          <div>
+            <p class="eyebrow">03 / Bring your devices together</p>
+            <h2>A home for your files.<br />A copy where you need it.</h2>
+            <p class="intro">
+              One computer or server is your hub: it keeps your shared folders
+              and their history. An always-on machine lets your devices sync
+              without waiting for your laptop to wake up.
+            </p>
+            <figure class="network">
+              <svg
+                class="network-diagram"
+                viewBox="0 0 400 355"
+                role="img"
+                aria-labelledby="network-title network-description"
+              >
+                <title id="network-title">
+                  Your hub, at the heart of your devices
+                </title>
+                <desc id="network-description">
+                  A laptop, tablet and phone surround your hub. Each exchanges
+                  changes with the hub in both directions. The hub keeps shared
+                  folders and history.
+                </desc>
+                <circle class="network-orbit" cx="200" cy="215" r="112" />
+                <circle class="network-orbit network-orbit-outer" cx="200" cy="215" r="150" />
+                <!-- Replica centers share a 170-unit radius, at -90, 30 and 150 degrees. -->
+                <g class="network-device" transform="translate(200 45)">
+                  <rect x="-48" y="-38" width="96" height="76" rx="14" />
+                  <g class="network-device-icon">
+                    <rect x="-17" y="-23" width="34" height="23" rx="3" />
+                    <path d="M-22 5 H22 M-7 5 V1 M7 5 V1" />
+                  </g>
+                  <text x="0" y="25">Laptop</text>
+                </g>
+                <g class="network-device" transform="translate(347.224 300)">
+                  <rect x="-48" y="-38" width="96" height="76" rx="14" />
+                  <g class="network-device-icon">
+                    <rect x="-13" y="-27" width="26" height="34" rx="4" />
+                    <path d="M-3 2 H3" />
+                  </g>
+                  <text x="0" y="25">Tablet</text>
+                </g>
+                <g class="network-device" transform="translate(52.776 300)">
+                  <rect x="-48" y="-38" width="96" height="76" rx="14" />
+                  <g class="network-device-icon">
+                    <rect x="-10" y="-27" width="20" height="34" rx="4" />
+                    <path d="M-3 2 H3" />
+                  </g>
+                  <text x="0" y="25">Phone</text>
+                </g>
+                <g class="network-hub" transform="translate(200 215)">
+                  <rect x="-62" y="-50" width="124" height="100" rx="18" />
+                  <image
+                    href="assets/arca-icon.svg"
+                    x="-17"
+                    y="-38"
+                    width="34"
+                    height="34"
+                  />
+                  <text class="network-hub-title" x="0" y="17">Hub</text>
+                  <text class="network-hub-caption" x="0" y="37">
+                    Folders + history
+                  </text>
+                </g>
+              </svg>
+              <figcaption>Your devices. Connected through your hub.</figcaption>
+            </figure>
+          </div>
+          <ol class="steps">
+            <li>
+              <span>01</span>
+              <div>
+                <h3>Choose your hub.</h3>
+                <p>
+                  Run Arca on your computer or a server with Docker. Use the web
+                  app to manage the server and choose the folders to share.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span>02</span>
+              <div>
+                <h3>Pair your devices.</h3>
+                <p>
+                  Connect with a single-use pairing code. Use your local
+                  network, or your own private network such as Tailscale when
+                  you’re away.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span>03</span>
+              <div>
+                <h3>Make room for what matters.</h3>
+                <p>
+                  Select whole folders on each device. Open them in Finder, edit
+                  in your favorite app, or share a file into Arca from your
+                  phone.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+      <section class="section wrap download-section">
+        <div class="section-heading">
+          <p class="eyebrow">04 / Start with the devices you own</p>
+          <h2>A home for your files.<br />Room for your devices.</h2>
+          <p>
+            Get the Mac app, set up your hub, and connect the devices you want
+            to keep in sync.
+          </p>
+        </div>
+        <div class="download-grid">
+          <article class="download-card mac-card">
+            <div class="card-top">
+              <span class="eyebrow">Desktop</span
+              ><span class="badge">Start here</span>
+            </div>
+            <h3>Arca for desktop</h3>
+            <p>Your folders in Finder, with sync and history close at hand.</p>
+            {{MAC_DOWNLOAD}}<small>Apple Silicon · Version {{VERSION}}</small>
+            <div class="download-alternatives">
+              <span class="eyebrow">Also for your desktop</span>
+              <div class="download-alternatives-list">
+                {{WINDOWS_DOWNLOAD}}{{LINUX_DOWNLOAD}}
+              </div>
+            </div>
+          </article>
+          <article class="download-card">
+            <span class="eyebrow">In your pocket</span>
+            <h3>Arca for mobile</h3>
+            <p>
+              Keep selected folders offline. Share files in, and take them with
+              you.
+            </p>
+            <div class="store-row">{{APP_STORE}}{{PLAY_STORE}}</div>
+            <small>
+              Mobile connects to your hub. Background sync follows your phone’s
+              system limits.
+            </small>
+            <div class="download-alternatives">
+              <span class="eyebrow">Outside the store</span>
+              <div class="download-alternatives-list">{{ANDROID_DOWNLOAD}}</div>
+              <small>Install directly, without Google Play or a store account.</small>
+            </div>
+          </article>
+        </div>
+        <article class="hub-download">
+          <div class="hub-download-copy">
+            <span class="eyebrow">Your hub</span>
+            <h3>{{DOCKER_ICON}} Arca with Docker</h3>
+            <p>
+              A home for your shared folders and history. Run the hub on an
+              always-on computer or a compatible NAS, and manage it in your
+              browser.
+            </p>
+            <p class="hub-platforms">
+              Linux · macOS and Windows with Docker Desktop<br />Linux
+              containers · amd64 / arm64
+            </p>
+          </div>
+          <div class="hub-download-action">
+            <code>docker pull satoshiltd/arca:{{VERSION}}</code
+            ><a class="button" href="https://hub.docker.com/r/satoshiltd/arca"
+              >{{DOCKER_ICON}}<span>Get the Docker image</span
+              ><span aria-hidden="true">↗</span></a
+            ><small
+              >Mount persistent storage for your files and history.
+              <a href="https://docs.docker.com/desktop/"
+                >About Docker Desktop ↗</a
+              ></small
+            >
+          </div>
+        </article>
+        <details class="release-notes">
+          <summary>Release notes · {{VERSION}}</summary>
+          <pre>{{RELEASE_NOTES}}</pre>
+        </details>
+        <p class="alpha-note">
+          Arca is an early alpha. Installers and mobile workflows are still
+          being qualified. macOS builds may be unnotarized and Windows builds
+          unsigned; check the release’s installation status before installing.
+          Keep an independent backup of important files.
+        </p>
+      </section>
+      <section class="section wrap questions">
+        <div>
+          <p class="eyebrow">A few good questions</p>
+          <h2>Know what you’re keeping.</h2>
+        </div>
+        <div class="answers">
+          <details open>
+            <summary>Where do my files live?</summary>
+            <p>
+              On your hub and the devices where you select their folders.
+              Desktop uses local paths you choose; mobile keeps complete copies
+              in app storage. Arca has no external account, public relay or
+              telemetry.
+            </p>
+          </details>
+          <details>
+            <summary>Is sync the same as a backup?</summary>
+            <p>
+              No. File deletions synchronize too. Retained history lets you
+              restore earlier content, while an optional full hub backup on a
+              desktop or server is separate from working copies. Phones cannot
+              be hubs or full-backup devices.
+            </p>
+          </details>
+          <details>
+            <summary>What happens when two devices edit the same file?</summary>
+            <p>
+              Arca preserves conflicting versions separately. Review them and
+              choose which content to keep; restoring creates a new revision
+              rather than rewriting the past.
+            </p>
+          </details>
+          <details>
+            <summary>Can I use it away from home?</summary>
+            <p>
+              Yes, when your device can reach the hub over your own private
+              network, for example with Tailscale. Offline copies remain
+              available without a connection. Arca does not provide a hosted
+              relay.
+            </p>
+          </details>
+          <details>
+            <summary>Does a new release update my apps automatically?</summary>
+            <p>
+              This page offers the current published installers. Download and
+              install a new version to update your apps; server deployments are
+              managed by you.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+    <footer class="wrap">
+      <div class="brand">
+        <img src="assets/arca-icon.svg" width="32" height="32" alt="" />arca
+      </div>
+      <p>Your files. Your devices. Your space.</p>
+      <span
+        >By <a href="https://www.satoshi-ltd.com">Satoshi Ltd.</a> ·
+        {{VERSION}}</span
+      >
+    </footer>
+  </body>
+</html>

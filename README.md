@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.3.1 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
+**v0.3.2 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -95,7 +95,7 @@ A deployment invalidates web sessions; reload and sign in again if requested. Pr
 
 ## Release and remaining work
 
-The single **Arca** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub/GHCR versioned images plus `latest`. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` is alpha, not a stable-release guarantee.
+The single **Arca** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb, an EAS standalone Android APK and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub/GHCR versioned images plus `latest`. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` is alpha, not a stable-release guarantee.
 
 macOS is ad-hoc signed and Windows unsigned by default; Developer ID signing/notarization is optional. No automatic updater, store submission or pilot deployment is part of publication. Detailed registry/signing setup belongs in [release operations](SPEC.md#release-setup-and-publication).
 
@@ -110,3 +110,16 @@ Before distribution: complete cross-client/offline/conflict workflows; real iOS/
 `AGENTS.md` contains contributor instructions; `changelog.md` records versions. The original visual assets are references, not another specification. Third-party documentation/licenses remain with their dependencies.
 
 Every commit requires a version bump and matching changelog entry, with package/lockfiles and Tauri manifests aligned. **No commit or push without explicit authorization.**
+
+## Public website
+
+The single page in `site/` is static HTML/CSS with local brand fonts and no navigation menu, client-side framework, telemetry or runtime API. A small local script adds pointer-responsive illustration motion, respecting reduced-motion preferences. It follows `../alf`'s Node-build → GitHub Actions → Cloudflare Pages direct-upload approach.
+
+```sh
+npm run site:preview
+python3 -m http.server --directory site/dist 4178
+```
+
+Preview deliberately has no working installer links. Production `npm run site:build` takes `RELEASE_JSON` from the published-release lookup; version and buttons come from actual release assets, including alpha prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive in the local preview, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. At the user’s request, unconfigured stores link to their generic home pages for now; these are not Arca listing links.
+
+`.github/workflows/publish-site.yml` runs after a successful Arca workflow, on site changes on main, or manually. It reads published release metadata with GitHub authentication, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. This is prepared locally, not deployed. Cloudflare/DNS configuration and the first end-to-end release remain to be verified. See SPEC's website publication section for required configuration.
