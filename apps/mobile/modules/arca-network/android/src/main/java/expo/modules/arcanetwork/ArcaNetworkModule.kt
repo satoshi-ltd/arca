@@ -60,6 +60,17 @@ class ArcaNetworkModule : Module() {
       copyDirectory(sourceFile,target)
       target.toString()
     }
+    Function("removeEmptyDirectory") { source: String ->
+      val target = File(java.net.URI(source))
+      val root = appContext.reactContext!!.filesDir.canonicalPath + "/"
+      check(target.canonicalPath.startsWith(root))
+      check(!Files.isSymbolicLink(target.toPath()))
+      if (target.exists()) {
+        check(target.isDirectory)
+        // Files.delete never descends into children, unlike Expo Directory.delete.
+        Files.delete(target.toPath())
+      }
+    }
     Function("replaceFile") { source: String, destination: String ->
       val from = File(java.net.URI(source)); val to = File(java.net.URI(destination))
       val root = appContext.reactContext!!.filesDir.canonicalPath + "/"

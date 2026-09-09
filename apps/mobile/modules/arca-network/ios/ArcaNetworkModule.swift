@@ -36,6 +36,14 @@ public class ArcaNetworkModule: Module {
       try FileManager.default.copyItem(at: from, to: target)
       return target.absoluteString
     }
+    Function("removeEmptyDirectory") { (source: String) in
+      guard let target = URL(string: source), target.isFileURL,
+        let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+        target.resolvingSymlinksInPath().path.hasPrefix(root.path + "/") else { throw NetworkUnavailable() }
+      if rmdir(target.path) != 0 && errno != ENOENT {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+      }
+    }
     Function("replaceFile") { (source: String, destination: String) in
       guard let from = URL(string: source), let to = URL(string: destination), from.isFileURL, to.isFileURL,
         let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,

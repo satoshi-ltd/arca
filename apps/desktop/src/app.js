@@ -148,8 +148,8 @@ function openDropdown(root, last = false) {
 function title(heading, description = "", actions = "") {
   return `<div class="heading"><div><h1>${heading}</h1>${description ? `<p>${description}</p>` : ""}</div><div class="heading-actions">${actions}</div></div>`;
 }
-function empty(heading, text, control = "") {
-  return `<div class="empty">${icon("folder-open")}<h2>${heading}</h2><p>${text}</p>${control}</div>`;
+function empty(heading, text, control = "", symbol = "folder-open") {
+  return `<div class="empty">${icon(symbol)}<h2>${heading}</h2>${text ? `<p>${text}</p>` : ""}${control}</div>`;
 }
 const section = (name, body) =>
   `<section><div class="section-label">${name}</div>${body}</section>`;
@@ -316,7 +316,7 @@ function renderCopies() {
     known
       .map(
         (m) =>
-          `<div class="copy-row">${icon(m.isHub ? "server" : "monitor")}<strong>${escape(m.name)}</strong><span class="tag ${m.machineId === status.id ? "self" : m.isHub ? "hub" : ""}">${m.machineId === status.id ? "This machine" : m.revoked ? "Access revoked" : copiesUnavailable || m.freshness === "stale" ? "Last reported" : m.isHub ? "Hub" : m.role === "backup" ? "Backup" : "Replica"}</span></div>`,
+          `<div class="copy-row">${icon(m.isHub ? "server" : "monitor")}<strong>${escape(m.name)}</strong><span class="tag ${m.machineId === status.id ? "self" : m.isHub ? "hub" : ""}">${m.machineId === status.id ? "This machine" : m.revoked ? "Access revoked" : copiesUnavailable || m.freshness === "stale" ? "Last reported" : m.isHub ? "Hub" : "Replica"}</span></div>`,
       )
       .join("") +
     (copiesUnavailable
@@ -445,7 +445,7 @@ async function action(work) {
 }
 function stateFor(v) {
   if (status.role !== "hub" && !status.hub)
-    return ["Disconnected", "id", "unlink"];
+    return ["Disconnected", "id", "unplug"];
   if (!v.selected) return ["Catalog only", "id", "circle-dashed"];
   if (status.phase === "paused") return ["Paused", "id", "pause"];
   if (v.sync?.state === "error")
@@ -488,12 +488,7 @@ function updateShell() {
   const nav = document.querySelector('nav [data-view="devices"]');
   if (nav) nav.innerHTML = icon("monitor-smartphone") + "Machines";
 
-  $("#managed-role").textContent =
-    status.role === "hub"
-      ? "Hub"
-      : status.role === "backup"
-        ? "Backup"
-        : "Replica";
+  $("#managed-role").textContent = status.role === "hub" ? "Hub" : "Replica";
   $("#managed-name").textContent = status.name;
   const states = {
     idle: ["Up to date", "ok", "circle-check"],
@@ -759,17 +754,13 @@ async function renderView(refreshCatalog = true) {
       syncControls() +
         (status.role !== "hub" && !status.hub
           ? button("Connect to hub…", "connect", "", "primary", "link")
-          : status.role === "backup"
-            ? ""
-            : button(
-                status.role === "hub"
-                  ? "Create shared folder"
-                  : "Choose folders",
-                status.role === "hub" ? "share" : "add",
-                "",
-                "primary",
-                "folder-plus",
-              )),
+          : button(
+              status.role === "hub" ? "Create shared folder" : "Choose folders",
+              status.role === "hub" ? "share" : "add",
+              "",
+              "primary",
+              "folder-plus",
+            )),
     );
     html += '<div class="page">';
     if (status.role !== "hub" && !status.hub)
@@ -801,12 +792,7 @@ async function renderView(refreshCatalog = true) {
             ),
           ),
     );
-    if (
-      status.role !== "hub" &&
-      status.hub &&
-      status.role !== "backup" &&
-      available.length
-    )
+    if (status.role !== "hub" && status.hub && available.length)
       html += section(
         "On hub · not selected",
         `<div class="folder-list">${available.map((v) => folderRow(v, true)).join("")}</div><p class="hint">Choose a local destination. Existing files join the sync; .arcaignore controls exclusions.</p>`,
@@ -842,7 +828,11 @@ async function renderView(refreshCatalog = true) {
       return;
     }
     const conflictCount = status.volumes
-      .filter((v) => !historyVolume || v.id === historyVolume)
+      .filter(
+        (v) =>
+          (status.role === "hub" || v.selected) &&
+          (!historyVolume || v.id === historyVolume),
+      )
       .reduce((n, v) => n + (v.conflicts || 0), 0);
     const filters = [
       {
@@ -868,7 +858,7 @@ async function renderView(refreshCatalog = true) {
       : title(
           "History",
           "",
-          `${dropdown("history-share", "Shared folder", [{ id: "", name: "All" }, ...status.volumes], historyVolume, "history-folder")}${segmented("History filters", filters, "history-filters")}`,
+          `${dropdown("history-share", "Shared folder", [{ id: "", name: "All" }, ...status.volumes.filter((v) => status.role === "hub" || v.selected)], historyVolume, "history-folder")}${segmented("History filters", filters, "history-filters")}`,
         ) +
         `<div class="page"><div id="history-list">${historyPanel.innerHTML}</div></div>`;
   } else await renderSettings();
@@ -887,7 +877,6 @@ function revisionRow(v, compact = false) {
     conflict &&
     !v.resolved &&
     !deleted &&
-    status.role !== "backup" &&
     (status.role === "hub" ||
       status.volumes.find((x) => x.id === v.volume)?.selected)
       ? "review-conflict"
@@ -915,7 +904,6 @@ function fileHistoryHeader() {
     available &&
     !current.resolved &&
     historyPath.includes(".conflict-") &&
-    status.role !== "backup" &&
     (status.role === "hub" || volume?.selected)
       ? button(
           "Resolve conflict…",
@@ -949,7 +937,16 @@ function fileHistorySide() {
         "folder",
       )
     : "";
-  return `<aside class="detail-side">${section("File location", `<div class="panel"><strong>${escape(volume?.name || "Shared folder")}</strong><p class="path">${escape(historyPath)}</p>${folderLink}</div>`)}</aside>`;
+  const current = historyVersions[0];
+  const canDelete =
+    current &&
+    !current.deleted &&
+    !current.directory &&
+    (status.role === "hub" || volume?.selected);
+  const deletion = canDelete
+    ? button("Delete file…", "delete-file", "", "secondary danger", "trash-2")
+    : "";
+  return `<aside class="detail-side">${section("File location", `<div class="panel"><strong>${escape(volume?.name || "Shared folder")}</strong><p class="path">${escape(historyPath)}</p><div class="file-location-actions">${folderLink}${deletion}</div></div>`)}</aside>`;
 }
 
 async function folderBrowser(v, recent) {
@@ -999,7 +996,12 @@ async function folderBrowser(v, recent) {
       `<div class="history-group folder-explorer">${trail}` +
       (data.entries.length
         ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}" aria-label="${escape(`Open ${row.name}`)}">${icon(row.directory ? "folder" : "file")}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
-        : empty(folderSearch ? "No matching files" : "No files yet", "")) +
+        : empty(
+            folderSearch ? "No matching files" : "This folder is empty",
+            "",
+            "",
+            "folder",
+          )) +
       "</div>" +
       `<div class="folder-browser-pages">${folderAfter ? button("First files", "browse-page", "", "secondary") : ""}${data.next ? button("Next files", "browse-page", data.next, "secondary") : ""}</div>`
     );
@@ -1065,7 +1067,7 @@ async function renderDetail() {
         : "See Machines for hub records"
       : `Other machines: see the hub`;
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("folder")}</div><div><h1>${escape(v.name)}</h1><p class="path">${escape(v.path || "Catalog only")}</p></div></div><div class="heading-actions">${syncControls(true)}${status.role === "hub" ? button("Rename", "rename-share", v.id, "secondary", "pencil") + (v.selected ? button("Edit .arcaignore…", "edit-ignore", v.id, "secondary", "file-pen-line") : "") : ""}${native && v.path ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}</div></div></div><div class="page"><div class="stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? "Waiting for the first scan" : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${maxRev ? `rev ${maxRev}` : "Not yet"}</strong><p>Accepted by the hub</p></div><div class="stat"><span>${backupTitle}</span><strong class="stat-backup">${icon(backupRecord || status.backup?.enabled ? "shield-check" : "shield")}${escape(backupValue)}</strong><p>${backupNote}</p></div></div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p><p>${status.role === "hub" ? "Files stay on this hub’s disk. Other machines choose their own local destinations." : "Choose a location on this machine. Moving verifies the new copy and keeps the original."}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role !== "backup" ? `<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. Files stay on disk and history is retained."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>` : ""}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("folder")}</div><div><h1>${escape(v.name)}</h1><p class="path">${escape(v.path || "Catalog only")}</p></div></div><div class="heading-actions">${syncControls(true)}${status.role === "hub" ? button("Rename", "rename-share", v.id, "secondary", "pencil") + (v.selected ? button("Edit .arcaignore…", "edit-ignore", v.id, "secondary", "file-pen-line") : "") : ""}${native && v.path ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}</div></div></div><div class="page"><div class="stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? "Waiting for the first scan" : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${maxRev ? `rev ${maxRev}` : "Not yet"}</strong><p>Accepted by the hub</p></div><div class="stat"><span>${backupTitle}</span><strong class="stat-backup">${icon(backupRecord || status.backup?.enabled ? "shield-check" : "shield")}${escape(backupValue)}</strong><p>${backupNote}</p></div></div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p><p>${status.role === "hub" ? "Files stay on this hub’s disk. Other machines choose their own local destinations." : "Choose a location on this machine. Moving verifies the new copy and keeps the original."}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. Files stay on disk and history is retained."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   refreshCopies();
 }
 async function renderHistory(cursor = "", append = false, target = null) {
@@ -1084,7 +1086,7 @@ async function renderHistory(cursor = "", append = false, target = null) {
       section(
         "File revisions",
         historyVersions.length
-          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${icon(v.deleted ? "trash-2" : "git-commit-horizontal")}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted || status.role === "backup" ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
+          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${icon(v.deleted ? "trash-2" : "git-commit-horizontal")}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
           : empty(
               "No retained revisions",
               "This file has no history available on the hub.",
@@ -1301,7 +1303,7 @@ async function renderMachines(serial = renderSerial) {
         state,
         d.revoked
           ? ""
-          : `<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${button("Disconnect", "revoke", d.id, "secondary danger", "unlink")}</div></details>`,
+          : `<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${button("Disconnect", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
         false,
         false,
         !d.last_seen,
@@ -1469,7 +1471,7 @@ function hubConnection() {
             "disconnect-hub",
             "",
             "secondary small-button danger",
-            "unlink",
+            "unplug",
           )
         : "",
       false,
@@ -1478,7 +1480,7 @@ function hubConnection() {
       hub?.platform ? escape(platformLabel(hub.platform)) : "",
     );
   }
-  return `<div class="settings-card">${setting(connected ? `Connected to ${escape(hubName())}` : "Not connected", connected ? `<span class="path">${escape(status.hub)}</span>${status.role === "backup" ? "<br>Receives a full backup without publishing local edits." : ""}` : "Your local files and saved destinations are kept. Enter a new pairing code to connect.", connected ? (status.role === "replica" ? button("Disconnect…", "disconnect-hub", "", "secondary small-button danger", "unlink") : pill("Backup connection", "id", "shield")) : button(status.disconnectedHub ? "Reconnect…" : "Connect to hub…", "connect", "", "primary", "link"))}</div>`;
+  return `<div class="settings-card">${setting(connected ? `Connected to ${escape(hubName())}` : "Not connected", connected ? `<span class="path">${escape(status.hub)}</span>` : "Your local files and saved destinations are kept. Enter a new pairing code to connect.", connected ? (status.role === "replica" ? button("Disconnect…", "disconnect-hub", "", "secondary small-button danger", "unplug") : pill("Backup connection", "id", "shield")) : button(status.disconnectedHub ? "Reconnect…" : "Connect to hub…", "connect", "", "primary", "link"))}</div>`;
 }
 async function renderSettings() {
   try {
@@ -1526,11 +1528,9 @@ async function renderSettings() {
     status.role === "hub" ? "Hub backup" : "Full backup on this machine",
     status.role === "hub"
       ? backupSummary()
-      : status.role === "backup"
-        ? '<div class="panel"><p>This legacy backup machine receives all shared folders and retained history. It never publishes local edits.</p></div>'
-        : !status.hub
-          ? '<div class="panel"><p>Connect to a hub first.</p></div>'
-          : `<div class="settings-card">${setting(`Keep a full backup of the hub here`, "Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.", toggleControl("backup-enabled", "Enable hub backup", status.backup?.enabled, "data-backup-toggle"))}${setting("Backup location", `<span class="path">${escape(status.backup?.path || "Not configured")}</span>`, status.backup?.path ? button("Copy path", "copy", status.backup.path, "secondary small-button", "copy") : button("Choose…", "enable-backup", "", "secondary small-button", "folder-input"))}${backupCompletionSetting()}</div>`,
+      : !status.hub
+        ? '<div class="panel"><p>Connect to a hub first.</p></div>'
+        : `<div class="settings-card">${setting(`Keep a full backup of the hub here`, "Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.", toggleControl("backup-enabled", "Enable hub backup", status.backup?.enabled, "data-backup-toggle"))}${setting("Backup location", `<span class="path">${escape(status.backup?.path || "Not configured")}</span>`, status.backup?.path ? button("Copy path", "copy", status.backup.path, "secondary small-button", "copy") : button("Choose…", "enable-backup", "", "secondary small-button", "folder-input"))}${backupCompletionSetting()}</div>`,
   );
   if (status.role === "hub")
     html += section(
@@ -1592,7 +1592,7 @@ async function renderSettings() {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.3.0 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.3.1 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
@@ -1655,18 +1655,7 @@ $("#cancel-dialog").onclick = () => {
 $("#dialog").addEventListener("cancel", (event) => {
   if (dialogSubmitting) event.preventDefault();
 });
-$("#dialog").addEventListener("click", (event) => {
-  if (event.target === $("#dialog") && !dialogSubmitting) {
-    const box = event.target.getBoundingClientRect();
-    if (
-      event.clientX < box.left ||
-      event.clientX > box.right ||
-      event.clientY < box.top ||
-      event.clientY > box.bottom
-    )
-      event.target.close();
-  }
-});
+// Form dialogs close explicitly; scrolling or releasing on the backdrop must not discard drafts.
 $("#dialog-form").onsubmit = (event) => {
   event.preventDefault();
   action(async () => {
@@ -2264,6 +2253,31 @@ async function handle(name, id, control) {
     });
     return;
   }
+  if (name === "delete-file") {
+    const target = {
+      volume: historyVolume,
+      path: historyPath,
+      rev: historyVersions[0]?.rev,
+    };
+    modal(
+      modalHeader(
+        "Delete this file?",
+        "Deletes from all synced copies. Retained history can be restored.",
+        "trash-2",
+      ),
+      async () => {
+        await api("/v1/delete-file", target);
+        view = "folders";
+        detailId = target.volume;
+        historyPath = null;
+        fileOriginFolder = null;
+        notice("File deleted.");
+      },
+      "Delete file",
+    );
+    $("#submit-dialog").className = "secondary danger";
+    return;
+  }
   if (name === "history-view-folder") {
     view = "folders";
     detailId = id;
@@ -2340,7 +2354,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.3.0",
+          version: "0.3.1",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -2407,7 +2421,7 @@ async function handle(name, id, control) {
       modalHeader(
         `Disconnect from hub?`,
         "Stops synchronization and any full backup on this machine. Local files, saved destinations and hub history are kept. Reconnecting requires a new pairing code.",
-        "unlink",
+        "unplug",
       ) +
         '<p class="hint">Disconnects this machine on both sides. The hub must be reachable to complete this action.</p>',
       async () => {
@@ -2477,7 +2491,7 @@ async function handle(name, id, control) {
       modalHeader(
         `Disconnect ${escape(d?.name || "this machine")}?`,
         "Disconnects this machine and removes its access and connection reports. The machine updates when it next contacts the hub. Files and revision history are kept. Connecting again requires a new pairing code.",
-        "unlink",
+        "unplug",
       ),
       async () => {
         await api("/v1/revoke", { id });

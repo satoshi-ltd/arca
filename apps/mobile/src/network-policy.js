@@ -1,8 +1,4 @@
 export async function verifyPrivateURL(value, native, nativeFetch) {
-  if (!native)
-    throw new Error(
-      "Use an Arca development build. Expo Go does not include the network check.",
-    );
   const url = new URL(value);
   const parts = url.hostname.split(".").map(Number);
   const lan =
@@ -12,10 +8,6 @@ export async function verifyPrivateURL(value, native, nativeFetch) {
       (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
       (parts[0] === 192 && parts[1] === 168));
   if (lan) {
-    if (!native.resolveLanHost)
-      throw new Error(
-        "Install the updated Arca development build to connect over the local network.",
-      );
     await native.resolveLanHost(url.hostname);
     // Check permission without sending a pairing code or saved credential.
     const response = await nativeFetch(`${url.origin}/.well-known/arca`);

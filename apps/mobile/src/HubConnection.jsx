@@ -29,7 +29,7 @@ export function HubConnection({
         <Button
           danger
           iconOnly={!wide}
-          icon="unlink"
+          icon="unplug"
           label={connection.leaving ? "Retry disconnect" : "Disconnect…"}
           disabled={busy}
           onPress={connection.leaving ? retry : disconnect}

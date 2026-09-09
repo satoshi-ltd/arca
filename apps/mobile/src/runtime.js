@@ -1,3 +1,4 @@
+import { clearIncoming } from "./incoming-files";
 import { Platform, AppState } from "react-native";
 import * as SQLite from "expo-sqlite";
 import * as Notifications from "expo-notifications";
@@ -45,6 +46,7 @@ export function runtime() {
         },
       });
       await replica.load();
+      await clearIncoming(replica);
       await client.load();
       return replica;
     })().catch((error) => {

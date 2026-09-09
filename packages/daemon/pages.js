@@ -48,20 +48,24 @@ export function browsePage(store, volume, query) {
   )
     fail("Invalid browse request");
   const base = prefix ? prefix.replace(/\/$/, "") + "/" : "";
+  const excluded = store.visibleRules?.(volume) || (() => false);
+  store.db.function("arca_browse_included", (path, directory) =>
+    excluded(path, !!directory) ? 0 : 1,
+  );
   const rows = store.db
     .prepare(
       `
     WITH source AS (
       SELECT *, substr(path, ?) AS relative FROM files
-      WHERE volume=? AND deleted=0 AND substr(path, 1, ?)=?
+      WHERE volume=? AND deleted=0 AND arca_browse_included(path,directory)=1 AND substr(path, 1, ?)=?
     ), entries AS (
       SELECT CASE WHEN ?='' AND instr(relative,'/')>0
         THEN substr(relative,1,instr(relative,'/')-1) ELSE relative END AS name,
-        CASE WHEN ?='' AND instr(relative,'/')>0 THEN 1 ELSE 0 END AS directory,
-        size, rev
+        CASE WHEN directory=1 OR (?='' AND instr(relative,'/')>0) THEN 1 ELSE 0 END AS directory,
+        CASE WHEN directory=1 THEN 0 ELSE 1 END AS file_count, size, rev
       FROM source WHERE relative<>'' AND (?='' OR instr(lower(relative),lower(?))>0)
     )
-    SELECT name, directory, count(*) AS files, sum(size) AS size, max(rev) AS rev
+    SELECT name, directory, sum(file_count) AS files, sum(size) AS size, max(rev) AS rev
     FROM entries GROUP BY name, directory
     HAVING (CASE WHEN directory=1 THEN '0:' ELSE '1:' END || name)>?
     ORDER BY directory DESC, name LIMIT ?

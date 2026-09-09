@@ -12,8 +12,10 @@ function render(name, { background, scale = 1, arch = '#eff5df', door = '#accb80
   fs.writeFileSync(`${assets}${name}.png`, execFileSync('rsvg-convert', ['-w', String(size), '-h', String(size)], { input: svg }));
 }
 render('icon', { background: '#244d3e', scale: 1.25 });
-render('adaptive-icon', { scale: 0.85 });
-render('monochrome-icon', { scale: 0.85, arch: '#ffffff', door: '#ffffff' });
+// Give the mark breathing room after the launcher crops the adaptive canvas.
+const androidMarkScale = 0.72;
+render('adaptive-icon', { scale: androidMarkScale });
+render('monochrome-icon', { scale: androidMarkScale, arch: '#ffffff', door: '#ffffff' });
 render('splash-icon-light', { arch: '#244d3e' });
 render('splash-icon-dark');
 render('notification-icon', { arch: '#ffffff', door: '#ffffff', size: 96 });

@@ -1,3 +1,12 @@
+import {
+  scopedActivity,
+  historyFolderIds,
+} from "../../../packages/core/scoped-activity.js";
+import {
+  KeyboardPane,
+  KeyboardScrollView,
+  useKeyboardVisible,
+} from "./KeyboardPane";
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   View,
@@ -9,11 +18,10 @@ import {
   Alert,
   useColorScheme,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
-  Linking,
   StatusBar,
   useWindowDimensions,
+  Dimensions,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
@@ -24,7 +32,6 @@ import { FragmentMono_400Regular } from "@expo-google-fonts/fragment-mono/400Reg
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
-import * as Clipboard from "expo-clipboard";
 import { palettes, styles } from "./theme";
 import {
   Design,
@@ -40,10 +47,8 @@ import {
   Button,
   Field,
   Card,
-  Badge,
   Tag,
   Toggle,
-  CopyButton,
   Sheet,
 } from "./components";
 import { client } from "./persistence";
@@ -59,6 +64,16 @@ import { bytes } from "./format";
 import { browseEntries } from "./browse";
 // Keep the native launch surface until fonts and local startup are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
+const relative = (value) => {
+  const seconds = Math.max(0, (Date.now() - Date.parse(value)) / 1000);
+  return seconds < 60
+    ? "just now"
+    : seconds < 3600
+      ? `${Math.floor(seconds / 60)} min ago`
+      : seconds < 86400
+        ? `${Math.floor(seconds / 3600)} h ago`
+        : date(value);
+};
 const date = (value) =>
   value
     ? new Date(value).toLocaleString("en", {
@@ -87,8 +102,13 @@ export default function App() {
         : "light"
     ];
   const { width, height } = useWindowDimensions();
+  const keyboardVisible = useKeyboardVisible();
   const layout = useRef(false);
-  layout.current = sidebarLayout(layout.current, width, height);
+  layout.current = sidebarLayout(
+    layout.current,
+    width,
+    keyboardVisible ? Dimensions.get("screen").height : height,
+  );
   const wide = layout.current;
   const compact = wide && width < 1100;
   const s = useMemo(() => styles(c, wide, compact), [c, wide, compact]);
@@ -119,26 +139,24 @@ export default function App() {
     [searchOpen, setSearchOpen] = useState(false),
     [fileView, setFileView] = useState("files"),
     [sheet, setSheet] = useState(null),
+    [deviceName, setDeviceName] = useState(null),
     [history, setHistory] = useState({ versions: [], next: null }),
     [historyLoading, setHistoryLoading] = useState(false),
+    [historyError, setHistoryError] = useState(""),
     [historyVolume, setHistoryVolume] = useState(""),
     [historyFilter, setHistoryFilter] = useState("all"),
     [dismissedError, setDismissedError] = useState("");
   const historyRequest = useRef(0);
-  const [fileMenu, setFileMenu] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
-  const [fileHistory, setFileHistory] = useState({ versions: [], next: null }),
-    [editor, setEditor] = useState(""),
-    [fileName, setFileName] = useState("");
+  const [fileHistory, setFileHistory] = useState({ versions: [], next: null });
   async function update() {
     const r = engine.current;
     if (!r || !mounted.current) return;
-    const [folders, last, backup, notifications, background, theme, free] =
+    const [folders, last, notifications, background, theme, free] =
       await Promise.all([
         r.scope ? r.store.folders(r.scope) : [],
         r.store.get(`lastSync:${r.scope}`),
-        r.store.get(`backup:${r.scope}`),
         r.store.get("notifications", false),
         r.store.get("background", false),
         r.store.get("theme", "system"),
@@ -153,8 +171,6 @@ export default function App() {
       progress: r.progress,
       error: r.error,
       last,
-      backup,
-      backupEnabled: r.backup,
       free,
     });
     setPrefs({ notifications, background, theme });
@@ -294,7 +310,21 @@ export default function App() {
   useEffect(() => {
     if (screen === "History" && connected)
       getHistory().catch((e) => setError(e.message));
-  }, [screen, connected, historyVolume, historyFilter]);
+  }, [
+    screen,
+    connected,
+    historyVolume,
+    historyFilter,
+    catalog?.volumes
+      .map((v) => v.id)
+      .sort()
+      .join(","),
+    locals
+      .filter((f) => f.selected)
+      .map((f) => f.id)
+      .sort()
+      .join(","),
+  ]);
   const locked = busy || status.busy || !engine.current;
   async function openFolder(f) {
     setFolder(f);
@@ -306,6 +336,31 @@ export default function App() {
     await listFiles(f.id);
   }
   async function getHistory(target = null, more = false) {
+    const selectedIds = historyFolderIds(
+      await engine.current.store.folders(engine.current.scope),
+      client.state().catalog.volumes,
+    );
+    if (target && !selectedIds.includes(target.volume))
+      throw new Error("Select this folder to view its history.");
+    if (target && !more) {
+      let localEntry = null;
+      if (
+        (await engine.current.store.folder(engine.current.scope, target.volume))
+          ?.selected
+      ) {
+        const uri = engine.current.files.work(
+          engine.current.scope,
+          target.volume,
+          target.path,
+        );
+        const info = await engine.current.files.stat(uri);
+        if (info && !info.directory)
+          localEntry = { ...info, path: target.path, uri };
+      }
+      target = { ...target, kind: "history", localEntry };
+      setFileHistory({ versions: [], next: null });
+      setSheet(target);
+    }
     const previous = target ? fileHistory : history;
     const q = new URLSearchParams({
       limit: "50",
@@ -315,15 +370,27 @@ export default function App() {
     const request = ++historyRequest.current;
     if (target) setDetailError("");
     if (!target) {
-      if (historyVolume) q.set("volume", historyVolume);
+      setHistoryError("");
+      if (historyVolume && selectedIds.includes(historyVolume))
+        q.set("volume", historyVolume);
+      else if (historyVolume) setHistoryVolume("");
+      if (!more) setHistory({ versions: [], next: null });
       q.set("filter", historyFilter);
       setHistoryLoading(true);
     }
     let page;
     try {
-      page = await client.api(
-        `${target ? "/v1/history" : "/v1/activity"}?${q}`,
-      );
+      page = target
+        ? await client.api(`/v1/history?${q}`)
+        : await scopedActivity(
+            (query) => client.api(`/v1/activity?${query}`),
+            selectedIds,
+            q,
+          );
+    } catch (e) {
+      if (target) throw e;
+      if (request === historyRequest.current) setHistoryError(e.message);
+      return;
     } finally {
       if (!target && request === historyRequest.current)
         setHistoryLoading(false);
@@ -337,7 +404,8 @@ export default function App() {
       );
       try {
         const info = await engine.current.files.stat(uri);
-        if (info) localEntry = { ...info, path: target.path, uri };
+        localEntry =
+          info && !info.directory ? { ...info, path: target.path, uri } : null;
       } catch {}
     }
     if (request !== historyRequest.current || !mounted.current) return;
@@ -415,7 +483,7 @@ export default function App() {
     const target = folder;
     confirm(
       "Stop syncing and remove local files?",
-      "This removes this folder’s files from this device and frees up space. Files on the hub and other machines, and shared history, stay unchanged. Unsynced changes must be saved first.",
+      "This removes this folder’s files from this device and frees up space. Files on the hub and other machines, and shared history, stay unchanged. Unsynced changes will be permanently lost. Use Save a copy first if you need them.",
       () => {
         setSheet(null);
         run(
@@ -437,14 +505,12 @@ export default function App() {
   function disconnect() {
     confirm(
       "Disconnect from hub?",
-      "Local files and backup copies are kept. A new pairing code will be required to reconnect.",
+      "Local files are kept. A new pairing code will be required to reconnect.",
       () =>
         run(async () => {
           const r = engine.current;
           r.stop();
           if (r.active) await r.active;
-          r.backup = false;
-          await r.store.set("backup", false);
           await client.disconnect();
           setFolder(null);
           setHistory({ versions: [], next: null });
@@ -454,28 +520,6 @@ export default function App() {
   }
   const [directory, setDirectory] = useState(""),
     [visibleCount, setVisibleCount] = useState(100);
-  async function editFile(entry, volume = folder?.id) {
-    if (entry.size > 1024 * 1024)
-      throw new Error("Use an external editor for files larger than 1 MB.");
-    const text = await engine.current.files.text(entry.uri);
-    setEditor(text);
-    setFileName(entry.path);
-    setSheet({
-      kind: "edit",
-      volume,
-      returnTo: sheet,
-      expectedHash: await engine.current.files.hash(entry.uri),
-    });
-  }
-  async function saveText() {
-    const r = engine.current;
-    await r.saveText(sheet.volume, fileName, editor, sheet.expectedHash);
-    const previous = sheet.returnTo;
-    setSheet(previous || null);
-    if (folder) await listFiles();
-    await r.sync();
-    if (previous?.kind === "history" && connected) await getHistory(previous);
-  }
   async function resolveConflict(entry, volume = folder?.id) {
     if (!locals.find((f) => f.id === volume)?.selected)
       throw new Error(
@@ -547,18 +591,10 @@ export default function App() {
   }
   useEffect(() => {
     const listener = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (fileMenu) {
-        if (!busy) setFileMenu(false);
-        return true;
-      }
       if (sheet) {
         historyRequest.current++;
         if (!busy)
-          setSheet(
-            ["conflict", "edit"].includes(sheet.kind)
-              ? sheet.returnTo || null
-              : null,
-          );
+          setSheet(sheet.kind === "conflict" ? sheet.returnTo || null : null);
         return true;
       }
       if (folder && view === "Folders") {
@@ -568,10 +604,9 @@ export default function App() {
       return false;
     });
     return () => listener.remove();
-  }, [sheet, folder, view, busy, fileMenu]);
+  }, [sheet, folder, view, busy]);
   const selectTab = (tab) => {
     historyRequest.current++;
-    setFileMenu(false);
     setView(tab);
     setSheet(null);
   };
@@ -595,6 +630,31 @@ export default function App() {
         </SafeAreaView>
       </SafeAreaProvider>
     );
+  const historyControls = (
+    <View style={wide ? s.historyTools : s.folderTools}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Shared folder"
+        onPress={() => setSheet({ kind: "history-filter" })}
+        style={[s.button, s.historyFolderFilter]}
+      >
+        <Text numberOfLines={1} style={[s.buttonLabel, s.flex]}>
+          {volumes.find((v) => v.id === historyVolume)?.name || "All"}
+        </Text>
+        <Icon name="chevron-down" size={14} />
+      </Pressable>
+      <SegmentedControl
+        options={[
+          { label: "Conflicts", value: "conflicts" },
+          { label: "Deleted", value: "deleted" },
+        ]}
+        value={historyFilter}
+        onChange={(value) =>
+          setHistoryFilter(value === historyFilter ? "all" : value)
+        }
+      />
+    </View>
+  );
   return (
     <SafeAreaProvider>
       <StatusBar
@@ -623,10 +683,7 @@ export default function App() {
                   : ["top", "right", "bottom", "left"]
               }
             >
-              <KeyboardAvoidingView
-                style={s.root}
-                behavior={Platform.OS === "ios" ? "padding" : undefined}
-              >
+              <KeyboardPane style={s.root}>
                 {!onboarding && (
                   <View style={s.viewHeader}>
                     {detail && (
@@ -640,7 +697,10 @@ export default function App() {
                               : "History"
                         }
                         icon="back"
-                        onPress={() => { historyRequest.current++; setFileMenu(false); setSheet(null); }}
+                        onPress={() => {
+                          historyRequest.current++;
+                          setSheet(null);
+                        }}
                       />
                     )}
                     {folder && screen === "Folders" && (
@@ -685,34 +745,19 @@ export default function App() {
                           )}
                           {folder && screen === "Folders" && (
                             <Text style={s.caption}>
-                              {`${entries.length} files · ${bytes(entries.reduce((total, e) => total + e.size, 0))} local${status.paused ? " · Paused" : status.busy ? " · Syncing" : ""}`}
+                              {`${entries.filter((e) => !e.directory).length} files · ${bytes(entries.reduce((total, e) => total + e.size, 0))} local${status.paused ? " · Paused" : ""}`}
                             </Text>
                           )}
                         </View>
-                        {historyDetail &&
-                          locals.some(
-                            (f) => f.id === sheet.volume && f.selected,
-                          ) &&
-                          !fileHistory.versions[0]?.deleted && (
-                            <View style={s.compactActions}>
-                              <Button
-                                label="Open / share"
-                                icon="export"
-                                iconOnly={!wide}
-                                disabled={locked}
-                                onPress={() => run(shareCurrentFile)}
-                              />
-                              {sheet.localEntry && (
-                                <Button
-                                  label="File actions"
-                                  icon="more"
-                                  iconOnly
-                                  disabled={locked}
-                                  onPress={() => setFileMenu(true)}
-                                />
-                              )}
-                            </View>
-                          )}
+                        {historyDetail && (
+                          <Button
+                            label="Share"
+                            icon="export"
+                            iconOnly={!wide}
+                            disabled={locked || !sheet.localEntry}
+                            onPress={() => run(shareCurrentFile)}
+                          />
+                        )}
                         {folder && screen === "Folders" && (
                           <View style={s.rowAction}>
                             {fileView === "files" && (
@@ -739,15 +784,7 @@ export default function App() {
                             />
                           </View>
                         )}
-                        {screen === "History" && (
-                          <Button
-                            label="Refresh"
-                            icon="refresh"
-                            disabled={!connected}
-                            busy={busy || historyLoading}
-                            onPress={() => run(() => getHistory())}
-                          />
-                        )}
+                        {screen === "History" && wide && historyControls}
                         {connected && screen === "Folders" && (
                           <Button
                             iconOnly={!!folder}
@@ -756,36 +793,19 @@ export default function App() {
                             busy={locked}
                             disabled={status.paused}
                             onPress={() =>
-                              run(async () => {
-                                await engine.current.sync(true);
-                                if (folder) await listFiles();
-                              })
+                              run(
+                                async () => {
+                                  await engine.current.sync(true);
+                                  if (folder) await listFiles();
+                                },
+                                { silent: true },
+                              )
                             }
                           />
                         )}
                       </View>
                     )}
-                    {screen === "History" && (
-                      <View style={s.folderTools}>
-                        <Button
-                          label={
-                            volumes.find((v) => v.id === historyVolume)?.name ||
-                            "All folders"
-                          }
-                          icon="folders"
-                          onPress={() => setSheet({ kind: "history-filter" })}
-                        />
-                        <SegmentedControl
-                          options={[
-                            { label: "All", value: "all" },
-                            { label: "Conflicts", value: "conflicts" },
-                            { label: "Deleted", value: "deleted" },
-                          ]}
-                          value={historyFilter}
-                          onChange={setHistoryFilter}
-                        />
-                      </View>
-                    )}
+                    {screen === "History" && !wide && historyControls}
                     {folder && screen === "Folders" && wide && (
                       <View style={[s.group, s.statsGrid]}>
                         {[
@@ -811,10 +831,6 @@ export default function App() {
                               ? date(currentFolder.completed)
                               : "Not yet",
                           ],
-                          [
-                            "Backup on this device",
-                            status.backupEnabled ? "On" : "Off",
-                          ],
                         ].map(([label, value]) => (
                           <View key={label} style={s.statCell}>
                             <Text style={s.caption}>{label}</Text>
@@ -833,7 +849,7 @@ export default function App() {
                   locals={locals}
                   onSaved={update}
                 />
-                <ScrollView
+                <KeyboardScrollView
                   key={`${screen}:${folder?.id || ""}`}
                   style={s.scroll}
                   contentContainerStyle={[
@@ -986,6 +1002,19 @@ export default function App() {
                                         </View>
                                       </Pressable>
                                     ))}
+                                  {!browseEntries(entries, directory, search)
+                                    .length && (
+                                    <View style={s.explorerEmpty}>
+                                      <Icon name="folders" color={c.mute} />
+                                      <Text style={s.text}>
+                                        {search
+                                          ? "No matching files"
+                                          : currentFolder?.completed
+                                            ? "This folder is empty"
+                                            : "No local files yet"}
+                                      </Text>
+                                    </View>
+                                  )}
                                 </View>
                                 {browseEntries(entries, directory, search)
                                   .length > visibleCount && (
@@ -995,14 +1024,6 @@ export default function App() {
                                       setVisibleCount((n) => n + 100)
                                     }
                                   />
-                                )}
-                                {!browseEntries(entries, directory, search)
-                                  .length && (
-                                  <Text style={s.text}>
-                                    {search
-                                      ? "No matching files."
-                                      : "No local files yet."}
-                                  </Text>
                                 )}
                               </>
                             )}
@@ -1070,7 +1091,7 @@ export default function App() {
                                   danger
                                   label="Stop syncing…"
                                   icon="unlink"
-                                  disabled={locked}
+                                  disabled={busy || !engine.current}
                                   onPress={unlink}
                                 />
                               </Card>
@@ -1145,6 +1166,34 @@ export default function App() {
                       loading={detailLoading}
                       error={detailError}
                       localEntry={sheet.localEntry}
+                      deleteFile={
+                        sheet.localEntry
+                          ? () =>
+                              confirm(
+                                "Delete this file?",
+                                "Deletes from all synced copies. Retained history can be restored." +
+                                  (!connected || status.paused
+                                    ? " Deletion will sync when connected and resumed."
+                                    : ""),
+                                () =>
+                                  run(
+                                    async () => {
+                                      const target = sheet;
+                                      await engine.current.removeFile(
+                                        target.volume,
+                                        target.path,
+                                      );
+                                      setSheet(null);
+                                      if (folder) await listFiles();
+                                      if (connected && !status.paused)
+                                        await engine.current.sync();
+                                    },
+                                    { success: "File deleted" },
+                                  ),
+                                "Delete file",
+                              )
+                          : null
+                      }
                       retry={() => run(() => getHistory(sheet))}
                       author={(id) =>
                         machines?.find(
@@ -1326,132 +1375,144 @@ export default function App() {
                       )}
                     </>
                   )}
-                  {screen === "Machines" && connection && (
-                    <>
-                      <Text style={s.eyebrow}>HUB BACKUP</Text>
-                      {wide ? (
-                        <View style={[s.card, s.backupCard, s.row]}>
-                          <Icon
-                            name={
-                              status.backupEnabled ? "shield" : "shield-off"
-                            }
-                          />
-                          <View style={[s.flex, s.stack]}>
-                            <Text style={s.rowTitle}>
-                              {status.backupEnabled
-                                ? "On this machine"
-                                : "Off on this machine"}
-                            </Text>
-                            <Text style={s.caption}>
-                              {status.backup?.completed
-                                ? `Last completed ${date(status.backup.completed)}`
-                                : "Keep a full copy of the hub and its history."}
-                            </Text>
-                          </View>
-                          <Button
-                            label="Backup settings"
-                            onPress={() => selectTab("Settings")}
-                          />
-                        </View>
-                      ) : (
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="Backup settings"
-                          onPress={() => selectTab("Settings")}
-                          style={[s.card, s.backupCard, s.row]}
-                        >
-                          <Icon
-                            name={
-                              status.backupEnabled ? "shield" : "shield-off"
-                            }
-                          />
-                          <View style={[s.flex, s.stack]}>
-                            <Text style={s.rowTitle}>Full hub backup</Text>
-                            <Text style={s.caption}>
-                              {status.backupEnabled
-                                ? "On this device"
-                                : "Off on this device"}
-                            </Text>
-                          </View>
-                          <Icon name="chevron" />
-                        </Pressable>
-                      )}
-                    </>
-                  )}
                   {screen === "History" && (
                     <>
                       {!connected && (
                         <Text style={s.text}>Connect to view hub history.</Text>
                       )}
                       {historyLoading && <ActivityIndicator color={c.accent} />}
-                      {!historyLoading && !history.versions.length && (
-                        <Card
-                          title={
-                            historyFilter !== "all" || historyVolume
-                              ? "No matching revisions"
-                              : "No history yet"
-                          }
-                        >
-                          <Text style={s.text}>
-                            Try another filter or sync to check for revisions.
-                          </Text>
+                      {!historyLoading && !!historyError && (
+                        <Card title="Could not load history">
+                          <Text style={s.text}>{historyError}</Text>
+                          <Button
+                            label="Retry"
+                            onPress={() =>
+                              run(async () => {
+                                await client.refresh();
+                                await getHistory();
+                              })
+                            }
+                          />
                         </Card>
                       )}
+                      {connected &&
+                        !historyLoading &&
+                        !historyError &&
+                        !history.versions.length && (
+                          <Card
+                            title={
+                              historyFilter !== "all" || historyVolume
+                                ? "No matching revisions"
+                                : "No history yet"
+                            }
+                          >
+                            <Text style={s.text}>
+                              Try another filter or sync to check for revisions.
+                            </Text>
+                          </Card>
+                        )}
                       {!!history.versions.length && (
-                        <View style={s.group}>
-                          {history.versions.map((row) => (
-                            <Pressable
-                              key={`${row.volume}:${row.rev}`}
-                              accessibilityRole="button"
-                              accessibilityLabel={`View history for ${row.path}`}
-                              onPress={() =>
-                                run(() =>
-                                  getHistory({
-                                    volume: row.volume,
-                                    path: row.path,
-                                  }),
-                                )
-                              }
-                              style={[s.settingRow, s.separator, s.row]}
-                            >
-                              <Icon
-                                name={
-                                  row.deleted
-                                    ? "trash"
-                                    : row.path.includes(".conflict-")
-                                      ? "conflict"
-                                      : "revision"
-                                }
-                                color={
-                                  row.deleted
-                                    ? c.mute
-                                    : row.path.includes(".conflict-") &&
-                                        !row.resolved
-                                      ? c.warning
-                                      : c.accent
-                                }
-                              />
-                              <View style={[s.flex, s.stack]}>
-                                <Text
-                                  style={[
-                                    s.rowTitle,
-                                    !!row.deleted && s.deletedFile,
-                                  ]}
-                                >
-                                  {row.path}
-                                </Text>
-                                <Text style={s.caption}>
-                                  {row.folder} ·{" "}
-                                  {row.resolved
-                                    ? "Resolved · copy kept"
-                                    : row.deleted
-                                      ? "Deleted"
-                                      : bytes(row.size)}{" "}
-                                  · {date(row.created)}
-                                </Text>
+                        <View style={s.historyGroups}>
+                          {Array.from(
+                            history.versions.reduce((groups, row) => {
+                              const day = new Date(
+                                row.created,
+                              ).toLocaleDateString("en", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              });
+                              if (!groups.has(day)) groups.set(day, []);
+                              groups.get(day).push(row);
+                              return groups;
+                            }, new Map()),
+                          ).map(([day, rows]) => (
+                            <View key={day} style={s.section}>
+                              <Text style={s.eyebrow}>{day.toUpperCase()}</Text>
+                              <View style={s.group}>
+                                {rows.map((row, index) => (
+                                  <Pressable
+                                    key={`${row.volume}:${row.rev}`}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`View history for ${row.path}`}
+                                    onPress={() =>
+                                      run(() =>
+                                        getHistory({
+                                          volume: row.volume,
+                                          path: row.path,
+                                        }),
+                                      )
+                                    }
+                                    style={[
+                                      s.settingRow,
+                                      index > 0 && s.separator,
+                                      s.row,
+                                    ]}
+                                  >
+                                    <Icon
+                                      name={
+                                        row.deleted
+                                          ? "trash"
+                                          : row.path.includes(".conflict-")
+                                            ? "conflict"
+                                            : "revision"
+                                      }
+                                      color={
+                                        row.deleted
+                                          ? c.mute
+                                          : row.path.includes(".conflict-") &&
+                                              !row.resolved
+                                            ? c.warning
+                                            : c.accent
+                                      }
+                                    />
+                                    <View style={[s.flex, s.stack]}>
+                                      <Text
+                                        numberOfLines={1}
+                                        style={[
+                                          s.rowTitle,
+                                          !!row.deleted && s.deletedFile,
+                                        ]}
+                                      >
+                                        {row.path}
+                                      </Text>
+                                      <Text style={s.caption}>
+                                        {!wide && `${row.folder} · `}
+                                        {row.deleted
+                                          ? "Deleted · recoverable"
+                                          : row.path.includes(".conflict-")
+                                            ? row.resolved
+                                              ? "Conflict resolved · copy kept"
+                                              : "Conflict copy retained"
+                                            : `${bytes(row.size)} · accepted revision`}
+                                        {!wide && ` · ${date(row.created)}`}
+                                      </Text>
+                                    </View>
+                                    {wide && (
+                                      <>
+                                        <Text
+                                          numberOfLines={1}
+                                          style={[s.caption, s.historyFolder]}
+                                        >
+                                          {row.folder}
+                                        </Text>
+                                        <Text
+                                          style={[s.mono, s.historyRevision]}
+                                        >
+                                          rev {row.rev}
+                                        </Text>
+                                        <Text
+                                          style={[s.caption, s.historyDate]}
+                                        >
+                                          {relative(row.created)}
+                                        </Text>
+                                      </>
+                                    )}
+                                    <Icon name="chevron" color={c.mute} />
+                                  </Pressable>
+                                ))}
                               </View>
-                              <Icon name="chevron" color={c.mute} />
-                            </Pressable>
+                            </View>
                           ))}
                         </View>
                       )}
@@ -1480,10 +1541,34 @@ export default function App() {
                         </>
                       )}
                       <Text style={s.eyebrow}>THIS MACHINE</Text>
-                      <Card title={name}>
-                        <Text style={s.caption}>
-                          {Platform.OS === "ios" ? "iOS" : "Android"} · Replica
-                        </Text>
+                      <Card>
+                        <Field
+                          label="Machine name"
+                          value={deviceName ?? name}
+                          onChangeText={setDeviceName}
+                          maxLength={100}
+                          autoCapitalize="words"
+                          returnKeyType="done"
+                          editable={!busy}
+                          onEndEditing={({ nativeEvent }) => {
+                            const nextName = nativeEvent.text.trim();
+                            if (nextName === name) {
+                              setDeviceName(null);
+                              return;
+                            }
+                            run(async () => {
+                              const reported =
+                                await engine.current.rename(nextName);
+                              setName(nextName);
+                              setDeviceName(null);
+                              setSuccess(
+                                reported
+                                  ? "Machine name updated."
+                                  : "Name saved. The hub will update on the next sync.",
+                              );
+                            });
+                          }}
+                        />
                       </Card>
                       <Text style={s.eyebrow}>LOCAL SYNCHRONIZATION</Text>
                       <SettingsGroup>
@@ -1526,73 +1611,10 @@ export default function App() {
                           />
                         </Card>
                       </SettingsGroup>
-                      <Text style={s.eyebrow}>FULL BACKUP ON THIS DEVICE</Text>
-                      <SettingsGroup>
-                        <Card>
-                          <Toggle
-                            label="Keep a full backup of the hub here"
-                            description="All shared folders and retained history, separate from your working copies"
-                            value={!!status.backupEnabled}
-                            disabled={!connected || locked}
-                            onChange={(v) =>
-                              v
-                                ? confirm(
-                                    "Enable full backup?",
-                                    "This downloads all retained content and history, including folders not selected here.",
-                                    () =>
-                                      run(async () => {
-                                        await engine.current.enableBackup(true);
-                                        await engine.current.sync();
-                                      }),
-                                    "Enable backup",
-                                  )
-                                : run(() => engine.current.enableBackup(false))
-                            }
-                          />
-                        </Card>
-                        <Card>
-                          <Text style={s.heading}>Last completed backup</Text>
-                          <Text style={s.text}>
-                            {status.backup?.completed
-                              ? `${date(status.backup.completed)} · ${bytes(status.backup.bytes)}`
-                              : "No completed backup yet"}
-                          </Text>
-                          <View style={s.compactActions}>
-                            <Button
-                              label="Export backup"
-                              disabled={locked || !status.backup?.completed}
-                              onPress={() =>
-                                run(async () => {
-                                  await engine.current.files.exportDirectory(
-                                    engine.current.files.backup(
-                                      engine.current.scope,
-                                    ),
-                                    "arca-backup",
-                                  );
-                                  Alert.alert(
-                                    "Backup exported",
-                                    "Keep the exported folder together. It can be recovered into a new hub using arca recover-backup.",
-                                  );
-                                })
-                              }
-                            />
-
-                            {engine.current?.scope && (
-                              <CopyButton
-                                label="Copy path"
-                                value={engine.current.files.backup(
-                                  engine.current.scope,
-                                )}
-                              />
-                            )}
-                          </View>
-                        </Card>
-                      </SettingsGroup>
                       <Text style={s.eyebrow}>STORAGE</Text>
                       <Card title={`${bytes(status.free)} free`}>
                         <Text style={s.text}>
-                          Selected files and backup copies are stored
-                          persistently on this device.
+                          Selected files are stored persistently on this device.
                         </Text>
                         {Platform.OS === "ios" && (
                           <Text style={s.caption}>
@@ -1616,19 +1638,13 @@ export default function App() {
                           Text size follows system accessibility settings.
                         </Text>
                       </Card>
-                      <Card title={`arca ${config.expo.version}`}>
-                        <Text style={s.text}>
-                          This device is always a replica.
-                        </Text>
-                        <Button
-                          label="Open system settings"
-                          onPress={() => Linking.openSettings()}
-                        />
-                      </Card>
+                      <Text style={[s.caption, s.centerText]}>
+                        arca {config.expo.version}
+                      </Text>
                     </>
                   )}
-                </ScrollView>
-                {!onboarding && !wide && (
+                </KeyboardScrollView>
+                {!onboarding && !wide && !keyboardVisible && (
                   <Navigation
                     view={view}
                     onSelect={selectTab}
@@ -1636,7 +1652,7 @@ export default function App() {
                     hub={catalog?.name}
                   />
                 )}
-              </KeyboardAvoidingView>
+              </KeyboardPane>
             </SafeAreaView>
           </View>
           {!!(actionLabel || success) && (!sheet || detail) && (
@@ -1697,7 +1713,7 @@ export default function App() {
                         if (error && retryAction.current) retryAction.current();
                         else
                           run(() => engine.current.sync(), {
-                            label: "Syncing…",
+                            silent: true,
                           });
                       }}
                     />
@@ -1705,60 +1721,6 @@ export default function App() {
                 )}
               </View>
             )}
-          {fileMenu && historyDetail && (
-            <Sheet
-              title="File actions"
-              busy={busy}
-              onClose={() => setFileMenu(false)}
-            >
-              <ActionRow
-                label="Edit as text"
-                icon="file"
-                disabled={locked}
-                onPress={() => {
-                  setFileMenu(false);
-                  run(() => editFile(sheet.localEntry, sheet.volume));
-                }}
-              />
-              <ActionRow
-                label="Copy path"
-                icon="link"
-                onPress={() =>
-                  run(
-                    async () => {
-                      await Clipboard.setStringAsync(sheet.path);
-                      setFileMenu(false);
-                    },
-                    { success: "Path copied" },
-                  )
-                }
-              />
-              <ActionRow
-                label="Delete file…"
-                icon="trash"
-                danger
-                disabled={locked}
-                onPress={() =>
-                  confirm(
-                    "Delete this file?",
-                    "Deletion synchronizes to the hub and other selected copies. Retained history can be restored.",
-                    () =>
-                      run(async () => {
-                        await engine.current.removeFile(
-                          sheet.volume,
-                          sheet.path,
-                        );
-                        setFileMenu(false);
-                        setSheet(null);
-                        await listFiles();
-                        if (!status.paused) await engine.current.sync();
-                      }),
-                    "Delete",
-                  )
-                }
-              />
-            </Sheet>
-          )}
           {sheet && !detail && (
             <Sheet
               title={
@@ -1770,19 +1732,15 @@ export default function App() {
                       ? sheet.volume.name
                       : sheet.kind === "history"
                         ? sheet.path
-                        : sheet.kind === "edit"
-                          ? "Text file"
-                          : sheet.kind === "conflict"
-                            ? "Resolve conflict"
-                            : sheet.entry.path
+                        : sheet.kind === "conflict"
+                          ? "Resolve conflict"
+                          : sheet.entry.path
               }
               busy={busy}
               busyLabel={actionLabel}
               onClose={() =>
                 setSheet(
-                  ["conflict", "edit"].includes(sheet.kind)
-                    ? sheet.returnTo || null
-                    : null,
+                  sheet.kind === "conflict" ? sheet.returnTo || null : null,
                 )
               }
             >
@@ -1793,20 +1751,23 @@ export default function App() {
               )}
               {sheet.kind === "history-filter" && (
                 <View style={s.group}>
-                  {[{ id: "", name: "All folders" }, ...volumes].map(
-                    (v, index) => (
-                      <FolderRow
-                        key={v.id}
-                        grouped
-                        divider={index > 0}
-                        name={v.name}
-                        onPress={() => {
-                          setHistoryVolume(v.id);
-                          setSheet(null);
-                        }}
-                      />
+                  {[
+                    { id: "", name: "All folders" },
+                    ...volumes.filter((v) =>
+                      locals.some((f) => f.id === v.id && f.selected),
                     ),
-                  )}
+                  ].map((v, index) => (
+                    <FolderRow
+                      key={v.id}
+                      grouped
+                      divider={index > 0}
+                      name={v.name}
+                      onPress={() => {
+                        setHistoryVolume(v.id);
+                        setSheet(null);
+                      }}
+                    />
+                  ))}
                 </View>
               )}
               {sheet.kind === "folder-actions" && (
@@ -1874,7 +1835,7 @@ export default function App() {
                       label="Stop syncing…"
                       icon="unlink"
                       danger
-                      disabled={locked}
+                      disabled={busy || !engine.current}
                       onPress={unlink}
                     />
                   </View>
@@ -1966,31 +1927,6 @@ export default function App() {
                     label="Keep both as they are"
                     disabled={locked}
                     onPress={() => setSheet(sheet.returnTo || null)}
-                  />
-                </>
-              )}
-              {sheet.kind === "edit" && (
-                <>
-                  <Field
-                    label="File name"
-                    value={fileName}
-                    onChangeText={setFileName}
-                  />
-                  <Field
-                    label="Contents"
-                    value={editor}
-                    onChangeText={setEditor}
-                    multiline
-                  />
-                  <Text style={s.caption}>
-                    Changes synchronize to the hub and other selected copies.
-                  </Text>
-                  <Button
-                    label="Save"
-                    primary
-                    busy={busy}
-                    disabled={!fileName || status.busy}
-                    onPress={() => run(saveText)}
                   />
                 </>
               )}

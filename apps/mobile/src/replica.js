@@ -1,3 +1,4 @@
+import { entryKey, directoryItem } from "../../../packages/core/entries.js";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 export const CHUNK = 1024 * 1024;
@@ -32,7 +33,9 @@ export function validRow(row, volume) {
     !Number.isSafeInteger(row.size) ||
     row.size < 0 ||
     ![0, 1, false, true].includes(row.deleted) ||
-    (!row.deleted && !/^[a-f0-9]{64}$/.test(row.hash))
+    ![undefined, 0, 1, false, true].includes(row.directory) ||
+    (row.directory && (row.hash !== null || row.size !== 0)) ||
+    (!row.directory && !row.deleted && !/^[a-f0-9]{64}$/.test(row.hash))
   )
     throw new Error("Invalid file metadata from hub");
   return row;
@@ -69,7 +72,6 @@ export class Replica {
     await this.store.init();
     this.scope = await this.store.get("scope");
     this.paused = await this.store.get("paused", false);
-    this.backup = await this.store.get("backup", false);
   }
   check() {
     if (this.stopped || this.paused) {
@@ -113,50 +115,10 @@ export class Replica {
       const scope = this.scope;
       const folder = await this.store.folder(scope, id);
       if (!folder) return;
-      const root = this.files.folder(scope, id);
       const removalKey = `removing:${scope}:${id}`;
-      if (!(await this.store.get(removalKey, false))) {
-        const pending = await this.store.pending(scope, id);
-        const applying = await this.store.applying(scope, id);
-        if (pending.length || applying.length)
-          throw new Error(
-            "Finish syncing this folder before removing its local files.",
-          );
-        const rows = await this.store.rows(scope, id);
-        const indexed = new Map(rows.map((row) => [row.path, row]));
-        const seen = new Set();
-        if (await this.files.exists(root)) {
-          // Verify actual bytes, including ignored files; cached hashes are not
-          // sufficient evidence for a destructive operation.
-          for await (const entry of this.files.walk(root)) {
-            if (builtinExcluded(entry.path)) continue;
-            const row = indexed.get(entry.path);
-            if (
-              !row ||
-              row.deleted ||
-              (await this.files.hash(entry.uri)) !== row.hash
-            )
-              throw new Error(
-                "This folder has local changes or files not saved on the hub. Sync or export them before removing it.",
-              );
-            seen.add(entry.path);
-          }
-          if (
-            rows.some(
-              (row) =>
-                !builtinExcluded(row.path) &&
-                !row.deleted &&
-                !seen.has(row.path),
-            )
-          )
-            throw new Error(
-              "This folder has local deletions waiting to sync. Finish syncing before removing it.",
-            );
-        }
-        // Persist the verified decision before deletion. If deletion fails or
-        // the app closes, retry cleanup without treating partial removal as edits.
-        await this.store.set(removalKey, true);
-      }
+      // The UI confirms permanent local removal, including unsynced changes.
+      // Persist before deletion so interruption can be retried safely.
+      await this.store.set(removalKey, true);
       const removedHashes = new Set(
         (await this.store.rows(scope, id)).map((row) => row.hash),
       );
@@ -196,21 +158,12 @@ export class Replica {
       }
     }
   }
-  async enableBackup(enabled) {
-    this.backup = enabled;
-    await this.store.set("backup", enabled);
-    if (!enabled && this.client.state().connection?.linked)
-      await this.client.api("/v1/backup-ack", { enabled: false });
-    this.changed();
-  }
-  async download(hash, size, backup = false) {
+  async download(hash, size) {
     if (!this.client.state().catalog?.blobRanges)
       throw new Error(
         "Update your hub to a release with mobile transfer support before downloading files.",
       );
-    const object = backup
-      ? this.files.backupObject(this.scope, hash)
-      : this.files.object(this.scope, hash);
+    const object = this.files.object(this.scope, hash);
     if (await this.files.exists(object)) {
       if ((await this.files.hash(object)) === hash) return object;
       await this.files.remove(object);
@@ -328,6 +281,7 @@ export class Replica {
       cached.mtime === stat.mtime
     )
       return cached.hash;
+    if (stat?.directory) return "directory";
     const hash = await this.files.hash(uri);
     this.hashCache.set(uri, { ...stat, hash });
     return hash;
@@ -352,10 +306,20 @@ export class Replica {
       this.check();
       validPath(entry.path);
       names.add(entry.path);
-      if (excluded(entry.path)) continue;
+      if (excluded(entry.path + (entry.directory ? "/" : ""))) continue;
       const previous = indexed.get(entry.path);
-      const hash = await this.localHash(entry.uri);
-      if (!previous || previous.deleted || previous.hash !== hash)
+      const hash = entry.directory
+        ? "directory"
+        : await this.localHash(entry.uri);
+      if (entry.directory) {
+        if (entryKey(previous) !== "directory")
+          await this.store.queue(this.scope, {
+            volume: folder.id,
+            path: entry.path,
+            base: previous?.rev || 0,
+            ...directoryItem(),
+          });
+      } else if (!previous || previous.deleted || previous.hash !== hash)
         await this.snapshotLocal(
           folder.id,
           entry.path,
@@ -363,8 +327,12 @@ export class Replica {
           previous?.rev || 0,
         );
     }
-    for (const row of rows)
-      if (!row.deleted && !excluded(row.path) && !names.has(row.path))
+    for (const row of rows.sort((a, b) => b.path.localeCompare(a.path)))
+      if (
+        !row.deleted &&
+        !excluded(row.path + (row.directory ? "/" : "")) &&
+        !names.has(row.path)
+      )
         await this.store.queue(this.scope, {
           volume: folder.id,
           path: row.path,
@@ -405,7 +373,17 @@ export class Replica {
     }
   }
   async push(folder) {
-    for (const op of await this.store.pending(this.scope, folder.id)) {
+    for (const op of (await this.store.pending(this.scope, folder.id)).sort(
+      (a, b) => {
+        const da = !a.hash && !a.directory,
+          db = !b.hash && !b.directory;
+        return da !== db
+          ? Number(da) - Number(db)
+          : da
+            ? b.path.localeCompare(a.path)
+            : a.path.localeCompare(b.path);
+      },
+    )) {
       this.check();
       if (
         builtinExcluded(op.path) ||
@@ -433,12 +411,29 @@ export class Replica {
     if (
       !recovering &&
       row.path !== ".arcaignore" &&
-      this.policy?.ignores(row.path)
+      this.policy?.ignores(row.path + (row.directory ? "/" : ""))
     )
       return;
     const current = await this.store.current(this.scope, row.volume, row.path);
     const target = this.files.work(this.scope, row.volume, row.path);
     const exists = await this.files.exists(target);
+    const info = exists ? await this.files.stat(target) : null;
+    if (row.directory) {
+      if (exists && !info?.directory)
+        throw new Error(
+          "Directory conflicts with a local file; reconcile it first.",
+        );
+      await this.store.journal(this.scope, row);
+      if (row.deleted) {
+        if (exists) await this.files.removeDirectory(target);
+      } else await this.files.mkdir(target);
+      await this.store.applied(this.scope, row);
+      return;
+    }
+    if (info?.directory)
+      throw new Error(
+        "File conflicts with a local directory; reconcile it first.",
+      );
     const actual = exists ? await this.files.hash(target) : null;
     if (
       actual &&
@@ -466,6 +461,12 @@ export class Replica {
   }
   async pull(folder) {
     let through;
+    const directoryDeletes = [];
+    const apply = async (row) => {
+      validRow(row, folder.id);
+      if (row.directory && row.deleted) directoryDeletes.push(row);
+      else await this.apply(row);
+    };
     if (!folder.initialized) {
       through = (
         await this.client.api(`/v1/changes?volume=${folder.id}&after=0`)
@@ -484,7 +485,7 @@ export class Replica {
           session = page.session;
           for (const row of page.files) {
             this.check();
-            await this.apply(validRow(row, folder.id));
+            await apply(row);
           }
           after = page.next;
         } while (after);
@@ -507,11 +508,15 @@ export class Replica {
         through = page.through;
         for (const row of page.files) {
           this.check();
-          await this.apply(validRow(row, folder.id));
+          await apply(row);
         }
         after = page.next;
       } while (after !== null);
     }
+    for (const row of directoryDeletes.sort((a, b) =>
+      b.path.localeCompare(a.path),
+    ))
+      await this.apply(row);
     if (!Number.isSafeInteger(through) || through < 0)
       throw new Error("Invalid synchronization cursor");
     if ((await this.store.pending(this.scope, folder.id)).length)
@@ -520,83 +525,20 @@ export class Replica {
       );
     await this.store.complete(this.scope, folder.id, through);
   }
-  async backupAll() {
-    const key = `backup:${this.scope}`;
-    let saved = await this.store.get(key, {
-      revision: 0,
-      bytes: 0,
-      completed: null,
-    });
-    let after = saved.revision,
-      through;
-    const roots = this.files.backup(this.scope);
-    await this.files.mkdir(roots);
-    do {
-      this.check();
-      const q = new URLSearchParams({
-        after: String(after),
-        limit: "250",
-        ...(through === undefined ? {} : { through: String(through) }),
-      });
-      const page = await this.client.api(`/v1/archive?${q}`);
-      through = page.through;
-      const volumes = new Map(
-        (await this.store.get(`backupVolumes:${this.scope}`, [])).map((v) => [
-          v.id,
-          v,
-        ]),
-      );
-      for (const v of page.volumes)
-        volumes.set(v.id, { id: v.id, name: v.name });
-      await this.store.set(`backupVolumes:${this.scope}`, [
-        ...volumes.values(),
-      ]);
-      for (const row of page.revisions) {
-        this.check();
-        validRow(row, row.volume);
-        if (!row.deleted) await this.download(row.hash, row.size, true);
-        await this.store.archive(this.scope, row);
-      }
-      after = page.next;
-      // Each page is durable before moving the cursor; repeat after a crash is idempotent.
-      if (after) await this.store.set(key, { ...saved, revision: after });
-    } while (after !== null);
-    if (
-      saved.completed &&
-      saved.revision === through &&
-      this.backupVerifiedAt &&
-      Date.now() - this.backupVerifiedAt < 3600000
-    ) {
-      await this.client.api("/v1/backup-ack", {
-        enabled: true,
-        revision: through,
-      });
-      return;
+  async rename(name) {
+    name = typeof name === "string" ? name.trim() : "";
+    if (!name || name.length > 100 || /[\x00-\x1f\x7f]/.test(name))
+      throw new Error("Enter a device name between 1 and 100 characters.");
+    await this.store.set("name", name);
+    this.changed();
+    try {
+      if (!this.client.state().connection) return false;
+      await this.report();
+      return true;
+    } catch {
+      // The saved name is sent again with the next machine report.
+      return false;
     }
-    let cursor = 0,
-      bytes = 0;
-    const verified = new Set();
-    for (;;) {
-      const page = await this.store.archiveRows(this.scope, cursor);
-      if (!page.length) break;
-      for (const row of page) {
-        this.check();
-        cursor = row.rev;
-        if (row.hash && !verified.has(row.hash)) {
-          await this.download(row.hash, row.size, true);
-          verified.add(row.hash);
-          bytes += row.size;
-        }
-      }
-    }
-    await this.files.exportBackup(this.scope, this.store, through);
-    this.backupVerifiedAt = Date.now();
-    const completed = new Date().toISOString();
-    await this.store.set(key, { revision: through, bytes, completed });
-    await this.client.api("/v1/backup-ack", {
-      enabled: true,
-      revision: through,
-    });
   }
   async report() {
     const folders = (await this.store.folders(this.scope)).filter(
@@ -605,7 +547,7 @@ export class Replica {
     const counts = await Promise.all(
       folders.map((f) => this.store.rows(this.scope, f.id)),
     );
-    const rows = counts.flat().filter((r) => !r.deleted);
+    const rows = counts.flat().filter((r) => !r.deleted && !r.directory);
     const name = await this.store.get(
       "name",
       this.platform === "ios" ? "iPhone" : "Android",
@@ -652,6 +594,8 @@ export class Replica {
         return;
       }
       const catalog = this.client.state().catalog;
+      if (!catalog.directories)
+        throw new Error("Update the hub to synchronize directories.");
       for (const folder of (await this.store.folders(this.scope)).filter(
         (f) => f.selected,
       )) {
@@ -668,7 +612,9 @@ export class Replica {
         }
         try {
           this.policy = null;
-          for (const row of await this.store.applying(this.scope, folder.id))
+          for (const row of (
+            await this.store.applying(this.scope, folder.id)
+          ).sort((a, b) => b.path.localeCompare(a.path)))
             await this.apply(row, true);
           await this.syncIgnore(folder);
           await this.scan(folder);
@@ -680,16 +626,11 @@ export class Replica {
           throw e;
         }
       }
-      if (this.backup) await this.backupAll();
       if (this.force) this.lastFullScan = Date.now();
       await this.store.set(`lastSync:${this.scope}`, new Date().toISOString());
       await this.report();
     } catch (e) {
       if (e.code === "SYNC_INTERRUPTED") return;
-      if (!this.client.state().connection) {
-        this.backup = false;
-        await this.store.set("backup", false);
-      }
       this.error = e.message;
       if (!this.stopped && !this.paused)
         await this.notify("Synchronization needs attention", e.message);
@@ -719,39 +660,19 @@ export class Replica {
     await this.files.copy(source, destination);
     this.changed();
   }
-  async saveText(volume, path, text, expectedHash) {
-    validPath(path);
-    if (builtinExcluded(path))
-      throw new Error("System metadata files are not synced.");
-    if (this.busy) throw new Error("Wait for synchronization to finish");
-    if (!(await this.store.folder(this.scope, volume))?.selected)
-      throw new Error("Select this folder first");
-    const target = this.files.work(this.scope, volume, path);
-    if (
-      expectedHash &&
-      (!(await this.files.exists(target)) ||
-        (await this.files.hash(target)) !== expectedHash)
-    )
-      throw new Error(
-        "This file changed while editing. Reload it before saving.",
-      );
-    if (!expectedHash && (await this.files.exists(target)))
-      throw new Error("A file with this name already exists");
-    const data = new TextEncoder().encode(text);
-    await this.space(data.length);
-    await this.files.mkdir(this.files.parent(target));
-    const temp = this.files.parent(target) + "/.arca-edit";
-    await this.files.remove(temp);
-    await this.files.write(temp, data);
-    await this.files.replace(temp, target);
-    this.changed();
-  }
   async removeFile(volume, name) {
     validPath(name);
     if (!(await this.store.folder(this.scope, volume))?.selected)
       throw new Error("Select this folder first");
     if (this.busy) throw new Error("Wait for synchronization to finish");
-    await this.files.remove(this.files.work(this.scope, volume, name));
+    const row = await this.store.current(this.scope, volume, name);
+    const file = this.files.work(this.scope, volume, name);
+    const info = await this.files.stat(file);
+    if (!info || info.directory || !row || row.deleted || row.directory)
+      throw new Error("Only synced files can be deleted here.");
+    if ((await this.files.hash(file)) !== row.hash)
+      throw new Error("Local file changed. Sync before deleting.");
+    await this.files.remove(file);
     this.changed();
   }
 }

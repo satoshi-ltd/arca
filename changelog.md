@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.1 — 2026-09-09
+
+### Synchronization and file operations
+
+- Synchronize empty directories across hub, desktop and mobile, with safe non-recursive removal and file-only counts.
+- Scope replica History to selected folders still shared by the hub; handle unavailable history explicitly and allow confirmed mobile copy removal offline, including orphaned shares and unsynced local changes.
+- Add confirmed, restorable file deletion on web/desktop; protect stale or unsynced file content on desktop/mobile. Yield background scans/transfers for interactive operations and schedule propagation after delete, restore and conflict resolution.
+- Apply current exclusion rules to browsing and counts while retaining existing disk content and history.
+
+### Mobile and interface
+
+- Make incoming sharing transient: cancellation discards unsaved temporary copies. Allow correcting incompatible sender filenames before saving; preserve original files and binary contents.
+- Unify file details and History across entry points and phone/Fold/desktop layouts; simplify file actions, empty states and synchronization feedback.
+- Keep forms visible above the keyboard, allow inline device renaming, and refine shared sidebar widths, role chips, accent colors and disconnect icons.
+- Prevent scrolling from dismissing the desktop/web exclusion editor. Give Android launcher and themed icons more breathing room.
+
+### Cleanup and qualification
+
+- Mobile is replica-only; remove full-backup UI/runtime/export support and the internal text editor. Remove obsolete schema/protocol compatibility branches and unused dependencies/helpers; desktop/server optional backup remains supported.
+- Align runtime, desktop, mobile and native module versions at 0.3.1; advance mobile build numbers to 3. Docker publication derives its tag from this version.
+- Validation: 165 tests passed, one platform skip; focused file-operation/conflict checks passed after the final queue change, Android/iOS exports and desktop frontend build passed, and release manifests agree.
+- User confirmed COROS import and Android launcher appearance. Broader native, installer and cross-platform qualification remains open. Current daemon schema/protocol is required; this commit does not deploy or reset existing installations.
+
 ## 0.3.0 — 2026-09-08
 
 ### Added

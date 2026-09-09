@@ -55,6 +55,7 @@ export function createClient({
       signal: options.signal || globalThis.AbortSignal?.timeout?.(timeout),
       headers: {
         ...options.headers,
+        "X-Arca-Directories": "1",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });

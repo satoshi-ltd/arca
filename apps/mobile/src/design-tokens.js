@@ -1,5 +1,6 @@
 // Mirrors the canonical desktop tokens.css; parity is checked automatically.
 export const geometry = {
+  detailSideWidth: 320,
   tagHeight: 20,
   tagFont: 10,
   tagLine: 14,

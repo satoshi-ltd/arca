@@ -1,4 +1,3 @@
-import { writePortableBackup } from "./portable-backup";
 import { native } from "./private-network";
 import { File, Directory, Paths } from "expo-file-system";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -12,30 +11,35 @@ function id(value) {
 }
 const root = new Directory(Paths.document, "arca");
 export const files = {
-  incoming: (key) => new File(root, "incoming", id(key)).uri,
-  scope: (scope) => new Directory(root, id(scope)).uri,
+  incoming: (key) => new File(Paths.cache, "arca-incoming", id(key)).uri,
+  async clearIncoming() {
+    const directory = new Directory(Paths.cache, "arca-incoming");
+    if (directory.exists) directory.delete();
+  },
   folder: (scope, volume) =>
     new Directory(root, id(scope), "folders", id(volume)).uri,
   work(scope, volume, path) {
-    return new File(this.folder(scope, volume), ...validPath(path).split("/"))
-      .uri;
+    return Paths.join(
+      this.folder(scope, volume),
+      ...validPath(path).split("/"),
+    );
   },
   object: (scope, hash) => new File(root, id(scope), "objects", id(hash)).uri,
   partial: (scope, hash) => new File(root, id(scope), "partial", id(hash)).uri,
-  backup: (scope) => new Directory(root, id(scope), "backup").uri,
-  backupObject(scope, hash) {
-    return new File(this.backup(scope), "objects", id(hash)).uri;
-  },
-  parent: (uri) => new File(uri).parentDirectory.uri,
+
+  parent: (uri) => Paths.dirname(uri),
   async mkdir(uri) {
     new Directory(uri).create({ intermediates: true, idempotent: true });
   },
   async exists(uri) {
-    return new File(uri).exists || new Directory(uri).exists;
+    return Paths.info(uri).exists;
   },
   async stat(uri) {
+    const info = Paths.info(uri);
+    if (!info.exists) return null;
+    if (info.isDirectory) return { directory: true, size: 0 };
     const f = new File(uri);
-    return f.exists ? { size: f.size, mtime: f.modificationTime } : null;
+    return { size: f.size, mtime: f.modificationTime };
   },
   async free() {
     return Paths.availableDiskSpace;
@@ -43,6 +47,9 @@ export const files = {
   async removeFolder(scope, volume) {
     const directory = new Directory(this.folder(scope, volume));
     if (directory.exists) directory.delete();
+  },
+  async removeDirectory(uri) {
+    native.removeEmptyDirectory(uri);
   },
   async remove(uri) {
     if (new File(uri).exists) new File(uri).delete();
@@ -56,8 +63,6 @@ export const files = {
   },
   // Callers journal replacements before entering this operation.
   async replace(from, to) {
-    if (!native)
-      throw new Error("Install the Arca native build to save files.");
     native.replaceFile(from, to);
   },
   async write(uri, data, offset = 0) {
@@ -100,8 +105,10 @@ export const files = {
     for (const entry of new Directory(uri).list()) {
       if (entry.name.startsWith(".arca-")) continue;
       const path = prefix + entry.name;
-      if (entry instanceof Directory) yield* this.walk(entry.uri, path + "/");
-      else
+      if (entry instanceof Directory) {
+        yield { path, uri: entry.uri, size: 0, directory: true };
+        yield* this.walk(entry.uri, path + "/");
+      } else
         yield {
           path,
           uri: entry.uri,
@@ -110,23 +117,12 @@ export const files = {
         };
     }
   },
-  async used(uri) {
-    let total = 0;
-    if (!new Directory(uri).exists) return 0;
-    for await (const entry of this.walk(uri)) total += entry.size;
-    return total;
-  },
   async exportDirectory(source, name) {
-    if (!native)
-      throw new Error("Install the Arca native build to export files.");
     const destination = await Directory.pickDirectoryAsync();
     return native.exportDirectory(
       source,
       destination.uri,
       name + "-" + Date.now(),
     );
-  },
-  exportBackup(scope, store, through) {
-    return writePortableBackup(this, scope, store, through);
   },
 };

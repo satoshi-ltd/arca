@@ -9,7 +9,7 @@ export class ReplicaStore {
       CREATE TABLE IF NOT EXISTS files (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
       CREATE TABLE IF NOT EXISTS pending (scope TEXT, volume TEXT, path TEXT, op TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
       CREATE TABLE IF NOT EXISTS applying (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
-      CREATE TABLE IF NOT EXISTS archive (scope TEXT, rev INTEGER, row TEXT NOT NULL, PRIMARY KEY(scope,rev));`);
+`);
   }
   async get(key, fallback = null) {
     const row = await this.db.getFirstAsync(
@@ -30,7 +30,7 @@ export class ReplicaStore {
       `SELECT f.*, COUNT(x.path) AS files,
        COALESCE(SUM(json_extract(x.row, '$.size')), 0) AS bytes
        FROM folders f LEFT JOIN files x ON x.scope=f.scope AND x.volume=f.id
-         AND COALESCE(json_extract(x.row, '$.deleted'), 0)=0
+         AND COALESCE(json_extract(x.row, '$.deleted'), 0)=0 AND COALESCE(json_extract(x.row, '$.directory'), 0)=0
        WHERE f.scope=? GROUP BY f.scope,f.id ORDER BY f.name`,
       scope,
     );
@@ -75,9 +75,7 @@ export class ReplicaStore {
       `
       SELECT json_extract(row, '$.hash') AS hash FROM files WHERE scope=?
       UNION SELECT json_extract(op, '$.hash') FROM pending WHERE scope=?
-      UNION SELECT json_extract(row, '$.hash') FROM applying WHERE scope=?
-      UNION SELECT json_extract(row, '$.hash') FROM archive WHERE scope=?`,
-      scope,
+      UNION SELECT json_extract(row, '$.hash') FROM applying WHERE scope=?`,
       scope,
       scope,
       scope,
@@ -185,23 +183,6 @@ export class ReplicaStore {
         "SELECT row FROM applying WHERE scope=? AND volume=?",
         scope,
         volume,
-      )
-    ).map((r) => JSON.parse(r.row));
-  }
-  async archive(scope, row) {
-    await this.db.runAsync(
-      "INSERT OR REPLACE INTO archive VALUES(?,?,?)",
-      scope,
-      row.rev,
-      JSON.stringify(row),
-    );
-  }
-  async archiveRows(scope, after = 0) {
-    return (
-      await this.db.getAllAsync(
-        "SELECT row FROM archive WHERE scope=? AND rev>? ORDER BY rev LIMIT 500",
-        scope,
-        after,
       )
     ).map((r) => JSON.parse(r.row));
   }

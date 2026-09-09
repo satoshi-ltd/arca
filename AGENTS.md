@@ -24,7 +24,7 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 
 - Hub alone creates shares; IDs identify them. Every machine chooses independent local destinations. Replicas edit bidirectionally. Complete local files, no placeholders.
 - Pause, replica unlink, hub local-copy unselection and hub Delete share are different operations. Preserve the documented file/history consequences.
-- Optional full backup is additional to replica working sync. Legacy backup nodes stay compatible. Quit leaves the daemon running.
+- Optional full backup is additional to desktop/server replica working sync. Mobile (phone and Fold) is replica-only: no hub or full backup. Do not retain pre-production backward-compatibility branches, legacy modes or unused code. Preserve current error recovery and platform support. Quit leaves the daemon running.
 - Discovery never links machines. Web access and pairing use separate six-digit, single-use, ten-minute codes with persistent failure budgets; credentials remain long/revocable.
 - Web is primary server administration; Tauri manages its local daemon. CLI is auxiliary, without interactive terminal menus. Do not imply remote hub admin authority from a replica credential.
 - New hub folders optionally create `.arcaignore` via an unchecked checkbox; existing directories and replica selection do not seed it. No hidden configurable cache list.
@@ -37,5 +37,6 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 - Workspace: `/Users/javi/git/arca`. Development normally uses the real `~/.arca`; tests should use isolated state.
 - Casa: SSH `casa`, Docker container `arca`, installation/state under `/home/atlas/arca-pilot`. Operational details and restart/deployment boundaries live in the spec.
 - Do not reset live state, delete user files, enable backup or resume a user pause as incidental cleanup. No automatic relocation/deletion of existing copies.
+- Casa deployment is user-managed (September 9): do not update or restart its Docker container unless explicitly requested again. Prepare and validate changes locally, and report deployment or client compatibility requirements. This supersedes the earlier standing deployment authorization.
 - Native changes require the running binary to reload/rebuild; daemon changes require service deployment/restart. Do not confuse a built bundle with the currently running dev process.
 - As of 2026-09-08: phase 1 alpha, not release-qualified. Event-driven remote sync/long polling is proposed, not implemented. Consult the spec for current open work instead of inferring completion from old messages.

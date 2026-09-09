@@ -25,6 +25,7 @@ async function setup(t, options = { timer: false }) {
         method: data === undefined ? "GET" : "POST",
         headers: {
           Authorization: `Bearer ${credential}`,
+          "X-Arca-Directories": "1",
           "Content-Type": "application/json",
         },
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),
@@ -49,7 +50,7 @@ async function setup(t, options = { timer: false }) {
       url: `http://127.0.0.1:${hub.port}`,
       token: invite.token,
     });
-    if (role !== "backup") await replica.api("/v1/select", { id: volume.id });
+    await replica.api("/v1/select", { id: volume.id });
     replica.invite = invite;
     return replica;
   };
@@ -117,18 +118,14 @@ test("concurrent offline edits preserve both versions and stale deletion preserv
   assert.equal(read(a, volume, "note.txt"), "hub-new");
 });
 
-test("selection is complete and unselection retains disk; backup receives full history", async (t) => {
+test("selection is complete and unselection retains disk", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const a = await connect("a");
-  const backup = await connect("backup", "backup");
   write(hub, volume, "a", "old");
   await hub.sync();
   write(hub, volume, "a", "new");
   await hub.sync();
   await a.sync();
-  await backup.sync();
-  assert.equal(read(backup, volume, "a"), "new");
-  assert.equal(backup.engine.status().backupRevisions, 3);
   const oldPath = a.engine.store.volume(volume.id).path;
   await a.api("/v1/unselect", { id: volume.id });
   assert.equal(
@@ -148,7 +145,6 @@ test("selection is complete and unselection retains disk; backup receives full h
 test("authentication, role permissions, revocation and unsafe paths", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const a = await connect("a");
-  const backup = await connect("backup", "backup");
   await assert.rejects(hub.api("/v1/status", undefined, "wrong"), {
     status: 401,
   });
@@ -164,9 +160,10 @@ test("authentication, role permissions, revocation and unsafe paths", async (t) 
     ),
     { status: 400 },
   );
-  await assert.rejects(hub.api("/v1/propose", {}, backup.invite.token), {
-    status: 403,
-  });
+  await assert.rejects(
+    hub.api("/v1/devices", { name: "obsolete", role: "backup" }),
+    { status: 400 },
+  );
   await hub.api("/v1/revoke", { id: a.invite.id });
   await a.sync();
   assert.equal(a.engine.config.hub, null);
@@ -1514,36 +1511,6 @@ test("removing a machine deletes registration and reports, rejects an in-flight 
   });
 });
 
-test("opening old state purges previously revoked registrations only", async (t) => {
-  const { hub, connect } = await setup(t);
-  const old = await connect("old");
-  const current = await connect("current");
-  const s = hub.engine.store;
-  s.db.prepare("UPDATE devices SET revoked=1 WHERE id=?").run(old.invite.id);
-  s.db
-    .prepare("INSERT OR REPLACE INTO machine_reports VALUES(?,?)")
-    .run(old.invite.id, "{}");
-  const reopened = new Store(s.home);
-  reopened.close();
-  assert.equal(
-    s.db.prepare("SELECT COUNT(*) n FROM devices WHERE id=?").get(old.invite.id)
-      .n,
-    0,
-  );
-  assert.equal(
-    s.db
-      .prepare("SELECT COUNT(*) n FROM machine_reports WHERE device=?")
-      .get(old.invite.id).n,
-    0,
-  );
-  assert.equal(
-    s.db
-      .prepare("SELECT COUNT(*) n FROM devices WHERE id=?")
-      .get(current.invite.id).n,
-    1,
-  );
-});
-
 test("pairing over a verified tailnet address needs no manual HTTP flag", async (t) => {
   const detector = {
     read: async () => ({
@@ -1705,3 +1672,312 @@ test("content flushes use writable handles for Windows compatibility", async (t)
   assert.equal(fs.readFileSync(source, "utf8"), "hub update");
   assert.ok(contentFlushes > 0);
 });
+
+test("empty directories synchronize bidirectionally, browse and survive restore without metadata files", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("mac"),
+    other = await connect("other");
+  const directory = (node, name) =>
+    path.join(node.engine.store.volume(volume.id).path, name);
+  fs.mkdirSync(directory(hub, "doc/Coros"), { recursive: true });
+  fs.writeFileSync(directory(hub, "doc/Coros/.DS_Store"), "excluded");
+  await hub.sync();
+  await mac.sync();
+  assert.deepEqual(fs.readdirSync(directory(mac, "doc/Coros")), []);
+  const browse = await hub.api(`/v1/browse?volume=${volume.id}&prefix=doc`);
+  assert.equal(browse.entries.find((e) => e.name === "Coros").files, 0);
+  assert.equal(browse.entries.find((e) => e.name === "Coros").directory, 1);
+  fs.mkdirSync(directory(mac, "workouts/empty"), { recursive: true });
+  await mac.sync();
+  await other.sync();
+  assert.ok(fs.statSync(directory(hub, "workouts/empty")).isDirectory());
+  assert.ok(fs.statSync(directory(other, "workouts/empty")).isDirectory());
+  const revision = hub.engine.store.current(volume.id, "workouts/empty");
+  fs.rmSync(directory(mac, "workouts"), { recursive: true });
+  await mac.sync();
+  await other.sync();
+  assert.equal(fs.existsSync(directory(hub, "workouts")), false);
+  assert.equal(fs.existsSync(directory(other, "workouts")), false);
+  await hub.engine.restore(volume.id, revision.path, revision.rev);
+  await other.sync();
+  assert.ok(fs.statSync(directory(other, "workouts/empty")).isDirectory());
+  assert.equal(
+    hub.engine.store.rows(volume.id).some((r) => r.path.endsWith(".DS_Store")),
+    false,
+  );
+});
+
+test("directory removal preserves unsynchronized local contents and older clients are rejected", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("mac");
+  const root = hub.engine.store.volume(volume.id).path;
+  fs.mkdirSync(path.join(root, "empty"));
+  await hub.sync();
+  await mac.sync();
+  const row = hub.engine.store.current(volume.id, "empty");
+  fs.writeFileSync(path.join(root, "empty", ".DS_Store"), "keep");
+  await assert.rejects(
+    hub.engine.propose(
+      { volume: volume.id, path: "empty", base: row.rev },
+      { id: mac.engine.config.id },
+    ),
+    /not empty|ENOTEMPTY/,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(root, "empty/.DS_Store"), "utf8"),
+    "keep",
+  );
+  const unsupported = await fetch(
+    `http://127.0.0.1:${hub.port}/v1/snapshot?volume=${volume.id}`,
+    { headers: { Authorization: `Bearer ${mac.invite.token}` } },
+  );
+  assert.equal(unsupported.status, 412);
+});
+
+test("stale directory deletion preserves a recreated directory and excluded empty directories stay untracked", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("mac");
+  const root = hub.engine.store.volume(volume.id).path;
+  fs.mkdirSync(path.join(root, "keep"));
+  fs.mkdirSync(path.join(root, "ignored"));
+  write(hub, volume, ".arcaignore", "ignored/\n");
+  await hub.sync();
+  const original = hub.engine.store.current(volume.id, "keep");
+  const removed = hub.engine.store.commit(
+    volume.id,
+    "keep",
+    null,
+    hub.engine.config.id,
+    true,
+  );
+  const restored = hub.engine.store.commit(
+    volume.id,
+    "keep",
+    { directory: 1, hash: null, size: 0 },
+    hub.engine.config.id,
+    true,
+  );
+  const result = await hub.engine.propose(
+    { volume: volume.id, path: "keep", base: original.rev },
+    { id: mac.engine.config.id },
+  );
+  assert.equal(result.row.rev, restored.rev);
+  assert.ok(fs.statSync(path.join(root, "keep")).isDirectory());
+  assert.equal(hub.engine.store.current(volume.id, "ignored"), undefined);
+  await mac.sync();
+  assert.equal(
+    fs.existsSync(
+      path.join(mac.engine.store.volume(volume.id).path, "ignored"),
+    ),
+    false,
+  );
+  assert.ok(removed.directory);
+});
+
+test("indexed path collision checks preserve Unicode, literal prefixes and file/directory boundaries", async (t) => {
+  const { hub, volume } = await setup(t),
+    s = hub.engine.store;
+  const dir = { directory: 1, hash: null, size: 0 },
+    file = { hash: digest("fixture"), size: 7 };
+  const commit = (name, item) =>
+    s.commit(volume.id, name, item, hub.engine.config.id);
+  commit("Äpfel", dir);
+  assert.throws(() => commit("äPFEL", dir), /collision/);
+  commit("über.txt", file);
+  assert.throws(() => commit("ÜBER.TXT/child", file), /collision/);
+  commit("100%/note", file);
+  assert.throws(() => commit("100%", file), /collision/);
+  commit("100%", dir);
+  commit("100other", file);
+  assert.throws(() => commit("100%", null), /contains synchronized/);
+  commit("100%/note", null);
+  commit("100%", null);
+  assert.equal(s.current(volume.id, "100other").deleted, 0);
+});
+
+test("file deletion rejects stale content, preserves history and propagates from hub and replica", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "delete.txt", "retained");
+  await hub.sync();
+  const replica = await connect("replica");
+  await replica.sync();
+  const first = hub.engine.store.current(volume.id, "delete.txt");
+  await assert.rejects(
+    hub.api("/v1/delete-file", {
+      volume: volume.id,
+      path: "delete.txt",
+      rev: first.rev - 1,
+    }),
+    /changed/,
+  );
+  await assert.rejects(
+    hub.api(
+      "/v1/delete-file",
+      { volume: volume.id, path: "delete.txt", rev: first.rev },
+      replica.invite.token,
+    ),
+    /administrator/,
+  );
+  await hub.api("/v1/delete-file", {
+    volume: volume.id,
+    path: "delete.txt",
+    rev: first.rev,
+  });
+  await replica.sync();
+  assert.equal(
+    fs.existsSync(
+      path.join(replica.engine.store.volume(volume.id).path, "delete.txt"),
+    ),
+    false,
+  );
+  await hub.api("/v1/restore", {
+    volume: volume.id,
+    path: "delete.txt",
+    rev: first.rev,
+  });
+  await replica.sync();
+  assert.equal(read(replica, volume, "delete.txt"), "retained");
+  const row = replica.engine.store.current(volume.id, "delete.txt");
+  write(replica, volume, "delete.txt", "unsynced");
+  await assert.rejects(
+    replica.api("/v1/delete-file", {
+      volume: volume.id,
+      path: "delete.txt",
+      rev: row.rev,
+    }),
+    /changed/,
+  );
+  await replica.sync();
+  const updated = replica.engine.store.current(volume.id, "delete.txt");
+  await replica.api("/v1/delete-file", {
+    volume: volume.id,
+    path: "delete.txt",
+    rev: updated.rev,
+  });
+  await replica.sync();
+  assert.equal(hub.engine.store.current(volume.id, "delete.txt").deleted, 1);
+});
+
+test("ignore changes hide retained files from browse and totals without deleting history or disk", async (t) => {
+  const { hub, volume } = await setup(t);
+  write(hub, volume, "smith/repos/core/a.txt", "retained");
+  write(hub, volume, "notes/keep.txt", "visible");
+  await hub.sync();
+  const original = hub.engine.store.current(
+    volume.id,
+    "smith/repos/core/a.txt",
+  );
+  write(hub, volume, ".arcaignore", "/smith/repos/*\n");
+  await hub.sync();
+  for (const endpoint of ["/v1/status", "/v1/catalog", "/v1/remote"]) {
+    const data = await hub.api(endpoint);
+    const v = data.volumes.find((v) => v.id === volume.id);
+    assert.equal(v.files, 2, endpoint);
+  }
+  const browse = await hub.api(
+    `/v1/browse?volume=${volume.id}&prefix=smith/repos`,
+  );
+  assert.equal(browse.entries.length, 0);
+  const search = await hub.api(`/v1/browse?volume=${volume.id}&search=a.txt`);
+  assert.equal(search.entries.length, 0);
+  assert.equal(read(hub, volume, "smith/repos/core/a.txt"), "retained");
+  assert.equal(
+    hub.engine.store.current(volume.id, original.path).rev,
+    original.rev,
+  );
+  assert.equal(hub.engine.store.history(volume.id, original.path).length, 1);
+  write(hub, volume, ".arcaignore", "");
+  await hub.sync();
+  assert.equal(
+    (await hub.api("/v1/catalog")).volumes.find((v) => v.id === volume.id)
+      .files,
+    3,
+  );
+});
+
+test("replica history is restricted to selected folders, including paused selections", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const hidden = await hub.api("/v1/volumes", { name: "Hidden" });
+  write(hub, volume, "visible.txt", "visible");
+  write(hub, hidden, "private.txt", "hidden");
+  await hub.sync();
+  const replica = await connect("history-replica");
+  await replica.sync();
+  const page = await replica.api("/v1/activity?limit=100");
+  assert.ok(page.versions.length);
+  assert.ok(page.versions.every((r) => r.volume === volume.id));
+  await assert.rejects(
+    replica.api(`/v1/history?volume=${hidden.id}&path=private.txt&limit=10`),
+  );
+  await replica.api("/v1/pause", { paused: true });
+  assert.ok((await replica.api("/v1/activity?limit=100")).versions.length);
+  await replica.api("/v1/unselect", { id: volume.id });
+  assert.deepEqual((await replica.api("/v1/activity?limit=100")).versions, []);
+  await assert.rejects(
+    replica.api(`/v1/history?volume=${volume.id}&path=visible.txt&limit=10`),
+    /Select/,
+  );
+});
+
+test("current contract rejects standalone backups, paginates snapshots and never reseeds ignore rules", async (t) => {
+  const { hub, volume, node } = await setup(t);
+  await assert.rejects(
+    node("standalone-backup", "backup"),
+    /Only hub and replica/,
+  );
+  fs.unlinkSync(path.join(volume.path, ".arcaignore"));
+  write(hub, volume, "kept.txt", "current");
+  await hub.sync();
+  assert.equal(fs.existsSync(path.join(volume.path, ".arcaignore")), false);
+  const page = await hub.api(`/v1/snapshot?volume=${volume.id}`);
+  assert.equal(typeof page.session, "string");
+  assert.equal(page.next, null);
+  assert.ok(page.files.some((row) => row.path === "kept.txt"));
+  await hub.api("/v1/snapshot-release", { session: page.session });
+});
+
+test(
+  "file actions interrupt stalled background requests and preserve sync intent",
+  { timeout: 10000 },
+  async (t) => {
+    const { hub, volume, connect } = await setup(t);
+    write(hub, volume, "action.txt", "recoverable");
+    await hub.sync();
+    const replica = await connect("interactive");
+    await replica.sync();
+    const original = hub.engine.store.current(volume.id, "action.txt");
+    const hubURL = replica.engine.config.hub.url;
+    for (const operation of ["delete-file", "restore"]) {
+      let entered;
+      const started = new Promise((resolve) => {
+        entered = resolve;
+      });
+      const slow = http.createServer(() => entered());
+      await new Promise((resolve) => slow.listen(0, "127.0.0.1", resolve));
+      try {
+        replica.engine.config.hub.url = `http://127.0.0.1:${slow.address().port}`;
+        const cycle = replica.sync();
+        await started;
+        replica.engine.config.hub.url = hubURL;
+        await replica.api(`/v1/${operation}`, {
+          volume: volume.id,
+          path: "action.txt",
+          rev: original.rev,
+        });
+        await cycle;
+        assert.equal(replica.engine.error, null);
+        assert.equal(replica.engine.paused, false);
+        await replica.sync();
+        assert.equal(
+          hub.engine.store.current(volume.id, "action.txt").deleted,
+          operation === "delete-file" ? 1 : 0,
+        );
+      } finally {
+        replica.engine.config.hub.url = hubURL;
+        slow.closeAllConnections();
+        await new Promise((resolve) => slow.close(resolve));
+      }
+    }
+    assert.equal(read(replica, volume, "action.txt"), "recoverable");
+  },
+);

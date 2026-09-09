@@ -20,6 +20,7 @@ export function FileHistory({
   localEntry,
   retry,
   author,
+  deleteFile,
 }) {
   const { s, c, wide } = useDesign();
   const current = history.versions[0];
@@ -170,6 +171,13 @@ export function FileHistory({
                   onPress={openFolder}
                 />
               )}
+              <Button
+                label="Delete file…"
+                icon="trash"
+                danger
+                disabled={locked || !deleteFile || !!current?.deleted}
+                onPress={deleteFile}
+              />
             </View>
           </Card>
         </View>

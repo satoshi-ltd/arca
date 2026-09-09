@@ -1,18 +1,15 @@
+import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g } from "./design-tokens.js";
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useRef } from "react";
 import {
   View,
   Text,
   Pressable,
   ActivityIndicator,
   TextInput,
-  Alert,
   Modal,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, {
   Path,
@@ -120,12 +117,23 @@ export function Button({
     </Pressable>
   );
 }
-export function Field({ label, ...props }) {
+export function Field({ label, onFocus, onBlur, ...props }) {
+  const input = useRef(null);
+  const focus = useContext(FieldFocus);
   const { s, c } = useDesign();
   return (
     <View style={s.section}>
       <Text style={s.heading}>{label}</Text>
       <TextInput
+        ref={input}
+        onFocus={(event) => {
+          focus?.focus(input.current);
+          onFocus?.(event);
+        }}
+        onBlur={(event) => {
+          focus?.blur(input.current);
+          onBlur?.(event);
+        }}
         accessibilityLabel={label}
         placeholderTextColor={c.mute}
         style={s.input}
@@ -247,47 +255,6 @@ export function Toggle({
     </View>
   );
 }
-export function CopyButton({ label, value }) {
-  const [copied, setCopied] = React.useState(false);
-  const timer = React.useRef();
-  React.useEffect(() => () => clearTimeout(timer.current), []);
-  return (
-    <Button
-      label={copied ? "Copied" : label}
-      onPress={async () => {
-        try {
-          await Clipboard.setStringAsync(value);
-          setCopied(true);
-          clearTimeout(timer.current);
-          timer.current = setTimeout(() => setCopied(false), 2000);
-        } catch {
-          Alert.alert("Could not copy", "Try again.");
-        }
-      }}
-    />
-  );
-}
-export function Progress({ done, total }) {
-  const { c, s } = useDesign();
-  const ratio = total > 0 ? Math.min(1, Math.max(0, done / total)) : 0;
-  return (
-    <View
-      accessibilityRole="progressbar"
-      accessibilityValue={{ min: 0, max: 100, now: Math.round(ratio * 100) }}
-      style={s.section}
-    >
-      <Svg
-        width="100%"
-        height={6}
-        viewBox="0 0 100 6"
-        preserveAspectRatio="none"
-      >
-        <Rect width={100} height={6} rx={3} fill={c.divider} />
-        <Rect width={100 * ratio} height={6} rx={3} fill={c.accent} />
-      </Svg>
-    </View>
-  );
-}
 export function Breadcrumbs({ name, directory, onChange }) {
   const { s, c } = useDesign();
   const parts = directory.split("/").filter(Boolean);
@@ -345,10 +312,7 @@ export function Sheet({
       presentationStyle="overFullScreen"
       onRequestClose={busy ? () => {} : onClose}
     >
-      <KeyboardAvoidingView
-        style={s.modalOverlay}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
+      <KeyboardPane style={s.modalOverlay}>
         <SafeAreaView style={s.modalPanel}>
           <View style={s.sheetHeader}>
             <Text accessibilityRole="header" style={[s.heading, s.flex]}>
@@ -363,7 +327,8 @@ export function Sheet({
               onPress={onClose}
             />
           </View>
-          <ScrollView
+          <KeyboardScrollView
+            style={s.sheetScroll}
             contentContainerStyle={s.content}
             keyboardShouldPersistTaps="handled"
           >
@@ -374,9 +339,9 @@ export function Sheet({
               </View>
             )}
             {children}
-          </ScrollView>
+          </KeyboardScrollView>
         </SafeAreaView>
-      </KeyboardAvoidingView>
+      </KeyboardPane>
     </Modal>
   );
 }
@@ -544,7 +509,7 @@ export function MachineRow({
       <View style={s.row}>
         <View style={[s.tile, s.machineTile, hub && s.hubTile]}>
           <Icon
-            color={hub ? c.paper : undefined}
+            color={hub ? c.onAccent : undefined}
             name={
               hub
                 ? "server"

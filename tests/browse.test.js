@@ -6,9 +6,11 @@ test("browse groups directories, scopes search and paginates without including d
   const db = new DatabaseSync(":memory:");
   try {
     db.exec(
-      "CREATE TABLE files(volume TEXT, path TEXT, size INTEGER, rev INTEGER, deleted INTEGER)",
+      "CREATE TABLE files(volume TEXT, path TEXT, size INTEGER, rev INTEGER, deleted INTEGER, directory INTEGER DEFAULT 0)",
     );
-    const put = db.prepare("INSERT INTO files VALUES(?,?,?,?,?)");
+    const put = db.prepare(
+      "INSERT INTO files(volume,path,size,rev,deleted) VALUES(?,?,?,?,?)",
+    );
     for (const [path, size, deleted] of [
       ["notes/a.md", 10, 0],
       ["notes/deep/b.md", 20, 0],

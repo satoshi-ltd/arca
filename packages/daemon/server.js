@@ -1,3 +1,4 @@
+import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
 import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
 import { folderPreview } from "./folder-preview.js";
 import { acceptReport, machines } from "./machines.js";
@@ -62,6 +63,10 @@ export async function start(home, options = {}) {
   let engine;
   try {
     engine = new Engine(home);
+    if (!["hub", "replica"].includes(engine.config.role)) {
+      engine.close();
+      fail("Only hub and replica daemons are supported");
+    }
   } catch (e) {
     fs.unlinkSync(lock);
     throw e;
@@ -228,7 +233,8 @@ export async function start(home, options = {}) {
         : s.db
             .prepare("SELECT * FROM devices WHERE token_hash=? AND revoked=0")
             .get(digest(credential));
-      if (!device) fail("Unauthorized", 401);
+      if (!device || (!admin && device.role !== "replica"))
+        fail("Unauthorized", 401);
       if (!admin) requireLanAccess();
       if (!admin)
         s.db
@@ -262,11 +268,24 @@ export async function start(home, options = {}) {
         )
           fail("Unauthorized", 401);
       };
-      const authorizedWork = (work) =>
-        engine.exclusive(() => {
+      const authorizedWork = (work) => {
+        // Explicit edits should not wait for a complete background scan/transfer.
+        if (
+          req.method === "POST" &&
+          [
+            "/v1/delete-file",
+            "/v1/restore",
+            "/v1/conflict-choice",
+            "/v1/move",
+            "/v1/ignore-policy",
+          ].includes(route)
+        )
+          engine.interruptCycle();
+        return engine.exclusive(() => {
           checkCredential();
           return work();
         });
+      };
       const requireAdmin = () => {
         if (!admin) fail("Local administrator credential required", 403);
       };
@@ -301,6 +320,14 @@ export async function start(home, options = {}) {
         requireAdmin();
         return send(200, engine.status());
       }
+      if (
+        !admin &&
+        ["/v1/snapshot", "/v1/changes", "/v1/archive", "/v1/propose"].includes(
+          route,
+        ) &&
+        req.headers["x-arca-directories"] !== "1"
+      )
+        fail("Update this client to synchronize directories", 412);
       if (req.method === "GET" && route === "/v1/catalog") {
         requireHub();
         return send(200, {
@@ -308,6 +335,7 @@ export async function start(home, options = {}) {
           changes: true,
           conflictResolution: true,
           blobRanges: true,
+          directories: true,
           id: config.id,
           name: config.name,
           ready: s.volumes().length > 0,
@@ -315,10 +343,7 @@ export async function start(home, options = {}) {
             id: v.id,
             name: v.name,
             conflicts: s.unresolvedConflicts(v.id),
-            files: s.rows(v.id).filter((r) => !r.deleted).length,
-            bytes: s
-              .rows(v.id)
-              .reduce((n, r) => n + (r.deleted ? 0 : r.size), 0),
+            ...s.visibleTotals(v.id),
           })),
         });
       }
@@ -330,12 +355,10 @@ export async function start(home, options = {}) {
             ? {
                 name: config.name,
                 volumes: s.volumes().map((v) => {
-                  const rows = s.rows(v.id).filter((r) => !r.deleted);
                   return {
                     id: v.id,
                     name: v.name,
-                    files: rows.length,
-                    bytes: rows.reduce((n, r) => n + r.size, 0),
+                    ...s.visibleTotals(v.id),
                   };
                 }),
               }
@@ -377,21 +400,17 @@ export async function start(home, options = {}) {
         if (!url.searchParams.get("session") && engine.phase !== "syncing")
           await authorizedWork(() => engine.scanHub(volume));
         checkCredential();
-        if (url.searchParams.has("limit"))
-          return send(
-            200,
-            snapshotPage(s, device.id, volume, {
-              session: url.searchParams.get("session"),
-              after: url.searchParams.get("after") || "",
-              limit: Number(url.searchParams.get("limit")),
-            }),
-          );
-        return send(200, { files: s.rows(volume) });
+        return send(
+          200,
+          snapshotPage(s, device.id, volume, {
+            session: url.searchParams.get("session"),
+            after: url.searchParams.get("after") || "",
+            limit: Number(url.searchParams.get("limit") ?? 500),
+          }),
+        );
       }
       if (req.method === "GET" && route === "/v1/archive") {
         requireHub();
-        if (!admin && !["backup", "replica"].includes(device.role))
-          fail("Linked machine credential required", 403);
         if (!admin)
           s.db
             .prepare(
@@ -440,7 +459,19 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/activity") {
         if (config.role !== "hub") {
           requireAdmin();
-          return send(200, await engine.json(`/v1/activity${url.search}`));
+          const shared = await engine.json("/v1/catalog");
+          const selectedIds = historyFolderIds(s.volumes(), shared.volumes);
+          const requested = url.searchParams.get("volume");
+          if (requested && !selectedIds.includes(requested))
+            fail("Select a shared folder to view its history", 403);
+          return send(
+            200,
+            await scopedActivity(
+              (query) => engine.json(`/v1/activity?${query}`),
+              selectedIds,
+              url.searchParams,
+            ),
+          );
         }
         const limit = Number(url.searchParams.get("limit") || 50);
         const before = Number(
@@ -460,7 +491,7 @@ export async function start(home, options = {}) {
         if (volume) s.volume(volume);
         const rows = s.db
           .prepare(
-            `SELECT r.*, v.name AS folder FROM revisions r JOIN volumes v ON v.id=r.volume WHERE r.rev<? ${volume ? "AND r.volume=?" : ""} ${filter === "deleted" ? "AND r.deleted=1" : filter === "conflicts" ? "AND instr(r.path,'.conflict-')>0 AND r.deleted=0 AND NOT EXISTS (SELECT 1 FROM conflict_resolutions c WHERE c.volume=r.volume AND c.path=r.path AND c.conflict_rev>=r.rev) AND EXISTS (SELECT 1 FROM files f WHERE f.volume=r.volume AND f.path=r.path AND f.deleted=0)" : ""} ORDER BY r.rev DESC LIMIT ?`,
+            `SELECT r.*, v.name AS folder FROM revisions r JOIN volumes v ON v.id=r.volume WHERE r.directory=0 AND r.rev<? ${volume ? "AND r.volume=?" : ""} ${filter === "deleted" ? "AND r.deleted=1" : filter === "conflicts" ? "AND instr(r.path,'.conflict-')>0 AND r.deleted=0 AND NOT EXISTS (SELECT 1 FROM conflict_resolutions c WHERE c.volume=r.volume AND c.path=r.path AND c.conflict_rev>=r.rev) AND EXISTS (SELECT 1 FROM files f WHERE f.volume=r.volume AND f.path=r.path AND f.deleted=0)" : ""} ORDER BY r.rev DESC LIMIT ?`,
           )
           .all(...[before, ...(volume ? [volume] : []), limit + 1]);
         return send(200, {
@@ -473,6 +504,8 @@ export async function start(home, options = {}) {
         const name = url.searchParams.get("path");
         if (config.role !== "hub") {
           requireAdmin();
+          if (!s.volumes().some((v) => v.id === volume && v.selected))
+            fail("Select this folder to view its history", 403);
           return send(200, await engine.json(`/v1/history${url.search}`));
         }
         s.volume(volume);
@@ -541,7 +574,6 @@ export async function start(home, options = {}) {
       }
       if (route.startsWith("/v1/uploads/")) {
         requireHub();
-        if (device.role === "backup") fail("Backup cannot upload", 403);
         const hash = route.split("/").at(-1);
         const file = s.blob(hash);
         const tmp = path.join(s.uploads, `${device.id}-${hash}.part`);
@@ -669,7 +701,6 @@ export async function start(home, options = {}) {
         }
         if (route === "/v1/propose") {
           requireHub();
-          if (device.role === "backup") fail("Backup cannot write", 403);
           return send(
             200,
             await authorizedWork(() => engine.propose(b, device)),
@@ -683,11 +714,14 @@ export async function start(home, options = {}) {
                 "Select this folder for synchronization before resolving conflicts.",
                 409,
               );
-            await engine.reportMachine(true);
-            return send(200, await engine.json("/v1/conflict-choice", b));
+            return send(
+              200,
+              await authorizedWork(async () => {
+                await engine.reportMachine(true);
+                return engine.json("/v1/conflict-choice", b);
+              }),
+            );
           }
-          if (device?.role === "backup")
-            fail("Backup cannot restore upstream", 403);
           if (!admin) {
             const report = s.db
               .prepare("SELECT report FROM machine_reports WHERE device=?")
@@ -734,9 +768,16 @@ export async function start(home, options = {}) {
             }),
           );
         }
+        if (route === "/v1/delete-file") {
+          requireAdmin();
+          return send(
+            200,
+            await authorizedWork(() =>
+              engine.deleteFile(b.volume, b.path, b.rev),
+            ),
+          );
+        }
         if (route === "/v1/restore") {
-          if (device.role === "backup")
-            fail("Backup cannot restore upstream", 403);
           return send(
             200,
             await authorizedWork(() => engine.restore(b.volume, b.path, b.rev)),
@@ -930,7 +971,7 @@ export async function start(home, options = {}) {
           if (b.confirmedName !== v.name)
             fail("Type the share name to confirm deletion", 400);
           engine.stopVolumes.add(b.id);
-          engine.scanner.interrupt();
+          engine.interruptCycle();
           try {
             return send(
               200,
@@ -945,10 +986,9 @@ export async function start(home, options = {}) {
           }
         }
         if (route === "/v1/unselect") {
-          if (config.role === "backup") fail("Backup keeps every folder");
           s.volume(b.id);
           engine.stopVolumes.add(b.id);
-          engine.scanner.interrupt();
+          engine.interruptCycle();
           try {
             return send(
               200,
@@ -1012,7 +1052,7 @@ export async function start(home, options = {}) {
           requireHub();
           const role = b.role || "replica";
           if (
-            !["replica", "backup"].includes(role) ||
+            role !== "replica" ||
             typeof b.name !== "string" ||
             !b.name.trim()
           )
@@ -1363,6 +1403,9 @@ export async function start(home, options = {}) {
         req.method === "POST" &&
         [
           "/v1/volumes",
+          "/v1/delete-file",
+          "/v1/restore",
+          "/v1/conflict-choice",
           "/v1/select",
           "/v1/unselect",
           "/v1/delete-share",
@@ -1374,6 +1417,7 @@ export async function start(home, options = {}) {
       )
         res.once("finish", () => {
           if (res.statusCode < 300 && !stopping) {
+            retryAt = 0;
             watchFolders();
             schedule(1000);
           }

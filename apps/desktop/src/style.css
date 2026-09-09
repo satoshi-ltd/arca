@@ -436,8 +436,8 @@ main {
   height: 20px;
 }
 .tile.hub {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--green);
+  color: var(--onGreen);
 }
 .row-main {
   flex: 1;
@@ -509,8 +509,9 @@ main {
   background: var(--idBg);
 }
 .tag {
-  display: inline-flex;
-  align-items: center;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
   height: var(--tag-height);
   font-family: var(--font-mono);
   font-size: var(--tag-font);
@@ -523,9 +524,9 @@ main {
   white-space: nowrap;
 }
 .tag.hub {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
+  background: var(--green);
+  color: var(--onGreen);
+  border-color: var(--green);
 }
 .tag.self {
   background: var(--tint);
@@ -628,7 +629,7 @@ main {
 .detail-grid {
   align-items: start;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) var(--detail-side-width);
   gap: var(--space-5);
 }
 .detail-side {
@@ -986,6 +987,7 @@ dialog {
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 40px);
   overflow: auto;
+  overscroll-behavior: contain;
   border-radius: var(--r-dialog);
   background: var(--surface);
   color: var(--ink);
@@ -2758,4 +2760,24 @@ progress::-webkit-progress-value {
 }
 .browser-file-row > .icon:last-child {
   color: var(--mute);
+}
+
+/* Embedded explorer feedback shares the list surface, never a drop target. */
+.folder-explorer > .empty {
+  border: 0;
+  border-radius: 0;
+  padding: calc(var(--space-6) * 2) var(--space-5);
+  gap: var(--space-2);
+}
+.folder-explorer > .empty h2 {
+  font-size: var(--text-body);
+  font-weight: 400;
+  color: var(--soft);
+}
+
+.file-location-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }

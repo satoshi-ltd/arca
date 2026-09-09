@@ -1,3 +1,4 @@
+import { entryKey, directoryItem } from "../core/entries.js";
 import {
   IGNORE_FILE,
   DEFAULT_IGNORE,
@@ -60,8 +61,18 @@ export class Engine {
       "CREATE TABLE IF NOT EXISTS proposals(id TEXT PRIMARY KEY,response TEXT NOT NULL)",
     );
   }
+  interruptCycle() {
+    this.syncAbort?.abort(
+      Object.assign(new Error("Synchronization yielded to a user action"), {
+        syncInterrupted: true,
+      }),
+    );
+    this.scanner.interrupt();
+    this.backupEngine?.interruptCycle();
+  }
   checkSyncInterrupted() {
-    if (this.paused || this.stopVolumes.has(this.progress?.volume))
+    if (this.syncAbort?.signal.aborted) throw this.syncAbort.signal.reason;
+    if (this.paused || this.stopVolumes.size)
       throw Object.assign(new Error("Synchronization stopped"), {
         syncInterrupted: true,
       });
@@ -112,8 +123,7 @@ export class Engine {
           state: v.selected ? "pending" : "unselected",
           lastCompleted: v.last_sync,
         },
-        files: s.rows(v.id).filter((r) => !r.deleted).length,
-        bytes: s.rows(v.id).reduce((n, r) => n + (r.deleted ? 0 : r.size), 0),
+        ...s.visibleTotals(v.id),
         conflicts:
           this.config.role === "hub"
             ? s.unresolvedConflicts(v.id)
@@ -140,8 +150,15 @@ export class Engine {
     const response = await fetch(`${hub.url}${route}`, {
       ...options,
       redirect: "error",
-      headers: { Authorization: `Bearer ${hub.token}`, ...options.headers },
-      signal: options.signal || AbortSignal.timeout(60000),
+      headers: {
+        Authorization: `Bearer ${hub.token}`,
+        "X-Arca-Directories": "1",
+        ...options.headers,
+      },
+      signal: AbortSignal.any([
+        options.signal || AbortSignal.timeout(60000),
+        ...(this.syncAbort ? [this.syncAbort.signal] : []),
+      ]),
     });
     if (!response.ok) {
       if (
@@ -224,9 +241,8 @@ export class Engine {
       const response = await this.request(`/v1/blobs/${hash}`, {
         headers: offset ? { Range: `bytes=${offset}-` } : {},
       });
-      if (offset && response.status !== 206) {
-        offset = 0;
-      }
+      if (offset && response.status !== 206)
+        fail("Hub did not honor the requested download range", 502);
       const fd = fs.openSync(tmp, offset ? "a" : "w");
       try {
         for await (const chunk of response.body) {
@@ -250,7 +266,20 @@ export class Engine {
   }
   async propose(body, device) {
     const s = this.store;
-    const { volume, path: name, base = 0, hash = null, size = 0 } = body;
+    const {
+      volume,
+      path: name,
+      base = 0,
+      hash = null,
+      size = 0,
+      directory = false,
+    } = body;
+    if (
+      ![false, true, 0, 1].includes(directory) ||
+      (directory && (hash !== null || size !== 0))
+    )
+      fail("Invalid directory metadata");
+    const item = directory ? directoryItem() : hash ? { hash, size } : null;
     if (
       !Number.isSafeInteger(base) ||
       base < 0 ||
@@ -262,7 +291,9 @@ export class Engine {
     validPath(name);
     if (name === IGNORE_FILE && size > MAX_IGNORE_BYTES)
       fail(".arcaignore exceeds 64 KiB", 409);
-    if (s.excluded(volume, name))
+    if (
+      s.excluded(volume, name, directory || s.current(volume, name)?.directory)
+    )
       fail("Path is excluded from synchronization", 409);
     if (v.selected) s.filePath(v, name);
     if (
@@ -270,7 +301,9 @@ export class Engine {
       (!fs.existsSync(s.blob(hash)) || fs.statSync(s.blob(hash)).size !== size)
     )
       fail("Upload content before proposing", 409);
-    const op = digest(JSON.stringify([device.id, volume, name, base, hash]));
+    const op = digest(
+      JSON.stringify([device.id, volume, name, base, hash, directory]),
+    );
     const cached = s.db
       .prepare("SELECT response FROM proposals WHERE id=?")
       .get(op);
@@ -278,9 +311,21 @@ export class Engine {
     await this.scanHub(volume, { paths: [name, IGNORE_FILE] });
     const old = s.current(volume, name);
     let result;
-    if ((old?.hash ?? null) === hash && Boolean(old?.deleted ?? true) === !hash)
+    if (entryKey(old) === entryKey(item))
       result = { row: old || null, conflict: false };
-    else if ((old?.rev ?? 0) !== base) {
+    else if ((old?.rev ?? 0) !== base && (directory || old?.directory)) {
+      if (old?.directory && directory && old.deleted)
+        result = {
+          row: s.commit(volume, name, item, device.id, true),
+          conflict: false,
+        };
+      else if (old?.directory && !item) result = { row: old, conflict: false };
+      else
+        fail(
+          "Path type changed on the hub; reconcile the local path before retrying",
+          409,
+        );
+    } else if ((old?.rev ?? 0) !== base) {
       if (name === IGNORE_FILE)
         fail(
           "Sync paused: .arcaignore differs between this machine and the hub. Use the same rules on both before retrying.",
@@ -303,14 +348,7 @@ export class Engine {
       }
     } else
       result = {
-        row: s.commit(
-          volume,
-          name,
-          hash ? { hash, size } : null,
-          device.id,
-          true,
-          old?.hash,
-        ),
+        row: s.commit(volume, name, item, device.id, true, old?.hash),
         conflict: false,
       };
     s.db
@@ -336,6 +374,7 @@ export class Engine {
       return;
     }
     this.phase = "syncing";
+    this.syncAbort = new AbortController();
     this.error = null;
     try {
       if (!this.lastCleanup || Date.now() - this.lastCleanup > 3600000) {
@@ -349,6 +388,11 @@ export class Engine {
         await this.scanHub(undefined, { incremental });
       else if (this.config.hub) {
         const catalog = await this.json("/v1/catalog");
+        if (!catalog.directories || !catalog.changes)
+          fail(
+            "Hub does not support the current synchronization protocol",
+            412,
+          );
         if (catalog.id !== this.config.hub.id)
           fail("Hub identity changed; reconnect explicitly", 409);
         this.config.hub.name = catalog.name;
@@ -410,7 +454,9 @@ export class Engine {
                 )
                 .filter(([name, item]) => {
                   const old = known.get(name);
-                  return !old || old.deleted || old.hash !== item.hash;
+                  return (
+                    !old || old.deleted || entryKey(old) !== entryKey(item)
+                  );
                 });
               Object.assign(this.progress, {
                 stage: "upload",
@@ -419,11 +465,11 @@ export class Engine {
               });
               for (const [name, item] of changed) {
                 this.checkSyncInterrupted();
-                if (s.excluded(v.id, name)) continue;
+                if (s.excluded(v.id, name, item.directory)) continue;
                 const old = known.get(name);
-                if (!old || old.deleted || old.hash !== item.hash) {
+                if (!old || old.deleted || entryKey(old) !== entryKey(item)) {
                   this.progress.path = name;
-                  await this.upload(item.hash);
+                  if (item.hash) await this.upload(item.hash);
                   this.checkSyncInterrupted();
                   await this.json("/v1/propose", {
                     volume: v.id,
@@ -434,11 +480,13 @@ export class Engine {
                   this.progress.filesDone++;
                 }
               }
-              for (const row of known.values())
+              for (const row of [...known.values()].sort((a, b) =>
+                b.path.localeCompare(a.path),
+              ))
                 if (
                   !row.deleted &&
                   covers(plan.paths, row.path) &&
-                  !s.excluded(v.id, row.path) &&
+                  !s.excluded(v.id, row.path, row.directory) &&
                   !disk.has(row.path)
                 )
                   await this.json("/v1/propose", {
@@ -457,12 +505,10 @@ export class Engine {
               bytesTotal: 0,
             });
             this.checkSyncInterrupted();
-            const useChanges =
-              incremental &&
-              catalog.changes === true &&
-              this.config.role !== "backup";
+            const useChanges = incremental && this.config.role !== "backup";
             let cursor = plan.full ? 0 : this.work.state(v.id).cursor;
             let through;
+            const directoryDeletes = [];
             let page,
               session,
               after = "";
@@ -500,10 +546,7 @@ export class Engine {
                 for (const name of paths) {
                   const local = incomingDisk.get(name),
                     known = s.current(v.id, name);
-                  if (
-                    (local?.hash ?? null) !==
-                    (known?.deleted ? null : (known?.hash ?? null))
-                  ) {
+                  if (entryKey(local) !== entryKey(known)) {
                     this.work.mark(v.id, name);
                     throw Object.assign(
                       new Error("Local edits need synchronization"),
@@ -532,7 +575,7 @@ export class Engine {
                 }
                 if (
                   this.config.role !== "backup" &&
-                  s.excluded(v.id, row.path)
+                  s.excluded(v.id, row.path, row.directory)
                 ) {
                   this.progress.filesDone++;
                   continue;
@@ -544,11 +587,16 @@ export class Engine {
                   bytesTotal: 0,
                 });
                 const local = disk.get(row.path);
-                if (!row.deleted) await this.download(row.hash, row.size);
+                if (row.hash && !row.deleted)
+                  await this.download(row.hash, row.size);
+                if (row.directory && row.deleted) {
+                  directoryDeletes.push(row);
+                  continue;
+                }
                 this.checkSyncInterrupted();
                 if (
                   (row.deleted && !local) ||
-                  (!row.deleted && local?.hash === row.hash)
+                  (!row.deleted && entryKey(local) === entryKey(row))
                 ) {
                   const indexed = s.current(v.id, row.path);
                   if (
@@ -556,7 +604,8 @@ export class Engine {
                     indexed.rev !== row.rev ||
                     indexed.hash !== row.hash ||
                     indexed.deleted !== row.deleted ||
-                    indexed.size !== row.size
+                    indexed.size !== row.size ||
+                    indexed.directory !== row.directory
                   )
                     s.setFile(row);
                 } else {
@@ -566,6 +615,12 @@ export class Engine {
                 this.progress.filesDone++;
               }
             } while (after);
+            for (const row of directoryDeletes.sort((a, b) =>
+              b.path.localeCompare(a.path),
+            )) {
+              s.queue(row);
+              s.materialize(row);
+            }
             if (session) await this.json("/v1/snapshot-release", { session });
             if (useChanges) this.work.cursor(v.id, through);
             this.work.complete(v, plan);
@@ -582,6 +637,8 @@ export class Engine {
               lastCompleted: new Date().toISOString(),
             });
           } catch (e) {
+            if (this.syncAbort.signal.aborted)
+              throw this.syncAbort.signal.reason;
             if (e.syncInterrupted) throw e;
             this.folderStates.set(v.id, {
               state: "error",
@@ -647,6 +704,7 @@ export class Engine {
           this.store.saveConfig();
           this.backupError = null;
         } catch (e) {
+          if (this.syncAbort.signal.aborted) throw this.syncAbort.signal.reason;
           this.backupError = e.message;
         }
       }
@@ -658,6 +716,7 @@ export class Engine {
       this.phase = "idle";
       this.progress = null;
     } catch (e) {
+      if (this.syncAbort.signal.aborted) e = this.syncAbort.signal.reason;
       if (this.config.role === "replica" && !this.config.hub) return;
       if (e.syncInterrupted) {
         if (this.progress?.volume)
@@ -677,7 +736,8 @@ export class Engine {
       this.error = e.message;
       throw e;
     } finally {
-      await this.reportMachine();
+      if (!this.syncAbort.signal.aborted) await this.reportMachine();
+      this.syncAbort = null;
     }
   }
   async reportMachine(force = false) {
@@ -688,7 +748,7 @@ export class Engine {
       await this.json("/v1/machine-report", machineReport(this));
       this.lastReport = Date.now();
     } catch {
-      // Offline/older hubs must not prevent local settings or file synchronization.
+      // A failed presence report must not prevent durable file synchronization.
     }
   }
   promotionPlan() {
@@ -789,7 +849,7 @@ export class Engine {
         "DELETE FROM files; DELETE FROM revisions; DELETE FROM pending; DELETE FROM proposals; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
       );
       const add = db.prepare(
-        "INSERT INTO revisions(volume,path,hash,size,deleted,author,created) VALUES(?,?,?,?,0,?,?)",
+        "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,0,?,?,?)",
       );
       for (const [v, disk] of scans)
         for (const [name, item] of disk) {
@@ -800,6 +860,7 @@ export class Engine {
             item.size,
             this.config.id,
             new Date().toISOString(),
+            item.directory ? 1 : 0,
           );
           this.store.setFile({
             volume: v.id,
@@ -938,10 +999,7 @@ export class Engine {
     const checkpoint = () => {
       // Release the current cycle for queued destructive controls, even when
       // they target a different folder. Never commit a partial scan as deletions.
-      if (this.paused || this.stopVolumes.size)
-        throw Object.assign(new Error("Synchronization stopped"), {
-          syncInterrupted: true,
-        });
+      this.checkSyncInterrupted();
     };
     for (const v of s
       .volumes()
@@ -962,18 +1020,18 @@ export class Engine {
           await new Promise((resolve) => setImmediate(resolve));
           checkpoint();
           const old = s.current(v.id, name);
-          if (!old || old.deleted || old.hash !== item.hash) {
+          if (!old || old.deleted || entryKey(old) !== entryKey(item)) {
             s.commit(v.id, name, item, this.config.id);
             this.activity++;
           }
         }
-        for (const row of known) {
+        for (const row of known.sort((a, b) => b.path.localeCompare(a.path))) {
           await new Promise((resolve) => setImmediate(resolve));
           checkpoint();
           if (
             !row.deleted &&
             covers(plan.paths, row.path) &&
-            !s.excluded(v.id, row.path) &&
+            !s.excluded(v.id, row.path, row.directory) &&
             !disk.has(row.path)
           )
             s.commit(v.id, row.path, null, this.config.id);
@@ -1204,6 +1262,37 @@ export class Engine {
     await this.reportMachine(true);
     this.lastReport = null;
     return local;
+  }
+  async deleteFile(volume, name, rev) {
+    validPath(name);
+    const v = this.store.volume(volume);
+    if (this.config.role === "backup") fail("Backup is read-only", 403);
+    if (this.config.role !== "hub" && !v.selected)
+      fail("Select this folder first", 403);
+    if (this.store.excluded(volume, name))
+      fail("Excluded files cannot be deleted here", 409);
+    if (this.config.role === "hub")
+      await this.scanHub(volume, { paths: [name, IGNORE_FILE] });
+    const current = this.store.current(volume, name);
+    if (!current || current.deleted) fail("File not found", 404);
+    if (current.directory) fail("Use file deletion only for files", 409);
+    if (current.rev !== Number(rev))
+      fail("File changed. Reload before deleting.", 409);
+    if (this.config.role === "hub")
+      return this.store.commit(
+        volume,
+        name,
+        null,
+        this.config.id,
+        true,
+        current.hash,
+      );
+    const file = this.store.filePath(v, name);
+    if (!fs.lstatSync(file).isFile() || hashFile(file) !== current.hash)
+      fail("Local file changed. Sync before deleting.", 409);
+    fs.unlinkSync(file);
+    this.work.mark(volume, name);
+    return { deleted: true };
   }
   async restore(volume, name, rev) {
     if (this.config.role !== "hub")

@@ -105,6 +105,7 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
     "utf8",
   );
   const pairs = {
+    detailSideWidth: "detail-side-width",
     tagHeight: "tag-height",
     tagFont: "tag-font",
     tagLine: "tag-line",
@@ -146,4 +147,19 @@ test("file search stays under the current breadcrumb and folder totals include n
   );
   assert.equal(inside.count, 2);
   assert.equal(inside.size, 10);
+});
+
+test("empty directory entries remain navigable without inflating recursive file counts", () => {
+  const entries = [
+    { path: "doc", directory: true, size: 0 },
+    { path: "doc/Coros", directory: true, size: 0 },
+    { path: "doc/notes.txt", size: 12 },
+  ];
+  assert.equal(browseEntries(entries, "", "")[0].count, 1);
+  assert.equal(browseEntries(entries, "", "")[0].size, 12);
+  assert.deepEqual(
+    browseEntries(entries, "doc/", "").map((e) => e.label),
+    ["Coros", "notes.txt"],
+  );
+  assert.equal(browseEntries(entries, "doc/Coros/", "").length, 0);
 });

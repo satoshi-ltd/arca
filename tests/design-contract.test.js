@@ -286,7 +286,7 @@ test("background sync acknowledges before completion, coalesces requests and exp
   assert.equal(status.error, "Test transfer failure");
 });
 
-test("replica and backup credentials cannot administer the hub; replica administrators cannot create hub resources", async (t) => {
+test("replica credentials cannot administer the hub; replica administrators cannot create hub resources", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-role-boundary-"));
   init(home, { port: 0 });
   const hub = await start(home, { timer: false });
@@ -305,7 +305,7 @@ test("replica and backup credentials cannot administer the hub; replica administ
     });
   const admin = hub.engine.config.adminToken;
   const before = hub.engine.config.name;
-  for (const role of ["replica", "backup"]) {
+  for (const role of ["replica"]) {
     const device = await (
       await call("/v1/devices", admin, { name: role, role })
     ).json();
@@ -334,9 +334,6 @@ test("replica and backup credentials cannot administer the hub; replica administ
     }
     assert.equal((await call("/v1/machines", device.token)).status, 200);
     assert.equal((await call("/v1/status", device.token)).status, 403);
-    if (role === "backup")
-      for (const route of ["/v1/propose", "/v1/restore", "/v1/conflict-choice"])
-        assert.equal((await call(route, device.token, {})).status, 403, route);
   }
   assert.equal(hub.engine.config.name, before);
   assert.equal(hub.engine.store.volumes().length, 0);

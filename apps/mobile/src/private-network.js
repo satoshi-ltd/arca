@@ -1,15 +1,11 @@
 import { verifyPrivateURL } from "./network-policy.js";
 import { fromByteArray, toByteArray } from "base64-js";
-import { requireOptionalNativeModule } from "expo-modules-core";
-export const native = requireOptionalNativeModule("ArcaNetwork");
+import { requireNativeModule } from "expo-modules-core";
+export const native = requireNativeModule("ArcaNetwork");
 export const resolvePrivateURL = (value) =>
   verifyPrivateURL(value, native, nativeFetch);
 
 export async function nativeFetch(url, options = {}) {
-  if (!native)
-    throw new Error(
-      "Install the Arca development build to connect to your hub.",
-    );
   const body =
     options.body === undefined
       ? null

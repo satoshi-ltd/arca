@@ -1,4 +1,3 @@
-import { writePortableBackup } from "../apps/mobile/src/portable-backup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -9,7 +8,6 @@ import { DatabaseSync } from "node:sqlite";
 import { Replica, CHUNK } from "../apps/mobile/src/replica.js";
 import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
 import { createClient } from "../apps/mobile/src/client.js";
-import { recoverBackup } from "../packages/daemon/recovery.js";
 import { init } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 
@@ -35,6 +33,7 @@ async function fixture(t) {
     cached = null,
     online = true;
   const ranges = [];
+  const requests = [];
   const client = createClient({
     secrets: {
       read: async () => saved,
@@ -52,6 +51,7 @@ async function fixture(t) {
       },
     },
     fetcher: (url, options) => {
+      requests.push(new URL(url).pathname);
       if (!online) throw new Error("offline");
       if (options.headers.Range) ranges.push(options.headers.Range);
       return fetch(url.replace("https://fixture.invalid", base), options);
@@ -59,19 +59,22 @@ async function fixture(t) {
   });
   const local = path.join(root, "mobile");
   const files = {
-    scope: (s) => path.join(local, s),
     folder: (s, v) => path.join(local, s, "folders", v),
     work: (s, v, p) => path.join(local, s, "folders", v, p),
     object: (s, h) => path.join(local, s, "objects", h),
     partial: (s, h) => path.join(local, s, "partial", h),
-    backup: (s) => path.join(local, s, "backup"),
-    backupObject: (s, h) => path.join(local, s, "backup", "objects", h),
     parent: path.dirname,
     mkdir: async (p) => fs.mkdirSync(p, { recursive: true }),
     exists: async (p) => fs.existsSync(p),
     stat: async (p) =>
-      fs.existsSync(p) ? { size: fs.statSync(p).size } : null,
+      fs.existsSync(p)
+        ? {
+            size: fs.statSync(p).isDirectory() ? 0 : fs.statSync(p).size,
+            directory: fs.statSync(p).isDirectory(),
+          }
+        : null,
     free: async () => 1e12,
+    removeDirectory: async (p) => fs.rmdirSync(p),
     remove: async (p) => fs.rmSync(p, { force: true }),
     removeFolder: async (s, v) =>
       fs.rmSync(path.join(local, s, "folders", v), {
@@ -97,17 +100,12 @@ async function fixture(t) {
       for (const e of fs.readdirSync(root, { withFileTypes: true })) {
         if (e.name.startsWith(".arca-")) continue;
         const p = path.join(root, e.name);
-        if (e.isDirectory()) yield* this.walk(p, prefix + e.name + "/");
-        else yield { path: prefix + e.name, uri: p, size: fs.statSync(p).size };
+        if (e.isDirectory()) {
+          yield { path: prefix + e.name, uri: p, size: 0, directory: true };
+          yield* this.walk(p, prefix + e.name + "/");
+        } else
+          yield { path: prefix + e.name, uri: p, size: fs.statSync(p).size };
       }
-    },
-    async used(p) {
-      let n = 0;
-      for await (const e of this.walk(p)) n += e.size;
-      return n;
-    },
-    exportBackup(s, store, through) {
-      return writePortableBackup(this, s, store, through);
     },
   };
   const replica = new Replica({ store, files, client, platform: "ios" });
@@ -135,6 +133,7 @@ async function fixture(t) {
     files,
     client,
     ranges,
+    requests,
     offline: () => {
       online = false;
     },
@@ -243,39 +242,6 @@ test("mobile preserves concurrent hub/local edits and replays an interrupted rep
   );
 });
 
-test("mobile full backup contains archived objects independently from working selection", async (t) => {
-  const f = await fixture(t),
-    { replica, volume, files, daemon, store } = f;
-  fs.writeFileSync(path.join(volume.path, "a.txt"), "one");
-  await daemon.engine.cycle();
-  fs.writeFileSync(path.join(volume.path, "a.txt"), "two");
-  await daemon.engine.cycle();
-  await replica.enableBackup(true);
-  await sync(f);
-  const rows = await store.archiveRows(replica.scope);
-  assert.equal(rows.filter((r) => r.path === "a.txt").length, 2);
-  for (const row of rows)
-    assert.equal(
-      await files.hash(files.backupObject(replica.scope, row.hash)),
-      row.hash,
-    );
-  assert.equal((await store.folders(replica.scope)).length, 0);
-  assert.ok((await store.get(`backup:${replica.scope}`)).completed);
-  const recovered = recoverBackup(
-    files.backup(replica.scope),
-    path.join(f.root, "recovered"),
-  );
-  assert.equal(recovered.revisions, rows.length);
-  const object = files.backupObject(replica.scope, rows[0].hash);
-  fs.writeFileSync(object, "corrupt");
-  assert.throws(
-    () =>
-      recoverBackup(files.backup(replica.scope), path.join(f.root, "rejected")),
-    /corrupt/,
-  );
-  assert.equal(fs.existsSync(path.join(f.root, "rejected")), false);
-});
-
 test("mobile resumes a partial download, rejects corruption, and applies storage limits before selection", async (t) => {
   const f = await fixture(t),
     { replica, volume, files, daemon } = f;
@@ -303,7 +269,7 @@ test("mobile resumes a partial download, rejects corruption, and applies storage
   assert.equal(await files.hash(files.object(replica.scope, hash)), hash);
 });
 
-test("mobile honors synchronized ignore rules and protects edits against stale editor saves", async (t) => {
+test("mobile honors synchronized ignore rules while syncing local edits", async (t) => {
   const f = await fixture(t),
     { replica, volume, files, daemon } = f;
   fs.writeFileSync(path.join(volume.path, ".arcaignore"), "private/\n");
@@ -323,13 +289,7 @@ test("mobile honors synchronized ignore rules and protects edits against stale e
     fs.existsSync(path.join(volume.path, "private", "secret.txt")),
     false,
   );
-  const local = files.work(replica.scope, volume.id, "note.txt"),
-    baseline = await files.hash(local);
-  await replica.saveText(volume.id, "note.txt", "edited", baseline);
-  await assert.rejects(
-    replica.saveText(volume.id, "note.txt", "stale", baseline),
-    /changed/,
-  );
+  fs.writeFileSync(files.work(replica.scope, volume.id, "note.txt"), "edited");
   await sync(f);
   assert.equal(
     fs.readFileSync(path.join(volume.path, "note.txt"), "utf8"),
@@ -375,35 +335,6 @@ test("mobile persists ignore reconciliation when snapshot download is interrupte
     fs.existsSync(path.join(volume.path, "private/queued.txt")),
     false,
   );
-});
-
-test("interrupted portable backup publication preserves the completed backup", async (t) => {
-  const f = await fixture(t);
-  const { replica, volume, files, daemon, store } = f;
-  fs.writeFileSync(path.join(volume.path, "saved.txt"), "completed content");
-  await daemon.engine.cycle();
-  await replica.enableBackup(true);
-  await sync(f);
-  const saved = await store.get(`backup:${replica.scope}`);
-  const source = files.backup(replica.scope);
-  const manifest = fs.readFileSync(path.join(source, "manifest.json"));
-  const replace = files.replace;
-  files.replace = async (from, to) => {
-    if (from.endsWith(".arca-history")) throw new Error("interrupted write");
-    await replace(from, to);
-  };
-  await assert.rejects(
-    files.exportBackup(replica.scope, store, saved.revision),
-    /interrupted write/,
-  );
-  assert.deepEqual(
-    fs.readFileSync(path.join(source, "manifest.json")),
-    manifest,
-  );
-  assert.ok(
-    recoverBackup(source, path.join(f.root, "still-recoverable")).revisions > 0,
-  );
-  assert.equal(fs.existsSync(path.join(source, ".arca-history")), false);
 });
 
 test("failed system notification does not reject sync or hide its connection error", async (t) => {
@@ -457,8 +388,8 @@ test("stopping a mobile download is resumable without a false synchronization er
   assert.ok((await f.store.folder(f.replica.scope, f.volume.id)).completed);
 });
 
-test("incoming workout files persist before confirmation and save to a nested selected folder", async (t) => {
-  const { stageIncoming, forgetIncoming, incomingDestination } =
+test("incoming workout files are transient until saved to a nested selected folder", async (t) => {
+  const { stageIncoming, IncomingSession, incomingDestination } =
     await import("../apps/mobile/src/incoming-files.js");
   const f = await fixture(t),
     r = f.replica;
@@ -481,7 +412,7 @@ test("incoming workout files persist before confirmation and save to a nested se
     ],
     "batch",
   );
-  assert.equal((await f.store.get("incomingFiles")).length, 1);
+  assert.equal((await f.store.get("incomingFiles", [])).length, 0);
   assert.deepEqual(fs.readFileSync(queued[0].uri), workout);
   assert.equal(fs.existsSync(path.join(f.volume.path, "workouts")), false);
   await assert.rejects(
@@ -497,7 +428,7 @@ test("incoming workout files persist before confirmation and save to a nested se
       "unsafe",
     ),
   );
-  assert.equal((await f.store.get("incomingFiles")).length, 1);
+  assert.equal((await f.store.get("incomingFiles", [])).length, 0);
   const payload = {
     shareType: "file",
     contentUri: `file:${source}`,
@@ -520,7 +451,7 @@ test("incoming workout files persist before confirmation and save to a nested se
     ),
   );
   assert.equal(fs.existsSync(f.files.incoming("rollback-0")), false);
-  assert.equal((await f.store.get("incomingFiles")).length, 1);
+  assert.equal((await f.store.get("incomingFiles", [])).length, 0);
   assert.deepEqual(fs.readFileSync(queued[0].uri), workout);
   await f.client.refresh();
   await r.select(f.client.state().catalog.volumes[0]);
@@ -531,8 +462,10 @@ test("incoming workout files persist before confirmation and save to a nested se
     incomingDestination("workouts/2026", queued[0].name),
     queued[0].uri,
   );
-  await forgetIncoming(r, queued[0]);
-  assert.equal((await f.store.get("incomingFiles")).length, 0);
+  const session = new IncomingSession(r);
+  session.items = queued;
+  await session.saved(queued[0]);
+  assert.equal((await f.store.get("incomingFiles", [])).length, 0);
   assert.equal(fs.existsSync(source), true);
   assert.equal(fs.existsSync(path.join(f.volume.path, "workouts")), false);
   await r.pause(false);
@@ -543,28 +476,18 @@ test("incoming workout files persist before confirmation and save to a nested se
   );
 });
 
-test("mobile unsync protects unqueued edits, new files, deletes and queued uploads", async (t) => {
+test("confirmed mobile removal discards offline changes even after the hub share is gone", async (t) => {
   const f = await fixture(t);
   const { replica, volume, files, store, daemon } = f;
   fs.writeFileSync(path.join(volume.path, "saved.txt"), "original");
   await daemon.engine.cycle();
-  await f.client.refresh();
-  await replica.select(f.client.state().catalog.volumes[0]);
+  await replica.select(volume);
   await sync(f);
   await replica.pause(true);
-  const local = files.work(replica.scope, volume.id, "saved.txt");
-  fs.writeFileSync(local, "offline edit");
-  await assert.rejects(replica.unselect(volume.id), /local changes/);
-  assert.equal(fs.readFileSync(local, "utf8"), "offline edit");
-  assert.equal((await store.folder(replica.scope, volume.id)).selected, 1);
-  fs.writeFileSync(local, "original");
-  const added = files.work(replica.scope, volume.id, "new.txt");
-  fs.writeFileSync(added, "not on hub");
-  await assert.rejects(replica.unselect(volume.id), /local changes/);
-  fs.unlinkSync(added);
-  fs.unlinkSync(local);
-  await assert.rejects(replica.unselect(volume.id), /local deletions/);
-  fs.writeFileSync(local, "original");
+  fs.writeFileSync(
+    files.work(replica.scope, volume.id, "saved.txt"),
+    "offline edit",
+  );
   await store.queue(replica.scope, {
     volume: volume.id,
     path: "saved.txt",
@@ -572,12 +495,23 @@ test("mobile unsync protects unqueued edits, new files, deletes and queued uploa
     size: 1,
     base: 1,
   });
-  await assert.rejects(replica.unselect(volume.id), /Finish syncing/);
-  assert.equal((await store.pending(replica.scope, volume.id)).length, 1);
+  daemon.engine.store.forgetVolume(volume.id);
+  await f.client.refresh();
+  f.offline();
+  f.requests.length = 0;
+  await replica.unselect(volume.id);
+  assert.equal(fs.existsSync(files.folder(replica.scope, volume.id)), false);
+  assert.equal(await store.folder(replica.scope, volume.id), undefined);
+  assert.deepEqual(await store.pending(replica.scope, volume.id), []);
+  assert.equal(
+    fs.readFileSync(path.join(volume.path, "saved.txt"), "utf8"),
+    "original",
+  );
   assert.equal(replica.paused, true);
+  assert.deepEqual(f.requests, []);
 });
 
-test("mobile unsync retries failed cleanup and retains other folders and backup objects", async (t) => {
+test("mobile unsync retries failed cleanup and retains other folders and their objects", async (t) => {
   const f = await fixture(t);
   const { replica, volume, files, store, daemon } = f;
   fs.writeFileSync(path.join(volume.path, "saved.txt"), "original");
@@ -593,9 +527,6 @@ test("mobile unsync retries failed cleanup and retains other folders and backup 
     files.work(replica.scope, "other", "saved.txt"),
     "other copy",
   );
-  const backup = files.backupObject(replica.scope, row.hash);
-  await files.mkdir(path.dirname(backup));
-  fs.writeFileSync(backup, "backup");
   const orphan = files.object(replica.scope, "a".repeat(64));
   fs.writeFileSync(orphan, "unused");
   const remove = files.removeFolder;
@@ -604,7 +535,10 @@ test("mobile unsync retries failed cleanup and retains other folders and backup 
   };
   await assert.rejects(replica.unselect(volume.id), /disk error/);
   assert.equal((await store.folder(replica.scope, volume.id)).selected, 1);
-  assert.match((await store.folder(replica.scope, volume.id)).issue, /removal incomplete/);
+  assert.match(
+    (await store.folder(replica.scope, volume.id)).issue,
+    /removal incomplete/,
+  );
   assert.ok(await store.get(`removing:${replica.scope}:${volume.id}`));
   await assert.rejects(
     replica.select({ id: volume.id, bytes: 0 }),
@@ -616,7 +550,6 @@ test("mobile unsync retries failed cleanup and retains other folders and backup 
   assert.equal(fs.existsSync(files.folder(replica.scope, volume.id)), false);
   assert.equal(fs.existsSync(orphan), false);
   assert.equal(fs.existsSync(files.object(replica.scope, row.hash)), true);
-  assert.equal(fs.readFileSync(backup, "utf8"), "backup");
   assert.equal(
     fs.readFileSync(files.work(replica.scope, "other", "saved.txt"), "utf8"),
     "other copy",
@@ -655,11 +588,159 @@ test("a missing hub share retains the mobile index and reports an actionable iss
   await sync(f);
   const before = await store.current(replica.scope, volume.id, "saved.txt");
   const state = client.state;
-  client.state = () => ({ ...state(), catalog: { ...state().catalog, volumes: [] } });
+  client.state = () => ({
+    ...state(),
+    catalog: { ...state().catalog, volumes: [] },
+  });
   await replica.sync();
   const folder = await store.folder(replica.scope, volume.id);
   assert.equal(folder.selected, 1);
   assert.match(folder.issue, /no longer shared/);
-  assert.equal((await store.current(replica.scope, volume.id, "saved.txt")).hash, before.hash);
-  assert.equal(fs.readFileSync(files.work(replica.scope, volume.id, "saved.txt"), "utf8"), "saved content");
+  assert.equal(
+    (await store.current(replica.scope, volume.id, "saved.txt")).hash,
+    before.hash,
+  );
+  assert.equal(
+    fs.readFileSync(files.work(replica.scope, volume.id, "saved.txt"), "utf8"),
+    "saved content",
+  );
+});
+
+test("mobile synchronizes empty directories both ways", async (t) => {
+  const f = await fixture(t);
+  const hubRoot = f.daemon.engine.store.volume(f.volume.id).path;
+  fs.mkdirSync(path.join(hubRoot, "doc/Coros"), { recursive: true });
+  fs.writeFileSync(path.join(hubRoot, "doc/Coros/.DS_Store"), "excluded");
+  await f.daemon.engine.cycle();
+  await f.replica.select(f.volume);
+  await sync(f);
+  const localRoot = f.files.folder(f.replica.scope, f.volume.id);
+  assert.deepEqual(fs.readdirSync(path.join(localRoot, "doc/Coros")), []);
+  fs.mkdirSync(path.join(localRoot, "new/deep/empty"), { recursive: true });
+  await sync(f);
+  assert.ok(fs.statSync(path.join(hubRoot, "new/deep/empty")).isDirectory());
+  fs.rmSync(path.join(hubRoot, "new"), { recursive: true });
+  await f.daemon.engine.cycle();
+  await sync(f);
+  assert.equal(fs.existsSync(path.join(localRoot, "new")), false);
+});
+
+test("mobile renames its own device, persists offline edits and reports them on reconnect", async (t) => {
+  const f = await fixture(t);
+  const id = f.client.state().connection.id;
+  const report = () =>
+    JSON.parse(
+      f.daemon.engine.store.db
+        .prepare("SELECT report FROM machine_reports WHERE device=?")
+        .get(id).report,
+    );
+  assert.equal(await f.replica.rename("  My phone  "), true);
+  assert.equal(await f.store.get("name"), "My phone");
+  assert.equal(report().name, "My phone");
+  for (const invalid of ["   ", "x".repeat(101), "bad\nname"])
+    await assert.rejects(f.replica.rename(invalid), /device name/);
+  assert.equal(await f.store.get("name"), "My phone");
+  f.offline();
+  assert.equal(await f.replica.rename("Travel phone"), false);
+  assert.equal(await f.store.get("name"), "Travel phone");
+  assert.equal(report().name, "My phone");
+  f.online();
+  await sync(f);
+  assert.equal(report().name, "Travel phone");
+  assert.equal(f.client.state().connection.id, id);
+});
+
+test("mobile file deletion preserves unsynced content and propagates a restorable deletion", async (t) => {
+  const f = await fixture(t);
+  const v = f.volume;
+  fs.writeFileSync(
+    path.join(f.daemon.engine.store.volume(v.id).path, "delete.txt"),
+    "retained",
+  );
+  await f.daemon.engine.exclusive(() => f.daemon.engine.cycle());
+  await f.replica.select(v);
+  await sync(f);
+  const file = f.files.work(f.replica.scope, v.id, "delete.txt");
+  await f.files.write(file, Buffer.from("unsynced"));
+  await assert.rejects(f.replica.removeFile(v.id, "delete.txt"), /changed/);
+  assert.equal(await f.files.text(file), "unsynced");
+  await sync(f);
+  const previous = f.daemon.engine.store.current(v.id, "delete.txt");
+  f.offline();
+  await f.replica.removeFile(v.id, "delete.txt");
+  f.online();
+  await sync(f);
+  assert.equal(f.daemon.engine.store.current(v.id, "delete.txt").deleted, 1);
+  await f.daemon.engine.exclusive(() =>
+    f.daemon.engine.restore(v.id, "delete.txt", previous.rev),
+  );
+  await sync(f);
+  assert.equal(await f.files.text(file), "unsynced");
+});
+
+test("mobile sync with no selected folders never downloads hub content or runs backup", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(
+    path.join(f.daemon.engine.store.volume(f.volume.id).path, "hub-only.txt"),
+    "keep on hub",
+  );
+  await f.daemon.engine.cycle();
+  f.requests.length = 0;
+  await sync(f);
+  assert.deepEqual(await f.store.folders(f.replica.scope), []);
+  assert.equal(
+    fs.existsSync(f.files.folder(f.replica.scope, f.volume.id)),
+    false,
+  );
+  assert.equal(
+    f.requests.some((route) =>
+      /^\/v1\/(archive|backup-ack|blobs|snapshot|changes)(\/|$)/.test(route),
+    ),
+    false,
+  );
+  const response = await f.client.api("/v1/machines");
+  const self = response.machines.find(
+    (machine) =>
+      machine.id === f.client.state().connection.id ||
+      machine.credentialId === f.client.state().connection.id,
+  );
+  assert.equal(self.role, "replica");
+});
+
+test("shared binary with a non-portable name imports after renaming and syncs byte-for-byte", async (t) => {
+  const { stageIncoming, incomingDestination } =
+    await import("../apps/mobile/src/incoming-files.js");
+  const f = await fixture(t);
+  await f.replica.select(f.volume);
+  await sync(f);
+  const data = crypto.randomBytes(4096);
+  const source = path.join(f.root, "activity.fit");
+  fs.writeFileSync(source, data);
+  f.files.incoming = (key) => path.join(f.root, "incoming", key);
+  const stat = f.files.stat,
+    copy = f.files.copy;
+  f.files.stat = (uri) => stat(uri.replace(/^file:\/\//, ""));
+  f.files.copy = (from, to) => copy(from.replace(/^file:\/\//, ""), to);
+  const [item] = await stageIncoming(
+    f.replica,
+    [
+      {
+        shareType: "file",
+        originalName: "Activity 07:35.fit",
+        contentUri: new URL("file://" + source).href,
+        contentSize: data.length,
+      },
+    ],
+    "binary",
+  );
+  assert.equal(item.renameRequired, true);
+  assert.throws(() => incomingDestination("", item.name), /Rename/);
+  const destination = incomingDestination("", "Activity 07-35.fit");
+  await f.replica.importFile(f.volume.id, destination, item.uri);
+  await sync(f);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.volume.path, destination)),
+    data,
+  );
+  assert.deepEqual(fs.readFileSync(source), data);
 });

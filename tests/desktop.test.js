@@ -882,6 +882,18 @@ test("share web routes survive reload and history navigation; hub edits use real
   q('[data-action="edit-ignore"]').click();
   await until(() => q('#dialog [name="text"]') && idle());
   q('#dialog [name="text"]').value = "*.tmp\n";
+  q("#dialog").dispatchEvent(
+    new w.WheelEvent("wheel", { deltaY: 1000, bubbles: true }),
+  );
+  q("#dialog").dispatchEvent(
+    new w.MouseEvent("click", { clientX: -10, clientY: -10, bubbles: true }),
+  );
+  assert.equal(
+    q("#dialog").open,
+    true,
+    "scroll/backdrop gestures must preserve the editor",
+  );
+  assert.equal(q('#dialog [name="text"]').value, "*.tmp\n");
   q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
   await until(() => !q("#dialog").open && idle());
   assert.equal(
@@ -1475,7 +1487,7 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   const diagnostics = w.document.querySelector('[data-action="diagnostics"]');
   diagnostics.click();
   await until(() => diagnostics.textContent.includes("Copied"));
-  assert.equal(JSON.parse(copied.at(-1)).version, "0.3.0");
+  assert.equal(JSON.parse(copied.at(-1)).version, "0.3.1");
   await new Promise((resolve) => setTimeout(resolve, 2100));
   assert.ok(diagnostics.textContent.includes("Copy diagnostics"));
 });

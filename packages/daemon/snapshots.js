@@ -30,7 +30,7 @@ export function snapshotPage(
         Date.now() + 600000,
       );
       db.prepare(
-        `INSERT INTO snapshot_files(session,path,hash,row) SELECT ?,path,hash,json_object('volume',volume,'path',path,'hash',hash,'size',size,'deleted',deleted,'rev',rev) FROM files WHERE volume=?`,
+        `INSERT INTO snapshot_files(session,path,hash,row) SELECT ?,path,hash,json_object('volume',volume,'path',path,'hash',hash,'size',size,'deleted',deleted,'rev',rev,'directory',directory) FROM files WHERE volume=?`,
       ).run(session, volume);
       db.exec("COMMIT");
     } catch (e) {
@@ -52,6 +52,8 @@ export function snapshotPage(
   const files = rows.slice(0, limit).map((r) => JSON.parse(r.row)),
     next = rows.length > limit ? rows[limit - 1].path : null;
   // Keep the lease until expiry, including after the final page, to support retry and content downloads.
-  const total = db.prepare("SELECT COUNT(*) AS n FROM snapshot_files WHERE session=?").get(session).n;
+  const total = db
+    .prepare("SELECT COUNT(*) AS n FROM snapshot_files WHERE session=?")
+    .get(session).n;
   return { files, next, session, total };
 }

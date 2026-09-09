@@ -1,3 +1,4 @@
+import { entryKey, directoryItem } from "../core/entries.js";
 import {
   ensureIgnore,
   readIgnore,
@@ -121,7 +122,6 @@ export function init(home, options = {}) {
     host: options.host || "127.0.0.1",
     port: Number(options.port ?? 47831),
     adminToken: token(),
-    interval: 3000,
     hub: null,
   };
   fs.mkdirSync(config.root, { recursive: true });
@@ -143,11 +143,11 @@ export class Store {
     this.db = new DatabaseSync(path.join(this.home, "index.sqlite"));
     this.db
       .exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
-      CREATE TABLE IF NOT EXISTS volumes(id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, selected INTEGER NOT NULL DEFAULT 1);
-      CREATE TABLE IF NOT EXISTS revisions(rev INTEGER PRIMARY KEY AUTOINCREMENT, volume TEXT NOT NULL, path TEXT NOT NULL, hash TEXT, size INTEGER NOT NULL, deleted INTEGER NOT NULL, author TEXT NOT NULL, created TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS volumes(id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, selected INTEGER NOT NULL DEFAULT 1,last_sync TEXT);
+      CREATE TABLE IF NOT EXISTS revisions(rev INTEGER PRIMARY KEY AUTOINCREMENT, volume TEXT NOT NULL, path TEXT NOT NULL, hash TEXT, size INTEGER NOT NULL, deleted INTEGER NOT NULL, author TEXT NOT NULL, created TEXT NOT NULL,directory INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,directory INTEGER NOT NULL DEFAULT 0,path_key TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS pending(volume TEXT NOT NULL,path TEXT NOT NULL,row TEXT NOT NULL,expected TEXT,PRIMARY KEY(volume,path));
-      CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL,role TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,last_seen TEXT);
+      CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL,role TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,last_seen TEXT,last_address TEXT);
       CREATE TABLE IF NOT EXISTS conflict_resolutions(volume TEXT NOT NULL,path TEXT NOT NULL,conflict_rev INTEGER NOT NULL,resolution_rev INTEGER NOT NULL,choice TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS transitions(id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS snapshot_sessions(id TEXT PRIMARY KEY,owner TEXT NOT NULL,volume TEXT NOT NULL,expires INTEGER NOT NULL);
@@ -163,33 +163,9 @@ export class Store {
       CREATE TABLE IF NOT EXISTS scan_cache(path TEXT PRIMARY KEY,signature TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,verified INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS backup_history(rev INTEGER PRIMARY KEY,row TEXT NOT NULL);
     `);
-    if (
-      !this.db
-        .prepare("PRAGMA table_info(volumes)")
-        .all()
-        .some((c) => c.name === "auto_ignore")
-    )
-      this.db.exec(
-        "ALTER TABLE volumes ADD COLUMN auto_ignore INTEGER NOT NULL DEFAULT 1",
-      );
-    if (
-      !this.db
-        .prepare("PRAGMA table_info(devices)")
-        .all()
-        .some((c) => c.name === "last_address")
-    )
-      this.db.exec("ALTER TABLE devices ADD COLUMN last_address TEXT");
-    if (
-      !this.db
-        .prepare("PRAGMA table_info(volumes)")
-        .all()
-        .some((c) => c.name === "last_sync")
-    )
-      this.db.exec("ALTER TABLE volumes ADD COLUMN last_sync TEXT");
-    for (const device of this.db
-      .prepare("SELECT id FROM devices WHERE revoked=1")
-      .all())
-      this.forgetDevice(device.id);
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS files_volume_path_key ON files(volume,path_key)",
+    );
   }
   forgetDevice(id) {
     this.db.exec("BEGIN IMMEDIATE");
@@ -344,14 +320,13 @@ export class Store {
     const marker = path.join(location, ".arca-volume");
     if (fs.existsSync(marker) && fs.readFileSync(marker, "utf8") !== id)
       fail("Directory belongs to another volume");
-    if (createIgnore && this.config.role !== "backup")
-      ensureIgnore(location, this.config.syncIncludes?.[id]);
+    if (createIgnore && this.config.role !== "backup") ensureIgnore(location);
     atomic(marker, id);
     this.db
       .prepare(
-        "INSERT INTO volumes(id,name,path,auto_ignore) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET selected=1,path=excluded.path",
+        "INSERT INTO volumes(id,name,path) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET selected=1,path=excluded.path",
       )
-      .run(id, name, location, createIgnore ? 1 : 0);
+      .run(id, name, location);
     return this.volume(id);
   }
   assertVolume(v) {
@@ -435,7 +410,6 @@ export class Store {
   }
   ignoreRules(v) {
     if (this.config.role === "backup") return compileIgnore("");
-    if (v.auto_ignore) ensureIgnore(v.path, this.config.syncIncludes?.[v.id]);
     const stat = fs.lstatSync(path.join(v.path, IGNORE_FILE), {
       bigint: true,
       throwIfNoEntry: false,
@@ -450,8 +424,31 @@ export class Store {
     this.ignoreCache.set(v.id, { stamp, match });
     return match;
   }
-  excluded(volume, name) {
-    return this.ignoreRules(this.volume(volume))(name);
+  visibleRules(volume) {
+    const v = this.volume(volume);
+    if (v.selected) return this.ignoreRules(v);
+    const policy = this.current(volume, IGNORE_FILE);
+    return compileIgnore(
+      policy && !policy.deleted && policy.hash
+        ? fs.readFileSync(this.blob(policy.hash), "utf8")
+        : "",
+    );
+  }
+  visibleTotals(volume) {
+    const excluded = this.visibleRules(volume);
+    return this.rows(volume).reduce(
+      (totals, row) => {
+        if (!row.deleted && !row.directory && !excluded(row.path, false)) {
+          totals.files++;
+          totals.bytes += row.size;
+        }
+        return totals;
+      },
+      { files: 0, bytes: 0 },
+    );
+  }
+  excluded(volume, name, directory = this.current(volume, name)?.directory) {
+    return this.ignoreRules(this.volume(volume))(name, !!directory);
   }
   scan(v, scopes = null, checkpoint = () => {}) {
     this.assertVolume(v);
@@ -495,8 +492,10 @@ export class Store {
       names.set(folded, name);
       if (entry.isSymbolicLink())
         fail(`Symlink requires attention: ${name}`, 409);
-      if (entry.isDirectory()) walk(name);
-      else if (entry.isFile())
+      if (entry.isDirectory()) {
+        result.set(name, directoryItem());
+        walk(name);
+      } else if (entry.isFile())
         result.set(name, this.capture(this.filePath(v, name)));
       else fail(`Unsupported file: ${name}`, 409);
     };
@@ -554,9 +553,18 @@ export class Store {
   setFile(row) {
     this.db
       .prepare(
-        "INSERT INTO files(volume,path,hash,size,deleted,rev) VALUES(?,?,?,?,?,?) ON CONFLICT(volume,path) DO UPDATE SET hash=excluded.hash,size=excluded.size,deleted=excluded.deleted,rev=excluded.rev",
+        "INSERT INTO files(volume,path,hash,size,deleted,rev,directory,path_key) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(volume,path) DO UPDATE SET hash=excluded.hash,size=excluded.size,deleted=excluded.deleted,rev=excluded.rev,directory=excluded.directory,path_key=excluded.path_key",
       )
-      .run(row.volume, row.path, row.hash, row.size, row.deleted, row.rev);
+      .run(
+        row.volume,
+        row.path,
+        row.hash,
+        row.size,
+        row.deleted,
+        row.rev,
+        Number(!!row.directory),
+        row.path.toLowerCase(),
+      );
   }
   queue(row, expected) {
     this.db
@@ -565,42 +573,54 @@ export class Store {
   }
   materialize(row, expected = null) {
     const v = this.volume(row.volume);
-    if (this.excluded(row.volume, row.path)) {
+    if (this.ignoreRules(v)(row.path, !!row.directory)) {
       this.db
         .prepare("DELETE FROM pending WHERE volume=? AND path=?")
         .run(row.volume, row.path);
       return;
     }
     const file = this.filePath(v, row.path);
-    if (!row.deleted) requireSpace(path.dirname(file), row.size);
-    if (!row.deleted && hashFile(this.blob(row.hash)) !== row.hash)
-      fail("Historical object corruption detected", 409);
-    if (fs.existsSync(file)) {
-      if (!fs.lstatSync(file).isFile())
-        fail(`Path is not a regular file: ${row.path}`, 409);
-      const actual = hashFile(file);
-      if (actual !== expected && actual !== row.hash) {
-        // Preserve edits made by another process since the scan (also on crash recovery).
-        fs.copyFileSync(
-          file,
-          `${file}.conflict-local-${crypto.randomUUID().slice(0, 8)}`,
-        );
-      }
-    }
-    if (row.deleted) {
-      if (fs.existsSync(file)) fs.unlinkSync(file);
+    if (row.directory) {
+      if (fs.existsSync(file) && !fs.lstatSync(file).isDirectory())
+        fail(`Directory conflicts with a local file: ${row.path}`, 409);
+      if (row.deleted) {
+        // Never recursively remove a directory: local/new/excluded content survives.
+        if (fs.existsSync(file)) fs.rmdirSync(file);
+      } else fs.mkdirSync(file, { recursive: true });
     } else {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      const tmp = path.join(path.dirname(file), `.arca-${crypto.randomUUID()}`);
-      fs.copyFileSync(this.blob(row.hash), tmp);
-      fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
-      const fd = fs.openSync(tmp, "r+");
-      try {
-        fs.fsyncSync(fd);
-      } finally {
-        fs.closeSync(fd);
+      if (!row.deleted) requireSpace(path.dirname(file), row.size);
+      if (!row.deleted && hashFile(this.blob(row.hash)) !== row.hash)
+        fail("Historical object corruption detected", 409);
+      if (fs.existsSync(file)) {
+        if (!fs.lstatSync(file).isFile())
+          fail(`Path is not a regular file: ${row.path}`, 409);
+        const actual = hashFile(file);
+        if (actual !== expected && actual !== row.hash) {
+          // Preserve edits made by another process since the scan (also on crash recovery).
+          fs.copyFileSync(
+            file,
+            `${file}.conflict-local-${crypto.randomUUID().slice(0, 8)}`,
+          );
+        }
       }
-      fs.renameSync(tmp, file);
+      if (row.deleted) {
+        if (fs.existsSync(file)) fs.unlinkSync(file);
+      } else {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        const tmp = path.join(
+          path.dirname(file),
+          `.arca-${crypto.randomUUID()}`,
+        );
+        fs.copyFileSync(this.blob(row.hash), tmp);
+        fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
+        const fd = fs.openSync(tmp, "r+");
+        try {
+          fs.fsyncSync(fd);
+        } finally {
+          fs.closeSync(fd);
+        }
+        fs.renameSync(tmp, file);
+      }
     }
     if (fs.existsSync(path.dirname(file))) syncDirectory(path.dirname(file));
     this.db.exec("BEGIN IMMEDIATE");
@@ -616,7 +636,9 @@ export class Store {
     }
   }
   recover() {
-    for (const p of this.db.prepare("SELECT * FROM pending").all())
+    for (const p of this.db
+      .prepare("SELECT * FROM pending ORDER BY path DESC")
+      .all())
       this.materialize(JSON.parse(p.row), p.expected);
   }
   unresolvedConflicts(volume) {
@@ -651,18 +673,63 @@ export class Store {
     write = write && Boolean(this.volume(volume).selected);
     if (write) {
       const file = this.filePath(this.volume(volume), name);
-      if (fs.existsSync(file) && !fs.lstatSync(file).isFile())
-        fail("Target is not a regular file", 409);
+      if (
+        fs.existsSync(file) &&
+        !((item ? item.directory : this.current(volume, name)?.directory)
+          ? fs.lstatSync(file).isDirectory()
+          : fs.lstatSync(file).isFile())
+      )
+        fail("Target type differs; synchronize its removal first", 409);
     }
-    const collision = this.rows(volume).find(
-      (r) =>
-        !r.deleted &&
-        ((r.path.toLowerCase() === name.toLowerCase() && r.path !== name) ||
-          (item &&
-            (r.path.toLowerCase().startsWith(name.toLowerCase() + "/") ||
-              name.toLowerCase().startsWith(r.path.toLowerCase() + "/")))),
-    );
-    if (collision) fail("Case-insensitive path collision", 409);
+    if (!item && this.current(volume, name)?.directory) {
+      if (
+        this.db
+          .prepare(
+            "SELECT 1 FROM files WHERE volume=? AND deleted=0 AND path_key>=? AND path_key<? LIMIT 1",
+          )
+          .get(volume, name.toLowerCase() + "/", name.toLowerCase() + "0")
+      )
+        fail(
+          "Directory contains synchronized entries; synchronize their removal first",
+          409,
+        );
+      if (write) {
+        const target = this.filePath(this.volume(volume), name);
+        if (fs.existsSync(target) && fs.readdirSync(target).length)
+          fail("Directory is not empty; local contents were preserved", 409);
+      }
+    }
+    const key = name.toLowerCase();
+    if (
+      this.db
+        .prepare(
+          "SELECT 1 FROM files WHERE volume=? AND path_key=? AND path<>? AND deleted=0 LIMIT 1",
+        )
+        .get(volume, key, name)
+    )
+      fail("Case-insensitive path collision", 409);
+    if (item) {
+      if (
+        !item.directory &&
+        this.db
+          .prepare(
+            "SELECT 1 FROM files WHERE volume=? AND deleted=0 AND path_key>=? AND path_key<? LIMIT 1",
+          )
+          .get(volume, key + "/", key + "0")
+      )
+        fail("Case-insensitive path collision", 409);
+      const parts = key.split("/");
+      for (let length = 1; length < parts.length; length++) {
+        if (
+          this.db
+            .prepare(
+              "SELECT 1 FROM files WHERE volume=? AND path_key=? AND deleted=0 AND directory=0 LIMIT 1",
+            )
+            .get(volume, parts.slice(0, length).join("/"))
+        )
+          fail("Case-insensitive path collision", 409);
+      }
+    }
     const created = new Date().toISOString();
     const values = {
       volume,
@@ -672,13 +739,16 @@ export class Store {
       deleted: item ? 0 : 1,
       author,
       created,
+      directory: Number(
+        !!(item?.directory || (!item && this.current(volume, name)?.directory)),
+      ),
     };
     this.db.exec("BEGIN IMMEDIATE");
     let row;
     try {
       const result = this.db
         .prepare(
-          "INSERT INTO revisions(volume,path,hash,size,deleted,author,created) VALUES(?,?,?,?,?,?,?)",
+          "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,?,?,?,?)",
         )
         .run(
           volume,
@@ -688,6 +758,7 @@ export class Store {
           values.deleted,
           author,
           created,
+          values.directory,
         );
       row = { ...values, rev: Number(result.lastInsertRowid) };
       if (resolution)
@@ -719,10 +790,10 @@ export class Store {
       const known = this.rows(v.id);
       for (const [name, item] of disk) {
         const old = this.current(v.id, name);
-        if (!old || old.deleted || old.hash !== item.hash)
+        if (!old || old.deleted || entryKey(old) !== entryKey(item))
           this.commit(v.id, name, item, this.config.id);
       }
-      for (const row of known)
+      for (const row of known.sort((a, b) => b.path.localeCompare(a.path)))
         if (
           !row.deleted &&
           !this.excluded(v.id, row.path) &&

@@ -12,18 +12,9 @@ export const DEFAULT_IGNORE = fs.readFileSync(
 );
 
 // Seed once; never replace user rules. An empty file disables user exclusions, not built-in metadata exclusions.
-export function ensureIgnore(root, includes = []) {
-  let text = DEFAULT_IGNORE;
-  if (Array.isArray(includes) && includes.length) {
-    // Preserve the old exact-component exceptions when migrating an existing share.
-    const names = new Set(includes.map((n) => String(n).toLowerCase()));
-    text = text
-      .split(/\r?\n/)
-      .filter((line) => !names.has(line.replace(/\/$/, "").toLowerCase()))
-      .join("\n");
-  }
+export function ensureIgnore(root) {
   try {
-    fs.writeFileSync(path.join(root, IGNORE_FILE), text, {
+    fs.writeFileSync(path.join(root, IGNORE_FILE), DEFAULT_IGNORE, {
       flag: "wx",
       mode: 0o600,
     });

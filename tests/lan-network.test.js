@@ -186,10 +186,6 @@ test("mobile checks native LAN routing and permission before returning a credent
     /Enable Allow HTTP/,
   );
   await assert.rejects(
-    verifyPrivateURL(url, {}, fetcher),
-    /updated Arca development build/,
-  );
-  await assert.rejects(
     verifyPrivateURL("http://8.8.8.8", native, fetcher),
     /Tailscale/,
   );
