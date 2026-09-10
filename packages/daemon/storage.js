@@ -123,6 +123,7 @@ export function init(home, options = {}) {
     port: Number(options.port ?? 47831),
     adminToken: token(),
     hub: null,
+    ...(options.onboarding ? { onboarding: true } : {}),
   };
   fs.mkdirSync(config.root, { recursive: true });
   config.root = fs.realpathSync(config.root);

@@ -11,6 +11,10 @@ function id(value) {
 }
 const root = new Directory(Paths.document, "arca");
 export const files = {
+  async destroy() {
+    if (root.exists) root.delete();
+    await this.clearIncoming();
+  },
   incoming: (key) => new File(Paths.cache, "arca-incoming", id(key)).uri,
   async clearIncoming() {
     const directory = new Directory(Paths.cache, "arca-incoming");

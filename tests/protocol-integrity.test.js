@@ -651,3 +651,167 @@ test("directory-capable clients must also support safe path transitions", async 
   assert.equal(response.status, 412);
   assert.match((await response.json()).error, /Update this client/);
 });
+
+test("destroy replica requires confirmation, removes local data and hub registration, and supports new setup", async (t) => {
+  const f = await setup(t);
+  const r = await f.connect("destroy-me");
+  const v = r.engine.store.volumes()[0];
+  fs.writeFileSync(path.join(v.path, "unsynced.txt"), "local only");
+  fs.writeFileSync(path.join(f.volume.path, "hub.txt"), "keep");
+  const oldToken = r.engine.config.adminToken;
+  const oldId = r.engine.config.id;
+  await assert.rejects(r.api("/v1/destroy-replica", {}), /Confirm/);
+  await assert.rejects(
+    f.hub.api("/v1/destroy-replica", { confirmed: true }),
+    /Only a replica/,
+  );
+  assert.ok(fs.existsSync(v.path));
+  await r.api("/v1/destroy-replica", { confirmed: true });
+  assert.equal(fs.existsSync(v.path), false);
+  assert.equal(
+    fs.readFileSync(path.join(f.volume.path, "hub.txt"), "utf8"),
+    "keep",
+  );
+  assert.equal(
+    f.hub.engine.store.db
+      .prepare("SELECT id FROM devices WHERE id=?")
+      .get(r.invite.id),
+    undefined,
+  );
+  assert.notEqual(r.engine.config.id, oldId);
+  await assert.rejects(
+    r.api("/v1/status", undefined, oldToken),
+    /Unauthorized/,
+  );
+  assert.equal((await r.api("/v1/status")).needsSetup, true);
+  assert.equal(r.engine.store.volumes().length, 0);
+  await r.api("/v1/setup", {
+    role: "replica",
+    name: "Fresh replica",
+    root: r.engine.config.root,
+  });
+  const invite = await f.hub.api("/v1/devices", {
+    name: "Fresh replica",
+    role: "replica",
+  });
+  await r.api("/v1/connect", {
+    url: `http://127.0.0.1:${f.hub.port}`,
+    token: invite.token,
+  });
+  await r.api("/v1/select", { id: f.volume.id });
+  await r.sync();
+  assert.equal(
+    fs.readFileSync(
+      path.join(r.engine.store.volumes()[0].path, "hub.txt"),
+      "utf8",
+    ),
+    "keep",
+  );
+});
+
+test("desktop destruction can resume after filesystem failure and rejects swapped folder paths", async (t) => {
+  const f = await setup(t);
+  const r = await f.connect("retry-destroy");
+  const folder = r.engine.store.volumes()[0].path;
+  const original = fs.rmSync;
+  fs.rmSync = (location, ...args) => {
+    if (location === folder) throw new Error("disk busy");
+    return original(location, ...args);
+  };
+  try {
+    await assert.rejects(
+      r.api("/v1/destroy-replica", { confirmed: true }),
+      /disk busy/,
+    );
+  } finally {
+    fs.rmSync = original;
+  }
+  assert.ok(r.engine.config.destroyPending);
+  assert.ok(fs.existsSync(folder));
+  await assert.rejects(r.api("/v1/sync", {}), /reset requires/);
+  const moved = folder + "-original";
+  fs.renameSync(folder, moved);
+  fs.mkdirSync(folder);
+  fs.writeFileSync(path.join(folder, "unrelated.txt"), "keep");
+  await assert.rejects(
+    r.api("/v1/destroy-replica", { confirmed: true }),
+    /changed during destruction/,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(folder, "unrelated.txt"), "utf8"),
+    "keep",
+  );
+  fs.renameSync(folder, folder + "-unrelated");
+  fs.renameSync(moved, folder);
+  await r.api("/v1/destroy-replica", { confirmed: true });
+  assert.equal(fs.existsSync(folder), false);
+  assert.equal(r.engine.config.needsSetup, true);
+});
+
+test("destroy after disconnect deletes replica folders and configured backup but leaves unrelated root files", async (t) => {
+  const f = await setup(t);
+  const r = await f.connect("disconnected-destroy");
+  const folder = r.engine.store.volumes()[0].path;
+  const unrelated = path.join(r.engine.config.root, "unrelated.txt");
+  fs.writeFileSync(unrelated, "keep");
+  const backup = path.join(r.engine.store.home, "backup-copy");
+  fs.mkdirSync(backup);
+  fs.writeFileSync(path.join(backup, "archive"), "copy");
+  r.engine.config.backup = { path: backup, enabled: false };
+  r.engine.store.saveConfig();
+  await r.api("/v1/disconnect", { confirmed: true });
+  assert.ok(fs.existsSync(folder));
+  await r.api("/v1/destroy-replica", { confirmed: true });
+  assert.equal(fs.existsSync(folder), false);
+  assert.equal(fs.existsSync(backup), false);
+  assert.equal(fs.readFileSync(unrelated, "utf8"), "keep");
+});
+
+test("a restarted daemon resumes its durable replica destruction before allowing setup", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-destroy-restart-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  init(root, { role: "replica", port: 0 });
+  const first = new Engine(root);
+  const folder = first.store.addVolume("Saved", undefined, undefined, false);
+  fs.writeFileSync(path.join(folder.path, "unsynced.txt"), "remove");
+  const remove = fs.rmSync;
+  fs.rmSync = (location, ...args) => {
+    if (location === folder.path) throw new Error("interrupted deletion");
+    return remove(location, ...args);
+  };
+  try {
+    await assert.rejects(first.destroyReplica(), /interrupted deletion/);
+  } finally {
+    fs.rmSync = remove;
+    first.close();
+  }
+  const second = new Engine(root);
+  try {
+    assert.equal(second.config.needsSetup, true);
+    assert.equal(second.config.destroyPending, undefined);
+    assert.equal(second.store.volumes().length, 0);
+    assert.equal(fs.existsSync(folder.path), false);
+  } finally {
+    second.close();
+  }
+});
+
+test("failed destruction journal write preserves files and permits a durable retry", async (t) => {
+  const f = await setup(t);
+  const r = await f.connect("journal-destroy");
+  await r.api("/v1/disconnect", { confirmed: true });
+  const folder = r.engine.store.volumes()[0].path;
+  const save = r.engine.store.saveConfig.bind(r.engine.store);
+  r.engine.store.saveConfig = () => {
+    throw new Error("configuration disk full");
+  };
+  await assert.rejects(
+    r.api("/v1/destroy-replica", { confirmed: true }),
+    /configuration disk full/,
+  );
+  assert.equal(r.engine.config.destroyPending, undefined);
+  assert.ok(fs.existsSync(folder));
+  r.engine.store.saveConfig = save;
+  await r.api("/v1/destroy-replica", { confirmed: true });
+  assert.equal(fs.existsSync(folder), false);
+});

@@ -60,6 +60,7 @@ async function fixture(t) {
   });
   const local = path.join(root, "mobile");
   const files = {
+    destroy: async () => fs.rmSync(local, { recursive: true, force: true }),
     folder: (s, v) => path.join(local, s, "folders", v),
     work: (s, v, p) => path.join(local, s, "folders", v, p),
     object: (s, h) => path.join(local, s, "objects", h),
@@ -870,5 +871,87 @@ test("mobile receives removed ignore policy before scanning newly included conte
   assert.equal(
     fs.existsSync(f.files.work(r.scope, f.volume.id, ".arcaignore")),
     false,
+  );
+});
+
+test("destroy mobile replica removes all private copies and hub registration, preserves hub content and resets pairing", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, files, client, store, daemon } = f;
+  fs.writeFileSync(path.join(volume.path, "kept.txt"), "hub content");
+  await daemon.engine.scanHub();
+  await replica.select(volume);
+  await sync(f);
+  const local = files.folder(replica.scope, volume.id);
+  fs.writeFileSync(path.join(local, "unsynced.txt"), "local only");
+  const device = client.state().connection.id;
+  await assert.rejects(replica.destroy(), /Confirm/);
+  assert.ok(fs.existsSync(local));
+  await replica.destroy(true);
+  assert.equal(fs.existsSync(local), false);
+  assert.equal(
+    fs.readFileSync(path.join(volume.path, "kept.txt"), "utf8"),
+    "hub content",
+  );
+  assert.equal(
+    daemon.engine.store.db
+      .prepare("SELECT id FROM devices WHERE id=?")
+      .get(device),
+    undefined,
+  );
+  assert.deepEqual(client.state(), { connection: null, catalog: null });
+  assert.equal(await store.get("scope"), null);
+  assert.equal(replica.scope, null);
+});
+
+test("mobile destruction fails offline without deleting copies, then resumes interrupted cleanup", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.volume);
+  const local = f.files.folder(f.replica.scope, f.volume.id);
+  f.offline();
+  await assert.rejects(f.replica.destroy(true));
+  assert.ok(fs.existsSync(local));
+  f.online();
+  const remove = f.files.destroy;
+  f.files.destroy = async () => {
+    throw new Error("storage unavailable");
+  };
+  await assert.rejects(f.replica.destroy(true), /storage unavailable/);
+  assert.equal(await f.store.get("destroyPending"), true);
+  assert.ok(f.client.state().catalog);
+  await assert.rejects(f.replica.select(f.volume), /cleanup is pending/);
+  f.files.destroy = remove;
+  await f.replica.load();
+  assert.equal(fs.existsSync(local), false);
+  assert.equal(await f.store.get("destroyPending"), null);
+  assert.deepEqual(f.client.state(), { connection: null, catalog: null });
+});
+
+test("mobile onboarding downloads only explicitly chosen folders and preflights space", async (t) => {
+  const { selectFirstFolders } =
+    await import("../apps/mobile/src/onboarding.js");
+  const f = await fixture(t);
+  await f.store.set("onboarding", "folders");
+  fs.writeFileSync(path.join(f.volume.path, "first.txt"), "first download");
+  await f.daemon.engine.scanHub();
+  await f.client.refresh();
+  await f.replica.sync();
+  assert.equal((await f.store.folders(f.replica.scope)).length, 0);
+  const free = f.files.free;
+  f.files.free = async () => 0;
+  await assert.rejects(
+    selectFirstFolders(f.replica, f.client.state().catalog, [f.volume.id]),
+    /storage/,
+  );
+  assert.equal((await f.store.folders(f.replica.scope)).length, 0);
+  f.files.free = free;
+  await selectFirstFolders(f.replica, f.client.state().catalog, [f.volume.id]);
+  assert.equal(await f.store.get("onboarding"), null);
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(
+      f.files.work(f.replica.scope, f.volume.id, "first.txt"),
+      "utf8",
+    ),
+    "first download",
   );
 });

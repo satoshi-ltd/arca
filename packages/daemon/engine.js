@@ -1,3 +1,8 @@
+import {
+  resetTargets,
+  beginReplicaReset,
+  finishReplicaReset,
+} from "./replica-reset.js";
 import { entryKey, directoryItem } from "../core/entries.js";
 import {
   IGNORE_FILE,
@@ -29,6 +34,13 @@ export class Engine {
   constructor(home) {
     this.store = new Store(home);
     this.config = this.store.config;
+    if (this.config.destroyPending) {
+      try {
+        finishReplicaReset(this.store);
+      } catch {
+        /* Keep the journal available for explicit retry. */
+      }
+    }
     const transition = path.join(this.store.home, "promotion.json");
     if (fs.existsSync(transition)) {
       const journal = JSON.parse(fs.readFileSync(transition, "utf8"));
@@ -119,6 +131,9 @@ export class Engine {
             : this.paused
               ? "paused"
               : this.phase,
+      needsSetup: !!this.config.needsSetup,
+      onboarding: !!this.config.onboarding,
+      destroyPending: !!this.config.destroyPending,
       setupRequired: this.config.role === "hub" && !s.volumes().length,
       root: this.config.root,
       retention: this.config.retention || { days: 0, versions: 0 },
@@ -406,6 +421,13 @@ export class Engine {
     return result;
   }
   async cycle({ incremental = false } = {}) {
+    if (
+      this.destroying ||
+      this.config.destroyPending ||
+      this.config.needsSetup ||
+      this.config.onboarding
+    )
+      return;
     if (this.paused && this.pauseUntil && Date.now() >= this.pauseUntil) {
       this.setPaused(false);
     }
@@ -1267,6 +1289,34 @@ export class Engine {
     await this.download(remote.hash, remote.size);
     s.queue(remote, localHash);
     s.materialize(remote, localHash);
+  }
+  async destroyReplica() {
+    if (this.config.role !== "replica")
+      fail("Only a replica can be destroyed", 409);
+    if (this.destroying)
+      fail("Replica destruction is already in progress", 409);
+    this.destroying = true;
+    this.interruptCycle();
+    try {
+      // Validate every target before removing the registration from the hub.
+      if (!this.config.destroyPending) resetTargets(this.store);
+      if (!this.config.destroyPending) await this.disconnect();
+      return await this.exclusive(async () => {
+        await this.scanner.worker?.terminate();
+        this.scanner = new Scanner(this.store.home);
+        if (!this.config.destroyPending)
+          beginReplicaReset(this.store, resetTargets(this.store));
+        finishReplicaReset(this.store);
+        this.folderStates.clear();
+        this.paused = false;
+        this.pauseUntil = null;
+        this.error = this.progress = this.lastSync = null;
+        this.phase = "unlinked";
+        return { destroyed: true, needsSetup: true };
+      });
+    } finally {
+      this.destroying = false;
+    }
   }
   async disconnect() {
     if (this.config.role !== "replica")

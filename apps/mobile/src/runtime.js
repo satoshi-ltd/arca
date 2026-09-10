@@ -45,9 +45,9 @@ export function runtime() {
           lastNotice = body;
         },
       });
+      await client.load();
       await replica.load();
       await clearIncoming(replica);
-      await client.load();
       return replica;
     })().catch((error) => {
       runtimePromise = null;
@@ -80,6 +80,14 @@ export async function setBackground(enabled) {
   } else if (await TaskManager.isTaskRegisteredAsync(BACKGROUND_TASK))
     await BackgroundTask.unregisterTaskAsync(BACKGROUND_TASK);
   await replica.store.set("background", enabled);
+}
+export async function destroyReplica() {
+  const replica = await runtime();
+  await setBackground(false);
+  await replica.destroy(true);
+  await Notifications.cancelAllScheduledNotificationsAsync();
+  await Notifications.dismissAllNotificationsAsync();
+  lastNotice = "";
 }
 export async function setNotifications(enabled) {
   if (enabled) {

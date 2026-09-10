@@ -1,6 +1,6 @@
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g } from "./design-tokens.js";
-import React, { createContext, useContext, useRef } from "react";
+import React, { createContext, useContext, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -89,6 +89,7 @@ export function Button({
         primary && s.primary,
         quiet && s.quietButton,
         danger && s.dangerButton,
+        danger && primary && s.destructivePrimary,
         (disabled || busy) && s.disabled,
       ]}
     >
@@ -108,7 +109,7 @@ export function Button({
             s.buttonLabel,
             primary && s.primaryLabel,
             quiet && s.active,
-            danger && s.errorText,
+            danger && !primary && s.errorText,
           ]}
         >
           {label}
@@ -117,30 +118,130 @@ export function Button({
     </Pressable>
   );
 }
-export function Field({ label, onFocus, onBlur, ...props }) {
+export function Field({ label, icon, onFocus, onBlur, ...props }) {
   const input = useRef(null);
   const focus = useContext(FieldFocus);
   const { s, c } = useDesign();
   return (
     <View style={s.section}>
       <Text style={s.heading}>{label}</Text>
-      <TextInput
-        ref={input}
-        onFocus={(event) => {
-          focus?.focus(input.current);
-          onFocus?.(event);
-        }}
-        onBlur={(event) => {
-          focus?.blur(input.current);
-          onBlur?.(event);
-        }}
-        accessibilityLabel={label}
-        placeholderTextColor={c.mute}
-        style={s.input}
-        autoCapitalize="none"
-        autoCorrect={false}
-        {...props}
-      />
+      <View style={icon && s.inputShell}>
+        {icon && <Icon name={icon} color={c.mute} />}
+        <TextInput
+          ref={input}
+          onFocus={(event) => {
+            focus?.focus(input.current);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            focus?.blur(input.current);
+            onBlur?.(event);
+          }}
+          accessibilityLabel={label}
+          placeholderTextColor={c.mute}
+          style={icon ? [s.input, s.inputEmbedded] : s.input}
+          autoCapitalize="none"
+          autoCorrect={false}
+          {...props}
+        />
+      </View>
+    </View>
+  );
+}
+export function FeatureRow({ icon, title, children }) {
+  const { s } = useDesign();
+  return (
+    <View style={s.featureRow}>
+      <View style={[s.tile, s.tileLarge]}>
+        <Icon name={icon} />
+      </View>
+      <View style={[s.flex, s.stack]}>
+        <Text style={s.heading}>{title}</Text>
+        <Text style={s.text}>{children}</Text>
+      </View>
+    </View>
+  );
+}
+export function StepIndicator({ step, count = 3 }) {
+  const { s } = useDesign();
+  return (
+    <View
+      accessibilityLabel={`Step ${step + 1} of ${count}`}
+      style={s.stepIndicator}
+    >
+      {Array.from({ length: count }, (_, index) => (
+        <View
+          key={index}
+          style={[s.stepDot, index === step && s.stepDotActive]}
+        />
+      ))}
+    </View>
+  );
+}
+export function CodeInput({ label, value, onChangeText, editable = true }) {
+  const { s, c } = useDesign();
+  const [focused, setFocused] = useState(false);
+  const input = useRef(null);
+  const focus = useContext(FieldFocus);
+  return (
+    <View style={s.section}>
+      <Text style={s.heading}>{label}</Text>
+      <Pressable
+        onPress={() => input.current?.focus()}
+        accessible={false}
+        style={s.codeControl}
+      >
+        <View
+          pointerEvents="none"
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={s.codeCells}
+        >
+          {Array.from({ length: 6 }, (_, index) => (
+            <React.Fragment key={index}>
+              {index === 3 && <Text style={s.codeSeparator}>–</Text>}
+              <View
+                style={[
+                  s.codeCell,
+                  focused &&
+                    Math.min(value.length, 5) === index &&
+                    s.controlFocused,
+                ]}
+              >
+                <Text style={s.codeDigit}>
+                  {value[index] ||
+                    (focused && value.length === index ? "│" : "")}
+                </Text>
+              </View>
+            </React.Fragment>
+          ))}
+        </View>
+        <TextInput
+          ref={input}
+          value={value}
+          editable={editable}
+          accessibilityLabel={label}
+          onChangeText={(next) =>
+            onChangeText(next.replace(/[^0-9]/g, "").slice(0, 6))
+          }
+          keyboardType="number-pad"
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
+          autoCorrect={false}
+          caretHidden
+          selectionColor={c.accent}
+          style={s.codeCapture}
+          onFocus={() => {
+            setFocused(true);
+            focus?.focus(input.current);
+          }}
+          onBlur={() => {
+            setFocused(false);
+            focus?.blur(input.current);
+          }}
+        />
+      </Pressable>
     </View>
   );
 }
@@ -148,6 +249,7 @@ export function Card({
   title,
   children,
   available = false,
+  danger = false,
   grouped = false,
   divider = false,
 }) {
@@ -157,6 +259,7 @@ export function Card({
       style={[
         grouped ? s.settingRow : s.card,
         available && s.available,
+        danger && s.dangerCard,
         divider && s.separator,
       ]}
     >
@@ -366,6 +469,8 @@ export function ActionRow({ label, icon, onPress, disabled, danger, divider }) {
 }
 
 export function FolderRow({
+  selectable = false,
+  selected = false,
   grouped = false,
   divider = false,
   name,
@@ -385,7 +490,15 @@ export function FolderRow({
         <Text style={s.rowTitle}>{name}</Text>
         {!!description && <Text style={s.caption}>{description}</Text>}
       </View>
-      {available ? (
+      {selectable ? (
+        selected ? (
+          <View style={s.selectionCheck}>
+            <Icon name="check" size={16} color={c.onAccent} />
+          </View>
+        ) : (
+          <Icon name="circle" color={c.line} size={24} />
+        )
+      ) : available ? (
         <Button
           label="Select"
           icon="download"
@@ -404,15 +517,19 @@ export function FolderRow({
     <View style={[s.card, s.available, s.folderRow]}>{contents}</View>
   ) : (
     <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${name}`}
-      accessibilityState={{ disabled: !!disabled }}
+      accessibilityRole={selectable ? "checkbox" : "button"}
+      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}`}
+      accessibilityState={{
+        disabled: !!disabled,
+        ...(selectable ? { checked: selected } : {}),
+      }}
       disabled={disabled}
       onPress={onPress}
       style={[
         !grouped && s.card,
         s.folderRow,
         grouped && s.groupedFolderRow,
+        selectable && selected && s.selectedCard,
         divider && s.separator,
       ]}
     >

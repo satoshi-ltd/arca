@@ -153,8 +153,8 @@ function empty(heading, text, control = "", symbol = "folder-open") {
 }
 const section = (name, body) =>
   `<section><div class="section-label">${name}</div>${body}</section>`;
-const setting = (name, description, control = "") =>
-  `<div class="setting-row"><div class="row-main"><strong>${name}</strong><p>${description}</p></div>${control}</div>`;
+const setting = (name, description, control = "", leading = "") =>
+  `<div class="setting-row">${leading}<div class="row-main"><strong>${name}</strong><p>${description}</p></div>${control}</div>`;
 async function browserRequest(route, body) {
   let response;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -557,6 +557,25 @@ async function refresh(renderView = true) {
   const next = await api("/v1/status");
   if (request !== statusRequestSerial) return lastSignature;
   status = next;
+  if (status.needsSetup || status.onboarding) {
+    ready = false;
+    onboarding ||= {
+      step: status.onboarding
+        ? status.role === "hub" || status.hub
+          ? 3
+          : 2
+        : -1,
+      name: status.onboarding ? status.name : "",
+      role: status.onboarding ? status.role : "replica",
+      root: status.root,
+      url: status.hub || "",
+      code: "",
+      initialized: !!status.onboarding,
+      paired: !!status.hub,
+    };
+    renderOnboarding();
+    return;
+  }
   if ($("#notice").dataset.source === "connection") {
     $("#notice").hidden = true;
     delete $("#notice").dataset.source;
@@ -1597,8 +1616,13 @@ async function renderSettings() {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.3.5 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.3.6 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
+  if (status.role === "replica")
+    html += section(
+      "Danger zone",
+      `<div class="settings-card replica-danger">${setting("Destroy this replica", "Deletes all local folders and resets Arca on this device. Hub files and other machines are kept.", button("Destroy replica…", "destroy-replica", "", "primary danger", "trash-2"))}</div>`,
+    );
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
     action(async () => {
@@ -2359,7 +2383,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.3.5",
+          version: "0.3.6",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -2421,6 +2445,41 @@ async function handle(name, id, control) {
     await renderSettings();
     return;
   }
+  if (name === "destroy-replica" && status.role === "replica") {
+    const paths = [
+      ...new Set(
+        [
+          ...(status.volumes || []).map((v) => v.path),
+          status.backup?.path,
+        ].filter(Boolean),
+      ),
+    ];
+    modal(
+      modalHeader(
+        "Destroy this replica?",
+        "Permanently deletes local folders, including unsynced changes, and resets Arca on this machine. Hub files, hub history and other machines are kept.",
+        "trash-2",
+      ) +
+        `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. If still connected, the hub must be reachable. An interrupted cleanup can be retried.</p>`,
+      async () => {
+        await api("/v1/destroy-replica", { confirmed: true });
+        ready = false;
+        detailId = null;
+        onboarding = null;
+        localStorage.removeItem("arca-theme");
+        theme("system");
+        if (native) await boot();
+        else
+          await showLogin(
+            "Replica destroyed. Generate a new local web access code to begin setup.",
+          );
+      },
+      "Destroy replica",
+      true,
+    );
+    $("#submit-dialog").classList.add("danger");
+    return;
+  }
   if (name === "disconnect-hub" && status.role === "replica") {
     modal(
       modalHeader(
@@ -2469,6 +2528,7 @@ async function handle(name, id, control) {
       if (input) {
         input.value = result;
         input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }
     return;
@@ -2960,6 +3020,7 @@ async function showLogin(message = "") {
   };
 }
 function renderOnboarding() {
+  ready = false;
   document.body.classList.add("onboarding-mode");
   const o = onboarding;
   const steps = [
@@ -2969,95 +3030,161 @@ function renderOnboarding() {
     "Pick a folder root",
   ];
   let body = "";
+  if (o.step === -1)
+    body = `<p>Your personal drive, on your own machines.</p><h1>Many devices.<br><em class="accent-text">One space.</em></h1><p>Arca keeps the folders you choose in sync across your laptop, tablet and phone, with complete local copies and a hub you run yourself.</p>${[
+      [
+        "hard-drive",
+        "Complete local copies",
+        "Real files on your disk. Offline is a normal day.",
+      ],
+      [
+        "history",
+        "A way back",
+        "Restore earlier versions. Conflicts keep both files.",
+      ],
+      [
+        "server",
+        "A hub you control",
+        "Your storage, your machines. No cloud account, no telemetry.",
+      ],
+    ]
+      .map(
+        ([symbol, heading, description]) =>
+          `<div class="settings-card">${setting(heading, description, "", icon(symbol))}</div>`,
+      )
+      .join("")}`;
   if (o.step === 0)
-    body =
-      "<h1>Name this machine</h1><p>Other machines and the history will show this name. You can change it later.</p>" +
-      textField("Machine name", "name", o.name, "monitor") +
-      '<div class="panel"><h3>Node identity</h3><p>A persistent node identity is generated when setup finishes. Names can be changed later.</p></div>';
+    body = `<h1>Name this machine</h1><p>Shown to other machines and in history.</p>${textField("Machine name", "name", o.name, "monitor")}${o.platform ? `<p class="hint">${escape(platformLabel(o.platform))}${o.arch ? ` · ${escape(o.arch)}` : ""}</p>` : ""}`;
   if (o.step === 1)
-    body = `<h1>What is ${escape(o.name)}?</h1><p>You can run the hub on any machine: a Mac, a PC or a server.</p>${[
+    body = `<h1>What is ${escape(o.name)}?</h1><p>A hub keeps your folders. Every other machine keeps a copy.</p>${[
       [
         "hub",
         "server",
         "Make it the hub",
-        "Keeps every folder and the full history. Other machines connect to it.",
+        "Keeps the folders and their history.",
       ],
       [
         "replica",
         "monitor-smartphone",
         "Join an existing hub",
-        "Select the folders you want here. Full copies stay on disk and work offline.",
+        "Keeps the folders you select. Needs a pairing code from the hub.",
       ],
     ]
       .map(
         ([value, symbol, name, desc]) =>
-          `<label class="role-card"><input name="role" type="radio" value="${value}" ${o.role === value ? "checked" : ""}>${icon(symbol)}<div><strong>${name}</strong><p>${desc}</p>${value === "replica" ? `<div class="role-note"><strong>You will need a pairing code</strong><p>The hub administrator generates it in Machines › Pair a machine. It works once and expires ten minutes after generation.</p></div>` : ""}</div></label>`,
+          `<label class="role-card"><input name="role" type="radio" value="${value}" ${o.role === value ? "checked" : ""}>${icon(symbol)}<div><strong>${name}</strong><p>${desc}</p></div></label>`,
       )
-      .join(
-        "",
-      )}<p class="hint">A replica can also keep a full backup of the hub. That is switched on later in Settings, not a separate kind of machine.</p>`;
-  if (o.step === 2)
-    body = `<h1>Pair with your hub</h1><p>Enter the code issued on your hub. ${escape(o.name)} then receives its own credential, kept until it is revoked on the hub.</p>${textField("Hub address", "url", o.url, "server", "https://arca.your-network", "mono")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">Six digits, leading zeroes included. Works once; expires ten minutes after the hub generated it. Ask the hub administrator for a new one if it fails.</p><p class="hint">Use HTTPS, verified Tailscale, or a private IPv4 address when the hub allows local network HTTP.</p><div class="callout">${icon("fingerprint")}<p>No password or code is needed to open Arca on this machine. This code only links it to the hub.</p></div>`;
+      .join("")}`;
+  if (o.step === 2 && !o.paired)
+    body = `<h1>Pair with your hub</h1><p>Connect with a single-use code from your hub.</p>${textField("Hub address", "url", o.url, "server", "https://arca.your-network", "mono")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">${icon("clock")}Single use · valid ten minutes.</p>`;
+  if (o.step === 2 && o.paired)
+    body = `<h1>Finish setup</h1><p>Paired with ${escape(o.hubName || "your hub")}. Your connection is saved.</p><p>No folders have been downloaded. Choose them after setup.</p>`;
   if (o.step === 3)
-    body = `<h1>Pick a folder root</h1><p>A default location for the folders you choose to synchronize.</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>${escape(o.root.split("/").filter(Boolean).pop() || "Folder root")}</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${button("Change…", "pick-path", "root", "secondary small-button", "folder-input")}</div><div class="callout">${icon("info")}<p>The root must be empty or new. Arca’s index stays outside synchronized folders. Nothing is downloaded until you select folders.</p></div>`;
+    body = `<h1>A home for your folders</h1><p>${o.role === "replica" ? "Folders you select from the hub live here, as ordinary folders." : "Choose a default location for the folders you share."}</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${native ? button("Change…", "pick-path", "root", "secondary small-button", "folder-input") : ""}</div><div id="setup-space"></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p>`;
   $("#content").innerHTML =
-    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((s, i) => `<div class="step ${o.step === i ? "current" : o.step > i ? "done" : ""}"><span>${o.step > i ? icon("check") : i + 1}</span>${s}</div>`).join("")}</div><p>One user. Your own machines.<br>No accounts, no telemetry.</p></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step === 0 ? "disabled" : ""}>${icon("chevron-left")}Back</button><button type="submit" class="primary">${o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button></div></form></div>`;
-  if (o.step === 2 && o.code)
-    [...o.code].forEach((v, i) => {
-      $(`[data-code="onboarding"][data-digit="${i}"]`).value = v;
-    });
+    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${o.step === i ? "current" : o.step > i && !(o.role === "hub" && i === 2) ? "done" : ""}" ${o.step === i ? 'aria-current="step"' : ""}><span>${o.step > i && !(o.role === "hub" && i === 2) ? icon("check") : i + 1}</span>${label}${i === 2 && o.role === "hub" && o.step > 0 ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button><button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button></div></form></div>`;
   $("#setup-back").onclick = () => {
     o.step = o.step === 3 && o.role === "hub" ? 1 : o.step - 1;
     renderOnboarding();
   };
-  $("#setup-form").onsubmit = (e) => {
-    e.preventDefault();
+  const showError = (error) => {
+    if (onboarding !== o || !$("#setup-error")) return;
+    $("#setup-error").hidden = false;
+    $("#setup-error").textContent = error.message;
+  };
+  const inspectRoot = async () => {
+    const root = $("[name=root]")?.value || o.root;
+    const result = await (native
+      ? invoke("setup_info", { root })
+      : api(`/v1/setup-info?root=${encodeURIComponent(root)}`));
+    if (onboarding === o && o.step === 3 && $("[name=root]")?.value === root)
+      $("#setup-space").innerHTML =
+        `<div class="stats"><div class="stat"><span>Available space</span><strong>${bytes(result.freeBytes)}</strong></div>${o.totalBytes !== undefined ? `<div class="stat"><span>On hub ${escape(o.hubName || "")}</span><strong>${bytes(o.totalBytes)}</strong><p>${o.folderCount} folders</p></div>` : ""}</div>`;
+    return result;
+  };
+  if (o.step === 3) {
+    inspectRoot().catch(showError);
+    $("[name=root]").onchange = () => inspectRoot().catch(showError);
+  }
+  $("#setup-form").onsubmit = (event) => {
+    event.preventDefault();
     action(async () => {
       try {
-        const f = new FormData(e.target);
-        if (o.step === 0) o.name = String(f.get("name")).trim();
-        if (o.step === 1) o.role = f.get("role");
-        if (o.step === 2) {
-          o.url = f.get("url");
-          o.code = readCode("onboarding");
-          if (o.code.length !== 6) throw new Error("Enter all six digits.");
-        }
-        if (o.step < 3) {
-          o.step = o.step === 1 && o.role === "hub" ? 3 : o.step + 1;
+        const f = new FormData(event.target);
+        if (o.step === -1) {
+          o.step = 0;
           renderOnboarding();
           return;
         }
-        o.root = f.get("root");
+        if (o.step === 0) {
+          o.name = String(f.get("name")).trim();
+          if (!o.name || o.name.length > 100)
+            throw new Error("Choose a name of up to 100 characters.");
+          o.step = 1;
+          renderOnboarding();
+          return;
+        }
+        if (o.step === 1) {
+          o.role = f.get("role");
+          o.step = o.role === "hub" ? 3 : 2;
+          renderOnboarding();
+          return;
+        }
+        if (o.step === 2 && !o.paired) {
+          o.url = String(f.get("url")).trim();
+          if (!o.url) throw new Error("Enter your hub address.");
+          if (readCode("onboarding").length !== 6 && !o.initialized)
+            throw new Error("Enter all six digits.");
+        }
+        if (o.step === 3) o.root = (await inspectRoot()).root;
         if (!o.initialized) {
-          await invoke("initialize", {
-            name: o.name,
-            role: o.role,
-            root: o.root,
-          });
+          await (
+            native
+              ? (data) => invoke("initialize", data)
+              : (data) => api("/v1/setup", { ...data, onboarding: true })
+          )({ name: o.name, role: o.role, root: o.root });
           o.initialized = true;
         }
-        let started = false;
+        let current;
         for (let i = 0; i < 30; i++) {
           try {
-            await api("/v1/status");
-            started = true;
+            current = await api("/v1/status");
             break;
           } catch {
             await new Promise((r) => setTimeout(r, 200));
           }
         }
-        if (!started)
-          throw new Error("Daemon is still starting. Try Finish again.");
-        if (o.role === "replica")
-          await api("/v1/connect", {
-            url: o.url,
-            code: o.code,
-          });
+        if (!current) throw new Error("Daemon is still starting. Try again.");
+        if (o.step === 2) {
+          o.url = String(f.get("url") || o.url).trim();
+          const code = readCode("onboarding");
+          if (!current.hub) {
+            if (code.length !== 6) throw new Error("Enter all six digits.");
+            try {
+              await api("/v1/connect", { url: o.url, code });
+            } catch (error) {
+              if (!(await api("/v1/status")).hub) throw error;
+              o.paired = true;
+              renderOnboarding();
+              // The credential is already durable; a catalog retry must not reuse the code.
+            }
+          }
+          const catalog = await api("/v1/remote");
+          o.paired = true;
+          o.hubName = catalog.name;
+          o.totalBytes = catalog.volumes.every((v) => Number.isFinite(v.bytes))
+            ? catalog.volumes.reduce((sum, v) => sum + v.bytes, 0)
+            : undefined;
+          o.folderCount = catalog.volumes.length;
+          o.step = 3;
+          renderOnboarding();
+          return;
+        }
+        await api("/v1/setup", { name: o.name, role: o.role, root: o.root });
         onboarding = null;
         await refresh();
       } catch (error) {
-        $("#setup-error").hidden = false;
-        $("#setup-error").textContent = error.message;
+        showError(error);
       }
     });
   };
@@ -3076,8 +3203,10 @@ async function boot() {
   const state = await invoke("bootstrap");
   if (state.setup) {
     onboarding = {
-      step: 0,
-      name: "",
+      step: -1,
+      name: state.name || "",
+      platform: state.platform,
+      arch: state.arch,
       role: "replica",
       root: state.root,
       url: "",

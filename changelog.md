@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.6 — 2026-09-10
+
+- Stabilize mobile single-line input height before text entry, including icon fields and accessibility font scaling. Share explicit 48-dp mobile control sizing alongside desktop 32-px controls and enforce token parity.
+
+- Apply the supplied desktop/mobile onboarding composition through shared design primitives, preserving the desktop step order and mobile pairing/first-folder flow. Mobile uses open welcome rows, grouped code cells, selection checks and bottom progress indicators; destinations remain app-owned.
+- Standardize separate list-card spacing at 12 logical units across desktop/web and mobile through a shared token with automated parity coverage. Apply it to folder lists and selectors, including mobile onboarding; keep grouped rows contiguous and section spacing independent.
+- Match desktop onboarding proportions and typography to the supplied reference, with leading feature icons, left-aligned code cells and separate capacity cards; visually review all five screens.
+- Persist accepted pairing before catalog retrieval, resume unfinished setup safely and defer automatic synchronization until setup completes. Validate empty/new desktop roots and preflight aggregate mobile download space.
+- Cover code expiry, concurrent single-use redemption and setup recovery; retain persistent guessing budgets and verified transport requirements.
+
+- Make `npm run desktop` replace the local daemon with the current checkout before opening Tauri, preserving files, pairing and pause. Wait for daemon readiness; leave first-run initialization to onboarding and keep installed-app closing behavior unchanged.
+- Add Destroy replica to desktop and mobile Settings with a concise Danger zone card and an explicit irreversible confirmation; desktop lists the affected local paths. Keep Disconnect unchanged.
+- Remove the replica's hub registration and permanently delete its local folders, unsynced changes, configured desktop full backup, credentials, indexes, queues and caches. Preserve hub content/history, other machines and unrelated local files.
+- Resume interrupted cleanup through durable deletion intent, reject changed desktop folder identities, and prevent normal synchronization while destruction is pending.
+- Return to first-run setup with a fresh desktop identity/credential or cleared mobile pairing and settings. Support configuring the existing daemon again through its native bridge or authenticated web setup.
+- Align all release versions at 0.3.6 and advance mobile native build numbers to 8. Expo builds remain manual; these changes are prepared locally and have not been deployed.
+- Validation: 223 tests passed, one platform skip; desktop web build, Android/iOS JavaScript exports, Rust compilation checks and release-version agreement pass.
+
 ## 0.3.5 — 2026-09-10
 
 - Fix stale proposal retries, incomplete backup restoration, hub local-copy reselection and corrupt object repair while preserving local edits and retained backup content.

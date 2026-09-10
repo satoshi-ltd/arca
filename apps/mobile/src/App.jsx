@@ -1,3 +1,5 @@
+import { Onboarding } from "./Onboarding";
+import { selectFirstFolders } from "./onboarding";
 import {
   scopedActivity,
   historyFolderIds,
@@ -53,7 +55,13 @@ import {
 } from "./components";
 import { client } from "./persistence";
 import { isPickerCancelled } from "./action-errors.js";
-import { runtime, subscribe, setBackground, setNotifications } from "./runtime";
+import {
+  runtime,
+  subscribe,
+  setBackground,
+  setNotifications,
+  destroyReplica,
+} from "./runtime";
 import config from "../app.json";
 import { HubConnection } from "./HubConnection";
 import { FileHistory } from "./FileHistory";
@@ -101,7 +109,7 @@ export default function App() {
         ? "dark"
         : "light"
     ];
-  const { width, height } = useWindowDimensions();
+  const { width, height, fontScale } = useWindowDimensions();
   const keyboardVisible = useKeyboardVisible();
   const layout = useRef(false);
   layout.current = sidebarLayout(
@@ -111,7 +119,10 @@ export default function App() {
   );
   const wide = layout.current;
   const compact = wide && width < 1100;
-  const s = useMemo(() => styles(c, wide, compact), [c, wide, compact]);
+  const s = useMemo(
+    () => styles(c, wide, compact, fontScale),
+    [c, wide, compact, fontScale],
+  );
   const [fonts, fontError] = useFonts({
     InstrumentSans_400Regular,
     InstrumentSans_600SemiBold,
@@ -173,7 +184,12 @@ export default function App() {
       last,
       free,
     });
-    setPrefs({ notifications, background, theme });
+    setPrefs({
+      notifications,
+      background,
+      theme,
+      onboarding: await r.store.get("onboarding"),
+    });
   }
   async function listFiles(id = folder?.id) {
     if (!id) return;
@@ -210,6 +226,7 @@ export default function App() {
     setDismissedError("");
     setError("");
     try {
+      if (!options.destroy) await engine.current?.requireActiveReplica();
       await work();
       if (options.success) setSuccess(options.success);
     } catch (e) {
@@ -282,10 +299,15 @@ export default function App() {
     catalog = state.catalog,
     volumes = catalog?.volumes || [];
   const currentFolder = locals.find((f) => f.id === folder?.id);
-  const onboarding = !connection && !catalog;
+  const onboarding = (!connection && !catalog) || !!prefs.onboarding;
+  const onboardingStep = connection
+    ? "folders"
+    : prefs.onboarding
+      ? "pair"
+      : "welcome";
   const historyDetail = sheet?.kind === "history";
   const detail = historyDetail;
-  const screen = onboarding ? "Machines" : detail ? "File detail" : view;
+  const screen = onboarding ? "Onboarding" : detail ? "File detail" : view;
   useEffect(() => {
     let cancelled = false;
     if (
@@ -500,6 +522,34 @@ export default function App() {
         );
       },
       "Remove local files",
+    );
+  }
+  function destroy() {
+    confirm(
+      "Destroy this replica?",
+      "Permanently deletes all downloaded folders and unsynced changes, credentials, selections, index, queues and caches. Arca returns to first-run setup. Hub files and history and other machines are kept. This cannot be undone. If still connected, the hub must be reachable.",
+      () =>
+        run(
+          async () => {
+            await destroyReplica();
+            setFolder(null);
+            setSheet(null);
+            setAddress("");
+            setCode("");
+            setEntries([]);
+            setMachines(null);
+            setHistory({ versions: [], next: null });
+            setName(Platform.OS === "ios" ? "iPhone" : "Android");
+            setDeviceName(null);
+            setView("Machines");
+          },
+          {
+            label: "Destroying replica…",
+            errorTitle: "Could not destroy replica",
+            destroy: true,
+          },
+        ),
+      "Destroy replica",
     );
   }
   function disconnect() {
@@ -1234,6 +1284,58 @@ export default function App() {
                       }
                     />
                   )}
+                  {screen === "Onboarding" && (
+                    <Onboarding
+                      step={onboardingStep}
+                      name={name}
+                      setName={setName}
+                      address={address}
+                      setAddress={setAddress}
+                      code={code}
+                      setCode={setCode}
+                      catalog={catalog}
+                      free={status.free}
+                      busy={locked}
+                      start={() =>
+                        run(() =>
+                          engine.current.store.set("onboarding", "pair"),
+                        )
+                      }
+                      pair={() =>
+                        run(async () => {
+                          const r = engine.current;
+                          await r.store.set("name", name.trim());
+                          await client.pair(address, code, name.trim());
+                          setCode("");
+                          r.scope = client.state().connection.hubId;
+                          await r.store.set("scope", r.scope);
+                          await r.store.set("onboarding", "folders");
+                        })
+                      }
+                      retry={() => run(() => client.refresh())}
+                      download={(ids) =>
+                        run(async () => {
+                          const r = engine.current;
+                          await client.refresh();
+                          r.scope = client.state().connection.hubId;
+                          await r.store.set("scope", r.scope);
+                          await selectFirstFolders(
+                            r,
+                            client.state().catalog,
+                            ids,
+                          );
+                          setView("Folders");
+                          r.sync();
+                        })
+                      }
+                      skip={() =>
+                        run(async () => {
+                          await engine.current.store.set("onboarding", null);
+                          setView("Folders");
+                        })
+                      }
+                    />
+                  )}
                   {screen === "Machines" && (
                     <>
                       {connection && (
@@ -1309,7 +1411,7 @@ export default function App() {
                                   "name",
                                   name.trim(),
                                 );
-                                await client.pair(address, code);
+                                await client.pair(address, code, name.trim());
                                 setCode("");
                                 await engine.current.sync();
                                 setView("Folders");
@@ -1643,6 +1745,21 @@ export default function App() {
                       <Text style={[s.caption, s.centerText]}>
                         arca {config.expo.version}
                       </Text>
+                      <Text style={[s.eyebrow, s.errorText]}>DANGER ZONE</Text>
+                      <Card title="Destroy this replica" danger>
+                        <Text style={s.text}>
+                          Deletes all local folders and resets Arca on this
+                          device. Hub files and other machines are kept.
+                        </Text>
+                        <Button
+                          label="Destroy replica…"
+                          icon="trash"
+                          primary
+                          danger
+                          busy={locked}
+                          onPress={destroy}
+                        />
+                      </Card>
                     </>
                   )}
                 </KeyboardScrollView>

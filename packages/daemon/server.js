@@ -1,3 +1,4 @@
+import { inspectSetupRoot } from "./setup.js";
 import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
 import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
 import { folderPreview } from "./folder-preview.js";
@@ -157,6 +158,13 @@ export async function start(home, options = {}) {
         }
         if (!b || typeof b !== "object" || Array.isArray(b))
           fail("Invalid pairing request", 400);
+        if (
+          b.name !== undefined &&
+          (typeof b.name !== "string" ||
+            !b.name.trim() ||
+            b.name.trim().length > 100)
+        )
+          fail("Choose a machine name of up to 100 characters");
         return send(
           201,
           await engine.exclusive(() => {
@@ -196,7 +204,7 @@ export async function start(home, options = {}) {
                 .prepare(
                   "INSERT INTO devices(id,name,token_hash,role) VALUES(?,?,?,'replica')",
                 )
-                .run(id, invitation.name, digest(secret));
+                .run(id, b.name?.trim() || invitation.name, digest(secret));
               s.db.exec("COMMIT");
             } catch (e) {
               s.db.exec("ROLLBACK");
@@ -246,6 +254,16 @@ export async function start(home, options = {}) {
           );
       const url = new URL(req.url, "http://localhost");
       const route = url.pathname;
+      if (
+        (engine.destroying || config.destroyPending || config.needsSetup) &&
+        ![
+          "/v1/status",
+          "/v1/destroy-replica",
+          "/v1/setup",
+          "/v1/setup-info",
+        ].includes(route)
+      )
+        fail("Replica reset requires setup or a destruction retry", 409);
       const jsonBody = async () => {
         try {
           const value = JSON.parse((await body(req)).toString());
@@ -283,6 +301,8 @@ export async function start(home, options = {}) {
           engine.interruptCycle();
         return engine.exclusive(() => {
           checkCredential();
+          if (engine.destroying || config.destroyPending || config.needsSetup)
+            fail("Replica destruction is pending; retry Destroy replica", 409);
           return work();
         });
       };
@@ -292,6 +312,13 @@ export async function start(home, options = {}) {
       const requireHub = () => {
         if (config.role !== "hub") fail("This device is not the hub", 409);
       };
+      if (req.method === "GET" && route === "/v1/setup-info") {
+        requireAdmin();
+        return send(
+          200,
+          inspectSetupRoot(url.searchParams.get("root"), s.home),
+        );
+      }
       if (req.method === "GET" && route === "/v1/ignore-policy") {
         requireAdmin();
         requireHub();
@@ -1099,6 +1126,51 @@ export async function start(home, options = {}) {
           await authorizedWork(() => s.forgetDevice(b.id));
           return send(200, { revoked: true, removed: true });
         }
+        if (route === "/v1/destroy-replica") {
+          requireAdmin();
+          if (b.confirmed !== true)
+            fail("Confirm permanent replica destruction first", 400);
+          const result = await engine.destroyReplica();
+          web?.sessions.clear();
+          return send(200, result);
+        }
+        if (route === "/v1/setup") {
+          requireAdmin();
+          if (
+            (!config.needsSetup && !config.onboarding) ||
+            config.destroyPending ||
+            engine.destroying
+          )
+            fail("This machine is not ready for first-run setup", 409);
+          if (
+            !["hub", "replica"].includes(b.role) ||
+            typeof b.name !== "string" ||
+            !b.name.trim()
+          )
+            fail("Choose a machine name and role");
+          if (s.volumes().length)
+            fail("Setup cannot replace existing folders", 409);
+          if (config.hub && b.role !== "replica")
+            fail("A paired machine must remain a replica", 409);
+          const { root } =
+            b.onboarding === true
+              ? { root: s.resolveLocation(b.root) }
+              : inspectSetupRoot(b.root, s.home);
+          fs.mkdirSync(root, { recursive: true });
+          const next = {
+            ...config,
+            name: b.name.trim().slice(0, 100),
+            role: b.role,
+            root: fs.realpathSync(root),
+            needsSetup: false,
+            onboarding: b.onboarding === true,
+          };
+          if (next.root === s.home || s.home.startsWith(next.root + path.sep))
+            fail("State must be outside synchronized folders");
+          atomic(s.configPath, JSON.stringify(next, null, 2));
+          Object.assign(config, next);
+          return send(200, { initialized: true });
+        }
         if (route === "/v1/disconnect") {
           requireAdmin();
           if (b.confirmed !== true) fail("Confirm disconnection first", 400);
@@ -1142,12 +1214,36 @@ export async function start(home, options = {}) {
               redirect: "error",
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ code: b.code }),
+              body: JSON.stringify({ code: b.code, name: config.name }),
               signal: AbortSignal.timeout(10000),
             });
-            if (!paired.ok)
-              fail("Pairing code expired, already used or refused", 401);
-            b.token = (await paired.json()).token;
+            if (!paired.ok) {
+              const failure = await paired.json().catch(() => ({}));
+              fail(
+                failure.error ||
+                  "Pairing code expired, already used or refused",
+                paired.status,
+              );
+            }
+            const issued = await paired.json();
+            if (
+              !/^[a-f0-9]{64}$/.test(issued.token || "") ||
+              typeof issued.hubId !== "string"
+            )
+              fail("Invalid pairing response", 502);
+            b.token = issued.token;
+            if (config.onboarding && !s.volumes().length) {
+              const next = {
+                ...config,
+                hub: {
+                  url: remote.origin,
+                  token: issued.token,
+                  id: issued.hubId,
+                },
+              };
+              atomic(s.configPath, JSON.stringify(next, null, 2));
+              Object.assign(config, next);
+            }
           }
           if (!/^[a-f0-9]{64}$/.test(b.token || ""))
             fail("Invalid machine token");

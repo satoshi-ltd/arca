@@ -11,6 +11,24 @@ export class ReplicaStore {
       CREATE TABLE IF NOT EXISTS applying (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
 `);
   }
+  async reset() {
+    await this.db.execAsync("PRAGMA secure_delete=ON; BEGIN IMMEDIATE");
+    try {
+      for (const table of [
+        "files",
+        "pending",
+        "applying",
+        "folders",
+        "settings",
+      ])
+        await this.db.execAsync(`DELETE FROM ${table}`);
+      await this.db.execAsync("COMMIT");
+    } catch (error) {
+      await this.db.execAsync("ROLLBACK");
+      throw error;
+    }
+    await this.db.execAsync("PRAGMA wal_checkpoint(TRUNCATE)");
+  }
   async get(key, fallback = null) {
     const row = await this.db.getFirstAsync(
       "SELECT value FROM settings WHERE key=?",

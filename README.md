@@ -2,13 +2,14 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.3.5 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
+**v0.3.6 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
 - The **hub** creates shared folders and owns their catalog and history. Each **replica** selects whole folders independently. Desktop copies use chosen local paths; mobile copies live in persistent app-owned storage. Existing edits synchronize in both directions; there are no placeholders.
 - **Web** administers the server it connects to. **Tauri** manages its local daemon, which does not serve a web panel. **Mobile** is always a replica. Pairing never grants remote hub administration.
 - **Pause** keeps copies linked. Desktop **Unlink** keeps files on disk. Mobile **Stop syncing** removes the app-owned copy after confirmation including unsynced changes; it works offline even if the hub share is gone. Hub **Delete share** removes catalog/history while retaining physical files. These operations are distinct.
+- **Disconnect** preserves local files and selections for fresh-code pairing. **Destroy replica**, in Settings → Danger zone, requires confirmation and permanently deletes that replica's local folders (including unsynced files), configured full backup and synchronization state, removes its hub registration and returns to first-run setup. Hub files/history and other machines remain.
 - Conflicts preserve both files and their histories. Choosing a version records the resolution; editing the conflict copy again reopens it. Replicas resolve only selected folders. Restore creates a new revision.
 - Mobile (phone and Fold) is exclusively a replica: it cannot act as a hub or keep a full hub backup. Optional desktop/server **full backup** is independent of working copies and requires explicit enablement. Quit leaves the desktop daemon running.
 
@@ -20,6 +21,8 @@ The September 10 checkout includes synchronization-integrity fixes: pause/deadli
 
 `.arcaignore` is synchronized and editable. Creating a hub folder can optionally seed it; selection does not. `.DS_Store`, `Thumbs.db` and `desktop.ini` are always excluded by the shared core.
 
+First-run desktop setup walks through welcome, machine name, role, pairing and an empty/new folder root; hubs skip pairing. Mobile pairs and then offers whole-folder selection or Skip for now, using app-owned storage. An interrupted first catalog load retains the accepted pairing; no folders download until setup permits it.
+
 ## Development
 
 Requires Node.js 24+. Desktop also requires Rust and the platform's Tauri prerequisites.
@@ -29,7 +32,7 @@ npm ci
 npm run desktop
 ```
 
-`npm run dev` is an alias. Development normally uses the real `~/.arca`; automated tests use isolated state. Vite serves development UI on port 1425. The daemon uses 47831; Docker/server installations also serve web there.
+`npm run dev` is an alias. Each `npm run desktop` stops the existing local daemon, stages the current runtime, starts it and waits for readiness before opening Tauri. It uses `ARCA_HOME` when set, otherwise the real `~/.arca`, preserving pairing, folders and pause. First-run setup still initializes a new state directory. Closing the app leaves the daemon running; the next development launch replaces it. Automated tests use isolated state. Vite serves development UI on port 1425. The daemon uses 47831; Docker/server installations also serve web there.
 
 ```sh
 npm test

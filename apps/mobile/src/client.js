@@ -110,10 +110,15 @@ export function createClient({
       if (
         typeof volume.id !== "string" ||
         typeof volume.name !== "string" ||
-        !Number.isSafeInteger(volume.files) ||
-        volume.files < 0 ||
-        !Number.isSafeInteger(volume.bytes) ||
-        volume.bytes < 0
+        !(
+          (Number.isSafeInteger(volume.files) &&
+            volume.files >= 0 &&
+            Number.isSafeInteger(volume.bytes) &&
+            volume.bytes >= 0) ||
+          (typeof volume.policyError === "string" &&
+            volume.files === null &&
+            volume.bytes === null)
+        )
       )
         throw new Error("The hub returned an invalid folder catalog.");
     }
@@ -196,7 +201,7 @@ export function createClient({
       return state();
     },
     refresh: () => serial(refresh),
-    pair: (address, code) =>
+    pair: (address, code, name) =>
       serial(async () => {
         if (connection)
           throw new Error("Disconnect the current hub before pairing again.");
@@ -205,7 +210,10 @@ export function createClient({
         const normalized = code.replace(/[\s-]/g, "");
         if (!/^\d{6}$/.test(normalized))
           throw new Error("Enter the six-digit pairing code.");
-        const paired = await request(url, "/pair", null, { code: normalized });
+        const paired = await request(url, "/pair", null, {
+          code: normalized,
+          ...(name ? { name } : {}),
+        });
         if (
           typeof paired.token !== "string" ||
           !paired.token ||
@@ -214,11 +222,20 @@ export function createClient({
         )
           throw new Error("The hub returned an invalid pairing response.");
         // Persist immediately: the pairing code has now been consumed.
-        connection = { url, ...paired };
-        await secrets.write(connection);
+        const next = { url, ...paired };
+        await secrets.write(next);
+        connection = next;
         catalog = null;
         await cache.write(null);
         return refresh();
+      }),
+    destroy: () =>
+      serial(async () => {
+        if (connection) await leave();
+        await secrets.clear();
+        await cache.write(null);
+        catalog = null;
+        return state();
       }),
     disconnect: () =>
       serial(async () => {

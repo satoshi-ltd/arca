@@ -70,8 +70,48 @@ export class Replica {
   }
   async load() {
     await this.store.init();
+    if (await this.store.get("destroyPending", false)) {
+      try {
+        await this.finishDestroy();
+      } catch (error) {
+        this.error = `Replica cleanup incomplete. Retry Destroy replica. ${error.message}`;
+      }
+    }
     this.scope = await this.store.get("scope");
     this.paused = await this.store.get("paused", false);
+  }
+  async requireActiveReplica() {
+    if (await this.store.get("destroyPending", false))
+      throw new Error(
+        "Replica cleanup is pending. Retry Destroy replica before continuing.",
+      );
+  }
+  async finishDestroy() {
+    await this.files.destroy();
+    await this.client.destroy();
+    await this.store.reset();
+    this.scope = null;
+    this.paused = false;
+    this.error = this.progress = null;
+    this.hashCache.clear();
+    this.lastFullScan = 0;
+  }
+  async destroy(confirmed = false) {
+    if (!confirmed)
+      throw new Error("Confirm permanent replica destruction first");
+    if (this.removing || this.importing)
+      throw new Error("Wait for the current operation to finish.");
+    this.removing = true;
+    this.stop();
+    try {
+      if (this.active) await this.active;
+      await this.client.disconnect();
+      await this.store.set("destroyPending", true);
+      await this.finishDestroy();
+    } finally {
+      this.removing = false;
+      this.changed();
+    }
   }
   check() {
     if (this.stopped || this.paused) {
@@ -81,6 +121,7 @@ export class Replica {
     }
   }
   async pause(value) {
+    await this.requireActiveReplica();
     this.paused = value;
     this.stopped = value;
     await this.store.set("paused", value);
@@ -94,6 +135,7 @@ export class Replica {
       throw new Error("Not enough storage. Free space to continue.");
   }
   async select(volume) {
+    await this.requireActiveReplica();
     if (!this.scope) throw new Error("Connect to a hub first");
     if (await this.store.get(`removing:${this.scope}:${volume.id}`, false))
       throw new Error(
@@ -105,6 +147,7 @@ export class Replica {
     this.changed();
   }
   async unselect(id) {
+    await this.requireActiveReplica();
     if (this.removing || this.importing)
       throw new Error("Wait for the current operation to finish.");
     this.removing = true;
@@ -629,6 +672,7 @@ export class Replica {
     await this.store.complete(this.scope, folder.id, through);
   }
   async rename(name) {
+    await this.requireActiveReplica();
     name = typeof name === "string" ? name.trim() : "";
     if (!name || name.length > 100 || /[\x00-\x1f\x7f]/.test(name))
       throw new Error("Enter a device name between 1 and 100 characters.");
@@ -680,6 +724,11 @@ export class Replica {
     return this.active;
   }
   async cycle() {
+    if (
+      (await this.store.get("destroyPending", false)) ||
+      (await this.store.get("onboarding"))
+    )
+      return;
     this.busy = true;
     this.stopped = false;
     this.error = null;
@@ -755,6 +804,7 @@ export class Replica {
     }
   }
   async importFile(volume, name, source) {
+    await this.requireActiveReplica();
     validPath(name);
     if (builtinExcluded(name))
       throw new Error("System metadata files are not synced.");
@@ -775,6 +825,7 @@ export class Replica {
     this.changed();
   }
   async removeFile(volume, name) {
+    await this.requireActiveReplica();
     validPath(name);
     if (!(await this.store.folder(this.scope, volume))?.selected)
       throw new Error("Select this folder first");

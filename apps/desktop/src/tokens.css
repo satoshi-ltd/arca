@@ -33,6 +33,7 @@
   --text-control: 13px;
   --text-row: 14px;
   --text-title: 20px;
+  --list-item-gap: 12px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -43,6 +44,8 @@
   --detail-side-width: 320px;
   --dialog-width: 480px;
   --control-height: 32px;
+  --touch-control-height: 48px;
+  --touch-target-min: 44px;
   --motion-loop: 1200ms;
   --layer-menu: 10;
   --layer-notice: 100;

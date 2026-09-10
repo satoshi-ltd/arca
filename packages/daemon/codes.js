@@ -3,14 +3,10 @@ import { fail } from "./storage.js";
 export function shortCode() {
   return String(crypto.randomInt(1000000)).padStart(6, "0");
 }
-export function normalizeCode(value, kind) {
+export function normalizeCode(value) {
   if (typeof value !== "string") return "";
   const compact = value.replace(/[\s-]/g, "");
   if (/^[0-9]{6}$/.test(compact)) return compact;
-  if (
-    new RegExp(`^[a-f0-9]{${kind === "W" ? 64 : 24}}$`, "i").test(value.trim())
-  )
-    return value.trim().toLowerCase();
   return "";
 }
 export class Attempts {

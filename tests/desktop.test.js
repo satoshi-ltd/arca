@@ -461,6 +461,8 @@ test("desktop onboarding submits chosen role and root without a browser credenti
     core: {
       invoke: async (command, args) => {
         if (command === "bootstrap") return { setup: true, root: "/tmp/Arca" };
+        if (command === "setup_info")
+          return { root: args.root, freeBytes: 1000000000 };
         if (command === "initialize") {
           received = args;
           return;
@@ -482,13 +484,23 @@ test("desktop onboarding submits chosen role and root without a browser credenti
   };
   try {
     await w.eval(`(async()=>{${script}\n})()`);
-    w.document.querySelector('[name="name"]').value = "My PC";
     const submit = () =>
       w.document
         .querySelector("#setup-form")
         .dispatchEvent(
           new w.Event("submit", { bubbles: true, cancelable: true }),
         );
+    assert.match(
+      w.document.querySelector("#content").textContent,
+      /Many devices/,
+    );
+    submit();
+    await until(
+      () =>
+        w.document.querySelector('[name="name"]') &&
+        w.document.body.getAttribute("aria-busy") === "false",
+    );
+    w.document.querySelector('[name="name"]').value = "My PC";
     submit();
     await until(
       () =>
@@ -1489,7 +1501,9 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   await until(() => diagnostics.textContent.includes("Copied"));
   assert.equal(
     JSON.parse(copied.at(-1)).version,
-    JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version,
+    JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ).version,
   );
   await new Promise((resolve) => setTimeout(resolve, 2100));
   assert.ok(diagnostics.textContent.includes("Copy diagnostics"));
@@ -1766,4 +1780,235 @@ test("numeric Lucide names render deletion and restore icons", () => {
   } finally {
     dom.window.close();
   }
+});
+
+test("desktop destroy confirmation cancels safely and returns to first-run onboarding after deletion", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-destroy-ui-"));
+  const nodes = [];
+  for (const role of ["hub", "replica"]) {
+    const home = path.join(root, role);
+    init(home, { role, port: 0, name: role });
+    nodes.push(await start(home, { timer: false }));
+  }
+  const [hub, replica] = nodes;
+  const request = (node, route, body) =>
+    fetch(`http://127.0.0.1:${node.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        Authorization: `Bearer ${node.engine.config.adminToken}`,
+        "Content-Type": "application/json",
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const invite = await (
+    await request(hub, "/v1/devices", { name: "replica", role: "replica" })
+  ).json();
+  await request(replica, "/v1/connect", {
+    url: `http://127.0.0.1:${hub.port}`,
+    token: invite.token,
+  });
+  const v = await hub.engine.publish("Documents", undefined, false);
+  await replica.engine.select(v.id);
+  const destination = replica.engine.store.volume(v.id).path;
+  fs.writeFileSync(path.join(destination, "local.txt"), "keep me");
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://localhost/#/machines",
+  });
+  const w = dom.window;
+  t.after(async () => {
+    dom.window.close();
+    for (const n of nodes.reverse()) await n.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  w.setInterval = () => 0;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (command !== "api") return null;
+        const r = await request(
+          replica,
+          args.route,
+          args.method === "POST" ? args.body : undefined,
+        );
+        const b = await r.json();
+        if (!r.ok) throw new Error(b.error);
+        return b;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.document.querySelector('[data-view="settings"]').click();
+  await until(
+    () =>
+      w.document.querySelector('[data-action="destroy-replica"]') &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  assert.ok(w.document.querySelector('[data-action="disconnect-hub"]'));
+  w.document.querySelector('[data-action="destroy-replica"]').click();
+  await until(() => w.document.querySelector("#dialog").open);
+  assert.ok(
+    w.document.querySelector("#dialog").textContent.includes(destination),
+  );
+  assert.match(
+    w.document.querySelector("#dialog").textContent,
+    /unsynced changes/,
+  );
+  assert.ok(
+    w.document.querySelector("#submit-dialog").classList.contains("danger"),
+  );
+  w.document.querySelector("#cancel-dialog").click();
+  assert.ok(fs.existsSync(destination));
+  assert.ok(replica.engine.config.hub);
+  await until(() => w.document.body.getAttribute("aria-busy") === "false");
+  w.document.querySelector('[data-action="destroy-replica"]').click();
+  await until(() => w.document.querySelector("#dialog").open);
+  w.document.querySelector("#submit-dialog").click();
+  await until(
+    () =>
+      w.document.querySelector("#setup-form") &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  assert.equal(fs.existsSync(destination), false);
+  assert.equal(replica.engine.config.needsSetup, true);
+  assert.match(
+    w.document.querySelector("#content").textContent,
+    /Many devices/,
+  );
+  w.document.querySelector('#setup-form button[type="submit"]').click();
+  await until(
+    () =>
+      w.document.querySelector('input[name="name"]') &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  assert.equal(w.document.querySelector('input[name="name"]').value, "");
+});
+
+test("replica onboarding follows welcome, name, role, pairing and root, and resumes after pairing", async (t) => {
+  const { inspectSetupRoot } = await import("../packages/daemon/setup.js");
+  const root = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), "arca-onboarding-dom-")),
+  );
+  const nodes = [],
+    windows = [];
+  for (const role of ["hub", "replica"]) {
+    const home = path.join(root, role);
+    init(home, { role, port: 0, name: role });
+    nodes.push(await start(home, { timer: false }));
+  }
+  const [hub, replica] = nodes;
+  replica.engine.config.needsSetup = true;
+  replica.engine.store.saveConfig();
+  t.after(async () => {
+    for (const w of windows) w.close();
+    for (const n of nodes.reverse()) await n.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const calls = [];
+  async function request(node, route, body) {
+    calls.push(route);
+    const r = await fetch(`http://127.0.0.1:${node.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        Authorization: `Bearer ${node.engine.config.adminToken}`,
+        "Content-Type": "application/json",
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const value = await r.json();
+    if (!r.ok) throw new Error(value.error);
+    return value;
+  }
+  const invite = await request(hub, "/v1/pairing", { name: "Invited machine" });
+  async function open() {
+    const w = new JSDOM(html, {
+      runScripts: "outside-only",
+      url: "http://localhost",
+    }).window;
+    windows.push(w);
+    w.setInterval = () => 0;
+    w.__TAURI__ = {
+      core: {
+        invoke: async (command, args) => {
+          if (command === "bootstrap") return { setup: false };
+          if (command === "setup_info")
+            return inspectSetupRoot(args.root, replica.engine.store.home);
+          if (command === "initialize")
+            return request(replica, "/v1/setup", { ...args, onboarding: true });
+          if (command === "api")
+            return request(
+              replica,
+              args.route,
+              args.method === "POST" ? args.body : undefined,
+            );
+          return null;
+        },
+      },
+    };
+    await w.eval(`(async()=>{${script}\n})()`);
+    return w;
+  }
+  let w = await open();
+  const submit = () =>
+    w.document
+      .querySelector("#setup-form")
+      .dispatchEvent(
+        new w.Event("submit", { bubbles: true, cancelable: true }),
+      );
+  const waitFor = (selector) =>
+    until(
+      () =>
+        w.document.querySelector(selector) &&
+        w.document.body.getAttribute("aria-busy") === "false",
+    );
+  assert.match(
+    w.document.querySelector("#content").textContent,
+    /Many devices/,
+  );
+  submit();
+  await waitFor('[name="name"]');
+  w.document.querySelector('[name="name"]').value = "Studio Mac";
+  submit();
+  await waitFor('[name="role"]');
+  assert.ok(w.document.querySelector('[name="role"][value="replica"]').checked);
+  submit();
+  await waitFor('[name="url"]');
+  assert.equal(w.document.querySelector('[name="root"]'), null);
+  w.document.querySelector('[name="url"]').value =
+    `http://127.0.0.1:${hub.port}`;
+  [...invite.code].forEach((digit, i) => {
+    w.document.querySelector(
+      `[data-code="onboarding"][data-digit="${i}"]`,
+    ).value = digit;
+  });
+  submit();
+  await waitFor('[name="root"]');
+  assert.equal(replica.engine.config.onboarding, true);
+  assert.ok(replica.engine.config.hub.token);
+  assert.equal(replica.engine.store.volumes().length, 0);
+  assert.equal(
+    hub.engine.store.db.prepare("SELECT name FROM devices").get().name,
+    "Studio Mac",
+  );
+  w.close();
+  w = await open();
+  await waitFor('[name="root"]');
+  assert.equal(w.document.querySelector('[data-code="onboarding"]'), null);
+  const chosen = path.join(root, "Chosen folders");
+  w.document.querySelector('[name="root"]').value = chosen;
+  submit();
+  await until(
+    () =>
+      !replica.engine.config.onboarding &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  assert.equal(replica.engine.config.root, chosen);
+  assert.equal(calls.filter((route) => route === "/v1/connect").length, 1);
 });

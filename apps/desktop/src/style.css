@@ -392,7 +392,7 @@ main {
 .folder-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--list-item-gap);
 }
 .folder-card {
   display: flex;
@@ -1177,14 +1177,19 @@ dialog::backdrop {
 }
 .onboarding {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  --text-body: clamp(14px, 1.4vw, 22px);
+  --text-control: clamp(15px, 1.5vw, 24px);
+  --text-row: clamp(16px, 1.6vw, 26px);
+  --text-title: clamp(26px, 2.7vw, 42px);
+  --text-caption: clamp(12px, 1.2vw, 18px);
+  grid-template-columns: minmax(240px, 33%) minmax(0, 1fr);
   min-height: 100dvh;
 }
 .onboarding-rail {
-  padding: 24px 28px;
+  padding: 48px;
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 48px;
   border-right: 1px solid var(--div);
 }
 .steps {
@@ -1232,25 +1237,119 @@ dialog::backdrop {
   color: var(--mute);
 }
 .onboarding-body {
-  padding: 24px 32px;
-  max-width: 640px;
+  padding: 48px;
+  max-width: 960px;
   width: 100%;
   margin: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  min-height: 500px;
+  min-height: 100dvh;
 }
 .onboarding-body h1 {
-  font-size: 24px;
+  font-size: var(--text-title);
 }
 .onboarding-body > p {
   font-size: var(--text-control);
   color: var(--soft);
 }
 .onboarding-body .dialog-actions {
-  margin-top: 24px;
+  margin-top: auto;
   justify-content: space-between;
+}
+.onboarding-rail .brand {
+  gap: var(--space-4);
+}
+.onboarding-rail .brand img {
+  width: 48px;
+  height: 48px;
+}
+.onboarding-rail .brand b {
+  font-size: var(--text-row);
+}
+.onboarding .step span {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+.onboarding .step {
+  gap: var(--space-4);
+}
+.onboarding .settings-card {
+  border-radius: var(--r-card);
+  flex-shrink: 0;
+}
+.onboarding .setting-row {
+  padding: var(--space-5);
+  gap: var(--space-5);
+}
+.onboarding .setting-row > .icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  color: var(--green);
+}
+.onboarding .dialog-actions {
+  padding-top: var(--space-6);
+}
+.onboarding .root-selection input {
+  font-size: var(--text-control);
+}
+.onboarding .code-inputs input {
+  width: 56px;
+  height: 64px;
+}
+.onboarding .role-card {
+  margin: 0;
+  padding: var(--space-6);
+  gap: var(--space-5);
+}
+.onboarding .role-card:has(input:checked) {
+  padding: calc(var(--space-6) - 1px);
+}
+.onboarding .role-card input {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+.onboarding .role-card > .icon,
+.onboarding .field-with-icon > .icon {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+.onboarding .role-card strong {
+  font-size: var(--text-row);
+}
+.onboarding .code-inputs {
+  justify-content: flex-start;
+  margin: 0;
+}
+.onboarding .hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.onboarding .root-selection {
+  border-color: var(--green);
+  box-shadow: 0 0 0 4px var(--tint);
+}
+.onboarding .root-selection .tile {
+  background: transparent;
+}
+.onboarding .stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  border: 0;
+  background: transparent;
+}
+.onboarding .stat {
+  border: 1px solid var(--div);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+.onboarding .stat > strong {
+  font-size: var(--text-row);
 }
 .role-card {
   position: relative;
@@ -1735,7 +1834,7 @@ html:has(.tray-body) {
 }
 .selection-list {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--list-item-gap);
 }
 .history-filters .filter-count {
   padding: 0 5px;
@@ -2780,4 +2879,16 @@ progress::-webkit-progress-value {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.settings-card.replica-danger {
+  border-color: var(--er);
+}
+
+section:has(> .replica-danger) > .section-label {
+  color: var(--erFg);
+}
+
+.accent-text {
+  color: var(--green);
 }

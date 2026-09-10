@@ -1,5 +1,6 @@
 // Mirrors the canonical desktop tokens.css; parity is checked automatically.
 export const geometry = {
+  listItemGap: 12,
   detailSideWidth: 320,
   tagHeight: 20,
   tagFont: 10,
@@ -20,4 +21,5 @@ export const geometry = {
   segmentRadius: 6,
   iconStroke: 1.75,
   touchHeight: 44,
+  touchControlHeight: 48,
 };

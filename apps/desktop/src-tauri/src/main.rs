@@ -88,7 +88,8 @@ async fn api(app: tauri::AppHandle, route: String, method: Option<String>, body:
 async fn bootstrap() -> Result<Value, String> {
     if !home().join("config.json").exists() {
         let root = home().parent().unwrap_or(&home()).join("arca");
-        return Ok(json!({"setup":true,"root":root.to_string_lossy()}));
+        let name = Command::new("hostname").output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+        return Ok(json!({"setup":true,"root":root.to_string_lossy(),"name":name,"platform":std::env::consts::OS,"arch":std::env::consts::ARCH}));
     }
     match request("/v1/status", "GET", None).await {
         Ok(status) => Ok(json!({"setup":false,"status":status})),
@@ -131,6 +132,10 @@ async fn initialize(
     root: String,
 ) -> Result<(), String> {
     if home().join("config.json").exists() {
+        if config()?["needsSetup"].as_bool() == Some(true) {
+            request("/v1/setup", "POST", Some(json!({"name":name,"role":role,"root":root,"onboarding":true}))).await?;
+            return Ok(());
+        }
         return Err("Arca is already configured".into());
     }
     if !["hub", "replica", "backup"].contains(&role.as_str()) {
@@ -140,7 +145,7 @@ async fn initialize(
     let output = Command::new(node)
         .arg(cli)
         .args([
-            "init", "--name", &name, "--role", &role, "--root", &root, "--home",
+            "init", "--name", &name, "--role", &role, "--root", &root, "--onboarding", "true", "--home",
         ])
         .arg(home())
         .output()
@@ -149,6 +154,13 @@ async fn initialize(
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }
     start_daemon(app).await
+}
+#[tauri::command]
+async fn setup_info(app: tauri::AppHandle, root: String) -> Result<Value, String> {
+    let (node, cli) = runtime(&app)?;
+    let output = Command::new(node).arg(cli).args(["setup-info", "--root", &root, "--home"]).arg(home()).output().map_err(|e| e.to_string())?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).to_string()); }
+    serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())
 }
 #[tauri::command]
 async fn open_folder(id: String) -> Result<(), String> {
@@ -295,6 +307,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             api,
             bootstrap,
+            setup_info,
             initialize,
             start_daemon,
             open_folder,

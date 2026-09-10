@@ -105,6 +105,9 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
     "utf8",
   );
   const pairs = {
+    listItemGap: "list-item-gap",
+    touchControlHeight: "touch-control-height",
+    touchHeight: "touch-target-min",
     detailSideWidth: "detail-side-width",
     tagHeight: "tag-height",
     tagFont: "tag-font",
@@ -162,4 +165,34 @@ test("empty directory entries remain navigable without inflating recursive file 
     ["Coros", "notes.txt"],
   );
   assert.equal(browseEntries(entries, "doc/Coros/", "").length, 0);
+});
+
+test("mobile single-line fields reserve stable geometry and grow only for accessibility scaling", async () => {
+  const { geometry } = await import("../apps/mobile/src/design-tokens.js");
+  const { palettes } = await import("../apps/mobile/src/palette.js");
+  const source = fs
+    .readFileSync(
+      new URL("../apps/mobile/src/theme.js", import.meta.url),
+      "utf8",
+    )
+    .replace(/^import .*;$/gm, "")
+    .replace("export { palettes };", "")
+    .replace("export function styles", "function styles");
+  const context = {
+    g: geometry,
+    palettes,
+    StyleSheet: { create: (value) => value, absoluteFillObject: {} },
+  };
+  vm.runInNewContext(source + ";this.makeStyles = styles;", context);
+  for (const wide of [false, true])
+    for (const scale of [1, 2, 3]) {
+      const s = context.makeStyles(palettes.light, wide, false, scale);
+      assert.equal(s.input.height, s.input.minHeight);
+      assert.equal(s.input.height, s.inputShell.height);
+      assert.equal(s.inputEmbedded.height + 2, s.inputShell.height);
+      assert.ok(s.input.height >= 26 * scale + 18);
+      assert.equal(s.input.includeFontPadding, false);
+      assert.equal(s.input.paddingVertical, 0);
+      assert.equal(s.button.minHeight, geometry.touchControlHeight);
+    }
 });
