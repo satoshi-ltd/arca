@@ -10,10 +10,20 @@ const html = fs.readFileSync(
   new URL("../apps/desktop/src/index.html", import.meta.url),
   "utf8",
 );
-const script = fs.readFileSync(
-  new URL("../apps/desktop/src/app.js", import.meta.url),
-  "utf8",
-);
+const script =
+  fs
+    .readFileSync(
+      new URL("../apps/desktop/src/notice-contract.js", import.meta.url),
+      "utf8",
+    )
+    .replace(/export /g, "") +
+  "\n" +
+  fs
+    .readFileSync(
+      new URL("../apps/desktop/src/app.js", import.meta.url),
+      "utf8",
+    )
+    .replace(/^import[\s\S]*?notice-contract\.js";\n/, "");
 async function until(check) {
   for (let i = 0; i < 200; i++) {
     if (check()) return;
@@ -770,7 +780,7 @@ test("floating notification keeps its layout outside the access screen", () => {
     dom.window.document.querySelector("#notice"),
   );
   assert.equal(style.display, "flex");
-  assert.equal(style.padding, "12px 14px");
+  assert.equal(style.padding, "0px");
   assert.equal(style.position, "fixed");
   dom.window.close();
 });
@@ -2011,4 +2021,55 @@ test("replica onboarding follows welcome, name, role, pairing and root, and resu
   );
   assert.equal(replica.engine.config.root, chosen);
   assert.equal(calls.filter((route) => route === "/v1/connect").length, 1);
+});
+
+test("notices use a stable stack, expose Copy while collapsed, and preserve Details across polling", async (t) => {
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  let copied = "";
+  Object.defineProperty(w.navigator, "clipboard", {
+    value: {
+      writeText: async (value) => {
+        copied = value;
+      },
+    },
+  });
+  await w.eval(
+    `(async()=>{${script.replace("await action(boot);", "")}\nwindow.queue=noticeStore;})()`,
+  );
+  t.after(() => {
+    w.queue.dispose();
+    dom.window.close();
+  });
+  const item = {
+    id: "status:hub",
+    kind: "error",
+    title: "Hub Casa unreachable",
+    body: "Your edits are saved locally.",
+    details: "GET /v1/catalog\nE_TIMEOUT token=hidden",
+    action: "refresh",
+    actionLabel: "Retry now",
+  };
+  w.queue.push(item);
+  const card = w.document.querySelector(".notice-card"),
+    details = card.querySelector("details"),
+    copy = card.querySelector('[data-action="copy-notice"]');
+  assert.ok(details.querySelector("summary").contains(copy));
+  assert.equal(details.open, false);
+  copy.click();
+  await until(() => copied.length > 0);
+  assert.ok(!copied.includes("hidden"));
+  assert.equal(details.open, false);
+  details.open = true;
+  w.queue.push(item);
+  assert.equal(w.document.querySelector(".notice-card"), card);
+  assert.equal(details.open, true);
+  w.queue.push({ id: "info", title: "Saved" });
+  w.queue.push({ id: "warning", kind: "warning", title: "Conflict" });
+  w.queue.push({ id: "info2", title: "Restored" });
+  assert.equal(w.document.querySelectorAll("#notice .notice-card").length, 3);
 });

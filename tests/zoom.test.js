@@ -6,7 +6,9 @@ import { JSDOM } from "jsdom";
 const source = readFileSync(
   new URL("../apps/desktop/src/app.js", import.meta.url),
   "utf8",
-).split("const $ =")[0];
+)
+  .replace(/^import[\s\S]*?notice-contract\.js";\n/, "")
+  .split("const $ =")[0];
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 test("native zoom restores, bounds rapid shortcuts, resets and persists", async () => {

@@ -1,3 +1,4 @@
+import { ErrorNotice } from "./Notice";
 import React from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { Badge, Button, Card, Icon, useDesign } from "./components";
@@ -26,14 +27,7 @@ export function FileHistory({
   const current = history.versions[0];
   return (
     <>
-      {error && (
-        <View style={s.section}>
-          <Text accessibilityRole="alert" style={s.text}>
-            {error}
-          </Text>
-          <Button label="Retry" onPress={retry} />
-        </View>
-      )}
+      <ErrorNotice error={error} retry={retry} />
       {!connected && (
         <Text style={s.caption}>
           Offline. Local files are available; connect to load hub revisions.

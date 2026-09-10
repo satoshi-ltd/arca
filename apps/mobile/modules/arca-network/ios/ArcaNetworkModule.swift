@@ -1,10 +1,14 @@
 import ExpoModulesCore
 import Foundation
+import UIKit
 import Darwin
 
 public class ArcaNetworkModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ArcaNetwork")
+    AsyncFunction("copyText") { (text: String) async in
+      await MainActor.run { UIPasteboard.general.string = text }
+    }
     AsyncFunction("request") { (address: String, method: String, headers: [String: String], body: String?) async throws -> [String: Any] in
       guard let url = URL(string: address), ["http", "https"].contains(url.scheme ?? ""), url.user == nil, url.password == nil else { throw NetworkUnavailable() }
       if url.scheme == "http" {

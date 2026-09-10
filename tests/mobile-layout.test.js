@@ -1,3 +1,4 @@
+import { noticeMetrics } from "../apps/desktop/src/notice-contract.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -180,6 +181,7 @@ test("mobile single-line fields reserve stable geometry and grow only for access
     .replace("export function styles", "function styles");
   const context = {
     g: geometry,
+    n: noticeMetrics,
     palettes,
     StyleSheet: { create: (value) => value, absoluteFillObject: {} },
   };

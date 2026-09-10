@@ -1,3 +1,10 @@
+import { subscribeNotificationResponse } from "./runtime";
+import { NoticeStack, ErrorNotice } from "./Notice";
+import {
+  createNoticeStore,
+  errorNotice,
+  conditionNotices,
+} from "../../desktop/src/notice-contract.js";
 import { Onboarding } from "./Onboarding";
 import { selectFirstFolders } from "./onboarding";
 import {
@@ -96,7 +103,13 @@ const tabs = ["Folders", "Machines", "History", "Settings"];
 function confirm(title, message, action, label = title) {
   Alert.alert(title, message, [
     { text: "Cancel", style: "cancel" },
-    { text: label, onPress: action },
+    {
+      text: label,
+      onPress: action,
+      style: /destroy|delete|stop syncing|remove/i.test(label)
+        ? "destructive"
+        : "default",
+    },
   ]);
 }
 export default function App() {
@@ -155,8 +168,7 @@ export default function App() {
     [historyLoading, setHistoryLoading] = useState(false),
     [historyError, setHistoryError] = useState(""),
     [historyVolume, setHistoryVolume] = useState(""),
-    [historyFilter, setHistoryFilter] = useState("revisions"),
-    [dismissedError, setDismissedError] = useState("");
+    [historyFilter, setHistoryFilter] = useState("revisions");
   const historyRequest = useRef(0);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -203,19 +215,22 @@ export default function App() {
     if (mounted.current && request === fileRequest.current && scope === r.scope)
       setEntries(list.sort((a, b) => a.path.localeCompare(b.path)));
   }
+  const notices = useMemo(() => createNoticeStore(), []);
+  const [noticeItems, setNoticeItems] = useState([]);
+  useEffect(() => {
+    const off = notices.subscribe(() => setNoticeItems(notices.snapshot()));
+    return () => {
+      off();
+      notices.dispose();
+    };
+  }, [notices]);
   const retryAction = useRef(null);
   useEffect(() => {
-    if (!success) return;
-    const timer = setTimeout(() => setSuccess(""), 4000);
-    return () => clearTimeout(timer);
-  }, [success]);
+    if (success) notices.push({ kind: "info", title: success });
+  }, [success, notices]);
   async function run(work, options = {}) {
     if (action.current) {
       if (options.silent) return;
-      Alert.alert(
-        "Action in progress",
-        "Wait for the current action to finish, then try again.",
-      );
       return;
     }
     action.current = true;
@@ -223,7 +238,6 @@ export default function App() {
     setBusy(true);
     setActionLabel(options.silent ? "" : options.label || "Working…");
     setSuccess("");
-    setDismissedError("");
     setError("");
     try {
       if (!options.destroy) await engine.current?.requireActiveReplica();
@@ -235,7 +249,6 @@ export default function App() {
       const message = e.message || "Could not complete this action.";
       retryAction.current.message = message;
       setError(message);
-      if (options.errorTitle) Alert.alert(options.errorTitle, message);
     } finally {
       if (mounted.current) {
         try {
@@ -615,10 +628,18 @@ export default function App() {
       originalRev: sheet.original.rev,
       conflictRev: sheet.conflict.rev,
     });
+    const volume = sheet.volume;
     const previous = sheet.returnTo;
     setSheet(previous || null);
     await engine.current.sync();
     if (previous?.kind === "history") await getHistory(previous);
+    notices.push({
+      kind: "info",
+      title: "Selected version restored. Source versions kept.",
+      action: "show",
+      actionLabel: "Show",
+      volume,
+    });
     if (folder) await listFiles();
   }
   async function restore(row) {
@@ -627,7 +648,7 @@ export default function App() {
       "The hub creates a new revision. It will synchronize to every selected copy.",
       () =>
         run(async () => {
-          await client.api("/v1/restore", {
+          const restored = await client.api("/v1/restore", {
             volume: row.volume,
             path: row.path,
             rev: row.rev,
@@ -635,6 +656,13 @@ export default function App() {
           await engine.current.sync();
           if (folder) await listFiles();
           await getHistory(sheet?.kind === "history" ? sheet : null);
+          notices.push({
+            kind: "info",
+            title: `Restored ${row.path}${restored.rev ? ` as rev ${restored.rev}` : ""}`,
+            action: "show",
+            actionLabel: "Show",
+            volume: row.volume,
+          });
         }),
       "Restore",
     );
@@ -662,8 +690,62 @@ export default function App() {
   };
   const showError = error || status.error;
   useEffect(() => {
-    if (!showError) setDismissedError("");
-  }, [showError]);
+    const conditions = conditionNotices({
+      error: status.error,
+      hubName: state.catalog?.name,
+      catalog: state.catalog,
+      volumes: locals,
+    });
+    notices.reconcile(conditions);
+    if (error)
+      notices.push(
+        errorNotice(error, {
+          id: "action",
+          hubName: state.catalog?.name,
+          action: retryAction.current ? "retry" : null,
+        }),
+      );
+    else notices.clear("action");
+  }, [error, status.error, locals, state.catalog, notices]);
+  const noticeAction = (item) => {
+    if (item.action === "review" || item.action === "show") {
+      setView("History");
+      setHistoryVolume(item.volume || "");
+      setHistoryFilter(item.action === "review" ? "conflicts" : "revisions");
+      setSheet(null);
+    } else if (item.action === "folder") {
+      setView("Folders");
+      setFolder(locals.find((f) => f.id === item.volume) || null);
+      setSheet(null);
+    } else if (item.action === "pair") {
+      setView("Settings");
+      setSheet(null);
+    } else if (item.id === "action" && retryAction.current)
+      retryAction.current();
+    else run(() => engine.current.sync(), { silent: true });
+  };
+  useEffect(
+    () =>
+      subscribeNotificationResponse((item) => {
+        if (item.action === "retry" && item.execute)
+          run(async () => (await runtime()).sync(), { silent: true });
+        if (item.action === "review") {
+          setView("History");
+          setHistoryVolume(item.volume || "");
+          setHistoryFilter("conflicts");
+        } else {
+          setView(
+            item.action === "pair" || item.action === "backup"
+              ? "Settings"
+              : "Folders",
+          );
+          if (item.volume)
+            setFolder(locals.find((f) => f.id === item.volume) || null);
+        }
+        setSheet(null);
+      }),
+    [locals],
+  );
   const opening =
     (!fonts && !fontError) || (!engine.current && busy && !showError);
   useEffect(() => {
@@ -1486,18 +1568,15 @@ export default function App() {
                       )}
                       {historyLoading && <ActivityIndicator color={c.accent} />}
                       {!historyLoading && !!historyError && (
-                        <Card title="Could not load history">
-                          <Text style={s.text}>{historyError}</Text>
-                          <Button
-                            label="Retry"
-                            onPress={() =>
-                              run(async () => {
-                                await client.refresh();
-                                await getHistory();
-                              })
-                            }
-                          />
-                        </Card>
+                        <ErrorNotice
+                          error={historyError}
+                          retry={() =>
+                            run(async () => {
+                              await client.refresh();
+                              await getHistory();
+                            })
+                          }
+                        />
                       )}
                       {connected &&
                         !historyLoading &&
@@ -1665,11 +1744,10 @@ export default function App() {
                                 await engine.current.rename(nextName);
                               setName(nextName);
                               setDeviceName(null);
-                              setSuccess(
-                                reported
-                                  ? "Machine name updated."
-                                  : "Name saved. The hub will update on the next sync.",
-                              );
+                              if (!reported)
+                                setSuccess(
+                                  "Name saved. The hub will update on the next sync.",
+                                );
                             });
                           }}
                         />
@@ -1774,74 +1852,24 @@ export default function App() {
               </KeyboardPane>
             </SafeAreaView>
           </View>
-          {!!(actionLabel || success) && (!sheet || detail) && (
-            <View
-              style={[s.noticeDock, s.toastNotice]}
-              accessibilityLiveRegion="polite"
-            >
-              <View style={s.row}>
-                {actionLabel ? (
-                  <ActivityIndicator color="#accb80" />
-                ) : (
-                  <Icon name="check" size={16} color="#accb80" />
-                )}
-                <Text style={[s.noticeText, s.toastText, s.flex]}>
-                  {actionLabel || success}
-                </Text>
-                {!actionLabel && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Dismiss notification"
-                    style={s.noticeClose}
-                    onPress={() => setSuccess("")}
-                  >
-                    <Icon name="close" size={16} color="#f4f6f1" />
-                  </Pressable>
-                )}
-              </View>
-            </View>
+          {(!sheet || detail) && (
+            <NoticeStack
+              items={noticeItems}
+              onDismiss={(id) => notices.remove(id)}
+              onAction={noticeAction}
+              disabled={locked}
+            />
           )}
-          {!actionLabel &&
-            !!showError &&
-            showError !== dismissedError &&
-            (!sheet || detail) && (
-              <View style={s.noticeDock} accessibilityRole="alert">
-                <View style={s.row}>
-                  <Icon name="alert" size={16} color={c.danger} />
-                  <Text style={[s.noticeTitle, s.flex]}>
-                    Could not complete action
-                  </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Dismiss notification"
-                    style={s.noticeClose}
-                    onPress={() => setDismissedError(showError)}
-                  >
-                    <Icon name="close" size={16} color={c.soft} />
-                  </Pressable>
-                </View>
-                <ScrollView style={s.noticeBody}>
-                  <Text style={s.noticeText}>{showError}</Text>
-                </ScrollView>
-                {(!error || retryAction.current?.message === error) && (
-                  <View style={s.compactActions}>
-                    <Button
-                      label="Retry"
-                      disabled={locked}
-                      onPress={() => {
-                        if (error && retryAction.current) retryAction.current();
-                        else
-                          run(() => engine.current.sync(), {
-                            silent: true,
-                          });
-                      }}
-                    />
-                  </View>
-                )}
-              </View>
-            )}
           {sheet && !detail && (
             <Sheet
+              overlay={
+                <NoticeStack
+                  items={noticeItems.filter((n) => n.kind === "info")}
+                  onDismiss={(id) => notices.remove(id)}
+                  onAction={noticeAction}
+                  disabled={locked}
+                />
+              }
               title={
                 sheet.kind === "history-filter"
                   ? "Shared folder"
@@ -1864,9 +1892,7 @@ export default function App() {
               }
             >
               {!!error && sheet.kind !== "folder-actions" && (
-                <Text accessibilityRole="alert" style={[s.text, s.errorText]}>
-                  {error}
-                </Text>
+                <ErrorNotice error={error} retry={retryAction.current} />
               )}
               {sheet.kind === "history-filter" && (
                 <View style={s.group}>
@@ -1944,7 +1970,6 @@ export default function App() {
                             ),
                             "arca-folder",
                           );
-                          Alert.alert("Folder exported");
                         });
                       }}
                     />
@@ -2036,8 +2061,6 @@ export default function App() {
                     onPress={() =>
                       run(() => chooseConflict(sheet.choice), {
                         label: "Restoring selected version…",
-                        success:
-                          "Selected version restored. Source versions kept.",
                       })
                     }
                   />

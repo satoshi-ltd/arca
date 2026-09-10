@@ -1,3 +1,4 @@
+import { ErrorNotice } from "./Notice";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { client } from "./persistence";
@@ -34,14 +35,7 @@ export function FolderRecent({ volume, connected, updated, date, open }) {
       </Text>
     );
   if (error)
-    return (
-      <View style={s.section}>
-        <Text accessibilityRole="alert" style={s.text}>
-          {error}
-        </Text>
-        <Button label="Retry" onPress={() => retry((n) => n + 1)} />
-      </View>
-    );
+    return <ErrorNotice error={error} retry={() => retry((n) => n + 1)} />;
   if (!page)
     return (
       <ActivityIndicator

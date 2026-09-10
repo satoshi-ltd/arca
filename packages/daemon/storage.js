@@ -778,6 +778,13 @@ export class Store {
       )
       .get(volume).n;
   }
+  conflictRevision(volume) {
+    return this.db
+      .prepare(
+        "SELECT COALESCE(MAX(rev),0) AS rev FROM files WHERE volume=? AND instr(path,'.conflict-')>0",
+      )
+      .get(volume).rev;
+  }
   conflictStatus(row) {
     const resolution = this.db
       .prepare(

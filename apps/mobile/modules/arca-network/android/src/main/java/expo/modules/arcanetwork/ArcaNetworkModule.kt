@@ -17,6 +17,11 @@ import expo.modules.kotlin.modules.ModuleDefinition
 class ArcaNetworkModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ArcaNetwork")
+    AsyncFunction("copyText") { text: String ->
+      val context = appContext.reactContext ?: error("App is unavailable")
+      val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+      clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Arca details", text))
+    }
     AsyncFunction("request") { address: String, method: String, headers: Map<String, String>, body: String? ->
       val url = URL(address)
       check(url.protocol == "https" || url.protocol == "http")

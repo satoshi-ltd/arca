@@ -216,6 +216,8 @@ test("conflict review restores chosen content and rejects stale decisions withou
   );
   assert.equal(s.current(v.id, "note.txt").rev, original.rev);
   assert.equal(s.unresolvedConflicts(v.id), 1);
+  const conflictIncident = s.conflictRevision(v.id);
+  assert.ok(conflictIncident > 0);
   s.db
     .prepare("INSERT INTO machine_reports VALUES(?,?)")
     .run("test-replica", JSON.stringify({ folderIds: [v.id] }));
@@ -233,6 +235,11 @@ test("conflict review restores chosen content and rejects stale decisions withou
     "alternative",
   );
   assert.equal(s.unresolvedConflicts(v.id), 0);
+  assert.equal(
+    s.conflictRevision(v.id),
+    conflictIncident,
+    "Resolution alone does not create another incident",
+  );
   assert.equal(s.conflictStatus(s.current(v.id, conflict)).resolved, true);
   assert.equal(
     s.conflictStatus(s.current(v.id, conflict)).resolutionRev,
@@ -246,6 +253,10 @@ test("conflict review restores chosen content and rejects stale decisions withou
   await d.engine.cycle();
   assert.equal(s.unresolvedConflicts(v.id), 1);
   assert.equal(s.conflictStatus(s.current(v.id, conflict)).resolved, false);
+  assert.ok(
+    s.conflictRevision(v.id) > conflictIncident,
+    "Editing a conflict creates a new notification incident",
+  );
   assert.equal(s.current(v.id, "note.txt").rev, originalBefore);
 });
 

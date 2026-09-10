@@ -46,7 +46,8 @@ export class ReplicaStore {
   folders(scope) {
     return this.db.getAllAsync(
       `SELECT f.*, COUNT(x.path) AS files,
-       COALESCE(SUM(json_extract(x.row, '$.size')), 0) AS bytes
+       COALESCE(SUM(json_extract(x.row, '$.size')), 0) AS bytes,
+       COALESCE(SUM(CASE WHEN instr(x.path, '.conflict-') > 0 AND COALESCE(json_extract(x.row, '$.resolved'), 0)=0 THEN 1 ELSE 0 END),0) AS conflicts
        FROM folders f LEFT JOIN files x ON x.scope=f.scope AND x.volume=f.id
          AND COALESCE(json_extract(x.row, '$.deleted'), 0)=0 AND COALESCE(json_extract(x.row, '$.directory'), 0)=0
        WHERE f.scope=? GROUP BY f.scope,f.id ORDER BY f.name`,

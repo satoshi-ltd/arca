@@ -64,6 +64,16 @@ fs.renameSync(stagedBinary, target);
 fs.cpSync(path.join(root, "packages"), path.join(destination, "packages"), {
   recursive: true,
 });
+// The daemon and both app renderers consume one platform-neutral notice contract.
+const sharedNotice = path.join(
+  destination,
+  "apps/desktop/src/notice-contract.js",
+);
+fs.mkdirSync(path.dirname(sharedNotice), { recursive: true });
+fs.copyFileSync(
+  path.join(root, "apps/desktop/src/notice-contract.js"),
+  sharedNotice,
+);
 fs.writeFileSync(
   path.join(destination, "package.json"),
   JSON.stringify({

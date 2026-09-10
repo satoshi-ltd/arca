@@ -399,6 +399,7 @@ export function Breadcrumbs({ name, directory, onChange }) {
 }
 
 export function Sheet({
+  overlay,
   title,
   onClose,
   children,
@@ -444,6 +445,7 @@ export function Sheet({
             {children}
           </KeyboardScrollView>
         </SafeAreaView>
+        {overlay}
       </KeyboardPane>
     </Modal>
   );

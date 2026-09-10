@@ -1,10 +1,15 @@
-# Upload the mobile app, shared core and vendored dependency.
+# Upload the mobile app, shared contracts, core and vendored dependency.
 /*
 !/package.json
 !/package-lock.json
 !/apps
 /apps/*
 !/apps/mobile
+!/apps/desktop
+/apps/desktop/*
+!/apps/desktop/src
+/apps/desktop/src/*
+!/apps/desktop/src/notice-contract.js
 !/packages
 /packages/*
 !/packages/vendor

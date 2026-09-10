@@ -1,3 +1,9 @@
+import {
+  createNoticeStore,
+  errorNotice,
+  conditionNotices,
+  safeDetails,
+} from "./notice-contract.js";
 const native = Boolean(window.__TAURI__?.core.invoke);
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
@@ -400,18 +406,41 @@ if (native) {
   });
 }
 
-function notice(message, error = false) {
-  delete $("#notice").dataset.source;
-  delete $("#notice").dataset.error;
-  $("#notice").hidden = false;
-  $("#notice").classList.toggle("error", error);
-  $("#notice").innerHTML =
-    `${icon(error ? "circle-alert" : "circle-check")}<span>${escape(message)}</span>${button(icon("x"), "dismiss", "", "icon-button")}`;
-  $('#notice [data-action="dismiss"]')?.setAttribute(
-    "aria-label",
-    "Dismiss notification",
-  );
+const noticeStore = createNoticeStore();
+function noticeMarkup(item) {
+  const action =
+    item.action &&
+    `<button class="notice-link" data-action="${escape(item.action)}" data-id="${escape(item.volume || "")}">${escape(item.actionLabel || "Review")}</button>`;
+  return `<article class="notice-card notice-${item.kind}" data-notice-id="${escape(item.id)}" role="${item.kind === "info" ? "status" : "alert"}"><div class="notice-main">${icon(item.icon || (item.kind === "info" ? "circle-check" : "circle-alert"))}<div class="notice-content"><strong>${escape(item.title)}</strong>${item.body ? `<p>${escape(item.body)}</p>` : ""}${action || item.kind !== "info" ? `<div class="notice-actions">${action || ""}${item.kind !== "info" ? `<button class="notice-link notice-muted" data-action="dismiss">Dismiss</button>` : ""}</div>` : ""}</div><button class="notice-close" data-action="dismiss" aria-label="Dismiss notification">${icon("x")}</button></div>${item.details ? `<details class="notice-details"><summary>${icon("chevron-right")}<span>Details</span><button class="notice-copy notice-link" data-action="copy-notice">Copy</button></summary><pre>${escape(safeDetails(item.details))}</pre></details>` : ""}</article>`;
+}
+function renderNotices() {
+  const box = $("#notice"),
+    items = noticeStore.snapshot();
+  const ids = new Set(items.map((n) => n.id));
+  for (const card of box.children)
+    if (!ids.has(card.dataset.noticeId)) card.remove();
+  for (const item of items) {
+    const old = Array.from(box.children).find(
+      (c) => c.dataset.noticeId === item.id,
+    );
+    const markup = noticeMarkup(item);
+    if (old?.dataset.markup === markup) continue;
+    const template = document.createElement("template");
+    template.innerHTML = markup;
+    const card = template.content.firstElementChild;
+    card.dataset.markup = markup;
+    if (old) old.replaceWith(card);
+    else box.append(card);
+  }
+  box.hidden = !items.length;
   icons();
+}
+noticeStore.subscribe(renderNotices);
+function notice(message, error = false, options = {}) {
+  const item = error
+    ? errorNotice(message, { hubName: status?.hubName || "your hub" })
+    : { kind: "info", title: message };
+  return noticeStore.push({ ...item, ...options });
 }
 async function action(work) {
   if (busy) return;
@@ -427,17 +456,17 @@ async function action(work) {
     }
     const message = e?.message || String(e);
     if ($("#dialog").open) {
-      $("#dialog-error").textContent = message;
+      $("#dialog-error").innerHTML = noticeMarkup({
+        ...errorNotice(message),
+        id: "dialog-error",
+        action: null,
+      });
       $("#dialog-error").hidden = false;
     } else {
-      notice(message, true);
-      if (e.transportError && e.readOnly) {
-        $("#notice").dataset.source = "connection";
-        $("#notice").insertAdjacentHTML(
-          "beforeend",
-          button("Retry", "refresh", "", "secondary"),
-        );
-      }
+      notice(message, true, {
+        id: e.transportError && e.readOnly ? "connection" : "action",
+        action: e.transportError && e.readOnly ? "refresh" : null,
+      });
     }
   } finally {
     busy = false;
@@ -576,10 +605,7 @@ async function refresh(renderView = true) {
     renderOnboarding();
     return;
   }
-  if ($("#notice").dataset.source === "connection") {
-    $("#notice").hidden = true;
-    delete $("#notice").dataset.source;
-  }
+  noticeStore.clear("connection");
   ready = true;
   document.body.classList.remove("access-mode", "onboarding-mode");
   updateShell();
@@ -611,37 +637,23 @@ async function refresh(renderView = true) {
     }
   }
   const syncError = synchronizationError();
-  if (syncError) {
-    const offline =
-      /fetch failed|ECONN|ENOTFOUND|timed? ?out|unreachable/i.test(syncError);
-    const revoked = /401|403|revoked|credential|unauthoriz/i.test(syncError);
-    const headline = revoked
-      ? "Hub access needs attention"
-      : offline
-        ? "Hub unreachable"
-        : "Synchronization needs attention";
-    const description = revoked
-      ? "Local files are retained. Pair again with a code from the hub."
-      : offline
-        ? "You can keep editing. Changes are saved locally and sent when the hub is back."
-        : "Your files remain on disk. Review the affected folder and retry.";
-    const box = $("#notice");
-    box.hidden = dismissedStatusError === syncError;
-    box.classList.add("error");
-    box.dataset.source = "status";
-    if (box.dataset.error !== syncError) {
-      box.dataset.error = syncError;
-      box.innerHTML = `${icon(offline ? "wifi-off" : "circle-alert")}<span><strong>${headline}</strong><p>${description}</p><details><summary>Details</summary>${escape(syncError)}</details></span>${button(revoked ? "Pair again…" : "Retry", revoked ? "replacement-hub" : "sync", "", "secondary")}${button(icon("x"), "dismiss", "", "icon-button")}`;
-      box
-        .querySelector('[data-action="dismiss"]')
-        .setAttribute("aria-label", "Dismiss notification");
-    }
-    icons();
-  } else if ($("#notice").dataset.source === "status") {
-    $("#notice").hidden = true;
-    delete $("#notice").dataset.error;
-    dismissedStatusError = null;
-  }
+  const conditions = conditionNotices({ ...status, error: syncError });
+  noticeStore.reconcile(
+    conditions.map((item) => ({
+      ...item,
+      action: !item.action
+        ? null
+        : item.action === "review"
+          ? "folder-conflicts"
+          : item.action === "folder"
+            ? "folder-detail"
+            : item.action === "backup"
+              ? "backup-settings"
+              : item.action === "pair"
+                ? "replacement-hub"
+                : "sync",
+    })),
+  );
   const signature = JSON.stringify([
     view,
     detailId,
@@ -823,6 +835,7 @@ async function renderView(refreshCatalog = true) {
     if (refreshCatalog && status.role !== "hub") {
       const previous = JSON.stringify([catalog, catalogHubName]);
       void loadCatalog().then(() => {
+        if (!window.document) return;
         if (
           serial === renderSerial &&
           view === "folders" &&
@@ -1616,7 +1629,7 @@ async function renderSettings() {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.3.6 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.3.7 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   if (status.role === "replica")
     html += section(
@@ -1628,7 +1641,6 @@ async function renderSettings() {
     action(async () => {
       await api("/v1/settings", { name: $("#machine-name").value });
       await refresh(false);
-      notice("Machine name updated.");
     });
   if (native) {
     invoke("desktop_preferences")
@@ -1661,6 +1673,12 @@ function modal(html, submit, label = "Save", wide = false) {
   $("#dialog-content").onclick = null;
   $("#dialog-content").innerHTML = html;
   $("#dialog").className = wide ? "wide-dialog" : "";
+  if (
+    !$("#dialog-content").querySelector(
+      "input, select, textarea, table, .folder-selection",
+    )
+  )
+    $("#dialog").classList.add("confirmation-dialog");
   $("#submit-dialog").textContent = label;
   $("#submit-dialog").hidden = false;
   $("#submit-dialog").disabled = false;
@@ -2114,6 +2132,8 @@ async function reviewConflict(item) {
       await api("/v1/sync", { background: true });
       notice(
         "Selected content restored. Both source versions remain in history.",
+        false,
+        { action: "folder-history", actionLabel: "Show", volume: item.volume },
       );
     },
     "Restore selected as new revision",
@@ -2143,7 +2163,6 @@ async function handle(name, id, control) {
       ) + textField("Name", "name", v.name),
       async (f) => {
         await api("/v1/rename-share", { id, name: f.get("name") });
-        notice("Shared folder renamed.");
       },
       "Rename",
     );
@@ -2191,9 +2210,18 @@ async function handle(name, id, control) {
   }
 
   if (name === "dismiss") {
-    if ($("#notice").dataset.source === "status")
-      dismissedStatusError = $("#notice").dataset.error;
-    $("#notice").hidden = true;
+    const card = control.closest("[data-notice-id]");
+    if (card?.dataset.noticeId === "dialog-error")
+      $("#dialog-error").hidden = true;
+    else if (card) noticeStore.remove(card.dataset.noticeId);
+    return;
+  }
+  if (name === "copy-notice") {
+    const text = control
+      .closest(".notice-details")
+      .querySelector("pre").textContent;
+    await navigator.clipboard.writeText(text);
+    control.textContent = "Copied";
     return;
   }
   if (name === "backup-settings") {
@@ -2359,13 +2387,21 @@ async function handle(name, id, control) {
           )
           .join("")}</div>`,
       async () => {
-        await api("/v1/restore", {
+        const restored = await api("/v1/restore", {
           volume: historyVolume,
           path: historyPath,
           rev: Number(id),
         });
         await api("/v1/sync", { background: true });
-        notice("Version restored as a new revision.");
+        notice(
+          `Version restored: ${historyPath}${restored.rev ? ` as rev ${restored.rev}` : ""}`,
+          false,
+          {
+            action: "folder-history",
+            actionLabel: "Show",
+            volume: historyVolume,
+          },
+        );
       },
       "Restore as new revision",
     );
@@ -2383,7 +2419,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.3.6",
+          version: "0.3.7",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -2715,9 +2751,22 @@ async function handle(name, id, control) {
       (v) => !status.volumes.find((x) => x.id === v.id)?.selected,
     );
     if (!available.length) {
-      notice(
-        "All available shared folders are selected. Create new shared folders on the hub.",
+      modal(
+        modalHeader(
+          "Choose folders",
+          "Keep complete copies on this machine.",
+          "folder",
+        ),
+        async () => {},
+        "Done",
       );
+      $("#dialog-content").insertAdjacentHTML(
+        "beforeend",
+        '<div class="empty">' +
+          icon("folder-check") +
+          "<h3>All folders are selected</h3><p>New shared folders will appear here when the hub creates them.</p></div>",
+      );
+      icons();
       return;
     }
     const remote =
@@ -2936,11 +2985,6 @@ document.addEventListener("change", (e) => {
       e.target.disabled = true;
       try {
         network = await api("/v1/network/lan", { enabled });
-        notice(
-          enabled
-            ? "Local network HTTP enabled."
-            : "Local network HTTP disabled.",
-        );
       } catch (error) {
         e.target.checked = !enabled;
         throw error;
@@ -2958,9 +3002,6 @@ document.addEventListener("change", (e) => {
       const enabled = e.target.checked;
       try {
         await invoke("set_launch_at_login", { enabled });
-        notice(
-          enabled ? "Launch at login enabled." : "Launch at login disabled.",
-        );
       } catch (error) {
         e.target.checked = !enabled;
         throw error;
@@ -3254,6 +3295,34 @@ setInterval(async () => {
   }
 }, 5000);
 if (native && window.__TAURI__.event) {
+  window.__TAURI__.event.listen("notice-action", (event) =>
+    action(async () => {
+      const data = event.payload || {};
+      if (
+        !["review", "retry", "pair", "backup", "folder"].includes(data.action)
+      )
+        return;
+      await refresh();
+      if (data.action === "review") {
+        view = "history";
+        historyVolume = typeof data.volume === "string" ? data.volume : "";
+        historyPath = null;
+        historyFilter = "conflicts";
+      } else if (data.action === "backup" || data.action === "pair")
+        view = "settings";
+      else {
+        view = "folders";
+        detailId = status.volumes.some((v) => v.id === data.volume)
+          ? data.volume
+          : null;
+        if (data.execute && data.action === "retry")
+          await api("/v1/sync", { background: true });
+      }
+      await render();
+      updateShell();
+    }),
+  );
+
   window.__TAURI__.event.listen("open-folder-detail", (event) =>
     action(async () => {
       view = "folders";

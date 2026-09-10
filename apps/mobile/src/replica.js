@@ -1,3 +1,4 @@
+import { conditionNotices } from "../../desktop/src/notice-contract.js";
 import { entryKey, directoryItem } from "../../../packages/core/entries.js";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
@@ -479,12 +480,6 @@ export class Replica {
       // The acknowledged source hash is the baseline for safe materialization.
       if (result.row)
         await this.store.put(this.scope, { ...result.row, localHash: op.hash });
-      if (result.conflict) {
-        await this.notify(
-          "File conflict",
-          "Both versions have been preserved.",
-        );
-      }
       await this.store.dequeue(this.scope, folder.id, op.path);
     }
   }
@@ -795,11 +790,20 @@ export class Replica {
     } catch (e) {
       if (e.code === "SYNC_INTERRUPTED") return;
       this.error = e.message;
-      if (!this.stopped && !this.paused)
-        await this.notify("Synchronization needs attention", e.message);
     } finally {
       this.busy = false;
       this.progress = null;
+      if (!this.stopped && !this.paused) {
+        const conditions = conditionNotices({
+          error: this.error,
+          hubName: this.client.state().catalog?.name,
+          catalog: this.client.state().catalog,
+          volumes: await Promise.resolve()
+            .then(() => this.store.folders(this.scope))
+            .catch(() => []),
+        });
+        await this.notify(null, null, { conditions });
+      }
       this.changed();
     }
   }

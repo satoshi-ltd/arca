@@ -929,36 +929,6 @@ input[type="radio"] {
   padding: 40px;
   color: var(--mute);
 }
-#notice {
-  margin: 16px 24px 0;
-  padding: 12px 14px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  background: var(--surface);
-  font-size: var(--text-body);
-  flex: none;
-}
-#notice.error {
-  background: var(--surface);
-  color: var(--ink);
-  border-color: var(--div);
-}
-#notice.error > .icon {
-  color: var(--erFg);
-}
-#notice.error .icon-button {
-  color: var(--ink);
-}
-#notice > span {
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-#notice button {
-  color: inherit;
-}
 .callout {
   border: 1px dashed var(--line);
   border-radius: var(--r-control);
@@ -1082,9 +1052,6 @@ dialog::backdrop {
   min-height: 100dvh;
 }
 .access-mode .sidebar {
-  display: none;
-}
-.access-mode #notice {
   display: none;
 }
 .access-page {
@@ -2011,22 +1978,6 @@ html:has(.tray-body) {
 .selection-check:not(.path-check-error) .mono {
   display: none;
 }
-#notice strong {
-  display: block;
-  font-size: var(--text-control);
-}
-#notice p {
-  margin-top: 3px;
-  font-size: var(--text-body);
-}
-#notice details {
-  margin-top: 4px;
-  font-size: var(--text-caption);
-}
-#notice > .icon {
-  width: 18px;
-  height: 18px;
-}
 
 /* Handoff text stacks use normal UI leading, with explicit leading for prose. */
 .folder-card .row-main {
@@ -2236,11 +2187,6 @@ label {
   color: var(--mute);
   white-space: nowrap;
 }
-#notice.error .secondary {
-  background: transparent;
-  border-color: var(--line);
-  color: var(--ink);
-}
 
 .stat > strong.stat-status {
   background: transparent;
@@ -2302,73 +2248,6 @@ body.view-loading::before {
     width: 100%;
     animation: none;
   }
-}
-
-/* Floating feedback never participates in the page layout. */
-#notice {
-  position: fixed;
-  inset: auto var(--notice-inset) var(--notice-inset) auto;
-  z-index: var(--layer-notice);
-  width: max-content;
-  max-width: min(var(--notice-width), calc(100vw - 2 * var(--notice-inset)));
-  max-height: min(40dvh, 240px);
-  overflow: auto;
-  margin: 0;
-  align-items: flex-start;
-  border-radius: var(--notice-radius);
-  box-shadow: var(--shadow-menu);
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity var(--motion-exit) var(--motion-ease),
-    transform var(--motion-exit) var(--motion-ease),
-    display var(--motion-exit) allow-discrete;
-}
-#notice:not(.error) {
-  padding: 10px 12px;
-  align-items: center;
-  background: var(--toast-bg);
-  color: var(--toast-fg);
-  border-color: var(--toast-bg);
-  font-size: var(--text-control);
-}
-#notice > span {
-  min-width: 0;
-}
-#notice:not(.error) > .icon {
-  width: 16px;
-  height: 16px;
-  color: var(--toast-accent);
-}
-#notice .icon-button {
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-  min-height: 24px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-#notice .icon-button .icon {
-  width: 14px;
-  height: 14px;
-}
-#notice[hidden] {
-  opacity: 0;
-  transform: translateY(var(--motion-distance));
-}
-#notice:not([hidden]) {
-  animation: notice-enter var(--motion-enter) var(--motion-ease) both;
-}
-#notice > button {
-  flex-shrink: 0;
-}
-#notice .icon-button {
-  padding: 4px;
-}
-#notice details {
-  max-height: 160px;
-  overflow: auto;
 }
 @keyframes notice-enter {
   from {
@@ -2891,4 +2770,215 @@ section:has(> .replica-danger) > .section-label {
 
 .accent-text {
   color: var(--green);
+}
+
+/* One notice surface for web and desktop. Mobile mirrors these tokens. */
+#notice {
+  position: fixed;
+  right: var(--notice-inset);
+  bottom: var(--notice-inset);
+  width: min(var(--notice-width), calc(100vw - 2 * var(--notice-inset)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--notice-gap);
+  z-index: var(--layer-notice);
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  max-height: calc(100dvh - 2 * var(--notice-inset));
+  overflow: auto;
+}
+#notice[hidden] {
+  display: none;
+}
+.notice-card {
+  flex-shrink: 0;
+  border: 1px solid var(--div);
+  border-radius: var(--notice-radius);
+  background: var(--notice-surface);
+  color: var(--ink);
+  overflow: hidden;
+  box-shadow: var(--shadow-menu);
+  animation: notice-enter var(--notice-duration) ease-out;
+}
+.notice-main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--notice-gap);
+  padding: var(--notice-padding);
+}
+.notice-main > .icon {
+  flex: none;
+  width: var(--notice-icon);
+  height: var(--notice-icon);
+  color: var(--er);
+  margin-top: 1px;
+}
+.notice-warning .notice-main > .icon {
+  color: var(--wa);
+}
+.notice-content {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.notice-content strong {
+  display: block;
+  font-size: var(--notice-title);
+  line-height: var(--notice-line);
+  font-weight: 600;
+}
+.notice-content p {
+  margin: 3px 0 0;
+  font-size: var(--notice-body);
+  line-height: var(--notice-line);
+  color: var(--soft);
+}
+.notice-actions {
+  display: flex;
+  gap: var(--notice-gap);
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.notice-link,
+.notice-close {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  min-height: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--notice-link);
+  font-size: var(--notice-body);
+  line-height: var(--notice-line);
+  font-weight: 600;
+}
+.notice-link:hover {
+  text-decoration: underline;
+  background: transparent;
+}
+.notice-muted,
+.notice-close {
+  color: var(--mute);
+}
+.notice-close {
+  flex: none;
+  width: 16px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+}
+.notice-close .icon {
+  width: 16px;
+  height: 16px;
+}
+.notice-info {
+  background: var(--notice-info-bg);
+  color: var(--notice-info-fg);
+  border-color: var(--notice-info-bg);
+}
+.notice-info .notice-link,
+.notice-info .notice-main > .icon {
+  color: var(--notice-info-link);
+}
+.notice-info .notice-content p {
+  color: inherit;
+}
+.notice-info .notice-close {
+  color: inherit;
+  opacity: 0.6;
+}
+.notice-details {
+  position: relative;
+  border-top: 1px solid var(--div);
+  background: var(--paper);
+}
+.notice-details summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--notice-details-height);
+  padding: 0 var(--notice-padding);
+  padding-right: 64px;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--soft);
+  cursor: pointer;
+}
+.notice-details summary::-webkit-details-marker {
+  display: none;
+}
+.notice-details summary .icon {
+  width: 14px;
+  height: 14px;
+}
+.notice-details[open] summary .icon {
+  transform: rotate(90deg);
+}
+.notice-copy {
+  position: absolute;
+  right: var(--notice-padding);
+  top: 0;
+  height: var(--notice-details-height);
+  font-size: 13px;
+}
+.notice-details pre {
+  margin: 0;
+  padding: 0 var(--notice-padding) var(--notice-padding);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow: auto;
+  font: 12px/18px var(--font-mono);
+  color: var(--soft);
+}
+.confirmation-dialog {
+  max-width: min(
+    var(--confirmation-width),
+    calc(100vw - 2 * var(--notice-inset))
+  );
+  padding: var(--space-6);
+}
+.confirmation-dialog .modal-title {
+  align-items: flex-start;
+  gap: 16px;
+}
+.confirmation-dialog .modal-title .tile {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--erBg);
+  color: var(--er);
+}
+.confirmation-dialog .modal-title .tile .icon {
+  width: 22px;
+  height: 22px;
+}
+.confirmation-dialog .modal-title h2 {
+  font-size: var(--confirmation-title);
+  line-height: 23px;
+}
+.confirmation-dialog .modal-title p {
+  font-size: 15px;
+  line-height: 23px;
+}
+.confirmation-dialog .dialog-actions {
+  margin-left: 60px;
+  gap: 10px;
+}
+.dialog-error .notice-card {
+  box-shadow: none;
+}
+.empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--r-card);
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice-card {
+    animation: none;
+  }
 }

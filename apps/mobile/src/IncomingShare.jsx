@@ -1,3 +1,4 @@
+import { ErrorNotice } from "./Notice";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Linking, Text, View } from "react-native";
 import * as Sharing from "expo-sharing";
@@ -200,11 +201,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
           busy={busy}
           onClose={discard}
         >
-          {!!error && (
-            <Text accessibilityRole="alert" style={s.errorText}>
-              {error}
-            </Text>
-          )}
+          <ErrorNotice error={error} />
           {!!items.length && (
             <View style={s.group}>
               {items.map((item, index) => (

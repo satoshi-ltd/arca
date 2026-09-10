@@ -1,3 +1,4 @@
+import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
 import { inspectSetupRoot } from "./setup.js";
 import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
 import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
@@ -345,7 +346,8 @@ export async function start(home, options = {}) {
       }
       if (req.method === "GET" && route === "/v1/status") {
         requireAdmin();
-        return send(200, engine.status());
+        const status = engine.status();
+        return send(200, { ...status, notices: conditionNotices(status) });
       }
       if (
         !admin &&
@@ -383,6 +385,7 @@ export async function start(home, options = {}) {
             id: v.id,
             name: v.name,
             conflicts: s.unresolvedConflicts(v.id),
+            conflictRevision: s.conflictRevision(v.id),
             ...s.visibleTotals(v.id),
           })),
         });

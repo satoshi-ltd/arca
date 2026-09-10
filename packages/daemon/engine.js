@@ -161,6 +161,11 @@ export class Engine {
                 lastCompleted: v.last_sync,
               },
           ...totals,
+          conflictRevision:
+            this.config.role === "hub"
+              ? s.conflictRevision(v.id)
+              : (this.config.catalog?.find((row) => row.id === v.id)
+                  ?.conflictRevision ?? s.conflictRevision(v.id)),
           conflicts:
             this.config.role === "hub"
               ? s.unresolvedConflicts(v.id)
@@ -472,6 +477,7 @@ export class Engine {
         this.config.catalog = catalog.volumes.map((v) => ({
           id: v.id,
           name: v.name,
+          conflictRevision: v.conflictRevision,
           conflicts: Number.isSafeInteger(v.conflicts)
             ? v.conflicts
             : undefined,

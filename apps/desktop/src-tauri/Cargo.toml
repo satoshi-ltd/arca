@@ -1,6 +1,6 @@
 [package]
 name = "arca-desktop"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2021"
 
 [build-dependencies]
@@ -16,3 +16,12 @@ tokio = { version = "1", features = ["time"] }
 rfd = "0.15"
 arboard = "3"
 tauri-plugin-notification = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+mac-notification-sys = "0.6.15"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+tauri-winrt-notification = "0.7.3"
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+notify-rust = "4.18.0"

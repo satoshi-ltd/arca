@@ -1,6 +1,11 @@
 // Matched to desktop tokens.css; parity is checked in mobile-layout.test.js.
 export const palettes = {
   light: {
+    noticeSurface: "#ffffff",
+    noticeInfoBg: "#121a16",
+    noticeInfoFg: "#f4f6f1",
+    noticeInfoLink: "#accb80",
+    noticeLink: "#2e6350",
     paper: "#f4f6f1",
     surface: "#ffffff",
     side: "#eef1ec",
@@ -20,6 +25,11 @@ export const palettes = {
     dangerBg: "#f7e2df",
   },
   dark: {
+    noticeSurface: "#1f2521",
+    noticeInfoBg: "#f4f6f1",
+    noticeInfoFg: "#121a16",
+    noticeInfoLink: "#2e6350",
+    noticeLink: "#7fb893",
     paper: "#0f1512",
     surface: "#161e19",
     side: "#131a16",

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.7 — 2026-09-10
+
+- Reduce notification noise: group hub connection/access failures, distinguish permissions from sign-in, remove redundant setting/export/busy notices and show an empty folder selector in context. Restore actions share Show links, including above mobile sheets.
+- Use authoritative hub conflict resolution and revision markers so resolved conflicts disappear and new conflicts can notify while previous ones remain.
+
+- Normalize web, desktop and mobile notices through one shared contract and token set: info/warning/error, three-item stack, four-second info timeout, stable incident dismissal, text actions and collapsed Details/Copy. Preserve native mobile confirmations.
+- Match desktop confirmation and empty-state composition to the notification reference. Route mobile operational errors through the shared component instead of duplicate alerts.
+- Use common condition copy for background system alerts; deduplicate by condition/folder, suppress foreground/completed-sync notifications and delay unreachable-hub alerts by one minute. Add mobile notification destinations and native clipboard support. Add desktop OS activation/action callbacks for macOS, Windows and Linux; clicking opens the corresponding screen and the explicit Retry now action requests synchronization.
+- Align release manifests at 0.3.7 and mobile native build numbers at 9. Native clipboard and notification changes require rebuilt clients; no deployment or pipeline changes.
+
 ## 0.3.6 — 2026-09-10
 
 - Stabilize mobile single-line input height before text entry, including icon fields and accessibility font scaling. Share explicit 48-dp mobile control sizing alongside desktop 32-px controls and enforce token parity.

@@ -159,6 +159,7 @@ export class Web {
     const assets = {
       "/": "index.html",
       "/app.js": "app.js",
+      "/notice-contract.js": "notice-contract.js",
       "/style.css": "style.css",
       "/tokens.css": "tokens.css",
       "/vendor/lucide.js": "vendor/lucide.js",

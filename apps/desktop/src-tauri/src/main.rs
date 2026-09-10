@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod notifications;
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -376,7 +377,7 @@ fn main() {
                 .build(app)?;
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let mut previous_notice = String::new();
+                let mut notice_state: std::collections::HashMap<String, (std::time::Instant, String)> = std::collections::HashMap::new();
                 loop {
                     let _ = request("/v1/client", "POST", Some(json!({"kind":"desktop"}))).await;
                     let status = request("/v1/status", "GET", None).await;
@@ -392,16 +393,19 @@ fn main() {
                         },
                         Err(_) => "Arca · service stopped",
                     };
-                    if preferences()["notifications"].as_bool().unwrap_or(false) {
-                        use tauri_plugin_notification::NotificationExt;
-                        let message = status.as_ref().ok().and_then(|s| {
-                            if let Some(error)=s["backup"]["error"].as_str(){Some(format!("Hub backup needs attention: {error}"))}
-                            else if let Some(error)=s["error"].as_str(){Some(format!("Synchronization needs attention: {error}"))}
-                            else if s["volumes"].as_array().map(|v|v.iter().any(|f|f["conflicts"].as_u64().unwrap_or(0)>0)).unwrap_or(false){Some("Conflict copies retained. Review them in Arca History.".to_string())}
-                            else {None}
-                        }).unwrap_or_default();
-                        if !message.is_empty() && message!=previous_notice { let _=handle.notification().builder().title("Arca needs attention").body(&message).show(); }
-                        previous_notice=message;
+                    if let Ok(s) = &status {
+                        let notices = s["notices"].as_array().cloned().unwrap_or_default();
+                        notice_state.retain(|id, _| notices.iter().any(|n| n["id"].as_str() == Some(id.as_str())));
+                        let focused = ["main", "tray"].iter().any(|label| handle.get_webview_window(label).map(|w| w.is_focused().unwrap_or(false)).unwrap_or(false));
+                        for notice in notices {
+                            let id = notice["id"].as_str().unwrap_or("").to_string();
+                            let state = notice_state.entry(id).or_insert((std::time::Instant::now(), String::new()));
+                            let signature = notice["incident"].to_string();
+                            let delayed = notice["offline"].as_bool().unwrap_or(false) && state.0.elapsed().as_secs() < 60;
+                            if !focused && !delayed && state.1 != signature && preferences()["notifications"].as_bool().unwrap_or(false) {
+                                if notifications::show(handle.clone(), notice.clone()).is_ok() { state.1 = signature; }
+                            }
+                        }
                     }
                     let _ = status_item.set_text(text);
                     let paused = status
