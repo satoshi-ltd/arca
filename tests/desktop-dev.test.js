@@ -49,7 +49,14 @@ test("desktop dev replaces its local daemon while retaining identity, pairing, p
   );
   t.after(async () => {
     await stopDaemon(home);
-    fs.rmSync(root, { recursive: true, force: true });
+    // Windows can briefly retain executable/file handles after the PID exits.
+    // Yield between bounded retries; a persistent cleanup failure must still fail.
+    await fs.promises.rm(root, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
   });
   await startDaemon(home, runtime);
   const first = fs.readFileSync(path.join(home, "daemon.lock"), "utf8");

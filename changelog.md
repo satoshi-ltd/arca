@@ -2,6 +2,7 @@
 
 ## 0.3.8 — 2026-09-10
 
+- Fix Windows development-launcher test cleanup: remove the isolated runtime asynchronously with bounded retries after stopping the daemon, allowing executable/file handles to be released. Persistent cleanup errors still fail the test.
 - Make desktop/web main-view navigation immediate using current data while status and view-specific reads refresh in the background. Fetch discovery/roster concurrently, coalesce equivalent reads, cache history by scope/filter and retain updating feedback without locking navigation. Reject stale responses and preserve active settings edits.
 - Fix Windows browser tests leaving ESM imports inside JSDOM when checkout uses CRLF. Accept both line endings and exercise CRLF on every runner; release jobs and build dependencies are unchanged.
 - Add Arca identity to phone screen titles, align Fold sidebar branding with the main header and unify root-header height.

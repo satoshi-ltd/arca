@@ -1,6 +1,6 @@
 # Arca — specification and roadmap
 
-Updated 2026-09-10. **v0.3.6 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+Updated 2026-09-10. **v0.3.8 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AGENTS.md) for contributor instructions. This document owns implementation status, remaining work, technical contracts, operations and the shared design system. Original visual references are not competing specifications.
 
@@ -91,6 +91,8 @@ Security: pairing and browser login retain separate random six-digit, single-use
 Validation: 223 tests pass, one platform skip; isolated real-daemon/DOM tests cover desktop step order, restart after accepted pairing, empty-root inspection, expiry/concurrent redemption and mobile download gating/space failure. Android/iOS JavaScript exports, desktop web build and Rust check pass. All five desktop wizard screens were visually inspected in an isolated browser using the production renderer and fixture data; this is frontend evidence, not a running Tauri/native-dialog check. The updated mobile pairing screen was visually inspected on the running Android emulator without pairing or restarting Metro. This does not establish pixel equality for every onboarding screen on iOS/Fold or certify native workflows. No Casa deployment or live reset was performed.
 
 Windows CI regression (September 10, run 34434396832): the browser test harness removed the shared notice import only with LF endings. Windows checkout CRLF left the ESM import inside JSDOM eval, failing 22 tests before execution. Both desktop/zoom harnesses now accept CRLF and exercise Windows endings on every runner. Local validation: 24 desktop/zoom tests passed with CRLF input; full suite 230 passed, one skipped. The corrected commit still needs a Windows CI run. Release build dependencies remain unchanged; a failed required test job correctly blocks builds and publishing.
+
+Windows CI follow-up (September 10, run 34440432054, commit d438ece): the CRLF browser tests passed. The only failure was the development-launcher test's after-hook: `fs.rmSync` raised `EPERM` removing its temporary runtime after `stopDaemon` returned (228 passed, one failed, three skipped). Cleanup now uses awaited `fs.promises.rm` with ten retries and 100-ms linear backoff, allowing Windows handle release without blocking the event loop. This is a bounded cleanup retry, not a skipped test or suppressed error; persistent failures still reject. The log proves the cleanup failure, but does not identify which Windows component retained a handle. Local validation passes: both launcher tests and the full Node suite (231 passed, one skipped), plus version agreement and diff checks. The user explicitly authorized this CI correction as a follow-up commit retaining v0.3.8; no additional version/build increment is required for this commit. Confirmation on the Windows runner remains pending. Workflow dependencies, production launcher behavior and installer jobs are unchanged.
 
 ## Remaining work and task candidates
 
