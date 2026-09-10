@@ -64,6 +64,21 @@ export function Logo({ size = 76 }) {
     </Svg>
   );
 }
+export function Section({ children }) {
+  const { s } = useDesign();
+  return <View style={s.section}>{children}</View>;
+}
+export function ScreenTitle({ children }) {
+  const { s, wide } = useDesign();
+  return (
+    <View style={s.screenTitle}>
+      {!wide && <Logo size={g.screenTitleLogo} />}
+      <Text accessibilityRole="header" style={[s.title, s.flex]}>
+        {children}
+      </Text>
+    </View>
+  );
+}
 export function Button({
   label,
   onPress,

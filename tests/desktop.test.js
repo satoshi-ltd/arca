@@ -23,7 +23,9 @@ const script =
       new URL("../apps/desktop/src/app.js", import.meta.url),
       "utf8",
     )
-    .replace(/^import[\s\S]*?notice-contract\.js";\n/, "");
+    // Exercise Windows checkout line endings on every runner.
+    .replace(/\r?\n/g, "\r\n")
+    .replace(/^import[\s\S]*?notice-contract\.js";\r?\n/, "");
 async function until(check) {
   for (let i = 0; i < 200; i++) {
     if (check()) return;
@@ -2072,4 +2074,129 @@ test("notices use a stable stack, expose Copy while collapsed, and preserve Deta
   w.queue.push({ id: "warning", kind: "warning", title: "Conflict" });
   w.queue.push({ id: "info2", title: "Restored" });
   assert.equal(w.document.querySelectorAll("#notice .notice-card").length, 3);
+});
+
+test("navigation paints before slow reads, retains updating feedback and ignores responses from older tabs", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-navigation-"));
+  init(home, { port: 0, name: "Navigation hub" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Documents");
+  fs.writeFileSync(path.join(volume.path, "navigation.txt"), "A revision");
+  await daemon.engine.cycle();
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window,
+    gates = new Map(),
+    calls = [];
+  w.setInterval = () => 0;
+  const hold = (route) => {
+    let release;
+    const promise = new Promise((resolve) => {
+      release = resolve;
+    });
+    gates.set(route, { promise, release });
+    return () => {
+      gates.delete(route);
+      release();
+    };
+  };
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap")
+          return { setup: false, status: daemon.engine.status() };
+        if (command === "desktop_preferences") return {};
+        if (command !== "api") return {};
+        calls.push(args.route);
+        const gate = gates.get(args.route.split("?")[0]);
+        if (gate) await gate.promise;
+        const response = await fetch(
+          `http://127.0.0.1:${daemon.port}${args.route}`,
+          {
+            method: args.method,
+            headers: {
+              authorization: `Bearer ${daemon.engine.config.adminToken}`,
+            },
+          },
+        );
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        return data;
+      },
+    },
+  };
+  t.after(async () => {
+    for (const gate of gates.values()) gate.release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  const title = () => w.document.querySelector("#content h1")?.textContent;
+  const updating = () => w.document.body.classList.contains("view-loading");
+  const nav = (view) =>
+    w.document.querySelector(`[data-view="${view}"]`).click();
+  const releaseStatus = hold("/v1/status");
+  const releaseDiscovery = hold("/v1/discovery"),
+    releaseMachines = hold("/v1/machines");
+  nav("devices");
+  await until(() => title() === "Machines");
+  await until(
+    () => calls.includes("/v1/discovery") && calls.includes("/v1/machines"),
+  );
+  assert.ok(
+    updating(),
+    "The target is visible while both independent machine reads are still pending",
+  );
+  assert.equal(
+    w.document.body.getAttribute("aria-busy"),
+    "false",
+    "Reads do not lock navigation",
+  );
+  const releaseNetwork = hold("/v1/network");
+  nav("settings");
+  await until(() => title() === "Settings");
+  releaseDiscovery();
+  releaseMachines();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(title(), "Settings", "Old machine data cannot replace Settings");
+  assert.ok(
+    updating(),
+    "Finishing the old tab cannot hide the new tab's progress",
+  );
+  const name = w.document.querySelector("#machine-name");
+  name.focus();
+  name.value = "Unsaved edit";
+  releaseNetwork();
+  releaseStatus();
+  await until(() => !updating());
+  assert.equal(w.document.querySelector("#machine-name"), name);
+  assert.equal(
+    name.value,
+    "Unsaved edit",
+    "Background data preserves the active field",
+  );
+  name.blur();
+  nav("history");
+  await until(() => !updating() && w.document.querySelector(".history-row"));
+  nav("folders");
+  await until(() => title() === "Folders" && !updating());
+  const releaseHistory = hold("/v1/activity");
+  nav("history");
+  await until(
+    () => title() === "History" && w.document.querySelector(".history-row"),
+  );
+  assert.ok(
+    updating(),
+    "Cached history is usable before the fresh read completes",
+  );
+  assert.match(
+    w.document.querySelector("#history-list").textContent,
+    /navigation.txt/,
+  );
+  releaseHistory();
+  await until(() => !updating());
 });

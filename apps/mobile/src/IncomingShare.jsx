@@ -1,3 +1,4 @@
+import { Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Linking, Text, View } from "react-native";
@@ -254,7 +255,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
                 Pair with your hub, then share the files again.
               </Text>
             ) : !volume ? (
-              <>
+              <Section>
                 <Text style={s.eyebrow}>SELECTED FOLDERS</Text>
                 {!destinations.length && (
                   <Text style={s.text}>
@@ -277,7 +278,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
                     />
                   ))}
                 </View>
-              </>
+              </Section>
             ) : (
               <>
                 <Button

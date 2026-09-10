@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.8 — 2026-09-10
+
+- Make desktop/web main-view navigation immediate using current data while status and view-specific reads refresh in the background. Fetch discovery/roster concurrently, coalesce equivalent reads, cache history by scope/filter and retain updating feedback without locking navigation. Reject stale responses and preserve active settings edits.
+- Fix Windows browser tests leaving ESM imports inside JSDOM when checkout uses CRLF. Accept both line endings and exercise CRLF on every runner; release jobs and build dependencies are unchanged.
+- Add Arca identity to phone screen titles, align Fold sidebar branding with the main header and unify root-header height.
+- Share section, list-row and touch typography tokens across phone/Fold and desktop. Group headings with their content, remove empty sections and keep row heights stable with or without actions. Preserve touch-sized controls and desktop-scale Fold titles.
+- Align all release manifests at 0.3.8 and mobile native build numbers at 10.
+
+
 ## 0.3.7 — 2026-09-10
 
 - Reduce notification noise: group hub connection/access failures, distinguish permissions from sign-in, remove redundant setting/export/busy notices and show an empty folder selector in context. Restore actions share Show links, including above mobile sheets.

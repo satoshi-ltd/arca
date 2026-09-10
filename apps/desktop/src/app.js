@@ -760,18 +760,56 @@ async function loadCatalog() {
   })();
   return catalogRequest;
 }
-async function render() {
+let viewLoadSerial = 0;
+const viewReads = new Map(),
+  historyCache = new Map();
+function viewRead(route) {
+  const key = JSON.stringify([status?.id, status?.hubId, status?.hub, route]);
+  if (!viewReads.has(key)) {
+    const pending = api(route).finally(() => {
+      if (viewReads.get(key) === pending) viewReads.delete(key);
+    });
+    viewReads.set(key, pending);
+  }
+  return viewReads.get(key);
+}
+async function render({ refreshStatus = false } = {}) {
+  const loading = ++viewLoadSerial;
   const route = routeURL();
   if (location.hash !== route) window.history.pushState(null, "", route);
   document.body.classList.add("view-loading");
+  $("#content").setAttribute("aria-busy", "true");
   try {
-    await renderView();
+    const page = renderView(true, undefined, refreshStatus);
+    const serial = renderSerial;
+    const request = statusRequestSerial + 1;
+    const state = refreshStatus
+      ? refresh(false).then(() => {
+          if (
+            serial === renderSerial &&
+            request === statusRequestSerial &&
+            ready &&
+            !busy &&
+            !$("#dialog").open
+          )
+            return renderView(false, serial);
+        })
+      : null;
+    const results = await Promise.allSettled([page, state]);
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) throw failed.reason;
   } finally {
-    document.body.classList.remove("view-loading");
+    if (loading === viewLoadSerial && window.document) {
+      document.body.classList.remove("view-loading");
+      $("#content").setAttribute("aria-busy", "false");
+    }
   }
 }
-async function renderView(refreshCatalog = true) {
-  const serial = ++renderSerial;
+async function renderView(
+  refreshCatalog = true,
+  serial = ++renderSerial,
+  trackCatalog = false,
+) {
   const content = $("#content");
   if (view === "folders") {
     if (status.role === "hub" || !catalog.length) catalog = status.volumes;
@@ -833,22 +871,25 @@ async function renderView(refreshCatalog = true) {
       );
     content.innerHTML = html + "</div>";
     if (refreshCatalog && status.role !== "hub") {
+      icons();
       const previous = JSON.stringify([catalog, catalogHubName]);
-      void loadCatalog().then(() => {
-        if (!window.document) return;
+      const update = loadCatalog().then(async () => {
+        if (!window.document || serial !== renderSerial) return;
         if (
-          serial === renderSerial &&
           view === "folders" &&
           !detailId &&
           !$("#dialog").open &&
           previous !== JSON.stringify([catalog, catalogHubName])
         ) {
-          void renderView(false);
+          await renderView(false, serial);
         }
       });
+      // Startup and mutations must finish independently of an offline hub.
+      if (trackCatalog) await update;
     }
   } else if (view === "devices") {
-    await renderMachines(serial);
+    await renderMachines(serial, false);
+    if (refreshCatalog) await renderMachines(serial);
   } else if (view === "history") {
     if (status.role !== "hub" && !status.hub) {
       content.innerHTML =
@@ -885,7 +926,12 @@ async function renderView(refreshCatalog = true) {
       },
     ];
     const historyPanel = document.createElement("div");
-    await renderHistory("", false, historyPanel);
+    await renderHistory(
+      "",
+      false,
+      historyPanel,
+      !historyPath || !refreshCatalog,
+    );
     if (serial !== renderSerial) return;
     content.innerHTML = historyPath
       ? fileHistoryHeader() +
@@ -896,7 +942,13 @@ async function renderView(refreshCatalog = true) {
           `${dropdown("history-share", "Shared folder", [{ id: "", name: "All" }, ...status.volumes.filter((v) => status.role === "hub" || v.selected)], historyVolume, "history-folder")}${segmented("History filters", filters, "history-filters")}`,
         ) +
         `<div class="page"><div id="history-list">${historyPanel.innerHTML}</div></div>`;
-  } else await renderSettings();
+    icons();
+    if (refreshCatalog && !historyPath) await renderHistory();
+    if (serial !== renderSerial) return;
+  } else {
+    await renderSettings(false, serial);
+    if (refreshCatalog) await renderSettings(true, serial);
+  }
   icons();
 }
 function revisionRow(v, compact = false) {
@@ -1107,15 +1159,50 @@ async function renderDetail() {
     `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("folder")}</div><div><h1>${escape(v.name)}</h1><p class="path">${escape(v.path || "Catalog only")}</p></div></div><div class="heading-actions">${syncControls(true)}${status.role === "hub" ? button("Rename", "rename-share", v.id, "secondary", "pencil") + (v.selected ? button("Edit .arcaignore…", "edit-ignore", v.id, "secondary", "file-pen-line") : "") : ""}${native && v.path ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}</div></div></div><div class="page"><div class="stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? (v.policyError ? "Resolve the exclusion policy error" : "Waiting for the first scan") : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${maxRev ? `rev ${maxRev}` : "Not yet"}</strong><p>Accepted by the hub</p></div><div class="stat"><span>${backupTitle}</span><strong class="stat-backup">${icon(backupRecord || status.backup?.enabled ? "shield-check" : "shield")}${escape(backupValue)}</strong><p>${backupNote}</p></div></div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p><p>${status.role === "hub" ? "Files stay on this hub’s disk. Other machines choose their own local destinations." : "Choose a location on this machine. Moving verifies the new copy and keeps the original."}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. Files stay on disk and history is retained."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   refreshCopies();
 }
-async function renderHistory(cursor = "", append = false, target = null) {
+async function renderHistory(
+  cursor = "",
+  append = false,
+  target = null,
+  cached = false,
+) {
+  const serial = renderSerial;
+  const key = JSON.stringify([
+    status.id,
+    status.hubId,
+    status.hub,
+    historyVolume,
+    historyPath,
+    historyFilter,
+  ]);
+  async function readHistory(route) {
+    if (cached) return historyCache.get(key);
+    const data = await viewRead(route);
+    if (serial !== renderSerial) return null;
+    if (!cursor && !append) {
+      historyCache.delete(key);
+      historyCache.set(key, data);
+      if (historyCache.size > 20)
+        historyCache.delete(historyCache.keys().next().value);
+    }
+    return data;
+  }
   if (view === "history" && location.hash !== routeURL())
     window.history.pushState(null, "", routeURL());
-  const list = target || $("#history-list");
+  let list = target || $("#history-list");
   if (!list) return;
   if (historyPath) {
-    const data = await api(
+    const data = await readHistory(
       `/v1/history?volume=${encodeURIComponent(historyVolume)}&path=${encodeURIComponent(historyPath)}&limit=50${cursor ? `&before=${cursor}` : ""}`,
     );
+    if (!data) {
+      if (cached) {
+        historyVersions = [];
+        list.innerHTML = '<p class="hint" role="status">Loading revisions…</p>';
+      }
+      return;
+    }
+    if (!target) list = $("#history-list");
+    if (!list) return;
     historyVersions = append
       ? [...historyVersions, ...data.versions]
       : data.versions;
@@ -1133,9 +1220,16 @@ async function renderHistory(cursor = "", append = false, target = null) {
     icons();
     return;
   }
-  const data = await api(
+  const data = await readHistory(
     `/v1/activity?limit=50&filter=${historyFilter}${historyVolume ? `&volume=${encodeURIComponent(historyVolume)}` : ""}${cursor ? `&before=${cursor}` : ""}`,
   );
+  if (!data) {
+    if (cached)
+      list.innerHTML = '<p class="hint" role="status">Loading history…</p>';
+    return;
+  }
+  if (!target) list = $("#history-list");
+  if (!list) return;
   historyRows = append ? [...historyRows, ...data.versions] : data.versions;
   historyNext = data.next;
   const groups = new Map();
@@ -1179,18 +1273,26 @@ const machineRow = (
 ) =>
   `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This machine</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
 
-async function renderMachines(serial = renderSerial) {
+async function renderMachines(serial = renderSerial, fetchData = true) {
   let issue = "";
-  try {
-    discovered = await api("/v1/discovery");
-  } catch (e) {
-    discovered = null;
-    issue = e.message;
-  }
-  try {
-    roster = await api("/v1/machines");
-  } catch {
-    roster = null;
+  if (fetchData) {
+    const [discoveryResult, rosterResult] = await Promise.allSettled([
+      viewRead("/v1/discovery"),
+      viewRead("/v1/machines"),
+    ]);
+    if (view !== "devices" || serial !== renderSerial) return;
+    if (discoveryResult.status === "fulfilled")
+      discovered = discoveryResult.value;
+    else issue = discoveryResult.reason.message;
+    if (rosterResult.status === "fulfilled") roster = rosterResult.value;
+    else issue ||= rosterResult.reason.message;
+    if (issue)
+      notice(issue, true, {
+        id: "view:devices",
+        action: "refresh",
+        actionLabel: "Retry now",
+      });
+    else noticeStore.clear("view:devices");
   }
   if (view !== "devices" || serial !== renderSerial) return;
   updateShell();
@@ -1519,12 +1621,37 @@ function hubConnection() {
   }
   return `<div class="settings-card">${setting(connected ? `Connected to ${escape(hubName())}` : "Not connected", connected ? `<span class="path">${escape(status.hub)}</span>` : "Your local files and saved destinations are kept. Enter a new pairing code to connect.", connected ? (status.role === "replica" ? button("Disconnect…", "disconnect-hub", "", "secondary small-button danger", "unplug") : pill("Backup connection", "id", "shield")) : button(status.disconnectedHub ? "Reconnect…" : "Connect to hub…", "connect", "", "primary", "link"))}</div>`;
 }
-async function renderSettings() {
-  try {
-    network = await api("/v1/network");
-  } catch {
-    network = null;
+async function renderSettings(fetchData = true, serial = renderSerial) {
+  const interaction = statusRequestSerial;
+  if (
+    !fetchData &&
+    $("#content").contains(document.activeElement) &&
+    document.activeElement.matches("input,textarea,select")
+  )
+    return;
+  if (fetchData) {
+    try {
+      const next = await viewRead("/v1/network");
+      if (view !== "settings" || serial !== renderSerial) return;
+      network = next;
+      noticeStore.clear("view:settings");
+    } catch (error) {
+      if (view !== "settings" || serial !== renderSerial) return;
+      notice(error.message, true, {
+        id: "view:settings",
+        action: "refresh",
+        actionLabel: "Retry now",
+      });
+    }
+    if (interaction !== statusRequestSerial || $("#dialog").open) return;
+    // Keep an in-progress edit intact while network information refreshes.
+    if (
+      $("#content").contains(document.activeElement) &&
+      document.activeElement.matches("input,textarea,select")
+    )
+      return;
   }
+  if (view !== "settings" || serial !== renderSerial) return;
   const controls =
     status.role !== "hub" && !status.hub
       ? ""
@@ -1629,7 +1756,7 @@ async function renderSettings() {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.3.7 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.3.8 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   if (status.role === "replica")
     html += section(
@@ -2419,7 +2546,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.3.7",
+          version: "0.3.8",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -2962,13 +3089,22 @@ document.addEventListener("click", (e) => {
   const nav = e.target.closest("[data-view]");
   if (nav) {
     e.preventDefault();
-    action(async () => {
-      view = nav.dataset.view;
-      document.querySelector(".page")?.scrollTo?.(0, 0);
-      detailId = null;
-      historyPath = null;
-      if (ready) await refresh();
-      if (status) updateShell();
+    if (busy || !ready || $("#dialog").open) return;
+    view = nav.dataset.view;
+    detailId = null;
+    historyPath = null;
+    updateShell();
+    const loading = viewLoadSerial + 1;
+    void render({ refreshStatus: true }).catch((error) => {
+      if (!window.document || loading !== viewLoadSerial) return;
+      if (!native && error.status === 401)
+        void showLogin("Your session has ended. Enter a new web access code.");
+      else
+        notice(error.message, true, {
+          id: "view:" + view,
+          action: "refresh",
+          actionLabel: "Retry now",
+        });
     });
     return;
   }
@@ -3013,6 +3149,11 @@ document.addEventListener("change", (e) => {
     });
 });
 async function showLogin(message = "") {
+  viewLoadSerial++;
+  historyCache.clear();
+  viewReads.clear();
+  document.body.classList.remove("view-loading");
+  $("#content").setAttribute("aria-busy", "false");
   ready = false;
   status = null;
   renderSerial++;

@@ -1,3 +1,4 @@
+import { Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React from "react";
 import { ActivityIndicator, Text, View } from "react-native";
@@ -90,46 +91,48 @@ export function FileHistory({
       </View>
       <View style={s.detailGrid}>
         <View style={s.detailMain}>
-          <Text style={s.eyebrow}>FILE REVISIONS</Text>
-          {!!history.versions.length && (
-            <View style={s.group}>
-              {history.versions.map((row, index) => (
-                <View
-                  key={row.rev}
-                  style={[s.settingRow, index > 0 && s.separator]}
-                >
-                  <View style={s.row}>
-                    <Icon
-                      name={row.deleted ? "trash" : "revision"}
-                      size={18}
-                      color={row.deleted ? c.mute : c.accent}
-                    />
-                    <View style={[s.flex, s.stack]}>
-                      <Text style={s.rowTitle}>{date(row.created)}</Text>
-                      <Text style={s.caption}>
-                        {row.deleted ? "Deleted" : bytes(row.size)}
-                        {author ? ` · ${author(row.author)}` : ""}
-                      </Text>
+          <Section>
+            <Text style={s.eyebrow}>FILE REVISIONS</Text>
+            {!!history.versions.length && (
+              <View style={s.group}>
+                {history.versions.map((row, index) => (
+                  <View
+                    key={row.rev}
+                    style={[s.settingRow, index > 0 && s.separator]}
+                  >
+                    <View style={s.row}>
+                      <Icon
+                        name={row.deleted ? "trash" : "revision"}
+                        size={18}
+                        color={row.deleted ? c.mute : c.accent}
+                      />
+                      <View style={[s.flex, s.stack]}>
+                        <Text style={s.rowTitle}>{date(row.created)}</Text>
+                        <Text style={s.caption}>
+                          {row.deleted ? "Deleted" : bytes(row.size)}
+                          {author ? ` · ${author(row.author)}` : ""}
+                        </Text>
+                      </View>
+                      {wide && <Text style={s.mono}>rev {row.rev}</Text>}
+                      {row.rev === target.currentRev ? (
+                        <Badge>Current</Badge>
+                      ) : (
+                        !row.deleted && (
+                          <Button
+                            quiet
+                            label="Restore"
+                            icon="restore"
+                            disabled={locked || !connected}
+                            onPress={() => restore(row)}
+                          />
+                        )
+                      )}
                     </View>
-                    {wide && <Text style={s.mono}>rev {row.rev}</Text>}
-                    {row.rev === target.currentRev ? (
-                      <Badge>Current</Badge>
-                    ) : (
-                      !row.deleted && (
-                        <Button
-                          quiet
-                          label="Restore"
-                          icon="restore"
-                          disabled={locked || !connected}
-                          onPress={() => restore(row)}
-                        />
-                      )
-                    )}
                   </View>
-                </View>
-              ))}
-            </View>
-          )}
+                ))}
+              </View>
+            )}
+          </Section>
           {loading && (
             <ActivityIndicator
               accessibilityLabel="Loading file revisions"
@@ -152,28 +155,30 @@ export function FileHistory({
           </Text>
         </View>
         <View style={s.detailSide}>
-          <Text style={s.eyebrow}>FILE LOCATION</Text>
-          <Card title={volume?.name || "Shared folder"}>
-            <Text selectable style={s.mono}>
-              {target.path}
-            </Text>
-            <View style={s.compactActions}>
-              {openFolder && (
+          <Section>
+            <Text style={s.eyebrow}>FILE LOCATION</Text>
+            <Card title={volume?.name || "Shared folder"}>
+              <Text selectable style={s.mono}>
+                {target.path}
+              </Text>
+              <View style={s.compactActions}>
+                {openFolder && (
+                  <Button
+                    label="View folder"
+                    icon="folders"
+                    onPress={openFolder}
+                  />
+                )}
                 <Button
-                  label="View folder"
-                  icon="folders"
-                  onPress={openFolder}
+                  label="Delete file…"
+                  icon="trash"
+                  danger
+                  disabled={locked || !deleteFile || !!current?.deleted}
+                  onPress={deleteFile}
                 />
-              )}
-              <Button
-                label="Delete file…"
-                icon="trash"
-                danger
-                disabled={locked || !deleteFile || !!current?.deleted}
-                onPress={deleteFile}
-              />
-            </View>
-          </Card>
+              </View>
+            </Card>
+          </Section>
         </View>
       </View>
     </>

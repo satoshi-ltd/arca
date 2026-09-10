@@ -48,7 +48,27 @@
   --text-control: 13px;
   --text-row: 14px;
   --text-title: 20px;
+  --text-title-line: 26px;
   --list-item-gap: 12px;
+  --touch-title-font: 26px;
+  --touch-title-line: 32px;
+  --touch-row-font: 16px;
+  --touch-row-line: 22px;
+  --touch-body-font: 15px;
+  --touch-body-line: 22px;
+  --touch-caption-font: 14px;
+  --touch-caption-line: 20px;
+  --touch-control-font: 15px;
+  --touch-control-line: 20px;
+  --touch-input-font: 16px;
+  --touch-input-line: 24px;
+  --list-row-padding-y: 10px;
+  --list-row-padding-x: 12px;
+  --section-label-gap: 6px;
+  --section-gap: 20px;
+  --header-bottom-gap: 16px;
+
+  --screen-title-logo: 32px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;

@@ -1,3 +1,4 @@
+import { Section } from "./components";
 import { subscribeNotificationResponse } from "./runtime";
 import { NoticeStack, ErrorNotice } from "./Notice";
 import {
@@ -44,6 +45,7 @@ import * as Sharing from "expo-sharing";
 import { palettes, styles } from "./theme";
 import {
   Design,
+  ScreenTitle,
   Breadcrumbs,
   FolderRow,
   Navigation,
@@ -846,7 +848,14 @@ export default function App() {
                       </View>
                     )}
                     {!onboarding && (
-                      <View style={s.row}>
+                      <View
+                        style={[
+                          s.row,
+                          !detail &&
+                            !(folder && view === "Folders") &&
+                            s.screenHeader,
+                        ]}
+                      >
                         <View style={s.flex}>
                           {detail ? (
                             <View style={s.row}>
@@ -868,12 +877,12 @@ export default function App() {
                                 </Text>
                               </View>
                             </View>
-                          ) : (
+                          ) : folder && view === "Folders" ? (
                             <Text accessibilityRole="header" style={s.title}>
-                              {folder && view === "Folders"
-                                ? folder.name
-                                : view}
+                              {folder.name}
                             </Text>
+                          ) : (
+                            <ScreenTitle>{view}</ScreenTitle>
                           )}
                           {folder && screen === "Folders" && (
                             <Text style={s.caption}>
@@ -1162,60 +1171,68 @@ export default function App() {
                           </View>
                           {wide && (
                             <View style={s.detailSide}>
-                              <Text style={s.eyebrow}>LOCAL COPY</Text>
-                              <Card>
-                                <Text style={s.text}>
-                                  {currentFolder?.issue
-                                    ? "Synchronization needs attention. Review the error to continue."
-                                    : currentFolder?.completed
-                                      ? "Files are stored on this device and available offline."
-                                      : "The local copy is incomplete. Keep Arca open to finish syncing."}
-                                </Text>
-                              </Card>
-                              <Text style={s.eyebrow}>COPIES</Text>
-                              <View style={s.group}>
-                                <View style={[s.settingRow, s.row]}>
-                                  <Icon name="server" />
-                                  <Text style={[s.heading, s.flex]}>
-                                    {catalog?.name || "Hub"}
+                              <Section>
+                                <Text style={s.eyebrow}>LOCAL COPY</Text>
+                                <Card>
+                                  <Text style={s.text}>
+                                    {currentFolder?.issue
+                                      ? "Synchronization needs attention. Review the error to continue."
+                                      : currentFolder?.completed
+                                        ? "Files are stored on this device and available offline."
+                                        : "The local copy is incomplete. Keep Arca open to finish syncing."}
                                   </Text>
-                                  <Tag variant="hub">Hub</Tag>
+                                </Card>
+                              </Section>
+                              <Section>
+                                <Text style={s.eyebrow}>COPIES</Text>
+                                <View style={s.group}>
+                                  <View style={[s.settingRow, s.row]}>
+                                    <Icon name="server" />
+                                    <Text style={[s.heading, s.flex]}>
+                                      {catalog?.name || "Hub"}
+                                    </Text>
+                                    <Tag variant="hub">Hub</Tag>
+                                  </View>
+                                  <View
+                                    style={[s.settingRow, s.row, s.separator]}
+                                  >
+                                    <Icon name="phone" />
+                                    <Text style={[s.heading, s.flex]}>
+                                      {name}
+                                    </Text>
+                                    <Tag variant="self">This machine</Tag>
+                                  </View>
+                                  {(machines || [])
+                                    .filter(
+                                      (m) =>
+                                        !m.isHub &&
+                                        m.credentialId !== connection?.id &&
+                                        m.folderIds?.includes(folder.id),
+                                    )
+                                    .map((m) => (
+                                      <View
+                                        key={m.machineId}
+                                        style={[
+                                          s.settingRow,
+                                          s.row,
+                                          s.separator,
+                                        ]}
+                                      >
+                                        <Icon
+                                          name={
+                                            /android|ios/.test(m.platform)
+                                              ? "phone"
+                                              : "monitor"
+                                          }
+                                        />
+                                        <Text style={[s.heading, s.flex]}>
+                                          {m.name}
+                                        </Text>
+                                        <Tag>Replica</Tag>
+                                      </View>
+                                    ))}
                                 </View>
-                                <View
-                                  style={[s.settingRow, s.row, s.separator]}
-                                >
-                                  <Icon name="phone" />
-                                  <Text style={[s.heading, s.flex]}>
-                                    {name}
-                                  </Text>
-                                  <Tag variant="self">This machine</Tag>
-                                </View>
-                                {(machines || [])
-                                  .filter(
-                                    (m) =>
-                                      !m.isHub &&
-                                      m.credentialId !== connection?.id &&
-                                      m.folderIds?.includes(folder.id),
-                                  )
-                                  .map((m) => (
-                                    <View
-                                      key={m.machineId}
-                                      style={[s.settingRow, s.row, s.separator]}
-                                    >
-                                      <Icon
-                                        name={
-                                          /android|ios/.test(m.platform)
-                                            ? "phone"
-                                            : "monitor"
-                                        }
-                                      />
-                                      <Text style={[s.heading, s.flex]}>
-                                        {m.name}
-                                      </Text>
-                                      <Tag>Replica</Tag>
-                                    </View>
-                                  ))}
-                              </View>
+                              </Section>
                               <Card title="Stop syncing on this device">
                                 <Text style={s.text}>
                                   Removes this device’s local copy. Hub files
@@ -1235,50 +1252,58 @@ export default function App() {
                       ) : (
                         <>
                           {!!locals.length && (
-                            <Text style={s.eyebrow}>
-                              SELECTED ON THIS DEVICE
-                            </Text>
+                            <Section>
+                              <Text style={s.eyebrow}>
+                                SELECTED ON THIS DEVICE
+                              </Text>
+                              <View style={s.folderList}>
+                                {locals.map((f) => (
+                                  <FolderRow
+                                    key={f.id}
+                                    name={f.name}
+                                    description={`${f.files} files · ${bytes(f.bytes)} local`}
+                                    status={
+                                      status.paused
+                                        ? "Paused"
+                                        : f.issue
+                                          ? "Needs attention"
+                                          : status.busy
+                                            ? "Syncing"
+                                            : f.completed
+                                              ? "Up to date"
+                                              : "Incomplete"
+                                    }
+                                    onPress={() => run(() => openFolder(f))}
+                                  />
+                                ))}
+                              </View>
+                            </Section>
                           )}
-                          <View style={s.folderList}>
-                            {locals.map((f) => (
-                              <FolderRow
-                                key={f.id}
-                                name={f.name}
-                                description={`${f.files} files · ${bytes(f.bytes)} local`}
-                                status={
-                                  status.paused
-                                    ? "Paused"
-                                    : f.issue
-                                      ? "Needs attention"
-                                      : status.busy
-                                        ? "Syncing"
-                                        : f.completed
-                                          ? "Up to date"
-                                          : "Incomplete"
-                                }
-                                onPress={() => run(() => openFolder(f))}
-                              />
-                            ))}
-                          </View>
                           {volumes.some(
                             (v) => !locals.some((f) => f.id === v.id),
                           ) && (
-                            <Text style={s.eyebrow}>ON HUB · NOT SELECTED</Text>
+                            <Section>
+                              <Text style={s.eyebrow}>
+                                ON HUB · NOT SELECTED
+                              </Text>
+                              <View style={s.folderList}>
+                                {volumes
+                                  .filter(
+                                    (v) => !locals.some((f) => f.id === v.id),
+                                  )
+                                  .map((v) => (
+                                    <FolderRow
+                                      key={v.id}
+                                      name={v.name}
+                                      available
+                                      description={`${v.files} files · ${bytes(v.bytes)}`}
+                                      disabled={!connected || locked}
+                                      onPress={() => choose(v)}
+                                    />
+                                  ))}
+                              </View>
+                            </Section>
                           )}
-                          <View style={s.folderList}>
-                            {volumes
-                              .filter((v) => !locals.some((f) => f.id === v.id))
-                              .map((v) => (
-                                <FolderRow
-                                  key={v.id}
-                                  name={v.name}
-                                  available
-                                  description={`${v.files} files · ${bytes(v.bytes)}`}
-                                  disabled={!connected || locked}
-                                  onPress={() => choose(v)}
-                                />
-                              ))}
-                          </View>
                           {!locals.length && !volumes.length && (
                             <Card title="No folders yet">
                               <Text style={s.text}>
@@ -1420,18 +1445,18 @@ export default function App() {
                   )}
                   {screen === "Machines" && (
                     <>
-                      {connection && (
-                        <Text style={s.eyebrow}>HUB CONNECTION</Text>
-                      )}
                       {connection ? (
-                        <HubConnection
-                          connection={connection}
-                          name={catalog?.name}
-                          machine={machines?.find((m) => m.isHub)}
-                          busy={locked}
-                          disconnect={disconnect}
-                          retry={() => run(() => client.refresh())}
-                        />
+                        <Section>
+                          <Text style={s.eyebrow}>HUB CONNECTION</Text>
+                          <HubConnection
+                            connection={connection}
+                            name={catalog?.name}
+                            machine={machines?.find((m) => m.isHub)}
+                            busy={locked}
+                            disconnect={disconnect}
+                            retry={() => run(() => client.refresh())}
+                          />
+                        </Section>
                       ) : (
                         <>
                           <View style={s.center}>
@@ -1510,53 +1535,57 @@ export default function App() {
                       )}
                       {connection && (
                         <>
-                          <Text style={s.eyebrow}>MACHINES</Text>
-                          <View style={s.folderList}>
-                            <MachineRow
-                              name={name}
-                              self
-                              role="Replica"
-                              totals={`${locals.filter((f) => f.selected).length} folders · ${bytes(locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0))} local`}
-                              description={`${Platform.OS === "ios" ? "iOS" : "Android"}${machines?.find((m) => m.credentialId === connection.id)?.lastAddress ? ` · ${machines.find((m) => m.credentialId === connection.id).lastAddress}` : ""}`}
-                              state={
-                                status.paused
-                                  ? "Paused"
-                                  : status.error ||
-                                      locals.some((f) => f.selected && f.issue)
-                                    ? "Needs attention"
-                                    : status.busy
-                                      ? "Syncing"
-                                      : locals.some(
-                                            (f) => f.selected && !f.completed,
-                                          )
-                                        ? "Incomplete"
-                                        : status.last
-                                          ? "Up to date"
-                                          : "Not yet synced"
-                              }
-                            />
-                            {machines ? (
-                              machines
-                                .filter(
-                                  (m) =>
-                                    !m.isHub &&
-                                    m.credentialId !== connection.id,
-                                )
-                                .map((m) => (
-                                  <MachineRow
-                                    key={m.credentialId}
-                                    name={m.name}
-                                    description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[m.platform] || m.platform || "Platform not reported"}${m.lastAddress ? ` · ${m.lastAddress}` : ""}`}
-                                    role={m.role || "Replica"}
-                                    state={m.revoked ? "Revoked" : "Linked"}
-                                  />
-                                ))
-                            ) : (
-                              <Text style={s.caption}>
-                                Machine list unavailable
-                              </Text>
-                            )}
-                          </View>
+                          <Section>
+                            <Text style={s.eyebrow}>MACHINES</Text>
+                            <View style={s.folderList}>
+                              <MachineRow
+                                name={name}
+                                self
+                                role="Replica"
+                                totals={`${locals.filter((f) => f.selected).length} folders · ${bytes(locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0))} local`}
+                                description={`${Platform.OS === "ios" ? "iOS" : "Android"}${machines?.find((m) => m.credentialId === connection.id)?.lastAddress ? ` · ${machines.find((m) => m.credentialId === connection.id).lastAddress}` : ""}`}
+                                state={
+                                  status.paused
+                                    ? "Paused"
+                                    : status.error ||
+                                        locals.some(
+                                          (f) => f.selected && f.issue,
+                                        )
+                                      ? "Needs attention"
+                                      : status.busy
+                                        ? "Syncing"
+                                        : locals.some(
+                                              (f) => f.selected && !f.completed,
+                                            )
+                                          ? "Incomplete"
+                                          : status.last
+                                            ? "Up to date"
+                                            : "Not yet synced"
+                                }
+                              />
+                              {machines ? (
+                                machines
+                                  .filter(
+                                    (m) =>
+                                      !m.isHub &&
+                                      m.credentialId !== connection.id,
+                                  )
+                                  .map((m) => (
+                                    <MachineRow
+                                      key={m.credentialId}
+                                      name={m.name}
+                                      description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[m.platform] || m.platform || "Platform not reported"}${m.lastAddress ? ` · ${m.lastAddress}` : ""}`}
+                                      role={m.role || "Replica"}
+                                      state={m.revoked ? "Revoked" : "Linked"}
+                                    />
+                                  ))
+                              ) : (
+                                <Text style={s.caption}>
+                                  Machine list unavailable
+                                </Text>
+                              )}
+                            </View>
+                          </Section>
                         </>
                       )}
                     </>
@@ -1610,7 +1639,7 @@ export default function App() {
                               return groups;
                             }, new Map()),
                           ).map(([day, rows]) => (
-                            <View key={day} style={s.section}>
+                            <Section key={day}>
                               <Text style={s.eyebrow}>{day.toUpperCase()}</Text>
                               <View style={s.group}>
                                 {rows.map((row, index) => (
@@ -1695,7 +1724,7 @@ export default function App() {
                                   </Pressable>
                                 ))}
                               </View>
-                            </View>
+                            </Section>
                           ))}
                         </View>
                       )}
@@ -1712,132 +1741,153 @@ export default function App() {
                     <>
                       {connection && (
                         <>
-                          <Text style={s.eyebrow}>HUB CONNECTION</Text>
-                          <HubConnection
-                            connection={connection}
-                            name={catalog?.name}
-                            machine={machines?.find((m) => m.isHub)}
-                            busy={locked}
-                            disconnect={disconnect}
-                            retry={() => run(() => client.refresh())}
-                          />
+                          <Section>
+                            <Text style={s.eyebrow}>HUB CONNECTION</Text>
+                            <HubConnection
+                              connection={connection}
+                              name={catalog?.name}
+                              machine={machines?.find((m) => m.isHub)}
+                              busy={locked}
+                              disconnect={disconnect}
+                              retry={() => run(() => client.refresh())}
+                            />
+                          </Section>
                         </>
                       )}
-                      <Text style={s.eyebrow}>THIS MACHINE</Text>
-                      <Card>
-                        <Field
-                          label="Machine name"
-                          value={deviceName ?? name}
-                          onChangeText={setDeviceName}
-                          maxLength={100}
-                          autoCapitalize="words"
-                          returnKeyType="done"
-                          editable={!busy}
-                          onEndEditing={({ nativeEvent }) => {
-                            const nextName = nativeEvent.text.trim();
-                            if (nextName === name) {
-                              setDeviceName(null);
-                              return;
-                            }
-                            run(async () => {
-                              const reported =
-                                await engine.current.rename(nextName);
-                              setName(nextName);
-                              setDeviceName(null);
-                              if (!reported)
-                                setSuccess(
-                                  "Name saved. The hub will update on the next sync.",
-                                );
-                            });
-                          }}
-                        />
-                      </Card>
-                      <Text style={s.eyebrow}>LOCAL SYNCHRONIZATION</Text>
-                      <SettingsGroup>
+                      <Section>
+                        <Text style={s.eyebrow}>THIS MACHINE</Text>
                         <Card>
-                          <Toggle
-                            label="Pause sync"
-                            description="Files stay as they are"
-                            value={!!status.paused}
-                            disabled={busy}
-                            onChange={(v) =>
+                          <Field
+                            label="Machine name"
+                            value={deviceName ?? name}
+                            onChangeText={setDeviceName}
+                            maxLength={100}
+                            autoCapitalize="words"
+                            returnKeyType="done"
+                            editable={!busy}
+                            onEndEditing={({ nativeEvent }) => {
+                              const nextName = nativeEvent.text.trim();
+                              if (nextName === name) {
+                                setDeviceName(null);
+                                return;
+                              }
                               run(async () => {
-                                await engine.current.pause(v);
-                                if (!v) await engine.current.sync();
-                              })
+                                const reported =
+                                  await engine.current.rename(nextName);
+                                setName(nextName);
+                                setDeviceName(null);
+                                if (!reported)
+                                  setSuccess(
+                                    "Name saved. The hub will update on the next sync.",
+                                  );
+                              });
+                            }}
+                          />
+                        </Card>
+                      </Section>
+                      <Section>
+                        <Text style={s.eyebrow}>LOCAL SYNCHRONIZATION</Text>
+                        <SettingsGroup>
+                          <Card>
+                            <Toggle
+                              label="Pause sync"
+                              description="Files stay as they are"
+                              value={!!status.paused}
+                              disabled={busy}
+                              onChange={(v) =>
+                                run(async () => {
+                                  await engine.current.pause(v);
+                                  if (!v) await engine.current.sync();
+                                })
+                              }
+                            />
+                          </Card>
+                          <Card title="Last completed sync">
+                            <Text style={s.text}>{date(status.last)}</Text>
+                          </Card>
+                        </SettingsGroup>
+                      </Section>
+                      <Section>
+                        <Text style={s.eyebrow}>MOBILE PREFERENCES</Text>
+                        <SettingsGroup>
+                          <Card>
+                            <Toggle
+                              label="Background sync"
+                              description="When the system allows. Open Arca to continue immediately."
+                              value={!!prefs.background}
+                              disabled={busy}
+                              onChange={(v) => run(() => setBackground(v))}
+                            />
+                          </Card>
+                          <Card>
+                            <Toggle
+                              label="System notifications"
+                              description="Alerts about conflicts and synchronization errors"
+                              value={!!prefs.notifications}
+                              disabled={busy}
+                              onChange={(v) => run(() => setNotifications(v))}
+                            />
+                          </Card>
+                        </SettingsGroup>
+                      </Section>
+                      <Section>
+                        <Text style={s.eyebrow}>STORAGE</Text>
+                        <Card title={`${bytes(status.free)} free`}>
+                          <Text style={s.text}>
+                            Selected files are stored persistently on this
+                            device.
+                          </Text>
+                          {Platform.OS === "ios" && (
+                            <Text style={s.caption}>
+                              Find Arca under On My iPhone in the Files app.
+                            </Text>
+                          )}
+                        </Card>
+                      </Section>
+                      <Section>
+                        <Text style={s.eyebrow}>APPEARANCE</Text>
+                        <Card title="Theme">
+                          <SegmentedControl
+                            options={["light", "dark", "system"].map(
+                              (value) => ({
+                                value,
+                                label: value[0].toUpperCase() + value.slice(1),
+                              }),
+                            )}
+                            value={prefs.theme}
+                            onChange={(value) =>
+                              run(() =>
+                                engine.current.store.set("theme", value),
+                              )
                             }
                           />
-                        </Card>
-                        <Card title="Last completed sync">
-                          <Text style={s.text}>{date(status.last)}</Text>
-                        </Card>
-                      </SettingsGroup>
-                      <Text style={s.eyebrow}>MOBILE PREFERENCES</Text>
-                      <SettingsGroup>
-                        <Card>
-                          <Toggle
-                            label="Background sync"
-                            description="When the system allows. Open Arca to continue immediately."
-                            value={!!prefs.background}
-                            disabled={busy}
-                            onChange={(v) => run(() => setBackground(v))}
-                          />
-                        </Card>
-                        <Card>
-                          <Toggle
-                            label="System notifications"
-                            description="Alerts about conflicts and synchronization errors"
-                            value={!!prefs.notifications}
-                            disabled={busy}
-                            onChange={(v) => run(() => setNotifications(v))}
-                          />
-                        </Card>
-                      </SettingsGroup>
-                      <Text style={s.eyebrow}>STORAGE</Text>
-                      <Card title={`${bytes(status.free)} free`}>
-                        <Text style={s.text}>
-                          Selected files are stored persistently on this device.
-                        </Text>
-                        {Platform.OS === "ios" && (
                           <Text style={s.caption}>
-                            Find Arca under On My iPhone in the Files app.
+                            Text size follows system accessibility settings.
                           </Text>
-                        )}
-                      </Card>
-                      <Text style={s.eyebrow}>APPEARANCE</Text>
-                      <Card title="Theme">
-                        <SegmentedControl
-                          options={["light", "dark", "system"].map((value) => ({
-                            value,
-                            label: value[0].toUpperCase() + value.slice(1),
-                          }))}
-                          value={prefs.theme}
-                          onChange={(value) =>
-                            run(() => engine.current.store.set("theme", value))
-                          }
-                        />
-                        <Text style={s.caption}>
-                          Text size follows system accessibility settings.
-                        </Text>
-                      </Card>
+                        </Card>
+                      </Section>
                       <Text style={[s.caption, s.centerText]}>
                         arca {config.expo.version}
                       </Text>
-                      <Text style={[s.eyebrow, s.errorText]}>DANGER ZONE</Text>
-                      <Card title="Destroy this replica" danger>
-                        <Text style={s.text}>
-                          Deletes all local folders and resets Arca on this
-                          device. Hub files and other machines are kept.
+                      <Section>
+                        <Text style={[s.eyebrow, s.errorText]}>
+                          DANGER ZONE
                         </Text>
-                        <Button
-                          label="Destroy replica…"
-                          icon="trash"
-                          primary
-                          danger
-                          busy={locked}
-                          onPress={destroy}
-                        />
-                      </Card>
+                        <Card title="Destroy this replica" danger>
+                          <Text style={s.text}>
+                            Deletes all local folders and resets Arca on this
+                            device. Hub files and other machines are kept.
+                          </Text>
+                          <Button
+                            label="Destroy replica…"
+                            icon="trash"
+                            primary
+                            danger
+                            busy={locked}
+                            onPress={destroy}
+                          />
+                        </Card>
+                      </Section>
                     </>
                   )}
                 </KeyboardScrollView>

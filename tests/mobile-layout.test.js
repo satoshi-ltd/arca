@@ -107,6 +107,28 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
   );
   const pairs = {
     listItemGap: "list-item-gap",
+    workspaceInset: "space-6",
+    desktopTitleFont: "text-title",
+    desktopTitleLine: "text-title-line",
+    touchTitleFont: "touch-title-font",
+    touchTitleLine: "touch-title-line",
+    touchRowFont: "touch-row-font",
+    touchRowLine: "touch-row-line",
+    touchBodyFont: "touch-body-font",
+    touchBodyLine: "touch-body-line",
+    touchCaptionFont: "touch-caption-font",
+    touchCaptionLine: "touch-caption-line",
+    touchControlFont: "touch-control-font",
+    touchControlLine: "touch-control-line",
+    touchInputFont: "touch-input-font",
+    touchInputLine: "touch-input-line",
+    listRowPaddingY: "list-row-padding-y",
+    listRowPaddingX: "list-row-padding-x",
+    sectionLabelGap: "section-label-gap",
+    sectionGap: "section-gap",
+    headerBottomGap: "header-bottom-gap",
+
+    screenTitleLogo: "screen-title-logo",
     touchControlHeight: "touch-control-height",
     touchHeight: "touch-target-min",
     detailSideWidth: "detail-side-width",
@@ -189,6 +211,21 @@ test("mobile single-line fields reserve stable geometry and grow only for access
   for (const wide of [false, true])
     for (const scale of [1, 2, 3]) {
       const s = context.makeStyles(palettes.light, wide, false, scale);
+      if (wide) {
+        assert.equal(s.navigation.paddingTop, s.viewHeader.padding);
+        assert.equal(s.brand.minHeight, s.screenHeader.minHeight);
+        assert.equal(s.title.fontSize, geometry.desktopTitleFont);
+      }
+      assert.equal(s.section.gap, geometry.sectionLabelGap);
+      assert.equal(s.content.gap, geometry.sectionGap);
+      assert.equal(s.buttonLabel.fontSize, geometry.touchControlFont);
+      assert.equal(s.caption.fontSize, geometry.touchCaptionFont);
+      assert.equal(s.rowTitle.fontSize, geometry.touchRowFont);
+      assert.equal(
+        s.folderRow.minHeight,
+        s.button.minHeight + 2 * s.folderRow.paddingVertical + 2,
+      );
+      assert.equal(s.viewHeader.paddingBottom, geometry.headerBottomGap);
       assert.equal(s.input.height, s.input.minHeight);
       assert.equal(s.input.height, s.inputShell.height);
       assert.equal(s.inputEmbedded.height + 2, s.inputShell.height);
@@ -196,5 +233,8 @@ test("mobile single-line fields reserve stable geometry and grow only for access
       assert.equal(s.input.includeFontPadding, false);
       assert.equal(s.input.paddingVertical, 0);
       assert.equal(s.button.minHeight, geometry.touchControlHeight);
+      assert.ok(s.screenHeader.minHeight >= s.button.minHeight);
+      if (scale === 1)
+        assert.equal(s.screenHeader.minHeight, s.button.minHeight);
     }
 });
