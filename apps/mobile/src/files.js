@@ -15,6 +15,12 @@ export const files = {
     if (root.exists) root.delete();
     await this.clearIncoming();
   },
+  galleryStage: (scope, volume) =>
+    new Directory(root, id(scope), "gallery-stage", id(volume)).uri,
+  async clearGalleryStage(scope, volume) {
+    const directory = new Directory(this.galleryStage(scope, volume));
+    if (directory.exists) directory.delete();
+  },
   incoming: (key) => new File(Paths.cache, "arca-incoming", id(key)).uri,
   async clearIncoming() {
     const directory = new Directory(Paths.cache, "arca-incoming");
@@ -107,13 +113,13 @@ export const files = {
       h.close();
     }
   },
-  async *walk(uri, prefix = "") {
+  async *walk(uri, prefix = "", includePrivate = false) {
     for (const entry of new Directory(uri).list()) {
-      if (entry.name.startsWith(".arca-")) continue;
+      if (!includePrivate && entry.name.startsWith(".arca-")) continue;
       const path = prefix + entry.name;
       if (entry instanceof Directory) {
         yield { path, uri: entry.uri, size: 0, directory: true };
-        yield* this.walk(entry.uri, path + "/");
+        yield* this.walk(entry.uri, path + "/", includePrivate);
       } else
         yield {
           path,

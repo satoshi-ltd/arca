@@ -658,6 +658,9 @@ test("destroy replica requires confirmation, removes local data and hub registra
   const v = r.engine.store.volumes()[0];
   fs.writeFileSync(path.join(v.path, "unsynced.txt"), "local only");
   fs.writeFileSync(path.join(f.volume.path, "hub.txt"), "keep");
+  const previews = path.join(r.engine.store.home, "previews");
+  fs.mkdirSync(previews, { recursive: true });
+  fs.writeFileSync(path.join(previews, "cached.jpg"), "private derivative");
   const oldToken = r.engine.config.adminToken;
   const oldId = r.engine.config.id;
   await assert.rejects(r.api("/v1/destroy-replica", {}), /Confirm/);
@@ -668,6 +671,7 @@ test("destroy replica requires confirmation, removes local data and hub registra
   assert.ok(fs.existsSync(v.path));
   await r.api("/v1/destroy-replica", { confirmed: true });
   assert.equal(fs.existsSync(v.path), false);
+  assert.equal(fs.existsSync(previews), false);
   assert.equal(
     fs.readFileSync(path.join(f.volume.path, "hub.txt"), "utf8"),
     "keep",

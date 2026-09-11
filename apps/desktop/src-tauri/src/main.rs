@@ -182,6 +182,19 @@ async fn open_folder(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn open_maps(latitude: f64, longitude: f64) -> Result<(), String> {
+    if !latitude.is_finite() || !longitude.is_finite() || latitude.abs() > 90.0 || longitude.abs() > 180.0 {
+        return Err("Invalid coordinates".into());
+    }
+    let url = format!("https://maps.google.com/?q={},{}", latitude, longitude);
+    #[cfg(target_os = "macos")] let mut command = Command::new("open");
+    #[cfg(target_os = "linux")] let mut command = Command::new("xdg-open");
+    #[cfg(target_os = "windows")] let mut command = { let mut c = Command::new("rundll32"); c.arg("url.dll,FileProtocolHandler"); c };
+    command.arg(url).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn open_file(volume: String, path: String, reveal: Option<bool>) -> Result<(), String> {
     let status=request("/v1/status","GET",None).await?;
     let root=status["volumes"].as_array().and_then(|vs|vs.iter().find(|v|v["id"].as_str()==Some(&volume))).and_then(|v|v["path"].as_str()).ok_or("Unknown local folder")?;
@@ -196,6 +209,28 @@ async fn open_file(volume: String, path: String, reveal: Option<bool>) -> Result
         #[cfg(not(target_os="macos"))] return Err("Reveal in Finder is only available on macOS".into());
     }
     command.arg(file).spawn().map_err(|e|e.to_string())?;Ok(())
+}
+#[tauri::command]
+async fn save_file(volume: String, path: String) -> Result<bool, String> {
+    let status = request("/v1/status", "GET", None).await?;
+    let root = status["volumes"].as_array()
+        .and_then(|vs| vs.iter().find(|v| v["id"].as_str() == Some(&volume)))
+        .and_then(|v| v["path"].as_str()).ok_or("Select this folder before downloading")?;
+    let root = fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let source = fs::canonicalize(root.join(path)).map_err(|e| e.to_string())?;
+    if !source.starts_with(&root) || !source.is_file() {
+        return Err("File is outside the selected folder".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let name = source.file_name().ok_or("Invalid file name")?.to_string_lossy();
+        let destination = rfd::FileDialog::new().set_title("Download photo").set_file_name(name.as_ref()).save_file();
+        let Some(destination) = destination else { return Ok(false); };
+        if fs::canonicalize(&destination).ok().as_ref() == Some(&source) {
+            return Err("Choose a different destination from the original file".into());
+        }
+        fs::copy(&source, destination).map_err(|e| e.to_string())?;
+        Ok(true)
+    }).await.map_err(|e| e.to_string())?
 }
 fn preferences() -> Value {
     fs::read(home().join("desktop.json")).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or(json!({}))
@@ -313,6 +348,8 @@ fn main() {
             start_daemon,
             open_folder,
             open_file,
+            open_maps,
+            save_file,
             desktop_preferences,
             set_launch_at_login,
             choose_folder,

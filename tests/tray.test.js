@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { JSDOM } from "jsdom";
 
-test("disconnected tray uses a static warning for the machine and saved folders", async () => {
+test("disconnected tray keeps the Arca header and explicit static folder warnings", async () => {
   const dom = new JSDOM('<div id="tray-content"></div>', {
     runScripts: "outside-only",
     url: "http://tauri.localhost",
@@ -43,7 +43,16 @@ test("disconnected tray uses a static warning for the machine and saved folders"
       w.document.querySelector(".tray-heading strong").textContent,
       "Disconnected",
     );
-    assert.ok(w.document.querySelector('.tray-heading [data-lucide="unlink"]'));
+    const logo = w.document.querySelector(".tray-heading .tray-brand-icon");
+    assert.equal(logo.getAttribute("src"), "assets/arca-icon.svg");
+    assert.equal(logo.getAttribute("alt"), "Arca");
+    assert.ok(w.document.querySelector(".tray-heading.tray-tone-conflict"));
+    assert.ok(
+      w.document.querySelector('[data-folder="saved"] [data-lucide="folder"]'),
+    );
+    assert.ok(
+      w.document.querySelector('[data-folder="saved"].tray-tone-disconnected'),
+    );
     assert.equal(
       w.document.querySelector('[data-folder="saved"] small').textContent,
       "Disconnected",

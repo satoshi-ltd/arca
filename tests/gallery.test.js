@@ -1,0 +1,385 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import sharp from "sharp";
+import { init, digest } from "../packages/daemon/storage.js";
+import { start } from "../packages/daemon/server.js";
+import { Gallery } from "../packages/daemon/gallery.js";
+
+async function fixture(t) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-gallery-"));
+  init(home, { port: 0, name: "Gallery hub" });
+  const daemon = await start(home, { timer: false });
+  t.after(async () => {
+    await daemon.engine.gallery?.background;
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const s = daemon.engine.store;
+  const v = s.addVolume("Camera");
+  async function api(route, body, token = daemon.engine.config.adminToken) {
+    const response = await fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Arca-Directories": "1",
+        "X-Arca-Path-Transitions": "1",
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const value = await response.json();
+    if (!response.ok)
+      throw Object.assign(new Error(value.error), { status: response.status });
+    return value;
+  }
+  async function photo(name, captured, color = "red") {
+    const buffer = await sharp({
+      create: { width: 1000, height: 500, channels: 3, background: color },
+    })
+      .jpeg()
+      .toBuffer();
+    const hash = digest(buffer);
+    fs.writeFileSync(s.blob(hash), buffer);
+    await api("/v1/propose", {
+      volume: v.id,
+      path: name,
+      hash,
+      size: buffer.length,
+      ...(captured ? { captured } : {}),
+    });
+    return { hash, buffer };
+  }
+  const route = "/v1/gallery?volume=" + v.id;
+  const preview = (name, hash) =>
+    "/v1/gallery/preview?" +
+    new URLSearchParams({ volume: v.id, path: name, hash });
+  return { home, daemon, s, v, api, photo, route, preview };
+}
+
+test("accepted photos prepare persistent bounded thumbnails and preserve originals", async (t) => {
+  const f = await fixture(t);
+  const { hash, buffer } = await f.photo("one.jpg", "2025-01-02T03:04:05.000Z");
+  await f.daemon.engine.gallery.background;
+  assert.ok(fs.existsSync(path.join(f.home, "previews", hash + "-thumb.jpg")));
+  assert.equal(digest(fs.readFileSync(f.s.blob(hash))), digest(buffer));
+  const thumbnail = await f.api(f.preview("one.jpg", hash));
+  const meta = await sharp(
+    Buffer.from(thumbnail.data.split(",")[1], "base64"),
+  ).metadata();
+  assert.equal(meta.width, 360);
+  assert.equal(meta.height, 180);
+  f.daemon.engine.gallery = new Gallery(f.s);
+  assert.deepEqual(await f.api(f.preview("one.jpg", hash)), thumbnail);
+  await assert.rejects(
+    f.api(f.preview("one.jpg", hash), undefined, "invalid"),
+    { status: 401 },
+  );
+  await assert.rejects(f.api(f.preview("other.jpg", hash)), { status: 404 });
+});
+
+test("gallery is explicit, chronological, scoped and respects exclusions even for cached previews", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  assert.equal((await f.api("/v1/catalog")).volumes[0].gallery, true);
+  assert.equal(f.daemon.engine.status().volumes[0].gallery, true);
+  const older = await f.photo("older.jpg", "2020-03-04T12:00:00.000Z");
+  await f.photo("newer.jpg", "2026-04-05T12:00:00.000Z", "blue");
+  await f.photo("unknown.jpg", null, "green");
+  const data = await f.api(f.route);
+  assert.deepEqual(
+    data.items.map((row) => row.path),
+    ["unknown.jpg", "newer.jpg", "older.jpg"],
+  );
+  assert.equal(data.items[0].captured, null);
+  assert.equal(data.items[0].dateSource, "date added");
+  const rest = await f.api(
+    f.route + "&after=" + encodeURIComponent(data.items[0].cursor),
+  );
+  assert.deepEqual(
+    rest.items.map((row) => row.path),
+    ["newer.jpg", "older.jpg"],
+  );
+  await f.daemon.engine.gallery.background;
+  fs.writeFileSync(path.join(f.v.path, ".arcaignore"), "older.jpg\n");
+  assert.equal(
+    (await f.api(f.route)).items.some((row) => row.path === "older.jpg"),
+    false,
+  );
+  await assert.rejects(f.api(f.preview("older.jpg", older.hash)), {
+    status: 404,
+  });
+  await assert.rejects(f.api("/v1/gallery?volume=missing"), { status: 404 });
+});
+
+test("old photos use EXIF capture date and unsupported media keep a usable listing", async (t) => {
+  const f = await fixture(t);
+  const image = await sharp({
+    create: { width: 20, height: 30, channels: 3, background: "red" },
+  })
+    .withExif({ IFD2: { DateTimeOriginal: "2018:07:09 10:11:12" } })
+    .jpeg()
+    .toBuffer();
+  fs.writeFileSync(path.join(f.v.path, "old.jpg"), image);
+  fs.writeFileSync(
+    path.join(f.v.path, "broken.heic"),
+    "unsupported test image",
+  );
+  fs.writeFileSync(path.join(f.v.path, "clip.mov"), "video");
+  fs.writeFileSync(path.join(f.v.path, "notes.txt"), "not an image");
+  await f.daemon.engine.cycle();
+  const data = await f.api(f.route);
+  assert.equal(data.items.length, 3);
+  assert.equal(
+    data.items.find((row) => row.path === "old.jpg").captured,
+    "2018-07-09T10:11:12",
+  );
+  assert.equal(data.items.find((row) => row.path === "clip.mov").kind, "video");
+  const broken = data.items.find((row) => row.path === "broken.heic");
+  assert.deepEqual(await f.api(f.preview(broken.path, broken.hash)), {
+    unavailable: true,
+  });
+});
+
+test("replicas inherit the gallery marker and proxy previews only for selected folders", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  const { hash } = await f.photo("photo.jpg", "2026-01-01T00:00:00.000Z");
+  const home = path.join(f.home, "replica");
+  init(home, { port: 0, name: "Viewer", role: "replica" });
+  const replica = await start(home, { timer: false });
+  const call = async (route, body) => {
+    const response = await fetch(`http://127.0.0.1:${replica.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        Authorization: `Bearer ${replica.engine.config.adminToken}`,
+        "Content-Type": "application/json",
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = await response.json();
+    if (!response.ok)
+      throw Object.assign(new Error(data.error), { status: response.status });
+    return data;
+  };
+  try {
+    const invite = await f.api("/v1/devices", {
+      name: "Viewer",
+      role: "replica",
+    });
+    await call("/v1/connect", {
+      url: `http://127.0.0.1:${f.daemon.port}`,
+      token: invite.token,
+    });
+    await call("/v1/select", { id: f.v.id });
+    await replica.engine.cycle();
+    assert.equal(replica.engine.status().volumes[0].gallery, true);
+    assert.equal((await call(f.route)).items[0].path, "photo.jpg");
+    assert.match(
+      (await call(f.preview("photo.jpg", hash))).data,
+      /^data:image\/jpeg;base64,/,
+    );
+    replica.engine.store.db
+      .prepare("UPDATE volumes SET selected=0 WHERE id=?")
+      .run(f.v.id);
+    await assert.rejects(call(f.route), { status: 403 });
+    await assert.rejects(call(f.preview("photo.jpg", hash)), { status: 403 });
+  } finally {
+    await replica.close();
+  }
+});
+
+test("gallery pages remain bounded and traverse all same-date paths without duplicates", async (t) => {
+  const f = await fixture(t);
+  await f.photo("source.jpg", "2026-01-01T00:00:00.000Z");
+  const source = f.s.current(f.v.id, "source.jpg");
+  for (let i = 0; i < 130; i++)
+    f.s.setFile({ ...source, path: `photo-${i}.jpg` });
+  const names = [];
+  let after = "";
+  do {
+    const data = await f.api(f.route + "&after=" + encodeURIComponent(after));
+    assert.ok(data.items.length <= 60);
+    names.push(...data.items.map((row) => row.path));
+    after = data.next;
+  } while (after);
+  assert.equal(names.length, 131);
+  assert.equal(new Set(names).size, 131);
+});
+
+test("filename and album dates preserve precision, and timeline seeks unloaded months", async (t) => {
+  const f = await fixture(t);
+  await f.photo("Screenshot 2022-03-04 image.jpg", null);
+  await f.photo("Phone-abcd/2021/06/photo.jpg", null, "blue");
+  const data = await f.api(f.route);
+  assert.equal(data.items[0].date, "2022-03-04");
+  assert.equal(data.items[1].date, "2021-06");
+  assert.deepEqual(
+    data.timeline.map((row) => row.month),
+    ["2022-03", "2021-06"],
+  );
+  const jump = await f.api(f.route + "&month=2021-06");
+  assert.equal(jump.items[0].date, "2021-06");
+  await assert.rejects(f.api(f.route + "&month=2021-99"), { status: 400 });
+});
+
+test("folder retention requires hub admin, confirms changes and persists its policy", async (t) => {
+  const f = await fixture(t);
+  const file = path.join(f.v.path, "version.txt");
+  for (const content of ["first", "second"]) {
+    fs.writeFileSync(file, content);
+    f.s.scanHub();
+  }
+  const invite = await f.api("/v1/devices", {
+    name: "Replica",
+    role: "replica",
+  });
+  await assert.rejects(
+    f.api("/v1/folder-retention", { id: f.v.id, mode: "off" }, invite.token),
+    (error) => error.status === 403,
+  );
+  const preview = await f.api("/v1/folder-retention", {
+    id: f.v.id,
+    mode: "off",
+  });
+  assert.equal(preview.remove, 1);
+  await assert.rejects(
+    f.api("/v1/folder-retention", {
+      id: f.v.id,
+      mode: "off",
+      apply: true,
+      confirmation: "stale",
+    }),
+    (error) => error.status === 409,
+  );
+  assert.equal(f.s.history(f.v.id, "version.txt").length, 2);
+  await f.api("/v1/folder-retention", {
+    id: f.v.id,
+    mode: "off",
+    apply: true,
+    confirmation: preview.confirmation,
+  });
+  assert.equal(f.s.history(f.v.id, "version.txt").length, 1);
+  assert.equal((await f.api("/v1/status")).folderRetention[f.v.id], "off");
+  assert.equal(fs.readFileSync(file, "utf8"), "second");
+});
+
+test("gallery original download authenticates and rejects stale or deleted photos", async (t) => {
+  const f = await fixture(t);
+  const { hash, buffer } = await f.photo(
+    "original.jpg",
+    "2026-08-15T12:00:00.000Z",
+  );
+  const url =
+    `http://127.0.0.1:${f.daemon.port}/v1/gallery/download?` +
+    new URLSearchParams({ volume: f.v.id, path: "original.jpg", hash });
+  const headers = {
+    Authorization: `Bearer ${f.daemon.engine.config.adminToken}`,
+  };
+  assert.notEqual((await fetch(url)).status, 200);
+  const response = await fetch(url, { headers });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-disposition"), /attachment/);
+  assert.equal(
+    digest(Buffer.from(await response.arrayBuffer())),
+    digest(buffer),
+  );
+  assert.equal(
+    (await fetch(url.replace(hash, "0".repeat(64)), { headers })).status,
+    404,
+  );
+  await f.api("/v1/delete-file", {
+    volume: f.v.id,
+    path: "original.jpg",
+    rev: f.s.current(f.v.id, "original.jpg").rev,
+  });
+  assert.equal((await fetch(url, { headers })).status, 404);
+});
+
+test("photo info reads original EXIF and rejects stale or hidden files", async (t) => {
+  const f = await fixture(t);
+  const buffer = await sharp({
+    create: { width: 800, height: 600, channels: 3, background: "blue" },
+  })
+    .withExif({
+      IFD0: { Make: "Test camera", Model: "Model One", Orientation: "6" },
+      IFD2: {
+        DateTimeOriginal: "2024:06:15 12:34:56",
+        OffsetTimeOriginal: "+07:00",
+        LensModel: "Prime 35",
+        FNumber: "28/10",
+        ExposureTime: "1/125",
+        ISOSpeedRatings: "200",
+        FocalLength: "35/1",
+      },
+      IFD3: {
+        GPSLatitudeRef: "N",
+        GPSLatitude: "13/1 45/1 0/1",
+        GPSLongitudeRef: "E",
+        GPSLongitude: "100/1 30/1 0/1",
+      },
+    })
+    .jpeg()
+    .toBuffer();
+  const hash = digest(buffer);
+  fs.writeFileSync(f.s.blob(hash), buffer);
+  await f.api("/v1/propose", {
+    volume: f.v.id,
+    path: "exif.jpg",
+    hash,
+    size: buffer.length,
+  });
+  const route =
+    "/v1/gallery/info?" +
+    new URLSearchParams({ volume: f.v.id, path: "exif.jpg", hash });
+  const info = await f.api(route);
+  assert.equal(info.make, "Test camera");
+  assert.equal(info.model, "Model One");
+  assert.equal(info.lens, "Prime 35");
+  assert.equal(info.aperture, 2.8);
+  assert.equal(info.exposure, 1 / 125);
+  assert.equal(info.iso, 200);
+  assert.equal(info.focalLength, 35);
+  assert.equal(info.captured, "2024-06-15T12:34:56");
+  assert.equal(info.offset, "+07:00");
+  assert.deepEqual(info.location, { latitude: 13.75, longitude: 100.5 });
+  assert.equal(info.width * info.height, 480000);
+  await assert.rejects(f.api(route, undefined, "invalid"), { status: 401 });
+  await assert.rejects(f.api(route.replace(hash, "a".repeat(64))), {
+    status: 404,
+  });
+  const plain = await f.photo("plain.jpg");
+  const plainInfo = await f.api(
+    "/v1/gallery/info?" +
+      new URLSearchParams({
+        volume: f.v.id,
+        path: "plain.jpg",
+        hash: plain.hash,
+      }),
+  );
+  assert.equal(plainInfo.width, 1000);
+  assert.equal(plainInfo.height, 500);
+  assert.equal(plainInfo.format, "JPEG");
+  assert.equal(plainInfo.hasHistory, false);
+  assert.ok(plainInfo.accepted.date);
+  await f.api("/v1/propose", {
+    volume: f.v.id,
+    path: "plain.jpg",
+    hash,
+    size: buffer.length,
+    base: f.s.current(f.v.id, "plain.jpg").rev,
+  });
+  const revised = await f.api(
+    "/v1/gallery/info?" +
+      new URLSearchParams({ volume: f.v.id, path: "plain.jpg", hash }),
+  );
+  assert.equal(revised.hasHistory, true);
+  await f.api("/v1/delete-file", {
+    volume: f.v.id,
+    path: "exif.jpg",
+    rev: f.s.current(f.v.id, "exif.jpg").rev,
+  });
+  await assert.rejects(f.api(route), { status: 404 });
+});

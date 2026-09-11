@@ -1,3 +1,4 @@
+import { Gallery } from "./gallery.js";
 import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
 import { inspectSetupRoot } from "./setup.js";
 import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
@@ -10,7 +11,12 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { moveFolder, retentionPlan, applyRetention } from "./maintenance.js";
+import {
+  moveFolder,
+  retentionPlan,
+  applyRetention,
+  folderRetentionOptions,
+} from "./maintenance.js";
 import { snapshotPage } from "./snapshots.js";
 import { Web } from "./web.js";
 import { Engine } from "./engine.js";
@@ -369,10 +375,76 @@ export async function start(home, options = {}) {
           412,
         );
 
+      if (req.method === "GET" && route === "/v1/gallery/download") {
+        requireAdmin();
+        const volume = url.searchParams.get("volume");
+        const name = url.searchParams.get("path");
+        const hash = url.searchParams.get("hash");
+        const v = s.volume(volume);
+        if (config.role !== "hub" && !v.selected)
+          fail("Select this folder first", 403);
+        const row = s.current(volume, name);
+        if (
+          !row ||
+          row.deleted ||
+          row.directory ||
+          row.hash !== hash ||
+          s.visibleRules(volume)(name, false)
+        )
+          fail("This photo is no longer available", 404);
+        const file = config.role === "hub" ? s.blob(hash) : s.filePath(v, name);
+        if (!fs.existsSync(file) || hashFile(file) !== hash)
+          fail("File changed. Sync before downloading.", 409);
+        res.writeHead(200, {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": fs.statSync(file).size,
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(name)).replace(/'/g, "%27")}`,
+          "Cache-Control": "private, no-store",
+        });
+        fs.createReadStream(file)
+          .on("error", () => res.destroy())
+          .pipe(res);
+        return;
+      }
+      if (
+        route === "/v1/gallery" ||
+        route === "/v1/gallery/preview" ||
+        route === "/v1/gallery/info"
+      ) {
+        if (req.method !== "GET") fail("Method not allowed", 405);
+        const volume = url.searchParams.get("volume");
+        s.volume(volume);
+        if (config.role !== "hub") {
+          requireAdmin();
+          if (!s.volume(volume).selected) fail("Select this folder first", 403);
+          if (config.hub)
+            return send(200, await engine.json(route + url.search));
+        }
+        if (req.method !== "GET") fail("Method not allowed", 405);
+        engine.gallery ||= new Gallery(s);
+        return send(
+          200,
+          route.endsWith("/info")
+            ? await engine.gallery.info(
+                volume,
+                url.searchParams.get("path"),
+                url.searchParams.get("hash"),
+              )
+            : route.endsWith("/preview")
+              ? await engine.gallery.preview(
+                  volume,
+                  url.searchParams.get("path"),
+                  url.searchParams.get("hash"),
+                  url.searchParams.get("size") === "large",
+                )
+              : await engine.gallery.page(volume, url.searchParams),
+        );
+      }
       if (req.method === "GET" && route === "/v1/catalog") {
         requireHub();
         return send(200, {
           protocol: 1,
+          gallery: true,
           changes: true,
           conflictResolution: true,
           blobRanges: true,
@@ -384,6 +456,10 @@ export async function start(home, options = {}) {
           volumes: s.volumes().map((v) => ({
             id: v.id,
             name: v.name,
+            historyRetention: config.folderRetention?.[v.id] || "1m",
+            gallery: !!s.db
+              .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
+              .get(v.id),
             conflicts: s.unresolvedConflicts(v.id),
             conflictRevision: s.conflictRevision(v.id),
             ...s.visibleTotals(v.id),
@@ -401,6 +477,9 @@ export async function start(home, options = {}) {
                   return {
                     id: v.id,
                     name: v.name,
+                    gallery: !!s.db
+                      .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
+                      .get(v.id),
                     ...s.visibleTotals(v.id),
                   };
                 }),
@@ -754,11 +833,45 @@ export async function start(home, options = {}) {
             );
           return send(200, { ok: true });
         }
+        if (route === "/v1/gallery/link") {
+          requireHub();
+          await authorizedWork(() => {
+            engine.gallery ||= new Gallery(s);
+            engine.gallery.mark(b.volume);
+          });
+          return send(200, { ok: true });
+        }
         if (route === "/v1/propose") {
           requireHub();
           return send(
             200,
-            await authorizedWork(() => engine.propose(b, device)),
+            await authorizedWork(async () => {
+              if (
+                b.captured !== undefined &&
+                (typeof b.captured !== "string" ||
+                  !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+                    b.captured,
+                  ) ||
+                  !Number.isFinite(Date.parse(b.captured)))
+              )
+                fail("Invalid capture date");
+              const result = await engine.propose(b, device);
+              if (b.hash && b.captured)
+                s.db
+                  .prepare(
+                    "INSERT INTO gallery_metadata(hash,captured) VALUES(?,?) ON CONFLICT(hash) DO UPDATE SET captured=coalesce(gallery_metadata.captured,excluded.captured)",
+                  )
+                  .run(b.hash, b.captured);
+              if (b.hash) {
+                engine.gallery ||= new Gallery(s);
+                engine.gallery.schedule(
+                  b.volume,
+                  result.conflictPath || b.path,
+                  b.hash,
+                );
+              }
+              return result;
+            }),
           );
         }
         if (route === "/v1/conflict-choice") {
@@ -878,6 +991,35 @@ export async function start(home, options = {}) {
             200,
             await authorizedWork(() => moveFolder(engine, b.id, b.path)),
           );
+        if (route === "/v1/folder-retention") {
+          requireAdmin();
+          requireHub();
+          return send(
+            200,
+            await authorizedWork(() => {
+              const options = folderRetentionOptions(b.id, b.mode);
+              const plan = retentionPlan(s, options);
+              const confirmation = digest(
+                JSON.stringify({ id: b.id, mode: b.mode, plan }),
+              );
+              if (!b.apply)
+                return {
+                  remove: plan.remove.length,
+                  protected: plan.protected,
+                  confirmation,
+                };
+              if (b.confirmation !== confirmation)
+                fail("History changed. Review the setting again.", 409);
+              const result = applyRetention(s, options);
+              config.folderRetention = {
+                ...config.folderRetention,
+                [b.id]: b.mode,
+              };
+              s.saveConfig();
+              return result;
+            }),
+          );
+        }
         if (route === "/v1/retention") {
           requireHub();
           return send(
@@ -1303,6 +1445,7 @@ export async function start(home, options = {}) {
                 catalog: catalog.volumes.map((v) => ({
                   id: v.id,
                   name: v.name,
+                  historyRetention: v.historyRetention ?? "1m",
                 })),
               };
               delete next.disconnectedHub;
@@ -1341,6 +1484,7 @@ export async function start(home, options = {}) {
             config.catalog = catalog.volumes.map((v) => ({
               id: v.id,
               name: v.name,
+              historyRetention: v.historyRetention ?? "1m",
             }));
             for (const v of s.volumes().filter((v) => v.selected))
               engine.work.mark(v.id);

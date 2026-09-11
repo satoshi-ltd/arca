@@ -1,4 +1,4 @@
-import { validPath } from "./replica.js";
+import { validPath } from "./validation.js";
 
 export function incomingName(payload, index) {
   const name = (payload.originalName || `shared-file-${index + 1}`).normalize(

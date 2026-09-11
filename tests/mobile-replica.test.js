@@ -955,3 +955,685 @@ test("mobile onboarding downloads only explicitly chosen folders and preflights 
     "first download",
   );
 });
+
+async function galleryFixture(
+  t,
+  assets = [
+    { id: "photo-1", filename: "IMG_1234.HEIC", creationTime: 1750000000000 },
+  ],
+) {
+  const f = await fixture(t);
+  const { replica: r, files, store } = f;
+  files.galleryStage = (s, v) =>
+    path.join(f.root, "mobile", s, "gallery-stage", v);
+  files.clearGalleryStage = async (s, v) =>
+    fs.rmSync(files.galleryStage(s, v), { recursive: true, force: true });
+  const data = new Map(
+    assets.map((a) => [a.id, Buffer.from(`original ${a.id}`)]),
+  );
+  const exports = [];
+  const media = {
+    permission: async () => ({ granted: true, accessPrivileges: "all" }),
+    albums: async () => [
+      { id: "camera", title: "Camera", assetCount: assets.length },
+    ],
+    page: async (source) => {
+      const after = Number(source.after || 0);
+      return {
+        assets: assets.slice(after, after + 100),
+        hasNextPage: after + 100 < assets.length,
+        endCursor: String(after + 100),
+      };
+    },
+    export: async (id, destination) => {
+      exports.push(id);
+      if (!data.has(id)) throw new Error("Photo no longer accessible");
+      fs.mkdirSync(destination, { recursive: true });
+      const uri = path.join(destination, "original");
+      fs.writeFileSync(uri, data.get(id));
+      return [
+        {
+          key: "original",
+          name: assets.find((a) => a.id === id).filename,
+          uri,
+        },
+      ];
+    },
+  };
+  r.gallery.media = media;
+  await r.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const enable = () =>
+    r.gallery.configure(
+      f.volume.id,
+      { albumId: "camera", albumName: "Camera", videos: true },
+      true,
+    );
+  const uploaded = async () =>
+    (await store.galleryAsset(r.scope, f.volume.id, assets[0].id))
+      ?.resources?.[0];
+  return { ...f, assets, data, media, exports, enable, uploaded };
+}
+
+test("gallery source uploads originals without working copies, ignores phone/remote deletions, disables and returns to a normal replica", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume, store, files } = f;
+  await f.enable();
+  assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), false);
+  await sync(f);
+  const item = await f.uploaded();
+  assert.deepEqual(
+    fs.readFileSync(path.join(volume.path, item.path)),
+    f.data.get("photo-1"),
+  );
+  assert.equal(fs.existsSync(files.galleryStage(r.scope, volume.id)), false);
+  assert.equal((await store.rows(r.scope, volume.id)).length, 0);
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).accepted, 1);
+  await assert.rejects(
+    r.importFile(volume.id, "test.jpg", "unused"),
+    /Gallery sources/,
+  );
+  await assert.rejects(
+    r.select(f.client.state().catalog.volumes[0]),
+    /Gallery source settings/,
+  );
+  f.data.delete("photo-1");
+  await sync(f);
+  assert.ok(fs.existsSync(path.join(volume.path, item.path)));
+  fs.rmSync(path.join(volume.path, item.path));
+  await f.daemon.engine.cycle();
+  f.data.set("photo-1", Buffer.from("edited after acceptance"));
+  await sync(f);
+  assert.equal(fs.existsSync(path.join(volume.path, item.path)), false);
+  assert.equal(f.exports.length, 1);
+  await r.gallery.setEnabled(volume.id, false);
+  f.assets.push({ id: "photo-2", filename: "next.jpg" });
+  f.data.set("photo-2", Buffer.from("new"));
+  await sync(f);
+  assert.equal(await store.galleryAsset(r.scope, volume.id, "photo-2"), null);
+  await r.gallery.setEnabled(volume.id, true);
+  await sync(f);
+  const second = await store.galleryAsset(r.scope, volume.id, "photo-2");
+  assert.equal(second.state, "accepted");
+  fs.writeFileSync(
+    path.join(volume.path, "from-desktop.txt"),
+    "remote content",
+  );
+  await f.daemon.engine.cycle();
+  await sync(f);
+  assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), false);
+  await r.gallery.useLocalCopy(volume.id, true);
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(files.work(r.scope, volume.id, "from-desktop.txt"), "utf8"),
+    "remote content",
+  );
+  await f.enable();
+  await sync(f);
+  assert.equal(
+    f.exports.length,
+    2,
+    "ledger survives a round trip through local-copy mode",
+  );
+});
+
+test("gallery conversion preserves untracked/excluded content and uploads local edits before removing a verified copy", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume, files } = f;
+  fs.writeFileSync(files.work(r.scope, volume.id, "note.txt"), "unsynced edit");
+  fs.writeFileSync(files.work(r.scope, volume.id, ".DS_Store"), "excluded");
+  await assert.rejects(f.enable(), /Keep or export.*DS_Store/);
+  assert.ok(fs.existsSync(files.work(r.scope, volume.id, ".DS_Store")));
+  assert.equal(await f.store.gallery(r.scope, volume.id), null);
+  fs.rmSync(files.work(r.scope, volume.id, ".DS_Store"));
+  await f.enable();
+  assert.equal(
+    fs.readFileSync(path.join(volume.path, "note.txt"), "utf8"),
+    "unsynced edit",
+  );
+  assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), false);
+});
+
+test("gallery conversion journal recovers removal failure without publishing deletions", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume, files, store } = f;
+  fs.writeFileSync(files.work(r.scope, volume.id, "keep.txt"), "keep");
+  const remove = files.removeFolder;
+  files.removeFolder = async () => {
+    throw new Error("disk busy");
+  };
+  await assert.rejects(f.enable(), /disk busy/);
+  assert.equal((await store.gallery(r.scope, volume.id)).mode, "converting");
+  files.removeFolder = remove;
+  await r.load();
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(path.join(volume.path, "keep.txt"), "utf8"),
+    "keep",
+  );
+  assert.equal((await store.gallery(r.scope, volume.id)).mode, "source");
+});
+
+test("gallery retries lost acceptance after remote deletion without reacquiring the deleted original", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume, client, store } = f;
+  await f.enable();
+  const api = client.api;
+  let lost = false;
+  client.api = async (route, body) => {
+    const result = await api(route, body);
+    if (route === "/v1/propose" && body.hash && !lost) {
+      lost = true;
+      throw new Error("reply lost");
+    }
+    return result;
+  };
+  await r.sync();
+  assert.match(r.error, /reply lost/);
+  const resource = await f.uploaded();
+  assert.ok(fs.existsSync(path.join(volume.path, resource.path)));
+  fs.rmSync(path.join(volume.path, resource.path));
+  await f.daemon.engine.cycle();
+  f.data.clear();
+  await r.sync(true);
+  assert.equal(r.error, null);
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).accepted, 1);
+  assert.equal(f.exports.length, 1);
+  assert.equal(fs.existsSync(path.join(volume.path, resource.path)), false);
+});
+
+test("gallery pauses, resumes a partial upload, cleans staging and does not block healthy folders", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, client, files, volume } = f;
+  f.data.set("photo-1", crypto.randomBytes(CHUNK * 2 + 23));
+  await f.enable();
+  const raw = client.raw;
+  let first = true;
+  client.raw = async (route, options) => {
+    const response = await raw(route, options);
+    if (route.startsWith("/v1/uploads/") && first) {
+      first = false;
+      r.stop();
+    }
+    return response;
+  };
+  await r.sync();
+  assert.equal(r.error, null);
+  assert.equal(fs.existsSync(files.galleryStage(r.scope, volume.id)), false);
+  await sync(f);
+  const resource = await f.uploaded();
+  assert.deepEqual(
+    fs.readFileSync(path.join(volume.path, resource.path)),
+    f.data.get("photo-1"),
+  );
+  await r.pause(true);
+  const count = f.exports.length;
+  await r.sync();
+  assert.equal(f.exports.length, count);
+  await r.pause(false);
+  const healthy = f.daemon.engine.store.addVolume("Healthy");
+  fs.writeFileSync(path.join(healthy.path, "safe.txt"), "safe");
+  await f.daemon.engine.cycle();
+  await client.refresh();
+  await r.select(
+    client.state().catalog.volumes.find((v) => v.id === healthy.id),
+  );
+  f.media.permission = async () => ({
+    granted: false,
+    accessPrivileges: "none",
+  });
+  await r.sync();
+  assert.match(r.error, /photo library access/);
+  assert.equal(
+    fs.readFileSync(files.work(r.scope, healthy.id, "safe.txt"), "utf8"),
+    "safe",
+  );
+});
+
+test("gallery excludes ignored paths, retries them after policy removal and handles unavailable albums", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume } = f;
+  await f.enable();
+  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "*.HEIC\n");
+  await f.daemon.engine.cycle();
+  await r.sync();
+  assert.match(r.error, /Excluded by/);
+  assert.equal((await f.store.gallerySummary(r.scope, volume.id)).accepted, 0);
+  fs.rmSync(path.join(volume.path, ".arcaignore"));
+  await f.daemon.engine.cycle();
+  await r.sync(true);
+  assert.equal(r.error, null);
+  f.media.albums = async () => [];
+  await r.sync();
+  assert.match(r.error, /album is unavailable/);
+  assert.ok(fs.existsSync(path.join(volume.path, (await f.uploaded()).path)));
+});
+
+test("gallery pagination remains bounded, counts only accepted items and survives restart", async (t) => {
+  const assets = Array.from({ length: 1103 }, (_, i) => ({
+    id: `asset-${i}`,
+    filename: "IMG_0001.jpg",
+    creationTime: 1750000000000,
+  }));
+  const f = await galleryFixture(t, assets),
+    { replica: r, volume, store } = f;
+  await f.enable();
+  await sync(f);
+  let summary = await store.gallerySummary(r.scope, volume.id);
+  assert.equal(summary.discovered, 400);
+  assert.equal(summary.accepted, 3);
+  await r.load();
+  await sync(f);
+  await sync(f);
+  summary = await store.gallerySummary(r.scope, volume.id);
+  assert.equal(summary.discovered, 1103);
+  assert.equal(summary.accepted, 9);
+  assert.equal(new Set(f.exports).size, 9);
+  assert.equal((await store.gallery(r.scope, volume.id)).after, null);
+});
+
+test("gallery preserves all resources of a Live Photo and resumes without reuploading accepted resources", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume } = f;
+  f.media.export = async (id, destination) => {
+    fs.mkdirSync(destination, { recursive: true });
+    return ["HEIC", "MOV"].map((ext, i) => {
+      const uri = path.join(destination, ext);
+      fs.writeFileSync(uri, `${ext} original`);
+      return { key: `resource-${i}`, name: `IMG_1234.${ext}`, uri };
+    });
+  };
+  await f.enable();
+  await sync(f);
+  const asset = await f.store.galleryAsset(r.scope, volume.id, "photo-1");
+  assert.equal(asset.resources.length, 2);
+  assert.ok(asset.resources.every((v) => v.accepted));
+  for (const resource of asset.resources)
+    assert.ok(fs.existsSync(path.join(volume.path, resource.path)));
+  await r.unselect(volume.id);
+  assert.equal(await f.store.gallery(r.scope, volume.id), null);
+  assert.equal(await f.store.galleryAsset(r.scope, volume.id, "photo-1"), null);
+  for (const resource of asset.resources)
+    assert.ok(fs.existsSync(path.join(volume.path, resource.path)));
+});
+
+test("gallery recovers a lost conflict receipt after the hub deletes that conflict copy", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume, client } = f;
+  await f.enable();
+  const api = client.api;
+  let conflictPath;
+  client.api = async (route, body) => {
+    if (route === "/v1/propose" && body.hash && !conflictPath) {
+      fs.mkdirSync(path.dirname(path.join(volume.path, body.path)), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(volume.path, body.path),
+        "concurrent desktop file",
+      );
+      await f.daemon.engine.cycle();
+      const result = await api(route, body);
+      conflictPath = result.conflictPath;
+      assert.ok(conflictPath);
+      throw new Error("conflict reply lost");
+    }
+    return api(route, body);
+  };
+  await r.sync();
+  assert.match(r.error, /reply lost/);
+  fs.rmSync(path.join(volume.path, conflictPath));
+  await f.daemon.engine.cycle();
+  f.data.clear();
+  await r.sync(true);
+  assert.equal(r.error, null);
+  assert.equal((await f.store.gallerySummary(r.scope, volume.id)).accepted, 1);
+  assert.equal(fs.existsSync(path.join(volume.path, conflictPath)), false);
+  assert.equal(f.exports.length, 1);
+});
+
+test("gallery handles limited access, low storage, changed originals and destroyed state without touching Photos", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, files, store, volume } = f;
+  f.media.permission = async () => ({
+    granted: true,
+    accessPrivileges: "limited",
+  });
+  await f.enable();
+  files.free = async () => 0;
+  await r.sync();
+  assert.match(r.error, /storage/);
+  assert.equal(f.exports.length, 0);
+  files.free = async () => 1e12;
+  const raw = f.client.raw;
+  f.client.raw = async (route, options) => {
+    if (route.startsWith("/v1/uploads/")) throw new Error("network lost");
+    return raw(route, options);
+  };
+  await r.sync(true);
+  assert.match(r.error, /network lost/);
+  f.client.raw = raw;
+  f.data.set("photo-1", Buffer.from("new original"));
+  await r.sync(true);
+  assert.match(r.error, /Original changed/);
+  assert.equal((await store.gallery(r.scope, volume.id)).limited, true);
+  assert.equal(fs.existsSync(files.galleryStage(r.scope, volume.id)), false);
+  await r.destroy(true);
+  assert.equal((await store.gallerySummary(null, volume.id)).discovered, 0);
+  assert.equal(f.data.get("photo-1").toString(), "new original");
+});
+
+test("gallery preview reads are bounded, folder-scoped and separate pending from recent receipts", async (t) => {
+  const f = await galleryFixture(t),
+    { store, replica: r, volume } = f;
+  for (let i = 0; i < 30; i++) {
+    await store.putGalleryAsset(r.scope, volume.id, {
+      id: `done-${i}`,
+      name: `${i}.jpg`,
+      state: "accepted",
+      acceptedAt: i + 1,
+    });
+    await store.putGalleryAsset(r.scope, volume.id, {
+      id: `pending-${i}`,
+      name: `${i}.jpg`,
+      state: i === 29 ? "failed" : "pending",
+    });
+  }
+  await store.putGalleryAsset(r.scope, "another-folder", {
+    id: "foreign",
+    state: "accepted",
+    acceptedAt: 9999,
+  });
+  const recent = await store.galleryPreview(r.scope, volume.id, true, 12);
+  assert.equal(recent.length, 12);
+  assert.equal(recent[0].id, "done-29");
+  assert.ok(
+    recent.every((item) => item.state === "accepted" && item.id !== "foreign"),
+  );
+  const pending = await store.galleryPreview(r.scope, volume.id, false, 6);
+  assert.equal(pending.length, 6);
+  assert.equal(pending[0].id, "pending-29");
+  assert.ok(pending.every((item) => item.state !== "accepted"));
+  assert.equal(
+    (await store.galleryPreview(r.scope, volume.id, true, 10000)).length,
+    24,
+  );
+});
+
+test("manual gallery picks share receipts with automatic album uploads", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  await r.gallery.addPhotos(f.volume.id, [
+    { assetId: "photo-1", fileName: "IMG_1234.HEIC" },
+  ]);
+  const first = await f.uploaded();
+  assert.ok(first.accepted);
+  const exports = f.exports.length;
+  await sync(f);
+  await r.gallery.addPhotos(f.volume.id, [{ assetId: "photo-1" }]);
+  assert.equal(f.exports.length, exports);
+  assert.equal(
+    (await f.store.gallerySummary(r.scope, f.volume.id)).accepted,
+    1,
+  );
+  assert.equal(
+    await f.files.exists(f.files.folder(r.scope, f.volume.id)),
+    false,
+  );
+});
+
+test("picker-only photos upload without asking for library access", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "picked.jpg");
+  fs.writeFileSync(uri, "picked photo");
+  f.media.export = async () => {
+    throw new Error("No library access");
+  };
+  await r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "picked.jpg" }]);
+  await r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "picked.jpg" }]);
+  assert.equal(
+    (await f.store.gallerySummary(r.scope, f.volume.id)).accepted,
+    1,
+  );
+  assert.equal(
+    await f.files.exists(f.files.folder(r.scope, f.volume.id)),
+    false,
+  );
+});
+
+test("picker-only receipt deduplicates identical bytes found later in the album", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "picked.jpg");
+  fs.writeFileSync(uri, f.data.get("photo-1"));
+  await r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "picked.jpg" }]);
+  const before = await f.store.galleryPreview(r.scope, f.volume.id, true);
+  await sync(f);
+  const after = await f.uploaded();
+  assert.equal(after.path, before[0].resources[0].path);
+  assert.ok(after.accepted);
+});
+
+test("returning from a picker cannot start sync during a three-photo import", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  const cycle = r.cycle.bind(r);
+  let cycles = 0;
+  r.cycle = async () => {
+    cycles++;
+    return cycle();
+  };
+  await r.withImportPicker(async () => {
+    // Native picker background/foreground transition, followed by timer ticks.
+    r.stop();
+    await r.sync();
+    for (let i = 0; i < 3; i++) {
+      const uri = path.join(f.root, `picked-${i}.jpg`);
+      fs.writeFileSync(uri, `photo ${i}`);
+      await r.importFile(f.volume.id, `picked-${i}.jpg`, uri);
+      await r.sync();
+    }
+    assert.equal(cycles, 0);
+  });
+  await sync(f);
+  assert.equal(cycles, 1);
+  for (let i = 0; i < 3; i++) {
+    const row = await f.store.current(r.scope, f.volume.id, `picked-${i}.jpg`);
+    assert.ok(row.hash);
+  }
+  assert.equal(r.picking, false);
+});
+
+test("picker cancellation and failure release sync reservation", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await r.withImportPicker(async () => {});
+  assert.equal(r.picking, false);
+  await assert.rejects(
+    r.withImportPicker(async () => {
+      throw new Error("Picker failed");
+    }),
+    /Picker failed/,
+  );
+  assert.equal(r.picking, false);
+  await sync(f);
+  assert.equal(r.error, null);
+});
+
+test("manual gallery batch records every pick and continues after one export fails", async (t) => {
+  const assets = [1, 2, 3].map((i) => ({
+    id: `photo-${i}`,
+    filename: `photo-${i}.jpg`,
+    creationTime: 1750000000000,
+  }));
+  const f = await galleryFixture(t, assets);
+  await f.enable();
+  const originalExport = f.media.export;
+  f.media.export = async (...args) => {
+    if (args[0] === "photo-1") throw new Error("Photo unavailable");
+    return originalExport(...args);
+  };
+  await assert.rejects(
+    f.replica.gallery.addPhotos(
+      f.volume.id,
+      assets.map((a) => ({ assetId: a.id, fileName: a.filename })),
+    ),
+    /Photo unavailable/,
+  );
+  const summary = await f.store.gallerySummary(f.replica.scope, f.volume.id);
+  assert.equal(summary.discovered, 3);
+  assert.equal(summary.accepted, 2);
+  assert.equal(summary.failed, 1);
+  assert.equal(f.replica.busy, false);
+  f.media.export = originalExport;
+  await f.store.retryGallery(f.replica.scope, f.volume.id);
+  await sync(f);
+  assert.equal(
+    (await f.store.gallerySummary(f.replica.scope, f.volume.id)).accepted,
+    3,
+  );
+});
+
+test("changing gallery settings preserves disabled uploads", async (t) => {
+  const f = await galleryFixture(t);
+  await f.enable();
+  await f.replica.gallery.setEnabled(f.volume.id, false);
+  await f.replica.gallery.configure(
+    f.volume.id,
+    { albumId: null, videos: false },
+    true,
+  );
+  assert.equal(
+    (await f.store.gallery(f.replica.scope, f.volume.id)).enabled,
+    false,
+  );
+  await sync(f);
+  assert.equal(f.exports.length, 0);
+});
+
+test("manual gallery summary write failure cannot leave the replica busy", async (t) => {
+  const f = await galleryFixture(t);
+  await f.enable();
+  const original = f.store.setGallery;
+  f.store.setGallery = async () => {
+    throw new Error("Disk full");
+  };
+  await assert.rejects(
+    f.replica.gallery.addPhotos(f.volume.id, [{ assetId: "photo-1" }]),
+    /Disk full/,
+  );
+  assert.equal(f.replica.busy, false);
+  assert.equal(f.replica.importing, false);
+  f.store.setGallery = original;
+});
+
+test("disable uploads interrupts an active gallery cycle without losing its pending item", async (t) => {
+  const f = await galleryFixture(t);
+  await f.enable();
+  let release, entered;
+  const started = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const wait = new Promise((resolve) => {
+    release = resolve;
+  });
+  const original = f.media.export;
+  f.media.export = async (...args) => {
+    entered();
+    await wait;
+    return original(...args);
+  };
+  const active = f.replica.sync();
+  await started;
+  const disable = f.replica.gallery.setEnabled(f.volume.id, false);
+  release();
+  await Promise.all([active, disable]);
+  assert.equal(
+    (await f.store.gallery(f.replica.scope, f.volume.id)).enabled,
+    false,
+  );
+  assert.equal(
+    (await f.store.gallerySummary(f.replica.scope, f.volume.id)).pending,
+    1,
+  );
+  assert.equal(f.replica.busy, false);
+});
+
+test("gallery size counts accepted resources once and excludes pending bytes", async (t) => {
+  const f = await galleryFixture(t);
+  const scope = f.replica.scope,
+    volume = f.volume.id;
+  const resource = {
+    path: "photo.jpg",
+    hash: "a".repeat(64),
+    size: 120,
+    accepted: true,
+  };
+  await f.store.putGalleryAsset(scope, volume, {
+    id: "original",
+    state: "accepted",
+    resources: [resource],
+  });
+  await f.store.putGalleryAsset(scope, volume, {
+    id: "alias",
+    state: "accepted",
+    resources: [resource],
+  });
+  await f.store.putGalleryAsset(scope, volume, {
+    id: "live",
+    state: "uploading",
+    resources: [
+      { ...resource, path: "live.jpg", size: 80 },
+      { ...resource, path: "live.mov", size: 900, accepted: false },
+    ],
+  });
+  const summary = await f.store.gallerySummary(scope, volume);
+  assert.equal(summary.bytes, 200);
+  assert.equal(summary.accepted, 2);
+  assert.equal(summary.pending, 1);
+});
+
+test("gallery edits create revisions at the same Machine path, including reverting an edit", async (t) => {
+  const f = await galleryFixture(t, [
+    {
+      id: "edit-photo",
+      filename: "photo.jpg",
+      creationTime: 1750000000000,
+      modificationTime: 1,
+    },
+  ]);
+  await f.enable();
+  await f.replica.sync({ force: true });
+  const first = await f.uploaded();
+  assert.match(first.path, /^Machine-/);
+  const original = f.data.get("edit-photo");
+  f.data.set("edit-photo", Buffer.from("edited photo"));
+  f.assets[0].modificationTime = 2;
+  await f.replica.sync({ force: true });
+  const edited = await f.uploaded();
+  assert.equal(edited.path, first.path);
+  assert.ok(edited.rev > first.rev);
+  assert.equal(
+    fs.readFileSync(path.join(f.volume.path, first.path), "utf8"),
+    "edited photo",
+  );
+  f.data.set("edit-photo", original);
+  f.assets[0].modificationTime = 3;
+  await f.replica.sync({ force: true });
+  const reverted = await f.uploaded();
+  assert.ok(reverted.rev > edited.rev);
+  const history = await f.client.api(
+    `/v1/history?${new URLSearchParams({ volume: f.volume.id, path: first.path })}`,
+  );
+  assert.equal(history.versions.filter((row) => !row.deleted).length, 3);
+  fs.rmSync(path.join(f.volume.path, first.path));
+  await f.daemon.engine.cycle();
+  f.data.set("edit-photo", Buffer.from("edit after hub deletion"));
+  f.assets[0].modificationTime = 4;
+  await f.replica.sync({ force: true });
+  assert.equal(fs.existsSync(path.join(f.volume.path, first.path)), false);
+});

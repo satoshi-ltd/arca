@@ -53,7 +53,11 @@ export function moveFolder(engine, id, location) {
   return { ...s.volume(id), originalRetained: v.path };
 }
 
-export function retentionPlan(store, { days = 0, versions = 0 } = {}) {
+export function retentionPlan(
+  store,
+  { days = 0, versions = 0, volume = null } = {},
+) {
+  if (volume !== null) store.volume(volume);
   if (
     !Number.isSafeInteger(days) ||
     days < 0 ||
@@ -78,17 +82,21 @@ export function retentionPlan(store, { days = 0, versions = 0 } = {}) {
     )
     .get().n;
   const counts = new Map(),
+    newerDates = new Map(),
     remove = [];
   const cutoff = Date.now() - days * 86400000;
   for (const r of revisions) {
     const key = JSON.stringify([r.volume, r.path]);
     const count = (counts.get(key) || 0) + 1;
     counts.set(key, count);
+    const ageFrom = volume ? newerDates.get(key) : r.created;
+    newerDates.set(key, r.created);
     if (
+      (!volume || r.volume === volume) &&
       (floor === null || r.rev <= floor) &&
       !pinned.has(r.rev) &&
       (days || versions) &&
-      (!days || Date.parse(r.created) < cutoff) &&
+      (!days || Date.parse(ageFrom) < cutoff) &&
       (!versions || count > versions)
     )
       remove.push(r.rev);
@@ -115,7 +123,7 @@ export function retentionPlan(store, { days = 0, versions = 0 } = {}) {
     hasBackup: floor !== null,
   };
 }
-export function applyRetention(store, options) {
+export function applyRetention(store, options, collect = true) {
   const plan = retentionPlan(store, options);
   store.db.exec("BEGIN IMMEDIATE");
   try {
@@ -126,6 +134,14 @@ export function applyRetention(store, options) {
     store.db.exec("ROLLBACK");
     throw e;
   }
+  return {
+    removed: plan.remove.length,
+    retained: plan.retained,
+    objectsRemoved: collect ? collectUnusedObjects(store) : 0,
+  };
+}
+
+function collectUnusedObjects(store) {
   // Content GC is conservative: preserve current, historical, backup and pending hashes.
   const hashes = new Set(
     store.db
@@ -156,12 +172,8 @@ export function applyRetention(store, options) {
       fs.unlinkSync(path.join(store.objects, name));
       objectsRemoved++;
     }
-  store.db.prepare("DELETE FROM scan_cache").run();
-  return {
-    removed: plan.remove.length,
-    retained: plan.retained,
-    objectsRemoved,
-  };
+  if (objectsRemoved) store.db.prepare("DELETE FROM scan_cache").run();
+  return objectsRemoved;
 }
 
 // This runs between sync cycles, never during an active transfer. Incomplete
@@ -181,4 +193,20 @@ export function cleanupTransfers(store, now = Date.now()) {
     }
   }
   return removed;
+}
+
+export function folderRetentionOptions(volume, mode) {
+  if (typeof volume !== "string" || !volume) fail("Folder ID is required");
+  const days = { off: 0, "1d": 1, "1w": 7, "1m": 30, forever: 0 };
+  if (!Object.hasOwn(days, mode)) fail("Invalid history retention");
+  return { volume, days: days[mode], versions: mode === "off" ? 1 : 0 };
+}
+export function applyFolderRetention(store) {
+  for (const volume of store.volumes()) {
+    const mode = store.config.folderRetention?.[volume.id] || "1m";
+    if (mode !== "forever")
+      applyRetention(store, folderRetentionOptions(volume.id, mode), false);
+  }
+  // Orphans still age out after switching every folder to Forever.
+  collectUnusedObjects(store);
 }

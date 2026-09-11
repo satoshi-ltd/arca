@@ -2057,3 +2057,55 @@ test("activity separates revisions, pending conflicts and deletions before pagin
       .versions.length,
   );
 });
+
+test("folder history policy is hub-owned, reaches replicas and survives saved catalog reads", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("history-reader");
+  await replica.sync();
+  assert.equal(
+    replica.engine.status().volumes.find((v) => v.id === volume.id)
+      .historyRetention,
+    "1m",
+  );
+  for (const mode of ["1d", "1w", "forever", "off"]) {
+    const preview = await hub.api("/v1/folder-retention", {
+      id: volume.id,
+      mode,
+    });
+    await hub.api("/v1/folder-retention", {
+      id: volume.id,
+      mode,
+      apply: true,
+      confirmation: preview.confirmation,
+    });
+    await replica.sync();
+    assert.equal(
+      hub.engine.status().volumes.find((v) => v.id === volume.id)
+        .historyRetention,
+      mode,
+    );
+    assert.equal(
+      replica.engine.status().volumes.find((v) => v.id === volume.id)
+        .historyRetention,
+      mode,
+    );
+    assert.equal(
+      replica.engine.config.catalog.find((v) => v.id === volume.id)
+        .historyRetention,
+      mode,
+    );
+    await assert.rejects(
+      replica.api("/v1/folder-retention", { id: volume.id, mode: "forever" }),
+      { status: 409 },
+    );
+  }
+  const saved = new Store(replica.engine.store.home);
+  try {
+    assert.equal(
+      saved.config.catalog.find((v) => v.id === volume.id).historyRetention,
+      "off",
+    );
+  } finally {
+    saved.close();
+  }
+});

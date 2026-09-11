@@ -10,6 +10,8 @@ import {
   moveFolder,
   retentionPlan,
   applyRetention,
+  folderRetentionOptions,
+  applyFolderRetention,
 } from "../packages/daemon/maintenance.js";
 function fixture(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-stability-"));
@@ -278,4 +280,166 @@ test("adopting an existing folder preserves files and never mkdirs that folder",
   } finally {
     fs.mkdirSync = mkdir;
   }
+});
+
+test("folder retention is scoped, preserves shared content, and collects expired objects", (t) => {
+  const { s, v } = fixture(t);
+  const other = s.addVolume("Other");
+  for (const text of ["old", "middle", "latest"]) {
+    fs.writeFileSync(path.join(v.path, "photo.jpg"), text);
+    fs.writeFileSync(path.join(other.path, "photo.jpg"), text);
+    s.scanHub();
+  }
+  const old = s
+    .history(v.id, "photo.jpg")
+    .find((row) => row.hash && row.hash !== s.current(v.id, "photo.jpg").hash);
+  const otherHistory = s.history(other.id, "photo.jpg").length;
+  s.config.folderRetention = { [v.id]: "off" };
+  applyFolderRetention(s);
+  assert.equal(s.history(v.id, "photo.jpg").length, 1);
+  assert.equal(s.history(other.id, "photo.jpg").length, otherHistory);
+  assert.ok(fs.existsSync(s.blob(old.hash)), "another folder retains the blob");
+  s.config.folderRetention[other.id] = "off";
+  const ago = new Date(Date.now() - 2 * 86400000);
+  fs.utimesSync(s.blob(old.hash), ago, ago);
+  applyFolderRetention(s);
+  assert.equal(fs.existsSync(s.blob(old.hash)), false);
+  assert.equal(
+    fs.readFileSync(path.join(v.path, "photo.jpg"), "utf8"),
+    "latest",
+  );
+});
+test("folder retention modes validate and keep Forever unchanged", (t) => {
+  const { s, v } = fixture(t);
+  for (const text of ["first", "second"]) {
+    fs.writeFileSync(path.join(v.path, "a"), text);
+    s.scanHub();
+  }
+  assert.deepEqual(
+    ["off", "1d", "1w", "1m", "forever"].map(
+      (mode) => folderRetentionOptions(v.id, mode).days,
+    ),
+    [0, 1, 7, 30, 0],
+  );
+  assert.throws(() => folderRetentionOptions(v.id, "bad"));
+  assert.equal(
+    retentionPlan(s, folderRetentionOptions(v.id, "forever")).remove.length,
+    0,
+  );
+  assert.equal(
+    retentionPlan(s, folderRetentionOptions(v.id, "1d")).remove.length,
+    0,
+  );
+  s.db
+    .prepare("UPDATE revisions SET created=? WHERE volume=?")
+    .run(new Date(Date.now() - 2 * 86400000).toISOString(), v.id);
+  assert.equal(
+    retentionPlan(s, folderRetentionOptions(v.id, "1d")).remove.length,
+    1,
+  );
+  assert.equal(
+    retentionPlan(s, folderRetentionOptions(v.id, "1w")).remove.length,
+    0,
+  );
+});
+
+test("scheduled folder retention expires superseded revisions and their unused objects", async (t) => {
+  for (const [mode, days] of [
+    ["1d", 1],
+    ["1w", 7],
+    ["1m", 30],
+  ]) {
+    await t.test(mode, async (t) => {
+      const { s, v, engine } = fixture(t);
+      const file = path.join(v.path, "document.txt");
+      for (const content of ["original", "replacement", "current"]) {
+        fs.writeFileSync(file, content);
+        s.scanHub();
+      }
+      const [current, middle, oldest] = s.history(v.id, "document.txt");
+      const now = Date.now();
+      const setDate = (rev, age) =>
+        s.db
+          .prepare("UPDATE revisions SET created=? WHERE rev=?")
+          .run(new Date(now - age * 86400000).toISOString(), rev);
+      setDate(oldest.rev, 100);
+      setDate(middle.rev, days / 2);
+      setDate(current.rev, 0);
+      s.config.folderRetention = { [v.id]: mode };
+      for (const row of [oldest, middle])
+        fs.utimesSync(
+          s.blob(row.hash),
+          new Date(now - 100 * 86400000),
+          new Date(now - 100 * 86400000),
+        );
+      await engine.cycle();
+      assert.equal(
+        s.history(v.id, "document.txt").length,
+        3,
+        "age starts at replacement, not original creation",
+      );
+      setDate(middle.rev, days + 1);
+      setDate(current.rev, days / 2);
+      engine.lastCleanup = Date.now() - 3600001;
+      await engine.cycle();
+      assert.deepEqual(
+        s.history(v.id, "document.txt").map((r) => r.rev),
+        [current.rev, middle.rev],
+      );
+      assert.equal(fs.existsSync(s.blob(oldest.hash)), false);
+      assert.equal(fs.existsSync(s.blob(middle.hash)), true);
+      setDate(current.rev, days + 1);
+      engine.lastCleanup = Date.now() - 3600001;
+      await engine.cycle();
+      assert.equal(s.history(v.id, "document.txt").length, 1);
+      assert.equal(fs.existsSync(s.blob(middle.hash)), false);
+      assert.equal(fs.readFileSync(file, "utf8"), "current");
+      assert.equal(fs.existsSync(s.blob(current.hash)), true);
+    });
+  }
+});
+
+test("orphan cleanup continues under Forever after the object grace period", (t) => {
+  const { s, v } = fixture(t);
+  for (const content of ["old", "new"]) {
+    fs.writeFileSync(path.join(v.path, "file"), content);
+    s.scanHub();
+  }
+  const old = s.history(v.id, "file")[1];
+  s.config.folderRetention = { [v.id]: "off" };
+  applyFolderRetention(s);
+  assert.equal(s.history(v.id, "file").length, 1);
+  assert.equal(
+    fs.existsSync(s.blob(old.hash)),
+    true,
+    "fresh unreferenced objects retain transfer grace",
+  );
+  s.config.folderRetention[v.id] = "forever";
+  const ago = new Date(Date.now() - 2 * 86400000);
+  fs.utimesSync(s.blob(old.hash), ago, ago);
+  applyFolderRetention(s);
+  assert.equal(fs.existsSync(s.blob(old.hash)), false);
+  assert.equal(fs.readFileSync(path.join(v.path, "file"), "utf8"), "new");
+});
+
+test("one-day retention expires deleted file content without resurrecting it", (t) => {
+  const { s, v } = fixture(t);
+  const file = path.join(v.path, "deleted.txt");
+  fs.writeFileSync(file, "photo content");
+  s.scanHub();
+  const original = s.current(v.id, "deleted.txt");
+  fs.unlinkSync(file);
+  s.scanHub();
+  const tombstone = s.current(v.id, "deleted.txt");
+  const ago = new Date(Date.now() - 2 * 86400000);
+  s.db
+    .prepare("UPDATE revisions SET created=? WHERE rev=?")
+    .run(ago.toISOString(), tombstone.rev);
+  fs.utimesSync(s.blob(original.hash), ago, ago);
+  s.config.folderRetention = { [v.id]: "1d" };
+  applyFolderRetention(s);
+  assert.equal(s.history(v.id, "deleted.txt").length, 1);
+  assert.equal(s.current(v.id, "deleted.txt").deleted, 1);
+  assert.equal(fs.existsSync(s.blob(original.hash)), false);
+  assert.equal(fs.existsSync(file), false);
 });

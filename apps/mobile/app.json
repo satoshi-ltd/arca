@@ -2,12 +2,12 @@
   "expo": {
     "name": "arca",
     "slug": "arca",
-    "version": "0.3.8",
+    "version": "0.4.0",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.satoshilimited.arca",
-      "buildNumber": "10",
+      "buildNumber": "11",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.satoshilimited.arca",
-      "versionCode": 10,
+      "versionCode": 11,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
@@ -90,6 +90,15 @@
             "image": "./assets/splash-icon-dark.png",
             "backgroundColor": "#0f1512"
           }
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Arca to copy selected albums to your hub without changing your photos.",
+          "savePhotosPermission": false,
+          "granularPermissions": ["photo", "video"],
+          "isAccessMediaLocationEnabled": true
         }
       ]
     ],

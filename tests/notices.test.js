@@ -78,6 +78,20 @@ test("conditions use per-folder identities and the same human copy for app and s
     '{"token":"[redacted]","password":"[redacted]"}',
   );
 });
+test("Android native connection failures show a grouped outage with collapsed diagnostics", () => {
+  const message = "Call to function 'ArcaNetwork.request' has been rejected. → Caused by: java.net.ConnectException: Failed to connect to /192.168.1.190:47831";
+  const notice = errorNotice(message, { hubName: "Casa" });
+  assert.equal(notice.offline, true);
+  assert.equal(notice.cause, "connection");
+  assert.equal(notice.title, "Hub Casa unreachable");
+  assert.equal(notice.details, message);
+  assert.doesNotMatch(notice.body, /java|ArcaNetwork|192\.168/);
+  const grouped = conditionNotices({ hubName: "Casa", volumes: [
+    { id: "a", issue: message }, { id: "b", issue: message },
+  ] });
+  assert.equal(grouped.length, 1);
+  assert.equal(grouped[0].cause, "connection");
+});
 test("notice geometry and colors are tokenized consistently across renderers", async () => {
   const css = fs.readFileSync(
     new URL("../apps/desktop/src/tokens.css", import.meta.url),

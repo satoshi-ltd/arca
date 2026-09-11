@@ -1,3 +1,6 @@
+import { Busy, Scaffold } from "./components";
+import { GallerySetup, GallerySource } from "./GallerySource";
+import { galleryConfig } from "./gallery.js";
 import { Section } from "./components";
 import { subscribeNotificationResponse } from "./runtime";
 import { NoticeStack, ErrorNotice } from "./Notice";
@@ -27,7 +30,6 @@ import {
   BackHandler,
   Alert,
   useColorScheme,
-  ActivityIndicator,
   Platform,
   StatusBar,
   useWindowDimensions,
@@ -192,6 +194,7 @@ export default function App() {
     setLocals(folders);
     setStatus({
       busy: r.busy,
+      syncingVolume: r.syncingVolume,
       paused: r.paused,
       progress: r.progress,
       error: r.error,
@@ -314,6 +317,21 @@ export default function App() {
     catalog = state.catalog,
     volumes = catalog?.volumes || [];
   const currentFolder = locals.find((f) => f.id === folder?.id);
+  const historyRetention =
+    catalog?.volumes?.find((v) => v.id === folder?.id)?.historyRetention ??
+    "1m";
+  const retentionLabel =
+    {
+      off: "Off",
+      "1d": "On · 1 day",
+      "1w": "On · 1 week",
+      "1m": "On · 30 days",
+      forever: "Forever",
+    }[historyRetention] || "On · 30 days";
+  const sourceConfig = galleryConfig(currentFolder);
+  const source = sourceConfig
+    ? { ...sourceConfig, issue: currentFolder.issue || sourceConfig.issue }
+    : null;
   const onboarding = (!connection && !catalog) || !!prefs.onboarding;
   const onboardingStep = connection
     ? "folders"
@@ -492,51 +510,81 @@ export default function App() {
     await Sharing.shareAsync(uri);
   }
   async function imported(kind) {
-    const result =
-      kind === "photos"
-        ? await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ["images"],
-            allowsMultipleSelection: true,
-            quality: 1,
-          })
-        : await DocumentPicker.getDocumentAsync({
-            multiple: true,
-            copyToCacheDirectory: true,
-          });
-    if (result.canceled) return;
-    for (const asset of result.assets)
-      await engine.current.importFile(
-        folder.id,
-        directory + (asset.name || asset.fileName || `photo-${Date.now()}.jpg`),
-        asset.uri,
-      );
-    await listFiles();
-    if (connected && !status.paused) await engine.current.sync();
+    const replica = engine.current;
+    await replica.withImportPicker(async () => {
+      const result =
+        kind === "photos"
+          ? await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ["images"],
+              allowsMultipleSelection: true,
+              quality: 1,
+            })
+          : await DocumentPicker.getDocumentAsync({
+              multiple: true,
+              copyToCacheDirectory: true,
+            });
+      if (result.canceled) return;
+      if (kind === "photos" && source) {
+        await replica.gallery.addPhotos(folder.id, result.assets);
+      } else {
+        for (const asset of result.assets)
+          await replica.importFile(
+            folder.id,
+            directory +
+              (asset.name || asset.fileName || `photo-${Date.now()}.jpg`),
+            asset.uri,
+          );
+        await listFiles();
+      }
+    });
+    if (connected && !status.paused) await replica.sync();
   }
   function choose(v) {
     setSheet({ kind: "select", volume: v });
   }
+  function configureGallery(options) {
+    const save = () =>
+      run(
+        async () => {
+          await engine.current.gallery.configure(folder.id, options, true);
+          setSheet(null);
+          await listFiles();
+          await engine.current.sync();
+        },
+        { label: source ? "Saving changes…" : "Enabling uploads…" },
+      );
+    if (source) {
+      save();
+      return;
+    }
+    confirm(
+      "Enable photo uploads?",
+      "Replaces this phone’s Arca copy with gallery uploads. Only verified local files are removed. Photos and hub files are kept.",
+      save,
+      "Enable uploads",
+    );
+  }
   function unlink() {
     const target = folder;
+    const gallery = galleryConfig(locals.find((f) => f.id === target.id));
+    const sourceOnly = gallery?.mode === "source";
+    const message = sourceOnly
+      ? "Stops photo uploads and removes the link to this album. Photos on this phone, uploaded files and hub history are kept. Linking again may upload photos again."
+      : "Removes this folder’s Arca copy from this phone. Hub files and history are kept. Unsynced local changes will be lost; use Export folder first to keep them.";
     confirm(
-      "Stop syncing and remove local files?",
-      "This removes this folder’s files from this device and frees up space. Files on the hub and other machines, and shared history, stay unchanged. Unsynced changes will be permanently lost. Use Save a copy first if you need them.",
-      () => {
-        setSheet(null);
+      "Stop syncing?",
+      message,
+      () =>
         run(
           async () => {
             await engine.current.unselect(target.id);
+            setSheet(null);
             setFolder(null);
             setView("Folders");
           },
-          {
-            label: "Removing local files…",
-            success: `${target.name}: local files removed`,
-            errorTitle: "Could not remove local files",
-          },
-        );
-      },
-      "Remove local files",
+          { label: "Stopping sync…" },
+        ),
+      "Stop syncing",
     );
   }
   function destroy() {
@@ -756,12 +804,14 @@ export default function App() {
   if (opening)
     return (
       <SafeAreaProvider>
-        <SafeAreaView style={s.root}>
-          <ActivityIndicator
-            color={c.accent}
-            accessibilityLabel="Opening arca"
-          />
-        </SafeAreaView>
+        <Design.Provider value={{ s, c, wide }}>
+          <SafeAreaView style={s.root}>
+            <View style={s.content}>
+              <Text style={s.heading}>Arca</Text>
+              <Scaffold label="Opening Arca" />
+            </View>
+          </SafeAreaView>
+        </Design.Provider>
       </SafeAreaProvider>
     );
   const historyControls = (
@@ -886,7 +936,9 @@ export default function App() {
                           )}
                           {folder && screen === "Folders" && (
                             <Text style={s.caption}>
-                              {`${entries.filter((e) => !e.directory).length} files · ${bytes(entries.reduce((total, e) => total + e.size, 0))} local${status.paused ? " · Paused" : ""}`}
+                              {source
+                                ? `${source.summary?.accepted || 0} photos · ${source.summary?.bytes == null ? "—" : bytes(source.summary.bytes)} uploaded`
+                                : `${entries.filter((e) => !e.directory).length} files · ${bytes(entries.reduce((total, e) => total + e.size, 0))} local${status.paused ? " · Paused" : ""}`}
                             </Text>
                           )}
                         </View>
@@ -901,7 +953,7 @@ export default function App() {
                         )}
                         {folder && screen === "Folders" && (
                           <View style={s.rowAction}>
-                            {fileView === "files" && (
+                            {!source && fileView === "files" && (
                               <Button
                                 iconOnly
                                 label={
@@ -947,7 +999,7 @@ export default function App() {
                       </View>
                     )}
                     {screen === "History" && !wide && historyControls}
-                    {folder && screen === "Folders" && wide && (
+                    {folder && screen === "Folders" && !source && (
                       <View style={[s.group, s.statsGrid]}>
                         {[
                           [
@@ -972,6 +1024,7 @@ export default function App() {
                               ? date(currentFolder.completed)
                               : "Not yet",
                           ],
+                          ["Revision history", retentionLabel],
                         ].map(([label, value]) => (
                           <View key={label} style={s.statCell}>
                             <Text style={s.caption}>{label}</Text>
@@ -987,7 +1040,7 @@ export default function App() {
                   name={catalog?.name}
                   machine={machines?.find((m) => m.isHub)}
                   catalog={catalog}
-                  locals={locals}
+                  locals={locals.filter((f) => !galleryConfig(f))}
                   onSaved={update}
                 />
                 <KeyboardScrollView
@@ -1034,221 +1087,241 @@ export default function App() {
                           />
                         </Card>
                       )}
+                      {folder && source && (
+                        <Card title="Revision history">
+                          <Text style={s.statValue}>{retentionLabel}</Text>
+                        </Card>
+                      )}
                       {folder ? (
-                        <View style={s.detailGrid}>
-                          <View style={s.detailMain}>
-                            <View style={s.folderToolbar}>
-                              <View style={!wide && s.flex}>
-                                <SegmentedControl
-                                  options={[
-                                    { label: "Files", value: "files" },
-                                    { label: "Recent", value: "recent" },
-                                  ]}
-                                  value={fileView}
-                                  onChange={(value) => {
-                                    setFileView(value);
-                                    setVisibleCount(100);
-                                  }}
-                                />
-                              </View>
-                              {fileView === "recent" && (
-                                <Button
-                                  quiet
-                                  label="All history"
-                                  onPress={() => {
-                                    setHistoryVolume(folder.id);
-                                    setHistoryFilter("revisions");
-                                    setFolder(null);
-                                    setView("History");
-                                  }}
-                                />
-                              )}
-                            </View>
-                            {searchOpen && fileView === "files" && (
-                              <Field
-                                label="Search files"
-                                autoFocus
-                                placeholder="Search this folder"
-                                returnKeyType="search"
-                                value={search}
-                                onChangeText={(value) => {
-                                  setSearch(value);
-                                  setVisibleCount(100);
-                                }}
-                              />
-                            )}
-                            {fileView === "recent" ? (
-                              <FolderRecent
-                                volume={folder.id}
-                                connected={connected}
-                                updated={status.last}
-                                date={date}
-                                open={(row) =>
-                                  run(() =>
-                                    getHistory({
-                                      volume: folder.id,
-                                      path: row.path,
-                                    }),
-                                  )
-                                }
-                              />
-                            ) : (
-                              <>
-                                <View style={s.group}>
-                                  <Breadcrumbs
-                                    name={folder.name}
-                                    directory={directory}
-                                    onChange={(path) => {
-                                      setDirectory(path);
-                                      setSearch("");
+                        source ? (
+                          <GallerySource
+                            source={source}
+                            busy={status.busy}
+                            gallery={engine.current.gallery}
+                            volume={folder.id}
+                            connected={connected}
+                            paused={status.paused}
+                            retry={() => run(() => engine.current.sync(true))}
+                          />
+                        ) : (
+                          <View style={s.detailGrid}>
+                            <View style={s.detailMain}>
+                              <View style={s.folderToolbar}>
+                                <View style={!wide && s.flex}>
+                                  <SegmentedControl
+                                    options={[
+                                      { label: "Files", value: "files" },
+                                      { label: "Recent", value: "recent" },
+                                    ]}
+                                    value={fileView}
+                                    onChange={(value) => {
+                                      setFileView(value);
                                       setVisibleCount(100);
                                     }}
                                   />
-                                  {browseEntries(entries, directory, search)
-                                    .slice(0, visibleCount)
-                                    .map((e, index) => (
-                                      <Pressable
-                                        key={e.path}
-                                        accessibilityRole="button"
-                                        accessibilityLabel={
-                                          e.directory
-                                            ? `Open folder ${e.label}`
-                                            : e.label
-                                        }
-                                        onPress={() => {
-                                          if (e.directory) {
-                                            setDirectory(e.path + "/");
-                                            setVisibleCount(100);
-                                          } else run(() => openFileDetail(e));
-                                        }}
-                                        style={[s.settingRow, s.separator]}
-                                      >
-                                        <View style={s.row}>
-                                          <Icon
-                                            name={
-                                              e.directory ? "folders" : "file"
-                                            }
-                                          />
-                                          <View style={s.flex}>
-                                            <Text style={s.heading}>
-                                              {e.label}
-                                            </Text>
-                                            <Text style={s.caption}>
-                                              {e.directory
-                                                ? `${e.count} ${e.count === 1 ? "file" : "files"} · ${bytes(e.size)}`
-                                                : bytes(e.size)}
-                                            </Text>
-                                          </View>
-                                          <Icon name="chevron" color={c.mute} />
-                                        </View>
-                                      </Pressable>
-                                    ))}
-                                  {!browseEntries(entries, directory, search)
-                                    .length && (
-                                    <View style={s.explorerEmpty}>
-                                      <Icon name="folders" color={c.mute} />
-                                      <Text style={s.text}>
-                                        {search
-                                          ? "No matching files"
-                                          : currentFolder?.completed
-                                            ? "This folder is empty"
-                                            : "No local files yet"}
-                                      </Text>
-                                    </View>
-                                  )}
                                 </View>
-                                {browseEntries(entries, directory, search)
-                                  .length > visibleCount && (
+                                {fileView === "recent" && (
                                   <Button
-                                    label="Show more files"
-                                    onPress={() =>
-                                      setVisibleCount((n) => n + 100)
-                                    }
+                                    quiet
+                                    label="All history"
+                                    onPress={() => {
+                                      setHistoryVolume(folder.id);
+                                      setHistoryFilter("revisions");
+                                      setFolder(null);
+                                      setView("History");
+                                    }}
                                   />
                                 )}
-                              </>
+                              </View>
+                              {searchOpen && fileView === "files" && (
+                                <Field
+                                  label="Search files"
+                                  autoFocus
+                                  placeholder="Search this folder"
+                                  returnKeyType="search"
+                                  value={search}
+                                  onChangeText={(value) => {
+                                    setSearch(value);
+                                    setVisibleCount(100);
+                                  }}
+                                />
+                              )}
+                              {fileView === "recent" ? (
+                                <FolderRecent
+                                  volume={folder.id}
+                                  connected={connected}
+                                  updated={status.last}
+                                  date={date}
+                                  open={(row) =>
+                                    run(() =>
+                                      getHistory({
+                                        volume: folder.id,
+                                        path: row.path,
+                                      }),
+                                    )
+                                  }
+                                />
+                              ) : (
+                                <>
+                                  <View style={s.group}>
+                                    <Breadcrumbs
+                                      name={folder.name}
+                                      directory={directory}
+                                      onChange={(path) => {
+                                        setDirectory(path);
+                                        setSearch("");
+                                        setVisibleCount(100);
+                                      }}
+                                    />
+                                    {browseEntries(entries, directory, search)
+                                      .slice(0, visibleCount)
+                                      .map((e, index) => (
+                                        <Pressable
+                                          key={e.path}
+                                          accessibilityRole="button"
+                                          accessibilityLabel={
+                                            e.directory
+                                              ? `Open folder ${e.label}`
+                                              : e.label
+                                          }
+                                          onPress={() => {
+                                            if (e.directory) {
+                                              setDirectory(e.path + "/");
+                                              setVisibleCount(100);
+                                            } else run(() => openFileDetail(e));
+                                          }}
+                                          style={[s.settingRow, s.separator]}
+                                        >
+                                          <View style={s.row}>
+                                            <Icon
+                                              name={
+                                                e.directory ? "folders" : "file"
+                                              }
+                                            />
+                                            <View style={s.flex}>
+                                              <Text style={s.heading}>
+                                                {e.label}
+                                              </Text>
+                                              <Text style={s.caption}>
+                                                {e.directory
+                                                  ? `${e.count} ${e.count === 1 ? "file" : "files"} · ${bytes(e.size)}`
+                                                  : bytes(e.size)}
+                                              </Text>
+                                            </View>
+                                            <Icon
+                                              name="chevron"
+                                              color={c.mute}
+                                            />
+                                          </View>
+                                        </Pressable>
+                                      ))}
+                                    {!browseEntries(entries, directory, search)
+                                      .length && (
+                                      <View style={s.explorerEmpty}>
+                                        <Icon name="folders" color={c.mute} />
+                                        <Text style={s.text}>
+                                          {search
+                                            ? "No matching files"
+                                            : currentFolder?.completed
+                                              ? "This folder is empty"
+                                              : "No local files yet"}
+                                        </Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                  {browseEntries(entries, directory, search)
+                                    .length > visibleCount && (
+                                    <Button
+                                      label="Show more files"
+                                      onPress={() =>
+                                        setVisibleCount((n) => n + 100)
+                                      }
+                                    />
+                                  )}
+                                </>
+                              )}
+                            </View>
+                            {wide && (
+                              <View style={s.detailSide}>
+                                <Section>
+                                  <Text style={s.eyebrow}>LOCAL COPY</Text>
+                                  <Card>
+                                    <Text style={s.text}>
+                                      {currentFolder?.issue
+                                        ? "Sync needs attention."
+                                        : currentFolder?.completed
+                                          ? "Available offline."
+                                          : "Keep Arca open to finish syncing."}
+                                    </Text>
+                                  </Card>
+                                </Section>
+                                <Section>
+                                  <Text style={s.eyebrow}>COPIES</Text>
+                                  <View style={s.group}>
+                                    <View style={[s.settingRow, s.row]}>
+                                      <Icon name="server" />
+                                      <Text style={[s.heading, s.flex]}>
+                                        {catalog?.name || "Hub"}
+                                      </Text>
+                                      <Tag variant="hub">Hub</Tag>
+                                    </View>
+                                    <View
+                                      style={[s.settingRow, s.row, s.separator]}
+                                    >
+                                      <Icon name="phone" />
+                                      <Text style={[s.heading, s.flex]}>
+                                        {name}
+                                      </Text>
+                                      <Tag variant="self">This machine</Tag>
+                                    </View>
+                                    {(machines || [])
+                                      .filter(
+                                        (m) =>
+                                          !m.isHub &&
+                                          m.credentialId !== connection?.id &&
+                                          m.folderIds?.includes(folder.id),
+                                      )
+                                      .map((m) => (
+                                        <View
+                                          key={m.machineId}
+                                          style={[
+                                            s.settingRow,
+                                            s.row,
+                                            s.separator,
+                                          ]}
+                                        >
+                                          <Icon
+                                            name={
+                                              /android|ios/.test(m.platform)
+                                                ? "phone"
+                                                : "monitor"
+                                            }
+                                          />
+                                          <Text style={[s.heading, s.flex]}>
+                                            {m.name}
+                                          </Text>
+                                          <Tag>Replica</Tag>
+                                        </View>
+                                      ))}
+                                  </View>
+                                </Section>
+                                <Card title="Stop syncing on this device">
+                                  <Text style={s.text}>
+                                    Removes this device’s local copy. Hub files
+                                    and history are kept.
+                                  </Text>
+                                  <Button
+                                    danger
+                                    label="Stop syncing…"
+                                    icon="unlink"
+                                    disabled={busy || !engine.current}
+                                    onPress={unlink}
+                                  />
+                                </Card>
+                              </View>
                             )}
                           </View>
-                          {wide && (
-                            <View style={s.detailSide}>
-                              <Section>
-                                <Text style={s.eyebrow}>LOCAL COPY</Text>
-                                <Card>
-                                  <Text style={s.text}>
-                                    {currentFolder?.issue
-                                      ? "Synchronization needs attention. Review the error to continue."
-                                      : currentFolder?.completed
-                                        ? "Files are stored on this device and available offline."
-                                        : "The local copy is incomplete. Keep Arca open to finish syncing."}
-                                  </Text>
-                                </Card>
-                              </Section>
-                              <Section>
-                                <Text style={s.eyebrow}>COPIES</Text>
-                                <View style={s.group}>
-                                  <View style={[s.settingRow, s.row]}>
-                                    <Icon name="server" />
-                                    <Text style={[s.heading, s.flex]}>
-                                      {catalog?.name || "Hub"}
-                                    </Text>
-                                    <Tag variant="hub">Hub</Tag>
-                                  </View>
-                                  <View
-                                    style={[s.settingRow, s.row, s.separator]}
-                                  >
-                                    <Icon name="phone" />
-                                    <Text style={[s.heading, s.flex]}>
-                                      {name}
-                                    </Text>
-                                    <Tag variant="self">This machine</Tag>
-                                  </View>
-                                  {(machines || [])
-                                    .filter(
-                                      (m) =>
-                                        !m.isHub &&
-                                        m.credentialId !== connection?.id &&
-                                        m.folderIds?.includes(folder.id),
-                                    )
-                                    .map((m) => (
-                                      <View
-                                        key={m.machineId}
-                                        style={[
-                                          s.settingRow,
-                                          s.row,
-                                          s.separator,
-                                        ]}
-                                      >
-                                        <Icon
-                                          name={
-                                            /android|ios/.test(m.platform)
-                                              ? "phone"
-                                              : "monitor"
-                                          }
-                                        />
-                                        <Text style={[s.heading, s.flex]}>
-                                          {m.name}
-                                        </Text>
-                                        <Tag>Replica</Tag>
-                                      </View>
-                                    ))}
-                                </View>
-                              </Section>
-                              <Card title="Stop syncing on this device">
-                                <Text style={s.text}>
-                                  Removes this device’s local copy. Hub files
-                                  and history are kept.
-                                </Text>
-                                <Button
-                                  danger
-                                  label="Stop syncing…"
-                                  icon="unlink"
-                                  disabled={busy || !engine.current}
-                                  onPress={unlink}
-                                />
-                              </Card>
-                            </View>
-                          )}
-                        </View>
+                        )
                       ) : (
                         <>
                           {!!locals.length && (
@@ -1261,17 +1334,42 @@ export default function App() {
                                   <FolderRow
                                     key={f.id}
                                     name={f.name}
-                                    description={`${f.files} files · ${bytes(f.bytes)} local`}
+                                    icon={
+                                      galleryConfig(f) ? "gallery" : "folders"
+                                    }
+                                    description={
+                                      galleryConfig(f)
+                                        ? `${galleryConfig(f).summary?.accepted || 0} photos · ${galleryConfig(f).summary?.bytes == null ? "—" : bytes(galleryConfig(f).summary.bytes)} uploaded`
+                                        : `${f.files} files · ${bytes(f.bytes)} local`
+                                    }
                                     status={
-                                      status.paused
-                                        ? "Paused"
-                                        : f.issue
+                                      galleryConfig(f)
+                                        ? f.issue || galleryConfig(f).issue
                                           ? "Needs attention"
-                                          : status.busy
-                                            ? "Syncing"
-                                            : f.completed
-                                              ? "Up to date"
-                                              : "Incomplete"
+                                          : !galleryConfig(f).enabled
+                                            ? "Disabled"
+                                            : status.paused
+                                              ? "Paused"
+                                              : status.busy &&
+                                                  status.syncingVolume === f.id
+                                                ? "Syncing"
+                                                : galleryConfig(f).summary
+                                                      ?.pending ||
+                                                    !galleryConfig(f)
+                                                      .scannedAt ||
+                                                    galleryConfig(f).after
+                                                  ? "Incomplete"
+                                                  : "Up to date"
+                                        : status.paused
+                                          ? "Paused"
+                                          : f.issue
+                                            ? "Needs attention"
+                                            : status.busy &&
+                                                status.syncingVolume === f.id
+                                              ? "Syncing"
+                                              : f.completed
+                                                ? "Up to date"
+                                                : "Incomplete"
                                     }
                                     onPress={() => run(() => openFolder(f))}
                                   />
@@ -1304,16 +1402,18 @@ export default function App() {
                               </View>
                             </Section>
                           )}
-                          {!locals.length && !volumes.length && (
-                            <Card title="No folders yet">
-                              <Text style={s.text}>
-                                Shared folders from your hub appear here.
-                              </Text>
-                            </Card>
+                          {connected && !catalog && (
+                            <Scaffold dashed label="Loading shared folders" />
                           )}
-                          <Text style={s.caption}>
-                            {bytes(status.free)} free on this device
-                          </Text>
+                          {!locals.length &&
+                            !volumes.length &&
+                            (!connected || catalog) && (
+                              <Card title="No folders yet">
+                                <Text style={s.text}>
+                                  Shared folders from your hub appear here.
+                                </Text>
+                              </Card>
+                            )}
                         </>
                       )}
                     </>
@@ -1448,6 +1548,7 @@ export default function App() {
                       {connection ? (
                         <Section>
                           <Text style={s.eyebrow}>HUB CONNECTION</Text>
+                          {!machines && <Scaffold label="Loading machines" />}
                           <HubConnection
                             connection={connection}
                             name={catalog?.name}
@@ -1595,7 +1696,9 @@ export default function App() {
                       {!connected && (
                         <Text style={s.text}>Connect to view hub history.</Text>
                       )}
-                      {historyLoading && <ActivityIndicator color={c.accent} />}
+                      {historyLoading && !history.versions.length && (
+                        <Scaffold kind="history" label="Loading history" />
+                      )}
                       {!historyLoading && !!historyError && (
                         <ErrorNotice
                           error={historyError}
@@ -1696,7 +1799,7 @@ export default function App() {
                                             ? row.resolved
                                               ? "Conflict resolved · copy kept"
                                               : "Conflict copy retained"
-                                            : `${bytes(row.size)} · accepted revision`}
+                                            : `${bytes(row.size)}`}
                                         {!wide && ` · ${date(row.created)}`}
                                       </Text>
                                     </View>
@@ -1921,17 +2024,19 @@ export default function App() {
                 />
               }
               title={
-                sheet.kind === "history-filter"
-                  ? "Shared folder"
-                  : sheet.kind === "folder-actions"
-                    ? folder.name
-                    : sheet.kind === "select"
-                      ? sheet.volume.name
-                      : sheet.kind === "history"
-                        ? sheet.path
-                        : sheet.kind === "conflict"
-                          ? "Resolve conflict"
-                          : sheet.entry.path
+                sheet.kind === "gallery"
+                  ? "Photo uploads"
+                  : sheet.kind === "history-filter"
+                    ? "Shared folder"
+                    : sheet.kind === "folder-actions"
+                      ? folder.name
+                      : sheet.kind === "select"
+                        ? sheet.volume.name
+                        : sheet.kind === "history"
+                          ? sheet.path
+                          : sheet.kind === "conflict"
+                            ? "Resolve conflict"
+                            : sheet.entry.path
               }
               busy={busy}
               busyLabel={actionLabel}
@@ -1943,6 +2048,14 @@ export default function App() {
             >
               {!!error && sheet.kind !== "folder-actions" && (
                 <ErrorNotice error={error} retry={retryAction.current} />
+              )}
+              {sheet.kind === "gallery" && (
+                <GallerySetup
+                  gallery={engine.current.gallery}
+                  source={source}
+                  locked={locked}
+                  enable={configureGallery}
+                />
               )}
               {sheet.kind === "history-filter" && (
                 <View style={s.group}>
@@ -1968,59 +2081,86 @@ export default function App() {
               {sheet.kind === "folder-actions" && (
                 <>
                   <View style={s.actionGroup}>
-                    {!!folder.selected && (
-                      <>
-                        <ActionRow
-                          label="Upload files"
-                          icon="upload"
-                          disabled={locked}
-                          onPress={() => {
-                            setSheet(null);
-                            run(() => imported("files"));
-                          }}
-                        />
-                        <ActionRow
-                          divider
-                          label="Import photos"
-                          icon="image"
-                          disabled={locked}
-                          onPress={() => {
-                            setSheet(null);
-                            run(() => imported("photos"));
-                          }}
-                        />
-                      </>
-                    )}
-                    {connected && (
+                    {!!folder.selected && !source && (
                       <ActionRow
-                        divider={!!folder.selected}
-                        label="View history"
-                        icon="history"
+                        label="Add files…"
+                        icon="upload"
                         disabled={locked}
                         onPress={() => {
-                          setHistoryVolume(folder.id);
-                          setHistoryFilter("revisions");
                           setSheet(null);
-                          setView("History");
+                          run(() => imported("files"));
+                        }}
+                      />
+                    )}
+                    {!!folder.selected && !source && (
+                      <ActionRow
+                        label="Add photos…"
+                        icon="image"
+                        disabled={locked}
+                        onPress={() => {
+                          setSheet(null);
+                          run(() => imported("photos"));
+                        }}
+                      />
+                    )}
+                    {(!source || source.mode === "converting") && (
+                      <ActionRow
+                        label="Export folder…"
+                        icon="export"
+                        disabled={
+                          locked || (!!source && source.mode !== "converting")
+                        }
+                        onPress={() => {
+                          setSheet(null);
+                          run(async () => {
+                            await engine.current.files.exportDirectory(
+                              engine.current.files.folder(
+                                engine.current.scope,
+                                folder.id,
+                              ),
+                              "arca-folder",
+                            );
+                          });
                         }}
                       />
                     )}
                     <ActionRow
-                      divider={!!folder.selected || connected}
-                      label="Save a copy…"
-                      icon="export"
-                      disabled={locked}
-                      onPress={() => {
-                        setSheet(null);
-                        run(async () => {
-                          await engine.current.files.exportDirectory(
-                            engine.current.files.folder(
-                              engine.current.scope,
+                      label={source ? "Change album…" : "Link album…"}
+                      icon="gallery"
+                      disabled={
+                        locked ||
+                        !connected ||
+                        (!source &&
+                          (!currentFolder?.completed || !!currentFolder?.issue))
+                      }
+                      onPress={() => setSheet({ kind: "gallery" })}
+                    />
+                    {source && (
+                      <ActionRow
+                        label={
+                          source.enabled ? "Disable uploads" : "Enable uploads"
+                        }
+                        icon="upload"
+                        disabled={busy || source.mode === "converting"}
+                        onPress={() =>
+                          run(() =>
+                            engine.current.gallery.setEnabled(
                               folder.id,
+                              !source.enabled,
                             ),
-                            "arca-folder",
-                          );
-                        });
+                          )
+                        }
+                      />
+                    )}
+                    <ActionRow
+                      label="View history"
+                      icon="history"
+                      disabled={busy || !connected}
+                      onPress={() => {
+                        setHistoryVolume(folder.id);
+                        setHistoryFilter("revisions");
+                        setSheet(null);
+                        setView("History");
                       }}
                     />
                   </View>
@@ -2039,12 +2179,11 @@ export default function App() {
                 <>
                   <Card title="Keep a local copy">
                     <Text style={s.text}>
-                      {bytes(sheet.volume.bytes)} on hub · {bytes(status.free)}{" "}
-                      free here
+                      Download this folder and keep it in sync.
                     </Text>
                     <Text style={s.caption}>
-                      Arca keeps a complete local copy and reserves space for
-                      verified transfers. Downloads resume after interruption.
+                      {bytes(sheet.volume.bytes)} on hub · {bytes(status.free)}{" "}
+                      free here
                     </Text>
                   </Card>
                   <Button
@@ -2100,12 +2239,11 @@ export default function App() {
                     </Pressable>
                   ))}
                   <Text style={s.caption}>
-                    Restoring creates a new revision. Both source versions and
-                    the conflict copy are kept.
+                    Both copies remain available in history.
                   </Text>
                   <Button
                     primary
-                    label="Restore selected as new revision"
+                    label="Restore selected"
                     busy={busy}
                     disabled={!connected || locked}
                     onPress={() =>

@@ -74,14 +74,30 @@ fs.copyFileSync(
   path.join(root, "apps/desktop/src/notice-contract.js"),
   sharedNotice,
 );
+const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json")));
 fs.writeFileSync(
   path.join(destination, "package.json"),
   JSON.stringify({
+    name: manifest.name,
+    version: manifest.version,
     type: "module",
     private: true,
     arcaInstallation: "desktop",
+    dependencies: manifest.dependencies,
   }),
 );
+// Install only production packages for the target host (including sharp's native runtime).
+fs.copyFileSync(
+  path.join(root, "package-lock.json"),
+  path.join(destination, "package-lock.json"),
+);
+const dependencies = spawnSync(
+  process.platform === "win32" ? "npm.cmd" : "npm",
+  ["ci", "--omit=dev", "--ignore-scripts"],
+  { cwd: destination, stdio: "inherit", shell: process.platform === "win32" },
+);
+if (dependencies.status !== 0)
+  throw new Error("Could not stage runtime dependencies");
 console.log(
   `Arca runtime staged: official Node ${version} (${platform}/${process.arch})`,
 );

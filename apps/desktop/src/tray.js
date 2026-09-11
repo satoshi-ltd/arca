@@ -7,6 +7,16 @@ const escape = (value) =>
         c
       ],
   );
+const bytes = (n) =>
+  n == null
+    ? ""
+    : n < 1024
+      ? `${n} B`
+      : n < 1024 ** 2
+        ? `${(n / 1024).toFixed(1)} KB`
+        : n < 1024 ** 3
+          ? `${(n / 1024 ** 2).toFixed(1)} MB`
+          : `${(n / 1024 ** 3).toFixed(1)} GB`;
 const icon = (name) => `<span data-lucide="${name}" aria-hidden="true"></span>`;
 const api = (route, body) =>
   invoke("api", {
@@ -30,7 +40,7 @@ async function refresh() {
     };
     const label = labels[state.phase] || state.phase;
     document.querySelector("#tray-content").innerHTML =
-      `<div class="tray-heading tray-tone-${state.phase === "error" ? "error" : state.phase === "unlinked" ? "conflict" : state.phase === "paused" ? "paused" : state.phase === "syncing" ? "syncing" : "synced"}">${state.phase === "syncing" ? busy() : icon(state.phase === "error" ? "circle-alert" : state.phase === "unlinked" ? "unlink" : state.phase === "paused" ? "pause" : "circle-check")}<div class="tray-title"><strong>${escape(label)}</strong><p>${state.lastSync ? "Last completed " + new Date(state.lastSync).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "Not yet verified"}</p></div><span class="tray-role">${escape(state.role)}</span></div><div class="tray-folders">${state.volumes
+      `<div class="tray-heading tray-tone-${state.phase === "error" ? "error" : state.phase === "unlinked" ? "conflict" : state.phase === "paused" ? "paused" : state.phase === "syncing" ? "syncing" : "synced"}"><img class="tray-brand-icon" src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><div class="tray-title"><strong>${escape(label)}</strong><p>${state.lastSync ? "Last completed " + new Date(state.lastSync).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "Not yet verified"}</p></div><span class="tray-role">${escape(state.role)}</span></div><div class="tray-folders">${state.volumes
         .filter((v) => v.selected)
         .map((v) => {
           const phase =
@@ -38,7 +48,9 @@ async function refresh() {
               ? "disconnected"
               : state.phase === "paused"
                 ? "paused"
-                : v.sync?.state || "pending";
+                : v.conflicts
+                  ? "conflict"
+                  : v.sync?.state || "pending";
           const names = {
             disconnected: "Disconnected",
             synced: "Up to date",
@@ -49,15 +61,7 @@ async function refresh() {
             paused: "Paused",
             conflict: "Conflict",
           };
-          const glyph = {
-            disconnected: "unlink",
-            synced: "circle-check",
-            error: "circle-alert",
-            pending: "clock",
-            paused: "pause",
-            conflict: "triangle-alert",
-          };
-          return `<button class="tray-tone-${escape(phase)}" data-folder="${escape(v.id)}">${["scanning", "syncing"].includes(phase) ? busy() : icon(glyph[phase] || "folder")}<span class="tray-folder-name">${escape(v.name)}</span><small>${escape(names[phase] || "Pending")}</small></button>`;
+          return `<button class="tray-tone-${escape(phase)}" data-folder="${escape(v.id)}">${["scanning", "syncing"].includes(phase) ? busy() : icon(v.gallery ? "images" : "folder")}<span class="tray-folder-name">${escape(v.name)}</span><small>${escape(phase === "synced" ? bytes(v.bytes) : names[phase] || "Pending")}</small></button>`;
         })
         .join(
           "",

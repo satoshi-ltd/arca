@@ -1,7 +1,9 @@
+import { Busy } from "./components";
+import { galleryConfig } from "./gallery.js";
 import { Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Linking, Text, View } from "react-native";
+import { AppState, Linking, Text, View } from "react-native";
 import * as Sharing from "expo-sharing";
 import {
   Button,
@@ -140,7 +142,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
       r.stop();
       if (r.active) await r.active;
       const local = await r.store.folder(r.scope, volume.id);
-      if (!local?.selected)
+      if (!local?.selected || galleryConfig(local))
         throw new Error(
           "This folder is no longer selected. Choose a folder syncing on this device.",
         );
@@ -188,7 +190,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
       setBusy(false);
     }
   }
-  const destinations = locals.filter((f) => f.selected);
+  const destinations = locals.filter((f) => f.selected && !galleryConfig(f));
   const children = directories.filter(
     (p) =>
       p.startsWith(directory ? `${directory}/` : "") &&
@@ -244,7 +246,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
           )}
           {preparing && (
             <View style={s.row} accessibilityLiveRegion="polite">
-              <ActivityIndicator />
+              <Busy />
               <Text style={s.text}>Preparing files…</Text>
             </View>
           )}

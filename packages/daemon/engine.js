@@ -11,7 +11,7 @@ import {
   readIgnore,
 } from "./exclusions.js";
 import { machineReport } from "./machines.js";
-import { cleanupTransfers } from "./maintenance.js";
+import { cleanupTransfers, applyFolderRetention } from "./maintenance.js";
 import { SyncWork, covers } from "./sync-work.js";
 import { Scanner } from "./scanner.js";
 import fs from "node:fs";
@@ -36,6 +36,8 @@ export class Engine {
     this.config = this.store.config;
     if (this.config.destroyPending) {
       try {
+        this.gallery?.close();
+        this.gallery = null;
         finishReplicaReset(this.store);
       } catch {
         /* Keep the journal available for explicit retry. */
@@ -137,6 +139,7 @@ export class Engine {
       setupRequired: this.config.role === "hub" && !s.volumes().length,
       root: this.config.root,
       retention: this.config.retention || { days: 0, versions: 0 },
+      folderRetention: this.config.folderRetention || {},
       backup: {
         enabled: false,
         ...this.config.backup,
@@ -154,6 +157,17 @@ export class Engine {
         const totals = s.visibleTotals(v.id);
         return {
           ...v,
+          historyRetention:
+            this.config.role === "hub"
+              ? this.config.folderRetention?.[v.id] || "1m"
+              : (this.config.catalog?.find((row) => row.id === v.id)
+                  ?.historyRetention ?? "1m"),
+          gallery:
+            this.config.role === "hub"
+              ? !!s.db
+                  .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
+                  .get(v.id)
+              : !!this.config.catalog?.find((row) => row.id === v.id)?.gallery,
           sync: totals.policyError
             ? { state: "error", error: totals.policyError, lastCompleted: null }
             : this.folderStates.get(v.id) || {
@@ -454,6 +468,7 @@ export class Engine {
     try {
       if (!this.lastCleanup || Date.now() - this.lastCleanup > 3600000) {
         cleanupTransfers(this.store);
+        if (this.config.role === "hub") applyFolderRetention(this.store);
         this.lastCleanup = Date.now();
       }
       const s = this.store;
@@ -477,6 +492,12 @@ export class Engine {
         this.config.catalog = catalog.volumes.map((v) => ({
           id: v.id,
           name: v.name,
+          gallery: !!v.gallery,
+          historyRetention:
+            v.historyRetention ??
+            this.config.catalog?.find((saved) => saved.id === v.id)
+              ?.historyRetention ??
+            "1m",
           conflictRevision: v.conflictRevision,
           conflicts: Number.isSafeInteger(v.conflicts)
             ? v.conflicts
@@ -1481,6 +1502,7 @@ export class Engine {
     );
   }
   close() {
+    this.gallery?.close();
     this.closeBackup();
     this.scanner.close();
     this.store.close();

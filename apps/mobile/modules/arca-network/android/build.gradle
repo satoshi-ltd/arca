@@ -3,8 +3,8 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 group = 'expo.modules.arcanetwork'
-version = '0.3.8'
+version = '0.4.0'
 android {
   namespace 'expo.modules.arcanetwork'
-  defaultConfig { versionCode 10; versionName '0.3.8' }
+  defaultConfig { versionCode 11; versionName '0.4.0' }
 }

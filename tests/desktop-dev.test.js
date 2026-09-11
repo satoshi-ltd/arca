@@ -27,6 +27,11 @@ test("desktop dev replaces its local daemon while retaining identity, pairing, p
   fs.writeFileSync(path.join(home, "config.json"), JSON.stringify(config));
   fs.writeFileSync(path.join(config.root, "kept.txt"), "unsynced local bytes");
   fs.mkdirSync(runtime);
+  fs.symlinkSync(
+    path.join(repo, "node_modules"),
+    path.join(runtime, "node_modules"),
+    "junction",
+  );
   (process.platform === "win32" ? fs.copyFileSync : fs.symlinkSync)(
     process.execPath,
     path.join(runtime, process.platform === "win32" ? "node.exe" : "node"),

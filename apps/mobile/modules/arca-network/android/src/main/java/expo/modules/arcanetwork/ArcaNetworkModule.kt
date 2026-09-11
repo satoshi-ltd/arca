@@ -17,6 +17,9 @@ import expo.modules.kotlin.modules.ModuleDefinition
 class ArcaNetworkModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ArcaNetwork")
+    AsyncFunction("exportGalleryAsset") { id: String, destination: String ->
+      exportGalleryAsset(appContext.reactContext ?: error("App is unavailable"), id, destination)
+    }
     AsyncFunction("copyText") { text: String ->
       val context = appContext.reactContext ?: error("App is unavailable")
       val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager

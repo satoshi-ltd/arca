@@ -34,7 +34,7 @@ export function errorNotice(
 ) {
   const details = safeDetails(error?.message || error);
   const offline =
-    /fetch failed|network request failed|ECONN|ENOTFOUND|timed? ?out|unreachable|ETIMEDOUT|offline/i.test(
+    /fetch failed|network request failed|ECONN|ENOTFOUND|timed? ?out|unreachable|ETIMEDOUT|offline|ConnectException|failed to connect|connection refused|SocketTimeoutException|NoRouteToHostException/i.test(
       details,
     );
   const revoked = /\b401\b|revoked|unauthorized|hub refused credential/i.test(

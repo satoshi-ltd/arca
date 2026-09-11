@@ -1,6 +1,7 @@
+import { Scaffold } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { client } from "./persistence";
 import { Icon, Button, useDesign } from "./components";
 import { bytes } from "./format";
@@ -36,13 +37,7 @@ export function FolderRecent({ volume, connected, updated, date, open }) {
     );
   if (error)
     return <ErrorNotice error={error} retry={() => retry((n) => n + 1)} />;
-  if (!page)
-    return (
-      <ActivityIndicator
-        accessibilityLabel="Loading recent revisions"
-        color={c.accent}
-      />
-    );
+  if (!page) return <Scaffold kind="history" label="Loading recent changes" />;
   return (
     <View style={s.section}>
       <View style={s.group}>
@@ -84,7 +79,7 @@ export function FolderRecent({ volume, connected, updated, date, open }) {
                     ? "Resolved · copy kept"
                     : row.path.includes(".conflict-")
                       ? "Conflict copy retained"
-                      : `${bytes(row.size)} · accepted revision`}
+                      : `${bytes(row.size)}`}
               </Text>
             </View>
             {wide && <Text style={s.mono}>rev {row.rev}</Text>}

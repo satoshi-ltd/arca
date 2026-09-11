@@ -53,9 +53,13 @@ export function finishReplicaReset(store) {
   }
   for (const name of fs.readdirSync(store.home)) {
     if (
-      ["objects", "uploads", "web-code.json", "promotion.json"].includes(
-        name,
-      ) ||
+      [
+        "objects",
+        "uploads",
+        "previews",
+        "web-code.json",
+        "promotion.json",
+      ].includes(name) ||
       /^before-(promotion|reconnect)-[a-f0-9-]+\.sqlite$/.test(name)
     )
       fs.rmSync(path.join(store.home, name), { recursive: true, force: true });

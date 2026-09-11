@@ -832,6 +832,76 @@ test("local folders render while the hub catalog is still pending", async (t) =>
   assert.equal(w.document.body.classList.contains("view-loading"), false);
 });
 
+test("replica folder history uses the hub policy when local status omits it", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-retention-ui-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Photos");
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  let mode = "off";
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (command !== "api") return {};
+        if (args.route === "/v1/status") {
+          const value = daemon.engine.status();
+          value.role = "replica";
+          value.hub = "http://hub.test";
+          value.volumes.forEach((v) => {
+            delete v.historyRetention;
+          });
+          return value;
+        }
+        if (args.route === "/v1/remote")
+          return {
+            name: "Casa",
+            volumes: [{ ...volume, historyRetention: mode }],
+          };
+        if (args.route.startsWith("/v1/activity")) return { versions: [] };
+        if (args.route.startsWith("/v1/browse")) return { entries: [] };
+        if (args.route === "/v1/machines") return { machines: [] };
+        throw new Error("Unexpected route " + args.route);
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.document.querySelector('[data-action="folder-detail"]').click();
+  await until(
+    () =>
+      w.document.querySelector(".folder-history-status strong")?.textContent ===
+      "Off",
+  );
+  assert.match(
+    w.document.querySelector(".folder-history-status").textContent,
+    /Current files only/,
+  );
+  await until(() => w.document.body.getAttribute("aria-busy") !== "true");
+  mode = "1w";
+  w.document.querySelector('[data-view="folders"]').click();
+  await until(
+    () =>
+      w.document.querySelector(".folder-card") &&
+      !w.document.body.classList.contains("view-loading"),
+  );
+  w.document.querySelector('[data-action="folder-detail"]').click();
+  await until(
+    () =>
+      w.document.querySelector(".folder-history-status strong")?.textContent ===
+      "On · 1 week",
+  );
+});
+
 test("share web routes survive reload and history navigation; hub edits use real API", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-share-ui-"));
   init(home, { port: 0, name: "Casa" });
@@ -2139,6 +2209,17 @@ test("navigation paints before slow reads, retains updating feedback and ignores
   const updating = () => w.document.body.classList.contains("view-loading");
   const nav = (view) =>
     w.document.querySelector(`[data-view="${view}"]`).click();
+  const releaseInitialHistory = hold("/v1/activity");
+  nav("history");
+  await until(() => w.document.querySelector("#history-list .scaffold-row"));
+  assert.equal(
+    w.document.querySelectorAll("#history-list .scaffold-row").length,
+    1,
+  );
+  assert.equal(w.document.querySelector("#content h1").textContent, "History");
+  nav("folders");
+  releaseInitialHistory();
+  await until(() => title() === "Folders" && !updating());
   const releaseStatus = hold("/v1/status");
   const releaseDiscovery = hold("/v1/discovery"),
     releaseMachines = hold("/v1/machines");
@@ -2199,4 +2280,355 @@ test("navigation paints before slow reads, retains updating feedback and ignores
   );
   releaseHistory();
   await until(() => !updating());
+});
+
+test("gallery folders open a chronological grid, viewer and existing Files tab", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-gallery-dom-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  const sharp = (await import("sharp")).default;
+  fs.writeFileSync(
+    path.join(v.path, "photo.jpg"),
+    await sharp({
+      create: { width: 40, height: 40, channels: 3, background: "red" },
+    })
+      .jpeg()
+      .toBuffer(),
+  );
+  for (const [name, color] of [
+    ["a-photo.jpg", "blue"],
+    ["0-photo.jpg", "green"],
+  ]) {
+    fs.writeFileSync(
+      path.join(v.path, name),
+      await sharp({
+        create: { width: 40, height: 40, channels: 3, background: color },
+      })
+        .jpeg()
+        .toBuffer(),
+    );
+  }
+  await daemon.engine.cycle();
+  daemon.engine.store.db
+    .prepare("INSERT INTO gallery_folders VALUES(?)")
+    .run(v.id);
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const retentionCalls = [];
+  const largeRequests = [];
+  const requests = new Set();
+  t.after(async () => {
+    await until(
+      () => dom.window.document.body.getAttribute("aria-busy") !== "true",
+    );
+    while (requests.size) await Promise.allSettled([...requests]);
+    await new Promise((resolve) => setImmediate(resolve));
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap")
+          return { setup: false, status: daemon.engine.status() };
+        if (command !== "api") throw new Error(command);
+        if (args.route === "/v1/folder-retention") {
+          retentionCalls.push(args.body);
+          return { remove: 3, confirmation: "preview" };
+        }
+        if (
+          args.route.includes("/gallery/preview?") &&
+          args.route.includes("size=large")
+        )
+          largeRequests.push(args.route);
+        const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          method: args.method || "GET",
+          headers: {
+            Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+            "Content-Type": "application/json",
+          },
+          ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        return data;
+      },
+    },
+  };
+  const invoke = w.__TAURI__.core.invoke;
+  w.__TAURI__.core.invoke = (...args) => {
+    const request = invoke(...args);
+    requests.add(request);
+    request.then(
+      () => requests.delete(request),
+      () => requests.delete(request),
+    );
+    return request;
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  assert.ok(w.document.querySelector('.folder-card [data-icon="images"]'));
+  w.document.querySelector('[data-action="folder-detail"]').click();
+  await until(() => w.document.querySelector(".browser-file-row"));
+  assert.ok(w.document.querySelector('[data-action="open"]'));
+  await until(() => w.document.body.getAttribute("aria-busy") !== "true");
+  assert.ok(
+    w.document.querySelector(".folder-history-status #folder-retention"),
+  );
+  assert.equal(
+    w.document.querySelector(".heading-actions #folder-retention"),
+    null,
+  );
+  assert.doesNotMatch(
+    w.document.querySelector(".folder-history-status").textContent,
+    /on hub/,
+  );
+  const retention = w.document.querySelector("#folder-retention");
+  assert.equal(
+    retention.querySelector('[aria-pressed="true"]').dataset.id,
+    "1m",
+  );
+  assert.deepEqual(
+    [...retention.querySelectorAll("button")].map(
+      (option) => option.dataset.id,
+    ),
+    ["off", "1d", "1w", "1m", "forever"],
+  );
+  assert.ok(
+    retention.compareDocumentPosition(
+      w.document.querySelector('[data-action="rename-share"]'),
+    ) & w.Node.DOCUMENT_POSITION_PRECEDING,
+  );
+  retention.querySelector('[data-id="off"]').click();
+  await until(
+    () =>
+      w.document.querySelector("#dialog").open &&
+      w.document.body.getAttribute("aria-busy") !== "true",
+  );
+  assert.ok(w.document.querySelector("#dialog.confirmation-dialog"));
+  assert.match(
+    w.document.querySelector("#dialog-content").textContent,
+    /3 older revisions/,
+  );
+  assert.equal(
+    retention.querySelector('[aria-pressed="true"]').dataset.id,
+    "1m",
+  );
+  assert.equal(w.document.querySelector(".retention-inline-review"), null);
+  w.document.querySelector("#cancel-dialog").click();
+  assert.equal(retentionCalls.length, 1);
+  assert.equal(retentionCalls[0].apply, undefined);
+
+  assert.deepEqual(
+    [...w.document.querySelectorAll('[data-action="folder-tab"]')].map(
+      (el) => el.dataset.id,
+    ),
+    ["files", "recent"],
+  );
+  assert.ok(w.document.querySelector('[data-action="open"]'));
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelector(".photo-thumb img"));
+  assert.equal(w.document.querySelector('[data-action="open"]'), null);
+  assert.equal(w.document.querySelector(".folder-browser-tools"), null);
+  assert.match(
+    w.document.querySelector('.heading-actions [data-action="gallery-mode"]')
+      .textContent,
+    /Exit gallery/,
+  );
+
+  assert.notEqual(
+    w.document.querySelector(".photo-day h2").textContent,
+    "Date unknown",
+  );
+  assert.ok(w.document.querySelector(".photo-timeline button"));
+  assert.equal(w.document.querySelectorAll(".photo-day").length, 1);
+  assert.equal(
+    w.document.querySelectorAll(".photo-day .photo-thumb").length,
+    3,
+  );
+  assert.match(
+    w.document.querySelector(".photo-day").dataset.day,
+    /^\d{4}-\d{2}$/,
+  );
+  assert.match(
+    w.document.querySelector(".photo-day h2").textContent,
+    /^[A-Za-z]+ \d{4}$/,
+  );
+  w.document.querySelector(".photo-open").click();
+  assert.ok(w.document.querySelector(".photo-viewer-image .busy-grid"));
+  await until(() => w.document.querySelector(".photo-viewer-image img"));
+  assert.equal(
+    w.document.querySelector(".photo-viewer-image img").alt,
+    "photo.jpg",
+  );
+  assert.equal(w.document.querySelector(".photo-previous").disabled, true);
+  assert.equal(
+    w.document.querySelector("#cancel-dialog").getAttribute("aria-label"),
+    "Back to gallery",
+  );
+  assert.ok(w.document.querySelector(".photo-download"));
+  w.document.querySelector(".photo-info-toggle").click();
+  assert.equal(w.document.querySelector(".photo-info").hidden, false);
+  assert.match(
+    w.document.querySelector(".photo-info").textContent,
+    /photo.jpg/,
+  );
+  await until(() =>
+    /40 × 40/.test(w.document.querySelector(".photo-info").textContent),
+  );
+  assert.match(
+    w.document.querySelector(".photo-info").textContent,
+    /File path/,
+  );
+  assert.equal(w.document.querySelector(".photo-file").hidden, true);
+  await until(() =>
+    largeRequests.some((route) => route.includes("path=a-photo.jpg")),
+  );
+  w.document.querySelector(".photo-next").click();
+  await until(
+    () =>
+      w.document.querySelector(".photo-viewer-image img")?.alt ===
+      "a-photo.jpg",
+  );
+  w.document.querySelector(".photo-previous").click();
+  await until(
+    () =>
+      w.document.querySelector(".photo-viewer-image img")?.alt === "photo.jpg",
+  );
+  assert.equal(
+    largeRequests.filter((route) => route.includes("path=photo.jpg")).length,
+    1,
+  );
+  assert.equal(
+    largeRequests.filter((route) => route.includes("path=a-photo.jpg")).length,
+    1,
+  );
+  w.document.querySelector(".photo-info-close").click();
+  assert.equal(w.document.querySelector(".photo-info").hidden, true);
+  w.document.querySelector(".photo-delete").click();
+  assert.ok(w.document.querySelector(".confirmation-dialog"));
+  assert.ok(
+    w.document.querySelector(
+      "#background-dialog[open] .photo-viewer-image img",
+    ),
+  );
+  w.document.querySelector("#cancel-dialog").click();
+  assert.equal(daemon.engine.store.current(v.id, "photo.jpg").deleted, 0);
+  assert.equal(
+    w.document.querySelector("#dialog").classList.contains("photo-viewer"),
+    true,
+  );
+  assert.equal(
+    w.document.querySelector(".photo-viewer-image img").alt,
+    "photo.jpg",
+  );
+  w.document.querySelector(".photo-delete").click();
+  w.document
+    .querySelector("#dialog-form")
+    .dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  await until(
+    () =>
+      w.document.querySelector("#dialog.photo-viewer .photo-viewer-image img")
+        ?.alt === "a-photo.jpg",
+  );
+  await until(() => w.document.body.getAttribute("aria-busy") !== "true");
+  assert.equal(daemon.engine.store.current(v.id, "photo.jpg").deleted, 1);
+  assert.equal(w.document.querySelector(".photo-previous").disabled, true);
+  w.document.querySelector("#cancel-dialog").click();
+  for (const check of w.document.querySelectorAll(".photo-select"))
+    check.click();
+  assert.equal(w.document.querySelector("#photo-selection").hidden, false);
+  assert.ok(
+    w.document.querySelector(".detail-head > .heading > #photo-selection"),
+  );
+  assert.ok(w.document.querySelector(".heading.has-photo-selection"));
+  assert.equal(w.document.querySelector(".page #photo-selection"), null);
+  assert.equal(
+    w.document.querySelector(".photo-selection-count").textContent,
+    "2 selected",
+  );
+  w.document.querySelector(".photo-selection-delete").click();
+  assert.match(
+    w.document.querySelector("#dialog-title").textContent,
+    /2 photos/,
+  );
+  w.document.querySelector("#cancel-dialog").click();
+  w.document.querySelector(".photo-selection-clear").click();
+  assert.equal(w.document.querySelector("#photo-selection").hidden, true);
+  assert.equal(w.document.querySelector(".heading.has-photo-selection"), null);
+
+  w.document.querySelector("#cancel-dialog").click();
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelector(".browser-file-row"));
+  await until(() => w.document.body.getAttribute("aria-busy") !== "true");
+  assert.match(
+    [...w.document.querySelectorAll(".browser-file-row")]
+      .map((row) => row.textContent)
+      .join(" "),
+    /photo.jpg/,
+  );
+  w.document
+    .querySelector('[data-action="folder-tab"][data-id="recent"]')
+    .click();
+  await until(() => w.document.querySelector(".history-row"));
+  await until(
+    () =>
+      w.document.querySelector("#content").getAttribute("aria-busy") !== "true",
+  );
+  w.document.querySelector(".page").scrollTop = 123;
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-select").length === 2);
+  w.document.querySelector(".photo-select").click();
+  assert.equal(
+    w.document
+      .querySelector('#photo-selection [data-action="gallery-mode"]')
+      .textContent.trim(),
+    "Exit gallery",
+  );
+  w.document
+    .querySelector('#photo-selection [data-action="gallery-mode"]')
+    .click();
+  await until(() => w.document.querySelector(".history-row"));
+  await until(() => w.document.querySelector(".page").scrollTop === 123);
+  assert.equal(
+    w.document
+      .querySelector('[data-action="folder-tab"][data-id="recent"]')
+      .getAttribute("aria-pressed"),
+    "true",
+  );
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-select").length === 2);
+  assert.equal(w.document.querySelector("#photo-selection").hidden, true);
+  for (const check of w.document.querySelectorAll(".photo-select"))
+    check.click();
+  w.document.querySelector(".photo-selection-delete").click();
+  w.document
+    .querySelector("#dialog-form")
+    .dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  await until(
+    () =>
+      daemon.engine.store.current(v.id, "photo.jpg").deleted &&
+      daemon.engine.store.current(v.id, "a-photo.jpg").deleted,
+  );
+  await until(() => !w.document.querySelector("#dialog").open);
+  await until(
+    () =>
+      !w.document.querySelector("#submit-dialog").disabled &&
+      !w.document.querySelector("#submit-dialog").hasAttribute("aria-busy"),
+  );
+  await until(
+    () =>
+      w.document.querySelector("#content").getAttribute("aria-busy") !== "true",
+  );
 });

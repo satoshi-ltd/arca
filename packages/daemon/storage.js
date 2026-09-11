@@ -144,6 +144,9 @@ export class Store {
     this.db = new DatabaseSync(path.join(this.home, "index.sqlite"));
     this.db
       .exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
+      CREATE TABLE IF NOT EXISTS gallery_derivatives(key TEXT PRIMARY KEY,size INTEGER NOT NULL,used INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS gallery_folders(volume TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS gallery_metadata(hash TEXT PRIMARY KEY,captured TEXT);
       CREATE TABLE IF NOT EXISTS volumes(id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, selected INTEGER NOT NULL DEFAULT 1,last_sync TEXT);
       CREATE TABLE IF NOT EXISTS revisions(rev INTEGER PRIMARY KEY AUTOINCREMENT, volume TEXT NOT NULL, path TEXT NOT NULL, hash TEXT, size INTEGER NOT NULL, deleted INTEGER NOT NULL, author TEXT NOT NULL, created TEXT NOT NULL,directory INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,directory INTEGER NOT NULL DEFAULT 0,path_key TEXT NOT NULL,PRIMARY KEY(volume,path));
@@ -164,6 +167,15 @@ export class Store {
       CREATE TABLE IF NOT EXISTS scan_cache(path TEXT PRIMARY KEY,signature TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,verified INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS backup_history(rev INTEGER PRIMARY KEY,row TEXT NOT NULL);
     `);
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(gallery_metadata)")
+        .all()
+        .some((column) => column.name === "date_checked")
+    )
+      this.db.exec(
+        "ALTER TABLE gallery_metadata ADD COLUMN date_checked INTEGER NOT NULL DEFAULT 0",
+      );
     this.db.exec(
       "CREATE INDEX IF NOT EXISTS files_volume_path_key ON files(volume,path_key)",
     );
@@ -236,6 +248,7 @@ export class Store {
           "DELETE FROM proposals WHERE json_extract(response, '$.volume')=?",
         )
         .run(id);
+      this.db.prepare("DELETE FROM gallery_folders WHERE volume=?").run(id);
       this.db.prepare("DELETE FROM volumes WHERE id=?").run(id);
       if (removeMarker) fs.unlinkSync(marker);
       this.db.exec("COMMIT");

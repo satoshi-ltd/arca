@@ -1,46 +1,12 @@
+import { validPath, validRow } from "./validation.js";
+import { Gallery, galleryConfig } from "./gallery.js";
 import { conditionNotices } from "../../desktop/src/notice-contract.js";
 import { entryKey, directoryItem } from "../../../packages/core/entries.js";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 export const CHUNK = 1024 * 1024;
 export const HEADROOM = 256 * 1024 * 1024;
-export function validPath(name) {
-  if (
-    typeof name !== "string" ||
-    !name ||
-    name.length > 1024 ||
-    name !== name.normalize("NFC")
-  )
-    throw new Error("Unsupported file path");
-  for (const part of name.split("/"))
-    if (
-      !part ||
-      part === "." ||
-      part === ".." ||
-      /[\\<>:"|?*\x00-\x1f]/.test(part) ||
-      /[. ]$/.test(part) ||
-      /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(part) ||
-      part.startsWith(".arca-")
-    )
-      throw new Error("Unsupported file path");
-  return name;
-}
-export function validRow(row, volume) {
-  validPath(row.path);
-  if (
-    row.volume !== volume ||
-    !Number.isSafeInteger(row.rev) ||
-    row.rev < 1 ||
-    !Number.isSafeInteger(row.size) ||
-    row.size < 0 ||
-    ![0, 1, false, true].includes(row.deleted) ||
-    ![undefined, 0, 1, false, true].includes(row.directory) ||
-    (row.directory && (row.hash !== null || row.size !== 0)) ||
-    (!row.directory && !row.deleted && !/^[a-f0-9]{64}$/.test(row.hash))
-  )
-    throw new Error("Invalid file metadata from hub");
-  return row;
-}
+export { validPath, validRow } from "./validation.js";
 
 export class Replica {
   constructor({
@@ -50,6 +16,7 @@ export class Replica {
     notify = async () => {},
     changed = () => {},
     platform = "mobile",
+    media = null,
   }) {
     Object.assign(this, { store, files, client, changed, platform });
     // OS notification delivery must never prevent durable sync acknowledgement.
@@ -60,6 +27,7 @@ export class Replica {
         /* The in-app error remains visible. */
       }
     };
+    this.gallery = new Gallery(this, media);
     this.busy = false;
     this.stopped = false;
     this.progress = null;
@@ -79,6 +47,17 @@ export class Replica {
       }
     }
     this.scope = await this.store.get("scope");
+    if (this.files.clearGalleryStage && this.scope)
+      for (const folder of await this.store.folders(this.scope))
+        if (galleryConfig(folder)) {
+          await this.files.clearGalleryStage(this.scope, folder.id);
+          const source = galleryConfig(folder);
+          source.summary = await this.store.gallerySummary(
+            this.scope,
+            folder.id,
+          );
+          await this.store.setGallery(this.scope, folder.id, source);
+        }
     this.paused = await this.store.get("paused", false);
   }
   async requireActiveReplica() {
@@ -142,6 +121,8 @@ export class Replica {
       throw new Error(
         "Remove the remaining local copy before selecting this folder again.",
       );
+    if (galleryConfig(await this.store.folder(this.scope, volume.id)))
+      throw new Error("Use Gallery source settings to download a local copy.");
     await this.space(volume.bytes * 2);
     await this.files.mkdir(this.files.folder(this.scope, volume.id));
     await this.store.select(this.scope, volume);
@@ -166,6 +147,8 @@ export class Replica {
       const removedHashes = new Set(
         (await this.store.rows(scope, id)).map((row) => row.hash),
       );
+      if (this.files.clearGalleryStage)
+        await this.files.clearGalleryStage(scope, id);
       await this.files.removeFolder(scope, id);
       await this.store.forgetFolder(scope, id);
       await this.store.set(removalKey, false);
@@ -424,8 +407,8 @@ export class Replica {
       if (!queued.has(op.path))
         await this.store.dequeue(this.scope, folder.id, op.path);
   }
-  async upload(op) {
-    const object = this.files.object(this.scope, op.hash);
+  async upload(op, source = null) {
+    const object = source || this.files.object(this.scope, op.hash);
     if ((await this.files.hash(object)) !== op.hash)
       throw new Error("Queued upload failed verification");
     let { offset, complete } = await this.client.api(`/v1/uploads/${op.hash}`);
@@ -684,7 +667,7 @@ export class Replica {
   }
   async report() {
     const folders = (await this.store.folders(this.scope)).filter(
-      (f) => f.selected,
+      (f) => f.selected && !galleryConfig(f),
     );
     const counts = await Promise.all(
       folders.map((f) => this.store.rows(this.scope, f.id)),
@@ -710,7 +693,8 @@ export class Replica {
     });
   }
   sync(force = false) {
-    if (this.importing || this.removing) return Promise.resolve();
+    if (this.picking || this.importing || this.removing)
+      return Promise.resolve();
     if (this.active) return this.active;
     this.force = force || Date.now() - this.lastFullScan > 3600000;
     this.active = this.cycle().finally(() => {
@@ -726,6 +710,7 @@ export class Replica {
       return;
     this.busy = true;
     this.stopped = false;
+    this.moreGalleryWork = false;
     this.error = null;
     this.changed();
     try {
@@ -760,9 +745,15 @@ export class Replica {
           );
           continue;
         }
+        this.syncingVolume = folder.id;
+        this.changed();
         try {
           const remote = catalog.volumes.find((v) => v.id === folder.id);
           if (remote.policyError) throw new Error(remote.policyError);
+          if (galleryConfig(folder)) {
+            await this.gallery.cycle(folder);
+            continue;
+          }
           this.policy = null;
           for (const row of (
             await this.store.applying(this.scope, folder.id)
@@ -777,6 +768,9 @@ export class Replica {
             await this.store.issue(this.scope, folder.id, e.message);
           if (e.code === "SYNC_INTERRUPTED") throw e;
           errors.push(`${folder.name}: ${e.message}`);
+        } finally {
+          this.syncingVolume = null;
+          this.changed();
         }
       }
       if (errors.length) {
@@ -807,6 +801,19 @@ export class Replica {
       this.changed();
     }
   }
+  async withImportPicker(work) {
+    if (this.picking) throw new Error("A file selection is already open.");
+    // Returning from the native picker emits AppState.active. Reserve the
+    // complete selection/import batch so foreground and background sync wait.
+    this.picking = true;
+    try {
+      if (this.active) await this.active;
+      return await work();
+    } finally {
+      this.picking = false;
+      this.changed();
+    }
+  }
   async importFile(volume, name, source) {
     await this.requireActiveReplica();
     validPath(name);
@@ -815,6 +822,10 @@ export class Replica {
     if (this.busy) throw new Error("Wait for synchronization to finish");
     const folder = await this.store.folder(this.scope, volume);
     if (!folder?.selected) throw new Error("Select this folder first");
+    if (galleryConfig(folder))
+      throw new Error(
+        "Gallery sources upload from Photos and do not keep local files.",
+      );
     const target = this.files.work(this.scope, volume, name);
     await this.space((await this.files.stat(source)).size * 2);
     if (await this.files.exists(target)) {
@@ -831,8 +842,10 @@ export class Replica {
   async removeFile(volume, name) {
     await this.requireActiveReplica();
     validPath(name);
-    if (!(await this.store.folder(this.scope, volume))?.selected)
-      throw new Error("Select this folder first");
+    const folder = await this.store.folder(this.scope, volume);
+    if (galleryConfig(folder))
+      throw new Error("Gallery originals can only be managed in Photos.");
+    if (!folder?.selected) throw new Error("Select this folder first");
     if (this.busy) throw new Error("Wait for synchronization to finish");
     const row = await this.store.current(this.scope, volume, name);
     const file = this.files.work(this.scope, volume, name);

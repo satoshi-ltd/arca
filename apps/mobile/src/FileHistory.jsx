@@ -1,7 +1,8 @@
+import { Scaffold } from "./components";
 import { Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Badge, Button, Card, Icon, useDesign } from "./components";
 import { bytes } from "./format";
 
@@ -133,12 +134,7 @@ export function FileHistory({
               </View>
             )}
           </Section>
-          {loading && (
-            <ActivityIndicator
-              accessibilityLabel="Loading file revisions"
-              color={c.accent}
-            />
-          )}
+          {loading && <Scaffold kind="history" label="Loading file history" />}
           {!loading && !error && connected && !history.versions.length && (
             <Text style={s.caption}>No retained revisions.</Text>
           )}
@@ -149,10 +145,6 @@ export function FileHistory({
               onPress={loadMore}
             />
           )}
-          <Text style={s.caption}>
-            Restoring creates a new revision. Existing revisions stay in
-            history.
-          </Text>
         </View>
         <View style={s.detailSide}>
           <Section>

@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.3.8 · Functional alpha, not release-qualified.** Includes empty-directory synchronization and the mobile/file-operation refinements described below. Updating source does not update running daemon or app binaries.
+**v0.4.0 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -57,6 +57,10 @@ npm run check --prefix apps/mobile
 `mobile` starts Metro for the installed development client over LAN with the `arca` scheme; it does not build or launch an emulator. `check` exports Android/iOS JavaScript, not native installers. Do not restart a user-managed Metro session just to refresh JavaScript.
 
 Implemented locally: secure pairing, persistent whole-folder sync with verified resumable transfers, offline files, imports, history/restore/conflicts, themes and OS background/notification integration. Files, Recent and History lead to one file-detail view. Phone uses bottom navigation and stacked content; wide/Fold uses a sidebar and desktop-style composition with touch-sized controls.
+
+**Photo uploads:** selecting a hub folder creates an ordinary synchronized local copy. To use it for gallery uploads, open the folder’s ⋯ menu → “Link album…” after a successful sync; Arca verifies their content before removing them. The source keeps tracking data and temporary transfer files. “Add photos…” is a separate one-time action available in ordinary folders. The gallery stays unchanged; deleting photos there keeps uploaded hub files, and hub changes are not downloaded to this source phone. Other normal replicas retain full copies. Exports include Live Photo pairs. Detected gallery edits create new hub revisions at the existing path; iOS requires the updated native exporter to send rendered edits. This is implemented and built locally; installing the updated native mobile client and physical-device qualification remain required. Background uploads remain OS-scheduled; keep Arca open for the first large upload.
+
+**Desktop/web gallery:** album-linked folders use the Images icon and keep Files as the default tab, followed by Recent and Gallery. Gallery provides a dated thumbnail grid and a month/year navigation rail. Accepted photo uploads prepare reusable thumbnails in the hub’s background queue. Existing photos are indexed when opened; clicking an image opens a larger preview. This requires the updated hub daemon and desktop runtime, including production dependencies. It is implemented and tested locally, not deployed to Casa. Video playback and codecs unsupported by the bundled image decoder use the original file action.
 
 **Receiving files:** Share → Arca → selected folder → subfolder → Save. Receiving is transient: X, Cancel or Android Back discards the unsaved temporary copies without touching the originals. Nothing waits in an inbox or reopens after cancellation/restart. **Save a copy** exports local folder files outside Arca; it does not export synchronized history or create another syncing copy. Native picker/export and background behavior still require real-device qualification. Android incoming intent reception has been exercised; the iOS share extension is experimental.
 
@@ -138,4 +142,6 @@ npm run site:build
 
 The lookup calls the GitHub REST API and writes `site/release.json`. CI always sets `RELEASE_JSON`, and an explicitly configured file that is missing stops the build, so production never deploys the package.json fallback.
 
-`.github/workflows/publish-site.yml` runs after a successful Arca workflow, on site changes on main, or manually. It reads published release metadata through the GitHub REST API with the workflow token, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. This is prepared locally, not deployed. Cloudflare/DNS configuration and the first end-to-end release remain to be verified. See SPEC's website publication section for required configuration.
+`.github/workflows/publish-site.yml` runs after a successful `publish` workflow on `main` (push or manual run), or manually from `main`. Automatic runs check out the exact successful commit; failed/cancelled runs and pull requests do not deploy. It reads published release metadata through the GitHub REST API with the workflow token, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. This is prepared locally, not deployed. Cloudflare/DNS configuration and the first end-to-end release remain to be verified. See SPEC's website publication section for required configuration.
+
+**Version history:** hub folder headers offer Off, 1 day, 1 week, 1 month (30 days), or Forever. 30 days is the default; explicit choices are preserved. Shortening retention previews existing revisions to remove; automatic cleanup runs hourly while the hub is active. Current files and protected work remain, and unreferenced content has a 24-hour grace period before disk reclamation. Requires the updated hub daemon.

@@ -1,3 +1,4 @@
+import { mediaLibrary } from "./media-library";
 import { errorNotice } from "../../desktop/src/notice-contract.js";
 import { clearIncoming } from "./incoming-files";
 import { Platform, AppState } from "react-native";
@@ -12,6 +13,8 @@ import { files } from "./files";
 export const BACKGROUND_TASK = "arca-sync";
 const listeners = new Set();
 let runtimePromise;
+let galleryTimer;
+let currentReplica;
 const noticeState = new Map();
 let pendingResponse = null;
 const responseListeners = new Set();
@@ -107,6 +110,15 @@ export function subscribe(listener) {
   return () => listeners.delete(listener);
 }
 function changed() {
+  clearTimeout(galleryTimer);
+  if (
+    currentReplica?.moreGalleryWork &&
+    !currentReplica.busy &&
+    !currentReplica.stopped &&
+    !currentReplica.paused &&
+    AppState.currentState === "active"
+  )
+    galleryTimer = setTimeout(() => currentReplica.sync(), 500);
   for (const listener of listeners) listener();
 }
 export function runtime() {
@@ -117,6 +129,7 @@ export function runtime() {
       );
       const replica = new Replica({
         store,
+        media: mediaLibrary,
         files,
         client,
         platform: Platform.OS,
@@ -128,6 +141,7 @@ export function runtime() {
           return publishConditions(store, [item]);
         },
       });
+      currentReplica = replica;
       await client.load();
       await replica.load();
       await clearIncoming(replica);

@@ -6,6 +6,9 @@ import Darwin
 public class ArcaNetworkModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ArcaNetwork")
+    AsyncFunction("exportGalleryAsset") { (id: String, destination: String) async throws -> [[String: String]] in
+      return try await GalleryExport.export(id: id, destination: destination)
+    }
     AsyncFunction("copyText") { (text: String) async in
       await MainActor.run { UIPasteboard.general.string = text }
     }

@@ -1,11 +1,19 @@
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g } from "./design-tokens.js";
-import React, { createContext, useContext, useRef, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
+  Animated,
+  AccessibilityInfo,
+  StyleSheet,
   View,
   Text,
   Pressable,
-  ActivityIndicator,
   TextInput,
   Modal,
   ScrollView,
@@ -23,6 +31,105 @@ import Svg, {
 import { icons } from "./icons";
 export const Design = createContext(null);
 export const useDesign = () => useContext(Design);
+// One representative row for pending lists, matching desktop scaffold geometry.
+export function Scaffold({
+  kind = "card",
+  dashed = false,
+  label = "Loading content",
+}) {
+  const { s } = useDesign();
+  return (
+    <View
+      accessible
+      accessibilityLabel={label}
+      accessibilityRole="progressbar"
+      style={[s.scaffoldRow, dashed && s.scaffoldDashed]}
+    >
+      <View style={[s.scaffoldMark, kind === "history" && s.scaffoldDot]} />
+      <View style={s.scaffoldCopy}>
+        <View style={[s.scaffoldLine, s.scaffoldTitle]} />
+        <View style={[s.scaffoldLine, s.scaffoldLong]} />
+      </View>
+      <View style={[s.scaffoldLine, s.scaffoldShort]} />
+    </View>
+  );
+}
+const busyStyles = StyleSheet.create({
+  grid: { width: 16, height: 16, gap: 2 },
+  small: { transform: [{ scale: 0.875 }], width: 16, height: 16 },
+  row: { flexDirection: "row", gap: 2 },
+  dot: { width: 4, height: 4, borderRadius: 3 },
+});
+export function Busy({ color, style, size, accessibilityLabel = "Loading" }) {
+  const { c } = useDesign();
+  const dots = useRef(
+    Array.from(
+      { length: 9 },
+      (_, i) => new Animated.Value(i % 3 === 0 ? 1 : 0.4),
+    ),
+  ).current;
+  useEffect(() => {
+    let active = true;
+    let loops = [];
+    const update = (reduce) => {
+      loops.forEach((loop) => loop.stop());
+      dots.forEach((dot, i) => dot.setValue(i % 3 === 0 ? 1 : 0.4));
+      if (reduce || !active) return;
+      loops = dots.map((dot, i) =>
+        Animated.loop(
+          Animated.sequence([
+            Animated.delay((i * 170) % 650),
+            Animated.timing(dot, {
+              toValue: 1,
+              duration: 450,
+              useNativeDriver: true,
+            }),
+            Animated.timing(dot, {
+              toValue: 0.35,
+              duration: 650,
+              useNativeDriver: true,
+            }),
+          ]),
+        ),
+      );
+      loops.forEach((loop) => loop.start());
+    };
+    AccessibilityInfo.isReduceMotionEnabled().then(update);
+    const subscription = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      update,
+    );
+    return () => {
+      active = false;
+      loops.forEach((loop) => loop.stop());
+      subscription.remove();
+    };
+  }, [dots]);
+  return (
+    <View
+      style={[busyStyles.grid, size === "small" && busyStyles.small, style]}
+      accessibilityRole="progressbar"
+      accessibilityLabel={accessibilityLabel}
+    >
+      {[0, 1, 2].map((row) => (
+        <View key={row} style={busyStyles.row}>
+          {[0, 1, 2].map((column) => (
+            <Animated.View
+              key={column}
+              style={[
+                busyStyles.dot,
+                {
+                  backgroundColor: color || c.ink,
+                  opacity: dots[row * 3 + column],
+                },
+              ]}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
 const shapes = {
   path: Path,
   rect: Rect,
@@ -40,7 +147,7 @@ export function Icon({ name, color, size = 20 }) {
       height={size}
       viewBox="0 0 24 24"
       fill="none"
-      stroke={color || c.accent}
+      stroke={color || c.ink}
       strokeWidth={g.iconStroke}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -109,9 +216,7 @@ export function Button({
       ]}
     >
       {busy ? (
-        <ActivityIndicator
-          color={primary ? c.onAccent : danger ? c.danger : c.ink}
-        />
+        <Busy color={primary ? c.onAccent : danger ? c.danger : c.ink} />
       ) : icon ? (
         <Icon
           name={icon}
@@ -306,7 +411,7 @@ export function Tag({ children, variant }) {
   );
 }
 
-export function Badge({ children }) {
+export function Badge({ children, iconOnly = false }) {
   const { s, c } = useDesign();
   const error = ["Needs attention", "Revoked"].includes(children);
   const warning = ["Incomplete", "Paused", "Not yet synced"].includes(children);
@@ -315,10 +420,14 @@ export function Badge({ children }) {
     <View
       style={[
         s.badge,
+        iconOnly && s.badgeIcon,
         !success && s.badgeNeutral,
+        children === "Syncing" && s.badgeBusy,
         warning && s.badgeWarning,
         error && s.badgeError,
       ]}
+      accessible={iconOnly || undefined}
+      accessibilityLabel={iconOnly ? children : undefined}
     >
       {success && <Icon name="check-circle" size={g.pillIcon} color={c.okFg} />}
       {children === "Current" && (
@@ -327,19 +436,34 @@ export function Badge({ children }) {
       {children === "Linked" && (
         <Icon name="link" size={g.pillIcon} color={c.soft} />
       )}
-      {children === "Syncing" && (
-        <ActivityIndicator size="small" color={c.accent} />
+      {children === "Syncing" && <Busy size="small" color={c.accent} />}
+      {iconOnly &&
+        !success &&
+        !["Syncing", "Current", "Linked"].includes(children) && (
+          <Icon
+            name={
+              error
+                ? "alert"
+                : ["Paused", "Disabled"].includes(children)
+                  ? "pause"
+                  : "clock"
+            }
+            size={g.pillIcon}
+            color={error ? c.danger : warning ? c.warning : c.soft}
+          />
+        )}
+      {!iconOnly && (
+        <Text
+          style={[
+            s.badgeText,
+            !success && s.badgeNeutralText,
+            warning && s.badgeWarningText,
+            error && s.errorText,
+          ]}
+        >
+          {children}
+        </Text>
       )}
-      <Text
-        style={[
-          s.badgeText,
-          !success && s.badgeNeutralText,
-          warning && s.badgeWarningText,
-          error && s.errorText,
-        ]}
-      >
-        {children}
-      </Text>
     </View>
   );
 }
@@ -453,7 +577,7 @@ export function Sheet({
           >
             {busy && !!busyLabel && (
               <View style={s.row} accessibilityLiveRegion="polite">
-                <ActivityIndicator />
+                <Busy />
                 <Text style={s.text}>{busyLabel}</Text>
               </View>
             )}
@@ -490,6 +614,7 @@ export function FolderRow({
   selected = false,
   grouped = false,
   divider = false,
+  icon = "folders",
   name,
   description,
   status,
@@ -497,11 +622,18 @@ export function FolderRow({
   onPress,
   disabled,
 }) {
-  const { s, c } = useDesign();
+  const { s, c, wide } = useDesign();
   const contents = (
     <>
-      <View style={[s.tile, available && s.tileAvailable]}>
-        <Icon name="folders" size={16} color={available ? c.mute : c.accent} />
+      <View
+        style={[s.tile, available && s.tileAvailable]}
+        accessibilityLabel={status === "Syncing" ? "Syncing" : undefined}
+      >
+        {status === "Syncing" ? (
+          <Busy color={c.accent} />
+        ) : (
+          <Icon name={icon} size={16} color={available ? c.mute : c.accent} />
+        )}
       </View>
       <View style={[s.flex, s.stack]}>
         <Text style={s.rowTitle}>{name}</Text>
@@ -524,7 +656,9 @@ export function FolderRow({
         />
       ) : (
         <View style={s.rowAction}>
-          {status && <Badge>{status}</Badge>}
+          {status && !["Syncing", "Up to date"].includes(status) && (
+            <Badge iconOnly={!wide}>{status}</Badge>
+          )}
           <Icon name="chevron" color={c.mute} />
         </View>
       )}
@@ -535,7 +669,7 @@ export function FolderRow({
   ) : (
     <Pressable
       accessibilityRole={selectable ? "checkbox" : "button"}
-      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}`}
+      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${status ? `, ${status}` : ""}`}
       accessibilityState={{
         disabled: !!disabled,
         ...(selectable ? { checked: selected } : {}),

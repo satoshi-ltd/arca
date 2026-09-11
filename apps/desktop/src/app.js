@@ -109,7 +109,7 @@ function icons() {
   });
 }
 function pill(label, state = "id", symbol = "circle-dashed") {
-  return `<span class="pill ${state}">${symbol === "busy" ? busyIcon() : icon(symbol)}${escape(label)}</span>`;
+  return `<span class="pill ${state}${symbol === "busy" ? " busy-status" : ""}">${symbol === "busy" ? busyIcon() : icon(symbol)}${escape(label)}</span>`;
 }
 function button(label, action, id = "", cls = "secondary", symbol = "") {
   return `<button type="button" class="${cls}" data-action="${action}" data-id="${escape(id)}">${symbol ? icon(symbol) : ""}${label}</button>`;
@@ -235,6 +235,7 @@ let status,
   roster = null,
   catalog = [],
   catalogRequest = null,
+  catalogLoaded = false,
   catalogHubName = "",
   historyVolume = "",
   historyPath = null,
@@ -330,7 +331,7 @@ function renderCopies() {
     (copiesUnavailable
       ? '<p class="hint">Hub unavailable. Showing last known copies.</p>'
       : !copiesRoster
-        ? '<p class="hint">Checking other machines…</p>'
+        ? scaffoldRow("compact")
         : !known.length
           ? '<p class="hint">No working copies reported.</p>'
           : "") +
@@ -668,19 +669,95 @@ async function refresh(renderView = true) {
   }
   return signature;
 }
-function syncControls(detail = false) {
+function folderRetentionSummary(volume) {
+  const mode =
+    (status.role === "hub"
+      ? status.folderRetention?.[volume.id]
+      : (catalog.find((row) => row.id === volume.id)?.historyRetention ??
+        volume.historyRetention)) || "1m";
+  const label =
+    {
+      off: "Off",
+      "1d": "On · 1 day",
+      "1w": "On · 1 week",
+      "1m": "On · 30 days",
+      forever: "Forever",
+    }[mode] || "Unknown";
+  return `<div class="stat folder-history-status"><span>Revision history</span>${status.role === "hub" ? folderRetentionControl(volume.id) : `<strong>${escape(label)}</strong>`}<p>${mode === "off" ? "Current files only" : "Older revisions kept"}</p></div>`;
+}
+function folderRetentionControl(id) {
+  const mode = status.folderRetention?.[id] || "1m";
+  return `<div id="folder-retention" data-volume="${escape(id)}">${segmented(
+    "Revision history retention",
+    [
+      ["off", "Off"],
+      ["1d", "1d"],
+      ["1w", "1w"],
+      ["1m", "30d"],
+      ["forever", "Forever"],
+    ].map(([value, label]) => ({
+      label,
+      action: "folder-retention",
+      id: value,
+      active: mode === value,
+    })),
+    "segmented-compact",
+  )}</div>`;
+}
+async function changeFolderRetention(mode, control) {
+  const group = control.closest("#folder-retention");
+  const id = group.dataset.volume;
+  if (mode === (status.folderRetention?.[id] || "1m")) return;
+  const buttons = [...group.querySelectorAll("button")];
+  buttons.forEach((button) => {
+    button.disabled = true;
+  });
+  try {
+    const preview = await api("/v1/folder-retention", { id, mode });
+    const apply = () =>
+      api("/v1/folder-retention", {
+        id,
+        mode,
+        apply: true,
+        confirmation: preview.confirmation,
+      });
+    if (preview.remove) {
+      modal(
+        modalHeader(
+          "Remove older revisions?",
+          `${preview.remove} older revisions will be permanently removed. Current files are kept.`,
+          "history",
+        ),
+        apply,
+        "Apply retention",
+      );
+      $("#submit-dialog").classList.add("danger");
+    } else {
+      await apply();
+      await refresh();
+    }
+  } finally {
+    buttons.forEach((button) => {
+      button.disabled = false;
+    });
+  }
+}
+
+function syncControls() {
   if (status.role !== "hub" && !status.hub) return "";
   const paused = status.phase === "paused";
   return (
     button(
-      paused ? "Resume sync" : detail ? "Pause all sync" : "Pause sync",
+      paused ? "Resume sync" : "Pause sync",
       "pause",
       "",
       "secondary",
       paused ? "play" : "pause",
     ) +
-    (!detail && !paused && status.phase !== "syncing"
-      ? button("Sync now", "sync", "", "secondary", "refresh-cw")
+    (!paused
+      ? status.phase === "syncing"
+        ? `<button type="button" class="secondary" data-action="sync" disabled aria-busy="true">${busyIcon()}Syncing…</button>`
+        : button("Sync now", "sync", "", "secondary", "refresh-cw")
       : "")
   );
 }
@@ -733,11 +810,12 @@ function folderRow(v, available = false) {
   if (p) meta = escape(progressLabel(p));
   if (v.sync?.error || v.policyError)
     meta = escape(v.sync?.error || v.policyError);
-  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}><div class="tile">${icon("folder")}</div><div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p>${p ? `<progress aria-label="${p.stage === "upload" ? "Files sent" : "Files checked"}" ${p.filesTotal > 0 ? `value="${Number(p.filesDone) || 0}" max="${Number(p.filesTotal)}"` : ""}></progress>` : ""}</div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}<span class="row-time">${relative(v.sync?.lastCompleted)}</span>${pill(...state)}${icon("chevron-right")}`}</article>`;
+  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}><div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(v.gallery ? "images" : "folder")}</div><div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p>${p ? `<progress aria-label="${p.stage === "upload" ? "Files sent" : "Files checked"}" ${p.filesTotal > 0 ? `value="${Number(p.filesDone) || 0}" max="${Number(p.filesTotal)}"` : ""}></progress>` : ""}</div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || state[0] === "Up to date" ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
 }
 async function loadCatalog() {
   if (status.role !== "hub" && !status.hub) {
     catalog = [];
+    catalogLoaded = false;
     catalogHubName = "";
     return;
   }
@@ -750,15 +828,35 @@ async function loadCatalog() {
     try {
       const remote = await api("/v1/remote");
       catalog = remote.volumes;
+      const volume = status.volumes.find((row) => row.id === detailId);
+      const summary = $(".folder-history-status");
+      if (
+        view === "folders" &&
+        volume &&
+        summary &&
+        $("#content").dataset.detail === volume.id
+      )
+        summary.outerHTML = folderRetentionSummary(volume);
       catalogHubName = remote.name || "";
       updateShell();
     } catch {
       // Keep the last known catalog when the hub is unavailable.
     } finally {
+      catalogLoaded = true;
       catalogRequest = null;
     }
   })();
   return catalogRequest;
+}
+// Shared loading primitives: compose existing surfaces, never invent list lengths.
+function scaffoldLine(size = "medium") {
+  return `<span class="scaffold-line scaffold-${size}" aria-hidden="true"></span>`;
+}
+function scaffoldRow(kind = "card", dashed = false) {
+  return `<div class="scaffold-row scaffold-${kind} ${dashed ? "scaffold-dashed" : ""}" role="status" aria-label="Loading content"><span class="scaffold-mark" aria-hidden="true"></span><div class="scaffold-copy">${scaffoldLine("medium")}${scaffoldLine("long")}</div>${scaffoldLine("short")}</div>`;
+}
+function scaffoldInfo(item) {
+  return `<div role="status" aria-label="Loading photo information"><div class="photo-info-summary"><p class="mono">${escape(item.path.split("/").pop())}</p>${scaffoldLine("long")}</div><section class="photo-info-section"><h3 class="section-label">Capture</h3>${scaffoldLine("medium")}${scaffoldLine("long")}<div class="photo-capture-stats">${Array.from({ length: 4 }, () => `<div>${scaffoldLine("short")}</div>`).join("")}</div></section><section class="photo-info-section"><h3 class="section-label">In Arca</h3>${scaffoldLine("long")}${scaffoldLine("medium")}</section></div>`;
 }
 let viewLoadSerial = 0;
 const viewReads = new Map(),
@@ -774,6 +872,9 @@ function viewRead(route) {
   return viewReads.get(key);
 }
 async function render({ refreshStatus = false } = {}) {
+  galleryView?.observer?.disconnect();
+  galleryView?.moreObserver?.disconnect();
+  galleryView?.cleanup?.();
   const loading = ++viewLoadSerial;
   const route = routeURL();
   if (location.hash !== route) window.history.pushState(null, "", route);
@@ -797,7 +898,16 @@ async function render({ refreshStatus = false } = {}) {
       : null;
     const results = await Promise.allSettled([page, state]);
     const failed = results.find((result) => result.status === "rejected");
-    if (failed) throw failed.reason;
+    if (failed) {
+      if (loading === viewLoadSerial)
+        for (const row of $("#content").querySelectorAll(".scaffold-row"))
+          row.outerHTML = empty(
+            "Content unavailable",
+            "Try loading this view again.",
+            button("Retry", "refresh", "", "secondary", "refresh-cw"),
+          );
+      throw failed.reason;
+    }
   } finally {
     if (loading === viewLoadSerial && window.document) {
       document.body.classList.remove("view-loading");
@@ -811,10 +921,13 @@ async function renderView(
   trackCatalog = false,
 ) {
   const content = $("#content");
+  if (view !== "folders" || !detailId) delete content.dataset.detail;
   if (view === "folders") {
     if (status.role === "hub" || !catalog.length) catalog = status.volumes;
     if (detailId) {
       await renderDetail();
+      if (refreshCatalog && status.role !== "hub" && status.hub)
+        void loadCatalog();
       icons();
       return;
     }
@@ -867,19 +980,26 @@ async function renderView(
     if (status.role !== "hub" && status.hub && available.length)
       html += section(
         "On hub · not selected",
-        `<div class="folder-list">${available.map((v) => folderRow(v, true)).join("")}</div><p class="hint">Choose a local destination. Existing files join the sync; .arcaignore controls exclusions.</p>`,
+        `<div class="folder-list">${available.map((v) => folderRow(v, true)).join("")}</div>`,
       );
+    if (
+      status.role !== "hub" &&
+      status.hub &&
+      !catalogLoaded &&
+      !available.length
+    )
+      html += section("On hub · not selected", scaffoldRow("card", true));
     content.innerHTML = html + "</div>";
     if (refreshCatalog && status.role !== "hub") {
       icons();
-      const previous = JSON.stringify([catalog, catalogHubName]);
+      const previous = JSON.stringify([catalog, catalogHubName, catalogLoaded]);
       const update = loadCatalog().then(async () => {
         if (!window.document || serial !== renderSerial) return;
         if (
           view === "folders" &&
           !detailId &&
           !$("#dialog").open &&
-          previous !== JSON.stringify([catalog, catalogHubName])
+          previous !== JSON.stringify([catalog, catalogHubName, catalogLoaded])
         ) {
           await renderView(false, serial);
         }
@@ -968,7 +1088,7 @@ function revisionRow(v, compact = false) {
       status.volumes.find((x) => x.id === v.volume)?.selected)
       ? "review-conflict"
       : "activity-file";
-  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button" aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${icon(deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal")}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)} · accepted revision`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
+  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button" aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${icon(deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal")}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
 }
 function fileHistoryHeader() {
   const volume = status.volumes.find((v) => v.id === historyVolume);
@@ -1036,7 +1156,720 @@ function fileHistorySide() {
   return `<aside class="detail-side">${section("File location", `<div class="panel"><strong>${escape(volume?.name || "Shared folder")}</strong><p class="path">${escape(historyPath)}</p><div class="file-location-actions">${folderLink}${deletion}</div></div>`)}</aside>`;
 }
 
-async function folderBrowser(v, recent) {
+let galleryView = null,
+  folderViewId = null,
+  folderReturn = { tab: "files", scroll: 0 };
+function mountGallery(volume) {
+  galleryView?.observer?.disconnect();
+  galleryView?.moreObserver?.disconnect();
+  galleryView?.cleanup?.();
+  const root = $("#photo-gallery");
+  if (!root) return;
+  const state = (galleryView = {
+    volume,
+    root,
+    items: [],
+    paths: new Set(),
+    selection: new Map(),
+    next: "",
+    loading: false,
+    month: "",
+    queue: [],
+    workers: 0,
+  });
+  const current = () => galleryView === state && root.isConnected;
+  const previewRoute = (item, large = false) =>
+    "/v1/gallery/preview?" +
+    new URLSearchParams({
+      volume,
+      path: item.path,
+      hash: item.hash,
+      ...(large ? { size: "large" } : {}),
+    });
+  state.previewRoute = previewRoute;
+  async function drain() {
+    if (!current() || state.workers >= 3 || !state.queue.length) return;
+    const tile = state.queue.shift();
+    if (tile.dataset.visible === "false") {
+      delete tile.dataset.queued;
+      return drain();
+    }
+    state.workers++;
+    const item = state.items[Number(tile.dataset.photo)];
+    try {
+      const result = await api(previewRoute(item));
+      if (current() && tile.isConnected && tile.dataset.visible !== "false") {
+        if (result.data) {
+          const img = document.createElement("img");
+          img.alt = "";
+          img.src = result.data;
+          img.decoding = "async";
+          img.onload = () => {
+            if (!current() || !img.naturalHeight) return;
+            const ratio = img.naturalWidth / img.naturalHeight;
+            if (tile.photoRatio !== ratio) {
+              tile.photoRatio = ratio;
+              layoutPhotos();
+            }
+          };
+          tile.querySelector(".photo-open").replaceChildren(img);
+        } else tile.querySelector(".photo-open").innerHTML = icon("image-off");
+        icons();
+      }
+    } catch {
+      if (tile.isConnected)
+        tile.querySelector(".photo-open").innerHTML = icon("image-off");
+    } finally {
+      delete tile.dataset.queued;
+      state.workers--;
+      drain();
+    }
+  }
+  state.observer =
+    typeof IntersectionObserver === "function"
+      ? new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              const tile = entry.target;
+              tile.dataset.visible = String(entry.isIntersecting);
+              if (entry.isIntersecting) {
+                if (!tile.dataset.queued && !tile.querySelector("img")) {
+                  tile.dataset.queued = "true";
+                  state.queue.push(tile);
+                  drain();
+                }
+              } else tile.querySelector(".photo-open").replaceChildren();
+            }
+          },
+          { rootMargin: "300px" },
+        )
+      : null;
+  const toolbar = $("#photo-selection");
+  const heading = $(".detail-head > .heading");
+  heading.classList.add("gallery-selection-host");
+  heading.append(toolbar);
+  toolbar.querySelector(".photo-selection-delete").hidden = !galleryCanDelete();
+  function updateSelection() {
+    toolbar.hidden = !state.selection.size;
+    heading.classList.toggle(
+      "has-photo-selection",
+      Boolean(state.selection.size),
+    );
+    toolbar.querySelector(".photo-selection-count").textContent =
+      `${state.selection.size} selected`;
+    root.classList.toggle("selecting", Boolean(state.selection.size));
+    for (const tile of root.querySelectorAll(".photo-thumb")) {
+      const selected = state.selection.has(
+        state.items[Number(tile.dataset.photo)].path,
+      );
+      tile.classList.toggle("selected", selected);
+      tile
+        .querySelector(".photo-select")
+        .setAttribute("aria-pressed", String(selected));
+    }
+    sizeTimeline();
+  }
+  function togglePhoto(item) {
+    if (state.selection.has(item.path)) state.selection.delete(item.path);
+    else state.selection.set(item.path, item);
+    updateSelection();
+  }
+  toolbar.querySelector(".photo-selection-clear").onclick = () => {
+    state.selection.clear();
+    updateSelection();
+  };
+  toolbar.querySelector(".photo-selection-delete").onclick = () =>
+    deleteGalleryPhotos([...state.selection.values()]);
+  state.updateSelection = updateSelection;
+  // Fit each complete row to the available width. The last row never grows
+  // beyond the target height, so sparse months keep ordinary-sized photos.
+  function layoutPhotos() {
+    if (!current()) return;
+    for (const grid of root.querySelectorAll(".photo-grid")) {
+      const width = grid.clientWidth;
+      if (!width) continue;
+      const gap = 6;
+      const target = width < 600 ? 120 : 180;
+      const tiles = [...grid.children];
+      let row = [],
+        sum = 0;
+      const place = (complete) => {
+        const height = Math.min(
+          complete ? target * 1.25 : target,
+          (width - gap * (row.length - 1)) / sum,
+        );
+        for (const tile of row) {
+          tile.style.setProperty(
+            "--photo-width",
+            `${Math.max(1, Math.floor(height * (tile.photoRatio || 1.5) * 100) / 100)}px`,
+          );
+          tile.style.setProperty("--photo-height", `${height}px`);
+        }
+        row = [];
+        sum = 0;
+      };
+      for (const tile of tiles) {
+        row.push(tile);
+        sum += tile.photoRatio || 1.5;
+        if (sum * target + gap * (row.length - 1) >= width) place(true);
+      }
+      if (row.length) place(false);
+    }
+  }
+  function addItems(items) {
+    for (const item of items) {
+      if (state.paths.has(item.path)) continue;
+      state.paths.add(item.path);
+      const index = state.items.push(item) - 1;
+      const day = (item.date || item.captured)?.slice(0, 7) || "unknown";
+      let group = [...root.querySelectorAll(".photo-day")].find(
+        (el) => el.dataset.day === day,
+      );
+      if (!group) {
+        group = document.createElement("section");
+        group.className = "photo-day";
+        group.dataset.day = day;
+        const heading =
+          day === "unknown"
+            ? "Date unknown"
+            : new Date(
+                day + (day.length === 7 ? "-01" : "") + "T12:00:00",
+              ).toLocaleDateString("en", {
+                year: "numeric",
+                month: "long",
+              });
+        group.innerHTML = `<h2>${escape(heading)}</h2><div class="photo-grid"></div>`;
+        root.querySelector(".photo-days").append(group);
+      }
+      const tile = document.createElement("div");
+      tile.className = "photo-thumb";
+      tile.dataset.photo = index;
+      tile.title = `${galleryPhotoDate(item)}${item.dateSource === "date added" ? " · Date added to Arca" : ""}`;
+      const filename = escape(item.path.split("/").pop());
+      tile.innerHTML = `<button type="button" class="photo-open" aria-label="Open ${filename}">${icon(item.kind === "video" ? "play" : "image")}</button><button type="button" class="photo-select" aria-label="Select ${filename}" aria-pressed="${state.selection.has(item.path)}">${icon("check")}</button>`;
+      tile.querySelector(".photo-open").onclick = () =>
+        state.selection.size ? togglePhoto(item) : openGalleryPhoto(index);
+      tile.querySelector(".photo-select").onclick = () => togglePhoto(item);
+      group.querySelector(".photo-grid").append(tile);
+      if (item.kind === "image") {
+        if (state.observer) state.observer.observe(tile);
+        else {
+          state.queue.push(tile);
+          drain();
+        }
+      }
+    }
+    updateSelection();
+    layoutPhotos();
+    icons();
+  }
+  state.load = async () => {
+    if (!current() || state.loading || state.next === null) return;
+    state.loading = true;
+    const more = root.querySelector(".photo-more");
+    more.disabled = true;
+    more.textContent = "Loading photos…";
+    try {
+      const data = await api(
+        "/v1/gallery?" +
+          new URLSearchParams({
+            volume,
+            after: state.next,
+            month: state.month,
+          }),
+      );
+      if (!current()) return;
+      if (data.indexing) {
+        more.textContent = "Preparing photos…";
+        setTimeout(() => {
+          state.loading = false;
+          state.load();
+        }, 250);
+        return;
+      }
+      const rail = root.querySelector(".photo-timeline");
+      if (data.timeline && !rail.children.length) {
+        let year = "";
+        for (const date of data.timeline) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.month = date.month;
+          const label = new Date(
+            date.month + "-01T12:00:00",
+          ).toLocaleDateString("en", { month: "short", year: "numeric" });
+          button.dataset.label = label;
+          button.title = `${label} · ${date.count} photos`;
+          button.setAttribute("aria-label", `Go to ${label}`);
+          button.textContent =
+            year !== date.month.slice(0, 4) ? date.month.slice(0, 4) : "";
+          button.innerHTML = `<span class="photo-year">${button.textContent}</span><span class="photo-date-dot"></span><span class="photo-date-label">${label}</span>`;
+          year = date.month.slice(0, 4);
+          button.onclick = () => {
+            if (state.loading) return;
+            state.observer?.disconnect();
+            state.items = [];
+            state.paths.clear();
+            state.queue = [];
+            root.querySelector(".photo-days").replaceChildren();
+            state.next = "";
+            state.month = date.month;
+            root.closest(".page").scrollTop = 0;
+            for (const item of rail.children)
+              item.removeAttribute("aria-current");
+            button.setAttribute("aria-current", "date");
+            state.load();
+          };
+          rail.append(button);
+        }
+      }
+      addItems(data.items);
+      state.next = data.next;
+      more.hidden = !data.next;
+      more.textContent = "Load more";
+      if (!state.items.length)
+        root.querySelector(".photo-days").innerHTML = empty(
+          "No photos yet",
+          "Photos uploaded to this folder will appear here.",
+          "",
+          "images",
+        );
+    } catch {
+      if (current()) more.textContent = "Could not load photos. Retry";
+    } finally {
+      if (current()) {
+        state.loading = false;
+        more.disabled = false;
+      }
+    }
+  };
+  root.querySelector(".photo-more").onclick = state.load;
+  state.moreObserver =
+    typeof IntersectionObserver === "function"
+      ? new IntersectionObserver(
+          (entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) state.load();
+          },
+          { rootMargin: "400px" },
+        )
+      : null;
+  state.moreObserver?.observe(root.querySelector(".photo-more"));
+  const page = root.closest(".page");
+  const rail = root.querySelector(".photo-timeline");
+  const sizeTimeline = () => {
+    if (!current()) return;
+    const bounds = page.getBoundingClientRect();
+    const top = Math.max(bounds.top, root.getBoundingClientRect().top);
+    const bottom = parseFloat(getComputedStyle(page).paddingBottom) || 0;
+    if (state.layoutWidth !== root.clientWidth) {
+      state.layoutWidth = root.clientWidth;
+      layoutPhotos();
+    }
+    rail.style.setProperty(
+      "--timeline-height",
+      `${Math.max(120, bounds.bottom - top - bottom)}px`,
+    );
+  };
+  const resizeObserver =
+    typeof ResizeObserver === "function"
+      ? new ResizeObserver(sizeTimeline)
+      : null;
+  resizeObserver?.observe(page);
+  window.addEventListener("resize", sizeTimeline);
+  state.cleanup = () => {
+    resizeObserver?.disconnect();
+    window.removeEventListener("resize", sizeTimeline);
+    page.removeEventListener("scroll", state.onScroll);
+  };
+  state.onScroll = () => {
+    if (!current()) {
+      page.removeEventListener("scroll", state.onScroll);
+      return;
+    }
+    sizeTimeline();
+    const top = page.getBoundingClientRect().top;
+    const groups = [...root.querySelectorAll(".photo-day")];
+    const active = groups.find(
+      (group) => group.getBoundingClientRect().bottom > top + 80,
+    );
+    if (active)
+      for (const button of root.querySelectorAll(".photo-timeline button")) {
+        if (button.dataset.month === active.dataset.day.slice(0, 7))
+          button.setAttribute("aria-current", "date");
+        else button.removeAttribute("aria-current");
+      }
+  };
+  page.addEventListener("scroll", state.onScroll, { passive: true });
+  sizeTimeline();
+  state.load();
+}
+function galleryCanDelete() {
+  return (
+    status.role !== "backup" &&
+    (status.role === "hub" ||
+      status.volumes.find((v) => v.id === galleryView?.volume)?.selected)
+  );
+}
+function deleteGalleryPhotos(items) {
+  if (!items.length || !galleryCanDelete()) return;
+  const state = galleryView;
+  const inViewer = $("#dialog").classList.contains("photo-viewer");
+  const remaining = [...items];
+  let completed = 0;
+  modal(
+    modalHeader(
+      `Delete ${items.length === 1 ? "this photo" : `${items.length} photos`}?`,
+      "Deletes from synced folders. Originals in a phone’s system gallery are kept. Recovery depends on this folder’s revision retention.",
+      "trash-2",
+    ),
+    async () => {
+      try {
+        for (const item of [...remaining]) {
+          await api("/v1/delete-file", {
+            volume: state.volume,
+            path: item.path,
+            rev: item.rev,
+          });
+          item.deleted = true;
+          state.selection.delete(item.path);
+          const tile = [...state.root.querySelectorAll(".photo-thumb")].find(
+            (t) => state.items[Number(t.dataset.photo)].path === item.path,
+          );
+          tile?.remove();
+          completed++;
+          remaining.shift();
+        }
+      } catch (error) {
+        state.updateSelection();
+        throw new Error(
+          `${completed} of ${items.length} deleted. ${error.message}`,
+        );
+      }
+      notice(`${completed} ${completed === 1 ? "photo" : "photos"} deleted.`);
+      if (inViewer)
+        return async () => {
+          const next = state.items.findIndex(
+            (item, index) => index > state.selected && !item.deleted,
+          );
+          const previous = state.items.findLastIndex((item) => !item.deleted);
+          if (next >= 0 || previous >= 0)
+            await openGalleryPhoto(next >= 0 ? next : previous);
+          else {
+            $("#dialog").close();
+            await refresh();
+          }
+        };
+    },
+    "Delete",
+    false,
+    inViewer,
+  );
+  $("#submit-dialog").className = "secondary danger";
+}
+async function downloadGalleryPhoto(item) {
+  if (native) {
+    await invoke("save_file", { volume: galleryView.volume, path: item.path });
+  } else {
+    const link = document.createElement("a");
+    link.href =
+      "/v1/gallery/download?" +
+      new URLSearchParams({
+        volume: galleryView.volume,
+        path: item.path,
+        hash: item.hash,
+      });
+    link.download = item.path.split("/").pop();
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }
+}
+function galleryPhotoDate(item) {
+  const value = item.date || item.captured;
+  if (!value) return "Unavailable";
+  const date = new Date(
+    value.length === 7
+      ? `${value}-01T12:00:00`
+      : value.length === 10
+        ? `${value}T12:00:00`
+        : value,
+  );
+  if (!Number.isFinite(date.getTime())) return value;
+  return date.toLocaleString("en", {
+    year: "numeric",
+    month: "long",
+    ...(value.length > 7 ? { day: "numeric" } : {}),
+    ...(value.length > 10 ? { hour: "2-digit", minute: "2-digit" } : {}),
+  });
+}
+// Keep only a small window of decoded previews; share work between navigation and prefetch.
+async function galleryPreview(state, item) {
+  state.previews ||= new Map();
+  state.previewRequests ||= new Map();
+  const key = item.hash;
+  if (state.previews.has(key)) return state.previews.get(key);
+  if (state.previewRequests.has(key)) return state.previewRequests.get(key);
+  const request = (state.previewWork || Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      if (galleryView !== state || !state.root.isConnected || item.deleted)
+        return {};
+      const active = state.items[state.selected];
+      const position = state.items.indexOf(item);
+      if (item !== active && Math.abs(position - state.selected) > 1) return {};
+      const result = await api(state.previewRoute(item, true));
+      if (result.data) {
+        const image = new Image();
+        image.src = result.data;
+        if (image.decode) await image.decode();
+        state.previews.set(key, { data: result.data, image });
+        let total = [...state.previews.values()].reduce(
+          (sum, value) => sum + value.data.length,
+          0,
+        );
+        while (
+          state.previews.size > 3 ||
+          (total > 24 * 1024 ** 2 && state.previews.size > 1)
+        ) {
+          const oldest = state.previews.keys().next().value;
+          total -= state.previews.get(oldest).data.length;
+          state.previews.delete(oldest);
+        }
+        return state.previews.get(key);
+      }
+      return result;
+    });
+  state.previewWork = request;
+  state.previewRequests.set(key, request);
+  try {
+    return await request;
+  } finally {
+    state.previewRequests.delete(key);
+  }
+}
+function galleryInfo(item, volume, meta = {}) {
+  const row = (label, value, symbol, detail = "", extra = "") =>
+    value || detail
+      ? `<div class="photo-info-row">${icon(symbol)}<div><dt>${label}</dt><dd>${escape(value)}${detail ? `<span class="hint">${escape(detail)}</span>` : ""}${extra}</dd></div></div>`
+      : "";
+  const number = (value) => Number(value.toFixed(2)).toString();
+  const dimensions =
+    meta.width && meta.height
+      ? `${meta.width} × ${meta.height} · ${number((meta.width * meta.height) / 1000000)} MP`
+      : "";
+  const camera = meta.model?.toLowerCase().startsWith(meta.make?.toLowerCase())
+    ? meta.model
+    : [meta.make, meta.model].filter(Boolean).join(" ");
+  const metrics = [
+    ["Aperture", meta.aperture && `f/${number(meta.aperture)}`],
+    [
+      "Shutter",
+      meta.exposure &&
+        (meta.exposure < 1
+          ? `1/${Math.round(1 / meta.exposure)} s`
+          : `${number(meta.exposure)} s`),
+    ],
+    ["ISO", meta.iso],
+    ["Focal", meta.focalLength && `${number(meta.focalLength)} mm`],
+  ].filter(([, value]) => value);
+  const date = meta.captured
+    ? galleryPhotoDate({ date: meta.captured })
+    : galleryPhotoDate(item);
+  const coordinates = meta.location
+    ? `${meta.location.latitude.toFixed(6)}, ${meta.location.longitude.toFixed(6)}`
+    : "";
+  const map = coordinates
+    ? `<a class="photo-map" href="https://maps.google.com/?q=${encodeURIComponent(coordinates)}" target="_blank" rel="noopener noreferrer">Open in Maps ${icon("arrow-up-right")}</a>`
+    : "";
+  return `<div class="photo-info-summary"><p class="mono">${escape(item.path.split("/").pop())}</p><p class="hint">${escape([bytes(item.size), dimensions, meta.format].filter(Boolean).join(" · "))}</p></div>
+    <section class="photo-info-section"><h3 class="section-label">Capture</h3><dl>
+    ${row(meta.captured ? "Taken" : item.dateSource === "date added" ? "Date added" : "Date", date, "calendar", meta.offset ? `UTC${meta.offset}` : "")}
+    ${row("Camera", camera, "camera", meta.lens || "")}</dl>
+    ${metrics.length ? `<dl class="photo-capture-stats">${metrics.map(([label, value]) => `<div><dt>${label}</dt><dd class="mono">${escape(String(value))}</dd></div>`).join("")}</dl>` : ""}
+    <dl>${row("Location", coordinates, "map-pin", "", map)}</dl></section>
+    <section class="photo-info-section"><h3 class="section-label">In Arca</h3><dl>${row("File path", (status.volumes.find((v) => v.id === volume)?.name || "") + "/" + item.path, "folder")}
+    ${meta.accepted ? row("Accepted by hub", galleryPhotoDate({ date: meta.accepted.date }), "upload", `${meta.accepted.machine ? `From ${meta.accepted.machine} · ` : ""}rev ${meta.accepted.revision}`) : ""}</dl></section>`;
+}
+async function openGalleryPhoto(index) {
+  const state = galleryView,
+    item = state?.items[index];
+  if (!item || item.deleted) return;
+  const previousIndex = state.items.findLastIndex(
+    (photo, i) => i < index && !photo.deleted,
+  );
+  const nextIndex = state.items.findIndex(
+    (photo, i) => i > index && !photo.deleted,
+  );
+  const focusNext = document.activeElement?.classList.contains("photo-next");
+  const focusPrevious =
+    document.activeElement?.classList.contains("photo-previous");
+  state.selected = index;
+  modal(
+    `<div class="photo-viewer-head"><h2 id="dialog-title" class="sr-only">${escape(item.path.split("/").pop())}</h2><div class="photo-viewer-operations"><button type="button" class="icon-button photo-download" aria-label="Download photo" title="Download">${icon("download")}</button><button type="button" class="icon-button photo-info-toggle" aria-label="Photo information" aria-expanded="false" title="Info">${icon("info")}</button>${galleryCanDelete() ? `<button type="button" class="icon-button photo-delete" aria-label="Delete photo" title="Delete">${icon("trash-2")}</button>` : ""}</div></div><div class="photo-viewer-stage"><div class="photo-viewer-image" aria-live="polite">${item.kind === "video" ? icon("play") : busyIcon()}</div><button type="button" class="icon-button photo-previous" aria-label="Previous photo" ${previousIndex < 0 ? "disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="icon-button photo-next" aria-label="Next photo" ${nextIndex < 0 ? "disabled" : ""}>${icon("chevron-right")}</button></div><aside class="photo-info" hidden><header><h2>Info</h2><button type="button" class="icon-button photo-info-close" aria-label="Close information">${icon("x")}</button></header><div class="photo-info-body">${item.metadata ? galleryInfo(item, state.volume, item.metadata) : scaffoldInfo(item)}</div><footer class="photo-info-footer" hidden><button type="button" class="secondary photo-file" hidden>${icon("history")}File history</button>${native && status.volumes.find((v) => v.id === state.volume)?.path ? `<button type="button" class="secondary icon-button photo-reveal" aria-label="Show in folder" title="Show in folder">${icon("folder-open")}</button>` : ""}</footer></aside>`,
+    null,
+    "",
+    true,
+  );
+  $("#dialog").className = "photo-viewer";
+  $("#submit-dialog").hidden = true;
+  $("#cancel-dialog").innerHTML = icon("arrow-left");
+  $("#cancel-dialog").setAttribute("aria-label", "Back to gallery");
+  $(".photo-download").onclick = () => action(() => downloadGalleryPhoto(item));
+  $(".photo-delete")?.addEventListener("click", () =>
+    deleteGalleryPhotos([item]),
+  );
+  const infoPanel = $(".photo-info");
+  const updateInfoActions = () => {
+    infoPanel.querySelector(".photo-file").hidden = !item.metadata?.hasHistory;
+    infoPanel.querySelector(".photo-info-footer").hidden =
+      !item.metadata?.hasHistory && !infoPanel.querySelector(".photo-reveal");
+    const map = infoPanel.querySelector(".photo-map");
+    if (native && map)
+      map.onclick = (event) => {
+        event.preventDefault();
+        action(() => invoke("open_maps", item.metadata.location));
+      };
+  };
+  updateInfoActions();
+  infoPanel.querySelector(".photo-reveal")?.addEventListener("click", () =>
+    action(() =>
+      status.platform === "darwin"
+        ? invoke("open_file", {
+            volume: state.volume,
+            path: item.path,
+            reveal: true,
+          })
+        : invoke("open_folder", { id: state.volume }),
+    ),
+  );
+  let infoLoading = false;
+  const loadInfo = async () => {
+    if (item.metadata || infoLoading) return;
+    infoLoading = true;
+    try {
+      const metadata = await api(
+        "/v1/gallery/info?" +
+          new URLSearchParams({
+            volume: state.volume,
+            path: item.path,
+            hash: item.hash,
+          }),
+      );
+      item.metadata = metadata;
+      if (infoPanel.isConnected) {
+        infoPanel.querySelector(".photo-info-body").innerHTML = galleryInfo(
+          item,
+          state.volume,
+          metadata,
+        );
+        updateInfoActions();
+        icons();
+      }
+    } catch {
+      if (infoPanel.isConnected)
+        infoPanel.querySelector(".photo-info-body").innerHTML = galleryInfo(
+          item,
+          state.volume,
+        );
+      if (
+        infoPanel.isConnected &&
+        !infoPanel.querySelector(".photo-info-error")
+      )
+        infoPanel.insertAdjacentHTML(
+          "beforeend",
+          '<p class="photo-info-error hint" role="status">Photo metadata could not be loaded. Close and reopen Info to retry.</p>',
+        );
+    } finally {
+      infoLoading = false;
+    }
+  };
+  const toggleInfo = (open) => {
+    state.infoOpen = open;
+    if (open) {
+      infoPanel.querySelector(".photo-info-error")?.remove();
+      loadInfo();
+    }
+    $(".photo-info").hidden = !open;
+    $("#dialog").classList.toggle("photo-info-open", open);
+    $(".photo-info-toggle").setAttribute("aria-expanded", String(open));
+  };
+  $(".photo-info-toggle").onclick = () => toggleInfo($(".photo-info").hidden);
+  $(".photo-info-close").onclick = () => toggleInfo(false);
+  toggleInfo(Boolean(state.infoOpen));
+  $(".photo-previous").onclick = () => openGalleryPhoto(previousIndex);
+  $(".photo-next").onclick = () => openGalleryPhoto(nextIndex);
+  $(".photo-file").onclick = () => {
+    $("#dialog").close();
+    action(() =>
+      handle(
+        "activity-file",
+        JSON.stringify({
+          volume: state.volume,
+          path: item.path,
+          rev: item.rev,
+        }),
+      ),
+    );
+  };
+  const navigationFocus = focusNext
+    ? $(".photo-next")
+    : focusPrevious
+      ? $(".photo-previous")
+      : null;
+  (navigationFocus && !navigationFocus.disabled
+    ? navigationFocus
+    : $("#cancel-dialog")
+  ).focus();
+  const target = $(".photo-viewer-image");
+  try {
+    const result =
+      item.kind === "image" ? await galleryPreview(state, item) : {};
+    if (!target.isConnected) return;
+    if (result.data) {
+      const img = result.image || document.createElement("img");
+      if (!result.image) img.src = result.data;
+      img.alt = item.path.split("/").pop();
+      target.replaceChildren(img);
+      // Warm the next photo first, then the previous, only while this viewer is current.
+      (async () => {
+        for (const neighbor of [nextIndex, previousIndex]) {
+          if (
+            state.selected !== index ||
+            !target.isConnected ||
+            !$("#dialog").open
+          )
+            break;
+          const photo = state.items[neighbor];
+          if (photo?.kind === "image") await galleryPreview(state, photo);
+        }
+      })().catch(() => {});
+    } else
+      target.innerHTML = `<div>${icon(item.kind === "video" ? "play" : "image-off")}<p>${item.kind === "video" ? "Open the file to play this video." : "Preview unavailable. The original file is preserved."}</p></div>`;
+  } catch {
+    if (target.isConnected)
+      target.textContent = "Preview unavailable. Try opening the file.";
+  }
+  icons();
+}
+document.addEventListener("keydown", (event) => {
+  if (!$("#dialog").open || !$("#dialog").classList.contains("photo-viewer"))
+    return;
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    $(event.key === "ArrowLeft" ? ".photo-previous" : ".photo-next")?.click();
+  }
+});
+
+function galleryModeButton(volume) {
+  if (!volume.gallery) return "";
+  return button(
+    folderTab === "gallery" ? "Exit gallery" : "Gallery",
+    "gallery-mode",
+    volume.id,
+    "primary gallery-mode-toggle",
+    folderTab === "gallery" ? "layout-list" : "images",
+  );
+}
+async function folderBrowser(v, recent, pending = false) {
   const tools = `<div class="folder-browser-tools">${segmented(
     "Folder content",
     [
@@ -1053,7 +1886,10 @@ async function folderBrowser(v, recent) {
         active: folderTab === "recent",
       },
     ],
-  )}<div>${folderTab === "files" ? `<button class="icon-button" data-action="folder-search-toggle" aria-label="${folderSearchOpen ? "Close search" : "Search files"}">${icon(folderSearchOpen ? "x" : "search")}</button>` : button("All history", "folder-history", v.id, "text-button")}</div></div>`;
+  )}<div>${folderTab === "files" ? `<button class="icon-button" data-action="folder-search-toggle" aria-label="${folderSearchOpen ? "Close search" : "Search files"}">${icon(folderSearchOpen ? "x" : "search")}</button>` : folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
+  if (folderTab === "gallery")
+    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><button type="button" class="secondary photo-more">Loading photos…</button></div>`;
+  if (pending) return tools + scaffoldRow("history");
   if (folderTab === "recent")
     return (
       tools +
@@ -1107,28 +1943,37 @@ async function folderBrowser(v, recent) {
   }
 }
 
-async function renderDetail() {
+async function renderDetail(pending = false) {
   const serial = renderSerial;
   const v = status.volumes.find((v) => v.id === detailId);
   if (!v) {
     detailId = null;
     return render();
   }
+  if (folderViewId !== v.id) {
+    folderViewId = v.id;
+    folderTab = "files";
+    folderReturn = { tab: "files", scroll: 0 };
+  }
   if (status.role !== "hub" && !status.hub) {
     $("#content").innerHTML =
-      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), escape(v.path || "Saved local copy"), native && v.path ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "")}</div><div class="page">${section("Hub connection", hubConnection())}${await folderBrowser(v, [])}</div>`;
+      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), escape(v.path || "Saved local copy"), (native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "") + galleryModeButton(v))}</div><div class="page ${folderTab === "gallery" ? "gallery-page" : ""}">${folderTab === "gallery" ? "" : section("Hub connection", hubConnection()) + `<div class="stats">${folderRetentionSummary(v)}</div>`}${await folderBrowser(v, [])}</div>`;
     icons();
+    if (folderTab === "gallery") mountGallery(v.id);
     return;
   }
+  if (!pending && $("#content").dataset.detail !== detailId)
+    await renderDetail(true);
   let recent = [];
   try {
-    recent = (
-      await api(`/v1/activity?volume=${encodeURIComponent(v.id)}&limit=4`)
-    ).versions;
+    if (!pending)
+      recent = (
+        await api(`/v1/activity?volume=${encodeURIComponent(v.id)}&limit=4`)
+      ).versions;
   } catch {}
   if (view !== "folders" || detailId !== v.id || serial !== renderSerial)
     return;
-  const browser = await folderBrowser(v, recent);
+  const browser = await folderBrowser(v, recent, pending);
   if (serial !== renderSerial || view !== "folders" || detailId !== v.id)
     return;
   const state = stateFor(v);
@@ -1136,28 +1981,11 @@ async function renderDetail() {
   const unscanned =
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
-  const backupRecord = (status.devices || [])
-    .filter((d) => !d.revoked && d.backup_enabled && d.backup_updated)
-    .sort((a, b) => b.backup_updated.localeCompare(a.backup_updated))[0];
-  const backupTitle =
-    status.role === "hub" ? "Hub backup" : `Backup on ${machineLabel()}`;
-  const backupValue =
-    status.role === "hub"
-      ? backupRecord
-        ? `Backup reported · rev ${backupRecord.backup_revision}`
-        : "No backup reported"
-      : status.backup?.enabled
-        ? "On"
-        : "Off";
-  const backupNote =
-    status.role === "hub"
-      ? backupRecord
-        ? `By ${escape(backupRecord.name)} · ${relative(backupRecord.backup_updated)}`
-        : "See Machines for hub records"
-      : `Other machines: see the hub`;
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("folder")}</div><div><h1>${escape(v.name)}</h1><p class="path">${escape(v.path || "Catalog only")}</p></div></div><div class="heading-actions">${syncControls(true)}${status.role === "hub" ? button("Rename", "rename-share", v.id, "secondary", "pencil") + (v.selected ? button("Edit .arcaignore…", "edit-ignore", v.id, "secondary", "file-pen-line") : "") : ""}${native && v.path ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}</div></div></div><div class="page"><div class="stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? (v.policyError ? "Resolve the exclusion policy error" : "Waiting for the first scan") : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${maxRev ? `rev ${maxRev}` : "Not yet"}</strong><p>Accepted by the hub</p></div><div class="stat"><span>${backupTitle}</span><strong class="stat-backup">${icon(backupRecord || status.backup?.enabled ? "shield-check" : "shield")}${escape(backupValue)}</strong><p>${backupNote}</p></div></div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p><p>${status.role === "hub" ? "Files stay on this hub’s disk. Other machines choose their own local destinations." : "Choose a location on this machine. Moving verifies the new copy and keeps the original."}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. Files stay on disk and history is retained."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(v.gallery ? "images" : "folder")}</div><div><h1>${escape(v.name)}</h1><p class="path">${escape(v.path || "Catalog only")}</p></div></div><div class="heading-actions">${status.role === "hub" ? button("Rename", "rename-share", v.id, "secondary", "pencil") + (v.selected ? button(".arcaignore…", "edit-ignore", v.id, "secondary", "file-pen-line") : "") : ""}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}</div></div></div><div class="page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? (v.policyError ? "Resolve the exclusion policy error" : "Waiting for the first scan") : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${pending ? scaffoldLine("short") : maxRev ? `rev ${maxRev}` : "Not yet"}</strong><p>Accepted by the hub</p></div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. Files stay on disk and history is retained."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+  $("#content").dataset.detail = v.id;
   refreshCopies();
+  if (!pending && folderTab === "gallery") mountGallery(v.id);
 }
 async function renderHistory(
   cursor = "",
@@ -1197,7 +2025,7 @@ async function renderHistory(
     if (!data) {
       if (cached) {
         historyVersions = [];
-        list.innerHTML = '<p class="hint" role="status">Loading revisions…</p>';
+        list.innerHTML = section("File revisions", scaffoldRow("history"));
       }
       return;
     }
@@ -1216,7 +2044,7 @@ async function renderHistory(
               "This file has no history available on the hub.",
             ),
       ) +
-      `<p class="hint history-note">Restoring creates a new revision. Existing revisions stay in history.</p>${data.next ? `<div class="pagination">${button("Load more", "history-page", data.next)}</div>` : ""}`;
+      `${data.next ? `<div class="pagination">${button("Load more", "history-page", data.next)}</div>` : ""}`;
     icons();
     return;
   }
@@ -1224,8 +2052,7 @@ async function renderHistory(
     `/v1/activity?limit=50&filter=${historyFilter}${historyVolume ? `&volume=${encodeURIComponent(historyVolume)}` : ""}${cursor ? `&before=${cursor}` : ""}`,
   );
   if (!data) {
-    if (cached)
-      list.innerHTML = '<p class="hint" role="status">Loading history…</p>';
+    if (cached) list.innerHTML = section("Loading", scaffoldRow("history"));
     return;
   }
   if (!target) list = $("#history-list");
@@ -1252,10 +2079,7 @@ async function renderHistory(
         )
         .join("") +
       `${historyNext ? `<div class="pagination">${button("Load more", "history-page", historyNext)}</div>` : ""}`
-    : empty(
-        "Every change has a history",
-        "Accepted revisions appear here after files synchronize.",
-      );
+    : empty("Every change has a history", "Changes to your files appear here.");
   icons();
 }
 const machineRow = (
@@ -1485,12 +2309,16 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
           .join("")
       : roster
         ? ""
-        : empty(
-            "Machine list unavailable",
-            "Reconnect to the hub to see its machines.",
-          );
+        : !fetchData
+          ? scaffoldRow()
+          : empty(
+              "Machine list unavailable",
+              "Reconnect to the hub to see its machines.",
+            );
   }
   html += section("Machines", machineRows);
+  if (!fetchData && !discovered)
+    html += section("Discovery", scaffoldRow("card", true));
   const found = peers.filter(
     (p) =>
       !consumed.has(p.id) &&
@@ -1699,7 +2527,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   if (status.role === "hub")
     html += section(
       "History retention",
-      `<div class="settings-card">${setting("Kept", `${status.historyRevisions} accepted revisions. No scheduled cleanup exists.`, button("Preview cleanup…", "retention", "", "secondary small-button", "history"))}${setting("Limits", "Preview always precedes applying. Current versions, pending writes and history not yet received by backups are protected.", `<span class="mono">${status.retention.days || 0} days · ${status.retention.versions || 0} versions</span>`)}</div>`,
+      `<div class="settings-card">${setting("Kept", `${status.historyRevisions} accepted revisions. Automatic retention is configured in each folder.`, button("Preview cleanup…", "retention", "", "secondary small-button", "history"))}${setting("Limits", "Preview always precedes applying. Current versions, pending writes and history not yet received by backups are protected.", `<span class="mono">${status.retention.days || 0} days · ${status.retention.versions || 0} versions</span>`)}</div>`,
     );
   html += section(
     "Tailscale",
@@ -1756,7 +2584,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.3.8 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.4.0 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   if (status.role === "replica")
     html += section(
@@ -1793,7 +2621,31 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
 function modalHeader(heading, description, symbol = "folder") {
   return `<div class="modal-title"><div class="tile">${icon(symbol)}</div><div><h2 id="dialog-title">${heading}</h2><p>${description}</p></div></div>`;
 }
-function modal(html, submit, label = "Save", wide = false) {
+const dialogTemplate = $("#dialog").innerHTML;
+function modal(html, submit, label = "Save", wide = false, layered = false) {
+  if (layered) {
+    const previous = $("#dialog"),
+      previousSubmit = submitDialog;
+    const identified = [previous, ...previous.querySelectorAll("[id]")];
+    for (const element of identified) {
+      element.dataset.dialogId = element.id;
+      element.id = "background-" + element.id;
+    }
+    const layer = document.createElement("dialog");
+    layer.id = "dialog";
+    layer.setAttribute("aria-labelledby", "dialog-title");
+    layer.innerHTML = dialogTemplate;
+    document.body.append(layer);
+    layer.restore = () => {
+      layer.remove();
+      for (const element of identified) {
+        element.id = element.dataset.dialogId;
+        delete element.dataset.dialogId;
+      }
+      submitDialog = previousSubmit;
+    };
+    bindDialog(layer);
+  }
   $("#dialog-error").hidden = true;
   $("#dialog-extra-actions")?.remove();
   $("#cancel-dialog").hidden = false;
@@ -1811,6 +2663,7 @@ function modal(html, submit, label = "Save", wide = false) {
   $("#submit-dialog").disabled = false;
   $("#submit-dialog").className = "primary";
   $("#cancel-dialog").textContent = "Cancel";
+  $("#cancel-dialog").removeAttribute("aria-label");
   submitDialog = submit;
   for (const item of $("#dialog-content").querySelectorAll("label")) {
     const field = item.nextElementSibling;
@@ -1823,35 +2676,48 @@ function modal(html, submit, label = "Save", wide = false) {
   icons();
 }
 let dialogSubmitting = false;
-$("#cancel-dialog").onclick = () => {
-  if (!dialogSubmitting) $("#dialog").close();
-};
-$("#dialog").addEventListener("cancel", (event) => {
-  if (dialogSubmitting) event.preventDefault();
-});
-// Form dialogs close explicitly; scrolling or releasing on the backdrop must not discard drafts.
-$("#dialog-form").onsubmit = (event) => {
-  event.preventDefault();
-  action(async () => {
-    const control = $("#submit-dialog");
-    control.disabled = true;
-    control.setAttribute("aria-busy", "true");
-    dialogSubmitting = true;
-    $("#cancel-dialog").disabled = true;
-    try {
-      $("#dialog-error").hidden = true;
-      const complete = await submitDialog(new FormData(event.target));
-      if (complete === false) return;
-      $("#dialog").close();
-      await refresh();
-    } finally {
-      dialogSubmitting = false;
-      control.removeAttribute("aria-busy");
-      $("#cancel-dialog").disabled = false;
-      control.disabled = false;
-    }
+function bindDialog(dialog) {
+  const cancel = dialog.querySelector("#cancel-dialog");
+  const form = dialog.querySelector("#dialog-form");
+  const close = () => {
+    dialog.close();
+    dialog.restore?.();
+  };
+  cancel.onclick = () => {
+    if (!dialogSubmitting) close();
+  };
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    if (!dialogSubmitting) close();
   });
-};
+  // Dialogs close explicitly; backdrop interaction never discards a draft.
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    action(async () => {
+      const control = dialog.querySelector("#submit-dialog");
+      control.disabled = true;
+      control.setAttribute("aria-busy", "true");
+      control.insertAdjacentHTML("afterbegin", busyIcon());
+      dialogSubmitting = true;
+      cancel.disabled = true;
+      try {
+        dialog.querySelector("#dialog-error").hidden = true;
+        const complete = await submitDialog(new FormData(event.target));
+        if (complete === false) return;
+        close();
+        if (typeof complete === "function") await complete();
+        else await refresh();
+      } finally {
+        dialogSubmitting = false;
+        control.removeAttribute("aria-busy");
+        control.querySelector(".busy-grid")?.remove();
+        cancel.disabled = false;
+        control.disabled = false;
+      }
+    });
+  };
+}
+bindDialog($("#dialog"));
 function textField(label, name, value = "", symbol = "folder", mono = false) {
   return `<label for="field-${name}">${label}</label><div class="field-with-icon">${icon(symbol)}<input id="field-${name}" aria-label="${label}" class="${mono ? "mono" : ""}" name="${name}" value="${escape(value)}" required></div>`;
 }
@@ -2037,6 +2903,7 @@ function connectModal(endpoint = "", recovery = false) {
         reconcile: recovery,
       });
       catalog = [];
+      catalogLoaded = false;
       catalogHubName = result.name || "";
       roster = null;
       notice(
@@ -2213,7 +3080,7 @@ async function reviewConflict(item) {
   modal(
     modalHeader(
       "Resolve conflict",
-      "Choose which version to use for the original file. Restoring creates a new revision; both source versions and the conflict copy are kept.",
+      "Choose which version to keep. Both copies remain available in history.",
       "git-branch",
     ) +
       `<div class="conflict-options">${[
@@ -2276,6 +3143,7 @@ async function reviewConflict(item) {
   icons();
 }
 async function handle(name, id, control) {
+  if (name === "folder-retention") return changeFolderRetention(id, control);
   if (name === "refresh") {
     await refresh();
     return;
@@ -2299,7 +3167,7 @@ async function handle(name, id, control) {
     const policy = await api(`/v1/ignore-policy?id=${encodeURIComponent(id)}`);
     modal(
       modalHeader(
-        "Edit .arcaignore",
+        ".arcaignore",
         "Rules sync to every copy. Excluded files stay on disk; newly included files join bidirectional sync.",
         "file-pen-line",
       ) +
@@ -2361,6 +3229,19 @@ async function handle(name, id, control) {
     view = "devices";
     await render();
     updateShell();
+    return;
+  }
+  if (name === "gallery-mode") {
+    const volume = status.volumes.find((v) => v.id === detailId);
+    if (!volume?.gallery) return;
+    const exiting = folderTab === "gallery";
+    if (exiting) folderTab = folderReturn.tab;
+    else {
+      folderReturn = { tab: folderTab, scroll: $(".page")?.scrollTop || 0 };
+      folderTab = "gallery";
+    }
+    await render();
+    if (exiting && $(".page")) $(".page").scrollTop = folderReturn.scroll;
     return;
   }
   if (
@@ -2546,7 +3427,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.3.8",
+          version: "0.4.0",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -2654,6 +3535,7 @@ async function handle(name, id, control) {
       async () => {
         await api("/v1/disconnect", { confirmed: true });
         catalog = [];
+        catalogLoaded = false;
         catalogHubName = "";
         roster = null;
         discovered = null;
@@ -3112,6 +3994,10 @@ document.addEventListener("click", (e) => {
   if (!control) return;
   e.preventDefault();
   if (["copy-pair", "new-pair"].includes(control.dataset.action)) return;
+  if (control.dataset.action === "dismiss") {
+    void handle(control.dataset.action, control.dataset.id, control);
+    return;
+  }
   action(() => handle(control.dataset.action, control.dataset.id, control));
 });
 document.addEventListener("change", (e) => {
@@ -3188,7 +4074,8 @@ async function showLogin(message = "") {
     try {
       await browserRequest("/auth/login", { code });
       // A successful one-time login must not be submitted again if loading fails.
-      $("#content").innerHTML = '<div class="loading">Opening Arca…</div>';
+      $("#content").innerHTML =
+        title("Folders") + `<div class="page">${scaffoldRow()}</div>`;
       await action(() => refresh());
     } catch (error) {
       const loginError = $("#login-error");
@@ -3421,7 +4308,8 @@ setInterval(async () => {
       ) &&
       serial === renderSerial &&
       ["folders", "devices"].includes(view) &&
-      old !== signature
+      old !== signature &&
+      !(view === "folders" && detailId && folderTab === "gallery")
     ) {
       await render();
       lastSignature = signature;

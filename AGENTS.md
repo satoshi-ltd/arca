@@ -22,7 +22,7 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 
 ## Non-negotiable product decisions
 
-- Hub alone creates shares; IDs identify them. Every machine chooses independent local destinations. Replicas edit bidirectionally. Complete local files, no placeholders.
+- Hub alone creates shares; IDs identify them. Every machine chooses independent local destinations. Ordinary replica selections edit bidirectionally with complete local files, no placeholders. Mobile Gallery source is an explicitly approved upload-only selection: read the system gallery, keep no permanent Arca working copy, never download hub changes into Photos or propagate gallery deletions. Converting an existing local copy requires explicit confirmation and verification before removal.
 - Pause, replica unlink, hub local-copy unselection and hub Delete share are different operations. Preserve the documented file/history consequences.
 - Optional full backup is additional to desktop/server replica working sync. Mobile (phone and Fold) is replica-only: no hub or full backup. Do not retain pre-production backward-compatibility branches, legacy modes or unused code. Preserve current error recovery and platform support. Quit leaves the daemon running.
 - Discovery never links machines. Web access and pairing use separate six-digit, single-use, ten-minute codes with persistent failure budgets; credentials remain long/revocable.

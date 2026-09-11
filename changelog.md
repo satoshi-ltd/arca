@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Rename the main workflow to `publish` and connect `publish-site` to successful main-branch runs. Deploy the exact validated commit, exclude pull requests and failed/cancelled runs, and restrict manual site deployment to main.
+
+## 0.4.0 — 2026-09-11
+
+- Add upload-only mobile gallery sources with verified conversion, resumable photo uploads, edited-photo revisions and native gallery export support.
+- Add desktop/web Gallery mode with date grouping, timeline navigation, selection/deletion, adjacent-photo prefetch and EXIF information.
+- Add per-folder revision retention: Off, 1 day, 1 week, 30 days (default) and Forever, with confirmed cleanup and replica policy display.
+- Fix delayed object cleanup, gallery/source recovery and disconnected tray feedback; expand synchronization regression coverage.
+- Unify folder/history copy, retention summaries and shared loading scaffolds across desktop/web and mobile.
+- Align application versions at 0.4.0 and mobile native build numbers at 11. Updated native clients are required for native changes; physical-device qualification remains open.
+
 ## 0.3.8 — 2026-09-10
 
 - Fix Windows development-launcher test cleanup: remove the isolated runtime asynchronously with bounded retries after stopping the daemon, allowing executable/file handles to be released. Persistent cleanup errors still fail the test.
