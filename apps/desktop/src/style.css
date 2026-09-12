@@ -952,7 +952,7 @@ input[type="radio"] {
 }
 dialog {
   border: 0;
-  padding: 22px;
+  padding: var(--access-padding);
   width: var(--dialog-width);
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 40px);
@@ -1055,7 +1055,7 @@ dialog::backdrop {
   display: none;
 }
 .access-page {
-  width: 380px;
+  width: var(--access-width);
   max-width: calc(100vw - 32px);
   margin: 0 auto;
   padding: 48px 0;
@@ -3576,4 +3576,266 @@ dialog.photo-viewer {
 }
 .photo-info-section .photo-capture-stats {
   margin-top: var(--space-4);
+}
+
+/* Shared access reference and grouped request details. */
+.access-page {
+  width: var(--access-width);
+  gap: var(--access-padding);
+}
+.access-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.access-logo img {
+  width: var(--access-mark);
+  height: var(--access-mark);
+}
+.access-brand h1 {
+  font-size: var(--access-brand-font);
+  margin: 0;
+}
+.access-card {
+  font-size: var(--text-row);
+  padding: var(--access-padding);
+  text-align: center;
+}
+.access-tabs {
+  display: flex;
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+.access-tabs button {
+  flex: 1;
+  justify-content: center;
+}
+.access-card label {
+  font-size: var(--text-row);
+}
+.access-card .code-inputs {
+  margin: var(--space-3) 0;
+  gap: var(--section-label-gap);
+}
+.access-card .code-inputs input {
+  width: var(--access-code-width);
+  height: var(--access-code-height);
+  font-size: var(--text-title);
+}
+.access-card .hint {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
+}
+.access-card .primary {
+  margin-top: var(--space-5);
+}
+.access-help {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+}
+.access-help h3 {
+  color: var(--ink);
+}
+.access-help code {
+  background: var(--paper);
+  border-radius: var(--r-control);
+  padding: 2px 6px;
+  font: inherit;
+  font-family: var(--font-mono);
+}
+.access-card .session-note {
+  margin-top: var(--space-4);
+  font-size: var(--text-caption);
+}
+.access-card .request-number {
+  font-size: var(--access-reference-font);
+  gap: var(--space-3);
+}
+.access-card .request-reference .eyebrow {
+  font-size: var(--text-caption);
+}
+.request-reference .eyebrow {
+  font: var(--text-row) var(--font-mono);
+  letter-spacing: 1px;
+  color: var(--mute);
+}
+.request-reference {
+  border: 1px dashed var(--line);
+  border-radius: var(--r-card);
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+}
+.request-number {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  font: var(--approval-reference-font) var(--font-mono);
+  letter-spacing: var(--reference-tracking);
+  margin-top: var(--space-3);
+  color: var(--ink);
+}
+.request-separator {
+  color: var(--line);
+}
+.request-reference p {
+  margin-top: var(--space-4);
+  color: var(--soft);
+}
+.approval-instructions {
+  margin-top: var(--space-6);
+  color: var(--soft);
+}
+.approval-countdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--list-row-padding-y);
+  margin: var(--space-3) 0 var(--space-5);
+}
+#access-approval button {
+  width: 100%;
+}
+.approval-dialog {
+  width: var(--approval-width);
+  max-width: calc(100vw - 32px);
+  padding: var(--access-padding);
+}
+.approval-dialog .modal-title {
+  gap: var(--space-3);
+}
+.approval-dialog .modal-title h2 {
+  font-size: var(--touch-row-font);
+  line-height: var(--touch-control-line);
+}
+.approval-dialog .modal-title p {
+  font-size: var(--text-control);
+  line-height: var(--touch-control-line);
+}
+.approval-dialog .modal-title .tile {
+  width: var(--approval-tile);
+  height: var(--approval-tile);
+  background: var(--tint);
+  color: var(--green);
+}
+.approval-dialog .request-reference {
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-3);
+}
+.approval-dialog .request-number {
+  font-size: var(--approval-reference-font);
+  margin-top: var(--space-2);
+  gap: var(--space-3);
+}
+.approval-dialog .request-reference .eyebrow {
+  font-size: var(--text-caption);
+}
+.approval-details {
+  border: 1px solid var(--div);
+  border-radius: var(--r-card);
+  overflow: hidden;
+  margin-top: var(--space-5);
+}
+.approval-detail {
+  font-size: var(--text-body);
+  display: flex;
+  align-items: center;
+  gap: var(--list-row-padding-y);
+  padding: var(--space-2) var(--space-3);
+  color: var(--soft);
+}
+.approval-detail + .approval-detail {
+  border-top: 1px solid var(--div);
+}
+.approval-detail strong {
+  margin-left: auto;
+  text-align: right;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.approval-detail .icon {
+  flex: none;
+}
+.approval-raw {
+  margin: var(--space-5) 0;
+  color: var(--soft);
+}
+.approval-raw summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.approval-raw p {
+  overflow-wrap: anywhere;
+  margin-top: 10px;
+}
+.approval-dialog .dialog-actions {
+  margin-left: 0;
+  align-items: center;
+}
+.approval-session {
+  margin-right: auto;
+  font-size: var(--text-caption);
+}
+@media (max-width: 600px) {
+  .access-page {
+    padding: var(--space-6) 0;
+  }
+  .access-card {
+    padding: var(--space-5) var(--space-4);
+  }
+  .access-tabs button {
+    padding: var(--list-row-padding-y) var(--space-2);
+    font-size: var(--text-body);
+  }
+  .access-card .code-inputs {
+    gap: var(--section-label-gap);
+  }
+  .access-card .code-inputs input {
+    width: var(--access-code-width);
+    height: var(--access-code-height);
+    font-size: var(--text-title);
+  }
+  .approval-dialog {
+    padding: var(--access-padding);
+  }
+  .approval-detail {
+    padding: var(--space-3);
+    gap: var(--space-2);
+  }
+}
+
+@media (max-width: 420px) {
+  .approval-dialog .dialog-actions {
+    flex-wrap: wrap;
+  }
+  .approval-session {
+    flex-basis: 100%;
+  }
+}
+
+.access-brand #access-role {
+  color: var(--surface);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.access-card label {
+  color: var(--ink);
+}
+.approval-raw summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+}
+.approval-raw summary::-webkit-details-marker {
+  display: none;
+}
+.approval-raw summary .icon {
+  width: var(--text-row);
+  height: var(--text-row);
+}
+.approval-raw[open] summary .icon {
+  transform: rotate(90deg);
 }

@@ -2266,7 +2266,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         state,
         d.revoked
           ? ""
-          : `<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${button("Disconnect", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
+          : `<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Disconnect", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
         false,
         false,
         !d.last_seen,
@@ -2584,7 +2584,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.4.0 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.4.1 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   if (status.role === "replica")
     html += section(
@@ -3143,6 +3143,21 @@ async function reviewConflict(item) {
   icons();
 }
 async function handle(name, id, control) {
+  if (name === "web-approver") {
+    const enabled = !status.webApprovers?.includes(id);
+    modal(
+      modalHeader(
+        enabled ? "Allow web approval?" : "Disable web approval?",
+        enabled
+          ? "This machine will be able to approve administrator access to this hub’s web interface."
+          : "This machine will no longer approve web access.",
+        "shield-check",
+      ),
+      () => api("/v1/web-approvers", { id, enabled }),
+      enabled ? "Allow" : "Disable",
+    );
+    return;
+  }
   if (name === "folder-retention") return changeFolderRetention(id, control);
   if (name === "refresh") {
     await refresh();
@@ -3427,7 +3442,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.4.0",
+          version: "0.4.1",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -4034,6 +4049,101 @@ document.addEventListener("change", (e) => {
       await invoke("set_notifications", { enabled: e.target.checked });
     });
 });
+function requestReference(reference, label = "REQUEST", hint = "") {
+  const digits = String(reference || "");
+  return `<div class="request-reference"><div class="eyebrow">${escape(label)}</div><div class="request-number" aria-label="${escape(digits)}"><span>${escape(digits.slice(0, 3))}</span><span class="request-separator" aria-hidden="true">–</span><span>${escape(digits.slice(3))}</span></div>${hint ? `<p>${escape(hint)}</p>` : ""}</div>`;
+}
+function requestRemaining(expires) {
+  const seconds = Math.max(0, Math.ceil((expires - Date.now()) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+let approvalModal = null;
+let checkingApprovals = false;
+async function checkWebApprovals() {
+  if (!ready || checkingApprovals || document.visibilityState === "hidden")
+    return;
+  checkingApprovals = true;
+  try {
+    const data = await api("/v1/web-approvals");
+    if (!ready) return;
+    if (approvalModal && !data.requests.some((r) => r.id === approvalModal)) {
+      if ($("#dialog").dataset.approval === approvalModal) $("#dialog").close();
+      approvalModal = null;
+    }
+    if (busy || $("#dialog").open || !data.requests.length) return;
+    const r = data.requests[0];
+    approvalModal = r.id;
+    modal(
+      modalHeader(
+        `Allow this browser to open ${escape(status.hubName || status.name)}?`,
+        `Someone is signing in to the hub web from a browser. Allow it only if that is you, right now.`,
+        "log-in",
+      ) +
+        requestReference(r.reference, "REQUEST · must match the browser") +
+        `<div class="approval-details">${[
+          ["globe", "Browser", escape(r.browser || "Browser")],
+          ["shield-check", "From", `<span class="mono">${escape(r.ip)}</span>`],
+          ["clock", "Requested", `<span id="approval-time"></span>`],
+        ]
+          .map(
+            ([symbol, label, value]) =>
+              `<div class="approval-detail">${icon(symbol)}<span>${label}</span><strong>${value}</strong></div>`,
+          )
+          .join("")}</div>
+        <details class="approval-raw"><summary>${icon("chevron-right")}Raw details, as reported by the browser</summary><p>${escape(r.agent)}</p></details>`,
+      async () => {
+        await api("/v1/web-approvals", { id: r.id, decision: "allow" });
+        approvalModal = null;
+      },
+      "Allow",
+    );
+    $("#dialog").dataset.approval = r.id;
+    $("#dialog").classList.add("approval-dialog");
+    const footer = document.createElement("p");
+    footer.className = "hint approval-session";
+    footer.textContent = "Grants a 24-hour session on that browser.";
+    $("#dialog .dialog-actions").prepend(footer);
+    const updateTime = () => {
+      const time = $("#approval-time");
+      if (time)
+        time.textContent = `${r.created && Date.now() - r.created >= 60000 ? `${Math.floor((Date.now() - r.created) / 60000)} min ago` : "Just now"} · expires in ${requestRemaining(r.expires || Date.now())}`;
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    const cancel = $("#cancel-dialog");
+    const previousCancel = cancel.onclick;
+    $("#dialog").addEventListener(
+      "close",
+      () => {
+        clearInterval(timer);
+        footer.remove();
+        cancel.onclick = previousCancel;
+        delete $("#dialog").dataset.approval;
+        if (approvalModal === r.id) {
+          approvalModal = null;
+          void api("/v1/web-approvals", { id: r.id, decision: "deny" }).catch(
+            () => {},
+          );
+        }
+      },
+      { once: true },
+    );
+    cancel.textContent = "Deny";
+    cancel.onclick = () =>
+      action(async () => {
+        await api("/v1/web-approvals", { id: r.id, decision: "deny" });
+        approvalModal = null;
+        $("#dialog").close();
+      });
+  } catch {
+    /* Offline/older hubs keep their existing sign-in path. */
+  } finally {
+    checkingApprovals = false;
+  }
+}
+setInterval(() => {
+  void checkWebApprovals();
+}, 3000);
 async function showLogin(message = "") {
   viewLoadSerial++;
   historyCache.clear();
@@ -4046,7 +4156,18 @@ async function showLogin(message = "") {
   if ($("#dialog").open) $("#dialog").close();
   document.body.classList.add("access-mode");
   $("#content").innerHTML =
-    `<div class="access-page"><div class="access-brand"><img src="assets/arca-icon.svg" width="56" height="56" alt="Arca"><h1>arca</h1><p><span id="access-role" class="tag" hidden></span> <span id="access-name"></span> <span class="mono">${escape(location.host)}</span></p></div><div class="access-card"><form id="web-login"><label>Web access code</label>${codeFields("web")}<p class="hint">${icon("clock")} Single use · expires in ten minutes</p><p id="login-error" role="alert">${escape(message)}</p><button class="primary" type="submit">${icon("log-in")}Open Arca</button><p class="session-note">Signed in for up to 24 hours, until sign-out or a server restart.</p></form></div><div class="access-help"><h3>Get a code</h3><p>Run on the server:</p><code>arca web-code</code><p>For a Docker installation, run the command inside its Arca container. Copy the <code>code</code> value from the JSON.</p></div></div>`;
+    `<div class="access-page"><div class="access-brand"><div class="access-logo"><img src="assets/arca-icon.svg" width="56" height="56" alt=""><h1>arca</h1></div><p><span id="access-role" class="tag" hidden></span> <span class="mono"><span id="access-name"></span> ${escape(location.host)}</span></p></div><div class="access-card">
+    ${segmented(
+      "Sign-in method",
+      [
+        { label: "Enter a code", action: "login-code", active: true },
+        { label: "Approve on a machine", action: "login-approval" },
+      ],
+      "access-tabs",
+    )}
+    <div id="access-code"><form id="web-login"><label>Web access code</label>${codeFields("web")}<p class="hint">${icon("clock")} Single use · valid ten minutes from generation</p><p id="login-error" role="alert">${escape(message)}</p><button class="primary" type="submit">${icon("log-in")}Open Arca</button></form><div class="access-help"><h3>Get a code</h3><p>On the server run <code>arca web-code</code></p><p>and copy the code value from the reply.</p></div></div>
+    <div id="access-approval" hidden><div id="web-approval-wait"></div><button type="button" id="request-web-approval" class="secondary">Try again</button></div>
+    <p class="session-note">Signed in for up to 24 hours, until sign-out or a server restart.<br>No username or password.</p></div></div>`;
   icons();
   fetch("/.well-known/arca")
     .then((r) => r.json())
@@ -4061,6 +4182,90 @@ async function showLogin(message = "") {
       $("#access-role").hidden = false;
     })
     .catch(() => {});
+  let cancelApproval = () => {};
+  const chooseMethod = (approval) => {
+    cancelApproval();
+    $("#access-code").hidden = approval;
+    $("#access-approval").hidden = !approval;
+    document
+      .querySelectorAll(".access-tabs button")
+      .forEach((button, index) => {
+        button.classList.toggle("active", Boolean(index) === approval);
+        button.setAttribute(
+          "aria-pressed",
+          String(Boolean(index) === approval),
+        );
+      });
+    if (approval) void startApproval();
+  };
+  document.querySelectorAll(".access-tabs button").forEach((button, index) => {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      chooseMethod(Boolean(index));
+    };
+  });
+  async function startApproval() {
+    const button = $("#request-web-approval"),
+      wait = $("#web-approval-wait");
+    button.hidden = true;
+    wait.innerHTML = `<p class="approval-countdown">${busyIcon()}Requesting access…</p>`;
+    let request,
+      cancelled = false,
+      timer;
+    cancelApproval = () => {
+      cancelled = true;
+    };
+    try {
+      request = await browserRequest("/auth/approval", { action: "create" });
+      if (cancelled || !wait.isConnected || ready) return;
+      wait.innerHTML =
+        requestReference(
+          request.reference,
+          "REQUEST",
+          "Approve only if the machine shows this same number.",
+        ) +
+        `<p class="approval-instructions">Open Arca on an authorized machine or your phone.</p><p class="approval-countdown">${busyIcon()}<span id="request-countdown"></span></p><button type="button" class="secondary">Cancel request</button>`;
+      const tick = () => {
+        const el = wait.querySelector("#request-countdown");
+        if (el)
+          el.textContent = `Expires in ${requestRemaining(request.expires)}`;
+      };
+      tick();
+      timer = setInterval(tick, 1000);
+      wait.querySelector("button").onclick = () => chooseMethod(false);
+      while (!cancelled && wait.isConnected && !ready) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (cancelled || !wait.isConnected || ready) break;
+        const result = await browserRequest("/auth/approval", {
+          ...request,
+          action: "poll",
+        });
+        if (cancelled || !wait.isConnected) break;
+        if (result.state === "approved") {
+          await action(() => refresh());
+          return;
+        }
+        if (result.state !== "pending") {
+          wait.textContent =
+            result.state === "denied"
+              ? "Access denied."
+              : "Request expired. Try again.";
+          return;
+        }
+      }
+    } catch (error) {
+      if (!cancelled && wait.isConnected) wait.textContent = error.message;
+    } finally {
+      clearInterval(timer);
+      if (request)
+        void browserRequest("/auth/approval", {
+          ...request,
+          action: "cancel",
+        }).catch(() => {});
+      if (!cancelled && button.isConnected && !ready) button.hidden = false;
+    }
+  }
+  $("#request-web-approval").onclick = startApproval;
   $("#web-login").onsubmit = async (e) => {
     e.preventDefault();
     const code = readCode("web");

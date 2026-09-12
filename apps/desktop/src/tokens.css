@@ -78,6 +78,18 @@
   --sidebar-width: 200px;
   --detail-side-width: 320px;
   --dialog-width: 480px;
+  /* Access surfaces: CSS dimensions, independent of screenshot pixel density. */
+  --access-width: 380px;
+  --approval-width: 440px;
+  --access-padding: 22px;
+  --access-mark: 38px;
+  --access-brand-font: 28px;
+  --access-code-width: 38px;
+  --access-code-height: 46px;
+  --access-reference-font: 30px;
+  --approval-reference-font: 28px;
+  --reference-tracking: 4px;
+  --approval-tile: 36px;
   --control-height: 32px;
   --touch-control-height: 48px;
   --touch-target-min: 44px;

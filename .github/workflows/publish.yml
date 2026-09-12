@@ -1,4 +1,4 @@
-name: Arca
+name: publish
 on:
   push:
     branches: [main]

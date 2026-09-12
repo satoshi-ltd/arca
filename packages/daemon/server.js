@@ -221,6 +221,18 @@ export async function start(home, options = {}) {
           }),
         );
       }
+      if (web) {
+        const allowed = (id) =>
+          id === config.id ||
+          (config.webApprovers?.includes(id) &&
+            Boolean(
+              s.db
+                .prepare("SELECT id FROM devices WHERE id=? AND revoked=0")
+                .get(id),
+            ));
+        web.hasApprovers = () => Boolean(config.webApprovers?.some(allowed));
+        web.canRedeem = allowed;
+      }
       if (web && (await web.handle(req, res, body))) return;
       if (req.method === "GET" && req.url === "/.well-known/arca")
         return send(200, {
@@ -319,6 +331,24 @@ export async function start(home, options = {}) {
       const requireHub = () => {
         if (config.role !== "hub") fail("This device is not the hub", 409);
       };
+      const canApprove = (id) =>
+        id === config.id ||
+        (config.webApprovers?.includes(id) &&
+          Boolean(
+            s.db
+              .prepare("SELECT id FROM devices WHERE id=? AND revoked=0")
+              .get(id),
+          ));
+      if (req.method === "GET" && route === "/v1/web-approvals") {
+        if (config.role !== "hub") {
+          requireAdmin();
+          return send(200, await engine.json(route));
+        }
+        if (!web) return send(200, { requests: [] });
+        return send(200, {
+          requests: admin || canApprove(device.id) ? web.pending() : [],
+        });
+      }
       if (req.method === "GET" && route === "/v1/setup-info") {
         requireAdmin();
         return send(
@@ -353,7 +383,11 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/status") {
         requireAdmin();
         const status = engine.status();
-        return send(200, { ...status, notices: conditionNotices(status) });
+        return send(200, {
+          ...status,
+          webApprovers: config.webApprovers || [],
+          notices: conditionNotices(status),
+        });
       }
       if (
         !admin &&
@@ -761,6 +795,34 @@ export async function start(home, options = {}) {
       if (req.method === "POST") {
         const b = await jsonBody();
         checkCredential();
+        if (route === "/v1/web-approvers") {
+          requireAdmin();
+          requireHub();
+          if (
+            typeof b.enabled !== "boolean" ||
+            !s.db
+              .prepare("SELECT id FROM devices WHERE id=? AND revoked=0")
+              .get(b.id)
+          )
+            fail("Invalid machine", 400);
+          config.webApprovers = [
+            ...new Set([
+              ...(config.webApprovers || []).filter((id) => id !== b.id),
+              ...(b.enabled ? [b.id] : []),
+            ]),
+          ];
+          s.saveConfig();
+          return send(200, { enabled: b.enabled });
+        }
+        if (route === "/v1/web-approvals") {
+          if (config.role !== "hub") {
+            requireAdmin();
+            return send(200, await engine.json(route, b));
+          }
+          if (!web || (!admin && !canApprove(device.id)))
+            fail("Web approval is not allowed on this machine", 403);
+          return send(200, web.decide(b.id, b.decision, device.id));
+        }
         if (route === "/v1/settings") {
           requireAdmin();
           if (

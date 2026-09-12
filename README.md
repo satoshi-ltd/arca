@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.4.0 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.4.1 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -145,3 +145,5 @@ The lookup calls the GitHub REST API and writes `site/release.json`. CI always s
 `.github/workflows/publish-site.yml` runs after a successful `publish` workflow on `main` (push or manual run), or manually from `main`. Automatic runs check out the exact successful commit; failed/cancelled runs and pull requests do not deploy. It reads published release metadata through the GitHub REST API with the workflow token, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. This is prepared locally, not deployed. Cloudflare/DNS configuration and the first end-to-end release remain to be verified. See SPEC's website publication section for required configuration.
 
 **Version history:** hub folder headers offer Off, 1 day, 1 week, 1 month (30 days), or Forever. 30 days is the default; explicit choices are preserved. Shortening retention previews existing revisions to remove; automatic cleanup runs hourly while the hub is active. Current files and protected work remain, and unreferenced content has a 24-hour grace period before disk reclamation. Requires the updated hub daemon.
+
+**Web sign-in approval:** an authenticated hub administrator can enable “Allow web approval” in a machine’s actions. The login page can then request access from those machines. Open foreground clients show the shared confirmation with a matching reference, requester IP and reported browser details. Requests expire after five minutes. Shell sign-in codes remain available for initial access and recovery. Updated hub and client code is required; mobile background push delivery is not included.

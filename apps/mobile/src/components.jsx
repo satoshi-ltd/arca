@@ -557,19 +557,22 @@ export function Sheet({
     >
       <KeyboardPane style={s.modalOverlay}>
         <SafeAreaView style={s.modalPanel}>
-          <View style={s.sheetHeader}>
-            <Text accessibilityRole="header" style={[s.heading, s.flex]}>
-              {title}
-            </Text>
-            <Button
-              label="Close"
-              quiet
-              icon="close"
-              iconOnly
-              disabled={busy}
-              onPress={onClose}
-            />
-          </View>
+          {!title && <View style={s.sheetHandle} />}
+          {!!title && (
+            <View style={s.sheetHeader}>
+              <Text accessibilityRole="header" style={[s.heading, s.flex]}>
+                {title}
+              </Text>
+              <Button
+                label="Close"
+                quiet
+                icon="close"
+                iconOnly
+                disabled={busy}
+                onPress={onClose}
+              />
+            </View>
+          )}
           <KeyboardScrollView
             style={s.sheetScroll}
             contentContainerStyle={s.content}
@@ -846,5 +849,83 @@ export function SegmentedControl({ options, value, onChange }) {
         </Pressable>
       ))}
     </View>
+  );
+}
+
+// Approval is composed from the shared sheet, reference panel, rows and controls.
+export function ApprovalSheet({ request, hubName, busy, error, onDecision }) {
+  const { s, c } = useDesign();
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.ceil((request.expires - now) / 1000));
+  const remaining = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const age = Math.max(0, Math.floor((now - request.created) / 60000));
+  const requested = age > 0 ? `${age} min ago` : "Just now";
+  return (
+    <Sheet onClose={() => onDecision("deny")} busy={busy}>
+      <Icon name="login" size={28} color={c.accent} />
+      <Text accessibilityRole="header" style={s.approvalTitle}>
+        Allow this browser to open {hubName}?
+      </Text>
+      <Text style={s.text}>
+        Someone is signing in to the hub web. Allow it only if that is you,
+        right now.
+      </Text>
+      <View style={s.requestReference}>
+        <Text style={[s.eyebrow, s.centerText]}>
+          REQUEST · must match the browser
+        </Text>
+        <Text accessibilityLabel={request.reference} style={s.requestNumber}>
+          {request.reference.slice(0, 3)}
+          <Text style={s.requestSeparator}> – </Text>
+          {request.reference.slice(3)}
+        </Text>
+      </View>
+      <View style={s.group}>
+        {[
+          ["globe", "Browser", request.browser || "Browser"],
+          ["shield", "From", request.ip],
+          ["clock", "Requested", `${requested} · expires in ${remaining}`],
+        ].map(([icon, label, value], index) => (
+          <View
+            key={label}
+            style={[s.approvalRow, index > 0 && s.approvalRowBorder]}
+          >
+            <Icon name={icon} />
+            <Text style={s.text}>{label}</Text>
+            <Text style={[s.heading, s.approvalValue]}>{value}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={s.caption}>
+        Grants a 24-hour session on that browser. Browser details are reported
+        by the requester.
+      </Text>
+      {!!error && (
+        <Text accessibilityRole="alert" style={s.caption}>
+          {error}
+        </Text>
+      )}
+      <View style={s.row}>
+        <View style={s.flex}>
+          <Button
+            label="Deny"
+            disabled={busy}
+            onPress={() => onDecision("deny")}
+          />
+        </View>
+        <View style={s.flex}>
+          <Button
+            primary
+            label="Allow"
+            disabled={busy || seconds === 0}
+            onPress={() => onDecision("allow")}
+          />
+        </View>
+      </View>
+    </Sheet>
   );
 }

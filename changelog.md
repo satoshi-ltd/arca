@@ -1,8 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 — 2026-09-12
 
 - Rename the main workflow to `publish` and connect `publish-site` to successful main-branch runs. Deploy the exact validated commit, exclude pull requests and failed/cancelled runs, and restrict manual site deployment to main.
+
+- Fix clean CI installs: declare the mobile gallery hash dependency in root devDependencies so the root test suite can load mobile-replica tests without an Expo installation.
+
+- Request web administrator access from authorized machines using the shared confirmation modal on desktop/web and mobile.
+- Reproduce the access design with one segmented login card, grouped comparison reference, ten-minute countdown and browser/IP/request details; mobile approval uses the shared bottom sheet.
+- Add explicit per-machine web-approval permission, expiring browser-bound requests, Allow/Deny, cancellation, rate limits and one-time session redemption.
+- Close pending prompts when another machine responds; retain shell login codes for initial access and recovery.
+- Align manifests at 0.4.1 and mobile build 12. Foreground delivery uses polling; background push and deployment are not included.
 
 ## 0.4.0 — 2026-09-11
 
@@ -21,7 +29,6 @@
 - Add Arca identity to phone screen titles, align Fold sidebar branding with the main header and unify root-header height.
 - Share section, list-row and touch typography tokens across phone/Fold and desktop. Group headings with their content, remove empty sections and keep row heights stable with or without actions. Preserve touch-sized controls and desktop-scale Fold titles.
 - Align all release manifests at 0.3.8 and mobile native build numbers at 10.
-
 
 ## 0.3.7 — 2026-09-10
 

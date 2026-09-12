@@ -5,6 +5,30 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { token, digest, atomic, fail, runtimeInstallation } from "./storage.js";
 
+export function browserLabel(agent) {
+  const browser = /Edg(?:e|A|iOS)?\//.test(agent)
+    ? "Edge"
+    : /(?:Firefox|FxiOS)\//.test(agent)
+      ? "Firefox"
+      : /(?:Chrome|CriOS)\//.test(agent)
+        ? "Chrome"
+        : /Safari\//.test(agent)
+          ? "Safari"
+          : "Browser";
+  const os = /iPad|iPhone|iPod/.test(agent)
+    ? "iOS"
+    : /Android/.test(agent)
+      ? "Android"
+      : /Windows/.test(agent)
+        ? "Windows"
+        : /Macintosh|Mac OS X/.test(agent)
+          ? "macOS"
+          : /Linux/.test(agent)
+            ? "Linux"
+            : "";
+  return os ? `${browser} on ${os}` : browser;
+}
+
 export function issueWebCode(home) {
   const config = JSON.parse(
     fs.readFileSync(path.join(home, "config.json"), "utf8"),
@@ -68,7 +92,37 @@ export class Web {
       this.publicHost = url.host;
     }
     this.sessions = new Map();
+    this.requests = new Map();
+    this.requestAttempts = new Attempts();
     this.attempts = new Attempts();
+  }
+  pending() {
+    for (const [id, request] of this.requests)
+      if (request.expires <= Date.now()) this.requests.delete(id);
+    return [...this.requests.values()]
+      .filter((r) => r.state === "pending")
+      .map(({ secret, ...r }) => r);
+  }
+  decide(id, decision, approver) {
+    this.pending();
+    const r = this.requests.get(id);
+    if (!r || r.state !== "pending") fail("This request has ended", 409);
+    if (!["allow", "deny"].includes(decision)) fail("Invalid decision", 400);
+    r.state = decision === "allow" ? "approved" : "denied";
+    r.approver = approver;
+    return { state: r.state };
+  }
+  grant(req, res) {
+    const session = token();
+    if (this.sessions.size >= 100)
+      this.sessions.delete(this.sessions.keys().next().value);
+    this.sessions.set(digest(session), Date.now() + 86400000);
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "Set-Cookie": `arca_session=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${req.socket.encrypted || this.publicOrigin ? "; Secure" : ""}`,
+    });
+    res.end('{"ok":true,"state":"approved"}');
   }
   sameOrigin(req) {
     if (this.publicOrigin)
@@ -91,6 +145,71 @@ export class Web {
   }
   async handle(req, res, readBody) {
     const url = new URL(req.url, "http://localhost");
+    if (url.pathname === "/auth/approval" && req.method === "POST") {
+      if (!this.sameOrigin(req)) fail("Invalid browser origin", 403);
+      let input;
+      try {
+        input = JSON.parse((await readBody(req, 4096)).toString());
+      } catch {
+        fail("Invalid request", 400);
+      }
+      if (!input || typeof input !== "object") fail("Invalid request", 400);
+      this.pending();
+      const reply = (data) => {
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        });
+        res.end(JSON.stringify(data));
+      };
+      if (input.action === "create") {
+        this.requestAttempts.check(req.socket.remoteAddress);
+        if (!this.hasApprovers?.())
+          fail("No devices can approve access. Use a sign-in code.", 409);
+        if (this.requests.size >= 50) fail("Too many pending requests", 429);
+        const secret = token(),
+          id = token();
+        const r = {
+          id,
+          secret: digest(secret),
+          reference: shortCode(),
+          state: "pending",
+          created: Date.now(),
+          expires: Date.now() + 600000,
+          ip: req.socket.remoteAddress?.replace(/^::ffff:/, "") || "",
+          agent: String(req.headers["user-agent"] || "Unknown browser").slice(
+            0,
+            256,
+          ),
+        };
+        r.browser = browserLabel(r.agent);
+        this.requests.set(id, r);
+        return (
+          reply({ id, secret, reference: r.reference, expires: r.expires }),
+          true
+        );
+      }
+      const r = this.requests.get(input.id);
+      if (
+        !r ||
+        typeof input.secret !== "string" ||
+        digest(input.secret) !== r.secret
+      )
+        return (reply({ state: "ended" }), true);
+      if (input.action === "cancel") {
+        this.requests.delete(r.id);
+        return (reply({ state: "cancelled" }), true);
+      }
+      if (input.action !== "poll") fail("Invalid request", 400);
+      if (r.state === "approved") {
+        this.requests.delete(r.id);
+        if (!this.canRedeem?.(r.approver))
+          return (reply({ state: "ended" }), true);
+        this.grant(req, res);
+        return true;
+      }
+      return (reply({ state: r.state }), true);
+    }
     if (url.pathname === "/auth/login" && req.method === "POST") {
       if (!this.sameOrigin(req)) fail("Invalid browser origin", 403);
       const ip = req.socket.remoteAddress;
@@ -130,16 +249,7 @@ export class Web {
         fail("Invalid, expired or already-used sign-in code", 401);
       }
       fs.unlinkSync(path.join(this.home, "web-code.json"));
-      const session = token();
-      if (this.sessions.size >= 100)
-        this.sessions.delete(this.sessions.keys().next().value);
-      this.sessions.set(digest(session), Date.now() + 86400000);
-      res.writeHead(200, {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-        "Set-Cookie": `arca_session=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${req.socket.encrypted || this.publicOrigin ? "; Secure" : ""}`,
-      });
-      res.end('{"ok":true}');
+      this.grant(req, res);
       return true;
     }
     if (url.pathname === "/auth/logout" && req.method === "POST") {

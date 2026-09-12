@@ -1,5 +1,8 @@
 // Mirrors the canonical desktop tokens.css; parity is checked automatically.
 export const geometry = {
+  approvalReferenceFont: 28,
+  referenceTracking: 4,
+  approvalTile: 36,
   listItemGap: 12,
   workspaceInset: 24,
   desktopTitleFont: 20,

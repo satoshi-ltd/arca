@@ -598,6 +598,30 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
   );
   await w.eval(`(async()=>{${script}\n})()`);
   assert.equal(w.document.querySelectorAll('[data-code="web"]').length, 6);
+  // A cancelled approval must not keep polling, and switching methods preserves code input.
+  daemon.engine.store.db
+    .prepare(
+      "INSERT INTO devices(id,name,token_hash,role) VALUES('approver','Mac',?,'replica')",
+    )
+    .run(digest("test-approver"));
+  daemon.engine.config.webApprovers = ["approver"];
+  w.document.querySelector('[data-digit="0"]').value = "0";
+  w.document.querySelector('[data-action="login-approval"]').click();
+  await until(() => w.document.querySelector("#request-countdown"));
+  assert.equal(w.document.querySelector("#access-code").hidden, true);
+  assert.match(
+    w.document.querySelector("#request-countdown").textContent,
+    /Expires in (10:00|9:59)/,
+  );
+  w.document.querySelector("#web-approval-wait button").click();
+  assert.equal(w.document.querySelector("#access-code").hidden, false);
+  assert.equal(w.document.querySelector('[data-digit="0"]').value, "0");
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  const pending = await fetch(base + "/v1/web-approvals", {
+    headers: { Authorization: "Bearer " + daemon.engine.config.adminToken },
+  });
+  assert.equal((await pending.json()).requests.length, 0);
+
   const submit = () =>
     w.document
       .querySelector("#web-login")
@@ -2631,4 +2655,68 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     () =>
       w.document.querySelector("#content").getAttribute("aria-busy") !== "true",
   );
+});
+
+test("web approval uses the shared confirmation and closes after another machine responds", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-approval-ui-"));
+  init(home, { port: 0, name: "Casa" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  const timers = [];
+  w.setInterval = (fn, ms) => {
+    if (ms === 3000) timers.push(fn);
+    return 0;
+  };
+  let requests = [
+    {
+      id: "request",
+      reference: "042123",
+      browser: "Safari on macOS",
+      created: Date.now(),
+      expires: Date.now() + 600000,
+      agent: "Safari <script>",
+      ip: "100.1.2.3",
+    },
+  ];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (command !== "api") return {};
+        if (args.route === "/v1/status") return daemon.engine.status();
+        if (args.route === "/v1/web-approvals") return { requests };
+        throw new Error("Unexpected route " + args.route);
+      },
+    },
+  };
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+    this.dispatchEvent(new w.Event("close"));
+  };
+  t.after(async () => {
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  timers[0]();
+  await until(() => w.document.querySelector("#dialog").open);
+  assert.ok(w.document.querySelector("#dialog.confirmation-dialog"));
+  assert.match(
+    w.document.querySelector("#dialog-content").textContent,
+    /042–123/,
+  );
+  assert.equal(w.document.querySelector("#dialog-content script"), null);
+  assert.equal(w.document.querySelector("#submit-dialog").textContent, "Allow");
+  assert.equal(w.document.querySelector("#cancel-dialog").textContent, "Deny");
+  requests = [];
+  timers[0]();
+  await until(() => !w.document.querySelector("#dialog").open);
 });

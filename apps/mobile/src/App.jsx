@@ -63,6 +63,7 @@ import {
   Tag,
   Toggle,
   Sheet,
+  ApprovalSheet,
 } from "./components";
 import { client } from "./persistence";
 import { isPickerCancelled } from "./action-errors.js";
@@ -316,6 +317,48 @@ export default function App() {
     connected = connection?.linked,
     catalog = state.catalog,
     volumes = catalog?.volumes || [];
+  const [webApproval, setWebApproval] = useState(null);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalError, setApprovalError] = useState("");
+  useEffect(() => {
+    if (!connected) {
+      setWebApproval(null);
+      return;
+    }
+    let active = true,
+      pending = false;
+    const check = async () => {
+      if (!active || pending || AppState.currentState !== "active") return;
+      pending = true;
+      try {
+        const data = await client.api("/v1/web-approvals");
+        if (active) setWebApproval(data.requests[0] || null);
+      } catch {
+        if (active) setWebApproval(null);
+      } finally {
+        pending = false;
+      }
+    };
+    check();
+    const timer = setInterval(check, 3000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [connected, connection?.hubId]);
+  const answerWebApproval = async (decision) => {
+    if (!webApproval || approvalBusy) return;
+    setApprovalBusy(true);
+    setApprovalError("");
+    try {
+      await client.api("/v1/web-approvals", { id: webApproval.id, decision });
+      setWebApproval(null);
+    } catch (error) {
+      setApprovalError(error.message);
+    } finally {
+      setApprovalBusy(false);
+    }
+  };
   const currentFolder = locals.find((f) => f.id === folder?.id);
   const historyRetention =
     catalog?.volumes?.find((v) => v.id === folder?.id)?.historyRetention ??
@@ -2011,6 +2054,15 @@ export default function App() {
               onDismiss={(id) => notices.remove(id)}
               onAction={noticeAction}
               disabled={locked}
+            />
+          )}
+          {webApproval && !sheet && !busy && (
+            <ApprovalSheet
+              request={webApproval}
+              hubName={catalog?.name || "hub"}
+              busy={approvalBusy}
+              error={approvalError}
+              onDecision={answerWebApproval}
             />
           )}
           {sheet && !detail && (

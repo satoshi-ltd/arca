@@ -1,5 +1,7 @@
 // Lucide v0.460.0, ISC. Exact desktop vendor nodes; verified in mobile-layout.test.js.
 export const iconNames = {
+  globe: "Globe",
+  login: "LogIn",
   pause: "Pause",
   gallery: "Images",
   "wifi-off": "WifiOff",
@@ -41,6 +43,16 @@ export const iconNames = {
   restore: "Undo2",
 };
 export const icons = {
+  globe: [
+    ["circle", { cx: "12", cy: "12", r: "10" }],
+    ["path", { d: "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" }],
+    ["path", { d: "M2 12h20" }],
+  ],
+  login: [
+    ["path", { d: "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" }],
+    ["polyline", { points: "10 17 15 12 10 7" }],
+    ["line", { x1: "15", x2: "3", y1: "12", y2: "12" }],
+  ],
   pause: [
     ["rect", { x: "14", y: "4", width: "4", height: "16", rx: "1" }],
     ["rect", { x: "6", y: "4", width: "4", height: "16", rx: "1" }],
