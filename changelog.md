@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3 — 2026-09-13
+
+- Fix the Tauri gallery regression test clicking before folder-detail loading completes; retain delayed API responses to reproduce the Ubuntu timing race locally.
+- Align release identifiers at 0.4.3 and mobile build 14. No application behavior or publication workflow changes.
+
 ## 0.4.2 — 2026-09-13
 
 - Bound mobile response-body reads by the request deadline and preserve connections when an unfinished authorization response is cancelled.

@@ -1,6 +1,6 @@
 # Arca — specification and roadmap
 
-Updated 2026-09-13. **v0.4.2 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+Updated 2026-09-13. **v0.4.3 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AGENTS.md) for contributor instructions. This document owns implementation status, remaining work, technical contracts, operations and the shared design system. Original visual references are not competing specifications.
 
@@ -114,6 +114,10 @@ The publication workflow is unchanged. Mobile exports and native builds were val
 Final local Mac verification used Node 24.14.0, a clean source snapshot, root-only `npm ci`, version agreement and the exact CI test command: **318 passed, zero failed, one platform skip (319 total)**. Separately, clean Expo dependency installation and Android/iOS exports passed. Android Gradle debug and iOS simulator native builds passed, as did Cargo checking. A macOS arm64 app/DMG was built from the clean snapshot and its bundled Node, FFmpeg, CLI and isolated daemon/API were verified. A fresh EAS-local production APK includes the final mobile correction at version 0.4.2/build 13. macOS packaging is ad-hoc signed, not notarized.
 
 These are local build and automated-test results. The GitHub macOS/Windows/Linux matrix has not run for this source; Docker could not be tested because no local Docker runtime is available. Installed native video playback, emulator rename propagation and physical Samsung/iPhone workflows (including a 10 GiB gallery with screen off) remain unverified. No commit, push, Casa deployment, Metro restart or device installation was performed in this stabilization pass. The Umbrel package still pins its separately documented published 0.4.1 image.
+
+### September 13 Ubuntu test race (v0.4.3)
+
+The v0.4.2 Ubuntu log reports 318 passes and one failure: the Tauri video DOM test clicked Gallery as soon as its scaffold button existed, while the folder-detail action was still busy. The action guard ignored that click. Adding 100 ms latency to the real activity API bridge reproduces the same failure on the local Mac. The test now waits for `body[aria-busy="false"]` as well as the button before clicking, retaining the delayed response to exercise the race. The focused test passes with the correction. A fresh source archive with the fix, Node 24.14.0, root-only `npm ci`, version agreement and the exact CI test command passed: 318 passed, zero failed, one platform skip (319 total). The correction changes test synchronization, with release identifiers advanced to v0.4.3/build 14 under the per-commit version policy. Runtime behavior, timeouts and workflow are unchanged; Ubuntu hosted confirmation remains pending. The existing production APK remains v0.4.2/build 13 and was not rebuilt for this test-only correction.
 
 ## Remaining work and task candidates
 

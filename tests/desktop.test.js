@@ -3009,6 +3009,9 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
         if (command === "bootstrap")
           return { setup: false, status: daemon.engine.status() };
         if (command !== "api") throw new Error(command);
+        // Keep the detail scaffold visible long enough to expose premature clicks.
+        if (args.route.startsWith("/v1/activity?volume="))
+          await new Promise((resolve) => setTimeout(resolve, 100));
         if (args.route.startsWith("/v1/gallery/preview?"))
           return new Promise((resolve) => {
             releasePoster = resolve;
@@ -3035,7 +3038,11 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
   });
   await w.eval(`(async()=>{${script}\n})()`);
   w.document.querySelector('[data-action="folder-detail"]').click();
-  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  await until(
+    () =>
+      w.document.querySelector('[data-action="gallery-mode"]') &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
   w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => w.document.querySelector(".photo-open"));
   assert.ok(w.document.querySelector(".photo-video-badge"));
