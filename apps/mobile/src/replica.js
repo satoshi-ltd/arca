@@ -17,8 +17,20 @@ export class Replica {
     changed = () => {},
     platform = "mobile",
     media = null,
+    transfer = { begin: async () => false, end: async () => {} },
   }) {
-    Object.assign(this, { store, files, client, changed, platform });
+    Object.assign(this, { store, files, changed, platform, transfer });
+    this.interactiveClient = client;
+    // Only replica work inherits this cancellation scope; UI uses the original client.
+    this.client = {
+      ...client,
+      state: () => client.state(),
+      raw: (route, options = {}) =>
+        client.raw(route, { ...options, signal: this.syncAbort?.signal }),
+      api: (route, body) =>
+        client.api(route, body, { signal: this.syncAbort?.signal }),
+      refresh: () => client.refresh({ signal: this.syncAbort?.signal }),
+    };
     // OS notification delivery must never prevent durable sync acknowledgement.
     this.notify = async (...args) => {
       try {
@@ -85,7 +97,6 @@ export class Replica {
     this.stop();
     try {
       if (this.active) await this.active;
-      await this.client.disconnect();
       await this.store.set("destroyPending", true);
       await this.finishDestroy();
     } finally {
@@ -104,11 +115,15 @@ export class Replica {
     await this.requireActiveReplica();
     this.paused = value;
     this.stopped = value;
+    if (value) this.stop();
     await this.store.set("paused", value);
     this.changed();
   }
   stop() {
     this.stopped = true;
+    this.syncAbort?.abort(
+      Object.assign(new Error("Sync paused"), { code: "SYNC_INTERRUPTED" }),
+    );
   }
   async space(bytes) {
     if ((await this.files.free()) < bytes + HEADROOM)
@@ -407,9 +422,12 @@ export class Replica {
       if (!queued.has(op.path))
         await this.store.dequeue(this.scope, folder.id, op.path);
   }
-  async upload(op, source = null) {
+  async upload(op, source = null, verifiedOriginal = false) {
     const object = source || this.files.object(this.scope, op.hash);
-    if ((await this.files.hash(object)) !== op.hash)
+    if (
+      (!verifiedOriginal || !source) &&
+      (await this.files.hash(object)) !== op.hash
+    )
       throw new Error("Queued upload failed verification");
     let { offset, complete } = await this.client.api(`/v1/uploads/${op.hash}`);
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > op.size)
@@ -654,18 +672,21 @@ export class Replica {
     name = typeof name === "string" ? name.trim() : "";
     if (!name || name.length > 100 || /[\x00-\x1f\x7f]/.test(name))
       throw new Error("Enter a device name between 1 and 100 characters.");
+    this.nameReportError = null;
     await this.store.set("name", name);
     this.changed();
     try {
       if (!this.client.state().connection) return false;
-      await this.report();
+      await this.report(this.interactiveClient);
+      this.nameReportError = null;
       return true;
-    } catch {
+    } catch (error) {
+      this.nameReportError = error.message;
       // The saved name is sent again with the next machine report.
       return false;
     }
   }
-  async report() {
+  async report(client = this.client) {
     const folders = (await this.store.folders(this.scope)).filter(
       (f) => f.selected && !galleryConfig(f),
     );
@@ -677,7 +698,7 @@ export class Replica {
       "name",
       this.platform === "ios" ? "iPhone" : "Android",
     );
-    await this.client.api("/v1/machine-report", {
+    await client.api("/v1/machine-report", {
       machineId: this.client.state().connection.id,
       name,
       platform: this.platform,
@@ -697,8 +718,26 @@ export class Replica {
       return Promise.resolve();
     if (this.active) return this.active;
     this.force = force || Date.now() - this.lastFullScan > 3600000;
-    this.active = this.cycle().finally(() => {
+    this.syncAbort = new AbortController();
+    this.active = (async () => {
+      try {
+        do {
+          await this.cycle();
+          // Continuation batches reuse the inventory cursor instead of forcing a new scan.
+          this.force = false;
+        } while (
+          this.transfer.active &&
+          this.moreGalleryWork &&
+          !this.stopped &&
+          !this.paused &&
+          !this.error
+        );
+      } finally {
+        await this.transfer.end();
+      }
+    })().finally(() => {
       this.active = null;
+      this.syncAbort = null;
     });
     return this.active;
   }
@@ -721,10 +760,9 @@ export class Replica {
         this.scope = connection.hubId;
         await this.store.set("scope", this.scope);
       }
-      if (this.paused) {
-        await this.report();
-        return;
-      }
+      // Publish identity before potentially long file/photo transfers.
+      await this.report();
+      if (this.paused) return;
       const catalog = this.client.state().catalog;
       if (!catalog.directories || !catalog.pathTransitions)
         throw new Error(

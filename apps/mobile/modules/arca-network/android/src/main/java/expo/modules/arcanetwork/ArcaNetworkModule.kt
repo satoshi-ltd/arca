@@ -13,19 +13,54 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.functions.Coroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class ArcaNetworkModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ArcaNetwork")
-    AsyncFunction("exportGalleryAsset") { id: String, destination: String ->
+    Events("transferStopped")
+    OnCreate { TransferService.onStopped = { reason -> sendEvent("transferStopped", mapOf("reason" to reason)) } }
+    OnDestroy { TransferService.onStopped = null }
+    AsyncFunction("startTransfer") {
+      val context = appContext.reactContext ?: error("App is unavailable")
+      check(appContext.currentActivity != null && appContext.currentActivity?.isFinishing == false) { "Open Arca to start photo uploads" }
+      val intent = android.content.Intent(context, TransferService::class.java)
+      if (android.os.Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+      true
+    }
+    AsyncFunction("stopTransfer") {
+      appContext.reactContext?.let { it.stopService(android.content.Intent(it, TransferService::class.java)) }
+    }
+    AsyncFunction("transferProgress") { text: String, done: Double, total: Double ->
+      TransferService.instance?.progress(text, done.toLong(), total.toLong())
+    }
+    AsyncFunction("hashFile") Coroutine { uri: String ->
+      withContext(Dispatchers.IO) {
+      val context = appContext.reactContext ?: error("App is unavailable")
+      val file = File(java.net.URI(uri))
+      check(file.canonicalPath.startsWith(context.filesDir.canonicalPath + "/") || file.canonicalPath.startsWith(context.cacheDir.canonicalPath + "/")) { "File is outside Arca storage" }
+      val digest = java.security.MessageDigest.getInstance("SHA-256")
+      file.inputStream().buffered().use { input ->
+        val buffer = ByteArray(1024 * 1024)
+        while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+      }
+      digest.digest().joinToString("") { "%02x".format(it) }
+      }
+    }
+    AsyncFunction("exportGalleryAsset") Coroutine { id: String, destination: String ->
+      withContext(Dispatchers.IO) {
       exportGalleryAsset(appContext.reactContext ?: error("App is unavailable"), id, destination)
+      }
     }
     AsyncFunction("copyText") { text: String ->
       val context = appContext.reactContext ?: error("App is unavailable")
       val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
       clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Arca details", text))
     }
-    AsyncFunction("request") { address: String, method: String, headers: Map<String, String>, body: String? ->
+    AsyncFunction("request") Coroutine { address: String, method: String, headers: Map<String, String>, body: String? ->
+      withContext(Dispatchers.IO) {
       val url = URL(address)
       check(url.protocol == "https" || url.protocol == "http")
       check(url.userInfo == null)
@@ -47,6 +82,7 @@ class ArcaNetworkModule : Module() {
         } ?: ByteArray(0)
         mapOf("status" to status, "headers" to connection.headerFields.filterKeys { it != null }.mapValues { it.value.joinToString(", ") }, "body" to Base64.encodeToString(data, Base64.NO_WRAP))
       } finally { connection.disconnect() }
+      }
     }
     AsyncFunction("exportDirectory") { source: String, destination: String, name: String ->
       val context = appContext.reactContext!!

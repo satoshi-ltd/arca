@@ -65,17 +65,19 @@ export function retentionPlan(
     versions < 0
   )
     fail("Retention values must be non-negative integers");
-  const revisions = store.db
-    .prepare("SELECT * FROM revisions ORDER BY rev DESC")
-    .all();
+  const revisions = volume
+    ? store.db.prepare("SELECT * FROM revisions WHERE volume=? ORDER BY rev DESC").all(volume)
+    : store.db.prepare("SELECT * FROM revisions ORDER BY rev DESC").all();
   const pinned = new Set(
-    store.db
-      .prepare("SELECT rev FROM files")
-      .all()
+    (volume
+      ? store.db.prepare("SELECT rev FROM files WHERE volume=?").all(volume)
+      : store.db.prepare("SELECT rev FROM files").all())
       .map((r) => r.rev),
   );
-  for (const p of store.db.prepare("SELECT row FROM pending").all())
-    pinned.add(JSON.parse(p.row).rev);
+  for (const p of store.db.prepare("SELECT row FROM pending").all()) {
+    const row = JSON.parse(p.row);
+    if (!volume || row.volume === volume) pinned.add(row.rev);
+  }
   const floor = store.db
     .prepare(
       "SELECT MIN(a.revision) AS n FROM backup_ack a JOIN devices d ON d.id=a.device WHERE a.enabled=1 AND d.revoked=0",
@@ -102,7 +104,7 @@ export function retentionPlan(
       remove.push(r.rev);
   }
   const removed = new Set(remove);
-  const folders = store.volumes().map((v) => {
+  const folders = (volume ? [store.volume(volume)] : store.volumes()).map((v) => {
     const rows = revisions.filter((r) => r.volume === v.id);
     return {
       id: v.id,
@@ -123,8 +125,7 @@ export function retentionPlan(
     hasBackup: floor !== null,
   };
 }
-export function applyRetention(store, options, collect = true) {
-  const plan = retentionPlan(store, options);
+export function applyRetention(store, options, collect = true, plan = retentionPlan(store, options)) {
   store.db.exec("BEGIN IMMEDIATE");
   try {
     const remove = store.db.prepare("DELETE FROM revisions WHERE rev=?");

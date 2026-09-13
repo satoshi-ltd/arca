@@ -24,6 +24,8 @@ try {
     `${volume}:/data`,
     image,
     "init",
+    "--port",
+    "47831",
     "--root",
     "/data/files",
     "--name",
@@ -36,11 +38,11 @@ try {
     (async () => {
       let response;
       for (let n = 0; n < 30; n++) {
-        try { response = await fetch('http://127.0.0.1:47831/v1/status', {headers:{Authorization:'Bearer '+c.adminToken}}); if (response.ok) break; } catch {}
+        try { response = await fetch('http://127.0.0.1:17831/v1/status', {headers:{Authorization:'Bearer '+c.adminToken}}); if (response.ok) break; } catch {}
         await new Promise(r => setTimeout(r, 500));
       }
       if (!response?.ok || (await response.json()).role !== 'hub') throw Error('Hub startup failed');
-      if (!(await fetch('http://127.0.0.1:47831/')).ok) throw Error('Server web missing');
+      if (!(await fetch('http://127.0.0.1:17831/')).ok) throw Error('Server web missing');
       const marker = '/data/files/smoke-id';
       if (fs.existsSync(marker) && fs.readFileSync(marker, 'utf8') !== c.id) throw Error('Identity changed');
       fs.writeFileSync(marker, c.id);

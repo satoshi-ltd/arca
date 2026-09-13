@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.4.2 — 2026-09-13
+
+- Bound mobile response-body reads by the request deadline and preserve connections when an unfinished authorization response is cancelled.
+- Verify that bundled FFmpeg actually runs during runtime staging and packaged desktop checks.
+
+- Publish mobile machine names before file transfers, isolate manual renaming from sync cancellation, and show failures to update the hub instead of a misleading success notice.
+
+- Coordinate desktop development restarts with the matching macOS login service, preventing KeepAlive from starting a competing daemon.
+- Add `dev:clean` for Vite-cache-only development startup and check the UI port before replacing the local daemon.
+
+- Prepare existing gallery folders in the background on activation and hub startup: persist capture metadata and thumbnail preparation, resume unfinished work, reuse derivatives and coalesce duplicate preview requests.
+- Reuse gallery pages across desktop/web navigation with background refresh and catalog/write invalidation. Reserve separate thumbnail/large-preview pools so browsing full-size photos cannot evict the grid, retaining the total 64 MiB memory budget.
+- Play gallery videos through authenticated byte-range streaming, independently of poster generation. Native playback uses short-lived, file-scoped loopback tickets; closing or changing the viewer stops playback. Browser/OS codec support still applies; unsupported formats retain original download.
+- Add authenticated first-run server setup, an Umbrel code-access gateway and packaging templates, and use 17831 for new installations. Existing configured ports remain unchanged. Umbrel templates still pin the published 0.4.1 image until release packaging updates it.
+- Add explicit hub destruction with recoverable cleanup journals, offline replica reset/unlink behavior, and cancellation isolated to the active sync operation. Preserve confirmation and file-loss boundaries.
+- Keep Docker container port aligned during upgrades and allow `ARCA_PORT` to preserve an existing external client address.
+- Use shared desktop tokens for onboarding dimensions and simplify retention maintenance work.
+
+- Upload desktop/server replica files in bounded batches of three, negotiate blocks up to 8 MiB with the hub, deduplicate identical blobs within each batch and keep ordered publication, pause and resumability.
+
+- Generate cached video poster frames, keep a visible video badge in the gallery and use the shared Busy indicator while loading/indexing. Bundle FFmpeg for desktop and install it in the hub container.
+
+- Add local Android development build/install for the Fold emulator and a locally compiled, EAS-signed production APK command, without cloud build usage or automatic Metro startup.
+
+- Keep Android photo uploads running after leaving the app using a foreground data-sync service, Headless JS, progress notification and Pause. Release the service and wake lock when finished; respect Android timeouts and preserve resumable transfers.
+- Hash private Android files natively and avoid hashing freshly prepared gallery originals twice. The hub still verifies uploaded content before acceptance.
+- Continue queued gallery batches during an active Android transfer without repeatedly forcing a full album scan.
+- Retain a bounded 64 MB gallery preview cache across desktop/web navigation, share concurrent reads and let the selected photo load without waiting behind queued prefetch.
+- Enable gallery view for ordinary shared folders from hub or selected desktop replicas, without changing files or sync mode.
+- Align version 0.4.2 and mobile build 13. A new Android binary is required; physical Samsung/background qualification is pending.
+
 ## 0.4.1 — 2026-09-12
 
 - Rename the main workflow to `publish` and connect `publish-site` to successful main-branch runs. Deploy the exact validated commit, exclude pull requests and failed/cancelled runs, and restrict manual site deployment to main.

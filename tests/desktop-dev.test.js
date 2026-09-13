@@ -6,7 +6,12 @@ import os from "node:os";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
 import { init } from "../packages/daemon/storage.js";
-import { startDaemon, stopDaemon } from "../scripts/desktop-dev.js";
+import {
+  startDaemon,
+  stopDaemon,
+  checkDevPort,
+  matchingService,
+} from "../scripts/desktop-dev.js";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 test("desktop dev replaces its local daemon while retaining identity, pairing, pause and files", async (t) => {
@@ -100,4 +105,38 @@ test("desktop dev refuses a lock naming another process and leaves fresh install
   );
   await startDaemon(home, path.join(home, "not-staged"));
   assert.equal(fs.existsSync(path.join(home, "config.json")), false);
+});
+
+test("desktop dev detects a busy UI port without stopping its owner", async (t) => {
+  const server = net.createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await assert.rejects(
+    checkDevPort(server.address().port),
+    /already in use.*No daemon was restarted/,
+  );
+  assert.equal(server.listening, true);
+  await checkDevPort(0);
+});
+
+test("development service matching excludes another installation or state directory", () => {
+  const runtime = path.resolve("test-runtime"),
+    home = path.resolve("test-home");
+  const args = [
+    path.join(runtime, "node"),
+    path.join(runtime, "packages/cli/arca.js"),
+    "daemon",
+    "--home",
+    home,
+  ];
+  assert.equal(matchingService(args, home, runtime), true);
+  assert.equal(
+    matchingService(args, path.resolve("other-home"), runtime),
+    false,
+  );
+  assert.equal(
+    matchingService(args, home, path.resolve("other-runtime")),
+    false,
+  );
+  assert.equal(matchingService([...args, "--extra"], home, runtime), false);
 });

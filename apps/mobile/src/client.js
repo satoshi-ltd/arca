@@ -1,3 +1,4 @@
+import { abortable } from "./request-control.js";
 // Platform-independent replica client. Native persistence is injected.
 export function hubAddress(input, privateNetwork = false) {
   let url;
@@ -44,27 +45,63 @@ export function createClient({
   async function rawRequest(url, route, token, options = {}) {
     if (!route.startsWith("/v1/") && route !== "/pair")
       throw new Error("Invalid hub route");
-    if (url.startsWith("http:")) {
-      if (!resolvePrivateURL)
-        throw new Error("Private network verification is unavailable");
-      url = await resolvePrivateURL(url);
+    const deadline = Date.now() + timeout;
+    const controller = new AbortController();
+    const cancel = () => controller.abort(options.signal.reason);
+    if (options.signal?.aborted) cancel();
+    else options.signal?.addEventListener("abort", cancel, { once: true });
+    const timer = setTimeout(
+      () => controller.abort(new Error("Hub request timed out")),
+      timeout,
+    );
+    let response;
+    try {
+      response = await abortable(async () => {
+        if (url.startsWith("http:")) {
+          if (!resolvePrivateURL)
+            throw new Error("Private network verification is unavailable");
+          url = await resolvePrivateURL(url);
+        }
+        if (controller.signal.aborted) throw controller.signal.reason;
+        return fetcher(url + route, {
+          ...options,
+          redirect: "error",
+          signal: controller.signal,
+          headers: {
+            ...options.headers,
+            "X-Arca-Directories": "1",
+            "X-Arca-Path-Transitions": "1",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+      }, controller.signal);
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", cancel);
     }
-    const response = await fetcher(url + route, {
-      ...options,
-      redirect: "error",
-      signal: options.signal || globalThis.AbortSignal?.timeout?.(timeout),
-      headers: {
-        ...options.headers,
-        "X-Arca-Directories": "1",
-        "X-Arca-Path-Transitions": "1",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
+    const consume = async (method) => {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) controller.abort(new Error("Hub request timed out"));
+      if (options.signal?.aborted) cancel();
+      else options.signal?.addEventListener("abort", cancel, { once: true });
+      const bodyTimer = setTimeout(
+        () => controller.abort(new Error("Hub request timed out")),
+        Math.max(0, remaining),
+      );
+      try {
+        return await abortable(() => response[method](), controller.signal);
+      } finally {
+        clearTimeout(bodyTimer);
+        options.signal?.removeEventListener("abort", cancel);
+      }
+    };
     if (!response.ok) {
       let data;
       try {
-        data = await response.json();
-      } catch {}
+        data = await consume("json");
+      } catch (error) {
+        if (controller.signal.aborted) throw controller.signal.reason || error;
+      }
       if (
         [401, 403].includes(response.status) &&
         token &&
@@ -79,21 +116,26 @@ export function createClient({
         response.status,
       );
     }
-    return response;
+    return {
+      ok: response.ok,
+      status: response.status,
+      headers: response.headers,
+      json: () => consume("json"),
+      arrayBuffer: () => consume("arrayBuffer"),
+      text: () => consume("text"),
+    };
   }
-  async function request(url, route, token, body) {
-    const response = await rawRequest(
-      url,
-      route,
-      token,
-      body === undefined
+  async function request(url, route, token, body, options = {}) {
+    const response = await rawRequest(url, route, token, {
+      ...options,
+      ...(body === undefined
         ? {}
         : {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
-          },
-    );
+          }),
+    });
     return response.json();
   }
   async function authenticated(route, options = {}) {
@@ -156,7 +198,7 @@ export function createClient({
     await secrets.clear();
     connection = null;
   }
-  async function refresh() {
+  async function refresh(options = {}) {
     if (!connection) return state();
     if (connection.leaving) {
       await leave();
@@ -164,7 +206,13 @@ export function createClient({
     }
     try {
       const next = validateCatalog(
-        await request(connection.url, "/v1/catalog", connection.token),
+        await request(
+          connection.url,
+          "/v1/catalog",
+          connection.token,
+          undefined,
+          options,
+        ),
         connection.hubId,
       );
       const saved = { ...next, fetchedAt: Date.now() };
@@ -182,17 +230,17 @@ export function createClient({
   return {
     state,
     raw: authenticated,
-    async api(route, body) {
-      const r = await authenticated(
-        route,
-        body === undefined
+    async api(route, body, options = {}) {
+      const r = await authenticated(route, {
+        ...options,
+        ...(body === undefined
           ? {}
           : {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
-            },
-      );
+            }),
+      });
       return r.json();
     },
     async load() {
@@ -200,7 +248,7 @@ export function createClient({
       catalog = await cache.read();
       return state();
     },
-    refresh: () => serial(refresh),
+    refresh: (options) => serial(() => refresh(options)),
     pair: (address, code, name) =>
       serial(async () => {
         if (connection)
@@ -231,8 +279,31 @@ export function createClient({
       }),
     destroy: () =>
       serial(async () => {
-        if (connection) await leave();
+        if (connection) {
+          // Hub cleanup is best effort; local destruction must work offline.
+          const controller = new AbortController();
+          let timer;
+          try {
+            await Promise.race([
+              rawRequest(connection.url, "/v1/leave", connection.token, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: "{}",
+                signal: controller.signal,
+              }).catch(() => {}),
+              new Promise((resolve) => {
+                timer = setTimeout(() => {
+                  controller.abort();
+                  resolve();
+                }, 1000);
+              }),
+            ]);
+          } finally {
+            clearTimeout(timer);
+          }
+        }
         await secrets.clear();
+        connection = null;
         await cache.write(null);
         catalog = null;
         return state();

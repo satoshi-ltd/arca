@@ -416,6 +416,8 @@ export class Gallery {
       await save();
       return;
     }
+    await r.transfer.begin();
+    r.check();
     await r.space(0);
     const stage = r.files.galleryStage(r.scope, folder.id);
     await r.files.clearGalleryStage(r.scope, folder.id);
@@ -509,7 +511,7 @@ export class Gallery {
         if (builtinExcluded(resource.path) || policy.ignores(resource.path))
           throw new Error(`Excluded by .arcaignore: ${resource.path}`);
         const uri = exported.find((e) => e.key === resource.key).uri;
-        await r.upload({ hash: resource.hash, size: resource.size }, uri);
+        await r.upload({ hash: resource.hash, size: resource.size }, uri, true);
         r.check();
         resource.attempted = true;
         await save();

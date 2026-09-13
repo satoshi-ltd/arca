@@ -130,6 +130,8 @@ test("old photos use EXIF capture date and unsupported media keep a usable listi
   fs.writeFileSync(path.join(f.v.path, "clip.mov"), "video");
   fs.writeFileSync(path.join(f.v.path, "notes.txt"), "not an image");
   await f.daemon.engine.cycle();
+  await f.api(f.route);
+  await f.daemon.engine.gallery.index(f.v.id);
   const data = await f.api(f.route);
   assert.equal(data.items.length, 3);
   assert.equal(
@@ -382,4 +384,208 @@ test("photo info reads original EXIF and rejects stale or hidden files", async (
     rev: f.s.current(f.v.id, "exif.jpg").rev,
   });
   await assert.rejects(f.api(route), { status: 404 });
+});
+
+test("videos have cached JPEG posters without changing their originals", async (t) => {
+  const { default: ffmpeg } = await import("ffmpeg-static");
+  const { execFileSync } = await import("node:child_process");
+  const f = await fixture(t);
+  const clip = path.join(f.home, "sample.mp4");
+  execFileSync(ffmpeg, [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=blue:s=320x180:d=0.1",
+    "-c:v",
+    "mpeg4",
+    "-y",
+    clip,
+  ]);
+  const original = fs.readFileSync(clip);
+  const hash = digest(original);
+  fs.writeFileSync(f.s.blob(hash), original);
+  await f.api("/v1/propose", {
+    volume: f.v.id,
+    path: "clip.mp4",
+    hash,
+    size: original.length,
+  });
+  const poster = await f.api(f.preview("clip.mp4", hash));
+  assert.match(poster.data, /^data:image\/jpeg;base64,/);
+  const dimensions = await sharp(
+    Buffer.from(poster.data.split(",")[1], "base64"),
+  ).metadata();
+  assert.ok(dimensions.width <= 360 && dimensions.height <= 360);
+  assert.equal(digest(fs.readFileSync(f.s.blob(hash))), hash);
+  f.daemon.engine.gallery = new Gallery(f.s);
+  assert.deepEqual(await f.api(f.preview("clip.mp4", hash)), poster);
+  await assert.rejects(f.api(f.preview("clip.mp4", "0".repeat(64))), {
+    status: 404,
+  });
+});
+
+test(
+  "gallery lists files while metadata indexing is stalled",
+  { timeout: 5000 },
+  async (t) => {
+    const f = await fixture(t);
+    await f.photo("pending.jpg", null);
+    const gallery = f.daemon.engine.gallery;
+    await gallery.background;
+    f.s.db.prepare("DELETE FROM gallery_metadata").run();
+    let release;
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    gallery.indexing.set(f.v.id, pending);
+    try {
+      const data = await f.api(f.route);
+      assert.equal(data.indexing, true);
+      assert.equal(data.items[0].path, "pending.jpg");
+      assert.ok(await f.api("/v1/status"));
+    } finally {
+      release();
+      gallery.indexing.delete(f.v.id);
+    }
+  },
+);
+
+test("gallery video playback streams ranges and scopes native access to a current original", async (t) => {
+  const f = await fixture(t);
+  const buffer = Buffer.from("0123456789-video-fixture");
+  const hash = digest(buffer);
+  fs.writeFileSync(f.s.blob(hash), buffer);
+  await f.api("/v1/propose", {
+    volume: f.v.id,
+    path: "clip.mp4",
+    hash,
+    size: buffer.length,
+  });
+  const query = new URLSearchParams({ volume: f.v.id, path: "clip.mp4", hash });
+  const { url } = await f.api("/v1/gallery/playback?" + query);
+  assert.ok(!url.includes(f.daemon.engine.config.adminToken));
+  let r = await fetch(url, { headers: { Range: "bytes=2-5" } });
+  assert.equal(r.status, 206);
+  assert.equal(r.headers.get("content-range"), `bytes 2-5/${buffer.length}`);
+  assert.equal(await r.text(), "2345");
+  r = await fetch(url, { method: "HEAD" });
+  assert.equal(r.status, 200);
+  assert.equal(Number(r.headers.get("content-length")), buffer.length);
+  assert.equal(await r.text(), "");
+  r = await fetch(url, { headers: { Range: "bytes=-7" } });
+  assert.equal(await r.text(), "fixture");
+  assert.equal(
+    (await fetch(url, { headers: { Range: "bytes=999-" } })).status,
+    416,
+  );
+  assert.equal(
+    (await fetch(url, { headers: { Origin: "https://evil.example" } })).status,
+    401,
+  );
+  const direct = `http://127.0.0.1:${f.daemon.port}/v1/gallery/media?${query}`;
+  assert.equal((await fetch(direct)).status, 401);
+  assert.equal(
+    (await fetch(url.replace(/ticket=.*/, "ticket=wrong"))).status,
+    401,
+  );
+  f.s.db
+    .prepare("UPDATE files SET deleted=1 WHERE volume=? AND path=?")
+    .run(f.v.id, "clip.mp4");
+  assert.equal((await fetch(url)).status, 404);
+});
+
+test("marking an existing gallery prepares every thumbnail without page requests and reuses them after restart", async (t) => {
+  const f = await fixture(t);
+  // More than the old queue limit, with distinct originals and no gallery page calls.
+  for (let i = 0; i < 260; i++) {
+    const buffer = await sharp({
+      create: {
+        width: 2,
+        height: 2,
+        channels: 3,
+        background: { r: i % 256, g: Math.floor(i / 256), b: 0 },
+      },
+    })
+      .png()
+      .toBuffer();
+    const hash = digest(buffer);
+    fs.writeFileSync(f.s.blob(hash), buffer);
+    f.s.db
+      .prepare(
+        "INSERT INTO files(volume,path,hash,size,deleted,rev,path_key) VALUES(?,?,?,?,0,?,?)",
+      )
+      .run(f.v.id, `${i}.png`, hash, buffer.length, i + 1, `${i}.png`);
+  }
+  f.daemon.engine.gallery.mark(f.v.id);
+  await f.daemon.engine.gallery.background;
+  assert.equal(
+    f.s.db.prepare("SELECT count(*) n FROM gallery_prepared").get().n,
+    260,
+  );
+  assert.equal(
+    f.s.db.prepare("SELECT count(*) n FROM gallery_derivatives").get().n,
+    260,
+  );
+  f.daemon.engine.gallery.close();
+  const next = new Gallery(f.s);
+  f.daemon.engine.gallery = next;
+  next.render = () => {
+    throw new Error("Must reuse persistent thumbnails");
+  };
+  next.resume();
+  await next.background;
+  const row = f.s.current(f.v.id, "0.png");
+  assert.match(
+    (await next.preview(f.v.id, "0.png", row.hash)).data,
+    /^data:image\/jpeg/,
+  );
+});
+
+test("web video ranges require an active browser session, including after logout", async (t) => {
+  const f = await fixture(t);
+  const { issueWebCode } = await import("../packages/daemon/web.js");
+  const buffer = Buffer.from("0123456789"),
+    hash = digest(buffer);
+  fs.writeFileSync(f.s.blob(hash), buffer);
+  await f.api("/v1/propose", {
+    volume: f.v.id,
+    path: "clip.mp4",
+    hash,
+    size: buffer.length,
+  });
+  const base = `http://127.0.0.1:${f.daemon.port}`;
+  const login = await fetch(base + "/auth/login", {
+    method: "POST",
+    headers: { Origin: base, "Content-Type": "application/json" },
+    body: JSON.stringify({ code: issueWebCode(f.home).code }),
+  });
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const response = await fetch(
+    base +
+      "/v1/gallery/playback?" +
+      new URLSearchParams({ volume: f.v.id, path: "clip.mp4", hash }),
+    { headers: { Cookie: cookie } },
+  );
+  const playback = await response.json();
+  assert.ok(playback.url.startsWith("/v1/gallery/media?"));
+  assert.ok(!playback.url.includes("ticket="));
+  const r = await fetch(base + playback.url, {
+    headers: { Cookie: cookie, Range: "bytes=4-7" },
+  });
+  assert.equal(r.status, 206);
+  assert.equal(await r.text(), "4567");
+  await fetch(base + "/auth/logout", {
+    method: "POST",
+    headers: { Cookie: cookie, Origin: base },
+  });
+  assert.equal(
+    (
+      await fetch(base + playback.url, {
+        headers: { Cookie: cookie, Range: "bytes=4-7" },
+      })
+    ).status,
+    401,
+  );
 });

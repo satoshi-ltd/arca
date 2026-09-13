@@ -2109,3 +2109,130 @@ test("folder history policy is hub-owned, reaches replicas and survives saved ca
     saved.close();
   }
 });
+
+test("desktop overlaps at most three uploads, negotiates larger blocks and verifies originals", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("large-gallery");
+  for (let i = 0; i < 4; i++) write(replica, volume, `clip-${i}.mp4`, Buffer.alloc(9 * 1024 ** 2, i + 1));
+  const request = replica.engine.request.bind(replica.engine);
+  let active = 0, maximum = 0;
+  const lengths = [];
+  replica.engine.request = async (route, options) => {
+    if (options?.method !== "PUT" || !route.startsWith("/v1/uploads/")) return request(route, options);
+    active++; maximum = Math.max(maximum, active); lengths.push(options.body.length);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return await request(route, options);
+    } finally { active--; }
+  };
+  await replica.sync();
+  assert.equal(replica.engine.error, null);
+  assert.equal(maximum, 3);
+  assert.equal(lengths.length, 8);
+  assert.equal(Math.max(...lengths), 8 * 1024 ** 2);
+  for (let i = 0; i < 4; i++) {
+    const name = `clip-${i}.mp4`;
+    const row = hub.engine.store.current(volume.id, name);
+    assert.equal(row.hash, digest(Buffer.alloc(9 * 1024 ** 2, i + 1)));
+    assert.equal(fs.statSync(hub.engine.store.blob(row.hash)).size, 9 * 1024 ** 2);
+  }
+});
+
+test("pausing desktop drains three in-flight uploads without publishing their files", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("pause-gallery");
+  for (let i = 0; i < 3; i++) write(replica, volume, `photo-${i}.jpg`, Buffer.alloc(100, i));
+  let release, ready;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { ready = resolve; });
+  let active = 0;
+  const upload = replica.engine.upload.bind(replica.engine);
+  replica.engine.upload = async (...args) => {
+    if (++active === 3) ready();
+    await gate;
+    return upload(...args);
+  };
+  const syncing = replica.sync();
+  await started;
+  replica.engine.setPaused(true);
+  release();
+  await syncing;
+  assert.equal(replica.engine.paused, true);
+  for (let i = 0; i < 3; i++) assert.equal(hub.engine.store.current(volume.id, `photo-${i}.jpg`), undefined);
+  replica.engine.setPaused(false);
+  await replica.sync();
+  for (let i = 0; i < 3; i++) assert.ok(hub.engine.store.current(volume.id, `photo-${i}.jpg`));
+});
+
+
+test("machine removal interrupts background work without waiting for an offline replica", { timeout: 10000 }, async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "kept.txt", "retained history");
+  await hub.sync();
+  const first = await connect("remove-from-hub");
+  const second = await connect("leave-from-replica");
+  const revision = hub.engine.store.current(volume.id, "kept.txt").rev;
+  for (const [replica, route] of [[first, "/v1/revoke"], [second, "/v1/leave"]]) {
+    let release;
+    let entered;
+    const started = new Promise((resolve) => { entered = resolve; });
+    const controller = new AbortController();
+    const blocked = hub.engine.exclusive(async () => {
+      hub.engine.syncAbort = controller;
+      await new Promise((resolve) => {
+        release = resolve;
+        controller.signal.addEventListener("abort", resolve, { once: true });
+        entered();
+      });
+    });
+    await started;
+    try {
+      const response = await fetch(`http://127.0.0.1:${hub.port}${route}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${route === "/v1/revoke" ? hub.engine.config.adminToken : replica.invite.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ id: replica.invite.id }),
+        signal: AbortSignal.timeout(1500),
+      });
+      assert.equal(response.status, 200);
+      assert.equal(hub.engine.store.db.prepare("SELECT id FROM devices WHERE id=?").get(replica.invite.id), undefined);
+      assert.equal(hub.engine.store.current(volume.id, "kept.txt").rev, revision);
+      assert.equal(read(hub, volume, "kept.txt"), "retained history");
+      await assert.rejects(hub.api("/v1/catalog", undefined, replica.invite.token), { status: 401 });
+    } finally {
+      release();
+      await blocked;
+      hub.engine.syncAbort = null;
+    }
+  }
+});
+
+
+test("interrupting sync does not abort an independent interface request", { timeout: 6000 }, async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("request-isolation");
+  let entered, uiEntered, uiResponse;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const uiStarted = new Promise((resolve) => { uiEntered = resolve; });
+  const remote = http.createServer((req, res) => {
+    if (req.url === "/v1/interface") { uiResponse = res; uiEntered(); }
+    else entered();
+  });
+  await new Promise((resolve) => remote.listen(0, "127.0.0.1", resolve));
+  const previous = replica.engine.config.hub.url;
+  try {
+    replica.engine.config.hub.url = `http://127.0.0.1:${remote.address().port}`;
+    const cycle = replica.sync();
+    await started;
+    const interactive = replica.engine.request("/v1/interface");
+    await uiStarted;
+    replica.engine.interruptCycle();
+    await cycle;
+    uiResponse.end("interface ready");
+    assert.equal(await (await interactive).text(), "interface ready");
+    assert.equal(replica.engine.error, null);
+  } finally {
+    replica.engine.config.hub.url = previous;
+    remote.closeAllConnections();
+    await new Promise((resolve) => remote.close(resolve));
+  }
+});

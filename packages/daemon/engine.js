@@ -1,8 +1,9 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   resetTargets,
-  beginReplicaReset,
-  finishReplicaReset,
-} from "./replica-reset.js";
+  beginInstallationReset,
+  finishInstallationReset,
+} from "./installation-reset.js";
 import { entryKey, directoryItem } from "../core/entries.js";
 import {
   IGNORE_FILE,
@@ -38,7 +39,7 @@ export class Engine {
       try {
         this.gallery?.close();
         this.gallery = null;
-        finishReplicaReset(this.store);
+        finishInstallationReset(this.store);
       } catch {
         /* Keep the journal available for explicit retry. */
       }
@@ -72,6 +73,7 @@ export class Engine {
     this.stopVolumes = new Set();
     this.transferred = 0;
     this.tail = Promise.resolve();
+    this.requestContext = new AsyncLocalStorage();
     this.store.db.exec(
       "CREATE TABLE IF NOT EXISTS proposals(id TEXT PRIMARY KEY,response TEXT NOT NULL)",
     );
@@ -215,7 +217,7 @@ export class Engine {
       },
       signal: AbortSignal.any([
         options.signal || AbortSignal.timeout(60000),
-        ...(this.syncAbort ? [this.syncAbort.signal] : []),
+        ...(this.requestContext.getStore() ? [this.requestContext.getStore().signal] : []),
       ]),
     });
     if (!response.ok) {
@@ -243,25 +245,36 @@ export class Engine {
     );
     return r.json();
   }
-  async upload(hash) {
+  async upload(hash, onProgress) {
     const file = this.store.blob(hash);
     const size = fs.statSync(file).size;
-    if (this.progress)
-      Object.assign(this.progress, {
-        direction: "upload",
-        bytesDone: 0,
-        bytesTotal: size,
-      });
-    let { offset, complete } = await this.json(`/v1/uploads/${hash}`);
+    const progress = (done) => {
+      if (onProgress) onProgress(done, size);
+      else if (this.progress)
+        Object.assign(this.progress, {
+          direction: "upload",
+          bytesDone: done,
+          bytesTotal: size,
+        });
+    };
+    progress(0);
+    let { offset, complete, maxChunkBytes } = await this.json(
+      `/v1/uploads/${hash}`,
+    );
+    const chunk =
+      Number.isSafeInteger(maxChunkBytes) && maxChunkBytes > 0
+        ? Math.min(maxChunkBytes, 8 * CHUNK)
+        : CHUNK;
+    progress(offset);
     if (complete) {
-      if (this.progress) this.progress.bytesDone = size;
+      progress(size);
       return;
     }
     const fd = fs.openSync(file, "r");
     try {
       do {
         this.checkSyncInterrupted();
-        const length = Math.min(CHUNK, size - offset);
+        const length = Math.min(chunk, size - offset);
         const buffer = Buffer.alloc(length);
         fs.readSync(fd, buffer, 0, length, offset);
         const r = await this.request(
@@ -270,7 +283,7 @@ export class Engine {
         );
         ({ offset, complete } = await r.json());
         this.transferred += length;
-        if (this.progress) this.progress.bytesDone = offset;
+        progress(offset);
       } while (!complete);
     } finally {
       fs.closeSync(fd);
@@ -439,7 +452,10 @@ export class Engine {
     );
     return result;
   }
-  async cycle({ incremental = false } = {}) {
+  cycle(options = {}) {
+    return this.requestContext.run(new AbortController(), () => this.runCycle(options));
+  }
+  async runCycle({ incremental = false } = {}) {
     if (
       this.destroying ||
       this.config.destroyPending ||
@@ -463,7 +479,7 @@ export class Engine {
       return;
     }
     this.phase = "syncing";
-    this.syncAbort = new AbortController();
+    this.syncAbort = this.requestContext.getStore();
     this.error = null;
     try {
       if (!this.lastCleanup || Date.now() - this.lastCleanup > 3600000) {
@@ -588,19 +604,63 @@ export class Engine {
                     base: row.rev,
                     hash: null,
                   });
-              for (const [name, item] of changed) {
+              for (let cursor = 0; cursor < changed.length;) {
                 this.checkSyncInterrupted();
-                if (s.excluded(v.id, name, item.directory)) continue;
-                const old = s.pathHead(v.id, name);
-                if (
-                  !old ||
-                  old.path !== name ||
-                  old.deleted ||
-                  entryKey(old) !== entryKey(item)
-                ) {
-                  this.progress.path = name;
-                  if (item.hash) await this.upload(item.hash);
+                // Keep policy, directories and empty files ordered. Only stage file bytes concurrently.
+                const batch = [changed[cursor++]];
+                const parallel = ([name, item]) =>
+                  name !== IGNORE_FILE && item.hash && item.size > 0;
+                if (parallel(batch[0]))
+                  while (
+                    batch.length < 3 &&
+                    cursor < changed.length &&
+                    parallel(changed[cursor])
+                  )
+                    batch.push(changed[cursor++]);
+                const pending = batch.filter(([name, item]) => {
+                  if (s.excluded(v.id, name, item.directory)) return false;
+                  const old = s.pathHead(v.id, name);
+                  return (
+                    !old ||
+                    old.path !== name ||
+                    old.deleted ||
+                    entryKey(old) !== entryKey(item)
+                  );
+                });
+                const uploads = new Map();
+                for (const [name, item] of pending)
+                  if (item.hash && !uploads.has(item.hash))
+                    uploads.set(item.hash, { name, size: item.size, done: 0 });
+                const update = () => {
+                  Object.assign(this.progress, {
+                    direction: "upload",
+                    path: pending.length === 1 ? pending[0][0] : null,
+                    bytesDone: [...uploads.values()].reduce(
+                      (sum, item) => sum + item.done,
+                      0,
+                    ),
+                    bytesTotal: [...uploads.values()].reduce(
+                      (sum, item) => sum + item.size,
+                      0,
+                    ),
+                  });
+                };
+                update();
+                const results = await Promise.allSettled(
+                  [...uploads].map(([hash, item]) =>
+                    this.upload(hash, (done) => {
+                      item.done = done;
+                      update();
+                    }),
+                  ),
+                );
+                const failed = results.find(
+                  (result) => result.status === "rejected",
+                );
+                if (failed) throw failed.reason;
+                for (const [name, item] of pending) {
                   this.checkSyncInterrupted();
+                  const old = s.pathHead(v.id, name);
                   await this.json("/v1/propose", {
                     volume: v.id,
                     path: name,
@@ -1317,23 +1377,42 @@ export class Engine {
     s.queue(remote, localHash);
     s.materialize(remote, localHash);
   }
-  async destroyReplica() {
-    if (this.config.role !== "replica")
-      fail("Only a replica can be destroyed", 409);
+  destroyReplica() {
+    return this.destroyInstallation("replica");
+  }
+  destroyHub() {
+    return this.destroyInstallation("hub");
+  }
+  async destroyInstallation(role) {
+    if (this.config.role !== role)
+      fail(`Only a ${role} can be destroyed`, 409);
     if (this.destroying)
-      fail("Replica destruction is already in progress", 409);
+      fail("Destruction is already in progress", 409);
     this.destroying = true;
     this.interruptCycle();
     try {
       // Validate every target before removing the registration from the hub.
       if (!this.config.destroyPending) resetTargets(this.store);
-      if (!this.config.destroyPending) await this.disconnect();
       return await this.exclusive(async () => {
+        if (role === "replica" && !this.config.destroyPending && this.config.hub) {
+          try {
+            await this.request("/v1/leave", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: "{}",
+              signal: AbortSignal.timeout(1000),
+            });
+          } catch {
+            // Remote registration cleanup must not prevent confirmed local deletion.
+          }
+        }
         await this.scanner.worker?.terminate();
         this.scanner = new Scanner(this.store.home);
         if (!this.config.destroyPending)
-          beginReplicaReset(this.store, resetTargets(this.store));
-        finishReplicaReset(this.store);
+          beginInstallationReset(this.store, resetTargets(this.store));
+        this.gallery?.close();
+        this.gallery = null;
+        finishInstallationReset(this.store);
         this.folderStates.clear();
         this.paused = false;
         this.pauseUntil = null;
@@ -1353,7 +1432,7 @@ export class Engine {
     const backup = this.backupEngine;
     const backupWasPaused = backup?.paused;
     this.paused = true;
-    this.scanner.interrupt();
+    this.interruptCycle();
     if (this.backupEngine) {
       this.backupEngine.paused = true;
       this.backupEngine.scanner.interrupt();

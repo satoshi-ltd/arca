@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Get a code · Arca</title>
+    <link rel="icon" href="/assets/arca-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/umbrel/umbrel.css" />
+    <script src="/umbrel/umbrel.js" defer></script>
+  </head>
+  <body class="access-mode">
+    <main class="access-page">
+      <header class="access-brand">
+        <div class="access-logo">
+          <img src="/assets/arca-icon.svg" alt="" />
+          <h1>arca</h1>
+        </div>
+      </header>
+      <section class="access-card" aria-label="Get a sign-in code">
+        <form id="access-form">
+          <label for="password">Arca app password</label>
+          <input id="password" name="password" type="password"
+            autocomplete="off" required maxlength="128" />
+          <p class="session-note">Use the app password shown by Umbrel.</p>
+          <p id="error" role="alert"></p>
+          <button class="primary" type="submit">Get sign-in code</button>
+        </form>
+        <div id="result" hidden>
+          <output id="code" aria-label="Sign-in code" tabindex="0"></output>
+          <p id="expiry" class="session-note" role="status">Copy this code into Arca. Single use · ten minutes.</p>
+        </div>
+        <a class="return-link" href="/">Open Arca</a>
+      </section>
+    </main>
+  </body>
+</html>

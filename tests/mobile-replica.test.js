@@ -33,6 +33,7 @@ async function fixture(t) {
   let saved = null,
     cached = null,
     online = true;
+  let stalled = null;
   const ranges = [];
   const requests = [];
   const client = createClient({
@@ -54,6 +55,7 @@ async function fixture(t) {
     fetcher: (url, options) => {
       requests.push(new URL(url).pathname);
       if (!online) throw new Error("offline");
+      if (stalled) return stalled(url, options);
       if (options.headers.Range) ranges.push(options.headers.Range);
       return fetch(url.replace("https://fixture.invalid", base), options);
     },
@@ -136,6 +138,9 @@ async function fixture(t) {
     client,
     ranges,
     requests,
+    stall: (handler) => {
+      stalled = handler;
+    },
     offline: () => {
       online = false;
     },
@@ -644,11 +649,20 @@ test("mobile renames its own device, persists offline edits and reports them on 
   assert.equal(await f.replica.rename("  My phone  "), true);
   assert.equal(await f.store.get("name"), "My phone");
   assert.equal(report().name, "My phone");
+  f.replica.syncAbort = new AbortController();
+  f.replica.syncAbort.abort(new Error("Sync cancelled"));
+  assert.equal(
+    await f.replica.rename("My phone"),
+    true,
+    "manual rename must not inherit sync cancellation",
+  );
+  f.replica.syncAbort = null;
   for (const invalid of ["   ", "x".repeat(101), "bad\nname"])
     await assert.rejects(f.replica.rename(invalid), /device name/);
   assert.equal(await f.store.get("name"), "My phone");
   f.offline();
   assert.equal(await f.replica.rename("Travel phone"), false);
+  assert.ok(f.replica.nameReportError);
   assert.equal(await f.store.get("name"), "Travel phone");
   assert.equal(report().name, "My phone");
   f.online();
@@ -903,14 +917,29 @@ test("destroy mobile replica removes all private copies and hub registration, pr
   assert.equal(replica.scope, null);
 });
 
-test("mobile destruction fails offline without deleting copies, then resumes interrupted cleanup", async (t) => {
+test("mobile destruction works offline and preserves hub content", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.volume.path, "kept.txt"), "hub copy");
+  await f.daemon.engine.scanHub();
+  await f.replica.select(f.volume);
+  await sync(f);
+  const local = f.files.folder(f.replica.scope, f.volume.id);
+  f.offline();
+  await f.replica.destroy(true);
+  assert.equal(fs.existsSync(local), false);
+  assert.deepEqual(f.client.state(), { connection: null, catalog: null });
+  assert.equal(await f.store.get("destroyPending"), null);
+  assert.equal(
+    fs.readFileSync(path.join(f.volume.path, "kept.txt"), "utf8"),
+    "hub copy",
+  );
+});
+
+test("mobile destruction resumes interrupted local cleanup while offline", async (t) => {
   const f = await fixture(t);
   await f.replica.select(f.volume);
   const local = f.files.folder(f.replica.scope, f.volume.id);
   f.offline();
-  await assert.rejects(f.replica.destroy(true));
-  assert.ok(fs.existsSync(local));
-  f.online();
   const remove = f.files.destroy;
   f.files.destroy = async () => {
     throw new Error("storage unavailable");
@@ -1636,4 +1665,81 @@ test("gallery edits create revisions at the same Machine path, including reverti
   f.assets[0].modificationTime = 4;
   await f.replica.sync({ force: true });
   assert.equal(fs.existsSync(path.join(f.volume.path, first.path)), false);
+});
+
+test("an active native transfer drains multiple gallery batches and releases on completion", async (t) => {
+  const assets = Array.from({ length: 8 }, (_, i) => ({
+    id: "foreground-" + i,
+    filename: "photo.jpg",
+    creationTime: 1750000000000,
+  }));
+  const f = await galleryFixture(t, assets),
+    r = f.replica;
+  await f.enable();
+  let stopped = 0;
+  r.transfer = {
+    active: false,
+    async begin() {
+      this.active = true;
+    },
+    async end() {
+      this.active = false;
+      stopped++;
+    },
+  };
+  await sync(f);
+  assert.equal(
+    (await f.store.gallerySummary(r.scope, f.volume.id)).accepted,
+    8,
+  );
+  assert.equal(stopped, 1);
+  assert.equal(r.transfer.active, false);
+});
+
+test(
+  "destroy cancels a stalled mobile sync before deleting local copies",
+  { timeout: 5000 },
+  async (t) => {
+    const f = await fixture(t);
+    await f.replica.select(f.volume);
+    const local = f.files.folder(f.replica.scope, f.volume.id);
+    let entered;
+    const started = new Promise((resolve) => {
+      entered = resolve;
+    });
+    f.stall(() => {
+      entered();
+      return new Promise(() => {});
+    });
+    const active = f.replica.sync();
+    await started;
+    f.offline();
+    await f.replica.destroy(true);
+    await active;
+    assert.equal(fs.existsSync(local), false);
+    assert.equal(f.replica.active, null);
+    assert.equal(f.replica.error, null);
+    assert.deepEqual(f.client.state(), { connection: null, catalog: null });
+  },
+);
+
+test("mobile publishes a pending name before starting folder transfers", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  f.offline();
+  assert.equal(await f.replica.rename("emulator-android"), false);
+  f.online();
+  let checked = false;
+  const scan = f.replica.scan.bind(f.replica);
+  f.replica.scan = async (...args) => {
+    const device = f.daemon.engine.store.db
+      .prepare("SELECT name FROM devices WHERE id=?")
+      .get(f.client.state().connection.id);
+    assert.equal(device.name, "emulator-android");
+    checked = true;
+    return scan(...args);
+  };
+  await sync(f);
+  assert.equal(checked, true);
 });

@@ -1,0 +1,176 @@
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const hash = (value) => createHash("sha256").update(value).digest();
+const hopHeaders = [
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+];
+function forwarded(headers) {
+  const copy = { ...headers };
+  const connection = String(copy.connection || "")
+    .toLowerCase()
+    .split(",")
+    .map((name) => name.trim());
+  for (const name of [...hopHeaders, ...connection]) delete copy[name];
+  // Arca does not trust forwarded identity or transport headers.
+  for (const name of Object.keys(copy))
+    if (name === "forwarded" || name.startsWith("x-forwarded-"))
+      delete copy[name];
+  return copy;
+}
+
+export function createAccess({ password, home, upstream, assets, issueCode }) {
+  if (!/^[a-f0-9]{64}$/.test(password || ""))
+    throw new Error("A valid per-install Umbrel app password is required.");
+  const target = new URL(upstream);
+  if (
+    target.protocol !== "http:" ||
+    target.username ||
+    target.password ||
+    target.pathname !== "/" ||
+    target.search ||
+    target.hash
+  )
+    throw new Error("Expected an internal HTTP upstream origin.");
+  const expected = hash(password);
+  let attempts = 0;
+  let windowEnds = 0;
+  const files = {
+    "/umbrel": ["umbrel.html", "text/html; charset=utf-8"],
+    "/umbrel/": ["umbrel.html", "text/html; charset=utf-8"],
+    "/umbrel/umbrel.js": ["umbrel.js", "text/javascript; charset=utf-8"],
+    "/umbrel/umbrel.css": ["umbrel.css", "text/css; charset=utf-8"],
+  };
+  return http.createServer(async (req, res) => {
+    const reply = (status, data, type = "application/json") => {
+      res.writeHead(status, {
+        "Content-Type": type,
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy":
+          "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'",
+      });
+      res.end(
+        typeof data === "string" || Buffer.isBuffer(data)
+          ? data
+          : JSON.stringify(data),
+      );
+    };
+    try {
+      if (!req.url.startsWith("/") || req.url.startsWith("//"))
+        return reply(400, { error: "Invalid request path." });
+      const url = new URL(req.url, "http://localhost");
+      if (files[url.pathname] && req.method === "GET") {
+        const [file, type] = files[url.pathname];
+        return reply(200, fs.readFileSync(path.join(assets, file)), type);
+      }
+      if (url.pathname === "/umbrel/code" && req.method === "POST") {
+        // No password cookie or automatic login: the long app password only
+        // authorizes issuing Arca's existing single-use, ten-minute web code.
+        if (req.headers.origin !== "http://" + req.headers.host)
+          return reply(403, { error: "Invalid browser origin." });
+        if (
+          !String(req.headers["content-type"] || "").startsWith(
+            "application/json",
+          )
+        )
+          return reply(415, { error: "Expected JSON." });
+        if (Date.now() >= windowEnds) {
+          attempts = 0;
+          windowEnds = Date.now() + 60000;
+        }
+        if (++attempts > 5)
+          return reply(429, {
+            error: "Too many attempts. Try again in a minute.",
+          });
+        const chunks = [];
+        let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > 4096) return reply(413, { error: "Request too large." });
+          chunks.push(chunk);
+        }
+        let input;
+        try {
+          input = JSON.parse(Buffer.concat(chunks).toString());
+        } catch {
+          return reply(400, { error: "Invalid request." });
+        }
+        if (
+          typeof input?.password !== "string" ||
+          !timingSafeEqual(hash(input.password), expected)
+        )
+          return reply(401, {
+            error:
+              "Incorrect app password. Use the password shown by Umbrel for Arca.",
+          });
+        return reply(200, issueCode(home));
+      }
+      if (url.pathname === "/umbrel" || url.pathname.startsWith("/umbrel/"))
+        return reply(404, { error: "Not found." });
+      // Fixed upstream; stream uploads/downloads without buffering file contents.
+      const proxy = http.request(
+        {
+          hostname: target.hostname,
+          port: target.port || 80,
+          method: req.method,
+          path: req.url,
+          headers: forwarded(req.headers),
+        },
+        (response) => {
+          res.writeHead(response.statusCode, forwarded(response.headers));
+          response.on("error", () => res.destroy());
+          response.pipe(res);
+        },
+      );
+      proxy.setTimeout(120000, () => proxy.destroy());
+      proxy.on("error", () => {
+        if (!res.headersSent)
+          reply(502, {
+            error: "Arca is starting or unavailable. Try again shortly.",
+          });
+        else res.destroy();
+      });
+      req.on("aborted", () => proxy.destroy());
+      res.on("close", () => {
+        if (!res.writableEnded) proxy.destroy();
+      });
+      req.pipe(proxy);
+    } catch {
+      if (!res.headersSent)
+        reply(503, { error: "Arca is not ready. Try again shortly." });
+      else res.destroy();
+    }
+  });
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
+  const app = process.env.ARCA_APP_DIR || "/app";
+  const { issueWebCode } = await import(
+    pathToFileURL(path.join(app, "packages/daemon/web.js"))
+  );
+  const server = createAccess({
+    password: process.env.ARCA_UMBREL_PASSWORD,
+    home: process.env.ARCA_HOME || "/data/state",
+    upstream: process.env.ARCA_UPSTREAM || "http://arca_server_1:17831",
+    assets: path.dirname(fileURLToPath(import.meta.url)),
+    issueCode: issueWebCode,
+  });
+  server.listen(47832, "0.0.0.0");
+  for (const signal of ["SIGTERM", "SIGINT"])
+    process.once(signal, () => {
+      server.close();
+      setTimeout(() => server.closeAllConnections(), 5000).unref();
+    });
+}

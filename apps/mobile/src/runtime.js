@@ -1,7 +1,9 @@
+import { native } from "./private-network";
+import { TransferSession } from "./transfer-session.js";
 import { mediaLibrary } from "./media-library";
 import { errorNotice } from "../../desktop/src/notice-contract.js";
 import { clearIncoming } from "./incoming-files";
-import { Platform, AppState } from "react-native";
+import { Platform, AppState, AppRegistry } from "react-native";
 import * as SQLite from "expo-sqlite";
 import * as Notifications from "expo-notifications";
 import * as BackgroundTask from "expo-background-task";
@@ -10,6 +12,48 @@ import { client } from "./persistence";
 import { Replica } from "./replica";
 import { ReplicaStore } from "./replica-store";
 import { files } from "./files";
+let finishTransferTask;
+AppRegistry.registerHeadlessTask(
+  "ArcaPhotoTransfer",
+  () => () =>
+    new Promise((resolve) => {
+      if (!transfer.active && !transfer.starting) resolve();
+      else finishTransferTask = resolve;
+    }),
+);
+const transfer = new TransferSession({
+  visible: () =>
+    Platform.OS === "android" && AppState.currentState === "active",
+  start: async () => {
+    await Notifications.requestPermissionsAsync();
+    await native.startTransfer();
+  },
+  stop: async () => {
+    finishTransferTask?.();
+    finishTransferTask = null;
+    await native.stopTransfer();
+  },
+  update: (progress) =>
+    native.transferProgress(
+      progress?.direction === "upload" ? "Uploading photo" : "Preparing photos",
+      progress?.bytesDone || 0,
+      progress?.bytesTotal || 0,
+    ),
+});
+export const canContinueInBackground = () =>
+  transfer.active || !!transfer.starting;
+if (Platform.OS === "android")
+  native.addListener("transferStopped", ({ reason }) => {
+    finishTransferTask?.();
+    finishTransferTask = null;
+    currentReplica?.stop();
+    const report = (error) => {
+      if (currentReplica) currentReplica.error = error.message;
+      changed();
+    };
+    void transfer.end().catch(report);
+    if (reason === "paused") void currentReplica?.pause(true).catch(report);
+  });
 export const BACKGROUND_TASK = "arca-sync";
 const listeners = new Set();
 let runtimePromise;
@@ -110,6 +154,7 @@ export function subscribe(listener) {
   return () => listeners.delete(listener);
 }
 function changed() {
+  transfer.progress(currentReplica?.progress);
   clearTimeout(galleryTimer);
   if (
     currentReplica?.moreGalleryWork &&
@@ -129,6 +174,7 @@ export function runtime() {
       );
       const replica = new Replica({
         store,
+        transfer,
         media: mediaLibrary,
         files,
         client,

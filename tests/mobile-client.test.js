@@ -34,9 +34,9 @@ function persistence() {
 }
 
 test("mobile rejects unverified HTTP, embedded credentials and address paths", () => {
-  assert.equal(hubAddress("https://casa:47831/"), "https://casa:47831");
+  assert.equal(hubAddress("https://casa:17831/"), "https://casa:17831");
   for (const value of [
-    "http://100.99.29.84:47831",
+    "http://100.99.29.84:17831",
     "https://name:secret@casa",
     "https://casa/path",
     "https://casa?token=x",
@@ -175,4 +175,140 @@ test("mobile rejects changed hub identity and clears revoked credentials without
   await assert.rejects(client.refresh(), /Revoked/);
   assert.equal(client.state().connection, null);
   assert.equal(client.state().catalog.name, "Original");
+});
+
+test(
+  "local client destruction does not wait indefinitely for hub acknowledgement",
+  { timeout: 4000 },
+  async () => {
+    const store = persistence();
+    await store.secrets.write({
+      url: "https://hub",
+      token: "secret",
+      id: "replica",
+      hubId: "hub",
+    });
+    const client = createClient({
+      ...store,
+      fetcher: () => new Promise(() => {}),
+    });
+    await client.load();
+    await client.destroy();
+    assert.equal(await store.secrets.read(), null);
+    assert.deepEqual(client.state(), { connection: null, catalog: null });
+  },
+);
+
+test("cancelled background requests do not block navigation or accept late native results", async () => {
+  const store = persistence();
+  await store.secrets.write({
+    url: "https://hub",
+    token: "secret",
+    id: "replica",
+    hubId: "hub",
+  });
+  let late;
+  const client = createClient({
+    ...store,
+    fetcher: (url) =>
+      url.endsWith("/v1/background")
+        ? new Promise((resolve) => {
+            late = resolve;
+          })
+        : Promise.resolve(Response.json({ ready: true })),
+  });
+  await client.load();
+  const controller = new AbortController();
+  const request = client.api("/v1/background", undefined, {
+    signal: controller.signal,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(await client.api("/v1/navigation"), { ready: true });
+  const rejected = assert.rejects(request, /cancel background/);
+  controller.abort(new Error("cancel background"));
+  await rejected;
+  late(Response.json({ error: "late unauthorized response" }, { status: 401 }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(client.state().connection);
+});
+
+for (const kind of ["timeout", "cancel"])
+  test(`mobile ${kind} also bounds stalled response bodies`, async () => {
+    const store = persistence();
+    await store.secrets.write({
+      url: "https://hub",
+      token: "secret",
+      id: "replica",
+      hubId: "hub",
+    });
+    let bodyStarted;
+    const started = new Promise((resolve) => {
+      bodyStarted = resolve;
+    });
+    const client = createClient({
+      ...store,
+      timeout: kind === "timeout" ? 30 : 15000,
+      fetcher: async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: () => {
+          bodyStarted();
+          return new Promise(() => {});
+        },
+      }),
+    });
+    await client.load();
+    const controller = new AbortController();
+    const request = client.api("/v1/stalled", undefined, {
+      signal: controller.signal,
+    });
+    const rejected = assert.rejects(
+      request,
+      kind === "timeout" ? /timed out/ : /cancel body/,
+    );
+    await started;
+    if (kind === "cancel") controller.abort(new Error("cancel body"));
+    await rejected;
+    assert.ok(
+      client.state().connection,
+      "a timeout is not credential revocation",
+    );
+  });
+
+test("cancelling an unfinished unauthorized response does not erase the connection", async () => {
+  const store = persistence();
+  await store.secrets.write({
+    url: "https://hub",
+    token: "secret",
+    id: "replica",
+    hubId: "hub",
+  });
+  let reading;
+  const started = new Promise((resolve) => {
+    reading = resolve;
+  });
+  const client = createClient({
+    ...store,
+    fetcher: async () => ({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      json: () => {
+        reading();
+        return new Promise(() => {});
+      },
+    }),
+  });
+  await client.load();
+  const controller = new AbortController();
+  const request = client.api("/v1/stalled", undefined, {
+    signal: controller.signal,
+  });
+  const rejected = assert.rejects(request, /cancelled response/);
+  await started;
+  controller.abort(new Error("cancelled response"));
+  await rejected;
+  assert.ok(client.state().connection);
+  assert.ok(await store.secrets.read());
 });

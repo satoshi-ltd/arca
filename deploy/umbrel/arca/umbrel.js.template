@@ -1,0 +1,58 @@
+const systemTheme = matchMedia("(prefers-color-scheme: dark)");
+function applyTheme() {
+  let preference = "system";
+  try { preference = localStorage.getItem("arca-theme") || "system"; } catch {}
+  document.documentElement.dataset.theme =
+    preference === "dark" || (preference === "system" && systemTheme.matches)
+      ? "dark" : "light";
+}
+applyTheme();
+systemTheme.addEventListener("change", applyTheme);
+window.addEventListener("storage", applyTheme);
+window.addEventListener("pageshow", applyTheme);
+const form = document.getElementById("access-form");
+const password = document.getElementById("password");
+const result = document.getElementById("result");
+const code = document.getElementById("code");
+const error = document.getElementById("error");
+let expiry;
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = form.querySelector("button");
+  button.disabled = true;
+  error.textContent = "";
+  result.hidden = true;
+  code.textContent = "";
+  clearTimeout(expiry);
+  try {
+    const response = await fetch("/umbrel/code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: password.value }),
+    });
+    password.value = "";
+    const data = await response.json();
+    if (!response.ok)
+      throw new Error(data.error || "Could not generate a code.");
+    code.textContent = data.code.slice(0, 3) + " " + data.code.slice(3);
+    result.hidden = false;
+    code.focus();
+    expiry = setTimeout(() => {
+      code.textContent = "";
+      result.hidden = true;
+      error.textContent = "This code has expired. Get a new sign-in code.";
+    }, data.expiresInMinutes * 60000);
+  } catch (failure) {
+    password.value = "";
+    error.textContent =
+      failure.message || "Arca is unavailable. Try again shortly.";
+  } finally {
+    button.disabled = false;
+  }
+});
+window.addEventListener("pagehide", () => {
+  password.value = "";
+  code.textContent = "";
+  result.hidden = true;
+  clearTimeout(expiry);
+});

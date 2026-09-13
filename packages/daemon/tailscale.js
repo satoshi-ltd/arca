@@ -128,7 +128,7 @@ export class Tailscale {
     };
   }
 }
-export async function probeArca(peer, { fetcher = fetch, port = 47831 } = {}) {
+export async function probeArca(peer, { fetcher = fetch, port = 17831 } = {}) {
   if (!peer.online) return { state: "offline" };
   for (const address of peer.addresses.filter(tailAddress)) {
     const origin = `http://${isIP(address) === 6 ? `[${address}]` : address}:${port}`;

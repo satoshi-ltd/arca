@@ -8,7 +8,7 @@ services:
     environment:
       ARCA_HOME: /data/state
     ports:
-      - "${ARCA_BIND:-127.0.0.1}:47831:47831"
+      - "${ARCA_BIND:-127.0.0.1}:${ARCA_PORT:-17831}:17831"
     volumes:
       - arca-state:/data/state
       - arca-files:/data/files

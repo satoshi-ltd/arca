@@ -76,7 +76,7 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
               version: "0.1.0",
               platform: "linux",
               deployment: "docker",
-              apiPort: 47831,
+              apiPort: 17831,
               client: null,
             }),
           ),
@@ -596,15 +596,16 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
       failures: 0,
     }),
   );
-  await w.eval(`(async()=>{${script}\n})()`);
-  assert.equal(w.document.querySelectorAll('[data-code="web"]').length, 6);
-  // A cancelled approval must not keep polling, and switching methods preserves code input.
   daemon.engine.store.db
     .prepare(
       "INSERT INTO devices(id,name,token_hash,role) VALUES('approver','Mac',?,'replica')",
     )
     .run(digest("test-approver"));
   daemon.engine.config.webApprovers = ["approver"];
+  await w.eval(`(async()=>{${script}\n})()`);
+  assert.equal(w.document.querySelectorAll('[data-code="web"]').length, 6);
+  await until(() => !w.document.querySelector("#access-methods").hidden);
+  // A cancelled approval must not keep polling, and switching methods preserves code input.
   w.document.querySelector('[data-digit="0"]').value = "0";
   w.document.querySelector('[data-action="login-approval"]').click();
   await until(() => w.document.querySelector("#request-countdown"));
@@ -1499,7 +1500,7 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   const daemon = await start(home, { timer: false });
   const dom = new JSDOM(html, {
     runScripts: "outside-only",
-    url: "http://casa:47831/#/machines",
+    url: "http://casa:17831/#/machines",
   });
   const w = dom.window;
   t.after(async () => {
@@ -1565,7 +1566,7 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
     ...w.document.querySelectorAll('#dialog-content [data-action="copy"]'),
   ];
   assert.equal(buttons.length, 2);
-  assert.equal(buttons[0].dataset.id, "http://casa:47831");
+  assert.equal(buttons[0].dataset.id, "http://casa:17831");
   assert.equal(buttons[1].dataset.id, `http://100.99.29.84:${daemon.port}`);
   assert.equal(
     w.document
@@ -1761,7 +1762,7 @@ test("LAN mobile metadata appears on hub and other machines appear read-only on 
                   id: "local-mac",
                   role,
                   name: "Mac",
-                  hub: "http://casa:47831",
+                  hub: "http://casa:17831",
                   devices: [],
                 };
           }
@@ -2334,15 +2335,13 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     );
   }
   await daemon.engine.cycle();
-  daemon.engine.store.db
-    .prepare("INSERT INTO gallery_folders VALUES(?)")
-    .run(v.id);
   const dom = new JSDOM(html, {
     runScripts: "outside-only",
     url: "http://tauri.localhost",
   });
   const retentionCalls = [];
   const largeRequests = [];
+  const galleryRequests = [];
   const requests = new Set();
   t.after(async () => {
     await until(
@@ -2377,6 +2376,8 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
           args.route.includes("size=large")
         )
           largeRequests.push(args.route);
+        if (args.route.startsWith("/v1/gallery?"))
+          galleryRequests.push(args.route);
         const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
           method: args.method || "GET",
           headers: {
@@ -2402,7 +2403,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     return request;
   };
   await w.eval(`(async()=>{${script}\n})()`);
-  assert.ok(w.document.querySelector('.folder-card [data-icon="images"]'));
+  assert.ok(w.document.querySelector('.folder-card [data-icon="folder"]'));
   w.document.querySelector('[data-action="folder-detail"]').click();
   await until(() => w.document.querySelector(".browser-file-row"));
   assert.ok(w.document.querySelector('[data-action="open"]'));
@@ -2461,8 +2462,20 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     ["files", "recent"],
   );
   assert.ok(w.document.querySelector('[data-action="open"]'));
-  w.document.querySelector('[data-action="gallery-mode"]').click();
+  w.document.querySelector('[data-action="enable-gallery"]').click();
+  assert.match(
+    w.document.querySelector("#dialog-content").textContent,
+    /Files and synchronization stay the same/,
+  );
+  await until(() => w.document.body.getAttribute("aria-busy") !== "true");
+  w.document.querySelector("#submit-dialog").click();
   await until(() => w.document.querySelector(".photo-thumb img"));
+  assert.equal(
+    daemon.engine.status().volumes.find((folder) => folder.id === v.id).gallery,
+    true,
+  );
+  assert.equal(fs.existsSync(path.join(v.path, "0-photo.jpg")), true);
+  assert.ok(w.document.querySelector(".photo-thumb .photo-open img"));
   assert.equal(w.document.querySelector('[data-action="open"]'), null);
   assert.equal(w.document.querySelector(".folder-browser-tools"), null);
   assert.match(
@@ -2475,6 +2488,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     w.document.querySelector(".photo-day h2").textContent,
     "Date unknown",
   );
+  await until(() => w.document.querySelector(".photo-timeline button"));
   assert.ok(w.document.querySelector(".photo-timeline button"));
   assert.equal(w.document.querySelectorAll(".photo-day").length, 1);
   assert.equal(
@@ -2540,6 +2554,24 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   );
   w.document.querySelector(".photo-info-close").click();
   assert.equal(w.document.querySelector(".photo-info").hidden, true);
+  w.document.querySelector("#cancel-dialog").click();
+  const pageReads = galleryRequests.length;
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => !w.document.querySelector("#photo-gallery"));
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelector(".photo-open"));
+  assert.equal(
+    galleryRequests.length,
+    pageReads,
+    "reopening must reuse the prepared page",
+  );
+  w.document.querySelector(".photo-open").click();
+  await until(() => w.document.querySelector(".photo-viewer-image img"));
+  assert.equal(
+    largeRequests.filter((route) => route.includes("path=photo.jpg")).length,
+    1,
+    "reopening the gallery must reuse its content-addressed preview",
+  );
   w.document.querySelector(".photo-delete").click();
   assert.ok(w.document.querySelector(".confirmation-dialog"));
   assert.ok(
@@ -2719,4 +2751,301 @@ test("web approval uses the shared confirmation and closes after another machine
   requests = [];
   timers[0]();
   await until(() => !w.document.querySelector("#dialog").open);
+});
+
+for (const role of ["hub", "replica"])
+  test(
+    "unconfigured web opens onboarding before authentication: " + role,
+    async (t) => {
+      const { initializeServer } = await import("../packages/daemon/setup.js");
+      const { issueWebCode } = await import("../packages/daemon/web.js");
+      const home = fs.mkdtempSync(
+        path.join(os.tmpdir(), "arca-first-access-ui-"),
+      );
+      initializeServer(home, { port: 0 });
+      const daemon = await start(home, { timer: false });
+      const base = "http://127.0.0.1:" + daemon.port;
+      const w = new JSDOM(html, { runScripts: "outside-only", url: base })
+        .window;
+      w.setInterval = () => 0;
+      let cookie = "",
+        mutations = 0;
+      w.fetch = async (route, options = {}) => {
+        if (route === "/v1/setup") mutations++;
+        const response = await fetch(new URL(route, base), {
+          ...options,
+          headers: {
+            ...options.headers,
+            Origin: base,
+            ...(cookie ? { Cookie: cookie } : {}),
+          },
+        });
+        if (response.headers.get("set-cookie"))
+          cookie = response.headers.get("set-cookie").split(";")[0];
+        return response;
+      };
+      t.after(async () => {
+        w.close();
+        await daemon.close();
+        fs.rmSync(home, { recursive: true, force: true });
+      });
+      await w.eval(`(async()=>{${script}\n})()`);
+      await until(() => w.document.querySelector("#setup-form"));
+      assert.match(w.document.querySelector("h1").textContent, /Many devices/);
+      assert.equal(w.document.querySelector("#web-login"), null);
+      const submit = () =>
+        w.document
+          .querySelector("#setup-form")
+          .dispatchEvent(
+            new w.Event("submit", { bubbles: true, cancelable: true }),
+          );
+      const waitFor = (selector) =>
+        until(
+          () =>
+            w.document.querySelector(selector) &&
+            w.document.body.getAttribute("aria-busy") === "false",
+        );
+      submit();
+      await waitFor('[name="name"]');
+      w.document.querySelector('[name="name"]').value = "Chosen server";
+      submit();
+      await waitFor('[name="role"]');
+      w.document.querySelector('[name="role"][value="' + role + '"]').checked =
+        true;
+      submit();
+      await waitFor('[data-code="setup-access"]');
+      assert.equal(mutations, 0);
+      assert.equal(daemon.engine.config.needsSetup, true);
+      submit();
+      await until(() => !w.document.querySelector("#setup-error").hidden);
+      assert.match(
+        w.document.querySelector("#setup-error").textContent,
+        /six digits/,
+      );
+      const { code } = issueWebCode(home);
+      [...code].forEach((digit, i) => {
+        w.document.querySelector(
+          '[data-code="setup-access"][data-digit="' + i + '"]',
+        ).value = digit;
+      });
+      submit();
+      await waitFor(role === "hub" ? '[name="root"]' : '[name="url"]');
+      assert.ok(cookie);
+      assert.equal(mutations, 0);
+      if (role === "hub") {
+        submit();
+        await until(
+          () =>
+            !daemon.engine.config.needsSetup &&
+            !daemon.engine.config.onboarding,
+        );
+        assert.equal(daemon.engine.config.name, "Chosen server");
+        assert.equal(daemon.engine.config.role, "hub");
+      }
+    },
+  );
+
+test("configured server hides unavailable machine approval and displays the chosen name", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-no-approvers-ui-"));
+  init(home, { name: "My server", port: 0 });
+  const daemon = await start(home, { timer: false });
+  const base = "http://127.0.0.1:" + daemon.port;
+  const w = new JSDOM(html, { runScripts: "outside-only", url: base }).window;
+  w.setInterval = () => 0;
+  w.fetch = (route, options) => fetch(new URL(route, base), options);
+  t.after(async () => {
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() =>
+    w.document.querySelector("#access-name")?.textContent.includes("My server"),
+  );
+  assert.equal(w.document.querySelector("#access-methods").hidden, true);
+  assert.ok(w.document.querySelector("#web-login"));
+  w.document.querySelector('[data-action="login-approval"]').click();
+  assert.equal(w.document.querySelector("#access-code").hidden, false);
+});
+
+test("hub danger zone cancels safely and returns to onboarding after local destruction", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-destroy-ui-"));
+  const nodes = [];
+  for (const role of ["hub", "replica"]) {
+    const home = path.join(root, role);
+    init(home, { role, port: 0, name: role });
+    nodes.push(await start(home, { timer: false }));
+  }
+  const [hub, replica] = nodes;
+  const request = (node, route, body) =>
+    fetch(`http://127.0.0.1:${node.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        Authorization: `Bearer ${node.engine.config.adminToken}`,
+        "Content-Type": "application/json",
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const v = await hub.engine.publish("Documents", undefined, false);
+  const destination = v.path;
+  fs.writeFileSync(path.join(destination, "local.txt"), "hub data");
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://localhost/#/machines",
+  });
+  const w = dom.window;
+  t.after(async () => {
+    dom.window.close();
+    for (const n of nodes.reverse()) await n.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  w.setInterval = () => 0;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (command !== "api") return null;
+        const r = await request(
+          hub,
+          args.route,
+          args.method === "POST" ? args.body : undefined,
+        );
+        const b = await r.json();
+        if (!r.ok) throw new Error(b.error);
+        return b;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.document.querySelector('[data-view="settings"]').click();
+  await until(
+    () =>
+      w.document.querySelector('[data-action="destroy-hub"]') &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  assert.equal(
+    w.document.querySelector('[data-action="disconnect-hub"]'),
+    null,
+  );
+  w.document.querySelector('[data-action="destroy-hub"]').click();
+  await until(() => w.document.querySelector("#dialog").open);
+  assert.ok(
+    w.document.querySelector("#dialog").textContent.includes(destination),
+  );
+  assert.match(
+    w.document.querySelector("#dialog").textContent,
+    /Replicas keep their local files/,
+  );
+  assert.ok(
+    w.document.querySelector("#submit-dialog").classList.contains("danger"),
+  );
+  w.document.querySelector("#cancel-dialog").click();
+  assert.ok(fs.existsSync(destination));
+  assert.equal(hub.engine.config.role, "hub");
+  await until(() => w.document.body.getAttribute("aria-busy") === "false");
+  w.document.querySelector('[data-action="destroy-hub"]').click();
+  await until(() => w.document.querySelector("#dialog").open);
+  w.document.querySelector("#submit-dialog").click();
+  await until(
+    () =>
+      w.document.querySelector("#setup-form") &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  assert.equal(fs.existsSync(destination), false);
+  assert.equal(hub.engine.config.needsSetup, true);
+  assert.match(
+    w.document.querySelector("#content").textContent,
+    /Many devices/,
+  );
+  w.document.querySelector('#setup-form button[type="submit"]').click();
+  await until(
+    () =>
+      w.document.querySelector('input[name="name"]') &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  assert.equal(w.document.querySelector('input[name="name"]').value, "");
+});
+
+test("Tauri gallery opens video before its poster and stops media when closed", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-dom-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Videos");
+  fs.writeFileSync(path.join(volume.path, "clip.mp4"), "video fixture");
+  await daemon.engine.cycle();
+  daemon.engine.gallery.mark(volume.id);
+  await daemon.engine.gallery.background;
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  let releasePoster,
+    paused = 0,
+    loads = 0;
+  w.setInterval = () => 0;
+  w.HTMLMediaElement.prototype.pause = function () {
+    paused++;
+  };
+  w.HTMLMediaElement.prototype.load = function () {
+    loads++;
+  };
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+    this.dispatchEvent(new w.Event("close"));
+  };
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap")
+          return { setup: false, status: daemon.engine.status() };
+        if (command !== "api") throw new Error(command);
+        if (args.route.startsWith("/v1/gallery/preview?"))
+          return new Promise((resolve) => {
+            releasePoster = resolve;
+          });
+        const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          method: args.method,
+          headers: {
+            Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+            "Content-Type": "application/json",
+          },
+          ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        return data;
+      },
+    },
+  };
+  t.after(async () => {
+    releasePoster?.({ unavailable: true });
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.document.querySelector('[data-action="folder-detail"]').click();
+  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelector(".photo-open"));
+  assert.ok(w.document.querySelector(".photo-video-badge"));
+  w.document.querySelector(".photo-open").click();
+  await until(() => w.document.querySelector("video"));
+  const video = w.document.querySelector("video");
+  assert.equal(video.controls, true);
+  assert.match(video.src, /127\.0\.0\.1.*ticket=/);
+  w.document.querySelector("#cancel-dialog").click();
+  assert.equal(paused, 1);
+  assert.equal(loads, 1);
+  assert.equal(video.hasAttribute("src"), false);
 });

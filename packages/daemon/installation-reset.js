@@ -17,7 +17,7 @@ export function resetTargets(store) {
       store.home.startsWith(target + path.sep)
     )
       fail(
-        "Replica data overlaps the state directory; resolve its location before destroying",
+        "Arca data overlaps the state directory; resolve its location before destroying",
         409,
       );
     if (!fs.existsSync(target)) return { path: target, missing: true };
@@ -27,11 +27,11 @@ export function resetTargets(store) {
       stat.isSymbolicLink() ||
       fs.realpathSync(target) !== target
     )
-      fail(`Replica folder location changed: ${target}`, 409);
+      fail(`Arca folder location changed: ${target}`, 409);
     return { path: target, dev: stat.dev, ino: stat.ino };
   });
 }
-export function finishReplicaReset(store) {
+export function finishInstallationReset(store) {
   const journal = store.config.destroyPending;
   if (!journal) return;
   for (const target of journal.targets) {
@@ -46,7 +46,7 @@ export function finishReplicaReset(store) {
       stat.ino !== target.ino
     )
       fail(
-        `Replica folder changed during destruction: ${target.path}. Restore its original location and retry.`,
+        `Arca folder changed during destruction: ${target.path}. Restore its original location and retry.`,
         409,
       );
     fs.rmSync(target.path, { recursive: true });
@@ -60,7 +60,9 @@ export function finishReplicaReset(store) {
         "web-code.json",
         "promotion.json",
       ].includes(name) ||
-      /^before-(promotion|reconnect)-[a-f0-9-]+\.sqlite$/.test(name)
+      /^before-(promotion|reconnect)-[a-f0-9-]+\.sqlite$/.test(name) ||
+      /^config\.before-[a-z0-9-]+\.json$/.test(name) ||
+      name === "pre-onboarding-config.json"
     )
       fs.rmSync(path.join(store.home, name), { recursive: true, force: true });
   }
@@ -99,7 +101,7 @@ export function finishReplicaReset(store) {
   for (const key of Object.keys(old)) delete old[key];
   Object.assign(old, next);
 }
-export function beginReplicaReset(store, targets) {
+export function beginInstallationReset(store, targets) {
   store.config.destroyPending = {
     targets,
     id: crypto.randomUUID(),

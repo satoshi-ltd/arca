@@ -1,0 +1,72 @@
+services:
+  app_proxy:
+    environment:
+      APP_HOST: arca_access_1
+      APP_PORT: 47832
+      # Native clients use Arca pairing/credentials, not Umbrel browser cookies.
+      # Every /v1 route still requires Arca authentication and role checks.
+      PROXY_AUTH_WHITELIST: "/pair,/.well-known/arca,/v1/*"
+
+  initialize:
+    image: satoshiltd/arca:0.4.1@sha256:e1f71386da5541c21c500e139d1ba9ca5ad01d389f4845bd0865467946d02ac4
+    user: "1000:1000"
+    entrypoint: ["node", "/app/umbrel-init.mjs"]
+    environment:
+      ARCA_HOME: /data/state
+      ARCA_FILES: /data/files
+    volumes:
+      - ${APP_DATA_DIR}/data/state:/data/state
+      - ${APP_DATA_DIR}/data/files:/data/files
+      - ${APP_DATA_DIR}/server-setup.js:/app/packages/daemon/setup.js:ro
+      - ${APP_DATA_DIR}/umbrel-init.mjs:/app/umbrel-init.mjs:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  server:
+    command:
+      ["daemon", "--host", "0.0.0.0", "--port", "17831", "--private-network"]
+    image: satoshiltd/arca:0.4.1@sha256:e1f71386da5541c21c500e139d1ba9ca5ad01d389f4845bd0865467946d02ac4
+    user: "1000:1000"
+    restart: on-failure
+    init: true
+    stop_grace_period: 1m
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+    environment:
+      ARCA_HOME: /data/state
+      ARCA_FILES: /data/files
+      ARCA_SETUP_CODE_PATH: /umbrel
+    volumes:
+      - ${APP_DATA_DIR}/data/state:/data/state
+      - ${APP_DATA_DIR}/data/files:/data/files
+      - ${APP_DATA_DIR}/server-setup.js:/app/packages/daemon/setup.js:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "node", "packages/cli/arca.js", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  access:
+    image: satoshiltd/arca:0.4.1@sha256:e1f71386da5541c21c500e139d1ba9ca5ad01d389f4845bd0865467946d02ac4
+    user: "1000:1000"
+    restart: on-failure
+    init: true
+    entrypoint: ["node", "/app/umbrel-access.mjs"]
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      ARCA_HOME: /data/state
+      ARCA_UMBREL_PASSWORD: ${APP_PASSWORD}
+      ARCA_UPSTREAM: http://arca_server_1:17831
+    volumes:
+      - ${APP_DATA_DIR}/data/state:/data/state
+      - ${APP_DATA_DIR}/umbrel-access.mjs:/app/umbrel-access.mjs:ro
+      - ${APP_DATA_DIR}/umbrel.html:/app/umbrel.html:ro
+      - ${APP_DATA_DIR}/umbrel.js:/app/umbrel.js:ro
+      - ${APP_DATA_DIR}/umbrel.css:/app/umbrel.css:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

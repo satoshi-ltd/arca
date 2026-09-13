@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { inspectSetupRoot } from "../daemon/setup.js";
+import { inspectSetupRoot, initializeServer } from "../daemon/setup.js";
 import { normalizeCode } from "../daemon/codes.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -15,7 +15,12 @@ const positional = [];
 for (let i = 0; i < args.length; i++) {
   if (args[i].startsWith("--")) {
     const key = args[i].slice(2);
-    options[key] = ["private-network", "reconcile", "confirm"].includes(key)
+    options[key] = [
+      "private-network",
+      "reconcile",
+      "confirm",
+      "setup",
+    ].includes(key)
       ? true
       : args[++i];
   } else positional.push(args[i]);
@@ -29,7 +34,7 @@ const print = (value) =>
 try {
   if (!command || command === "help") {
     console.log(
-      `Arca 0.4.1 — personal drive\n\n  init --role hub|replica --name NAME --root PATH [--port 47831]\n  daemon [--host 127.0.0.1] [--port PORT] [--private-network]\n  network | discover | network-mode standalone|tailscale\n  status | sync | pause | resume\n  pair NAME (one-time machine pairing code)\n  move-folder FOLDER_ID NEW_PATH\n  promotion-plan | promote --confirm\n  retention --days N --versions N [--confirmation PREVIEW_DIGEST]\n  web-code\n  backup enable NEW_PATH | backup disable\n  add-folder NAME [PATH]\n  invite NAME   (prints a secret once)\n  connect URL --token-file PATH [--private-network]\n  catalog | select FOLDER_ID [LOCAL_PATH] | unselect FOLDER_ID\n  files FOLDER_ID | history FOLDER_ID FILE_PATH\n  restore FOLDER_ID FILE_PATH REVISION\n  revoke MACHINE_ID\n  recover-backup NEW_HOME (source backup is --home; both offline)\n\nAll commands accept --home PATH (default ~/.arca).\nUse --private-network for Tailscale, a TLS proxy, or a trusted LAN with HTTP explicitly enabled in hub Settings.\n`,
+      `Arca 0.4.2 — personal drive\n\n  init --role hub|replica --name NAME --root PATH [--port 17831]\n  daemon [--setup] [--host 127.0.0.1] [--port PORT] [--private-network]\n  network | discover | network-mode standalone|tailscale\n  status | sync | pause | resume\n  pair NAME (one-time machine pairing code)\n  move-folder FOLDER_ID NEW_PATH\n  promotion-plan | promote --confirm\n  retention --days N --versions N [--confirmation PREVIEW_DIGEST]\n  web-code\n  backup enable NEW_PATH | backup disable\n  add-folder NAME [PATH]\n  invite NAME   (prints a secret once)\n  connect URL --token-file PATH [--private-network]\n  catalog | select FOLDER_ID [LOCAL_PATH] | unselect FOLDER_ID\n  files FOLDER_ID | history FOLDER_ID FILE_PATH\n  restore FOLDER_ID FILE_PATH REVISION\n  revoke MACHINE_ID\n  recover-backup NEW_HOME (source backup is --home; both offline)\n\nAll commands accept --home PATH (default ~/.arca).\nUse --private-network for Tailscale, a TLS proxy, or a trusted LAN with HTTP explicitly enabled in hub Settings.\n`,
     );
   } else if (command === "setup-info") {
     print(inspectSetupRoot(options.root, home));
@@ -47,6 +52,12 @@ try {
     const c = init(home, options);
     print({ home, id: c.id, role: c.role, root: c.root });
   } else if (command === "daemon") {
+    if (options.setup)
+      initializeServer(home, {
+        root: options.root,
+        port: options.port,
+        host: options.host,
+      });
     const daemon = await start(home, {
       host: options.host,
       port: options.port === undefined ? undefined : Number(options.port),

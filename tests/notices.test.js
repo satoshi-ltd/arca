@@ -79,7 +79,7 @@ test("conditions use per-folder identities and the same human copy for app and s
   );
 });
 test("Android native connection failures show a grouped outage with collapsed diagnostics", () => {
-  const message = "Call to function 'ArcaNetwork.request' has been rejected. → Caused by: java.net.ConnectException: Failed to connect to /192.168.1.190:47831";
+  const message = "Call to function 'ArcaNetwork.request' has been rejected. → Caused by: java.net.ConnectException: Failed to connect to /192.168.1.190:17831";
   const notice = errorNotice(message, { hubName: "Casa" });
   assert.equal(notice.offline, true);
   assert.equal(notice.cause, "connection");

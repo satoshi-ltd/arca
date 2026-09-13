@@ -819,3 +819,69 @@ test("failed destruction journal write preserves files and permits a durable ret
   await r.api("/v1/destroy-replica", { confirmed: true });
   assert.equal(fs.existsSync(folder), false);
 });
+
+
+test("confirmed desktop destruction works with an unreachable hub and preserves hub files", async (t) => {
+  const f = await setup(t);
+  const replica = await f.connect("offline-destroy");
+  const folder = replica.engine.store.volumes()[0].path;
+  fs.writeFileSync(path.join(folder, "local-only.txt"), "delete only on confirmation");
+  fs.writeFileSync(path.join(f.volume.path, "hub.txt"), "retained");
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  await replica.api("/v1/destroy-replica", { confirmed: true });
+  assert.equal(fs.existsSync(folder), false);
+  assert.equal(replica.engine.config.needsSetup, true);
+  assert.equal(fs.readFileSync(path.join(f.volume.path, "hub.txt"), "utf8"), "retained");
+});
+
+test("destroy hub deletes its files/history and returns to setup without deleting replica copies", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  fs.writeFileSync(path.join(volume.path, "kept.txt"), "original");
+  await hub.sync();
+  fs.writeFileSync(path.join(volume.path, "kept.txt"), "latest");
+  await hub.sync();
+  const first = await connect("first-copy");
+  const second = await connect("second-copy");
+  await first.sync();
+  await second.sync();
+  const oldId = hub.engine.config.id;
+  const oldAdmin = hub.engine.config.adminToken;
+  await assert.rejects(hub.api("/v1/destroy-hub", {}), /Confirm/);
+  await assert.rejects(hub.api("/v1/destroy-hub", { confirmed: true }, first.invite.token), { status: 403 });
+  await assert.rejects(first.api("/v1/destroy-hub", { confirmed: true }), /Only a hub/);
+  assert.ok(fs.existsSync(volume.path));
+  await hub.api("/v1/destroy-hub", { confirmed: true });
+  assert.equal(fs.existsSync(volume.path), false);
+  assert.equal(hub.engine.store.db.prepare("SELECT count(*) AS n FROM revisions").get().n, 0);
+  assert.equal(hub.engine.store.db.prepare("SELECT count(*) AS n FROM devices").get().n, 0);
+  assert.notEqual(hub.engine.config.id, oldId);
+  assert.notEqual(hub.engine.config.adminToken, oldAdmin);
+  assert.equal(hub.engine.config.needsSetup, true);
+  assert.equal(hub.engine.config.role, "replica");
+  for (const replica of [first, second]) {
+    await replica.sync();
+    assert.equal(replica.engine.config.hub, null);
+    assert.equal(fs.readFileSync(path.join(replica.engine.store.volume(volume.id).path, "kept.txt"), "utf8"), "latest");
+  }
+  assert.equal((await hub.api("/v1/status")).needsSetup, true);
+});
+
+
+test("interrupted hub destruction blocks catalog reads until a safe retry", async (t) => {
+  const { hub, volume } = await setup(t);
+  fs.writeFileSync(path.join(volume.path, "kept.txt"), "not yet removed");
+  const remove = fs.rmSync;
+  fs.rmSync = (target, ...args) => {
+    if (target === volume.path) throw new Error("disk unavailable");
+    return remove(target, ...args);
+  };
+  try {
+    await assert.rejects(hub.api("/v1/destroy-hub", { confirmed: true }), /disk unavailable/);
+    assert.ok(hub.engine.config.destroyPending);
+    await assert.rejects(hub.api("/v1/catalog"), { status: 409 });
+    assert.ok(fs.existsSync(volume.path));
+  } finally { fs.rmSync = remove; }
+  await hub.api("/v1/destroy-hub", { confirmed: true });
+  assert.equal(fs.existsSync(volume.path), false);
+  assert.equal(hub.engine.config.needsSetup, true);
+});

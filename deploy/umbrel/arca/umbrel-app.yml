@@ -1,0 +1,45 @@
+manifestVersion: 1
+id: arca
+category: files
+name: Arca
+version: "0.4.1"
+tagline: Your files, synchronized across your own machines
+description: >-
+  Arca is a personal drive with complete local files, bidirectional sync,
+  revision history, and a hub you control. This is an alpha release.
+
+
+  Choose whether this server is your hub or a replica during first-run setup.
+  Open the app to start setup. When asked to confirm server access, use the
+  app password shown by Umbrel to get a single-use code, then paste it into
+  the wizard. No terminal access is needed.
+
+
+  As a hub, create shared folders. As a replica, pair with your hub and select
+  folders to synchronize. Use Arca's persistent /data/files storage location. Files and history are
+  stored in this app's private data directory. Uninstalling the Umbrel app
+  removes its stored data; export files before uninstalling.
+
+
+  To connect Arca desktop or mobile clients over your trusted local network,
+  enable Settings → Local network → Allow HTTP connections in Arca, then use
+  this app's address and a separate pairing code from Machines. Local HTTP
+  traffic is unencrypted. Never expose this installation directly to the Internet.
+releaseNotes: ""
+
+developer: Satoshi Ltd
+website: https://arca.satoshi-ltd.com/
+dependencies: []
+repo: https://github.com/satoshi-ltd/arca
+support: https://github.com/satoshi-ltd/arca/issues
+
+port: 17831
+gallery: []
+path: /
+
+defaultUsername: ""
+defaultPassword: ""
+deterministicPassword: true
+
+submitter: Satoshi Ltd
+submission: ""

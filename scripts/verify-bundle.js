@@ -31,6 +31,15 @@ try {
     throw new Error("Packaged Node does not match the runner architecture");
   if (!fs.existsSync(path.join(runtime, "LICENSE.node")))
     throw new Error("Packaged Node license missing");
+  const video = spawnSync(
+    node,
+    [
+      "-e",
+      "require('node:child_process').execFileSync(require('ffmpeg-static'),['-version'],{stdio:'ignore',timeout:10000})",
+    ],
+    { cwd: runtime, encoding: "utf8" },
+  );
+  if (video.status !== 0) throw new Error("Packaged FFmpeg cannot run");
   const initialized = spawnSync(
     node,
     [cli, "init", "--home", home, "--port", "0"],

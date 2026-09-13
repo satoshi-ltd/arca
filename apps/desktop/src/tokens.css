@@ -75,6 +75,11 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  --onboarding-title: 24px;
+  --onboarding-brand: 18px;
+  --onboarding-step-gap: 14px;
+  --onboarding-welcome-title: 30px;
+  --onboarding-padding: 32px;
   --sidebar-width: 200px;
   --detail-side-width: 320px;
   --dialog-width: 480px;

@@ -1,3 +1,4 @@
+import { videoPreview } from "./video-preview.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -55,35 +56,72 @@ export class Gallery {
     store.db.function("arca_media_kind", mediaKind);
     this.directory = path.join(store.home, "previews");
     fs.mkdirSync(this.directory, { recursive: true });
-    this.queue = [];
     this.cache = new Map();
     this.cacheBytes = 0;
     this.running = 0;
+    this.pending = new Map();
     this.indexing = new Map();
+    this.volumes = new Set();
+    store.db.exec(
+      "CREATE TABLE IF NOT EXISTS gallery_prepared(hash TEXT PRIMARY KEY, attempted INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS gallery_revision_lookup ON revisions(volume,path,hash,created)",
+    );
   }
   close() {
     this.closed = true;
-    this.queue = [];
   }
-  schedule(volume, name, hash) {
-    if (this.closed || mediaKind(name) !== "image" || this.queue.length >= 256)
-      return;
-    this.queue.push({ volume, name, hash });
-    if (!this.background) {
+  schedule(volume, name) {
+    if (this.closed || !mediaKind(name)) return;
+    this.prepare(volume);
+  }
+  resume() {
+    for (const { volume } of this.s.db
+      .prepare("SELECT volume FROM gallery_folders")
+      .all())
+      this.prepare(volume);
+  }
+  prepare(volume) {
+    if (this.closed) return;
+    this.volumes.add(volume);
+    if (!this.background)
       this.background = this.prepareQueued().finally(() => {
         this.background = null;
       });
-    }
   }
   async prepareQueued() {
-    while (!this.closed && this.queue.length) {
-      const item = this.queue.shift();
+    while (!this.closed && this.volumes.size) {
+      const volume = this.volumes.values().next().value;
+      this.volumes.delete(volume);
       try {
-        await this.preview(item.volume, item.name, item.hash);
+        while (!this.closed && (await this.index(volume)))
+          await new Promise((r) => setImmediate(r));
+        let after = "";
+        while (!this.closed) {
+          const rows = this.s.db
+            .prepare(
+              `SELECT f.path,f.hash FROM files f LEFT JOIN gallery_prepared p ON p.hash=f.hash
+            WHERE f.volume=? AND f.path>? AND f.deleted=0 AND arca_media_kind(f.path) IS NOT NULL
+            AND (p.hash IS NULL OR p.attempted<?) ORDER BY f.path LIMIT 32`,
+            )
+            .all(volume, after, Date.now() - 86400000);
+          if (!rows.length) break;
+          for (const row of rows) {
+            if (this.closed) return;
+            after = row.path;
+            try {
+              await this.preview(volume, row.path, row.hash);
+            } catch {
+              /* Hidden/deleted files are skipped. */
+            }
+            if (this.closed) return;
+            this.s.db
+              .prepare("INSERT OR REPLACE INTO gallery_prepared VALUES(?,?)")
+              .run(row.hash, Date.now());
+            await new Promise((r) => setImmediate(r));
+          }
+        }
       } catch {
-        /* Read-time generation can retry. */
+        /* Folder removal or bad policy must not stop other galleries. */
       }
-      await new Promise((resolve) => setImmediate(resolve));
     }
   }
   mark(volume) {
@@ -91,6 +129,7 @@ export class Gallery {
     this.s.db
       .prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)")
       .run(volume);
+    this.prepare(volume);
   }
   async index(volume) {
     if (this.indexing.has(volume)) return this.indexing.get(volume);
@@ -151,7 +190,16 @@ export class Gallery {
     const s = this.s;
     s.volume(volume);
     const excluded = s.visibleRules(volume);
-    const indexing = await this.index(volume);
+    const indexing = Boolean(
+      s.db
+        .prepare(
+          `SELECT 1 FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
+       WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL
+       AND (m.hash IS NULL OR (m.captured IS NULL AND m.date_checked=0)) LIMIT 1`,
+        )
+        .get(volume),
+    );
+    if (indexing) this.prepare(volume);
     s.db.function("arca_gallery_visible", (name) =>
       mediaKind(name) && !excluded(name, false) ? 1 : 0,
     );
@@ -167,7 +215,7 @@ export class Gallery {
     const source = `WITH media AS (
       SELECT f.path,f.hash,f.size,f.rev,m.captured,
         (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash) AS added
-      FROM files f JOIN gallery_metadata m ON m.hash=f.hash
+      FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
       WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_gallery_visible(f.path)=1
     ), dated AS (SELECT *,arca_gallery_date(path,captured,added) AS date FROM media)`;
     const rows = s.db
@@ -320,7 +368,7 @@ export class Gallery {
       s.visibleRules(volume)(name, false)
     )
       fail("This photo is no longer available", 404);
-    if (mediaKind(name) !== "image") return { unavailable: true };
+    if (!mediaKind(name)) return { unavailable: true };
     const key = `${hash}:${large ? "large" : "thumb"}`;
     if (this.cache.has(key)) {
       const value = this.cache.get(key);
@@ -338,21 +386,33 @@ export class Gallery {
         data: `data:image/jpeg;base64,${fs.readFileSync(disk).toString("base64")}`,
       };
     }
+    if (this.pending.has(key)) return this.pending.get(key);
+    const job = this.render(name, hash, large, key, diskKey, disk).finally(() =>
+      this.pending.delete(key),
+    );
+    this.pending.set(key, job);
+    return job;
+  }
+  async render(name, hash, large, key, diskKey, disk) {
+    const s = this.s;
     if (this.running >= 4) fail("Previews are busy. Try again.", 429);
     this.running++;
     try {
-      const data = await sharp(s.blob(hash), {
-        limitInputPixels: 100000000,
-        sequentialRead: true,
-      })
-        .rotate()
-        .resize(large ? 2048 : 360, large ? 2048 : 360, {
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .jpeg({ quality: large ? 85 : 75 })
-        .timeout({ seconds: 10 })
-        .toBuffer();
+      const data =
+        mediaKind(name) === "video"
+          ? await videoPreview(s.blob(hash), name, large)
+          : await sharp(s.blob(hash), {
+              limitInputPixels: 100000000,
+              sequentialRead: true,
+            })
+              .rotate()
+              .resize(large ? 2048 : 360, large ? 2048 : 360, {
+                fit: "inside",
+                withoutEnlargement: true,
+              })
+              .jpeg({ quality: large ? 85 : 75 })
+              .timeout({ seconds: 10 })
+              .toBuffer();
       if (this.closed) return { unavailable: true };
       const temporary = disk + `.${crypto.randomUUID()}.tmp`;
       try {

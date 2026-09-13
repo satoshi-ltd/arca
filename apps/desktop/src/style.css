@@ -1144,19 +1144,15 @@ dialog::backdrop {
 }
 .onboarding {
   display: grid;
-  --text-body: clamp(14px, 1.4vw, 22px);
-  --text-control: clamp(15px, 1.5vw, 24px);
-  --text-row: clamp(16px, 1.6vw, 26px);
-  --text-title: clamp(26px, 2.7vw, 42px);
-  --text-caption: clamp(12px, 1.2vw, 18px);
-  grid-template-columns: minmax(240px, 33%) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 100dvh;
 }
 .onboarding-rail {
-  padding: 48px;
+  padding: var(--space-4) var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 48px;
+  gap: var(--space-6);
+  background: var(--side);
   border-right: 1px solid var(--div);
 }
 .steps {
@@ -1204,51 +1200,66 @@ dialog::backdrop {
   color: var(--mute);
 }
 .onboarding-body {
-  padding: 48px;
-  max-width: 960px;
+  max-width: var(--dialog-width);
+  padding: var(--space-6) var(--onboarding-padding);
+  min-width: 0;
   width: 100%;
-  margin: auto;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  min-height: 100dvh;
 }
 .onboarding-body h1 {
-  font-size: var(--text-title);
+  font-size: var(--onboarding-title);
+  line-height: 1.15;
+}
+.onboarding-body h1:has(.accent-text) {
+  font-size: var(--onboarding-welcome-title);
 }
 .onboarding-body > p {
   font-size: var(--text-control);
   color: var(--soft);
 }
 .onboarding-body .dialog-actions {
-  margin-top: auto;
+  margin-top: 0;
   justify-content: space-between;
 }
 .onboarding-rail .brand {
-  gap: var(--space-4);
+  gap: var(--space-3);
+}
+.onboarding-rail .brand,
+.onboarding-rail .steps {
+  padding-inline: var(--space-1);
 }
 .onboarding-rail .brand img {
-  width: 48px;
-  height: 48px;
+  width: var(--screen-title-logo);
+  height: var(--screen-title-logo);
 }
 .onboarding-rail .brand b {
-  font-size: var(--text-row);
+  font-size: var(--onboarding-brand);
 }
 .onboarding .step span {
-  width: 28px;
-  height: 28px;
+  justify-self: center;
+  width: var(--space-5);
+  height: var(--space-5);
   flex-shrink: 0;
 }
+.onboarding .steps {
+  gap: var(--onboarding-step-gap);
+}
 .onboarding .step {
-  gap: var(--space-4);
+  display: grid;
+  grid-template-columns: var(--screen-title-logo) minmax(0, 1fr);
+  font-size: var(--text-control);
+  gap: var(--space-3);
 }
 .onboarding .settings-card {
   border-radius: var(--r-card);
   flex-shrink: 0;
 }
 .onboarding .setting-row {
-  padding: var(--space-5);
-  gap: var(--space-5);
+  padding: var(--space-4);
+  gap: var(--space-3);
 }
 .onboarding .setting-row > .icon {
   width: 24px;
@@ -1257,22 +1268,22 @@ dialog::backdrop {
   color: var(--green);
 }
 .onboarding .dialog-actions {
-  padding-top: var(--space-6);
+  padding-top: var(--space-2);
 }
 .onboarding .root-selection input {
   font-size: var(--text-control);
 }
 .onboarding .code-inputs input {
-  width: 56px;
-  height: 64px;
+  width: var(--access-code-width);
+  height: var(--access-code-height);
 }
 .onboarding .role-card {
   margin: 0;
-  padding: var(--space-6);
-  gap: var(--space-5);
+  padding: var(--space-4);
+  gap: var(--space-3);
 }
 .onboarding .role-card:has(input:checked) {
-  padding: calc(var(--space-6) - 1px);
+  padding: calc(var(--space-4) - 1px);
 }
 .onboarding .role-card input {
   width: 24px;
@@ -1309,6 +1320,9 @@ dialog::backdrop {
   gap: var(--space-4);
   border: 0;
   background: transparent;
+}
+.onboarding .stat:only-child {
+  grid-column: 1 / -1;
 }
 .onboarding .stat {
   border: 1px solid var(--div);
@@ -3816,6 +3830,7 @@ dialog.photo-viewer {
 }
 
 .access-brand #access-role {
+  margin-inline-end: var(--space-2);
   color: var(--surface);
   background: var(--ink);
   border-color: var(--ink);
@@ -3838,4 +3853,41 @@ dialog.photo-viewer {
 }
 .approval-raw[open] summary .icon {
   transform: rotate(90deg);
+}
+
+.photo-video-badge {
+  position: absolute;
+  bottom: var(--space-2);
+  left: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--r-control);
+  background: var(--ink);
+  color: var(--surface);
+  font-size: var(--text-caption);
+  pointer-events: none;
+}
+.photo-viewer-image {
+  position: relative;
+}
+.photo-more[aria-busy="true"] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.photo-viewer-image video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.video-error {
+  position: absolute;
+  bottom: var(--space-6);
+  padding: var(--space-3);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--r-control);
 }

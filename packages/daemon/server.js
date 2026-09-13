@@ -1,3 +1,4 @@
+import { galleryMedia, streamGalleryMedia } from "./gallery-media.js";
 import { Gallery } from "./gallery.js";
 import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
 import { inspectSetupRoot } from "./setup.js";
@@ -87,6 +88,10 @@ export async function start(home, options = {}) {
   }
   const webEnabled = config.installation !== "desktop";
   const network = new Network(engine, options.network);
+  if (config.role === "hub") {
+    engine.gallery = new Gallery(s);
+    engine.gallery.resume();
+  }
   let web;
   try {
     if (webEnabled)
@@ -99,6 +104,7 @@ export async function start(home, options = {}) {
     fs.unlinkSync(lock);
     throw error;
   }
+  const playbackTickets = new Map();
   const pairingAttempts = new Attempts();
   const server = http.createServer(async (req, res) => {
     const send = (status, data) => {
@@ -150,6 +156,37 @@ export async function start(home, options = {}) {
         return send(404, {
           error: "Web access is not available in the desktop installation",
         });
+      // Native video elements cannot attach the daemon bearer credential. A loopback-only
+      // ticket grants read access to one current video; never to other API routes.
+      const playbackUrl = new URL(req.url, "http://localhost");
+      if (
+        pathname === "/v1/gallery/media" &&
+        playbackUrl.searchParams.has("ticket")
+      ) {
+        const ticket = playbackTickets.get(
+          playbackUrl.searchParams.get("ticket"),
+        );
+        if (
+          !["GET", "HEAD"].includes(req.method) ||
+          !["127.0.0.1", "::1"].includes(remote) ||
+          !ticket ||
+          ticket.expires < Date.now() ||
+          ticket.owner !== config.adminToken ||
+          (req.headers.origin &&
+            ![
+              "tauri://localhost",
+              "http://tauri.localhost",
+              "https://tauri.localhost",
+              "http://127.0.0.1:1425",
+            ].includes(req.headers.origin))
+        )
+          fail("Playback access expired", 401);
+        return streamGalleryMedia(
+          req,
+          res,
+          galleryMedia(s, ticket.volume, ticket.name, ticket.hash),
+        );
+      }
       if (req.headers.origin && (!web || !web.sameOrigin(req)))
         fail("Invalid browser origin", 403);
       if (req.method === "POST" && req.url === "/pair") {
@@ -241,6 +278,12 @@ export async function start(home, options = {}) {
             daemonTransport: req.socket.encrypted ? "https" : "http",
             networkMode: config.network?.mode || "standalone",
             allowLanHttp: lanAllowed,
+            setupRequired: Boolean(config.needsSetup || config.onboarding),
+            setupCodePath:
+              process.env.ARCA_SETUP_CODE_PATH === "/umbrel" ? "/umbrel" : null,
+            machineApproval: Boolean(
+              !config.needsSetup && !config.onboarding && web?.hasApprovers?.(),
+            ),
             codeDigits: 6,
             codeExpiresInSeconds: 600,
           },
@@ -278,6 +321,7 @@ export async function start(home, options = {}) {
         ![
           "/v1/status",
           "/v1/destroy-replica",
+          "/v1/destroy-hub",
           "/v1/setup",
           "/v1/setup-info",
         ].includes(route)
@@ -315,6 +359,19 @@ export async function start(home, options = {}) {
             "/v1/conflict-choice",
             "/v1/move",
             "/v1/ignore-policy",
+            "/v1/revoke",
+            "/v1/leave",
+            "/v1/gallery/link",
+            "/v1/locate-folder",
+            "/v1/move-folder",
+            "/v1/folder-retention",
+            "/v1/retention",
+            "/v1/backup",
+            "/v1/rename-share",
+            "/v1/volumes",
+            "/v1/select",
+            "/v1/connect",
+            "/v1/promote",
           ].includes(route)
         )
           engine.interruptCycle();
@@ -409,6 +466,37 @@ export async function start(home, options = {}) {
           412,
         );
 
+      if (["/v1/gallery/playback", "/v1/gallery/media"].includes(route)) {
+        requireAdmin();
+        if (!["GET", "HEAD"].includes(req.method))
+          fail("Method not allowed", 405);
+        const volume = url.searchParams.get("volume"),
+          name = url.searchParams.get("path"),
+          hash = url.searchParams.get("hash");
+        const media = galleryMedia(s, volume, name, hash);
+        if (route === "/v1/gallery/media")
+          return streamGalleryMedia(req, res, media);
+        const query = new URLSearchParams({ volume, path: name, hash });
+        if (browserSession)
+          return send(200, { url: "/v1/gallery/media?" + query });
+        if (!["127.0.0.1", "::1"].includes(remote))
+          fail("Use the local desktop application", 403);
+        for (const [key, ticket] of playbackTickets)
+          if (ticket.expires < Date.now()) playbackTickets.delete(key);
+        while (playbackTickets.size >= 32)
+          playbackTickets.delete(playbackTickets.keys().next().value);
+        const ticket = token();
+        playbackTickets.set(ticket, {
+          volume,
+          name,
+          hash,
+          owner: config.adminToken,
+          expires: Date.now() + 2 * 3600000,
+        });
+        return send(200, {
+          url: `http://127.0.0.1:${server.address().port}/v1/gallery/media?ticket=${ticket}`,
+        });
+      }
       if (req.method === "GET" && route === "/v1/gallery/download") {
         requireAdmin();
         const volume = url.searchParams.get("volume");
@@ -743,10 +831,11 @@ export async function start(home, options = {}) {
         if (req.method === "GET")
           return send(200, {
             complete: fs.existsSync(file) && hashFile(file) === hash,
+            maxChunkBytes: 8 * 1024 * 1024,
             offset: fs.existsSync(tmp) ? fs.statSync(tmp).size : 0,
           });
         if (req.method === "PUT") {
-          const data = await body(req);
+          const data = await body(req, 8 * 1024 * 1024);
           const offset = Number(url.searchParams.get("offset"));
           const size = Number(url.searchParams.get("size"));
           if (
@@ -896,6 +985,20 @@ export async function start(home, options = {}) {
           return send(200, { ok: true });
         }
         if (route === "/v1/gallery/link") {
+          if (config.role !== "hub") {
+            requireAdmin();
+            if (!s.volume(b.volume).selected)
+              fail("Select this folder first", 403);
+            const result = await engine.json(route, { volume: b.volume });
+            const known = config.catalog?.find(
+              (folder) => folder.id === b.volume,
+            );
+            if (known) {
+              known.gallery = true;
+              saveConfig(s.home, config);
+            }
+            return send(200, result);
+          }
           requireHub();
           await authorizedWork(() => {
             engine.gallery ||= new Gallery(s);
@@ -1072,7 +1175,7 @@ export async function start(home, options = {}) {
                 };
               if (b.confirmation !== confirmation)
                 fail("History changed. Review the setting again.", 409);
-              const result = applyRetention(s, options);
+              const result = applyRetention(s, options, false, plan);
               config.folderRetention = {
                 ...config.folderRetention,
                 [b.id]: b.mode,
@@ -1103,7 +1206,7 @@ export async function start(home, options = {}) {
                   "History changed. Preview retention again before applying.",
                   409,
                 );
-              const result = applyRetention(s, b);
+              const result = applyRetention(s, b, false, plan);
               config.retention = { days: plan.days, versions: plan.versions };
               s.saveConfig();
               return result;
@@ -1333,11 +1436,13 @@ export async function start(home, options = {}) {
           await authorizedWork(() => s.forgetDevice(b.id));
           return send(200, { revoked: true, removed: true });
         }
-        if (route === "/v1/destroy-replica") {
+        if (route === "/v1/destroy-replica" || route === "/v1/destroy-hub") {
           requireAdmin();
           if (b.confirmed !== true)
-            fail("Confirm permanent replica destruction first", 400);
-          const result = await engine.destroyReplica();
+            fail("Confirm permanent destruction first", 400);
+          const result = await (route === "/v1/destroy-hub"
+            ? engine.destroyHub()
+            : engine.destroyReplica());
           web?.sessions.clear();
           return send(200, result);
         }

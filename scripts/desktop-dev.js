@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn, execFileSync } from "node:child_process";
@@ -76,30 +77,40 @@ function run(command, args, options = {}) {
     });
   });
 }
-export async function startDaemon(home, runtime, timeout = 30000) {
+export async function startDaemon(
+  home,
+  runtime,
+  timeout = 30000,
+  service = null,
+) {
   const configPath = path.join(home, "config.json");
   if (!fs.existsSync(configPath)) return; // First-run onboarding initializes it.
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  const log = fs.openSync(path.join(home, "daemon.log"), "a", 0o600);
-  const child = spawn(
-    path.join(runtime, process.platform === "win32" ? "node.exe" : "node"),
-    [path.join(runtime, "packages/cli/arca.js"), "daemon", "--home", home],
-    { detached: true, stdio: ["ignore", log, log, "ipc"], windowsHide: true },
-  );
-  fs.closeSync(log);
-  let failure,
-    ready = false;
-  child.on("message", (message) => {
-    if (message?.type === "arca-ready") ready = true;
-  });
-  child.once("error", (error) => {
-    failure = error;
-  });
-  child.unref();
+  let child,
+    failure,
+    ready = Boolean(service);
+  if (service)
+    execFileSync("launchctl", ["bootstrap", service.domain, service.file]);
+  else {
+    const log = fs.openSync(path.join(home, "daemon.log"), "a", 0o600);
+    child = spawn(
+      path.join(runtime, process.platform === "win32" ? "node.exe" : "node"),
+      [path.join(runtime, "packages/cli/arca.js"), "daemon", "--home", home],
+      { detached: true, stdio: ["ignore", log, log, "ipc"], windowsHide: true },
+    );
+    fs.closeSync(log);
+    child.on("message", (message) => {
+      if (message?.type === "arca-ready") ready = true;
+    });
+    child.once("error", (error) => {
+      failure = error;
+    });
+    child.unref();
+  }
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (failure) throw failure;
-    if (child.exitCode !== null || child.signalCode !== null)
+    if (child && (child.exitCode !== null || child.signalCode !== null))
       throw new Error(
         "The local daemon failed to start. Check daemon.log in its state directory.",
       );
@@ -115,8 +126,10 @@ export async function startDaemon(home, runtime, timeout = 30000) {
         ready &&
         response.ok &&
         (await response.json()).id === config.id &&
-        Number(fs.readFileSync(path.join(home, "daemon.lock"), "utf8")) ===
-          child.pid
+        (child
+          ? Number(fs.readFileSync(path.join(home, "daemon.lock"), "utf8")) ===
+            child.pid
+          : fs.existsSync(path.join(home, "daemon.lock")))
       ) {
         console.log("Local daemon is ready with the current checkout.");
         return;
@@ -128,19 +141,100 @@ export async function startDaemon(home, runtime, timeout = 30000) {
     "The local daemon did not become ready. Check daemon.log before retrying.",
   );
 }
+export function matchingService(args, home, runtime) {
+  return (
+    Array.isArray(args) &&
+    args.length === 5 &&
+    args[0] === path.join(runtime, "node") &&
+    args[1] === path.join(runtime, "packages/cli/arca.js") &&
+    args[2] === "daemon" &&
+    args[3] === "--home" &&
+    args[4] === home
+  );
+}
+function devService(home, runtime) {
+  if (process.platform !== "darwin") return null;
+  const file = path.join(
+    os.homedir(),
+    "Library/LaunchAgents/com.soyjavi.arca.daemon.plist",
+  );
+  const domain = `gui/${process.getuid()}`;
+  if (!fs.existsSync(file)) return null;
+  const config = JSON.parse(
+    execFileSync("plutil", ["-convert", "json", "-o", "-", file], {
+      encoding: "utf8",
+    }),
+  );
+  if (!matchingService(config.ProgramArguments, home, runtime)) return null;
+  try {
+    execFileSync("launchctl", ["print", `${domain}/com.soyjavi.arca.daemon`], {
+      stdio: "ignore",
+    });
+  } catch {
+    return null;
+  }
+  return { file, domain };
+}
+export async function restartDevDaemon(home, runtime, stage) {
+  const service = devService(home, runtime);
+  if (service) {
+    console.log("Updating the local daemon through its macOS service…");
+    execFileSync("launchctl", [
+      "bootout",
+      `${service.domain}/com.soyjavi.arca.daemon`,
+    ]);
+  }
+  try {
+    await stopDaemon(home);
+    await stage();
+  } catch (error) {
+    if (service)
+      execFileSync("launchctl", ["bootstrap", service.domain, service.file]);
+    throw error;
+  }
+  await startDaemon(home, runtime, 30000, service);
+}
+export function checkDevPort(port = 1425) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (error) =>
+      reject(
+        new Error(
+          error.code === "EADDRINUSE"
+            ? `Desktop development port ${port} is already in use. Stop the other Arca/Vite dev session and retry. No daemon was restarted.`
+            : `Cannot open desktop development port ${port}: ${error.message}`,
+        ),
+      ),
+    );
+    server.listen(port, "127.0.0.1", () => server.close(resolve));
+  });
+}
 async function main() {
+  await checkDevPort();
+  const args = process.argv.slice(2);
+  if (args.includes("--clean")) {
+    // Disposable Vite output only; never state, credentials, native builds or Metro.
+    for (const directory of [
+      "node_modules/.vite",
+      "apps/desktop/src/node_modules/.vite",
+    ])
+      fs.rmSync(path.join(root, directory), { recursive: true, force: true });
+    console.log("Vite cache cleared.");
+  }
   const home = path.resolve(
     process.env.ARCA_HOME || path.join(os.homedir(), ".arca"),
   );
-  await stopDaemon(home);
-  await run(process.execPath, [path.join(root, "scripts/stage-runtime.js")]);
-  await startDaemon(home, path.join(root, "apps/desktop/src-tauri/runtime"));
+  await restartDevDaemon(
+    home,
+    path.join(root, "apps/desktop/src-tauri/runtime"),
+    () => run(process.execPath, [path.join(root, "scripts/stage-runtime.js")]),
+  );
   await run(
     process.execPath,
     [
       path.join(root, "node_modules/@tauri-apps/cli/tauri.js"),
       "dev",
-      ...process.argv.slice(2),
+      ...args.filter((arg) => arg !== "--clean"),
     ],
     {
       cwd: path.join(root, "apps/desktop"),

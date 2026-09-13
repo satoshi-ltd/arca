@@ -49,7 +49,7 @@ const hello = {
   platform: "linux",
   deployment: "docker",
   version: "0.1.0",
-  apiPort: 47831,
+  apiPort: 17831,
   client: null,
 };
 test("normalization only exposes tailnet addresses and minimal peer metadata", () => {
@@ -109,7 +109,7 @@ test("probe validates Arca response, never sends credentials and skips offline p
   let count = 0;
   const fetcher = async (url, opts) => {
     count++;
-    assert.equal(url, "http://100.70.0.2:47831/.well-known/arca");
+    assert.equal(url, "http://100.70.0.2:17831/.well-known/arca");
     assert.equal(opts.headers, undefined);
     assert.equal(opts.redirect, "error");
     return new Response(JSON.stringify(hello));
@@ -275,27 +275,27 @@ test("automatic HTTP verification accepts known tailnet IPs, pins DNS and reject
     peers: [{ addresses: ["100.70.0.2", "fd7a:115c:a1e0::2"] }],
   };
   const ip = await verifiedTailnetURL(
-    new URL("http://100.70.0.2:47831"),
+    new URL("http://100.70.0.2:17831"),
     state,
   );
-  assert.equal(ip.origin, "http://100.70.0.2:47831");
+  assert.equal(ip.origin, "http://100.70.0.2:17831");
   const named = await verifiedTailnetURL(
-    new URL("http://casa:47831"),
+    new URL("http://casa:17831"),
     state,
     async () => [{ address: "100.70.0.2" }],
   );
   assert.equal(named.origin, ip.origin);
   const ipv6 = await verifiedTailnetURL(
-    new URL("http://[fd7a:115c:a1e0::2]:47831"),
+    new URL("http://[fd7a:115c:a1e0::2]:17831"),
     state,
   );
   assert.equal(ipv6.hostname, "[fd7a:115c:a1e0::2]");
   await assert.rejects(
-    verifiedTailnetURL(new URL("http://100.70.0.3:47831"), state),
+    verifiedTailnetURL(new URL("http://100.70.0.3:17831"), state),
     /not verified/,
   );
   await assert.rejects(
-    verifiedTailnetURL(new URL("http://casa:47831"), state, async () => [
+    verifiedTailnetURL(new URL("http://casa:17831"), state, async () => [
       { address: "100.70.0.2" },
       { address: "192.168.1.2" },
     ]),
@@ -306,7 +306,7 @@ test("automatic HTTP verification accepts known tailnet IPs, pins DNS and reject
     /Connect Tailscale/,
   );
   await assert.rejects(
-    verifiedTailnetURL(new URL("http://casa:47831"), state, async () => {
+    verifiedTailnetURL(new URL("http://casa:17831"), state, async () => {
       throw Error("DNS unavailable");
     }),
     /Cannot resolve/,

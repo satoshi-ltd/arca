@@ -1,0 +1,20 @@
+import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const app = process.env.ARCA_APP_DIR || "/app";
+const { initializeServer } = await import(
+  pathToFileURL(path.join(app, "packages/daemon/setup.js"))
+);
+const home = process.env.ARCA_HOME || "/data/state";
+const root = process.env.ARCA_FILES || "/data/files";
+const marker = path.join(root, ".gitkeep");
+if (!fs.existsSync(path.join(home, "config.json")) &&
+    fs.existsSync(marker) && fs.lstatSync(marker).isFile() &&
+    fs.statSync(marker).size === 0 && fs.readdirSync(root).length === 1)
+  fs.unlinkSync(marker);
+initializeServer(home, {
+  port: 17831,
+  name: "Arca on Umbrel",
+  root,
+});

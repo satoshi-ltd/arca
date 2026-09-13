@@ -101,6 +101,11 @@ export const files = {
     return new File(uri).text();
   },
   async hash(uri) {
+    if (
+      native.hashFile &&
+      (uri.startsWith(Paths.document.uri) || uri.startsWith(Paths.cache.uri))
+    )
+      return native.hashFile(uri);
     const h = new File(uri).open(),
       digest = sha256.create();
     try {

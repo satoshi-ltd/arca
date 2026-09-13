@@ -98,6 +98,25 @@ const dependencies = spawnSync(
 );
 if (dependencies.status !== 0)
   throw new Error("Could not stage runtime dependencies");
+const ffmpegInstall = spawnSync(
+  process.platform === "win32" ? "npm.cmd" : "npm",
+  ["rebuild", "ffmpeg-static"],
+  { cwd: destination, stdio: "inherit", shell: process.platform === "win32" },
+);
+if (ffmpegInstall.status !== 0)
+  throw new Error("Could not stage video preview runtime");
+const videoCheck = spawnSync(
+  binary,
+  [
+    "-e",
+    "const ffmpeg=require('ffmpeg-static');require('node:child_process').execFileSync(ffmpeg,['-version'],{stdio:'ignore',timeout:10000})",
+  ],
+  { cwd: destination, encoding: "utf8" },
+);
+if (videoCheck.status !== 0)
+  throw new Error(
+    "Video preview binary is missing or cannot run. Check ffmpeg-static installation/script approval before building desktop.",
+  );
 console.log(
   `Arca runtime staged: official Node ${version} (${platform}/${process.arch})`,
 );

@@ -4,6 +4,12 @@ import {
   conditionNotices,
   safeDetails,
 } from "./notice-contract.js";
+const galleryPages = new Map();
+let galleryEpoch = 0;
+function clearGalleryPages() {
+  galleryEpoch++;
+  galleryPages.clear();
+}
 const native = Boolean(window.__TAURI__?.core.invoke);
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
@@ -215,15 +221,20 @@ const api = (route, body) =>
     route,
     method: body === undefined ? "GET" : "POST",
     body: body ?? null,
-  }).catch((error) => {
-    throw error instanceof Error
-      ? error
-      : new Error(
-          typeof error === "string"
-            ? error
-            : error?.message || "Request failed. Try again.",
-        );
-  });
+  })
+    .then((value) => {
+      if (body !== undefined) clearGalleryPages();
+      return value;
+    })
+    .catch((error) => {
+      throw error instanceof Error
+        ? error
+        : new Error(
+            typeof error === "string"
+              ? error
+              : error?.message || "Request failed. Try again.",
+          );
+    });
 let dismissedStatusError = null;
 let status,
   view = "folders",
@@ -1156,6 +1167,64 @@ function fileHistorySide() {
   return `<aside class="detail-side">${section("File location", `<div class="panel"><strong>${escape(volume?.name || "Shared folder")}</strong><p class="path">${escape(historyPath)}</p><div class="file-location-actions">${folderLink}${deletion}</div></div>`)}</aside>`;
 }
 
+// Content-addressed session cache survives leaving a gallery; never persisted with credentials.
+const photoCaches = {
+  thumb: { entries: new Map(), bytes: 0, limit: 48 * 1024 ** 2, count: 2000 },
+  large: { entries: new Map(), bytes: 0, limit: 16 * 1024 ** 2, count: 8 },
+};
+const photoRequests = new Map();
+async function galleryPage(route) {
+  const key = `${status.hubId || status.id}:${status.historyRevisions}:${JSON.stringify(status.volumes.map((v) => [v.id, v.selected, v.files, v.bytes]))}:${route}`;
+  const cached = galleryPages.get(key);
+  const epoch = galleryEpoch;
+  const refresh = async () => {
+    const data = await api(route);
+    if (!data.indexing && epoch === galleryEpoch) {
+      galleryPages.delete(key);
+      galleryPages.set(key, { time: Date.now(), data });
+      while (galleryPages.size > 40)
+        galleryPages.delete(galleryPages.keys().next().value);
+    }
+    return data;
+  };
+  if (cached) {
+    if (Date.now() - cached.time > 15000 && !cached.refreshing) {
+      cached.refreshing = true;
+      void refresh().catch(() => galleryPages.delete(key));
+    }
+    return cached.data;
+  }
+  return refresh();
+}
+async function cachedPhoto(route) {
+  const pool = photoCaches[route.includes("size=large") ? "large" : "thumb"];
+  const photoCache = pool.entries;
+  const key = `${status.hubId || status.id}:${route}`;
+  if (photoCache.has(key)) {
+    const value = photoCache.get(key);
+    photoCache.delete(key);
+    photoCache.set(key, value);
+    return value;
+  }
+  if (photoRequests.has(key)) return photoRequests.get(key);
+  const pending = api(route)
+    .then((value) => {
+      if (photoRequests.get(key) !== pending || !value.data) return value;
+      photoCache.set(key, value);
+      pool.bytes += value.data.length * 2;
+      while (pool.bytes > pool.limit || photoCache.size > pool.count) {
+        const oldest = photoCache.keys().next().value;
+        pool.bytes -= photoCache.get(oldest).data.length * 2;
+        photoCache.delete(oldest);
+      }
+      return value;
+    })
+    .finally(() => {
+      if (photoRequests.get(key) === pending) photoRequests.delete(key);
+    });
+  photoRequests.set(key, pending);
+  return pending;
+}
 let galleryView = null,
   folderViewId = null,
   folderReturn = { tab: "files", scroll: 0 };
@@ -1197,7 +1266,7 @@ function mountGallery(volume) {
     state.workers++;
     const item = state.items[Number(tile.dataset.photo)];
     try {
-      const result = await api(previewRoute(item));
+      const result = await cachedPhoto(previewRoute(item));
       if (current() && tile.isConnected && tile.dataset.visible !== "false") {
         if (result.data) {
           const img = document.createElement("img");
@@ -1346,12 +1415,12 @@ function mountGallery(volume) {
       tile.dataset.photo = index;
       tile.title = `${galleryPhotoDate(item)}${item.dateSource === "date added" ? " · Date added to Arca" : ""}`;
       const filename = escape(item.path.split("/").pop());
-      tile.innerHTML = `<button type="button" class="photo-open" aria-label="Open ${filename}">${icon(item.kind === "video" ? "play" : "image")}</button><button type="button" class="photo-select" aria-label="Select ${filename}" aria-pressed="${state.selection.has(item.path)}">${icon("check")}</button>`;
+      tile.innerHTML = `<button type="button" class="photo-open" aria-label="Open ${filename}">${icon(item.kind === "video" ? "play" : "image")}</button>${item.kind === "video" ? `<span class="photo-video-badge" aria-label="Video">${icon("video")}</span>` : ""}<button type="button" class="photo-select" aria-label="Select ${filename}" aria-pressed="${state.selection.has(item.path)}">${icon("check")}</button>`;
       tile.querySelector(".photo-open").onclick = () =>
         state.selection.size ? togglePhoto(item) : openGalleryPhoto(index);
       tile.querySelector(".photo-select").onclick = () => togglePhoto(item);
       group.querySelector(".photo-grid").append(tile);
-      if (item.kind === "image") {
+      if (item.kind === "image" || item.kind === "video") {
         if (state.observer) state.observer.observe(tile);
         else {
           state.queue.push(tile);
@@ -1368,9 +1437,11 @@ function mountGallery(volume) {
     state.loading = true;
     const more = root.querySelector(".photo-more");
     more.disabled = true;
-    more.textContent = "Loading photos…";
+    more.innerHTML = busyIcon();
+    more.setAttribute("aria-label", "Loading gallery");
+    more.setAttribute("aria-busy", "true");
     try {
-      const data = await api(
+      const data = await galleryPage(
         "/v1/gallery?" +
           new URLSearchParams({
             volume,
@@ -1380,12 +1451,24 @@ function mountGallery(volume) {
       );
       if (!current()) return;
       if (data.indexing) {
-        more.textContent = "Preparing photos…";
+        state.indexing = true;
+        if (!state.items.length) addItems(data.items);
+        more.innerHTML = busyIcon();
+        more.setAttribute("aria-label", "Preparing gallery");
         setTimeout(() => {
           state.loading = false;
           state.load();
         }, 250);
         return;
+      }
+      if (state.indexing) {
+        state.indexing = false;
+        state.observer?.disconnect();
+        state.items = [];
+        state.paths.clear();
+        state.queue = [];
+        root.querySelector(".photo-days").replaceChildren();
+        root.querySelector(".photo-timeline").replaceChildren();
       }
       const rail = root.querySelector(".photo-timeline");
       if (data.timeline && !rail.children.length) {
@@ -1426,6 +1509,7 @@ function mountGallery(volume) {
       state.next = data.next;
       more.hidden = !data.next;
       more.textContent = "Load more";
+      more.removeAttribute("aria-label");
       if (!state.items.length)
         root.querySelector(".photo-days").innerHTML = empty(
           "No photos yet",
@@ -1434,11 +1518,15 @@ function mountGallery(volume) {
           "images",
         );
     } catch {
-      if (current()) more.textContent = "Could not load photos. Retry";
+      if (current()) {
+        more.textContent = "Could not load gallery. Retry";
+        more.removeAttribute("aria-label");
+      }
     } finally {
       if (current()) {
         state.loading = false;
         more.disabled = false;
+        more.removeAttribute("aria-busy");
       }
     }
   };
@@ -1608,7 +1696,7 @@ async function galleryPreview(state, item) {
   const key = item.hash;
   if (state.previews.has(key)) return state.previews.get(key);
   if (state.previewRequests.has(key)) return state.previewRequests.get(key);
-  const request = (state.previewWork || Promise.resolve())
+  const request = Promise.resolve()
     .catch(() => {})
     .then(async () => {
       if (galleryView !== state || !state.root.isConnected || item.deleted)
@@ -1616,7 +1704,7 @@ async function galleryPreview(state, item) {
       const active = state.items[state.selected];
       const position = state.items.indexOf(item);
       if (item !== active && Math.abs(position - state.selected) > 1) return {};
-      const result = await api(state.previewRoute(item, true));
+      const result = await cachedPhoto(state.previewRoute(item, true));
       if (result.data) {
         const image = new Image();
         image.src = result.data;
@@ -1638,7 +1726,6 @@ async function galleryPreview(state, item) {
       }
       return result;
     });
-  state.previewWork = request;
   state.previewRequests.set(key, request);
   try {
     return await request;
@@ -1693,6 +1780,7 @@ async function openGalleryPhoto(index) {
   const state = galleryView,
     item = state?.items[index];
   if (!item || item.deleted) return;
+  state.stopMedia?.();
   const previousIndex = state.items.findLastIndex(
     (photo, i) => i < index && !photo.deleted,
   );
@@ -1704,7 +1792,7 @@ async function openGalleryPhoto(index) {
     document.activeElement?.classList.contains("photo-previous");
   state.selected = index;
   modal(
-    `<div class="photo-viewer-head"><h2 id="dialog-title" class="sr-only">${escape(item.path.split("/").pop())}</h2><div class="photo-viewer-operations"><button type="button" class="icon-button photo-download" aria-label="Download photo" title="Download">${icon("download")}</button><button type="button" class="icon-button photo-info-toggle" aria-label="Photo information" aria-expanded="false" title="Info">${icon("info")}</button>${galleryCanDelete() ? `<button type="button" class="icon-button photo-delete" aria-label="Delete photo" title="Delete">${icon("trash-2")}</button>` : ""}</div></div><div class="photo-viewer-stage"><div class="photo-viewer-image" aria-live="polite">${item.kind === "video" ? icon("play") : busyIcon()}</div><button type="button" class="icon-button photo-previous" aria-label="Previous photo" ${previousIndex < 0 ? "disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="icon-button photo-next" aria-label="Next photo" ${nextIndex < 0 ? "disabled" : ""}>${icon("chevron-right")}</button></div><aside class="photo-info" hidden><header><h2>Info</h2><button type="button" class="icon-button photo-info-close" aria-label="Close information">${icon("x")}</button></header><div class="photo-info-body">${item.metadata ? galleryInfo(item, state.volume, item.metadata) : scaffoldInfo(item)}</div><footer class="photo-info-footer" hidden><button type="button" class="secondary photo-file" hidden>${icon("history")}File history</button>${native && status.volumes.find((v) => v.id === state.volume)?.path ? `<button type="button" class="secondary icon-button photo-reveal" aria-label="Show in folder" title="Show in folder">${icon("folder-open")}</button>` : ""}</footer></aside>`,
+    `<div class="photo-viewer-head"><h2 id="dialog-title" class="sr-only">${escape(item.path.split("/").pop())}</h2><div class="photo-viewer-operations"><button type="button" class="icon-button photo-download" aria-label="Download photo" title="Download">${icon("download")}</button><button type="button" class="icon-button photo-info-toggle" aria-label="Photo information" aria-expanded="false" title="Info">${icon("info")}</button>${galleryCanDelete() ? `<button type="button" class="icon-button photo-delete" aria-label="Delete photo" title="Delete">${icon("trash-2")}</button>` : ""}</div></div><div class="photo-viewer-stage"><div class="photo-viewer-image" aria-live="polite">${busyIcon()}</div><button type="button" class="icon-button photo-previous" aria-label="Previous photo" ${previousIndex < 0 ? "disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="icon-button photo-next" aria-label="Next photo" ${nextIndex < 0 ? "disabled" : ""}>${icon("chevron-right")}</button></div><aside class="photo-info" hidden><header><h2>Info</h2><button type="button" class="icon-button photo-info-close" aria-label="Close information">${icon("x")}</button></header><div class="photo-info-body">${item.metadata ? galleryInfo(item, state.volume, item.metadata) : scaffoldInfo(item)}</div><footer class="photo-info-footer" hidden><button type="button" class="secondary photo-file" hidden>${icon("history")}File history</button>${native && status.volumes.find((v) => v.id === state.volume)?.path ? `<button type="button" class="secondary icon-button photo-reveal" aria-label="Show in folder" title="Show in folder">${icon("folder-open")}</button>` : ""}</footer></aside>`,
     null,
     "",
     true,
@@ -1821,8 +1909,53 @@ async function openGalleryPhoto(index) {
   ).focus();
   const target = $(".photo-viewer-image");
   try {
-    const result =
-      item.kind === "image" ? await galleryPreview(state, item) : {};
+    if (item.kind === "video") {
+      const playback = await api(
+        "/v1/gallery/playback?" +
+          new URLSearchParams({
+            volume: state.volume,
+            path: item.path,
+            hash: item.hash,
+          }),
+      );
+      if (!target.isConnected) return;
+      const video = document.createElement("video");
+      video.controls = true;
+      video.preload = "metadata";
+      video.playsInline = true;
+      video.setAttribute("aria-label", item.path.split("/").pop());
+      cachedPhoto(
+        "/v1/gallery/preview?" +
+          new URLSearchParams({
+            volume: state.volume,
+            path: item.path,
+            hash: item.hash,
+          }),
+      )
+        .then((poster) => {
+          if (video.isConnected && poster.data) video.poster = poster.data;
+        })
+        .catch(() => {});
+      video.src = playback.url;
+      video.onerror = () => {
+        if (target.isConnected)
+          target.insertAdjacentHTML(
+            "beforeend",
+            '<p class="video-error" role="status">This video format cannot play in this browser. Download the original to open it.</p>',
+          );
+      };
+      target.replaceChildren(video);
+      const stop = () => {
+        $("#dialog").removeEventListener("close", stop);
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      };
+      state.stopMedia = stop;
+      $("#dialog").addEventListener("close", stop, { once: true });
+      return;
+    }
+    const result = await galleryPreview(state, item);
     if (!target.isConnected) return;
     if (result.data) {
       const img = result.image || document.createElement("img");
@@ -1860,7 +1993,16 @@ document.addEventListener("keydown", (event) => {
 });
 
 function galleryModeButton(volume) {
-  if (!volume.gallery) return "";
+  if (!volume.gallery)
+    return status.role === "hub" || volume.selected
+      ? button(
+          "Enable gallery",
+          "enable-gallery",
+          volume.id,
+          "secondary",
+          "images",
+        )
+      : "";
   return button(
     folderTab === "gallery" ? "Exit gallery" : "Gallery",
     "gallery-mode",
@@ -1888,7 +2030,7 @@ async function folderBrowser(v, recent, pending = false) {
     ],
   )}<div>${folderTab === "files" ? `<button class="icon-button" data-action="folder-search-toggle" aria-label="${folderSearchOpen ? "Close search" : "Search files"}">${icon(folderSearchOpen ? "x" : "search")}</button>` : folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
   if (folderTab === "gallery")
-    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><button type="button" class="secondary photo-more">Loading photos…</button></div>`;
+    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><button type="button" class="secondary photo-more" aria-label="Loading gallery" aria-busy="true" disabled>${busyIcon()}</button></div>`;
   if (pending) return tools + scaffoldRow("history");
   if (folderTab === "recent")
     return (
@@ -2549,7 +2691,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
             m === "tailscale" && network?.tailscale.state !== "connected",
         })),
       ),
-    )}${setting("Tailscale addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No Tailscale address")} · port ${status.port || 47831}</span>`, pill(network?.publishing ? "Discoverable" : "Not advertised", "id", "wifi"))}</div>`,
+    )}${setting("Tailscale addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No Tailscale address")} · port ${status.port || 17831}</span>`, pill(network?.publishing ? "Discoverable" : "Not advertised", "id", "wifi"))}</div>`,
   );
   if (status.role === "hub")
     html += section(
@@ -2562,7 +2704,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   html += section(
     "Service",
-    `<div class="settings-card">${setting("Runtime", `<span class="mono">Port ${status.port || 47831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
+    `<div class="settings-card">${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
   );
   if (status.role === "replica" && status.hub)
     html += section(
@@ -2584,13 +2726,13 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.4.1 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.4.2 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
-  if (status.role === "replica")
-    html += section(
-      "Danger zone",
-      `<div class="settings-card replica-danger">${setting("Destroy this replica", "Deletes all local folders and resets Arca on this device. Hub files and other machines are kept.", button("Destroy replica…", "destroy-replica", "", "primary danger", "trash-2"))}</div>`,
-    );
+  const destroyRole = status.role === "hub" ? "hub" : "replica";
+  html += section(
+    "Danger zone",
+    `<div class="settings-card replica-danger">${setting(`Destroy this ${destroyRole}`, destroyRole === "hub" ? "Deletes this hub’s folders, history and configuration. Files on replicas are kept." : "Deletes all local folders and resets Arca on this device. Hub files and other machines are kept.", button(`Destroy ${destroyRole}…`, `destroy-${destroyRole}`, "", "primary danger", "trash-2"))}</div>`,
+  );
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
     action(async () => {
@@ -2927,10 +3069,10 @@ function pairingAddresses(info) {
     const ip = ips.find((value) => !value.includes(":")) || ips[0];
     if (ip)
       addresses.push(
-        `http://${ip.includes(":") ? `[${ip}]` : ip}:${status.port || 47831}`,
+        `http://${ip.includes(":") ? `[${ip}]` : ip}:${status.port || 17831}`,
       );
     const dns = info.tailscale.self?.dnsName?.replace(/\.$/, "");
-    if (dns) addresses.push(`http://${dns}:${status.port || 47831}`);
+    if (dns) addresses.push(`http://${dns}:${status.port || 17831}`);
   }
   return [...new Set(addresses)].slice(0, 2);
 }
@@ -3246,6 +3388,21 @@ async function handle(name, id, control) {
     updateShell();
     return;
   }
+  if (name === "enable-gallery") {
+    modal(
+      modalHeader(
+        "Enable gallery?",
+        "Browse this folder’s photos and videos as a gallery. Files and synchronization stay the same.",
+        "images",
+      ),
+      async () => {
+        await api("/v1/gallery/link", { volume: id });
+        folderTab = "gallery";
+      },
+      "Enable gallery",
+    );
+    return;
+  }
   if (name === "gallery-mode") {
     const volume = status.volumes.find((v) => v.id === detailId);
     if (!volume?.gallery) return;
@@ -3442,7 +3599,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.4.1",
+          version: "0.4.2",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -3504,7 +3661,11 @@ async function handle(name, id, control) {
     await renderSettings();
     return;
   }
-  if (name === "destroy-replica" && status.role === "replica") {
+  if (
+    (name === "destroy-replica" && status.role === "replica") ||
+    (name === "destroy-hub" && status.role === "hub")
+  ) {
+    const destroyingHub = status.role === "hub";
     const paths = [
       ...new Set(
         [
@@ -3515,13 +3676,17 @@ async function handle(name, id, control) {
     ];
     modal(
       modalHeader(
-        "Destroy this replica?",
-        "Permanently deletes local folders, including unsynced changes, and resets Arca on this machine. Hub files, hub history and other machines are kept.",
+        destroyingHub ? "Destroy this hub?" : "Destroy this replica?",
+        destroyingHub
+          ? "Permanently deletes this hub’s shared folders, files, revision history and configuration. Replicas keep their local files and lose access to this hub. Arca returns to setup, where you can choose hub or replica."
+          : "Permanently deletes local folders, including unsynced changes, and resets Arca on this machine. Hub files, hub history and other machines are kept.",
         "trash-2",
       ) +
-        `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. If still connected, the hub must be reachable. An interrupted cleanup can be retried.</p>`,
+        `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to replicas." : "Works offline. If the hub cannot be reached, remove this machine from its Machines list separately."} An interrupted cleanup can be retried.</p>`,
       async () => {
-        await api("/v1/destroy-replica", { confirmed: true });
+        await api(destroyingHub ? "/v1/destroy-hub" : "/v1/destroy-replica", {
+          confirmed: true,
+        });
         ready = false;
         detailId = null;
         onboarding = null;
@@ -3530,10 +3695,10 @@ async function handle(name, id, control) {
         if (native) await boot();
         else
           await showLogin(
-            "Replica destroyed. Generate a new local web access code to begin setup.",
+            `${destroyingHub ? "Hub" : "Replica"} destroyed. Generate a new local web access code to begin setup.`,
           );
       },
-      "Destroy replica",
+      destroyingHub ? "Destroy hub" : "Destroy replica",
       true,
     );
     $("#submit-dialog").classList.add("danger");
@@ -4147,6 +4312,12 @@ setInterval(() => {
 async function showLogin(message = "") {
   viewLoadSerial++;
   historyCache.clear();
+  clearGalleryPages();
+  for (const pool of Object.values(photoCaches)) {
+    pool.entries.clear();
+    pool.bytes = 0;
+  }
+  photoRequests.clear();
   viewReads.clear();
   document.body.classList.remove("view-loading");
   $("#content").setAttribute("aria-busy", "false");
@@ -4155,35 +4326,54 @@ async function showLogin(message = "") {
   renderSerial++;
   if ($("#dialog").open) $("#dialog").close();
   document.body.classList.add("access-mode");
+  const loginSerial = renderSerial;
+  $("#content").innerHTML =
+    '<div class="page" role="status">Checking server setup…</div>';
+  const info = await fetch("/.well-known/arca")
+    .then((response) => response.json())
+    .catch(() => null);
+  if (loginSerial !== renderSerial) return;
+  if (info?.service === "arca" && info.access?.setupRequired === true) {
+    onboarding = {
+      step: -1,
+      name: "",
+      role: "replica",
+      root: "",
+      url: "",
+      code: "",
+      serverAccessRequired: true,
+      setupCodePath: info.access?.setupCodePath === "/umbrel" ? "/umbrel" : "",
+    };
+    renderOnboarding();
+    return;
+  }
   $("#content").innerHTML =
     `<div class="access-page"><div class="access-brand"><div class="access-logo"><img src="assets/arca-icon.svg" width="56" height="56" alt=""><h1>arca</h1></div><p><span id="access-role" class="tag" hidden></span> <span class="mono"><span id="access-name"></span> ${escape(location.host)}</span></p></div><div class="access-card">
-    ${segmented(
+    <div id="access-methods" hidden>${segmented(
       "Sign-in method",
       [
         { label: "Enter a code", action: "login-code", active: true },
         { label: "Approve on a machine", action: "login-approval" },
       ],
       "access-tabs",
-    )}
+    )}</div>
     <div id="access-code"><form id="web-login"><label>Web access code</label>${codeFields("web")}<p class="hint">${icon("clock")} Single use · valid ten minutes from generation</p><p id="login-error" role="alert">${escape(message)}</p><button class="primary" type="submit">${icon("log-in")}Open Arca</button></form><div class="access-help"><h3>Get a code</h3><p>On the server run <code>arca web-code</code></p><p>and copy the code value from the reply.</p></div></div>
     <div id="access-approval" hidden><div id="web-approval-wait"></div><button type="button" id="request-web-approval" class="secondary">Try again</button></div>
     <p class="session-note">Signed in for up to 24 hours, until sign-out or a server restart.<br>No username or password.</p></div></div>`;
   icons();
-  fetch("/.well-known/arca")
-    .then((r) => r.json())
-    .then((info) => {
-      if (
-        !document.body.classList.contains("access-mode") ||
-        info.service !== "arca"
-      )
-        return;
-      $("#access-name").textContent = `${info.name} ·`;
-      $("#access-role").textContent = info.role;
-      $("#access-role").hidden = false;
-    })
-    .catch(() => {});
+  let approvalAvailable = info?.access?.machineApproval === true;
+  if (info?.service === "arca") {
+    $("#access-name").textContent = `${info.name} ·`;
+    $("#access-role").textContent = info.role;
+    $("#access-role").hidden = false;
+    $("#access-methods").hidden = !approvalAvailable;
+    if (info.access?.setupCodePath === "/umbrel")
+      $(".access-help").innerHTML =
+        '<h3>Get a code</h3><p><a href="/umbrel" target="_blank" rel="noopener">Open Umbrel code access</a>, then return here.</p>';
+  }
   let cancelApproval = () => {};
   const chooseMethod = (approval) => {
+    if (approval && !approvalAvailable) return;
     cancelApproval();
     $("#access-code").hidden = approval;
     $("#access-approval").hidden = !approval;
@@ -4295,8 +4485,10 @@ async function showLogin(message = "") {
 }
 function renderOnboarding() {
   ready = false;
+  document.body.classList.remove("access-mode");
   document.body.classList.add("onboarding-mode");
   const o = onboarding;
+  const activeStep = o.step === "access" ? 1 : o.step;
   const steps = [
     "Name this machine",
     "Choose its role",
@@ -4349,16 +4541,23 @@ function renderOnboarding() {
           `<label class="role-card"><input name="role" type="radio" value="${value}" ${o.role === value ? "checked" : ""}>${icon(symbol)}<div><strong>${name}</strong><p>${desc}</p></div></label>`,
       )
       .join("")}`;
+  if (o.step === "access")
+    body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p>${o.setupCodePath ? '<p><a href="/umbrel" target="_blank" rel="noopener">Get a code from Umbrel</a>, then return here.</p>' : "<p>On this server, run <code>arca web-code</code> and copy the code from the reply.</p>"}<label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
   if (o.step === 2 && !o.paired)
     body = `<h1>Pair with your hub</h1><p>Connect with a single-use code from your hub.</p>${textField("Hub address", "url", o.url, "server", "https://arca.your-network", "mono")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">${icon("clock")}Single use · valid ten minutes.</p>`;
   if (o.step === 2 && o.paired)
     body = `<h1>Finish setup</h1><p>Paired with ${escape(o.hubName || "your hub")}. Your connection is saved.</p><p>No folders have been downloaded. Choose them after setup.</p>`;
   if (o.step === 3)
-    body = `<h1>A home for your folders</h1><p>${o.role === "replica" ? "Folders you select from the hub live here, as ordinary folders." : "Choose a default location for the folders you share."}</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${native ? button("Change…", "pick-path", "root", "secondary small-button", "folder-input") : ""}</div><div id="setup-space"></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p>`;
+    body = `<h1>A home for your folders</h1><p>${o.role === "replica" ? "Folders you select from the hub live here, as ordinary folders." : "Choose a default location for the folders you share."}</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${native ? button("Change…", "pick-path", "root", "secondary small-button", "folder-input") : ""}</div><div id="setup-space"></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p>${native ? "" : '<p class="hint">This path is on the server. In Docker or Umbrel, use persistent mounted storage; the default is /data/files.</p>'}`;
   $("#content").innerHTML =
-    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${o.step === i ? "current" : o.step > i && !(o.role === "hub" && i === 2) ? "done" : ""}" ${o.step === i ? 'aria-current="step"' : ""}><span>${o.step > i && !(o.role === "hub" && i === 2) ? icon("check") : i + 1}</span>${label}${i === 2 && o.role === "hub" && o.step > 0 ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button><button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button></div></form></div>`;
+    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${activeStep === i ? "current" : activeStep > i && !(o.role === "hub" && i === 2) ? "done" : ""}" ${activeStep === i ? 'aria-current="step"' : ""}><span>${activeStep > i && !(o.role === "hub" && i === 2) ? icon("check") : i + 1}</span>${label}${i === 2 && o.role === "hub" && o.step > 0 ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button><button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button></div></form></div>`;
   $("#setup-back").onclick = () => {
-    o.step = o.step === 3 && o.role === "hub" ? 1 : o.step - 1;
+    o.step =
+      o.step === "access"
+        ? 1
+        : o.step === 3 && o.role === "hub"
+          ? 1
+          : o.step - 1;
     renderOnboarding();
   };
   const showError = (error) => {
@@ -4400,6 +4599,24 @@ function renderOnboarding() {
         }
         if (o.step === 1) {
           o.role = f.get("role");
+          o.step = o.serverAccessRequired ? "access" : o.role === "hub" ? 3 : 2;
+          renderOnboarding();
+          return;
+        }
+        if (o.step === "access") {
+          const code = readCode("setup-access");
+          if (code.length !== 6) throw new Error("Enter all six digits.");
+          if (o.serverAccessRequired) {
+            await browserRequest("/auth/login", { code });
+            o.serverAccessRequired = false;
+          }
+          const current = await api("/v1/status");
+          if (!current.needsSetup || current.onboarding) {
+            onboarding = null;
+            await refresh();
+            return;
+          }
+          o.root = current.root;
           o.step = o.role === "hub" ? 3 : 2;
           renderOnboarding();
           return;

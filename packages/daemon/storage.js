@@ -120,7 +120,7 @@ export function init(home, options = {}) {
     role,
     root: path.resolve(options.root || path.join(home, "files")),
     host: options.host || "127.0.0.1",
-    port: Number(options.port ?? 47831),
+    port: Number(options.port ?? 17831),
     adminToken: token(),
     hub: null,
     ...(options.onboarding ? { onboarding: true } : {}),

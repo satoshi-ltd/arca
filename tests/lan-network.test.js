@@ -27,7 +27,7 @@ test("LAN addresses are bounded to literal RFC1918 IPv4 and require hub opt-in",
     undefined,
   ])
     assert.equal(lanAddress(value), false);
-  const url = new URL("http://192.168.1.5:47831");
+  const url = new URL("http://192.168.1.5:17831");
   let calls = 0;
   const fetcher = async (address, options) => {
     calls++;
@@ -162,7 +162,7 @@ test("hub LAN permission persists, gates pairing and sync, and is admin-only", a
 test("mobile checks native LAN routing and permission before returning a credential destination", async () => {
   const { verifyPrivateURL } =
     await import("../apps/mobile/src/network-policy.js");
-  const url = "http://192.168.1.5:47831";
+  const url = "http://192.168.1.5:17831";
   const calls = [];
   let allowed = true;
   const native = {

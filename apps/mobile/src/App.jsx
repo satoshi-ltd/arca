@@ -1,3 +1,4 @@
+import { canContinueInBackground } from "./runtime";
 import { Busy, Scaffold } from "./components";
 import { GallerySetup, GallerySource } from "./GallerySource";
 import { galleryConfig } from "./gallery.js";
@@ -34,6 +35,7 @@ import {
   StatusBar,
   useWindowDimensions,
   Dimensions,
+  Linking,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
@@ -291,7 +293,7 @@ export default function App() {
     );
     const app = AppState.addEventListener("change", (value) => {
       if (value === "active") engine.current?.sync();
-      else engine.current?.stop();
+      else if (!canContinueInBackground()) engine.current?.stop();
     });
     const timer = setInterval(() => {
       if (AppState.currentState === "active" && !action.current)
@@ -633,7 +635,7 @@ export default function App() {
   function destroy() {
     confirm(
       "Destroy this replica?",
-      "Permanently deletes all downloaded folders and unsynced changes, credentials, selections, index, queues and caches. Arca returns to first-run setup. Hub files and history and other machines are kept. This cannot be undone. If still connected, the hub must be reachable.",
+      "Permanently deletes all downloaded folders and unsynced changes, credentials, selections, index, queues and caches. Arca returns to first-run setup. Hub files and history and other machines are kept. This cannot be undone. Works offline. If the hub cannot be reached, remove this machine from its Machines list separately.",
       () =>
         run(
           async () => {
@@ -1624,7 +1626,7 @@ export default function App() {
                             label="Hub address"
                             value={address}
                             onChangeText={setAddress}
-                            placeholder="http://192.168.1.10:47831"
+                            placeholder="http://192.168.1.10:17831"
                             keyboardType="url"
                           />
                           <Text style={s.caption}>
@@ -1923,8 +1925,8 @@ export default function App() {
                                 setName(nextName);
                                 setDeviceName(null);
                                 if (!reported)
-                                  setSuccess(
-                                    "Name saved. The hub will update on the next sync.",
+                                  setError(
+                                    `Name saved on this device, but not updated on the hub. ${engine.current.nameReportError || "Connect to the hub and try again."}`,
                                   );
                               });
                             }}
@@ -1958,13 +1960,27 @@ export default function App() {
                         <SettingsGroup>
                           <Card>
                             <Toggle
-                              label="Background sync"
+                              label="Background refresh"
                               description="When the system allows. Open Arca to continue immediately."
                               value={!!prefs.background}
                               disabled={busy}
                               onChange={(v) => run(() => setBackground(v))}
                             />
                           </Card>
+                          {Platform.OS === "android" && (
+                            <Card title="Photo uploads">
+                              <Text style={s.caption}>
+                                On Samsung, set Battery to Unrestricted and keep
+                                Arca out of Sleeping apps.
+                              </Text>
+                              <Button
+                                label="Open app settings"
+                                onPress={() =>
+                                  run(() => Linking.openSettings())
+                                }
+                              />
+                            </Card>
+                          )}
                           <Card>
                             <Toggle
                               label="System notifications"
