@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.4 — 2026-09-14
+
+- Preview the first three seconds of a video silently on mouse hover in desktop/web Gallery. Stop on pointer exit, scrolling or navigation, and respect reduced motion.
+- Start video playback when opening the viewer, retaining manual controls when browser autoplay policy blocks it. Open every photo/video with Info closed.
+- Keep last-known folder files and revisions visible while refreshing. Scope bounded session caches by machine, folder and query, and preserve known data when refresh fails.
+- Retain mobile local file lists and Recent revisions during refresh; prevent delayed reads from replacing another folder’s contents.
+- Replace the top loading line with the shared Busy inside the Arca logo. Keep its green rounded tile and replace only the inner glyph on desktop/web, Fold sidebar and narrow mobile headers.
+- Wait for onboarding UI completion in its regression test, including delayed server replies, before closing the test window.
+- Align release identifiers at 0.4.4 and mobile build 15. No storage conversion, automatic mobile publication or workflow changes.
+
 ## 0.4.3 — 2026-09-13
 
 - Fix the Tauri gallery regression test clicking before folder-detail loading completes; retain delayed API responses to reproduce the Ubuntu timing race locally.

@@ -6,40 +6,66 @@ import { client } from "./persistence";
 import { Icon, Button, useDesign } from "./components";
 import { bytes } from "./format";
 
+const knownRecent = new Map();
+
 // Recent means accepted hub revisions on every client, not filesystem mtimes.
-export function FolderRecent({ volume, connected, updated, date, open }) {
+export function FolderRecent({
+  volume,
+  scope,
+  connected,
+  updated,
+  date,
+  open,
+  onLoading,
+}) {
   const { s, c, wide } = useDesign();
-  const [page, setPage] = useState(null),
+  const key = `${scope}:${volume}`;
+  const [loaded, setLoaded] = useState(null),
     [error, setError] = useState("");
+  const page = loaded?.key === key ? loaded.value : knownRecent.get(key);
   const [attempt, retry] = useState(0);
   useEffect(() => {
     let active = true;
-    setPage(null);
+    setLoaded({ key, value: knownRecent.get(key) });
+    onLoading?.(!!connected);
     setError("");
     if (connected)
       client
         .api(`/v1/activity?${new URLSearchParams({ volume, limit: "4" })}`)
         .then((value) => {
-          if (active) setPage(value);
+          if (active) {
+            knownRecent.set(key, value);
+            while (knownRecent.size > 40)
+              knownRecent.delete(knownRecent.keys().next().value);
+            setLoaded({ key, value });
+          }
         })
         .catch((e) => {
           if (active) setError(e.message);
+        })
+        .finally(() => {
+          if (active) onLoading?.(false);
         });
     return () => {
       active = false;
+      onLoading?.(false);
     };
-  }, [volume, connected, updated, attempt]);
-  if (!connected)
+  }, [key, connected, updated, attempt, onLoading]);
+  if (!connected && !page)
     return (
       <Text style={s.text}>
         Connect to view recent revisions. Local files remain in Files.
       </Text>
     );
-  if (error)
+  if (error && !page)
     return <ErrorNotice error={error} retry={() => retry((n) => n + 1)} />;
   if (!page) return <Scaffold kind="history" label="Loading recent changes" />;
   return (
     <View style={s.section}>
+      {error && <ErrorNotice error={error} retry={() => retry((n) => n + 1)} />}
+      {!connected && (
+        <Text style={s.caption}>Offline · last known revisions</Text>
+      )}
       <View style={s.group}>
         {page.versions.map((row, index) => (
           <Pressable

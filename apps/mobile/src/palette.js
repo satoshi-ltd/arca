@@ -49,3 +49,6 @@ export const palettes = {
     dangerBg: "#3a2321",
   },
 };
+
+// Stable logo colors match desktop --mark-* tokens in both themes.
+export const brandMark = { tile: "#244d3e", arch: "#eff5df", door: "#accb80" };

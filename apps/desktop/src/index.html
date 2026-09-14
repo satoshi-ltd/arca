@@ -13,12 +13,33 @@
       <aside class="sidebar">
         <div class="window-drag"></div>
         <a class="brand" href="#" data-view="folders"
-          ><img
-            src="assets/arca-icon.svg"
-            width="28"
-            height="28"
-            alt="Arca"
-          /><span><b>arca</b></span></a
+          ><div class="brand-mark" role="img" aria-label="Arca">
+            <svg class="brand-logo" viewBox="0 0 512 512" aria-hidden="true">
+              <rect
+                x="8"
+                y="8"
+                width="496"
+                height="496"
+                rx="116"
+                fill="var(--mark-tile)"
+              />
+              <g class="brand-glyph">
+                <path
+                  d="M136 370V232a120 120 0 0 1 240 0v138h-58V232a62 62 0 0 0-124 0v138z"
+                  fill="var(--mark-arch)"
+                />
+                <rect
+                  x="224"
+                  y="276"
+                  width="64"
+                  height="94"
+                  rx="8"
+                  fill="var(--mark-door)"
+                />
+              </g></svg
+            ><span class="brand-busy" aria-hidden="true"></span>
+          </div>
+          <span><b>arca</b></span></a
         >
         <div class="managing">
           <span data-icon="monitor"></span

@@ -238,3 +238,60 @@ test("mobile single-line fields reserve stable geometry and grow only for access
         assert.equal(s.screenHeader.minHeight, s.button.minHeight);
     }
 });
+
+test("mobile folder refresh retains its cached files and ignores an older folder read", async () => {
+  const source = fs.readFileSync(
+    new URL("../apps/mobile/src/App.jsx", import.meta.url),
+    "utf8",
+  );
+  const method = source.slice(
+    source.indexOf("  async function listFiles("),
+    source.indexOf("  const notices ="),
+  );
+  let entries, release;
+  const cache = new Map([["hub:A", [{ path: "last-known.jpg", size: 20 }]]]);
+  const context = {
+    engine: {
+      current: {
+        scope: "hub",
+        files: {
+          folder: (scope, id) => id,
+          exists: async () => true,
+          walk: async function* (id) {
+            if (id === "A")
+              await new Promise((resolve) => {
+                release = resolve;
+              });
+            yield { path: `${id}.jpg`, size: 30 };
+          },
+        },
+      },
+    },
+    mounted: { current: true },
+    fileRequest: { current: 0 },
+    folderLists: { current: cache },
+    setEntries: (value) => {
+      entries = value;
+    },
+    setFilesLoading: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(method + "\nthis.readFolder = listFiles;", context);
+  const oldRead = context.readFolder("A");
+  assert.equal(entries[0].path, "last-known.jpg");
+  while (!release) await new Promise((resolve) => setImmediate(resolve));
+  const newRead = context.readFolder("B");
+  assert.equal(
+    entries.length,
+    0,
+    "a new folder must not show the previous folder's files",
+  );
+  await newRead;
+  release();
+  await oldRead;
+  assert.equal(entries[0].path, "B.jpg");
+  assert.equal(cache.get("hub:A")[0].path, "last-known.jpg");
+  const repeat = context.readFolder("B");
+  assert.equal(entries[0].path, "B.jpg");
+  await repeat;
+});

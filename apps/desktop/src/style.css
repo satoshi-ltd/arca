@@ -2236,32 +2236,30 @@ label {
   padding: 0 12px 10px;
 }
 
-/* View loads retain their content; the top line is indeterminate. */
-body.view-loading::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 35%;
-  height: 2px;
-  z-index: var(--layer-progress);
-  background: var(--green);
-  animation: view-load var(--motion-loop) var(--motion-ease) infinite;
-  pointer-events: none;
+/* Activity occupies the existing brand slot without shifting the sidebar. */
+.brand-mark {
+  position: relative;
+  flex: none;
+  width: var(--brand-mark-size);
+  height: var(--brand-mark-size);
 }
-@keyframes view-load {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(386%);
-  }
+.brand-mark .brand-logo {
+  width: 100%;
+  height: 100%;
 }
-@media (prefers-reduced-motion: reduce) {
-  body.view-loading::before {
-    width: 100%;
-    animation: none;
-  }
+.brand-busy {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--mark-arch);
+}
+.brand-mark.is-busy .brand-glyph {
+  visibility: hidden;
+}
+.brand-mark.is-busy .brand-busy {
+  display: flex;
 }
 @keyframes notice-enter {
   from {
@@ -3890,4 +3888,18 @@ dialog.photo-viewer {
   background: var(--surface);
   color: var(--ink);
   border-radius: var(--r-control);
+}
+
+/* Keep the cached poster underneath until a hover preview has decoded. */
+.photo-hover-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  opacity: 0;
+}
+.photo-hover-video.ready {
+  opacity: 1;
 }

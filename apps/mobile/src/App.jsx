@@ -1,5 +1,5 @@
 import { canContinueInBackground } from "./runtime";
-import { Busy, Scaffold } from "./components";
+import { BrandActivity, Busy, Scaffold } from "./components";
 import { GallerySetup, GallerySource } from "./GallerySource";
 import { galleryConfig } from "./gallery.js";
 import { Section } from "./components";
@@ -178,6 +178,9 @@ export default function App() {
     [historyFilter, setHistoryFilter] = useState("revisions");
   const historyRequest = useRef(0);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const folderLists = useRef(new Map());
   const [detailError, setDetailError] = useState("");
   const [fileHistory, setFileHistory] = useState({ versions: [], next: null });
   async function update() {
@@ -212,16 +215,33 @@ export default function App() {
     });
   }
   async function listFiles(id = folder?.id) {
-    if (!id) return;
+    if (!id || !engine.current) return;
     const request = ++fileRequest.current;
     const r = engine.current;
     const scope = r.scope;
-    const list = [];
-    const root = r.files.folder(r.scope, id);
-    if (await r.files.exists(root))
-      for await (const e of r.files.walk(root)) list.push(e);
-    if (mounted.current && request === fileRequest.current && scope === r.scope)
-      setEntries(list.sort((a, b) => a.path.localeCompare(b.path)));
+    const key = `${scope}:${id}`;
+    setEntries(folderLists.current.get(key) || []);
+    setFilesLoading(true);
+    try {
+      const list = [];
+      const root = r.files.folder(scope, id);
+      if (await r.files.exists(root))
+        for await (const e of r.files.walk(root)) list.push(e);
+      if (
+        mounted.current &&
+        request === fileRequest.current &&
+        scope === r.scope
+      ) {
+        const sorted = list.sort((a, b) => a.path.localeCompare(b.path));
+        folderLists.current.set(key, sorted);
+        while (folderLists.current.size > 20)
+          folderLists.current.delete(folderLists.current.keys().next().value);
+        setEntries(sorted);
+      }
+    } finally {
+      if (mounted.current && request === fileRequest.current)
+        setFilesLoading(false);
+    }
   }
   const notices = useMemo(() => createNoticeStore(), []);
   const [noticeItems, setNoticeItems] = useState([]);
@@ -427,6 +447,9 @@ export default function App() {
   ]);
   const locked = busy || status.busy || !engine.current;
   async function openFolder(f) {
+    setEntries(
+      folderLists.current.get(`${engine.current?.scope}:${f.id}`) || [],
+    );
     setFolder(f);
     setSearchOpen(false);
     setFileView("files");
@@ -849,7 +872,19 @@ export default function App() {
   if (opening)
     return (
       <SafeAreaProvider>
-        <Design.Provider value={{ s, c, wide }}>
+        <Design.Provider
+          value={{
+            s,
+            c,
+            wide,
+            active:
+              busy ||
+              status.busy ||
+              detailLoading ||
+              historyLoading ||
+              !!(folder && (filesLoading || recentLoading)),
+          }}
+        >
           <SafeAreaView style={s.root}>
             <View style={s.content}>
               <Text style={s.heading}>Arca</Text>
@@ -891,7 +926,19 @@ export default function App() {
           c.paper === palettes.dark.paper ? "light-content" : "dark-content"
         }
       />
-      <Design.Provider value={{ s, c, wide }}>
+      <Design.Provider
+        value={{
+          s,
+          c,
+          wide,
+          active:
+            busy ||
+            status.busy ||
+            detailLoading ||
+            historyLoading ||
+            !!(folder && (filesLoading || recentLoading)),
+        }}
+      >
         <View style={s.root}>
           <View style={[s.root, wide && !onboarding && s.shell]}>
             {wide && !onboarding && (
@@ -954,6 +1001,7 @@ export default function App() {
                         <View style={s.flex}>
                           {detail ? (
                             <View style={s.row}>
+                              {!wide && <BrandActivity />}
                               <View style={s.tile}>
                                 <Icon name="file" />
                               </View>
@@ -973,9 +1021,7 @@ export default function App() {
                               </View>
                             </View>
                           ) : folder && view === "Folders" ? (
-                            <Text accessibilityRole="header" style={s.title}>
-                              {folder.name}
-                            </Text>
+                            <ScreenTitle>{folder.name}</ScreenTitle>
                           ) : (
                             <ScreenTitle>{view}</ScreenTitle>
                           )}
@@ -1194,6 +1240,8 @@ export default function App() {
                               {fileView === "recent" ? (
                                 <FolderRecent
                                   volume={folder.id}
+                                  scope={engine.current?.scope}
+                                  onLoading={setRecentLoading}
                                   connected={connected}
                                   updated={status.last}
                                   date={date}
@@ -1260,19 +1308,23 @@ export default function App() {
                                           </View>
                                         </Pressable>
                                       ))}
-                                    {!browseEntries(entries, directory, search)
-                                      .length && (
-                                      <View style={s.explorerEmpty}>
-                                        <Icon name="folders" color={c.mute} />
-                                        <Text style={s.text}>
-                                          {search
-                                            ? "No matching files"
-                                            : currentFolder?.completed
-                                              ? "This folder is empty"
-                                              : "No local files yet"}
-                                        </Text>
-                                      </View>
+                                    {filesLoading && !entries.length && (
+                                      <Scaffold label="Loading files" />
                                     )}
+                                    {!filesLoading &&
+                                      !browseEntries(entries, directory, search)
+                                        .length && (
+                                        <View style={s.explorerEmpty}>
+                                          <Icon name="folders" color={c.mute} />
+                                          <Text style={s.text}>
+                                            {search
+                                              ? "No matching files"
+                                              : currentFolder?.completed
+                                                ? "This folder is empty"
+                                                : "No local files yet"}
+                                          </Text>
+                                        </View>
+                                      )}
                                   </View>
                                   {browseEntries(entries, directory, search)
                                     .length > visibleCount && (

@@ -1,3 +1,4 @@
+import { brandMark } from "./palette.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g } from "./design-tokens.js";
 import React, {
@@ -55,6 +56,17 @@ export function Scaffold({
   );
 }
 const busyStyles = StyleSheet.create({
+  brandSlot: {
+    width: g.screenTitleLogo,
+    height: g.screenTitleLogo,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  brandBusy: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   grid: { width: 16, height: 16, gap: 2 },
   small: { transform: [{ scale: 0.875 }], width: 16, height: 16 },
   row: { flexDirection: "row", gap: 2 },
@@ -159,16 +171,47 @@ export function Icon({ name, color, size = 20 }) {
     </Svg>
   );
 }
-export function Logo({ size = 76 }) {
+export function Logo({ size = 76, glyph = true }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 512 512">
-      <Rect x="8" y="8" width="496" height="496" rx="116" fill="#244d3e" />
-      <Path
-        d="M136 370V232a120 120 0 0 1 240 0v138h-58V232a62 62 0 0 0-124 0v138z"
-        fill="#eff5df"
+      <Rect
+        x="8"
+        y="8"
+        width="496"
+        height="496"
+        rx="116"
+        fill={brandMark.tile}
       />
-      <Rect x="224" y="276" width="64" height="94" rx="8" fill="#accb80" />
+      {glyph && (
+        <>
+          <Path
+            d="M136 370V232a120 120 0 0 1 240 0v138h-58V232a62 62 0 0 0-124 0v138z"
+            fill={brandMark.arch}
+          />
+          <Rect
+            x="224"
+            y="276"
+            width="64"
+            height="94"
+            rx="8"
+            fill={brandMark.door}
+          />
+        </>
+      )}
     </Svg>
+  );
+}
+export function BrandActivity() {
+  const { active } = useDesign();
+  return (
+    <View style={busyStyles.brandSlot}>
+      <Logo size={g.screenTitleLogo} glyph={!active} />
+      {active && (
+        <View style={busyStyles.brandBusy}>
+          <Busy color={brandMark.arch} accessibilityLabel="Arca: updating" />
+        </View>
+      )}
+    </View>
   );
 }
 export function Section({ children }) {
@@ -179,7 +222,7 @@ export function ScreenTitle({ children }) {
   const { s, wide } = useDesign();
   return (
     <View style={s.screenTitle}>
-      {!wide && <Logo size={g.screenTitleLogo} />}
+      {!wide && <BrandActivity />}
       <Text accessibilityRole="header" style={[s.title, s.flex]}>
         {children}
       </Text>
@@ -702,7 +745,7 @@ export function Navigation({ wide, compact, view, onSelect, name, hub }) {
       {wide && (
         <>
           <View style={[s.brand, compact && s.compactBrand]}>
-            <Logo size={32} />
+            <BrandActivity />
             {!compact && <Text style={s.heading}>arca</Text>}
           </View>
           {!compact && (

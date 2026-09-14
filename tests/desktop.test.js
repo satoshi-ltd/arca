@@ -707,17 +707,14 @@ test("native path validation displays string errors instead of a blank disabled 
   const w = dom.window;
   const apiCode = script.slice(
     script.indexOf("const api ="),
-    script.indexOf(
-      "\n",
-      script.indexOf("  });", script.indexOf("const api =")),
-    ),
+    script.indexOf("let dismissedStatusError"),
   );
   const checkCode = script.slice(
     script.indexOf("function checkFolderPath("),
     script.indexOf("function codeFields("),
   );
   w.eval(
-    `const icon = () => ""; const icons = () => {}; const escape = s => s; const $ = s => document.querySelector(s); const invoke = async () => { throw 'This folder is already shared as "alpi-host".'; }; ${apiCode}\n${checkCode}\ncheckFolderPath('path', 'new-share');`,
+    `let activeRequests = 0, folderCacheEpoch = 0; const folderPageKey = route => route; const updateBrandActivity = () => {}; const icon = () => ""; const icons = () => {}; const escape = s => s; const $ = s => document.querySelector(s); const invoke = async () => { throw 'This folder is already shared as "alpi-host".'; }; ${apiCode}\n${checkCode}\ncheckFolderPath('path', 'new-share');`,
   );
   await until(() =>
     w.document
@@ -2539,6 +2536,13 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
       w.document.querySelector(".photo-viewer-image img")?.alt ===
       "a-photo.jpg",
   );
+  assert.equal(w.document.querySelector(".photo-info").hidden, true);
+  assert.equal(
+    w.document
+      .querySelector(".photo-info-toggle")
+      .getAttribute("aria-expanded"),
+    "false",
+  );
   w.document.querySelector(".photo-previous").click();
   await until(
     () =>
@@ -2782,6 +2786,9 @@ for (const role of ["hub", "replica"])
         });
         if (response.headers.get("set-cookie"))
           cookie = response.headers.get("set-cookie").split(";")[0];
+        // Server state may be committed before the browser receives the reply.
+        if (route === "/v1/setup")
+          await new Promise((resolve) => setTimeout(resolve, 100));
         return response;
       };
       t.after(async () => {
@@ -2837,7 +2844,10 @@ for (const role of ["hub", "replica"])
         await until(
           () =>
             !daemon.engine.config.needsSetup &&
-            !daemon.engine.config.onboarding,
+            !daemon.engine.config.onboarding &&
+            !w.document.querySelector("#setup-form") &&
+            w.document.body.getAttribute("aria-busy") === "false" &&
+            !w.document.body.classList.contains("view-loading"),
         );
         assert.equal(daemon.engine.config.name, "Chosen server");
         assert.equal(daemon.engine.config.role, "hub");
@@ -2983,12 +2993,25 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
   await daemon.engine.gallery.background;
   const dom = new JSDOM(html, {
     runScripts: "outside-only",
+    pretendToBeVisual: true,
     url: "http://tauri.localhost",
   });
   const w = dom.window;
   let releasePoster,
     paused = 0,
-    loads = 0;
+    loads = 0,
+    played = 0,
+    reducedMotion = false,
+    rejectPlay = false,
+    holdPlayback = false,
+    releasePlayback;
+  w.matchMedia = () => ({ matches: reducedMotion });
+  w.HTMLMediaElement.prototype.play = function () {
+    played++;
+    return rejectPlay
+      ? Promise.reject(new Error("Autoplay blocked"))
+      : Promise.resolve();
+  };
   w.setInterval = () => 0;
   w.HTMLMediaElement.prototype.pause = function () {
     paused++;
@@ -3016,6 +3039,10 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
           return new Promise((resolve) => {
             releasePoster = resolve;
           });
+        if (holdPlayback && args.route.startsWith("/v1/gallery/playback?"))
+          await new Promise((resolve) => {
+            releasePlayback = resolve;
+          });
         const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
           method: args.method,
           headers: {
@@ -3031,6 +3058,7 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
     },
   };
   t.after(async () => {
+    releasePlayback?.();
     releasePoster?.({ unavailable: true });
     w.close();
     await daemon.close();
@@ -3046,13 +3074,205 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
   w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => w.document.querySelector(".photo-open"));
   assert.ok(w.document.querySelector(".photo-video-badge"));
+  await until(() => w.document.body.getAttribute("aria-busy") === "false");
+  const tile = w.document.querySelector(".photo-thumb");
+  const enter = (pointerType = "mouse") =>
+    tile.dispatchEvent(
+      Object.assign(new w.Event("pointerenter"), { pointerType }),
+    );
+  enter("touch");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(played, 0, "touch must not start a hover preview");
+  reducedMotion = true;
+  enter();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(played, 0, "respect reduced motion");
+  reducedMotion = false;
+  enter();
+  await until(() => tile.querySelector("video"));
+  const preview = tile.querySelector("video");
+  assert.equal(preview.muted, true);
+  assert.equal(preview.controls, false);
+  preview.currentTime = 3;
+  preview.dispatchEvent(new w.Event("timeupdate"));
+  assert.equal(tile.querySelector("video"), null);
+  assert.equal(preview.hasAttribute("src"), false);
+  enter();
+  await until(() => tile.querySelector("video"));
+  tile.dispatchEvent(new w.Event("pointerleave"));
+  assert.equal(tile.querySelector("video"), null);
+  holdPlayback = true;
+  enter();
+  await until(() => releasePlayback);
+  tile.dispatchEvent(new w.Event("pointerleave"));
+  releasePlayback();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(
+    tile.querySelector("video"),
+    null,
+    "late playback response cannot restart hover",
+  );
+  holdPlayback = false;
+  const beforeClose = { paused, loads, played };
   w.document.querySelector(".photo-open").click();
-  await until(() => w.document.querySelector("video"));
+  await until(() => w.document.querySelector(".photo-viewer video"));
   const video = w.document.querySelector("video");
   assert.equal(video.controls, true);
+  assert.equal(video.autoplay, true);
+  assert.equal(played, beforeClose.played + 1);
+  w.document.querySelector(".photo-info-toggle").click();
+  assert.equal(w.document.querySelector(".photo-info").hidden, false);
   assert.match(video.src, /127\.0\.0\.1.*ticket=/);
   w.document.querySelector("#cancel-dialog").click();
-  assert.equal(paused, 1);
-  assert.equal(loads, 1);
+  assert.equal(paused, beforeClose.paused + 1);
+  assert.equal(loads, beforeClose.loads + 1);
   assert.equal(video.hasAttribute("src"), false);
+  rejectPlay = true;
+  w.document.querySelector(".photo-open").click();
+  await until(() => w.document.querySelector(".photo-viewer video"));
+  assert.equal(w.document.querySelector(".photo-info").hidden, true);
+  assert.equal(
+    w.document
+      .querySelector(".photo-info-toggle")
+      .getAttribute("aria-expanded"),
+    "false",
+  );
+  assert.equal(w.document.querySelector(".photo-viewer video").controls, true);
+  w.document.querySelector("#cancel-dialog").click();
+});
+
+test("folder reentry keeps known files and revision while the brand shows refresh activity", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-folder-cache-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Cached folder");
+  const other = daemon.engine.store.addVolume("Other folder");
+  fs.writeFileSync(path.join(volume.path, "known.txt"), "known content");
+  await daemon.engine.cycle();
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  let hold = false,
+    fail = false,
+    release;
+  const pending = new Set();
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap")
+          return { setup: false, status: daemon.engine.status() };
+        if (command !== "api") throw new Error(command);
+        const work = (async () => {
+          if (hold && args.route.startsWith("/v1/activity?volume="))
+            await new Promise((resolve) => {
+              release = resolve;
+            });
+          if (fail && /^\/v1\/(activity|browse)\?/.test(args.route))
+            throw new Error("Hub offline");
+          const response = await fetch(
+            `http://127.0.0.1:${daemon.port}${args.route}`,
+            {
+              headers: {
+                Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+              },
+            },
+          );
+          if (!response.ok) throw new Error(`API ${response.status}`);
+          return response.json();
+        })();
+        pending.add(work);
+        try {
+          return await work;
+        } finally {
+          pending.delete(work);
+        }
+      },
+    },
+  };
+  t.after(async () => {
+    release?.();
+    while (pending.size) await Promise.allSettled([...pending]);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const click = (action, id) =>
+    w.document
+      .querySelector(
+        `[data-action="${action}"]${id ? `[data-id="${id}"]` : ""}`,
+      )
+      .click();
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  await w.eval(`(async()=>{${script}\n})()`);
+  click("folder-detail", volume.id);
+  await until(() => idle() && w.document.querySelector(".browser-file-row"));
+  const revision = w.document.querySelector(
+    ".folder-stats .stat:nth-child(3) strong",
+  ).textContent;
+  assert.match(revision, /^rev \d+$/);
+  click("back-folders");
+  await until(idle);
+  hold = true;
+  click("folder-detail", volume.id);
+  await until(() => release && w.document.querySelector(".browser-file-row"));
+  assert.match(
+    w.document.querySelector(".folder-explorer").textContent,
+    /known.txt/,
+  );
+  assert.equal(
+    w.document.querySelector(".folder-stats .stat:nth-child(3) strong")
+      .textContent,
+    revision,
+  );
+  assert.equal(
+    w.document.querySelectorAll(".detail-revisions .scaffold-row").length,
+    0,
+  );
+  assert.ok(w.document.querySelector(".brand-mark.is-busy .busy-grid"));
+  assert.equal(
+    w.document.querySelector(".brand-mark").getAttribute("aria-busy"),
+    "true",
+  );
+  fail = true;
+  hold = false;
+  release();
+  await until(idle);
+  await until(
+    () =>
+      w.document.querySelector(".brand-mark").getAttribute("aria-busy") ===
+      "false",
+  );
+  assert.match(
+    w.document.querySelector(".folder-explorer").textContent,
+    /known.txt/,
+  );
+  assert.equal(
+    w.document.querySelector(".folder-stats .stat:nth-child(3) strong")
+      .textContent,
+    revision,
+  );
+  click("back-folders");
+  await until(idle);
+  hold = true;
+  release = null;
+  fail = false;
+  click("folder-detail", other.id);
+  await until(
+    () =>
+      release && w.document.querySelector(".detail-revisions .scaffold-row"),
+  );
+  assert.doesNotMatch(
+    w.document.querySelector(".detail-revisions").textContent,
+    /known.txt/,
+  );
+  hold = false;
+  release();
+  await until(idle);
+  assert.doesNotMatch(
+    w.document.querySelector(".folder-explorer").textContent,
+    /known.txt/,
+  );
 });
