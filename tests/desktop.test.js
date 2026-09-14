@@ -34,6 +34,15 @@ async function until(check) {
   throw new Error("UI did not reach expected state");
 }
 
+async function drainRequests(requests) {
+  do {
+    await Promise.allSettled([...requests]);
+    // Native replies settle before the app's then/finally render callbacks.
+    // Let those finish, including any follow-up requests, before closing JSDOM.
+    await new Promise((resolve) => setImmediate(resolve));
+  } while (requests.size);
+}
+
 test("desktop DOM uses real API: folders, history, restore and pause", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-desktop-test-"));
   init(home, { port: 0, name: "Test hub" });
@@ -2344,8 +2353,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     await until(
       () => dom.window.document.body.getAttribute("aria-busy") !== "true",
     );
-    while (requests.size) await Promise.allSettled([...requests]);
-    await new Promise((resolve) => setImmediate(resolve));
+    await drainRequests(requests);
     dom.window.close();
     await daemon.close();
     fs.rmSync(home, { recursive: true, force: true });
@@ -3181,7 +3189,10 @@ test("folder reentry keeps known files and revision while the brand shows refres
             },
           );
           if (!response.ok) throw new Error(`API ${response.status}`);
-          return response.json();
+          const value = await response.json();
+          if (args.route === "/v1/machines")
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          return value;
         })();
         pending.add(work);
         try {
@@ -3193,8 +3204,9 @@ test("folder reentry keeps known files and revision while the brand shows refres
     },
   };
   t.after(async () => {
+    hold = false;
     release?.();
-    while (pending.size) await Promise.allSettled([...pending]);
+    await drainRequests(pending);
     w.close();
     await daemon.close();
     fs.rmSync(home, { recursive: true, force: true });
