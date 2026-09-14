@@ -361,12 +361,16 @@ export class Replica {
     for await (const entry of this.files.walk(root)) {
       this.check();
       try {
-        validPath(entry.path);
+        entry.path = validPath(entry.path);
       } catch {
         throw new Error(
-          `Rename "${entry.path}" using a portable composed Unicode (NFC) name, then retry.`,
+          `Rename "${entry.path}" without reserved characters or trailing spaces/dots, then retry.`,
         );
       }
+      if (names.has(entry.path))
+        throw new Error(
+          `Multiple Unicode spellings exist for "${entry.path}". Rename one before retrying.`,
+        );
       names.add(entry.path);
       foldedNames.add(entry.path.toLowerCase());
       if (excluded(entry.path + (entry.directory ? "/" : ""))) continue;

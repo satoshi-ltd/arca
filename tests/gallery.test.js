@@ -139,6 +139,15 @@ test("old photos use EXIF capture date and unsupported media keep a usable listi
     "2018-07-09T10:11:12",
   );
   assert.equal(data.items.find((row) => row.path === "clip.mov").kind, "video");
+  const clipHash = data.items.find((row) => row.path === "clip.mov").hash;
+  assert.equal(
+    f.s.db
+      .prepare("SELECT date_checked FROM gallery_metadata WHERE hash=?")
+      .get(clipHash).date_checked,
+    2,
+  );
+  assert.equal(await f.daemon.engine.gallery.index(f.v.id), false);
+
   const broken = data.items.find((row) => row.path === "broken.heic");
   assert.deepEqual(await f.api(f.preview(broken.path, broken.hash)), {
     unavailable: true,
@@ -384,6 +393,79 @@ test("photo info reads original EXIF and rejects stale or hidden files", async (
     rev: f.s.current(f.v.id, "exif.jpg").rev,
   });
   await assert.rejects(f.api(route), { status: 404 });
+});
+
+test("existing videos are reindexed by capture date and interleave with photos", async (t) => {
+  const { default: ffmpeg } = await import("ffmpeg-static");
+  const { execFileSync } = await import("node:child_process");
+  const f = await fixture(t);
+  const clip = path.join(f.home, "dated.mp4");
+  execFileSync(ffmpeg, [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=blue:s=32x32:d=0.1",
+    "-c:v",
+    "mpeg4",
+    "-metadata",
+    "creation_time=2025-09-10T12:00:00Z",
+    "-y",
+    clip,
+  ]);
+  const original = fs.readFileSync(clip);
+  const hash = digest(original);
+  fs.writeFileSync(f.s.blob(hash), original);
+  await f.api("/v1/propose", {
+    volume: f.v.id,
+    path: "random-id.mp4",
+    hash,
+    size: original.length,
+  });
+  await f.photo("newer.jpg", "2025-09-11T12:00:00.000Z", "red");
+  await f.photo("older.jpg", "2025-09-09T12:00:00.000Z", "green");
+  await f.daemon.engine.gallery.background;
+  // Simulate an existing index from the version that only read image EXIF.
+  f.s.db
+    .prepare(
+      "UPDATE gallery_metadata SET captured=NULL,date_checked=1 WHERE hash=?",
+    )
+    .run(hash);
+  const pending = await f.api(f.route);
+  assert.equal(pending.indexing, true);
+  await f.daemon.engine.gallery.background;
+  const page = await f.api(f.route);
+  assert.equal(page.indexing, false);
+  assert.deepEqual(
+    page.items.map((item) => item.path),
+    ["newer.jpg", "random-id.mp4", "older.jpg"],
+  );
+  assert.equal(page.items[1].date, "2025-09-10T12:00:00.000Z");
+  assert.equal(page.items[1].dateSource, "metadata");
+  assert.deepEqual(
+    page.timeline.map((item) => item.month),
+    ["2025-09"],
+  );
+  const after = await f.api(
+    f.route + "&after=" + encodeURIComponent(page.items[0].cursor),
+  );
+  assert.deepEqual(
+    after.items.map((item) => item.path),
+    ["random-id.mp4", "older.jpg"],
+  );
+  assert.equal(digest(fs.readFileSync(f.s.blob(hash))), hash);
+  // A timestamp supplied by the phone remains authoritative.
+  f.s.db
+    .prepare(
+      "UPDATE gallery_metadata SET captured=?,date_checked=0 WHERE hash=?",
+    )
+    .run("2025-09-08T00:00:00.000Z", hash);
+  await f.daemon.engine.gallery.index(f.v.id);
+  assert.equal(
+    (await f.api(f.route)).items.at(-1).captured,
+    "2025-09-08T00:00:00.000Z",
+  );
 });
 
 test("videos have cached JPEG posters without changing their originals", async (t) => {

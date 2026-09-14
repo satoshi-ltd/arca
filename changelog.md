@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.6 — 2026-09-14
+
+- Order photos and videos together by capture date. Repair previously indexed video dates while preserving dates provided by phones and original files.
+- Keep later folders accessible in the tray and preserve scroll position during status updates.
+- Support composed and decomposed accented filenames in sync and renaming, preserving local spelling and rejecting ambiguous Unicode collisions.
+- Show the complete folder error when selecting Review, including the affected path.
+- Add Open to mobile file details and move Share into the actions menu. Older installed clients explain when a new app build is required.
+- Move desktop Open in Finder into the actions menu and add a divider above Delete file, matching mobile.
+- Add regressions for gallery chronology and index repair, tray navigation, Unicode sync, error review and mobile file actions.
+- Align release identifiers at 0.4.6 and mobile build 17. Mobile Open requires an updated native binary. Physical Samsung Fold scaling remains under investigation.
+
 ## 0.4.5 — 2026-09-14
 
 - Add file renaming across web, desktop and mobile, with portable-name validation, collision protection, stale-content checks and case-only rename support. Retained history remains under the previous name.

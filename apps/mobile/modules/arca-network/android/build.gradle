@@ -3,10 +3,10 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 group = 'expo.modules.arcanetwork'
-version = '0.4.5'
+version = '0.4.6'
 android {
   namespace 'expo.modules.arcanetwork'
-  defaultConfig { versionCode 16; versionName '0.4.5' }
+  defaultConfig { versionCode 17; versionName '0.4.6' }
 }
 dependencies {
   implementation("com.facebook.react:react-android")

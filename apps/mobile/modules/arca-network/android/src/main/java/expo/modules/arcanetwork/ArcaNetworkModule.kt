@@ -20,6 +20,23 @@ import kotlinx.coroutines.withContext
 class ArcaNetworkModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ArcaNetwork")
+    AsyncFunction("openFile") Coroutine { uri: String ->
+      withContext(Dispatchers.Main) {
+        val context = appContext.reactContext ?: error("App is unavailable")
+        val activity = appContext.currentActivity ?: error("Open Arca to open this file.")
+        val file = File(java.net.URI(uri)).canonicalFile
+        check(file.path.startsWith(context.filesDir.canonicalPath + "/") && file.isFile) { "This file is not available locally yet." }
+        val content = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".SharingFileProvider", file)
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase(java.util.Locale.ROOT)) ?: "application/octet-stream"
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+          setDataAndType(content, mime)
+          addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          clipData = android.content.ClipData.newRawUri(file.name, content)
+        }
+        try { activity.startActivity(intent) }
+        catch (_: android.content.ActivityNotFoundException) { error("No installed app can open this file. Try Share from the file menu.") }
+      }
+    }
     Events("transferStopped")
     OnCreate { TransferService.onStopped = { reason -> sendEvent("transferStopped", mapOf("reason" to reason)) } }
     OnDestroy { TransferService.onStopped = null }

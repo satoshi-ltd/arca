@@ -1807,3 +1807,25 @@ test("mobile renames synced files offline, rejects collisions and propagates ord
       .some((r) => r.hash === row.hash),
   );
 });
+
+test("mobile sync and rename accept accented Unicode filenames", async (t) => {
+  const f = await fixture(t),
+    v = f.volume;
+  const source = "re\u0301sume\u0301.txt";
+  fs.writeFileSync(path.join(v.path, source), "accented");
+  await f.daemon.engine.cycle();
+  await f.replica.select(v);
+  await sync(f);
+  const row = await f.store.current(
+    f.replica.scope,
+    v.id,
+    source.normalize("NFC"),
+  );
+  assert.ok(row);
+  await f.replica.renameFile(v.id, row.path, "vacacio\u0301n.txt", row.rev);
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(path.join(v.path, "vacación.txt"), "utf8"),
+    "accented",
+  );
+});

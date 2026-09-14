@@ -1,10 +1,5 @@
 export function validPath(name) {
-  if (
-    typeof name !== "string" ||
-    !name ||
-    name.length > 1024 ||
-    name !== name.normalize("NFC")
-  )
+  if (typeof name !== "string" || !name || name.length > 1024)
     throw new Error("Unsupported file path");
   for (const part of name.split("/"))
     if (
@@ -17,7 +12,7 @@ export function validPath(name) {
       part.startsWith(".arca-")
     )
       throw new Error("Unsupported file path");
-  return name;
+  return name.normalize("NFC");
 }
 export function validRow(row, volume) {
   validPath(row.path);

@@ -66,3 +66,60 @@ test("disconnected tray keeps the Arca header and explicit static folder warning
     dom.window.close();
   }
 });
+
+test("tray includes gallery folders beyond six rows and preserves scroll on refresh", async () => {
+  const dom = new JSDOM('<div id="tray-content"></div>', {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.matchMedia = () => ({ matches: false });
+  w.ResizeObserver = class {
+    observe() {}
+  };
+  w.lucide = { createIcons() {} };
+  const calls = [];
+  const volumes = Array.from({ length: 12 }, (_, i) => ({
+    id: `folder-${i}`,
+    name: i === 6 ? "photos-yuri" : `Folder ${i}`,
+    selected: true,
+    gallery: i === 6,
+    bytes: 1024,
+    sync: { state: "synced" },
+  }));
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        calls.push({ command, args });
+        return { role: "replica", phase: "idle", volumes };
+      },
+    },
+  };
+  try {
+    const source = fs.readFileSync(
+      new URL("../apps/desktop/src/tray.js", import.meta.url),
+      "utf8",
+    );
+    await w.eval(`(async () => {${source}\nwindow.refreshTray = refresh;})()`);
+    assert.equal(w.document.querySelectorAll("[data-folder]").length, 12);
+    assert.ok(
+      w.document.querySelector(
+        '[data-folder="folder-6"] [data-lucide="images"]',
+      ),
+    );
+    w.document.querySelector(".tray-folders").scrollTop = 180;
+    await w.refreshTray();
+    assert.equal(w.document.querySelector(".tray-folders").scrollTop, 180);
+    w.document.querySelector('[data-folder="folder-6"]').click();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(
+      calls.some(
+        ({ command, args }) =>
+          command === "show_main" && args.folder === "folder-6",
+      ),
+    );
+  } finally {
+    w.close();
+  }
+});

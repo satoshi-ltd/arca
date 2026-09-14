@@ -866,7 +866,7 @@ function folderRow(v, available = false) {
         : v.sync?.error
           ? button(
               "Review",
-              "folder-detail",
+              "folder-problem",
               v.id,
               "secondary small-button",
               "circle-alert",
@@ -1200,11 +1200,18 @@ function fileHistoryHeader() {
           "folder-search",
         )
       : "";
-  const canModify = current && !current.deleted && !current.directory &&
+  const canModify =
+    current &&
+    !current.deleted &&
+    !current.directory &&
     (status.role === "hub" || volume?.selected);
-  const actions = canModify ? `${historyPath !== ".arcaignore" ? button("Rename…", "rename-file", "", "secondary", "pencil") : ""}${button("Delete file…", "delete-file", "", "secondary danger", "trash-2")}` : "";
-  const fileMenu = actions ? `<details class="details-menu file-actions-menu"><summary class="icon-button" aria-label="File actions">${icon("ellipsis")}</summary><div class="menu-items">${actions}</div></details>` : "";
-  return `<div class="detail-head file-detail-head">${button(fileOriginFolder ? "Folder" : "History", fileOriginFolder ? "file-back-folder" : "history-back", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("file")}</div><div><h1>${escape(filename)}</h1><p class="path">${escape(volume?.name || "Shared folder")}</p></div></div><div class="file-header-actions">${conflictAction}${finder}${access}${fileMenu}</div></div></div><div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : "No retained revisions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
+  const actions = canModify
+    ? `${historyPath !== ".arcaignore" ? button("Rename…", "rename-file", "", "secondary", "pencil") : ""}${button("Delete file…", "delete-file", "", "secondary danger menu-item-separated", "trash-2")}`
+    : "";
+  const fileMenu = finder || actions
+    ? `<details class="details-menu file-actions-menu"><summary class="icon-button" aria-label="File actions">${icon("ellipsis")}</summary><div class="menu-items">${finder}${actions}</div></details>`
+    : "";
+  return `<div class="detail-head file-detail-head">${button(fileOriginFolder ? "Folder" : "History", fileOriginFolder ? "file-back-folder" : "history-back", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("file")}</div><div><h1>${escape(filename)}</h1><p class="path">${escape(volume?.name || "Shared folder")}</p></div></div><div class="file-header-actions">${conflictAction}${access}${fileMenu}</div></div></div><div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : "No retained revisions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
 }
 
 function fileHistorySide() {
@@ -2854,7 +2861,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.4.5 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.4.6 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   const destroyRole = status.role === "hub" ? "hub" : "replica";
   html += section(
@@ -3568,6 +3575,28 @@ async function handle(name, id, control) {
       $("#folder-search-input")?.focus();
     return;
   }
+  if (name === "folder-problem") {
+    const folder = status.volumes.find((item) => item.id === id);
+    if (!folder) return;
+    modal(
+      modalHeader(
+        `Synchronization of ${escape(folder.name)} stopped`,
+        escape(
+          folder.sync?.error ||
+            folder.policyError ||
+            "No current error reported.",
+        ),
+        "circle-alert",
+      ),
+      async () => {
+        await api("/v1/sync", { background: true });
+        await refresh();
+      },
+      "Retry now",
+    );
+    $("#cancel-dialog").textContent = "Close";
+    return;
+  }
   if (name === "back-folders") {
     detailId = null;
     await render();
@@ -3751,7 +3780,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.4.5",
+          version: "0.4.6",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,

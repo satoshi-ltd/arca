@@ -289,10 +289,38 @@ test("SYNC-12 pause restart", async (t) => {
   d = await start(root, { timer: false });
   assert.equal(d.engine.paused, true);
 });
-test("SYNC-13 decomposed path", async (t) => {
-  const { hub, volume } = await setup(t);
-  write(hub, volume, "cafe\u0301.txt", "data");
-  await assert.rejects(hub.sync(), /cafe.*NFC/);
+test("decomposed accents synchronize without renaming local files or creating duplicate revisions", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("mac");
+  const raw = "cafe\u0301/re\u0301sume\u0301.txt";
+  const canonical = raw.normalize("NFC");
+  write(hub, volume, raw, "data");
+  await hub.sync();
+  await mac.sync();
+  assert.equal(read(mac, volume, canonical), "data");
+  assert.ok(fs.existsSync(localPath(hub, volume, raw)));
+  const before = hub.engine.store.current(volume.id, canonical).rev;
+  await hub.sync();
+  await mac.sync();
+  assert.equal(hub.engine.store.current(volume.id, canonical).rev, before);
+  write(mac, volume, canonical, "edited");
+  await mac.sync();
+  await hub.sync();
+  assert.equal(read(hub, volume, raw), "edited");
+  const scoped = hub.engine.store.scan(hub.engine.store.volume(volume.id), [
+    raw,
+  ]);
+  assert.ok(scoped.has(canonical));
+  assert.ok(
+    hub.engine.store
+      .rowsInScope(volume.id, [raw])
+      .some((row) => row.path === canonical),
+  );
+  fs.unlinkSync(localPath(hub, volume, raw));
+  await hub.sync();
+  await mac.sync();
+  assert.equal(hub.engine.store.current(volume.id, canonical).deleted, 1);
+  assert.equal(fs.existsSync(localPath(mac, volume, canonical)), false);
 });
 test("hub reselection does not apply directory tombstones to retained local files", async (t) => {
   const { hub, volume } = await setup(t);
@@ -820,18 +848,23 @@ test("failed destruction journal write preserves files and permits a durable ret
   assert.equal(fs.existsSync(folder), false);
 });
 
-
 test("confirmed desktop destruction works with an unreachable hub and preserves hub files", async (t) => {
   const f = await setup(t);
   const replica = await f.connect("offline-destroy");
   const folder = replica.engine.store.volumes()[0].path;
-  fs.writeFileSync(path.join(folder, "local-only.txt"), "delete only on confirmation");
+  fs.writeFileSync(
+    path.join(folder, "local-only.txt"),
+    "delete only on confirmation",
+  );
   fs.writeFileSync(path.join(f.volume.path, "hub.txt"), "retained");
   replica.engine.config.hub.url = "http://127.0.0.1:1";
   await replica.api("/v1/destroy-replica", { confirmed: true });
   assert.equal(fs.existsSync(folder), false);
   assert.equal(replica.engine.config.needsSetup, true);
-  assert.equal(fs.readFileSync(path.join(f.volume.path, "hub.txt"), "utf8"), "retained");
+  assert.equal(
+    fs.readFileSync(path.join(f.volume.path, "hub.txt"), "utf8"),
+    "retained",
+  );
 });
 
 test("destroy hub deletes its files/history and returns to setup without deleting replica copies", async (t) => {
@@ -847,13 +880,25 @@ test("destroy hub deletes its files/history and returns to setup without deletin
   const oldId = hub.engine.config.id;
   const oldAdmin = hub.engine.config.adminToken;
   await assert.rejects(hub.api("/v1/destroy-hub", {}), /Confirm/);
-  await assert.rejects(hub.api("/v1/destroy-hub", { confirmed: true }, first.invite.token), { status: 403 });
-  await assert.rejects(first.api("/v1/destroy-hub", { confirmed: true }), /Only a hub/);
+  await assert.rejects(
+    hub.api("/v1/destroy-hub", { confirmed: true }, first.invite.token),
+    { status: 403 },
+  );
+  await assert.rejects(
+    first.api("/v1/destroy-hub", { confirmed: true }),
+    /Only a hub/,
+  );
   assert.ok(fs.existsSync(volume.path));
   await hub.api("/v1/destroy-hub", { confirmed: true });
   assert.equal(fs.existsSync(volume.path), false);
-  assert.equal(hub.engine.store.db.prepare("SELECT count(*) AS n FROM revisions").get().n, 0);
-  assert.equal(hub.engine.store.db.prepare("SELECT count(*) AS n FROM devices").get().n, 0);
+  assert.equal(
+    hub.engine.store.db.prepare("SELECT count(*) AS n FROM revisions").get().n,
+    0,
+  );
+  assert.equal(
+    hub.engine.store.db.prepare("SELECT count(*) AS n FROM devices").get().n,
+    0,
+  );
   assert.notEqual(hub.engine.config.id, oldId);
   assert.notEqual(hub.engine.config.adminToken, oldAdmin);
   assert.equal(hub.engine.config.needsSetup, true);
@@ -861,11 +906,16 @@ test("destroy hub deletes its files/history and returns to setup without deletin
   for (const replica of [first, second]) {
     await replica.sync();
     assert.equal(replica.engine.config.hub, null);
-    assert.equal(fs.readFileSync(path.join(replica.engine.store.volume(volume.id).path, "kept.txt"), "utf8"), "latest");
+    assert.equal(
+      fs.readFileSync(
+        path.join(replica.engine.store.volume(volume.id).path, "kept.txt"),
+        "utf8",
+      ),
+      "latest",
+    );
   }
   assert.equal((await hub.api("/v1/status")).needsSetup, true);
 });
-
 
 test("interrupted hub destruction blocks catalog reads until a safe retry", async (t) => {
   const { hub, volume } = await setup(t);
@@ -876,12 +926,37 @@ test("interrupted hub destruction blocks catalog reads until a safe retry", asyn
     return remove(target, ...args);
   };
   try {
-    await assert.rejects(hub.api("/v1/destroy-hub", { confirmed: true }), /disk unavailable/);
+    await assert.rejects(
+      hub.api("/v1/destroy-hub", { confirmed: true }),
+      /disk unavailable/,
+    );
     assert.ok(hub.engine.config.destroyPending);
     await assert.rejects(hub.api("/v1/catalog"), { status: 409 });
     assert.ok(fs.existsSync(volume.path));
-  } finally { fs.rmSync = remove; }
+  } finally {
+    fs.rmSync = remove;
+  }
   await hub.api("/v1/destroy-hub", { confirmed: true });
   assert.equal(fs.existsSync(volume.path), false);
   assert.equal(hub.engine.config.needsSetup, true);
+});
+
+test("canonically equivalent local names never overwrite one another", async (t) => {
+  const { hub, volume } = await setup(t);
+  const composed = "café.txt",
+    decomposed = "cafe\u0301.txt";
+  write(hub, volume, composed, "first");
+  write(hub, volume, decomposed, "second");
+  const entries = fs.readdirSync(hub.engine.store.volume(volume.id).path);
+  if (!entries.includes(composed) || !entries.includes(decomposed)) {
+    t.skip("Filesystem treats equivalent Unicode names as the same entry");
+    return;
+  }
+  await assert.rejects(
+    hub.sync(),
+    /equivalent Unicode names|Multiple Unicode spellings/,
+  );
+  assert.equal(read(hub, volume, composed), "first");
+  assert.equal(read(hub, volume, decomposed), "second");
+  assert.equal(hub.engine.store.current(volume.id, composed), undefined);
 });

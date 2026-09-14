@@ -218,7 +218,9 @@ export class Engine {
       },
       signal: AbortSignal.any([
         options.signal || AbortSignal.timeout(60000),
-        ...(this.requestContext.getStore() ? [this.requestContext.getStore().signal] : []),
+        ...(this.requestContext.getStore()
+          ? [this.requestContext.getStore().signal]
+          : []),
       ]),
     });
     if (!response.ok) {
@@ -340,7 +342,7 @@ export class Engine {
     const s = this.store;
     const {
       volume,
-      path: name,
+      path: requestedPath,
       base = 0,
       hash = null,
       size = 0,
@@ -360,7 +362,7 @@ export class Engine {
     )
       fail("Invalid revision or size");
     const v = s.volume(volume);
-    validPath(name);
+    const name = validPath(requestedPath);
     if (name === IGNORE_FILE && size > MAX_IGNORE_BYTES)
       fail(".arcaignore exceeds 64 KiB", 409);
     if (
@@ -454,7 +456,9 @@ export class Engine {
     return result;
   }
   cycle(options = {}) {
-    return this.requestContext.run(new AbortController(), () => this.runCycle(options));
+    return this.requestContext.run(new AbortController(), () =>
+      this.runCycle(options),
+    );
   }
   async runCycle({ incremental = false } = {}) {
     if (
@@ -1385,17 +1389,19 @@ export class Engine {
     return this.destroyInstallation("hub");
   }
   async destroyInstallation(role) {
-    if (this.config.role !== role)
-      fail(`Only a ${role} can be destroyed`, 409);
-    if (this.destroying)
-      fail("Destruction is already in progress", 409);
+    if (this.config.role !== role) fail(`Only a ${role} can be destroyed`, 409);
+    if (this.destroying) fail("Destruction is already in progress", 409);
     this.destroying = true;
     this.interruptCycle();
     try {
       // Validate every target before removing the registration from the hub.
       if (!this.config.destroyPending) resetTargets(this.store);
       return await this.exclusive(async () => {
-        if (role === "replica" && !this.config.destroyPending && this.config.hub) {
+        if (
+          role === "replica" &&
+          !this.config.destroyPending &&
+          this.config.hub
+        ) {
           try {
             await this.request("/v1/leave", {
               method: "POST",
@@ -1533,7 +1539,7 @@ export class Engine {
     return local;
   }
   async renameFile(volume, name, newName, rev) {
-    validPath(name);
+    name = validPath(name);
     let destination;
     try {
       destination = renamedPath(name, newName);

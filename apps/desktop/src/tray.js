@@ -39,6 +39,8 @@ async function refresh() {
       "needs-folder": "Choose a shared folder",
     };
     const label = labels[state.phase] || state.phase;
+    const folderScroll =
+      document.querySelector(".tray-folders")?.scrollTop || 0;
     document.querySelector("#tray-content").innerHTML =
       `<div class="tray-heading tray-tone-${state.phase === "error" ? "error" : state.phase === "unlinked" ? "conflict" : state.phase === "paused" ? "paused" : state.phase === "syncing" ? "syncing" : "synced"}"><img class="tray-brand-icon" src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><div class="tray-title"><strong>${escape(label)}</strong><p>${state.lastSync ? "Last completed " + new Date(state.lastSync).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "Not yet verified"}</p></div><span class="tray-role">${escape(state.role)}</span></div><div class="tray-folders">${state.volumes
         .filter((v) => v.selected)
@@ -66,6 +68,7 @@ async function refresh() {
         .join(
           "",
         )}</div><div class="tray-menu"><button data-action="sync">${icon("refresh-cw")}Sync now<kbd>⌘R</kbd></button><button data-action="pause">${icon(state.phase === "paused" ? "play" : "pause")}${state.phase === "paused" ? "Resume sync" : "Pause for 1 hour"}</button><hr><button data-action="open">${icon("app-window-mac")}Open Arca<kbd>⌘O</kbd></button><button data-action="quit">${icon("power")}Quit Arca<kbd>⌘Q</kbd></button></div><p class="tray-note">Quitting the app keeps the daemon running.</p><p id="tray-error" role="alert"></p>`;
+    document.querySelector(".tray-folders").scrollTop = folderScroll;
     window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
   } catch {
     document.querySelector("#tray-content").innerHTML =

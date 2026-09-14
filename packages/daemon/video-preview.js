@@ -51,3 +51,57 @@ export async function videoPreview(file, name, large = false) {
   if (!stdout.length) throw new Error("No video frame available");
   return stdout;
 }
+
+// Read container tags without decoding frames or transferring media to stdout.
+export async function videoCaptureDate(file, name) {
+  const binary =
+    bundledFfmpeg && fs.existsSync(bundledFfmpeg) ? bundledFfmpeg : "ffmpeg";
+  const { stdout } = await execute(
+    binary,
+    [
+      "-v",
+      "error",
+      "-nostdin",
+      "-protocol_whitelist",
+      "file",
+      "-f",
+      path.extname(name).toLowerCase() === ".webm" ? "matroska" : "mov",
+      "-i",
+      file,
+      "-map_metadata",
+      "0",
+      "-f",
+      "ffmetadata",
+      "pipe:1",
+    ],
+    {
+      encoding: "utf8",
+      timeout: 15000,
+      killSignal: "SIGKILL",
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    },
+  );
+  const tags = new Map(
+    stdout.split(/\r?\n/).map((line) => {
+      const at = line.indexOf("=");
+      return [line.slice(0, at), line.slice(at + 1).replace(/\\(.)/g, "$1")];
+    }),
+  );
+  for (const key of [
+    "com.apple.quicktime.creationdate",
+    "creation_time",
+    "date",
+  ]) {
+    const raw = tags.get(key);
+    if (
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/.test(
+        raw || "",
+      )
+    )
+      continue;
+    const date = new Date(raw);
+    if (Number.isFinite(date.getTime())) return date.toISOString();
+  }
+  return null;
+}

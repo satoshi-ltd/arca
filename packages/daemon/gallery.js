@@ -1,4 +1,4 @@
-import { videoPreview } from "./video-preview.js";
+import { videoPreview, videoCaptureDate } from "./video-preview.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -49,6 +49,9 @@ export function galleryDate(name, captured, added) {
   if (month) return { date: `${month[1]}-${month[2]}`, source: "album folder" };
   return { date: added, source: "date added" };
 }
+// Revisit videos checked before container capture dates were supported.
+const needsCaptureDate = `(m.hash IS NULL OR (m.captured IS NULL AND
+  (m.date_checked=0 OR (arca_media_kind(f.path)='video' AND m.date_checked<2))))`;
 // Derivatives are disposable and bounded; original objects remain untouched.
 export class Gallery {
   constructor(store) {
@@ -143,34 +146,39 @@ export class Gallery {
     const s = this.s;
     const rows = s.db
       .prepare(
-        `SELECT DISTINCT f.hash FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
-      WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL AND (m.hash IS NULL OR (m.captured IS NULL AND m.date_checked=0)) LIMIT 64`,
+        `SELECT f.hash,min(f.path) AS path FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
+      WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL AND ${needsCaptureDate} GROUP BY f.hash LIMIT 64`,
       )
       .all(volume);
     for (const row of rows) {
       let captured = null;
+      const video = mediaKind(row.path) === "video";
       try {
-        const meta = await sharp(s.blob(row.hash), {
-          limitInputPixels: 100000000,
-        }).metadata();
-        if (meta.exif?.length <= 4 * 1024 ** 2) {
-          const tags = await exifr.parse(
-            meta.exif.subarray(
-              meta.exif.subarray(0, 6).toString() === "Exif\0\0" ? 6 : 0,
-            ),
-            {
-              pick: ["DateTimeOriginal", "CreateDate", "ModifyDate"],
-              reviveValues: false,
-            },
-          );
-          const raw =
-            tags?.DateTimeOriginal || tags?.CreateDate || tags?.ModifyDate;
-          if (
-            typeof raw === "string" &&
-            /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)
-          )
-            captured =
-              raw.slice(0, 10).replaceAll(":", "-") + "T" + raw.slice(11);
+        if (video)
+          captured = await videoCaptureDate(s.blob(row.hash), row.path);
+        else {
+          const meta = await sharp(s.blob(row.hash), {
+            limitInputPixels: 100000000,
+          }).metadata();
+          if (meta.exif?.length <= 4 * 1024 ** 2) {
+            const tags = await exifr.parse(
+              meta.exif.subarray(
+                meta.exif.subarray(0, 6).toString() === "Exif\0\0" ? 6 : 0,
+              ),
+              {
+                pick: ["DateTimeOriginal", "CreateDate", "ModifyDate"],
+                reviveValues: false,
+              },
+            );
+            const raw =
+              tags?.DateTimeOriginal || tags?.CreateDate || tags?.ModifyDate;
+            if (
+              typeof raw === "string" &&
+              /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)
+            )
+              captured =
+                raw.slice(0, 10).replaceAll(":", "-") + "T" + raw.slice(11);
+          }
         }
       } catch {
         /* Missing capture metadata is a distinct, visible date group. */
@@ -179,9 +187,9 @@ export class Gallery {
       if (this.closed) return false;
       s.db
         .prepare(
-          "INSERT INTO gallery_metadata(hash,captured,date_checked) VALUES(?,?,1) ON CONFLICT(hash) DO UPDATE SET captured=coalesce(gallery_metadata.captured,excluded.captured),date_checked=1",
+          "INSERT INTO gallery_metadata(hash,captured,date_checked) VALUES(?,?,?) ON CONFLICT(hash) DO UPDATE SET captured=coalesce(gallery_metadata.captured,excluded.captured),date_checked=excluded.date_checked",
         )
-        .run(row.hash, captured);
+        .run(row.hash, captured, video ? 2 : 1);
       await new Promise((resolve) => setImmediate(resolve));
     }
     return rows.length === 64;
@@ -195,7 +203,7 @@ export class Gallery {
         .prepare(
           `SELECT 1 FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
        WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL
-       AND (m.hash IS NULL OR (m.captured IS NULL AND m.date_checked=0)) LIMIT 1`,
+       AND ${needsCaptureDate} LIMIT 1`,
         )
         .get(volume),
     );

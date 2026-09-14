@@ -1,3 +1,4 @@
+import { native } from "./private-network.js";
 import { canContinueInBackground } from "./runtime";
 import { BrandActivity, Busy, Scaffold } from "./components";
 import { GallerySetup, GallerySource } from "./GallerySource";
@@ -408,7 +409,10 @@ export default function App() {
     : prefs.onboarding
       ? "pair"
       : "welcome";
-  useEffect(() => setFileActionsOpen(false), [sheet?.kind, sheet?.path, width, height]);
+  useEffect(
+    () => setFileActionsOpen(false),
+    [sheet?.kind, sheet?.path, width, height],
+  );
   const historyDetail = sheet?.kind === "history";
   const detail = historyDetail;
   const screen = onboarding ? "Onboarding" : detail ? "File detail" : view;
@@ -571,7 +575,7 @@ export default function App() {
       setDetailLoading(false);
     }
   }
-  async function shareCurrentFile() {
+  async function currentFileURI() {
     const uri = engine.current.files.work(
       engine.current.scope,
       sheet.volume,
@@ -579,6 +583,17 @@ export default function App() {
     );
     if (!(await engine.current.files.exists(uri)))
       throw new Error("This file is not available locally yet.");
+    return uri;
+  }
+  async function openCurrentFile() {
+    if (typeof native.openFile !== "function")
+      throw new Error(
+        "Install the updated Arca app to open files. You can still use Share from the file menu.",
+      );
+    await native.openFile(await currentFileURI());
+  }
+  async function shareCurrentFile() {
+    const uri = await currentFileURI();
     if (!(await Sharing.isAvailableAsync()))
       throw new Error("Sharing is unavailable on this device.");
     await Sharing.shareAsync(uri);
@@ -1084,11 +1099,11 @@ export default function App() {
                         {historyDetail && (
                           <View style={s.rowAction}>
                             <Button
-                              label="Share"
-                              icon="export"
+                              label="Open"
+                              icon="external"
                               iconOnly={!wide}
                               disabled={locked || !sheet.localEntry}
-                              onPress={() => run(shareCurrentFile)}
+                              onPress={() => run(openCurrentFile)}
                             />
                             <View>
                               <Pressable
@@ -2502,6 +2517,15 @@ export default function App() {
                 onPress={() => setFileActionsOpen(false)}
               />
               <View style={[s.fileActionMenu, fileMenuStyle]}>
+                <ActionRow
+                  label="Share"
+                  icon="export"
+                  disabled={locked || !sheet.localEntry}
+                  onPress={() => {
+                    setFileActionsOpen(false);
+                    run(shareCurrentFile);
+                  }}
+                />
                 <ActionRow
                   label="Rename…"
                   icon="edit"

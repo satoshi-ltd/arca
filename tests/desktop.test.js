@@ -202,6 +202,10 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
     );
     if (process.platform === "darwin") {
       assert.ok(finder);
+      assert.ok(finder.closest(".file-actions-menu"));
+      assert.equal(w.document.querySelector('[data-action="history-open-file"]').closest(".file-actions-menu"), null);
+      assert.ok(w.document.querySelector('.file-actions-menu [data-action="delete-file"]').classList.contains("menu-item-separated"));
+      finder.closest("details").open = true;
       finder.click();
       await until(
         () =>
@@ -1152,13 +1156,18 @@ test("share web routes survive reload and history navigation; hub edits use real
     renameWindow.document.body.getAttribute("aria-busy") === "false";
   const fileMenu = rq(".file-header-actions .file-actions-menu");
   assert.ok(fileMenu);
-  assert.equal(fileMenu.querySelector('[data-action="history-view-folder"]'), null);
+  assert.equal(
+    fileMenu.querySelector('[data-action="history-view-folder"]'),
+    null,
+  );
   assert.ok(rq('.detail-side [data-action="history-view-folder"]'));
   const fileTrigger = fileMenu.querySelector("summary");
   assert.equal(fileMenu.open, false);
   fileTrigger.click();
   assert.equal(fileMenu.open, true);
-  fileTrigger.dispatchEvent(new renameWindow.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  fileTrigger.dispatchEvent(
+    new renameWindow.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+  );
   assert.equal(fileMenu.open, false);
   assert.equal(renameWindow.document.activeElement, fileTrigger);
   fileTrigger.click();
@@ -3341,4 +3350,78 @@ test("folder reentry keeps known files and revision while the brand shows refres
     w.document.querySelector(".folder-explorer").textContent,
     /known.txt/,
   );
+});
+
+test("Review opens the folder error details without navigating away", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-review-error-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Documents");
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  const pending = new Set();
+  w.setInterval = () => 0;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  const problem =
+    'Unsupported file path: "café/report?.txt". Remove reserved characters.';
+  const status = () => ({
+    ...daemon.engine.status(),
+    volumes: daemon.engine
+      .status()
+      .volumes.map((v) => ({ ...v, sync: { state: "error", error: problem } })),
+  });
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false, status: status() };
+        if (args.route === "/v1/status") return status();
+        const work = fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          headers: {
+            Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+          },
+        }).then((r) => r.json());
+        pending.add(work);
+        try {
+          return await work;
+        } finally {
+          pending.delete(work);
+        }
+      },
+    },
+  };
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.document.querySelector('[data-action="folder-problem"]').click();
+  await until(
+    () =>
+      w.document.querySelector("#dialog").open &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  assert.match(
+    w.document.querySelector("#dialog-title").textContent,
+    /Documents/,
+  );
+  assert.ok(
+    w.document.querySelector("#dialog-content").textContent.includes(problem),
+  );
+  assert.equal(
+    w.document.querySelector("#submit-dialog").textContent,
+    "Retry now",
+  );
+  assert.ok(w.document.querySelector(".folder-card"));
+  w.document.querySelector("#cancel-dialog").click();
+  assert.equal(w.document.querySelector("#dialog").open, false);
 });

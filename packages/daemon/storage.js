@@ -18,13 +18,8 @@ export function fail(message, status = 400) {
   throw Object.assign(new Error(message), { status });
 }
 export function validPath(value) {
-  if (
-    typeof value !== "string" ||
-    !value ||
-    value.length > 1024 ||
-    value !== value.normalize("NFC")
-  )
-    fail("Invalid file path");
+  if (typeof value !== "string" || !value || value.length > 1024)
+    fail(`Invalid file path: ${JSON.stringify(value)}`);
   for (const part of value.split("/")) {
     if (
       !part ||
@@ -35,9 +30,11 @@ export function validPath(value) {
       /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(part) ||
       part.startsWith(".arca-")
     )
-      fail("Unsupported file path");
+      fail(
+        `Unsupported file path: ${JSON.stringify(value)}. Remove reserved characters or trailing spaces/dots.`,
+      );
   }
-  return value;
+  return value.normalize("NFC");
 }
 export function hashFile(file) {
   const hash = crypto.createHash("sha256");
@@ -364,8 +361,11 @@ export class Store {
     let current = v.path;
     for (const part of name.split("/")) {
       try {
-        if (!fs.readdirSync(current).includes(part)) return false;
-        current = path.join(current, part);
+        const actual = fs
+          .readdirSync(current)
+          .find((entry) => entry.normalize("NFC") === part.normalize("NFC"));
+        if (!actual) return false;
+        current = path.join(current, actual);
         if (fs.lstatSync(current).isSymbolicLink()) return false;
       } catch (e) {
         if (["ENOENT", "ENOTDIR"].includes(e.code)) return false;
@@ -396,19 +396,33 @@ export class Store {
       : row;
   }
   filePath(v, relative) {
-    validPath(relative);
+    relative = validPath(relative);
     this.assertVolume(v);
     let current = v.path;
-    for (const part of relative.split("/")) {
-      current = path.join(current, part);
+    const parts = relative.split("/");
+    for (const [index, part] of parts.entries()) {
+      let next = path.join(current, part);
       try {
-        const stat = fs.lstatSync(current);
-        if (stat.isSymbolicLink()) fail("Symlinks are not supported", 409);
-        if (current !== path.join(v.path, relative) && !stat.isDirectory())
-          fail("Parent path is not a directory", 409);
+        if (/[^\x00-\x7f]/.test(part)) {
+          const aliases = fs
+            .readdirSync(current)
+            .filter((entry) => entry.normalize("NFC") === part);
+          if (aliases.length > 1)
+            fail(
+              `Multiple Unicode spellings exist for "${relative}". Rename one before retrying.`,
+              409,
+            );
+          if (aliases.length) next = path.join(current, aliases[0]);
+        }
+        const stat = fs.lstatSync(next);
+        if (stat.isSymbolicLink())
+          fail(`Symlinks are not supported: ${relative}`, 409);
+        if (index < parts.length - 1 && !stat.isDirectory())
+          fail(`Parent path is not a directory: ${relative}`, 409);
       } catch (e) {
         if (e.code !== "ENOENT") throw e;
       }
+      current = next;
     }
     return current;
   }
@@ -516,6 +530,7 @@ export class Store {
     const result = new Map();
     const excluded = this.ignoreRules(v);
     const names = new Map();
+    const unicodeNames = new Map();
     // Include indexed names outside a partial scan to detect portable collisions.
     if (scopes !== null)
       for (const row of this.rows(v.id).filter((r) => !r.deleted)) {
@@ -539,14 +554,15 @@ export class Store {
           );
         return;
       }
-      try {
-        validPath(name);
-      } catch {
+      const original = name;
+      name = validPath(name);
+      const previous = unicodeNames.get(name);
+      if (previous && previous !== original)
         fail(
-          `Folder scan stopped: "${name}" is not a portable NFC path. Rename it using a composed Unicode name without reserved characters, then retry. Files have not been changed.`,
+          `Folder scan stopped: "${previous}" and "${original}" are equivalent Unicode names. Rename one before retrying. Files have not been changed.`,
           409,
         );
-      }
+      unicodeNames.set(name, original);
       const folded = name.toLowerCase();
       if (
         names.has(folded) &&
@@ -568,15 +584,18 @@ export class Store {
       else fail(`Unsupported file: ${name}`, 409);
     };
     const walk = (relative) => {
-      for (const entry of fs.readdirSync(path.join(v.path, relative), {
-        withFileTypes: true,
-      }))
+      for (const entry of fs.readdirSync(
+        relative ? this.filePath(v, relative) : v.path,
+        {
+          withFileTypes: true,
+        },
+      ))
         visit(relative ? `${relative}/${entry.name}` : entry.name, entry);
     };
     if (scopes === null) walk("");
     else
-      for (const name of scopes) {
-        validPath(name);
+      for (const requested of scopes) {
+        const name = validPath(requested);
         const parts = name.split("/");
         if (
           parts.some((_, i) =>
@@ -608,7 +627,8 @@ export class Store {
     const query = this.db.prepare(
       "SELECT * FROM files WHERE volume=? AND (path=? COLLATE NOCASE OR path LIKE ? ESCAPE '!')",
     );
-    for (const scope of scopes) {
+    for (const requested of scopes) {
+      const scope = validPath(requested);
       const prefix = scope.replace(/[!%_]/g, (c) => "!" + c) + "/%";
       for (const row of query.all(id, scope, prefix)) result.set(row.path, row);
     }
@@ -617,7 +637,7 @@ export class Store {
   current(id, name) {
     return this.db
       .prepare("SELECT * FROM files WHERE volume=? AND path=?")
-      .get(id, name);
+      .get(id, name.normalize("NFC"));
   }
   setFile(row) {
     this.db
@@ -674,7 +694,7 @@ export class Store {
     let absent = false;
     if (row.deleted) {
       try {
-        absent = !fs.lstatSync(path.join(v.path, row.path), {
+        absent = !fs.lstatSync(this.filePath(v, row.path), {
           throwIfNoEntry: false,
         });
       } catch (error) {
@@ -828,7 +848,7 @@ export class Store {
     resolution = null,
     renameFrom = null,
   ) {
-    validPath(name);
+    name = validPath(name);
     write = write && Boolean(this.volume(volume).selected);
     if (write) {
       const file = this.filePath(this.volume(volume), name);

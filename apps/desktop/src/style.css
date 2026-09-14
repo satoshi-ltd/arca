@@ -1645,7 +1645,7 @@ html:has(.tray-body) {
   border: 1px solid var(--div);
   border-radius: var(--r-control);
   background: var(--surface);
-  max-height: 220px;
+  max-height: var(--tray-folders-max-height);
   overflow: auto;
 }
 .tray-folders:empty {
@@ -2751,6 +2751,10 @@ progress::-webkit-progress-value {
 }
 .file-actions-menu .menu-items {
   min-width: 180px;
+}
+.file-actions-menu .menu-item-separated {
+  border-top: 1px solid var(--div);
+  border-radius: 0;
 }
 
 .settings-card.replica-danger {

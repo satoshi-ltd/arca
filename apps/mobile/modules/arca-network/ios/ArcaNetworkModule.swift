@@ -4,8 +4,28 @@ import UIKit
 import Darwin
 
 public class ArcaNetworkModule: Module {
+  private var documentController: UIDocumentInteractionController?
+
   public func definition() -> ModuleDefinition {
     Name("ArcaNetwork")
+    AsyncFunction("openFile") { (uri: String) async throws in
+      try await MainActor.run {
+        guard let url = URL(string: uri), url.isFileURL,
+          let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+          url.resolvingSymlinksInPath().path.hasPrefix(root.path + "/"),
+          FileManager.default.fileExists(atPath: url.path),
+          let view = self.appContext?.utilities?.currentViewController()?.view else {
+          throw NSError(domain: "Arca", code: 1, userInfo: [NSLocalizedDescriptionKey: "This file is not available locally yet."])
+        }
+        self.documentController?.dismissMenu(animated: false)
+        let controller = UIDocumentInteractionController(url: url)
+        self.documentController = controller
+        guard controller.presentOpenInMenu(from: CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1), in: view, animated: true) else {
+          self.documentController = nil
+          throw NSError(domain: "Arca", code: 2, userInfo: [NSLocalizedDescriptionKey: "No installed app can open this file. Try Share from the file menu."])
+        }
+      }
+    }
     AsyncFunction("exportGalleryAsset") { (id: String, destination: String) async throws -> [[String: String]] in
       return try await GalleryExport.export(id: id, destination: destination)
     }
