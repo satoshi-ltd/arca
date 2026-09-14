@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { browseEntries } from "../apps/mobile/src/browse.js";
-import { sidebarLayout } from "../apps/mobile/src/layout.js";
+import { sidebarLayout, fileMenuPosition } from "../apps/mobile/src/layout.js";
 import { icons, iconNames } from "../apps/mobile/src/icons.js";
 
 test("fold/tablet layout uses available space, preserves hysteresis and excludes short landscape phones", () => {
@@ -294,4 +294,15 @@ test("mobile folder refresh retains its cached files and ignores an older folder
   const repeat = context.readFolder("B");
   assert.equal(entries[0].path, "B.jpg");
   await repeat;
+});
+
+test("file dropdown stays inside narrow screens and aligns below its trigger", () => {
+  for (const width of [320, 390, 768]) {
+    for (const x of [0, width - 44]) {
+      const menu = fileMenuPosition(x, 80, 44, 44, width);
+      assert.ok(menu.left >= 16);
+      assert.ok(menu.left + menu.width <= width - 16);
+      assert.equal(menu.top, 130);
+    }
+  }
 });

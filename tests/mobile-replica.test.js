@@ -70,6 +70,7 @@ async function fixture(t) {
     parent: path.dirname,
     mkdir: async (p) => fs.mkdirSync(p, { recursive: true }),
     exists: async (p) => fs.existsSync(p),
+    listNames: async (p) => fs.readdirSync(p),
     stat: async (p) =>
       fs.existsSync(p)
         ? {
@@ -1742,4 +1743,67 @@ test("mobile publishes a pending name before starting folder transfers", async (
   };
   await sync(f);
   assert.equal(checked, true);
+});
+
+test("mobile renames synced files offline, rejects collisions and propagates ordinary and case-only names", async (t) => {
+  const f = await fixture(t),
+    v = f.volume;
+  const root = f.daemon.engine.store.volume(v.id).path;
+  fs.mkdirSync(path.join(root, "nested"));
+  fs.writeFileSync(path.join(root, "nested/original.txt"), "retained");
+  fs.writeFileSync(path.join(root, "nested/taken.txt"), "keep");
+  fs.writeFileSync(path.join(root, ".arcaignore"), "*.private\n");
+  await f.daemon.engine.exclusive(() => f.daemon.engine.cycle());
+  await f.replica.select(v);
+  await sync(f);
+  const row = await f.store.current(
+    f.replica.scope,
+    v.id,
+    "nested/original.txt",
+  );
+  for (const name of [
+    "../escape",
+    "a/b",
+    "CON.txt",
+    "taken.txt",
+    "TAKEN.TXT",
+    "secret.private",
+  ])
+    await assert.rejects(f.replica.renameFile(v.id, row.path, name, row.rev));
+  await assert.rejects(
+    f.replica.renameFile(v.id, row.path, "new.txt", row.rev - 1),
+    /changed/,
+  );
+  const file = f.files.work(f.replica.scope, v.id, row.path);
+  fs.writeFileSync(file, "unsynced");
+  await assert.rejects(
+    f.replica.renameFile(v.id, row.path, "new.txt", row.rev),
+    /changed/,
+  );
+  fs.writeFileSync(file, "retained");
+  f.offline();
+  await f.replica.renameFile(v.id, row.path, "renamed.txt", row.rev);
+  assert.equal(fs.existsSync(file), false);
+  f.online();
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(path.join(root, "nested/renamed.txt"), "utf8"),
+    "retained",
+  );
+  const next = await f.store.current(
+    f.replica.scope,
+    v.id,
+    "nested/renamed.txt",
+  );
+  await f.replica.renameFile(v.id, next.path, "RENAMED.txt", next.rev);
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(path.join(root, "nested/RENAMED.txt"), "utf8"),
+    "retained",
+  );
+  assert.ok(
+    f.daemon.engine.store
+      .history(v.id, row.path)
+      .some((r) => r.hash === row.hash),
+  );
 });

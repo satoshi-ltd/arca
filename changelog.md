@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.5 — 2026-09-14
+
+- Add file renaming across web, desktop and mobile, with portable-name validation, collision protection, stale-content checks and case-only rename support. Retained history remains under the previous name.
+- Journal hub renames and recover the destination before removing the source; support catalog-only hubs and offline mobile renaming of synchronized files.
+- Group Rename and Delete in a header ellipsis menu across clients. Use an anchored dropdown on mobile, keep View folder visible in File location, and support outside-touch and Back dismissal.
+- Refresh the single-page website with concise product copy, five setup points and ten practical FAQs. Fold storage ownership into the benefits section.
+- Replace the setup diagram with illustrated laptop, phone, tablet and server devices, subtle transfer animation and reduced-motion support.
+- Add API, sync, recovery, web-menu and mobile-layout regressions.
+- Align release identifiers at 0.4.5 and mobile build 16. No deployment, native installation or publication workflow changes.
+
 ## 0.4.4 — 2026-09-14
 
 - Preview the first three seconds of a video silently on mouse hover in desktop/web Gallery. Stop on pointer exit, scrolling or navigation, and respect reduced motion.

@@ -1141,6 +1141,60 @@ test("share web routes survive reload and history navigation; hub edits use real
         .querySelector("#folder-copies")
         .textContent.includes("Checking"),
   );
+  fs.writeFileSync(path.join(v.path, "rename-me.txt"), "content");
+  fs.writeFileSync(path.join(v.path, "occupied.txt"), "do not replace");
+  await daemon.engine.exclusive(() => daemon.engine.cycle());
+  const renameWindow = await open(
+    `#/history?volume=${v.id}&path=rename-me.txt`,
+  );
+  const rq = (selector) => renameWindow.document.querySelector(selector);
+  const renameIdle = () =>
+    renameWindow.document.body.getAttribute("aria-busy") === "false";
+  const fileMenu = rq(".file-header-actions .file-actions-menu");
+  assert.ok(fileMenu);
+  assert.equal(fileMenu.querySelector('[data-action="history-view-folder"]'), null);
+  assert.ok(rq('.detail-side [data-action="history-view-folder"]'));
+  const fileTrigger = fileMenu.querySelector("summary");
+  assert.equal(fileMenu.open, false);
+  fileTrigger.click();
+  assert.equal(fileMenu.open, true);
+  fileTrigger.dispatchEvent(new renameWindow.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(fileMenu.open, false);
+  assert.equal(renameWindow.document.activeElement, fileTrigger);
+  fileTrigger.click();
+  rq(".detail-side .panel strong").click();
+  assert.equal(fileMenu.open, false);
+  fileTrigger.click();
+  rq('[data-action="rename-file"]').click();
+  assert.equal(fileMenu.open, false);
+
+  await until(() => rq('#dialog [name="name"]') && renameIdle());
+  assert.equal(rq('#dialog [name="name"]').value, "rename-me.txt");
+  rq('#dialog [name="name"]').value = "occupied.txt";
+  rq("#dialog-form").dispatchEvent(
+    new renameWindow.Event("submit", { cancelable: true }),
+  );
+  await until(() => !rq("#dialog-error").hidden && renameIdle());
+  assert.ok(rq("#dialog").open);
+  assert.equal(
+    fs.readFileSync(path.join(v.path, "occupied.txt"), "utf8"),
+    "do not replace",
+  );
+  rq('#dialog [name="name"]').value = "renamed-file.txt";
+  rq("#dialog-form").dispatchEvent(
+    new renameWindow.Event("submit", { cancelable: true }),
+  );
+  await until(() => !rq("#dialog").open && renameIdle());
+  assert.equal(
+    fs.readFileSync(path.join(v.path, "renamed-file.txt"), "utf8"),
+    "content",
+  );
+  assert.equal(fs.existsSync(path.join(v.path, "rename-me.txt")), false);
+  await until(
+    () =>
+      rq("#folder-copies") &&
+      !rq("#folder-copies").textContent.includes("Checking"),
+  );
 });
 
 test("unlink confirms and completes while a native background status read is pending", async (t) => {

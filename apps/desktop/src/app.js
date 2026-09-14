@@ -1200,7 +1200,11 @@ function fileHistoryHeader() {
           "folder-search",
         )
       : "";
-  return `<div class="detail-head file-detail-head">${button(fileOriginFolder ? "Folder" : "History", fileOriginFolder ? "file-back-folder" : "history-back", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("file")}</div><div><h1>${escape(filename)}</h1><p class="path">${escape(volume?.name || "Shared folder")}</p></div></div><div class="file-header-actions">${conflictAction}${finder}${access}</div></div></div><div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : "No retained revisions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
+  const canModify = current && !current.deleted && !current.directory &&
+    (status.role === "hub" || volume?.selected);
+  const actions = canModify ? `${historyPath !== ".arcaignore" ? button("Rename…", "rename-file", "", "secondary", "pencil") : ""}${button("Delete file…", "delete-file", "", "secondary danger", "trash-2")}` : "";
+  const fileMenu = actions ? `<details class="details-menu file-actions-menu"><summary class="icon-button" aria-label="File actions">${icon("ellipsis")}</summary><div class="menu-items">${actions}</div></details>` : "";
+  return `<div class="detail-head file-detail-head">${button(fileOriginFolder ? "Folder" : "History", fileOriginFolder ? "file-back-folder" : "history-back", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon("file")}</div><div><h1>${escape(filename)}</h1><p class="path">${escape(volume?.name || "Shared folder")}</p></div></div><div class="file-header-actions">${conflictAction}${finder}${access}${fileMenu}</div></div></div><div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : "No retained revisions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
 }
 
 function fileHistorySide() {
@@ -1214,16 +1218,7 @@ function fileHistorySide() {
         "folder",
       )
     : "";
-  const current = historyVersions[0];
-  const canDelete =
-    current &&
-    !current.deleted &&
-    !current.directory &&
-    (status.role === "hub" || volume?.selected);
-  const deletion = canDelete
-    ? button("Delete file…", "delete-file", "", "secondary danger", "trash-2")
-    : "";
-  return `<aside class="detail-side">${section("File location", `<div class="panel"><strong>${escape(volume?.name || "Shared folder")}</strong><p class="path">${escape(historyPath)}</p><div class="file-location-actions">${folderLink}${deletion}</div></div>`)}</aside>`;
+  return `<aside class="detail-side">${section("File location", `<div class="panel"><strong>${escape(volume?.name || "Shared folder")}</strong><p class="path">${escape(historyPath)}</p>${folderLink}</div>`)}</aside>`;
 }
 
 // Content-addressed session cache survives leaving a gallery; never persisted with credentials.
@@ -2859,7 +2854,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
           active: preference === t,
         })),
       ),
-    )}${setting("Arca v0.4.4 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
+    )}${setting("Arca v0.4.5 alpha", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}</div>`,
   );
   const destroyRole = status.role === "hub" ? "hub" : "replica";
   html += section(
@@ -3623,6 +3618,30 @@ async function handle(name, id, control) {
     });
     return;
   }
+  if (name === "rename-file") {
+    const target = {
+      volume: historyVolume,
+      path: historyPath,
+      rev: historyVersions[0]?.rev,
+    };
+    modal(
+      modalHeader(
+        "Rename file",
+        "The new name syncs to other copies. Earlier history stays under the previous name.",
+        "pencil",
+      ) + textField("Filename", "name", target.path.split("/").at(-1)),
+      async (form) => {
+        await api("/v1/rename-file", { ...target, name: form.get("name") });
+        view = "folders";
+        detailId = target.volume;
+        historyPath = null;
+        fileOriginFolder = null;
+        notice("File renamed.");
+      },
+      "Rename",
+    );
+    return;
+  }
   if (name === "delete-file") {
     const target = {
       volume: historyVolume,
@@ -3732,7 +3751,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.4.4",
+          version: "0.4.5",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -4260,6 +4279,10 @@ async function handle(name, id, control) {
   }
 }
 document.addEventListener("click", (e) => {
+  document.querySelectorAll(".file-actions-menu[open]").forEach((menu) => {
+    if (!menu.contains(e.target) || e.target.closest("[data-action]"))
+      menu.open = false;
+  });
   const dropdownRoot = e.target.closest(".dropdown");
   document.querySelectorAll(".dropdown").forEach((root) => {
     if (root !== dropdownRoot) closeDropdown(root);
@@ -4999,4 +5022,19 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     document.querySelector('[data-action="folder-search-apply"]')?.click();
   }
+});
+
+// File actions use a native disclosure, with keyboard dismissal and focus return.
+document.addEventListener("keydown", (event) => {
+  const menu = event.target.closest(".file-actions-menu[open]");
+  if (menu && event.key === "Escape") {
+    event.preventDefault();
+    menu.open = false;
+    menu.querySelector("summary").focus();
+  }
+});
+document.addEventListener("focusin", (event) => {
+  document.querySelectorAll(".file-actions-menu[open]").forEach((menu) => {
+    if (!menu.contains(event.target)) menu.open = false;
+  });
 });

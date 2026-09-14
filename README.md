@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.4.4 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.4.5 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -11,6 +11,7 @@ A personal drive for your own machines: complete files on disk, bidirectional sy
 - **Web** administers the server it connects to. **Tauri** manages its local daemon, which does not serve a web panel. **Mobile** is always a replica. Pairing never grants remote hub administration.
 - **Pause** keeps copies linked. Desktop **Unlink** keeps files on disk. Mobile **Stop syncing** removes the app-owned copy after confirmation including unsynced changes; it works offline even if the hub share is gone. Hub **Delete share** removes catalog/history while retaining physical files. These operations are distinct.
 - **Disconnect** preserves local files and selections for fresh-code pairing. **Destroy replica**, in Settings → Danger zone, requires confirmation and permanently deletes that replica's local folders (including unsynced files), configured full backup and synchronization state, attempts to remove its hub registration and returns to first-run setup. Destruction works offline; an unreachable hub may retain a machine entry that you can remove separately. Hub files/history and other machines remain.
+- **Rename…** in the file-detail **⋯** menu on web, desktop and mobile changes a filename within its folder and syncs the change. Occupied names and unsynced local edits are rejected; retained history remains under the previous name. Mobile can rename a synced local file offline. Gallery-source originals stay managed in Photos.
 - Conflicts preserve both files and their histories. Choosing a version records the resolution; editing the conflict copy again reopens it. Replicas resolve only selected folders. Restore creates a new revision.
 - Mobile (phone and Fold) is exclusively a replica: it cannot act as a hub or keep a full hub backup. Optional desktop/server **full backup** is independent of working copies and requires explicit enablement. Quit leaves the desktop daemon running.
 

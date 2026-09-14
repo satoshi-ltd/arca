@@ -1,3 +1,4 @@
+import { renamedPath } from "../core/file-rename.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   resetTargets,
@@ -1530,6 +1531,66 @@ export class Engine {
     await this.reportMachine(true);
     this.lastReport = null;
     return local;
+  }
+  async renameFile(volume, name, newName, rev) {
+    validPath(name);
+    let destination;
+    try {
+      destination = renamedPath(name, newName);
+    } catch (error) {
+      fail(error.message);
+    }
+    validPath(destination);
+    const s = this.store,
+      v = s.volume(volume);
+    if (this.config.role === "backup") fail("Backup is read-only", 403);
+    if (this.config.role !== "hub" && !v.selected)
+      fail("Select this folder first", 403);
+    if (this.config.role === "hub")
+      await this.scanHub(volume, { paths: [name, destination, IGNORE_FILE] });
+    const excluded = s.visibleRules(volume);
+    if (excluded(name, false) || excluded(destination, false))
+      fail("Excluded files cannot be renamed here", 409);
+    const current = s.current(volume, name);
+    if (!current || current.deleted) fail("File not found", 404);
+    if (current.directory) fail("Only files can be renamed here", 409);
+    if (current.rev !== Number(rev))
+      fail("File changed. Reload before renaming.", 409);
+    if (destination === name) return { path: name };
+    const collision = [
+      s.current(volume, destination),
+      s.caseAlias(volume, destination),
+    ].find((row) => row && !row.deleted && row.path !== name);
+    if (collision) fail("A file or folder with that name already exists", 409);
+    if (v.selected) {
+      const file = s.filePath(v, name);
+      const target = s.filePath(v, destination);
+      const siblings = fs.readdirSync(path.dirname(file));
+      if (
+        siblings.some(
+          (entry) =>
+            entry.toLowerCase() === newName.toLowerCase() &&
+            entry !== path.basename(name),
+        )
+      )
+        fail("A file or folder with that name already exists", 409);
+      if (!fs.lstatSync(file).isFile() || hashFile(file) !== current.hash)
+        fail("Local file changed. Sync before renaming.", 409);
+      if (this.config.role !== "hub") {
+        if (name.toLowerCase() === destination.toLowerCase())
+          fs.renameSync(file, target);
+        else {
+          // Creating a hard link fails if another file appears at the destination.
+          fs.linkSync(file, target);
+          fs.unlinkSync(file);
+        }
+        syncDirectory(path.dirname(file));
+        this.work.mark(volume, name);
+        this.work.mark(volume, destination);
+        return { path: destination };
+      }
+    }
+    return s.renameFile(current, destination, this.config.id);
   }
   async deleteFile(volume, name, rev) {
     validPath(name);

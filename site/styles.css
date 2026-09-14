@@ -761,23 +761,21 @@ footer .brand {
 }
 .ownership {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  gap: 80px;
-  padding-block: 0 90px;
-}
-.ownership h2 {
-  font-size: clamp(32px, 3.4vw, 46px);
-}
-.ownership-copy p {
-  margin: 0 0 18px;
-  color: var(--muted);
-  font-size: 16px;
-}
-.ownership-copy .ownership-tradeoff {
-  font-size: 14px;
+  grid-template-columns: 1fr 1.5fr;
+  align-items: center;
+  gap: 40px;
+  margin-top: 55px;
+  padding-top: 28px;
   border-top: 1px solid var(--line);
-  padding-top: 18px;
-  margin-bottom: 0;
+}
+.ownership h3 {
+  margin: 0;
+  color: var(--green);
+}
+.ownership p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
 }
 #setup {
   scroll-margin-top: 24px;
@@ -785,8 +783,8 @@ footer .brand {
 @media (max-width: 720px) {
   .ownership {
     grid-template-columns: 1fr;
-    gap: 8px;
-    padding-bottom: 55px;
+    gap: 12px;
+    margin-top: 35px;
   }
   .hero .eyebrow {
     max-width: 290px;
@@ -941,17 +939,17 @@ footer .brand {
   .network-device {
     animation: replica-float 7s ease-in-out infinite;
   }
-  .network-device:nth-of-type(2) {
+  .network-phone {
     animation-delay: -2.5s;
   }
-  .network-device:nth-of-type(3) {
+  .network-tablet {
     animation-delay: -4.5s;
   }
   .network-hub {
     animation: replica-float 9s ease-in-out infinite reverse;
   }
   .network-orbit {
-    transform-origin: 200px 215px;
+    transform-origin: 260px 226px;
     animation: ring-breathe 9s ease-in-out infinite;
   }
   .network-orbit-outer {
@@ -1008,8 +1006,8 @@ footer .brand {
 
 .network {
   width: 100%;
-  max-width: 440px;
-  margin: 28px 0 0;
+  max-width: 520px;
+  margin: 24px 0 0;
 }
 .network-diagram {
   display: block;
@@ -1022,33 +1020,73 @@ footer .brand {
   stroke: #d1dcc6;
   stroke-width: 1;
 }
-.network-device > rect {
-  fill: var(--paper);
-  stroke: #c9d5bf;
-  stroke-width: 1;
-}
-.network-device-icon {
+.network-links {
   fill: none;
-  stroke: var(--green);
-  stroke-width: 1.6;
+  stroke: #8ca977;
+  stroke-width: 2;
   stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke-dasharray: 2 12;
+  opacity: 0.6;
 }
-.network-device text {
+.network-device,
+.network-hub {
+  filter: drop-shadow(0 10px 10px #253d2414);
+}
+.device-shell {
+  fill: url(#device-shell);
+  stroke: #becbb5;
+  stroke-width: 1.3;
+}
+.device-screen {
+  fill: #fafcf7;
+}
+.screen-rule {
+  fill: none;
+  stroke: #b5c5aa;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.device-light {
+  fill: #7c9e56;
+}
+.phone-speaker {
+  stroke: #294e3e;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.photo-mini {
+  fill: #b4c9a2;
+}
+.photo-mini.second {
+  fill: #e4d8af;
+}
+.tablet-sidebar,
+.server-slot {
+  fill: #e7edde;
+}
+.device-label {
   text-anchor: middle;
   fill: var(--ink);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 500;
 }
-.network-hub > rect {
-  fill: var(--green);
-}
-.network-hub text {
+.device-sublabel {
   text-anchor: middle;
+  fill: var(--muted);
+  font-size: 10px;
+}
+.hub-depth {
+  fill: #163f31;
+}
+.hub-face {
+  fill: url(#hub-shell);
+}
+.hub-light {
+  fill: var(--lime);
 }
 .network-hub-title {
   fill: #fff;
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 600;
 }
 .network-hub-caption {
@@ -1057,7 +1095,25 @@ footer .brand {
 }
 .network figcaption {
   text-align: center;
-  font-size: 12px;
+  font:
+    11px/1.6 Fragment,
+    monospace;
   color: var(--muted);
-  margin-top: 4px;
+  margin-top: 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .network-links {
+    animation: transfer-travel 5s linear infinite;
+  }
+  .network-links path:nth-child(even) {
+    animation: transfer-travel 5s linear infinite reverse;
+  }
+  .network-server {
+    animation-delay: -5s;
+  }
+}
+@keyframes transfer-travel {
+  to {
+    stroke-dashoffset: -56;
+  }
 }

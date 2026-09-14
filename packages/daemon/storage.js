@@ -662,6 +662,14 @@ export class Store {
         .run(row.volume, row.path);
       return;
     }
+    // A renamed file must exist at its destination before removing its source,
+    // including when recovery otherwise processes deletions first.
+    if (row.deleted && row.renameDestination) {
+      const pending = this.db
+        .prepare("SELECT row,expected FROM pending WHERE volume=? AND path=?")
+        .get(row.volume, row.renameDestination);
+      if (pending) this.materialize(JSON.parse(pending.row), pending.expected);
+    }
     // A case-only rename keeps the physical entry until its new spelling arrives.
     let absent = false;
     if (row.deleted) {
@@ -953,6 +961,88 @@ export class Store {
     }
     if (write) this.materialize(row, expected);
     return row;
+  }
+  renameFile(current, destination, author) {
+    const volume = current.volume;
+    const selected = this.volume(volume).selected;
+    // Reuse the existing atomic case-transition contract and recovery path.
+    if (current.path.toLowerCase() === destination.toLowerCase())
+      return this.commit(
+        volume,
+        destination,
+        current,
+        author,
+        true,
+        current.hash,
+        null,
+        current.path,
+      );
+    const created = new Date().toISOString();
+    const insert = this.db.prepare(
+      "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,?,?,?,0)",
+    );
+    let renamed, removed;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const added = insert.run(
+        volume,
+        destination,
+        current.hash,
+        current.size,
+        0,
+        author,
+        created,
+      );
+      renamed = {
+        ...current,
+        path: destination,
+        rev: Number(added.lastInsertRowid),
+        author,
+        created,
+      };
+      const deleted = insert.run(
+        volume,
+        current.path,
+        null,
+        0,
+        1,
+        author,
+        created,
+      );
+      removed = {
+        ...current,
+        hash: null,
+        size: 0,
+        deleted: 1,
+        rev: Number(deleted.lastInsertRowid),
+        author,
+        created,
+      };
+      if (selected) {
+        // Hide both revisions from readers until physical work is complete.
+        this.queue({ ...renamed, pendingFrom: renamed.rev }, null);
+        this.queue(
+          {
+            ...removed,
+            pendingFrom: renamed.rev,
+            renameDestination: destination,
+          },
+          current.hash,
+        );
+      } else {
+        this.setFile(renamed);
+        this.setFile(removed);
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    if (selected) {
+      this.materialize(renamed, null);
+      this.materialize(removed, current.hash);
+    }
+    return renamed;
   }
   scanHub() {
     this.recover();

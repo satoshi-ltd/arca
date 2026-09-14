@@ -81,7 +81,7 @@ import { HubConnection } from "./HubConnection";
 import { FileHistory } from "./FileHistory";
 import { IncomingShare } from "./IncomingShare";
 import { FolderRecent } from "./FolderRecent";
-import { sidebarLayout } from "./layout";
+import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes } from "./format";
 import { browseEntries } from "./browse";
 // Keep the native launch surface until fonts and local startup are ready.
@@ -132,6 +132,8 @@ export default function App() {
   const { width, height, fontScale } = useWindowDimensions();
   const keyboardVisible = useKeyboardVisible();
   const layout = useRef(false);
+  const fileMenuTrigger = useRef(null);
+  const pageRoot = useRef(null);
   layout.current = sidebarLayout(
     layout.current,
     width,
@@ -170,6 +172,9 @@ export default function App() {
     [searchOpen, setSearchOpen] = useState(false),
     [fileView, setFileView] = useState("files"),
     [sheet, setSheet] = useState(null),
+    [renameName, setRenameName] = useState(""),
+    [fileActionsOpen, setFileActionsOpen] = useState(false),
+    [fileMenuStyle, setFileMenuStyle] = useState(null),
     [deviceName, setDeviceName] = useState(null),
     [history, setHistory] = useState({ versions: [], next: null }),
     [historyLoading, setHistoryLoading] = useState(false),
@@ -403,6 +408,7 @@ export default function App() {
     : prefs.onboarding
       ? "pair"
       : "welcome";
+  useEffect(() => setFileActionsOpen(false), [sheet?.kind, sheet?.path, width, height]);
   const historyDetail = sheet?.kind === "history";
   const detail = historyDetail;
   const screen = onboarding ? "Onboarding" : detail ? "File detail" : view;
@@ -787,10 +793,18 @@ export default function App() {
   }
   useEffect(() => {
     const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (fileActionsOpen) {
+        setFileActionsOpen(false);
+        return true;
+      }
       if (sheet) {
         historyRequest.current++;
         if (!busy)
-          setSheet(sheet.kind === "conflict" ? sheet.returnTo || null : null);
+          setSheet(
+            ["conflict", "rename-file"].includes(sheet.kind)
+              ? sheet.returnTo || null
+              : null,
+          );
         return true;
       }
       if (folder && view === "Folders") {
@@ -800,7 +814,7 @@ export default function App() {
       return false;
     });
     return () => listener.remove();
-  }, [sheet, folder, view, busy]);
+  }, [sheet, folder, view, busy, fileActionsOpen]);
   const selectTab = (tab) => {
     historyRequest.current++;
     setView(tab);
@@ -894,6 +908,40 @@ export default function App() {
         </Design.Provider>
       </SafeAreaProvider>
     );
+  const renameCurrentFile =
+    sheet?.localEntry && sheet.path !== ".arcaignore"
+      ? () => {
+          setRenameName(sheet.path.split("/").at(-1));
+          setError("");
+          setSheet({
+            kind: "rename-file",
+            path: sheet.path,
+            returnTo: sheet,
+          });
+        }
+      : null;
+  const deleteCurrentFile = sheet?.localEntry
+    ? () =>
+        confirm(
+          "Delete this file?",
+          "Deletes from all synced copies. Retained history can be restored." +
+            (!connected || status.paused
+              ? " Deletion will sync when connected and resumed."
+              : ""),
+          () =>
+            run(
+              async () => {
+                const target = sheet;
+                await engine.current.removeFile(target.volume, target.path);
+                setSheet(null);
+                if (folder) await listFiles();
+                if (connected && !status.paused) await engine.current.sync();
+              },
+              { success: "File deleted" },
+            ),
+          "Delete file",
+        )
+    : null;
   const historyControls = (
     <View style={wide ? s.historyTools : s.folderTools}>
       <Pressable
@@ -939,7 +987,7 @@ export default function App() {
             !!(folder && (filesLoading || recentLoading)),
         }}
       >
-        <View style={s.root}>
+        <View ref={pageRoot} style={s.root} collapsable={false}>
           <View style={[s.root, wide && !onboarding && s.shell]}>
             {wide && !onboarding && (
               <Navigation
@@ -1034,13 +1082,58 @@ export default function App() {
                           )}
                         </View>
                         {historyDetail && (
-                          <Button
-                            label="Share"
-                            icon="export"
-                            iconOnly={!wide}
-                            disabled={locked || !sheet.localEntry}
-                            onPress={() => run(shareCurrentFile)}
-                          />
+                          <View style={s.rowAction}>
+                            <Button
+                              label="Share"
+                              icon="export"
+                              iconOnly={!wide}
+                              disabled={locked || !sheet.localEntry}
+                              onPress={() => run(shareCurrentFile)}
+                            />
+                            <View>
+                              <Pressable
+                                ref={fileMenuTrigger}
+                                accessibilityRole="button"
+                                accessibilityLabel="File actions"
+                                accessibilityState={{
+                                  expanded: fileActionsOpen,
+                                  disabled: locked,
+                                }}
+                                disabled={locked}
+                                style={[
+                                  s.button,
+                                  s.iconButton,
+                                  locked && s.disabled,
+                                ]}
+                                onPress={() => {
+                                  if (fileActionsOpen) {
+                                    setFileActionsOpen(false);
+                                    return;
+                                  }
+                                  fileMenuTrigger.current?.measureInWindow(
+                                    (x, y, width, height) => {
+                                      pageRoot.current?.measureInWindow(
+                                        (rootX, rootY, rootWidth) => {
+                                          setFileMenuStyle(
+                                            fileMenuPosition(
+                                              x - rootX,
+                                              y - rootY,
+                                              width,
+                                              height,
+                                              rootWidth,
+                                            ),
+                                          );
+                                          setFileActionsOpen(true);
+                                        },
+                                      );
+                                    },
+                                  );
+                                }}
+                              >
+                                <Icon name="more" />
+                              </Pressable>
+                            </View>
+                          </View>
                         )}
                         {folder && screen === "Folders" && (
                           <View style={s.rowAction}>
@@ -1522,34 +1615,6 @@ export default function App() {
                       loading={detailLoading}
                       error={detailError}
                       localEntry={sheet.localEntry}
-                      deleteFile={
-                        sheet.localEntry
-                          ? () =>
-                              confirm(
-                                "Delete this file?",
-                                "Deletes from all synced copies. Retained history can be restored." +
-                                  (!connected || status.paused
-                                    ? " Deletion will sync when connected and resumed."
-                                    : ""),
-                                () =>
-                                  run(
-                                    async () => {
-                                      const target = sheet;
-                                      await engine.current.removeFile(
-                                        target.volume,
-                                        target.path,
-                                      );
-                                      setSheet(null);
-                                      if (folder) await listFiles();
-                                      if (connected && !status.paused)
-                                        await engine.current.sync();
-                                    },
-                                    { success: "File deleted" },
-                                  ),
-                                "Delete file",
-                              )
-                          : null
-                      }
                       retry={() => run(() => getHistory(sheet))}
                       author={(id) =>
                         machines?.find(
@@ -2144,30 +2209,76 @@ export default function App() {
                 />
               }
               title={
-                sheet.kind === "gallery"
-                  ? "Photo uploads"
-                  : sheet.kind === "history-filter"
-                    ? "Shared folder"
-                    : sheet.kind === "folder-actions"
-                      ? folder.name
-                      : sheet.kind === "select"
-                        ? sheet.volume.name
-                        : sheet.kind === "history"
-                          ? sheet.path
-                          : sheet.kind === "conflict"
-                            ? "Resolve conflict"
-                            : sheet.entry.path
+                sheet.kind === "rename-file"
+                  ? "Rename file"
+                  : sheet.kind === "gallery"
+                    ? "Photo uploads"
+                    : sheet.kind === "history-filter"
+                      ? "Shared folder"
+                      : sheet.kind === "folder-actions"
+                        ? folder.name
+                        : sheet.kind === "select"
+                          ? sheet.volume.name
+                          : sheet.kind === "history"
+                            ? sheet.path
+                            : sheet.kind === "conflict"
+                              ? "Resolve conflict"
+                              : sheet.entry.path
               }
               busy={busy}
               busyLabel={actionLabel}
               onClose={() =>
                 setSheet(
-                  sheet.kind === "conflict" ? sheet.returnTo || null : null,
+                  ["conflict", "rename-file"].includes(sheet.kind)
+                    ? sheet.returnTo || null
+                    : null,
                 )
               }
             >
               {!!error && sheet.kind !== "folder-actions" && (
                 <ErrorNotice error={error} retry={retryAction.current} />
+              )}
+              {sheet.kind === "rename-file" && (
+                <View style={s.group}>
+                  <Text style={s.text}>
+                    The new name syncs to other copies. Earlier history stays
+                    under the previous name.
+                  </Text>
+                  <Field
+                    label="Filename"
+                    value={renameName}
+                    onChangeText={setRenameName}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!locked}
+                  />
+                  <Button
+                    label="Rename"
+                    disabled={
+                      locked ||
+                      !renameName ||
+                      renameName === sheet.path.split("/").at(-1)
+                    }
+                    onPress={() =>
+                      run(
+                        async () => {
+                          const target = sheet.returnTo;
+                          await engine.current.renameFile(
+                            target.volume,
+                            target.path,
+                            renameName,
+                            target.currentRev,
+                          );
+                          setSheet(null);
+                          if (folder) await listFiles();
+                          if (connected && !status.paused)
+                            await engine.current.sync();
+                        },
+                        { success: "File renamed" },
+                      )
+                    }
+                  />
+                </View>
               )}
               {sheet.kind === "gallery" && (
                 <GallerySetup
@@ -2381,6 +2492,46 @@ export default function App() {
                 </>
               )}
             </Sheet>
+          )}
+          {fileActionsOpen && historyDetail && (
+            <View style={s.fileMenuOverlay} pointerEvents="box-none">
+              <Pressable
+                style={s.fileMenuDismiss}
+                accessibilityRole="button"
+                accessibilityLabel="Close file actions"
+                onPress={() => setFileActionsOpen(false)}
+              />
+              <View style={[s.fileActionMenu, fileMenuStyle]}>
+                <ActionRow
+                  label="Rename…"
+                  icon="edit"
+                  disabled={
+                    locked ||
+                    !renameCurrentFile ||
+                    !!fileHistory.versions[0]?.deleted
+                  }
+                  onPress={() => {
+                    setFileActionsOpen(false);
+                    renameCurrentFile?.();
+                  }}
+                />
+                <ActionRow
+                  label="Delete file…"
+                  icon="trash"
+                  danger
+                  divider
+                  disabled={
+                    locked ||
+                    !deleteCurrentFile ||
+                    !!fileHistory.versions[0]?.deleted
+                  }
+                  onPress={() => {
+                    setFileActionsOpen(false);
+                    deleteCurrentFile?.();
+                  }}
+                />
+              </View>
+            </View>
           )}
         </View>
       </Design.Provider>

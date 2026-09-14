@@ -41,6 +41,9 @@ export const files = {
   async mkdir(uri) {
     new Directory(uri).create({ intermediates: true, idempotent: true });
   },
+  async listNames(uri) {
+    return new Directory(uri).list().map((entry) => entry.name);
+  },
   async exists(uri) {
     return Paths.info(uri).exists;
   },

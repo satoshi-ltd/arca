@@ -35,9 +35,9 @@
           <p class="eyebrow">Your personal drive, on your own machines.</p>
           <h1>Many devices.<br /><em>One space.</em></h1>
           <p class="intro">
-            Your laptop, tablet and phone each have a place in your day. Arca
-            keeps the folders you choose in sync across them, with complete
-            local copies and a hub you run yourself.
+            Keep documents in sync and bring photos together on a computer you
+            control. That’s your hub. Choose which folders each device keeps,
+            with complete local copies ready to use offline.
           </p>
           <div class="hero-download">
             {{MAC_DOWNLOAD}}<a class="setup-link" href="#setup"
@@ -112,9 +112,9 @@
           <p class="eyebrow">01 / One person. More than one device.</p>
           <h2>Move between devices.<br />Keep your files with you.</h2>
           <p>
-            Work on your laptop. Take documents on your tablet. Save a file from
-            your phone. Your shared folders connect those moments without
-            sending yourself another attachment.
+            Keep working in the apps you already use. Arca carries folder
+            changes between devices, so you can pick up where you left off
+            without emailing yourself a copy.
           </p>
         </div>
         <div class="feature-grid">
@@ -122,59 +122,42 @@
             <span class="feature-number">↔</span>
             <h3>Edit here. Pick up there.</h3>
             <p>
-              Edit a document on your laptop or import a file from your phone.
-              Changes travel through your hub to the other devices that keep
-              that folder. Each device chooses its own folders.
+              Edit on your laptop or save a file from your phone. Changes travel
+              through your hub to every device that keeps that folder.
             </p>
           </article>
           <article>
             <span class="feature-number">↓</span>
             <h3>Offline is a normal day.</h3>
             <p>
-              Once a folder has finished syncing, its files are on your device.
-              Open them without a connection. Offline edits wait until Arca can
-              reach your hub and sync again.
+              Once a folder finishes syncing, its files are on your device. Open
+              them offline. Your edits sync when the hub is reachable again.
             </p>
           </article>
           <article>
             <span class="feature-number">↶</span>
             <h3>A way back.</h3>
             <p>
-              Browse retained revisions and restore an earlier version. When
-              edits conflict, Arca keeps both versions for you to review. Your
-              hub holds the history.
+              Changed your mind about an edit? Restore an earlier version from
+              retained history. If edits conflict, Arca keeps both versions for
+              you to review.
             </p>
           </article>
         </div>
-      </section>
-      <section class="ownership wrap">
-        <div>
-          <p class="eyebrow">02 / Keep the storage in your hands</p>
-          <h2>Your files need a home.<br />You can provide it.</h2>
-        </div>
-        <div class="ownership-copy">
+        <div class="ownership">
+          <h3>Your storage. On your terms.</h3>
           <p>
-            Keeping devices in sync doesn’t have to mean putting your files in a
-            provider’s storage account. With Arca, you supply the storage,
-            choose the devices and decide which folders each one keeps.
-          </p>
-          <p>
-            Your capacity comes from your own disks. Your files remain ordinary
-            files. Arca needs no external account and runs without a public
-            relay or telemetry.
-          </p>
-          <p class="ownership-tradeoff">
-            You also run the hub and look after its storage and backups. Devices
-            need to reach it to exchange changes; completed local copies remain
-            usable while it’s offline.
+            Ordinary files on your own disks, with no external account, public
+            relay or telemetry. You run the hub and look after its storage and
+            backups.
           </p>
         </div>
       </section>
       <section class="how-section" id="setup">
         <div class="wrap how-layout">
           <div>
-            <p class="eyebrow">03 / Bring your devices together</p>
-            <h2>A home for your files.<br />A copy where you need it.</h2>
+            <p class="eyebrow">02 / Bring your devices together</p>
+            <h2>One hub.<br />Your devices around it.</h2>
             <p class="intro">
               One computer or server is your hub: it keeps your shared folders
               and their history. An always-on machine lets your devices sync
@@ -183,66 +166,261 @@
             <figure class="network">
               <svg
                 class="network-diagram"
-                viewBox="0 0 400 355"
+                viewBox="0 0 520 430"
                 role="img"
                 aria-labelledby="network-title network-description"
               >
                 <title id="network-title">
-                  Your hub, at the heart of your devices
+                  Your devices, with a home in common
                 </title>
                 <desc id="network-description">
-                  A laptop, tablet and phone surround your hub. Each exchanges
-                  changes with the hub in both directions. The hub keeps shared
-                  folders and history.
+                  A laptop, phone, tablet and second server keep selected
+                  folders through a central hub. A linked phone album uploads
+                  photos to the hub. The hub holds shared folders and history.
                 </desc>
-                <circle class="network-orbit" cx="200" cy="215" r="112" />
-                <circle
-                  class="network-orbit network-orbit-outer"
-                  cx="200"
-                  cy="215"
-                  r="150"
+                <defs>
+                  <linearGradient id="device-shell" x2="0.7" y2="1">
+                    <stop stop-color="#ffffff" />
+                    <stop offset="1" stop-color="#e3e9dc" />
+                  </linearGradient>
+                  <linearGradient id="hub-shell" x2="0.8" y2="1">
+                    <stop stop-color="#32715a" />
+                    <stop offset="1" stop-color="#193f33" />
+                  </linearGradient>
+                  <symbol id="scene-folder" viewBox="0 0 32 26">
+                    <path
+                      d="M2 6V3Q2 1 4 1H12L16 6H28Q30 6 30 8V23Q30 25 28 25H4Q2 25 2 23Z"
+                      fill="#dcebbe"
+                      stroke="#88a46c"
+                    />
+                  </symbol>
+                  <symbol id="scene-photo" viewBox="0 0 60 58">
+                    <rect width="60" height="58" rx="5" fill="#dcebbe" />
+                    <circle cx="44" cy="14" r="6" fill="#faf9df" />
+                    <path
+                      d="M0 45L21 20L43 47L52 33L60 44V58H0Z"
+                      fill="#88a46c"
+                    />
+                    <path d="M0 52L16 38L36 58H0Z" fill="#32715a" />
+                  </symbol>
+                </defs>
+                <ellipse
+                  class="network-orbit"
+                  cx="260"
+                  cy="226"
+                  rx="212"
+                  ry="153"
+                  transform="rotate(-16 260 226)"
                 />
-                <!-- Replica centers share a 170-unit radius, at -90, 30 and 150 degrees. -->
-                <g class="network-device" transform="translate(200 45)">
-                  <rect x="-48" y="-38" width="96" height="76" rx="14" />
-                  <g class="network-device-icon">
-                    <rect x="-17" y="-23" width="34" height="23" rx="3" />
-                    <path d="M-22 5 H22 M-7 5 V1 M7 5 V1" />
-                  </g>
-                  <text x="0" y="25">Laptop</text>
+                <ellipse
+                  class="network-orbit network-orbit-outer"
+                  cx="260"
+                  cy="226"
+                  rx="160"
+                  ry="110"
+                  transform="rotate(-16 260 226)"
+                />
+                <g class="network-links">
+                  <path d="M139 111Q240 100 258 225" />
+                  <path d="M407 116Q346 143 278 222" />
+                  <path d="M105 305Q183 338 241 249" />
+                  <path d="M397 330Q320 342 278 255" />
                 </g>
-                <g class="network-device" transform="translate(347.224 300)">
-                  <rect x="-48" y="-38" width="96" height="76" rx="14" />
-                  <g class="network-device-icon">
-                    <rect x="-13" y="-27" width="26" height="34" rx="4" />
-                    <path d="M-3 2 H3" />
+                <g transform="translate(44 48) rotate(-8 86 50)">
+                  <g class="network-device network-laptop">
+                    <rect
+                      class="device-shell"
+                      x="5"
+                      width="156"
+                      height="100"
+                      rx="10"
+                    />
+                    <rect
+                      class="device-screen"
+                      x="13"
+                      y="9"
+                      width="140"
+                      height="82"
+                      rx="4"
+                    />
+                    <path class="screen-rule" d="M22 25H143" />
+                    <circle class="device-light" cx="24" cy="17" r="2" />
+                    <use
+                      href="#scene-folder"
+                      x="25"
+                      y="39"
+                      width="30"
+                      height="25"
+                    />
+                    <use
+                      href="#scene-folder"
+                      x="68"
+                      y="39"
+                      width="30"
+                      height="25"
+                    />
+                    <use
+                      href="#scene-folder"
+                      x="111"
+                      y="39"
+                      width="30"
+                      height="25"
+                    />
+                    <path
+                      class="screen-rule"
+                      d="M26 75H52M69 75H95M112 75H138"
+                    />
+                    <path
+                      class="device-shell"
+                      d="M5 100H161L174 111Q174 117 165 117H1Q-8 117 -8 111Z"
+                    />
+                    <path class="screen-rule" d="M62 104H104" />
+                    <text class="device-label" x="83" y="139">Your laptop</text>
                   </g>
-                  <text x="0" y="25">Tablet</text>
                 </g>
-                <g class="network-device" transform="translate(52.776 300)">
-                  <rect x="-48" y="-38" width="96" height="76" rx="14" />
-                  <g class="network-device-icon">
-                    <rect x="-10" y="-27" width="20" height="34" rx="4" />
-                    <path d="M-3 2 H3" />
+                <g transform="translate(365 53) rotate(9 42 60)">
+                  <g class="network-device network-phone">
+                    <rect
+                      class="device-shell"
+                      width="78"
+                      height="133"
+                      rx="15"
+                    />
+                    <rect
+                      class="device-screen"
+                      x="6"
+                      y="7"
+                      width="66"
+                      height="119"
+                      rx="10"
+                    />
+                    <path class="phone-speaker" d="M28 13H50" />
+                    <use
+                      href="#scene-photo"
+                      x="12"
+                      y="28"
+                      width="54"
+                      height="53"
+                    />
+                    <rect
+                      class="photo-mini"
+                      x="12"
+                      y="86"
+                      width="24"
+                      height="23"
+                      rx="3"
+                    />
+                    <rect
+                      class="photo-mini second"
+                      x="41"
+                      y="86"
+                      width="25"
+                      height="23"
+                      rx="3"
+                    />
+                    <path class="screen-rule" d="M29 118H49" />
+                    <text class="device-label" x="39" y="154">Your phone</text>
                   </g>
-                  <text x="0" y="25">Phone</text>
                 </g>
-                <g class="network-hub" transform="translate(200 215)">
-                  <rect x="-62" y="-50" width="124" height="100" rx="18" />
-                  <image
-                    href="assets/arca-icon.svg"
-                    x="-17"
-                    y="-38"
-                    width="34"
-                    height="34"
-                  />
-                  <text class="network-hub-title" x="0" y="17">Hub</text>
-                  <text class="network-hub-caption" x="0" y="37">
-                    Folders + history
-                  </text>
+                <g transform="translate(187 178) rotate(-4 73 57)">
+                  <g class="network-hub">
+                    <rect
+                      class="hub-depth"
+                      x="3"
+                      y="9"
+                      width="146"
+                      height="112"
+                      rx="22"
+                    />
+                    <rect class="hub-face" width="146" height="112" rx="22" />
+                    <image
+                      href="assets/arca-icon.svg"
+                      x="16"
+                      y="17"
+                      width="34"
+                      height="34"
+                    />
+                    <circle class="hub-light" cx="122" cy="29" r="4" />
+                    <text class="network-hub-title" x="17" y="77">
+                      Your hub
+                    </text>
+                    <text class="network-hub-caption" x="17" y="96">
+                      Folders + history
+                    </text>
+                  </g>
+                </g>
+                <g transform="translate(34 275) rotate(7 67 48)">
+                  <g class="network-device network-tablet">
+                    <rect
+                      class="device-shell"
+                      width="142"
+                      height="99"
+                      rx="12"
+                    />
+                    <rect
+                      class="device-screen"
+                      x="8"
+                      y="8"
+                      width="126"
+                      height="83"
+                      rx="5"
+                    />
+                    <rect
+                      class="tablet-sidebar"
+                      x="8"
+                      y="8"
+                      width="31"
+                      height="83"
+                      rx="5"
+                    />
+                    <path class="screen-rule" d="M17 23H29M17 33H26M17 43H29" />
+                    <use
+                      href="#scene-folder"
+                      x="52"
+                      y="21"
+                      width="23"
+                      height="19"
+                    />
+                    <path
+                      class="screen-rule"
+                      d="M53 53H118M53 64H118M53 75H99"
+                    />
+                    <circle class="device-light" cx="119" cy="28" r="4" />
+                    <text class="device-label" x="71" y="121">Your tablet</text>
+                  </g>
+                </g>
+                <g transform="translate(361 286) rotate(-7 47 44)">
+                  <g class="network-device network-server">
+                    <rect class="device-shell" width="99" height="89" rx="12" />
+                    <rect
+                      class="server-slot"
+                      x="12"
+                      y="16"
+                      width="75"
+                      height="23"
+                      rx="5"
+                    />
+                    <rect
+                      class="server-slot"
+                      x="12"
+                      y="48"
+                      width="75"
+                      height="23"
+                      rx="5"
+                    />
+                    <path class="screen-rule" d="M23 28H54M23 60H54" />
+                    <circle class="device-light" cx="74" cy="28" r="3" />
+                    <circle class="device-light" cx="74" cy="60" r="3" />
+                    <text class="device-label" x="49" y="111">
+                      Another server
+                    </text>
+                    <text class="device-sublabel" x="49" y="128">
+                      A replica, too
+                    </text>
+                  </g>
                 </g>
               </svg>
-              <figcaption>Your devices. Connected through your hub.</figcaption>
+              <figcaption>Different devices. A home in common.</figcaption>
             </figure>
           </div>
           <ol class="steps">
@@ -270,11 +448,33 @@
             <li>
               <span>03</span>
               <div>
-                <h3>Make room for what matters.</h3>
+                <h3>Choose your folders.</h3>
                 <p>
-                  Select whole folders on each device. Open them in Finder, edit
-                  in your favorite app, or share a file into Arca from your
-                  phone.
+                  Select whole folders independently on each device. Choose a
+                  local path on desktop; on mobile, Arca keeps the selected
+                  copies in app storage.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span>04</span>
+              <div>
+                <h3>Link your photo albums.</h3>
+                <p>
+                  Link a phone album to upload photos and videos to your hub,
+                  without a second Arca copy on your phone. Explore your gallery
+                  by date on desktop or the web.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span>05</span>
+              <div>
+                <h3>Set your history retention.</h3>
+                <p>
+                  Choose how long each folder retains earlier versions. Keep
+                  more history for ongoing work, or a shorter window for folders
+                  that change often.
                 </p>
               </div>
             </li>
@@ -283,11 +483,11 @@
       </section>
       <section class="section wrap download-section">
         <div class="section-heading">
-          <p class="eyebrow">04 / Start with the devices you own</p>
-          <h2>A home for your files.<br />Room for your devices.</h2>
+          <p class="eyebrow">03 / Start with the devices you own</p>
+          <h2>Put Arca to work.</h2>
           <p>
-            Get the Mac app, set up your hub, and connect the devices you want
-            to keep in sync.
+            Start with a desktop or Docker hub, then add your phone, tablet and
+            other computers.
           </p>
         </div>
         <div class="download-grid">
@@ -297,7 +497,7 @@
               ><span class="badge">Start here</span>
             </div>
             <h3>Arca for desktop</h3>
-            <p>Your folders in Finder, with sync and history close at hand.</p>
+            <p>Local folders in your file manager. Sync and history in Arca.</p>
             {{MAC_DOWNLOAD}}<small>Apple Silicon · Version {{VERSION}}</small>
             <div class="download-alternatives">
               <span class="eyebrow">Also for your desktop</span>
@@ -310,8 +510,8 @@
             <span class="eyebrow">In your pocket</span>
             <h3>Arca for mobile</h3>
             <p>
-              Keep selected folders offline. Share files in, and take them with
-              you.
+              Take folders offline, save files from other apps and upload photo
+              albums to your hub.
             </p>
             <div class="store-row">{{APP_STORE}}{{PLAY_STORE}}</div>
             <small>
@@ -348,8 +548,8 @@
               >{{DOCKER_ICON}}<span>Get the Docker image</span
               ><span aria-hidden="true">↗</span></a
             ><small
-              >The guide covers persistent storage, starting Arca and opening
-              the setup wizard on port 17831.
+              >Use persistent storage for your files and history, then open the
+              setup wizard in your browser on port 17831.
               <a href="https://hub.docker.com/r/satoshiltd/arca"
                 >View Docker image ↗</a
               ></small
@@ -369,51 +569,91 @@
       </section>
       <section class="section wrap questions">
         <div>
-          <p class="eyebrow">A few good questions</p>
-          <h2>Know what you’re keeping.</h2>
+          <p class="eyebrow">Questions, answered</p>
+          <h2>Before you get started.</h2>
         </div>
         <div class="answers">
           <details open>
+            <summary>Do I need a server to use Arca?</summary>
+            <p>
+              A dedicated server is optional. A computer you already own can be
+              the hub, or you can run one with Docker. Phones and tablets
+              connect to a hub; they cannot act as one.
+            </p>
+          </details>
+          <details>
             <summary>Where do my files live?</summary>
             <p>
               On your hub and the devices where you select their folders.
-              Desktop uses local paths you choose; mobile keeps complete copies
-              in app storage. Arca has no external account, public relay or
-              telemetry.
+              Desktop copies use local paths you choose; mobile copies live in
+              app storage. Your own disks set the capacity.
             </p>
           </details>
           <details>
-            <summary>Is sync the same as a backup?</summary>
+            <summary>Does every device need to keep everything?</summary>
             <p>
-              No. File deletions synchronize too. Retained history lets you
-              restore earlier content, while an optional full hub backup on a
-              desktop or server is separate from working copies. Phones cannot
-              be hubs or full-backup devices.
+              No. Each device chooses whole folders independently. Selected
+              folders download as complete files, ready for offline use. A
+              linked phone album is different: it uploads without keeping a
+              second Arca copy on that phone.
             </p>
           </details>
           <details>
-            <summary>What happens when two devices edit the same file?</summary>
+            <summary>Does my hub have to stay on?</summary>
             <p>
-              Arca preserves conflicting versions separately. Review them and
-              choose which content to keep; restoring creates a new revision
-              rather than rewriting the past.
+              Only to exchange changes. Once a folder finishes syncing, its
+              local files work offline. Edits wait until the hub is reachable
+              again. An always-on hub makes syncing more convenient.
             </p>
           </details>
           <details>
-            <summary>Can I use it away from home?</summary>
+            <summary>Can I use Arca away from home?</summary>
             <p>
-              Yes, when your device can reach the hub over your own private
-              network, for example with Tailscale. Offline copies remain
-              available without a connection. Arca does not provide a hosted
-              relay.
+              Yes, if your device can reach the hub, for example through your
+              own private network with Tailscale. Arca provides no public relay
+              and requires no external storage account.
             </p>
           </details>
           <details>
-            <summary>Does a new release update my apps automatically?</summary>
+            <summary>How do photo albums work?</summary>
             <p>
-              This page offers the current published installers. Download and
-              install a new version to update your apps; server deployments are
-              managed by you.
+              Link a phone album to a hub folder. Arca uploads new photos and
+              videos; browse them by date on desktop or the web. Deleting from
+              your phone’s gallery keeps uploaded files, and hub changes never
+              write back to it.
+            </p>
+          </details>
+          <details>
+            <summary>Will my phone sync in the background?</summary>
+            <p>
+              Background work follows iOS and Android scheduling limits. Arca
+              also resumes work when you open it. Keep the app open for a large
+              first upload; background sync is not continuous.
+            </p>
+          </details>
+          <details>
+            <summary>Is sync a backup?</summary>
+            <p>
+              Sync also carries file deletions between ordinary folder copies.
+              Retained history offers a way back, but keep an independent
+              backup. Arca’s optional full hub backup runs on a desktop or
+              server, separately from working copies.
+            </p>
+          </details>
+          <details>
+            <summary>Can I undo an edit or recover a deleted file?</summary>
+            <p>
+              Yes, while its history is retained. Restoring creates a new
+              revision, leaving earlier history intact. Conflicting edits are
+              kept as separate versions for you to review.
+            </p>
+          </details>
+          <details>
+            <summary>How do I update Arca?</summary>
+            <p>
+              Download and install a new version on your devices; update your
+              server deployment separately. Check the release notes for any
+              requirement to update the hub and replicas together.
             </p>
           </details>
         </div>

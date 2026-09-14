@@ -355,6 +355,7 @@ export async function start(home, options = {}) {
           req.method === "POST" &&
           [
             "/v1/delete-file",
+            "/v1/rename-file",
             "/v1/restore",
             "/v1/conflict-choice",
             "/v1/move",
@@ -1099,6 +1100,15 @@ export async function start(home, options = {}) {
                 { path: b.path, rev: conflict.rev, choice: b.choice },
               );
             }),
+          );
+        }
+        if (route === "/v1/rename-file") {
+          requireAdmin();
+          return send(
+            200,
+            await authorizedWork(() =>
+              engine.renameFile(b.volume, b.path, b.name, b.rev),
+            ),
           );
         }
         if (route === "/v1/delete-file") {
@@ -1847,6 +1857,7 @@ export async function start(home, options = {}) {
         [
           "/v1/volumes",
           "/v1/delete-file",
+          "/v1/rename-file",
           "/v1/restore",
           "/v1/conflict-choice",
           "/v1/select",

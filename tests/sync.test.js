@@ -2236,3 +2236,168 @@ test("interrupting sync does not abort an independent interface request", { time
     await new Promise((resolve) => remote.close(resolve));
   }
 });
+
+test("file rename validates names and stale revisions, preserves history and syncs from hub and replica", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "nested/original.txt", "retained");
+  write(hub, volume, "nested/taken.txt", "keep");
+  await hub.sync();
+  const replica = await connect("rename-replica");
+  await replica.sync();
+  const first = hub.engine.store.current(volume.id, "nested/original.txt");
+  const target = { volume: volume.id, path: first.path, rev: first.rev };
+  for (const name of [
+    "../escape",
+    "a/b",
+    "a\\b",
+    "",
+    "CON.txt",
+    "bad.",
+    "taken.txt",
+    "TAKEN.TXT",
+  ])
+    await assert.rejects(hub.api("/v1/rename-file", { ...target, name }));
+  await assert.rejects(
+    hub.api("/v1/rename-file", {
+      ...target,
+      name: "new.txt",
+      rev: first.rev - 1,
+    }),
+    /changed/,
+  );
+  await assert.rejects(
+    hub.api(
+      "/v1/rename-file",
+      { ...target, name: "new.txt" },
+      replica.invite.token,
+    ),
+    /administrator/,
+  );
+  assert.equal(read(hub, volume, first.path), "retained");
+  assert.equal(read(hub, volume, "nested/taken.txt"), "keep");
+  await hub.api("/v1/rename-file", { ...target, name: "renamed.txt" });
+  assert.equal(hub.engine.store.current(volume.id, first.path).deleted, 1);
+  assert.ok(
+    hub.engine.store
+      .history(volume.id, first.path)
+      .some((r) => r.rev === first.rev),
+  );
+  await replica.sync();
+  assert.equal(read(replica, volume, "nested/renamed.txt"), "retained");
+  const local = replica.engine.store.current(volume.id, "nested/renamed.txt");
+  write(replica, volume, local.path, "pending edit");
+  await assert.rejects(
+    replica.api("/v1/rename-file", {
+      volume: volume.id,
+      path: local.path,
+      rev: local.rev,
+      name: "final.txt",
+    }),
+    /changed/,
+  );
+  await replica.sync();
+  const updated = replica.engine.store.current(volume.id, local.path);
+  await replica.api("/v1/rename-file", {
+    volume: volume.id,
+    path: local.path,
+    rev: updated.rev,
+    name: "RENAMED.txt",
+  });
+  await replica.sync();
+  assert.equal(read(hub, volume, "nested/RENAMED.txt"), "pending edit");
+  const renamed = hub.engine.store.current(volume.id, "nested/RENAMED.txt");
+  await hub.api("/v1/rename-file", {
+    volume: volume.id,
+    path: renamed.path,
+    rev: renamed.rev,
+    name: "Final.txt",
+  });
+  await replica.sync();
+  assert.equal(read(replica, volume, "nested/Final.txt"), "pending edit");
+});
+
+test("catalog-only hub rename keeps content and rejects exclusions and directory targets", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "original.txt", "archive");
+  write(hub, volume, ".arcaignore", "*.private\n");
+  write(hub, volume, "directory/child.txt", "child");
+  await hub.sync();
+  const replica = await connect("catalog-rename");
+  await replica.sync();
+  const original = hub.engine.store.current(volume.id, "original.txt");
+  await hub.api("/v1/unselect", { id: volume.id });
+  for (const name of ["secret.private", ".arcaignore", "directory"])
+    await assert.rejects(
+      hub.api("/v1/rename-file", {
+        volume: volume.id,
+        path: original.path,
+        rev: original.rev,
+        name,
+      }),
+    );
+  await hub.api("/v1/rename-file", {
+    volume: volume.id,
+    path: original.path,
+    rev: original.rev,
+    name: "archived.txt",
+  });
+  await replica.sync();
+  assert.equal(read(replica, volume, "archived.txt"), "archive");
+  assert.equal(
+    read(hub, volume, "original.txt"),
+    "archive",
+    "unselected disk contents are untouched",
+  );
+  const current = hub.engine.store.current(volume.id, "archived.txt");
+  await hub.api("/v1/rename-file", {
+    volume: volume.id,
+    path: current.path,
+    rev: current.rev,
+    name: "Archived.txt",
+  });
+  await replica.sync();
+  assert.equal(read(replica, volume, "Archived.txt"), "archive");
+});
+
+test("hub rename journals both paths and recovers after interrupted materialization", async (t) => {
+  const { hub, volume } = await setup(t);
+  write(hub, volume, "source.txt", "durable");
+  await hub.sync();
+  const s = hub.engine.store,
+    original = s.current(volume.id, "source.txt");
+  const materialize = s.materialize.bind(s);
+  s.materialize = () => {
+    throw new Error("disk unavailable");
+  };
+  await assert.rejects(
+    hub.api("/v1/rename-file", {
+      volume: volume.id,
+      path: original.path,
+      rev: original.rev,
+      name: "destination.txt",
+    }),
+    /disk unavailable/,
+  );
+  assert.equal(
+    s.db
+      .prepare("SELECT count(*) AS n FROM pending WHERE volume=?")
+      .get(volume.id).n,
+    2,
+  );
+  s.materialize = (row, expected) => {
+    if (!row.deleted) throw new Error("disk still unavailable");
+    return materialize(row, expected);
+  };
+  assert.throws(() => s.recover(volume.id), /disk still unavailable/);
+  assert.equal(read(hub, volume, "source.txt"), "durable", "recovery keeps the source until the destination can be written");
+  s.materialize = materialize;
+  s.recover(volume.id);
+  assert.equal(read(hub, volume, "destination.txt"), "durable");
+  assert.equal(s.current(volume.id, "source.txt").deleted, 1);
+  assert.equal(
+    s.db
+      .prepare("SELECT count(*) AS n FROM pending WHERE volume=?")
+      .get(volume.id).n,
+    0,
+  );
+});

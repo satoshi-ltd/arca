@@ -23,7 +23,6 @@ export function FileHistory({
   localEntry,
   retry,
   author,
-  deleteFile,
 }) {
   const { s, c, wide } = useDesign();
   const current = history.versions[0];
@@ -153,22 +152,13 @@ export function FileHistory({
               <Text selectable style={s.mono}>
                 {target.path}
               </Text>
-              <View style={s.compactActions}>
-                {openFolder && (
-                  <Button
-                    label="View folder"
-                    icon="folders"
-                    onPress={openFolder}
-                  />
-                )}
+              {openFolder && (
                 <Button
-                  label="Delete file…"
-                  icon="trash"
-                  danger
-                  disabled={locked || !deleteFile || !!current?.deleted}
-                  onPress={deleteFile}
+                  label="View folder"
+                  icon="folders"
+                  onPress={openFolder}
                 />
-              </View>
+              )}
             </Card>
           </Section>
         </View>

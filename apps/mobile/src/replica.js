@@ -1,3 +1,4 @@
+import { renamedPath } from "../../../packages/core/file-rename.js";
 import { validPath, validRow } from "./validation.js";
 import { Gallery, galleryConfig } from "./gallery.js";
 import { conditionNotices } from "../../desktop/src/notice-contract.js";
@@ -714,7 +715,7 @@ export class Replica {
     });
   }
   sync(force = false) {
-    if (this.picking || this.importing || this.removing)
+    if (this.picking || this.importing || this.removing || this.renaming)
       return Promise.resolve();
     if (this.active) return this.active;
     this.force = force || Date.now() - this.lastFullScan > 3600000;
@@ -876,6 +877,72 @@ export class Replica {
     await this.files.mkdir(this.files.parent(destination));
     await this.files.copy(source, destination);
     this.changed();
+  }
+  async renameFile(volume, name, newName, rev) {
+    if (this.renaming || this.busy || this.active)
+      throw new Error("Wait for synchronization to finish");
+    this.renaming = true;
+    try {
+      await this.requireActiveReplica();
+      validPath(name);
+      const destination = validPath(renamedPath(name, newName));
+      const folder = await this.store.folder(this.scope, volume);
+      if (!folder?.selected) throw new Error("Select this folder first");
+      if (galleryConfig(folder))
+        throw new Error("Gallery originals can only be managed in Photos.");
+      const row = await this.store.current(this.scope, volume, name);
+      const file = this.files.work(this.scope, volume, name);
+      const info = await this.files.stat(file);
+      if (!info || info.directory || !row || row.deleted || row.directory)
+        throw new Error("Only synced files can be renamed here.");
+      if (rev != null && row.rev !== Number(rev))
+        throw new Error("File changed. Reload before renaming.");
+      if ((await this.files.hash(file)) !== row.hash)
+        throw new Error("Local file changed. Sync before renaming.");
+      const policyFile = this.files.work(this.scope, volume, ".arcaignore");
+      const policy = ignore().add(
+        (await this.files.exists(policyFile))
+          ? await this.files.text(policyFile)
+          : "",
+      );
+      if (
+        [name, destination].some(
+          (value) => builtinExcluded(value) || policy.ignores(value),
+        )
+      )
+        throw new Error("Excluded files cannot be renamed here.");
+      if (destination === name) return { path: name };
+      const rows = await this.store.rows(this.scope, volume);
+      if (
+        rows.some(
+          (other) =>
+            !other.deleted &&
+            other.path !== name &&
+            other.path.toLowerCase() === destination.toLowerCase(),
+        )
+      )
+        throw new Error("A file or folder with that name already exists.");
+      const parent = this.files.parent(file);
+      // Include unsynced and excluded siblings in collision checks.
+      const siblings = await this.files.listNames(parent);
+      if (
+        siblings.some(
+          (entry) =>
+            entry !== name.split("/").at(-1) &&
+            entry.toLowerCase() === newName.toLowerCase(),
+        )
+      )
+        throw new Error("A file or folder with that name already exists.");
+      await this.files.move(
+        file,
+        this.files.work(this.scope, volume, destination),
+      );
+      this.hashCache.delete(file);
+      this.changed();
+      return { path: destination };
+    } finally {
+      this.renaming = false;
+    }
   }
   async removeFile(volume, name) {
     await this.requireActiveReplica();
