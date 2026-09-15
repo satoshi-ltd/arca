@@ -17,6 +17,16 @@ test("single port web, discovery, one-time login, CSRF rejection and logout", as
   });
   const url = `http://127.0.0.1:${d.port}`;
   assert.equal((await fetch(url)).status, 200);
+  const fileIcons = await fetch(url + "/file-icons.js");
+  assert.equal(fileIcons.status, 200);
+  assert.match(fileIcons.headers.get("content-type"), /javascript/);
+  assert.equal(
+    await fileIcons.text(),
+    fs.readFileSync(
+      new URL("../apps/desktop/src/file-icons.js", import.meta.url),
+      "utf8",
+    ),
+  );
   assert.equal((await fetch(url + "/v1/status")).status, 401);
   assert.equal(
     (await (await fetch(url + "/.well-known/arca")).json()).apiPort,

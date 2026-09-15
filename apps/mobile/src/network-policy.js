@@ -8,7 +8,13 @@ export async function verifyPrivateURL(value, native, nativeFetch) {
       (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
       (parts[0] === 192 && parts[1] === 168));
   if (lan) {
-    await native.resolveLanHost(url.hostname);
+    try {
+      await native.resolveLanHost(url.hostname);
+    } catch {
+      throw new Error(
+        "Cannot reach the hub over the local network. Connect this device to the hub’s Wi-Fi or Ethernet network and try again.",
+      );
+    }
     // Check permission without sending a pairing code or saved credential.
     const response = await nativeFetch(`${url.origin}/.well-known/arca`);
     const info = response.ok ? await response.json() : null;

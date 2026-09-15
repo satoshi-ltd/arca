@@ -5,6 +5,7 @@
 
 # System metadata and trash
 .DS_Store
+.localized
 Thumbs.db
 desktop.ini
 .Trash/
@@ -14,6 +15,9 @@ $RECYCLE.BIN/
 .Spotlight-V100/
 .TemporaryItems/
 .fseventsd/
+
+# Obsidian settings, plugins and themes (notes remain synchronized)
+.obsidian/
 
 # Regenerable caches and environments
 cache/

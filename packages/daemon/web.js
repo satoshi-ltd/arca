@@ -270,6 +270,7 @@ export class Web {
       "/": "index.html",
       "/app.js": "app.js",
       "/notice-contract.js": "notice-contract.js",
+      "/file-icons.js": "file-icons.js",
       "/style.css": "style.css",
       "/tokens.css": "tokens.css",
       "/vendor/lucide.js": "vendor/lucide.js",

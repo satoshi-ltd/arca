@@ -1,5 +1,16 @@
 // Lucide v0.460.0, ISC. Exact desktop vendor nodes; verified in mobile-layout.test.js.
 export const iconNames = {
+  "file-code": "FileCode",
+  presentation: "Presentation",
+  sheet: "Sheet",
+  "file-archive": "FileArchive",
+  "file-audio": "FileAudio",
+  "file-video": "FileVideo",
+  package: "Package",
+  "book-open": "BookOpen",
+  "file-type": "FileType",
+  "file-text": "FileText",
+  folder: "Folder",
   external: "ExternalLink",
   edit: "Pencil",
   globe: "Globe",
@@ -45,6 +56,106 @@ export const iconNames = {
   restore: "Undo2",
 };
 export const icons = {
+  "file-code": [
+    ["path", { d: "M10 12.5 8 15l2 2.5" }],
+    ["path", { d: "m14 12.5 2 2.5-2 2.5" }],
+    ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4" }],
+    [
+      "path",
+      { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" },
+    ],
+  ],
+  presentation: [
+    ["path", { d: "M2 3h20" }],
+    ["path", { d: "M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3" }],
+    ["path", { d: "m7 21 5-5 5 5" }],
+  ],
+  sheet: [
+    ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2" }],
+    ["line", { x1: "3", x2: "21", y1: "9", y2: "9" }],
+    ["line", { x1: "3", x2: "21", y1: "15", y2: "15" }],
+    ["line", { x1: "9", x2: "9", y1: "9", y2: "21" }],
+    ["line", { x1: "15", x2: "15", y1: "9", y2: "21" }],
+  ],
+  "file-archive": [
+    ["path", { d: "M10 12v-1" }],
+    ["path", { d: "M10 18v-2" }],
+    ["path", { d: "M10 7V6" }],
+    ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4" }],
+    [
+      "path",
+      {
+        d: "M15.5 22H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v16a2 2 0 0 0 .274 1.01",
+      },
+    ],
+    ["circle", { cx: "10", cy: "20", r: "2" }],
+  ],
+  "file-audio": [
+    ["path", { d: "M17.5 22h.5a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3" }],
+    ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4" }],
+    [
+      "path",
+      {
+        d: "M2 19a2 2 0 1 1 4 0v1a2 2 0 1 1-4 0v-4a6 6 0 0 1 12 0v4a2 2 0 1 1-4 0v-1a2 2 0 1 1 4 0",
+      },
+    ],
+  ],
+  "file-video": [
+    [
+      "path",
+      { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" },
+    ],
+    ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4" }],
+    ["path", { d: "m10 11 5 3-5 3v-6Z" }],
+  ],
+  package: [
+    [
+      "path",
+      {
+        d: "M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z",
+      },
+    ],
+    ["path", { d: "M12 22V12" }],
+    ["path", { d: "m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7" }],
+    ["path", { d: "m7.5 4.27 9 5.15" }],
+  ],
+  "book-open": [
+    ["path", { d: "M12 7v14" }],
+    [
+      "path",
+      {
+        d: "M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z",
+      },
+    ],
+  ],
+  "file-type": [
+    [
+      "path",
+      { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" },
+    ],
+    ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4" }],
+    ["path", { d: "M9 13v-1h6v1" }],
+    ["path", { d: "M12 12v6" }],
+    ["path", { d: "M11 18h2" }],
+  ],
+  "file-text": [
+    [
+      "path",
+      { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" },
+    ],
+    ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4" }],
+    ["path", { d: "M10 9H8" }],
+    ["path", { d: "M16 13H8" }],
+    ["path", { d: "M16 17H8" }],
+  ],
+  folder: [
+    [
+      "path",
+      {
+        d: "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z",
+      },
+    ],
+  ],
   external: [
     ["path", { d: "M15 3h6v6" }],
     ["path", { d: "M10 14 21 3" }],

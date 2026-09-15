@@ -97,6 +97,10 @@
   --approval-reference-font: 28px;
   --reference-tracking: 4px;
   --approval-tile: 36px;
+  --button-small-height: 32px;
+  --button-small-icon: 16px;
+  --button-icon: 20px;
+  --detail-tile: 40px;
   --control-height: 32px;
   --touch-control-height: 48px;
   --touch-target-min: 44px;

@@ -1,3 +1,5 @@
+import { coalescedRefresh, retainSnapshot } from "./ui-refresh.js";
+import { fileIcon } from "../../desktop/src/file-icons.js";
 import { native } from "./private-network.js";
 import { canContinueInBackground } from "./runtime";
 import { BrandActivity, Busy, Scaffold } from "./components";
@@ -141,6 +143,7 @@ export default function App() {
     keyboardVisible ? Dimensions.get("screen").height : height,
   );
   const wide = layout.current;
+  const compactAndroid = Platform.OS === "android" && !wide;
   const compact = wide && width < 1100;
   const s = useMemo(
     () => styles(c, wide, compact, fontScale),
@@ -189,7 +192,13 @@ export default function App() {
   const folderLists = useRef(new Map());
   const [detailError, setDetailError] = useState("");
   const [fileHistory, setFileHistory] = useState({ versions: [], next: null });
-  async function update() {
+  const updateQueue = useRef(null);
+  const freeSpaceSample = useRef({ at: 0, value: null });
+  function update() {
+    updateQueue.current ||= coalescedRefresh(readSnapshot);
+    return updateQueue.current();
+  }
+  async function readSnapshot() {
     const r = engine.current;
     if (!r || !mounted.current) return;
     const [folders, last, notifications, background, theme, free] =
@@ -199,25 +208,43 @@ export default function App() {
         r.store.get("notifications", false),
         r.store.get("background", false),
         r.store.get("theme", "system"),
-        r.files.free(),
+        Date.now() - freeSpaceSample.current.at < 30000
+          ? freeSpaceSample.current.value
+          : r.files.free().then((value) => {
+              freeSpaceSample.current = { at: Date.now(), value };
+              return value;
+            }),
       ]);
     if (!mounted.current) return;
-    setState(client.state());
-    setLocals(folders);
-    setStatus({
-      busy: r.busy,
-      syncingVolume: r.syncingVolume,
-      paused: r.paused,
-      progress: r.progress,
-      error: r.error,
-      last,
-      free,
-    });
-    setPrefs({
-      notifications,
-      background,
-      theme,
-      onboarding: await r.store.get("onboarding"),
+    setState((old) => retainSnapshot(old, client.state()));
+    setLocals((old) => retainSnapshot(old, folders));
+    setStatus((old) =>
+      retainSnapshot(old, {
+        busy: r.busy,
+        syncingVolume: r.syncingVolume,
+        paused: r.paused,
+        progress: r.progress,
+        error: r.error,
+        last,
+        free,
+      }),
+    );
+    const onboarding = await r.store.get("onboarding");
+    if (!mounted.current) return;
+    setPrefs((old) =>
+      retainSnapshot(old, {
+        notifications,
+        background,
+        theme,
+        onboarding,
+      }),
+    );
+  }
+  function startSync(force = false) {
+    const replica = engine.current;
+    if (!replica) return;
+    void replica.sync(force).catch((error) => {
+      if (mounted.current) setError(error.message || "Synchronization failed.");
     });
   }
   async function listFiles(id = folder?.id) {
@@ -300,8 +327,11 @@ export default function App() {
     mounted.current = true;
     let updateTimer;
     const unsub = subscribe(() => {
-      clearTimeout(updateTimer);
-      updateTimer = setTimeout(() => update().catch(() => {}), 80);
+      if (updateTimer) return;
+      updateTimer = setTimeout(() => {
+        updateTimer = null;
+        update().catch(() => {});
+      }, 100);
     });
     run(
       async () => {
@@ -455,7 +485,8 @@ export default function App() {
       .sort()
       .join(","),
   ]);
-  const locked = busy || status.busy || !engine.current;
+  const actionLocked = busy || !engine.current;
+  const locked = actionLocked || status.busy;
   async function openFolder(f) {
     setEntries(
       folderLists.current.get(`${engine.current?.scope}:${f.id}`) || [],
@@ -590,7 +621,19 @@ export default function App() {
       throw new Error(
         "Install the updated Arca app to open files. You can still use Share from the file menu.",
       );
-    await native.openFile(await currentFileURI());
+    const result = await native.openFile(await currentFileURI());
+    if (result === "install-permission")
+      Alert.alert(
+        "Allow APK installation",
+        "To open this APK, allow Arca under Install unknown apps in Android Settings. Then return here and tap Open again.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Open settings",
+            onPress: () => run(() => native.openInstallSettings()),
+          },
+        ],
+      );
   }
   async function shareCurrentFile() {
     const uri = await currentFileURI();
@@ -722,6 +765,17 @@ export default function App() {
   }
   const [directory, setDirectory] = useState(""),
     [visibleCount, setVisibleCount] = useState(100);
+  const visibleEntries = useMemo(
+    () => browseEntries(entries, directory, search),
+    [entries, directory, search],
+  );
+  const entrySummary = useMemo(
+    () => ({
+      files: entries.filter((entry) => !entry.directory).length,
+      bytes: entries.reduce((total, entry) => total + (entry.size || 0), 0),
+    }),
+    [entries],
+  );
   async function resolveConflict(entry, volume = folder?.id) {
     if (!locals.find((f) => f.id === volume)?.selected)
       throw new Error(
@@ -869,13 +923,12 @@ export default function App() {
       setSheet(null);
     } else if (item.id === "action" && retryAction.current)
       retryAction.current();
-    else run(() => engine.current.sync(), { silent: true });
+    else startSync();
   };
   useEffect(
     () =>
       subscribeNotificationResponse((item) => {
-        if (item.action === "retry" && item.execute)
-          run(async () => (await runtime()).sync(), { silent: true });
+        if (item.action === "retry" && item.execute) startSync();
         if (item.action === "review") {
           setView("History");
           setHistoryVolume(item.volume || "");
@@ -1024,7 +1077,13 @@ export default function App() {
             >
               <KeyboardPane style={s.root}>
                 {!onboarding && (
-                  <View style={s.viewHeader}>
+                  <View
+                    style={[
+                      s.viewHeader,
+                      (detail || (folder && screen === "Folders")) &&
+                        s.detailViewHeader,
+                    ]}
+                  >
                     {detail && (
                       <Button
                         quiet
@@ -1065,35 +1124,42 @@ export default function App() {
                           {detail ? (
                             <View style={s.row}>
                               {!wide && <BrandActivity />}
-                              <View style={s.tile}>
-                                <Icon name="file" />
-                              </View>
+                              {!compactAndroid && (
+                                <View style={[s.tile, wide && s.detailTile]}>
+                                  <Icon name={fileIcon(sheet.path)} />
+                                </View>
+                              )}
                               <View style={[s.flex, s.stack]}>
                                 <Text
                                   accessibilityRole="header"
-                                  style={s.title}
+                                  style={
+                                    compactAndroid ? s.detailTitle : s.title
+                                  }
                                 >
                                   {sheet.path.split("/").pop()}
-                                </Text>
-                                <Text style={s.caption}>
-                                  {volumes.find((v) => v.id === sheet.volume)
-                                    ?.name ||
-                                    folder?.name ||
-                                    "Shared folder"}
                                 </Text>
                               </View>
                             </View>
                           ) : folder && view === "Folders" ? (
-                            <ScreenTitle>{folder.name}</ScreenTitle>
+                            <ScreenTitle
+                              detail={compactAndroid}
+                              contentIcon={
+                                wide
+                                  ? folder.gallery || source
+                                    ? "gallery"
+                                    : "folder"
+                                  : undefined
+                              }
+                              subtitle={
+                                source
+                                  ? `${source.summary?.accepted || 0} photos · ${source.summary?.bytes == null ? "—" : bytes(source.summary.bytes)} uploaded`
+                                  : `${entrySummary.files} files · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`
+                              }
+                            >
+                              {folder.name}
+                            </ScreenTitle>
                           ) : (
                             <ScreenTitle>{view}</ScreenTitle>
-                          )}
-                          {folder && screen === "Folders" && (
-                            <Text style={s.caption}>
-                              {source
-                                ? `${source.summary?.accepted || 0} photos · ${source.summary?.bytes == null ? "—" : bytes(source.summary.bytes)} uploaded`
-                                : `${entries.filter((e) => !e.directory).length} files · ${bytes(entries.reduce((total, e) => total + e.size, 0))} local${status.paused ? " · Paused" : ""}`}
-                            </Text>
                           )}
                         </View>
                         {historyDetail && (
@@ -1102,7 +1168,7 @@ export default function App() {
                               label="Open"
                               icon="external"
                               iconOnly={!wide}
-                              disabled={locked || !sheet.localEntry}
+                              disabled={actionLocked || !sheet.localEntry}
                               onPress={() => run(openCurrentFile)}
                             />
                             <View>
@@ -1112,13 +1178,13 @@ export default function App() {
                                 accessibilityLabel="File actions"
                                 accessibilityState={{
                                   expanded: fileActionsOpen,
-                                  disabled: locked,
+                                  disabled: actionLocked,
                                 }}
-                                disabled={locked}
+                                disabled={actionLocked}
                                 style={[
                                   s.button,
                                   s.iconButton,
-                                  locked && s.disabled,
+                                  actionLocked && s.disabled,
                                 ]}
                                 onPress={() => {
                                   if (fileActionsOpen) {
@@ -1152,7 +1218,7 @@ export default function App() {
                         )}
                         {folder && screen === "Folders" && (
                           <View style={s.rowAction}>
-                            {!source && fileView === "files" && (
+                            {!wide && !source && fileView === "files" && (
                               <Button
                                 iconOnly
                                 label={
@@ -1184,15 +1250,7 @@ export default function App() {
                             icon="refresh"
                             busy={locked}
                             disabled={status.paused}
-                            onPress={() =>
-                              run(
-                                async () => {
-                                  await engine.current.sync(true);
-                                  if (folder) await listFiles();
-                                },
-                                { silent: true },
-                              )
-                            }
+                            onPress={() => startSync(true)}
                           />
                         )}
                       </View>
@@ -1280,7 +1338,7 @@ export default function App() {
                             onPress={() =>
                               run(async () => {
                                 await engine.current.pause(false);
-                                await engine.current.sync();
+                                startSync();
                               })
                             }
                           />
@@ -1319,6 +1377,23 @@ export default function App() {
                                     }}
                                   />
                                 </View>
+                                {wide && !source && fileView === "files" && (
+                                  <Button
+                                    size="small"
+                                    iconOnly
+                                    label={
+                                      searchOpen
+                                        ? "Close search"
+                                        : "Search files"
+                                    }
+                                    icon={searchOpen ? "close" : "search"}
+                                    onPress={() => {
+                                      setSearchOpen(!searchOpen);
+                                      setSearch("");
+                                      setVisibleCount(100);
+                                    }}
+                                  />
+                                )}
                                 {fileView === "recent" && (
                                   <Button
                                     quiet
@@ -1374,7 +1449,7 @@ export default function App() {
                                         setVisibleCount(100);
                                       }}
                                     />
-                                    {browseEntries(entries, directory, search)
+                                    {visibleEntries
                                       .slice(0, visibleCount)
                                       .map((e, index) => (
                                         <Pressable
@@ -1395,9 +1470,10 @@ export default function App() {
                                         >
                                           <View style={s.row}>
                                             <Icon
-                                              name={
-                                                e.directory ? "folders" : "file"
-                                              }
+                                              name={fileIcon(
+                                                e.path,
+                                                e.directory,
+                                              )}
                                             />
                                             <View style={s.flex}>
                                               <Text style={s.heading}>
@@ -1420,8 +1496,7 @@ export default function App() {
                                       <Scaffold label="Loading files" />
                                     )}
                                     {!filesLoading &&
-                                      !browseEntries(entries, directory, search)
-                                        .length && (
+                                      !visibleEntries.length && (
                                         <View style={s.explorerEmpty}>
                                           <Icon name="folders" color={c.mute} />
                                           <Text style={s.text}>
@@ -1434,8 +1509,7 @@ export default function App() {
                                         </View>
                                       )}
                                   </View>
-                                  {browseEntries(entries, directory, search)
-                                    .length > visibleCount && (
+                                  {visibleEntries.length > visibleCount && (
                                     <Button
                                       label="Show more files"
                                       onPress={() =>
@@ -2077,7 +2151,7 @@ export default function App() {
                               onChange={(v) =>
                                 run(async () => {
                                   await engine.current.pause(v);
-                                  if (!v) await engine.current.sync();
+                                  if (!v) startSync();
                                 })
                               }
                             />
@@ -2440,7 +2514,7 @@ export default function App() {
                       run(async () => {
                         await engine.current.select(sheet.volume);
                         setSheet(null);
-                        await engine.current.sync();
+                        startSync();
                       })
                     }
                   />
@@ -2520,7 +2594,7 @@ export default function App() {
                 <ActionRow
                   label="Share"
                   icon="export"
-                  disabled={locked || !sheet.localEntry}
+                  disabled={actionLocked || !sheet.localEntry}
                   onPress={() => {
                     setFileActionsOpen(false);
                     run(shareCurrentFile);

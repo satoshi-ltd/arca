@@ -75,3 +75,24 @@ test("older installed clients explain that Open requires an app update", async (
   await context.shareCurrentFile();
   assert.deepEqual(calls, [["share", uri]]);
 });
+
+test("APK authorization explains the next step and opens settings only on request", async () => {
+  const { context, calls } = harness();
+  let prompt;
+  context.native.openFile = async () => "install-permission";
+  context.native.openInstallSettings = async () => calls.push(["settings"]);
+  context.run = (action) => action();
+  context.Alert = {
+    alert: (...args) => {
+      prompt = args;
+    },
+  };
+  await context.openCurrentFile();
+  assert.equal(prompt[0], "Allow APK installation");
+  assert.match(prompt[1], /tap Open again/);
+  assert.equal(prompt[2][0].style, "cancel");
+  assert.equal(prompt[2][0].onPress, undefined);
+  assert.deepEqual(calls, []);
+  await prompt[2][1].onPress();
+  assert.deepEqual(calls, [["settings"]]);
+});

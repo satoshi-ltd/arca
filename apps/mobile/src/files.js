@@ -122,7 +122,10 @@ export const files = {
     }
   },
   async *walk(uri, prefix = "", includePrivate = false) {
+    await tick();
+    let visited = 0;
     for (const entry of new Directory(uri).list()) {
+      if (++visited % 32 === 0) await tick();
       if (!includePrivate && entry.name.startsWith(".arca-")) continue;
       const path = prefix + entry.name;
       if (entry instanceof Directory) {

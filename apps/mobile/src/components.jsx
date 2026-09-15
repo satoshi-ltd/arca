@@ -218,14 +218,36 @@ export function Section({ children }) {
   const { s } = useDesign();
   return <View style={s.section}>{children}</View>;
 }
-export function ScreenTitle({ children }) {
+export function ScreenTitle({
+  children,
+  detail = false,
+  subtitle,
+  contentIcon,
+}) {
   const { s, wide } = useDesign();
   return (
     <View style={s.screenTitle}>
       {!wide && <BrandActivity />}
-      <Text accessibilityRole="header" style={[s.title, s.flex]}>
-        {children}
-      </Text>
+      {wide && contentIcon && (
+        <View style={[s.tile, s.detailTile]}>
+          <Icon name={contentIcon} />
+        </View>
+      )}
+      {detail || subtitle != null ? (
+        <View style={[s.flex, s.stack]}>
+          <Text
+            accessibilityRole="header"
+            style={detail ? s.detailTitle : s.title}
+          >
+            {children}
+          </Text>
+          {subtitle != null && <Text style={s.caption}>{subtitle}</Text>}
+        </View>
+      ) : (
+        <Text accessibilityRole="header" style={[s.title, s.flex]}>
+          {children}
+        </Text>
+      )}
     </View>
   );
 }
@@ -238,6 +260,7 @@ export function Button({
   busy = false,
   icon,
   quiet = false,
+  size = "normal",
   danger = false,
 }) {
   const { s, c } = useDesign();
@@ -248,9 +271,12 @@ export function Button({
       accessibilityState={{ disabled: disabled || busy, busy }}
       disabled={disabled || busy}
       onPress={onPress}
+      hitSlop={size === "small" ? 6 : undefined}
       style={[
         s.button,
         iconOnly && s.iconButton,
+        size === "small" && s.smallButton,
+        size === "small" && iconOnly && s.smallIconButton,
         primary && s.primary,
         quiet && s.quietButton,
         danger && s.dangerButton,
@@ -263,6 +289,7 @@ export function Button({
       ) : icon ? (
         <Icon
           name={icon}
+          size={size === "small" ? g.buttonSmallIcon : g.buttonIcon}
           color={primary ? c.onAccent : danger ? c.danger : c.ink}
         />
       ) : null}

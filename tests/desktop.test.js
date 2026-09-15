@@ -10,7 +10,15 @@ const html = fs.readFileSync(
   new URL("../apps/desktop/src/index.html", import.meta.url),
   "utf8",
 );
+const fileIconScript = fs
+  .readFileSync(
+    new URL("../apps/desktop/src/file-icons.js", import.meta.url),
+    "utf8",
+  )
+  .replace(/export /g, "");
 const script =
+  fileIconScript +
+  "\n" +
   fs
     .readFileSync(
       new URL("../apps/desktop/src/notice-contract.js", import.meta.url),
@@ -25,7 +33,8 @@ const script =
     )
     // Exercise Windows checkout line endings on every runner.
     .replace(/\r?\n/g, "\r\n")
-    .replace(/^import[\s\S]*?notice-contract\.js";\r?\n/, "");
+    .replace(/^import[\s\S]*?notice-contract\.js";\r?\n/, "")
+    .replace(/import \{ fileIcon \} from "\.\/file-icons\.js";\r?\n/, "");
 async function until(check) {
   for (let i = 0; i < 200; i++) {
     if (check()) return;
@@ -203,8 +212,17 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
     if (process.platform === "darwin") {
       assert.ok(finder);
       assert.ok(finder.closest(".file-actions-menu"));
-      assert.equal(w.document.querySelector('[data-action="history-open-file"]').closest(".file-actions-menu"), null);
-      assert.ok(w.document.querySelector('.file-actions-menu [data-action="delete-file"]').classList.contains("menu-item-separated"));
+      assert.equal(
+        w.document
+          .querySelector('[data-action="history-open-file"]')
+          .closest(".file-actions-menu"),
+        null,
+      );
+      assert.ok(
+        w.document
+          .querySelector('.file-actions-menu [data-action="delete-file"]')
+          .classList.contains("menu-item-separated"),
+      );
       finder.closest("details").open = true;
       finder.click();
       await until(

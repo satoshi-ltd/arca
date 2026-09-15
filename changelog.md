@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.7 — 2026-09-15
+
+- Keep mobile file opening, sharing and menus available during background sync; release the foreground action lock for manual sync, selection downloads and resume.
+- Coalesce mobile status reads, retain unchanged UI snapshots, memoize file browsing and yield during directory scans. Reduce unrelated desktop/web detail refreshes and preserve focused input fields.
+- Retry interrupted mobile HTTP reads once and show a readable connection error; never automatically replay ambiguous writes.
+- Remove the repeated folder name from file headers across desktop, web, mobile and Fold; retain it in File location.
+- Tighten mobile and Fold folder/file detail navigation spacing while preserving the Back touch target.
+- Unify small button and header tile tokens across desktop and Fold, make mobile icon buttons square, and show folder file-count summaries instead of duplicated desktop header paths.
+- Share Lucide file-type icons across web, desktop and mobile headers and file lists; show folder icons in Fold headers.
+- Place Fold file search beside Files/Recent, preserving compact header placement.
+- Simplify compact Android file headers to a single Arca activity icon without the folder subtitle; use smaller folder/file title tokens and align folder summaries beneath their names. Preserve Fold/tablet and iOS layouts.
+- Show a clear local-network connection message instead of native bridge exceptions when mobile LAN routing is unavailable.
+- Exclude macOS `.localized` metadata and Obsidian `.obsidian` settings, plugins and themes by default across daemon and mobile sync; preserve notes, attachments, existing disk files and history.
+- Fix Android APK opening: declare installation-request permission, use the APK MIME type and explain how to authorize Arca in system settings. Installation remains user-confirmed by Android. Requires an updated native build.
+- Add regression coverage for the permission prompt and explicit settings action.
+
 ## 0.4.6 — 2026-09-14
 
 - Order photos and videos together by capture date. Repair previously indexed video dates while preserving dates provided by phones and original files.

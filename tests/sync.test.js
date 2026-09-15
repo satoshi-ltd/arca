@@ -641,6 +641,8 @@ test("default exclusions skip caches before symlinks and preserve indexed histor
   const old = store.current(volume.id, "cache/legacy.txt");
   for (const name of [
     ".DS_Store",
+    ".localized",
+    "vault/.obsidian/workspace.json",
     "Thumbs.db",
     "desktop.ini",
     ".Trashes/file",

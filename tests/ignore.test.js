@@ -66,15 +66,20 @@ test("ignore reads reject a dangling symlink", (t) => {
   assert.throws(() => readIgnore(root));
 });
 
-test("Finder metadata is always excluded, without user rules or despite negation", () => {
+test("system metadata and Obsidian settings are excluded without rules or despite negation", () => {
   for (const text of [
     "",
-    "!.DS_Store\n!**/.DS_Store\n!Thumbs.db\n!desktop.ini\n",
+    "!.DS_Store\n!**/.DS_Store\n!Thumbs.db\n!desktop.ini\n!.localized\n!**/.localized\n!.obsidian/\n!**/.obsidian/**\n",
   ]) {
     const excluded = compileIgnore(text);
     for (const name of [
       ".DS_Store",
       "photos/.DS_Store",
+      ".localized",
+      "Documents/.LOCALIZED",
+      ".obsidian",
+      "vault/.obsidian/plugins/plugin/main.js",
+      "vault/.OBSIDIAN/workspace.json",
       "photos/.ds_store",
       "Thumbs.db",
       "photos/THUMBS.DB",
@@ -84,6 +89,10 @@ test("Finder metadata is always excluded, without user rules or despite negation
       assert.equal(excluded(name), true, name);
     for (const name of [
       ".env",
+      "vault/notes/today.md",
+      "vault/attachments/photo.jpg",
+      "notes/.localized.txt",
+      "notes/.obsidian-backup/settings.json",
       "notes/.DS_Store.txt",
       "node_modules/package.json",
       ".arcaignore",

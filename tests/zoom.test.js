@@ -10,6 +10,7 @@ const source = readFileSync(
   // Exercise Windows checkout line endings on every runner.
   .replace(/\r?\n/g, "\r\n")
   .replace(/^import[\s\S]*?notice-contract\.js";\r?\n/, "")
+  .replace(/import \{ fileIcon \} from "\.\/file-icons\.js";\r?\n/, "")
   .split("const $ =")[0];
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 

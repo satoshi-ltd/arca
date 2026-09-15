@@ -572,14 +572,29 @@ test("mobile unsync retries failed cleanup and retains other folders and their o
 test("Finder metadata never enters hub or mobile sync without an ignore file", async (t) => {
   const f = await fixture(t),
     { replica, volume, files, daemon } = f;
-  fs.writeFileSync(path.join(volume.path, ".DS_Store"), "hub metadata");
+  const excluded = [
+    ".DS_Store",
+    ".localized",
+    "vault/.obsidian/plugins/plugin/main.js",
+  ];
+  for (const name of excluded) {
+    fs.mkdirSync(path.dirname(path.join(volume.path, name)), {
+      recursive: true,
+    });
+    fs.writeFileSync(path.join(volume.path, name), "hub metadata");
+  }
   fs.writeFileSync(path.join(volume.path, "note.txt"), "content");
   await daemon.engine.cycle();
   await f.client.refresh();
   await replica.select(f.client.state().catalog.volumes[0]);
   await sync(f);
   const root = files.folder(replica.scope, volume.id);
-  assert.equal(fs.existsSync(path.join(root, ".DS_Store")), false);
+  for (const name of excluded) {
+    assert.equal(fs.existsSync(path.join(root, name)), false);
+    const local = path.join(root, "nested", name);
+    fs.mkdirSync(path.dirname(local), { recursive: true });
+    fs.writeFileSync(local, "mobile metadata");
+  }
   fs.mkdirSync(path.join(root, "nested"), { recursive: true });
   fs.writeFileSync(path.join(root, "nested", ".DS_Store"), "mobile metadata");
   await sync(f);
@@ -588,7 +603,17 @@ test("Finder metadata never enters hub or mobile sync without an ignore file", a
     false,
   );
   assert.equal(fs.readFileSync(path.join(root, "note.txt"), "utf8"), "content");
-  assert.equal(fs.existsSync(path.join(volume.path, ".DS_Store")), true);
+  for (const name of excluded) {
+    assert.equal(fs.existsSync(path.join(volume.path, "nested", name)), false);
+    assert.equal(
+      fs.readFileSync(path.join(volume.path, name), "utf8"),
+      "hub metadata",
+    );
+    assert.equal(
+      fs.readFileSync(path.join(root, "nested", name), "utf8"),
+      "mobile metadata",
+    );
+  }
 });
 
 test("a missing hub share retains the mobile index and reports an actionable issue", async (t) => {

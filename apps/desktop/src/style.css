@@ -354,13 +354,14 @@ main {
   background: var(--hover);
 }
 .small-button {
+  min-height: var(--button-small-height);
   font-size: var(--text-body);
   padding: 5px 10px;
   border-radius: var(--r-control);
 }
 .small-button svg {
-  width: 13px;
-  height: 13px;
+  width: var(--button-small-icon);
+  height: var(--button-small-icon);
 }
 .ghost,
 .back,
@@ -377,9 +378,13 @@ main {
   text-decoration: underline;
 }
 .icon-button {
-  padding: 7px;
-  width: 32px;
-  height: 32px;
+  padding: 0;
+  width: var(--button-small-height);
+  height: var(--button-small-height);
+}
+.icon-button svg {
+  width: var(--button-small-icon);
+  height: var(--button-small-icon);
 }
 .danger {
   color: var(--erFg);
@@ -427,8 +432,8 @@ main {
   color: var(--mute);
 }
 .tile.large {
-  width: 40px;
-  height: 40px;
+  width: var(--detail-tile);
+  height: var(--detail-tile);
   border-radius: var(--r-card);
 }
 .tile.large svg {

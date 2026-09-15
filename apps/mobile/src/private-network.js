@@ -1,3 +1,4 @@
+import { requestWithRecovery } from "./native-request.js";
 import { verifyPrivateURL } from "./network-policy.js";
 import { fromByteArray, toByteArray } from "base64-js";
 import { requireNativeModule } from "expo-modules-core";
@@ -14,7 +15,8 @@ export async function nativeFetch(url, options = {}) {
             ? new TextEncoder().encode(options.body)
             : new Uint8Array(options.body),
         );
-  const result = await native.request(
+  const result = await requestWithRecovery(
+    (...args) => native.request(...args),
     url,
     options.method || "GET",
     options.headers || {},

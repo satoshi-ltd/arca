@@ -191,13 +191,19 @@ test("mobile checks native LAN routing and permission before returning a credent
   );
   const disconnected = {
     async resolveLanHost() {
-      throw Error("No Wi-Fi");
+      throw Error(
+        "Call to function ArcaNetwork.resolveLanHost rejected: java.lang.IllegalStateException: No Wi-Fi",
+      );
     },
   };
   await assert.rejects(
     verifyPrivateURL(url, disconnected, () => {
       throw Error("Must not send any HTTP");
     }),
-    /No Wi-Fi/,
+    (error) => {
+      assert.match(error.message, /Wi-Fi or Ethernet/);
+      assert.doesNotMatch(error.message, /java\.lang|ArcaNetwork/);
+      return true;
+    },
   );
 });

@@ -27,7 +27,11 @@ class ArcaNetworkModule : Module() {
         val file = File(java.net.URI(uri)).canonicalFile
         check(file.path.startsWith(context.filesDir.canonicalPath + "/") && file.isFile) { "This file is not available locally yet." }
         val content = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".SharingFileProvider", file)
-        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase(java.util.Locale.ROOT)) ?: "application/octet-stream"
+        val extension = file.extension.lowercase(java.util.Locale.ROOT)
+        val apk = extension == "apk"
+        if (apk && android.os.Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls())
+          return@withContext "install-permission"
+        val mime = if (apk) "application/vnd.android.package-archive" else android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
         val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
           setDataAndType(content, mime)
           addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -35,6 +39,20 @@ class ArcaNetworkModule : Module() {
         }
         try { activity.startActivity(intent) }
         catch (_: android.content.ActivityNotFoundException) { error("No installed app can open this file. Try Share from the file menu.") }
+        catch (_: SecurityException) { error("Android blocked opening this file. Check the app permissions and try again.") }
+        "opened"
+      }
+    }
+    AsyncFunction("openInstallSettings") Coroutine { ->
+      withContext(Dispatchers.Main) {
+        val activity = appContext.currentActivity ?: error("Open Arca to change this setting.")
+        try {
+          activity.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.packageName)))
+        } catch (_: android.content.ActivityNotFoundException) {
+          error("Open Android Settings, then Apps, Special app access, Install unknown apps, and select Arca.")
+        } catch (_: SecurityException) {
+          error("Android does not allow changing this setting on this device.")
+        }
       }
     }
     Events("transferStopped")

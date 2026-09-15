@@ -309,7 +309,28 @@ export function styles(c, wide = false, compact = false, fontScale = 1) {
       paddingHorizontal: wide ? 24 : 16,
       paddingTop: 12,
     },
-    iconButton: { width: 44, paddingHorizontal: 0 },
+    iconButton: {
+      width: g.touchControlHeight,
+      height: g.touchControlHeight,
+      paddingHorizontal: 0,
+      paddingVertical: 0,
+    },
+    smallButton: {
+      minHeight: g.buttonSmallHeight,
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+    },
+    smallIconButton: {
+      width: g.buttonSmallHeight,
+      height: g.buttonSmallHeight,
+      paddingHorizontal: 0,
+      paddingVertical: 0,
+    },
+    detailTile: {
+      width: g.detailTile,
+      height: g.detailTile,
+      borderRadius: g.cardRadius,
+    },
     badgeWarning: { backgroundColor: c.warningBg },
     badgeWarningText: { color: c.warning },
     badgeError: { backgroundColor: c.dangerBg },
@@ -568,6 +589,10 @@ export function styles(c, wide = false, compact = false, fontScale = 1) {
       maxWidth: 1400,
       alignSelf: "center",
     },
+    detailViewHeader: {
+      paddingTop: g.detailHeaderTop,
+      gap: g.detailNavigationGap,
+    },
     viewBody: { paddingTop: 0 },
     content: {
       padding: wide ? g.workspaceInset : 16,
@@ -585,6 +610,13 @@ export function styles(c, wide = false, compact = false, fontScale = 1) {
       lineHeight: wide ? g.desktopTitleLine : g.touchTitleLine,
       color: c.ink,
       letterSpacing: -0.5,
+    },
+    detailTitle: {
+      fontFamily: "InstrumentSans_600SemiBold",
+      fontSize: g.detailTitleFont,
+      lineHeight: g.detailTitleLine,
+      color: c.ink,
+      flexShrink: 1,
     },
     heading: {
       fontFamily: "InstrumentSans_600SemiBold",
