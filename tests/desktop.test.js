@@ -989,6 +989,9 @@ test("share web routes survive reload and history navigation; hub edits use real
     w.setInterval = () => 0;
     w.fetch = async (route, options = {}) => {
       inFlight++;
+      // Keep the history scaffold visible before the real API response settles.
+      if (route.startsWith("/v1/activity?") && route.includes("filter=deleted"))
+        await new Promise((resolve) => setTimeout(resolve, 100));
       const response = await request(
         route,
         options.body === undefined ? undefined : JSON.parse(options.body),
@@ -1096,6 +1099,8 @@ test("share web routes survive reload and history navigation; hub edits use real
   assert.ok(w.location.hash.includes("volume=" + v.id));
 
   const historyWindow = await open("#/history");
+  const historyIdle = () =>
+    historyWindow.document.body.getAttribute("aria-busy") === "false";
   const historyQuery = (selector) =>
     historyWindow.document.querySelector(selector);
   assert.equal(historyQuery("#history-share span").textContent, "All");
@@ -1126,21 +1131,20 @@ test("share web routes survive reload and history navigation; hub edits use real
   await until(
     () =>
       historyQuery('[data-id="conflicts"]').getAttribute("aria-pressed") ===
-      "true",
+        "true" && historyIdle(),
   );
   historyQuery("#history-share").click();
   historyQuery(`[role="option"][data-id="${v.id}"]`).click();
   await until(
     () =>
-      historyWindow.location.hash.includes("volume=" + v.id) &&
-      historyWindow.document.body.getAttribute("aria-busy") === "false",
+      historyWindow.location.hash.includes("volume=" + v.id) && historyIdle(),
   );
   assert.ok(historyWindow.location.hash.includes("filter=conflicts"));
   historyQuery('[data-action="history-filter"][data-id="deleted"]').click();
   await until(
     () =>
       historyQuery('[data-id="deleted"]').getAttribute("aria-pressed") ===
-      "true",
+        "true" && historyIdle(),
   );
   assert.equal(
     historyQuery("#history-share-options [aria-selected='true']").dataset.id,
@@ -1150,7 +1154,7 @@ test("share web routes survive reload and history navigation; hub edits use real
   await until(
     () =>
       historyQuery('[data-id="deleted"]').getAttribute("aria-pressed") ===
-      "false",
+        "false" && historyIdle(),
   );
   assert.ok(!historyWindow.location.hash.includes("filter="));
   const deep = await open(`#/folders/${v.id}`);

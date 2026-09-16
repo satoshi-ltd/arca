@@ -2,6 +2,8 @@
 
 ## 0.4.8 — 2026-09-16
 
+- Fix a Windows CI navigation-test race: wait for history actions to finish before toggling filters again, with delayed-response regression coverage.
+
 - Limit CI artifact retention to one day and remove current-run temporary installers/images after successful publication. Update core GitHub actions to Node 24 runtimes.
 
 - Fix the Windows test failure introduced in 0.4.7: accept CRLF when extracting the UI refresh function and exercise LF/CRLF in every runner.
