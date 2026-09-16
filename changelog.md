@@ -2,6 +2,8 @@
 
 ## 0.4.8 — 2026-09-16
 
+- Fix the Windows test failure introduced in 0.4.7: accept CRLF when extracting the UI refresh function and exercise LF/CRLF in every runner.
+
 - Keep folder/file information sidebars sticky in desktop/web and Fold two-column layouts, with internal scrolling when needed. Move detail summaries with the main content; preserve ordinary scrolling on compact phones.
 - Move app version and diagnostics into Service. Show the installed mobile version, build and runtime information; remove maturity suffixes from Settings versions and the site header.
 - Add persistent mobile text-size preferences using the same segmented control as Theme, while respecting system accessibility settings.
