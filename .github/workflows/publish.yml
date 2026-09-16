@@ -31,8 +31,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24.14.0"
           cache: npm
@@ -52,8 +52,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24.14.0"
       - id: version
@@ -118,8 +118,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24.14.0"
           cache: npm
@@ -207,12 +207,12 @@ jobs:
         env:
           PLATFORM: ${{ matrix.name }}
         run: node scripts/collect-release.js
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: desktop-${{ matrix.name }}
           path: release-assets/*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
       - name: Remove signing keychain
         if: always() && runner.os == 'macOS' && inputs.sign_macos
         run: |
@@ -224,8 +224,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24.14.0"
       - uses: docker/setup-qemu-action@v3
@@ -255,11 +255,11 @@ jobs:
           outputs: type=oci,dest=${{ runner.temp }}/arca-image.tar
           tags: ghcr.io/satoshi-ltd/arca:${{ needs.prepare.outputs.version }}
           provenance: false
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: docker-image
           path: ${{ runner.temp }}/arca-image.tar
-          retention-days: 14
+          retention-days: 1
   publish:
     if: needs.prepare.outputs.publish == 'true'
     needs: [prepare, desktop, docker]
@@ -267,13 +267,14 @@ jobs:
     permissions:
       contents: write
       packages: write
+      actions: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: desktop-*
           path: assets
           merge-multiple: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: docker-image
           path: image
@@ -301,3 +302,23 @@ jobs:
           if [[ "$SIGN" == true ]]; then macos_status="Developer ID signed and notarized"; fi
           gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Arca $TAG alpha" --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION and $registry:$VERSION (amd64/arm64; also tagged latest). No automatic updates or pilot deployment."
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+      - name: Remove temporary artifacts after successful publication
+        continue-on-error: true
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const names = new Set([
+              'desktop-macos-arm64', 'desktop-windows-x64',
+              'desktop-linux-x64', 'docker-image'
+            ]);
+            const artifacts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              { ...context.repo, run_id: context.runId, per_page: 100 }
+            );
+            for (const artifact of artifacts) {
+              if (!names.has(artifact.name)) continue;
+              await github.rest.actions.deleteArtifact({
+                ...context.repo, artifact_id: artifact.id
+              });
+              core.info(`Removed published temporary artifact: ${artifact.name}`);
+            }

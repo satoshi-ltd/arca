@@ -2,6 +2,8 @@
 
 ## 0.4.8 — 2026-09-16
 
+- Limit CI artifact retention to one day and remove current-run temporary installers/images after successful publication. Update core GitHub actions to Node 24 runtimes.
+
 - Fix the Windows test failure introduced in 0.4.7: accept CRLF when extracting the UI refresh function and exercise LF/CRLF in every runner.
 
 - Keep folder/file information sidebars sticky in desktop/web and Fold two-column layouts, with internal scrolling when needed. Move detail summaries with the main content; preserve ordinary scrolling on compact phones.
