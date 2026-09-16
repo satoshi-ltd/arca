@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish the prerelease and Docker Hub/GHCR images
+        description: Publish the prerelease and Docker Hub image
         type: boolean
         default: false
       sign_macos:
@@ -46,9 +46,11 @@ jobs:
     needs: tests
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     outputs:
-      build: ${{ steps.gate.outputs.build }}
-      publish: ${{ steps.gate.outputs.publish }}
+      build: ${{ steps.release.outputs.build || steps.gate.outputs.build }}
+      publish: ${{ steps.release.outputs.build || steps.gate.outputs.publish }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
@@ -76,18 +78,6 @@ jobs:
           set -euo pipefail
           if [[ "$PUBLISH" == true ]]; then
             test "$GITHUB_REF" = refs/heads/main || { echo 'Publish from main only'; exit 1; }
-            set +e
-            git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null
-            status=$?
-            set -e
-            if [[ "$status" == 0 ]]; then
-              echo 'Version already tagged; skipping builds and publication.'
-              echo 'build=false' >> "$GITHUB_OUTPUT"
-              echo 'publish=false' >> "$GITHUB_OUTPUT"
-              exit 0
-            elif [[ "$status" != 2 ]]; then
-              echo 'Remote tag lookup failed. Publication stopped.'; exit 1
-            fi
             for key in DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
               test -n "${!key}" || { echo "Missing secret: $key"; exit 1; }
             done
@@ -99,7 +89,22 @@ jobs:
           fi
           echo 'build=true' >> "$GITHUB_OUTPUT"
           echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+      - name: Create or resume draft release
+        id: release
+        if: steps.gate.outputs.publish == 'true'
+        uses: actions/github-script@v8
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        with:
+          script: |
+            const { prepareRelease } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/prepare-release.js`);
+            const build = await prepareRelease({
+              github, repo: context.repo, tag: process.env.TAG, sha: context.sha
+            });
+            core.setOutput('build', String(build));
   desktop:
+    permissions:
+      contents: write
     needs: prepare
     if: needs.prepare.outputs.build == 'true'
     strategy:
@@ -207,19 +212,21 @@ jobs:
         env:
           PLATFORM: ${{ matrix.name }}
         run: node scripts/collect-release.js
-      - uses: actions/upload-artifact@v6
-        with:
-          name: desktop-${{ matrix.name }}
-          path: release-assets/*
-          if-no-files-found: error
-          retention-days: 1
+      - name: Upload verified installers to draft release
+        if: needs.prepare.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
       - name: Remove signing keychain
         if: always() && runner.os == 'macOS' && inputs.sign_macos
         run: |
           security delete-keychain "$RUNNER_TEMP/arca-signing.keychain-db" || true
           rm -f "$RUNNER_TEMP/arca.p12"
   docker:
-    needs: prepare
+    needs: [prepare, desktop]
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: "false"
     if: needs.prepare.outputs.build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -247,78 +254,47 @@ jobs:
           load: true
           tags: arca-smoke:arm64
       - run: node scripts/verify-docker.js arca-smoke:arm64
-      - uses: docker/build-push-action@v6
+      - name: Sign in to Docker Hub
+        if: needs.prepare.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish verified multiarch image to Docker Hub
+        if: needs.prepare.outputs.publish == 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: deploy/Dockerfile
           platforms: linux/amd64,linux/arm64
-          outputs: type=oci,dest=${{ runner.temp }}/arca-image.tar
-          tags: ghcr.io/satoshi-ltd/arca:${{ needs.prepare.outputs.version }}
+          push: true
+          tags: |
+            satoshiltd/arca:${{ needs.prepare.outputs.version }}
+            satoshiltd/arca:latest
           provenance: false
-      - uses: actions/upload-artifact@v6
-        with:
-          name: docker-image
-          path: ${{ runner.temp }}/arca-image.tar
-          retention-days: 1
   publish:
     if: needs.prepare.outputs.publish == 'true'
     needs: [prepare, desktop, docker]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-      packages: write
-      actions: write
     steps:
-      - uses: actions/download-artifact@v7
-        with:
-          pattern: desktop-*
-          path: assets
-          merge-multiple: true
-      - uses: actions/download-artifact@v7
-        with:
-          name: docker-image
-          path: image
-      - name: Publish versioned image and alpha release
+      - name: Verify assets and publish draft release
         env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           SIGN: ${{ inputs.sign_macos }}
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.prepare.outputs.version }}
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y skopeo
-          printf '%s' "$GH_TOKEN" | skopeo login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          printf '%s' "$DOCKERHUB_TOKEN" | skopeo login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin
-          registry="ghcr.io/${GITHUB_REPOSITORY,,}"
-          skopeo copy --all oci-archive:image/arca-image.tar "docker://$registry:$VERSION"
-          skopeo copy --all oci-archive:image/arca-image.tar "docker://docker.io/satoshiltd/arca:$VERSION"
-          skopeo copy --all "docker://$registry:$VERSION" "docker://$registry:latest"
-          skopeo copy --all "docker://docker.io/satoshiltd/arca:$VERSION" "docker://docker.io/satoshiltd/arca:latest"
+          mkdir assets
+          for suffix in macos-arm64.dmg windows-x64.exe linux-x64.AppImage linux-x64.deb; do
+            asset="arca-$VERSION-$suffix"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir assets
+            test -s "assets/$asset"
+          done
           (cd assets && sha256sum * > SHA256SUMS)
+          gh release upload "$TAG" assets/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
           macos_status="ad-hoc signed, not notarized (macOS may block downloaded apps)"
           if [[ "$SIGN" == true ]]; then macos_status="Developer ID signed and notarized"; fi
-          gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --title "Arca $TAG alpha" --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION and $registry:$VERSION (amd64/arm64; also tagged latest). No automatic updates or pilot deployment."
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-      - name: Remove temporary artifacts after successful publication
-        continue-on-error: true
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const names = new Set([
-              'desktop-macos-arm64', 'desktop-windows-x64',
-              'desktop-linux-x64', 'docker-image'
-            ]);
-            const artifacts = await github.paginate(
-              github.rest.actions.listWorkflowRunArtifacts,
-              { ...context.repo, run_id: context.runId, per_page: 100 }
-            );
-            for (const artifact of artifacts) {
-              if (!names.has(artifact.name)) continue;
-              await github.rest.actions.deleteArtifact({
-                ...context.repo, artifact_id: artifact.id
-              });
-              core.info(`Removed published temporary artifact: ${artifact.name}`);
-            }
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION (amd64/arm64; also tagged latest). No automatic updates or pilot deployment."
