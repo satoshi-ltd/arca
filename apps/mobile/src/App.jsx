@@ -1,3 +1,6 @@
+import { StickyDetailSide } from "./StickyDetailSide";
+import * as Application from "expo-application";
+import { textSizes, textScale } from "./text-size.js";
 import { coalescedRefresh, retainSnapshot } from "./ui-refresh.js";
 import { fileIcon } from "../../desktop/src/file-icons.js";
 import { native } from "./private-network.js";
@@ -146,8 +149,8 @@ export default function App() {
   const compactAndroid = Platform.OS === "android" && !wide;
   const compact = wide && width < 1100;
   const s = useMemo(
-    () => styles(c, wide, compact, fontScale),
-    [c, wide, compact, fontScale],
+    () => styles(c, wide, compact, fontScale, textScale(prefs.textSize)),
+    [c, wide, compact, fontScale, prefs.textSize],
   );
   const [fonts, fontError] = useFonts({
     InstrumentSans_400Regular,
@@ -201,7 +204,7 @@ export default function App() {
   async function readSnapshot() {
     const r = engine.current;
     if (!r || !mounted.current) return;
-    const [folders, last, notifications, background, theme, free] =
+    const [folders, last, notifications, background, theme, free, textSize] =
       await Promise.all([
         r.scope ? r.store.folders(r.scope) : [],
         r.store.get(`lastSync:${r.scope}`),
@@ -214,6 +217,7 @@ export default function App() {
               freeSpaceSample.current = { at: Date.now(), value };
               return value;
             }),
+        r.store.get("textSize", 1),
       ]);
     if (!mounted.current) return;
     setState((old) => retainSnapshot(old, client.state()));
@@ -236,6 +240,7 @@ export default function App() {
         notifications,
         background,
         theme,
+        textSize: textScale(textSize),
         onboarding,
       }),
     );
@@ -1256,40 +1261,6 @@ export default function App() {
                       </View>
                     )}
                     {screen === "History" && !wide && historyControls}
-                    {folder && screen === "Folders" && !source && (
-                      <View style={[s.group, s.statsGrid]}>
-                        {[
-                          [
-                            "Status",
-                            currentFolder?.issue || status.error
-                              ? "Needs attention"
-                              : status.paused
-                                ? "Paused"
-                                : status.busy
-                                  ? "Syncing"
-                                  : currentFolder?.completed
-                                    ? "Up to date"
-                                    : "Not yet synced",
-                          ],
-                          [
-                            "Files",
-                            `${currentFolder?.files ?? 0} · ${bytes(currentFolder?.bytes)}`,
-                          ],
-                          [
-                            "Last completed",
-                            currentFolder?.completed
-                              ? date(currentFolder.completed)
-                              : "Not yet",
-                          ],
-                          ["Revision history", retentionLabel],
-                        ].map(([label, value]) => (
-                          <View key={label} style={s.statCell}>
-                            <Text style={s.caption}>{label}</Text>
-                            <Text style={s.statValue}>{value}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
                   </View>
                 )}
                 <IncomingShare
@@ -1310,6 +1281,40 @@ export default function App() {
                   ]}
                   keyboardShouldPersistTaps="handled"
                 >
+                  {folder && screen === "Folders" && !source && (
+                    <View style={[s.group, s.statsGrid]}>
+                      {[
+                        [
+                          "Status",
+                          currentFolder?.issue || status.error
+                            ? "Needs attention"
+                            : status.paused
+                              ? "Paused"
+                              : status.busy
+                                ? "Syncing"
+                                : currentFolder?.completed
+                                  ? "Up to date"
+                                  : "Not yet synced",
+                        ],
+                        [
+                          "Files",
+                          `${currentFolder?.files ?? 0} · ${bytes(currentFolder?.bytes)}`,
+                        ],
+                        [
+                          "Last completed",
+                          currentFolder?.completed
+                            ? date(currentFolder.completed)
+                            : "Not yet",
+                        ],
+                        ["Revision history", retentionLabel],
+                      ].map(([label, value]) => (
+                        <View key={label} style={s.statCell}>
+                          <Text style={s.caption}>{label}</Text>
+                          <Text style={s.statValue}>{value}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
                   {screen === "Folders" && (
                     <>
                       {!connected && (
@@ -1521,7 +1526,7 @@ export default function App() {
                               )}
                             </View>
                             {wide && (
-                              <View style={s.detailSide}>
+                              <StickyDetailSide>
                                 <Section>
                                   <Text style={s.eyebrow}>LOCAL COPY</Text>
                                   <Card>
@@ -1597,7 +1602,7 @@ export default function App() {
                                     onPress={unlink}
                                   />
                                 </Card>
-                              </View>
+                              </StickyDetailSide>
                             )}
                           </View>
                         )
@@ -2174,17 +2179,21 @@ export default function App() {
                             />
                           </Card>
                           {Platform.OS === "android" && (
-                            <Card title="Photo uploads">
+                            <Card
+                              title="Photo uploads"
+                              actions={
+                                <Button
+                                  label="Open app settings"
+                                  onPress={() =>
+                                    run(() => Linking.openSettings())
+                                  }
+                                />
+                              }
+                            >
                               <Text style={s.caption}>
                                 On Samsung, set Battery to Unrestricted and keep
                                 Arca out of Sleeping apps.
                               </Text>
-                              <Button
-                                label="Open app settings"
-                                onPress={() =>
-                                  run(() => Linking.openSettings())
-                                }
-                              />
                             </Card>
                           )}
                           <Card>
@@ -2213,47 +2222,126 @@ export default function App() {
                         </Card>
                       </Section>
                       <Section>
-                        <Text style={s.eyebrow}>APPEARANCE</Text>
-                        <Card title="Theme">
-                          <SegmentedControl
-                            options={["light", "dark", "system"].map(
-                              (value) => ({
-                                value,
-                                label: value[0].toUpperCase() + value.slice(1),
-                              }),
-                            )}
-                            value={prefs.theme}
-                            onChange={(value) =>
-                              run(() =>
-                                engine.current.store.set("theme", value),
-                              )
+                        <Text style={s.eyebrow}>SERVICE</Text>
+                        <SettingsGroup>
+                          <Card
+                            title={`Arca v${Application.nativeApplicationVersion || config.expo.version}`}
+                            actions={
+                              <Button
+                                label="Copy diagnostics"
+                                icon="copy"
+                                onPress={() =>
+                                  run(async () => {
+                                    await native.copyText(
+                                      JSON.stringify(
+                                        {
+                                          appVersion:
+                                            Application.nativeApplicationVersion,
+                                          build: Application.nativeBuildVersion,
+                                          bundleVersion: config.expo.version,
+                                          platform: Platform.OS,
+                                          osVersion: Platform.Version,
+                                          machineId: connection?.id || null,
+                                          linked: !!connected,
+                                          paused: !!status.paused,
+                                        },
+                                        null,
+                                        2,
+                                      ),
+                                    );
+                                    setSuccess("Diagnostics copied");
+                                  })
+                                }
+                              />
                             }
-                          />
-                          <Text style={s.caption}>
-                            Text size follows system accessibility settings.
-                          </Text>
-                        </Card>
+                          >
+                            <Text style={s.caption}>
+                              Build{" "}
+                              {Application.nativeBuildVersion || "Unknown"} ·{" "}
+                              {Platform.OS === "ios" ? "iOS" : "Android"}{" "}
+                              {String(Platform.Version)}
+                            </Text>
+                          </Card>
+                          <Card title="Runtime">
+                            <Text style={s.text}>Mobile replica</Text>
+                            <Text style={s.caption}>
+                              Sync runs while Arca is open. Background activity
+                              depends on this device’s permissions and system
+                              limits.
+                            </Text>
+                          </Card>
+                        </SettingsGroup>
                       </Section>
-                      <Text style={[s.caption, s.centerText]}>
-                        arca {config.expo.version}
-                      </Text>
+                      <Section>
+                        <Text style={s.eyebrow}>APPEARANCE</Text>
+                        <SettingsGroup>
+                          <Card
+                            title="Theme"
+                            actions={
+                              <SegmentedControl
+                                options={["light", "dark", "system"].map(
+                                  (value) => ({
+                                    value,
+                                    label:
+                                      value[0].toUpperCase() + value.slice(1),
+                                  }),
+                                )}
+                                value={prefs.theme || "system"}
+                                onChange={(value) =>
+                                  run(() =>
+                                    engine.current.store.set("theme", value),
+                                  )
+                                }
+                              />
+                            }
+                          >
+                            <Text style={s.caption}>
+                              Use light, dark or your system appearance.
+                            </Text>
+                          </Card>
+                          <Card
+                            title="Text size"
+                            actions={
+                              <SegmentedControl
+                                options={textSizes}
+                                value={textScale(prefs.textSize)}
+                                onChange={(value) =>
+                                  run(() =>
+                                    engine.current.store.set("textSize", value),
+                                  )
+                                }
+                              />
+                            }
+                          >
+                            <Text style={s.caption}>
+                              Adjust text in Arca alongside your system text
+                              size. Applies to phone and Fold layouts.
+                            </Text>
+                          </Card>
+                        </SettingsGroup>
+                      </Section>
                       <Section>
                         <Text style={[s.eyebrow, s.errorText]}>
                           DANGER ZONE
                         </Text>
-                        <Card title="Destroy this replica" danger>
+                        <Card
+                          title="Destroy this replica"
+                          danger
+                          actions={
+                            <Button
+                              label="Destroy replica…"
+                              icon="trash"
+                              primary
+                              danger
+                              busy={locked}
+                              onPress={destroy}
+                            />
+                          }
+                        >
                           <Text style={s.text}>
                             Deletes all local folders and resets Arca on this
                             device. Hub files and other machines are kept.
                           </Text>
-                          <Button
-                            label="Destroy replica…"
-                            icon="trash"
-                            primary
-                            danger
-                            busy={locked}
-                            onPress={destroy}
-                          />
                         </Card>
                       </Section>
                     </>

@@ -10,6 +10,7 @@
 !/apps/desktop/src
 /apps/desktop/src/*
 !/apps/desktop/src/notice-contract.js
+!/apps/desktop/src/file-icons.js
 !/packages
 /packages/*
 !/packages/vendor

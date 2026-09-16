@@ -1081,7 +1081,8 @@ test("share web routes survive reload and history navigation; hub edits use real
   await until(() => q('[data-action="history-back"]') && idle());
   assert.equal(q("#history-share"), null);
   assert.equal(q('[data-action="history-filter"]'), null);
-  assert.ok(q(".file-history-summary .stats"));
+  assert.ok(q(".detail-page > .file-history-summary .stats"));
+  assert.equal(q(".detail-head .file-history-summary"), null);
   const download = q(".file-header-actions a[download]");
   assert.ok(download);
   const blob = await request(download.getAttribute("href"));
@@ -1691,6 +1692,10 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   w.document.querySelector('[data-view="settings"]').click();
   await until(() => w.document.querySelector('[data-action="diagnostics"]'));
   const diagnostics = w.document.querySelector('[data-action="diagnostics"]');
+  const service = diagnostics.closest("section");
+  assert.match(service.textContent, /Service/);
+  assert.match(service.textContent, /Runtime/);
+  assert.doesNotMatch(service.textContent, /alpha/);
   diagnostics.click();
   await until(() => diagnostics.textContent.includes("Copied"));
   assert.equal(

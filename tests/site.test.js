@@ -226,3 +226,9 @@ test("read-release picks the newest complete release via the GitHub API", async 
   assert.equal(resolveToken({ GITHUB_TOKEN: "from-env" }), "from-env");
   assert.equal(resolveToken({ GH_TOKEN: "gh", GITHUB_TOKEN: "x" }), "gh");
 });
+
+test("site masthead displays version without an alpha or early-access suffix", () => {
+  const masthead = template.split("<header")[1].split("</header>")[0];
+  assert.match(masthead, /\{\{VERSION\}\}/);
+  assert.doesNotMatch(masthead, /alpha|early access/i);
+});

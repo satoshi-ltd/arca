@@ -3,12 +3,18 @@ import { StyleSheet } from "react-native";
 import { geometry as g } from "./design-tokens.js";
 import { palettes } from "./palette.js";
 export { palettes };
-export function styles(c, wide = false, compact = false, fontScale = 1) {
+export function styles(
+  c,
+  wide = false,
+  compact = false,
+  fontScale = 1,
+  textScale = 1,
+) {
   const controlHeight = Math.max(
     g.touchControlHeight,
-    Math.ceil(26 * fontScale + 18),
+    Math.ceil(26 * fontScale * textScale + 18),
   );
-  return StyleSheet.create({
+  const rules = {
     scaffoldRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -454,7 +460,7 @@ export function styles(c, wide = false, compact = false, fontScale = 1) {
     machineIdentity: { flexDirection: "row", alignItems: "center", gap: 6 },
     machineName: { flexShrink: 1 },
     machineTag: {
-      height: g.tagHeight,
+      minHeight: g.tagHeight,
       justifyContent: "center",
       alignSelf: "center",
       borderWidth: 1,
@@ -485,6 +491,8 @@ export function styles(c, wide = false, compact = false, fontScale = 1) {
     statCell: { width: wide ? "25%" : "50%", padding: 12, gap: 6 },
     detailGrid: { flexDirection: wide ? "row" : "column", gap: 16 },
     detailMain: { flex: wide ? 1 : undefined, minWidth: 0, gap: 12 },
+    stickySideScroll: { flexGrow: 0 },
+    stickySideContent: { gap: 12 },
     detailSide: {
       width: wide ? g.detailSideWidth : undefined,
       flexShrink: 0,
@@ -680,6 +688,13 @@ export function styles(c, wide = false, compact = false, fontScale = 1) {
     },
     breadcrumbButton: { minHeight: 44, justifyContent: "center" },
     separator: { borderTopWidth: 1, borderColor: c.divider },
+    settingWithActions: {
+      flexDirection: wide ? "row" : "column",
+      alignItems: wide ? "center" : "stretch",
+      gap: 16,
+    },
+    settingDescription: { flex: wide ? 1 : undefined, minWidth: 0, gap: 12 },
+    settingActions: { flexShrink: 0, maxWidth: wide ? "60%" : "100%" },
     card: {
       backgroundColor: c.surface,
       borderColor: c.divider,
@@ -794,5 +809,10 @@ export function styles(c, wide = false, compact = false, fontScale = 1) {
       lineHeight: g.pillLine,
       includeFontPadding: false,
     },
-  });
+  };
+  for (const rule of Object.values(rules)) {
+    if (typeof rule.fontSize === "number") rule.fontSize *= textScale;
+    if (typeof rule.lineHeight === "number") rule.lineHeight *= textScale;
+  }
+  return StyleSheet.create(rules);
 }

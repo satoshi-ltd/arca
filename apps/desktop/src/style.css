@@ -637,7 +637,15 @@ main {
   grid-template-columns: minmax(0, 1fr) var(--detail-side-width);
   gap: var(--space-5);
 }
+.detail-page {
+  container-type: size;
+}
 .detail-side {
+  position: sticky;
+  top: 0;
+  max-height: 100cqh;
+  overflow-y: auto;
+  align-self: start;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -1508,6 +1516,11 @@ progress::-moz-progress-bar {
   }
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+  .detail-side {
+    position: static;
+    max-height: none;
+    overflow: visible;
   }
   .stats {
     grid-template-columns: 1fr 1fr;
@@ -2568,7 +2581,7 @@ progress::-webkit-progress-value {
 /* File history uses the same hierarchy as folder detail. */
 .file-history-summary {
   flex: none;
-  padding: 0 var(--space-6) var(--space-5);
+  padding: 0;
 }
 .detail-title > div:last-child {
   min-width: 0;
@@ -2599,9 +2612,6 @@ progress::-webkit-progress-value {
 
 .history-row:not(.compact):not(.file-version-row) {
   grid-template-columns: 20px minmax(0, 1fr) 110px 64px 56px auto;
-}
-.file-history-summary + .page {
-  padding-top: 0;
 }
 .heading-actions a.secondary {
   text-decoration: none;

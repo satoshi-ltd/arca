@@ -306,3 +306,44 @@ test("file dropdown stays inside narrow screens and aligns below its trigger", (
     }
   }
 });
+
+test("app text size scales typography without zooming layout or icons", async () => {
+  const { geometry } = await import("../apps/mobile/src/design-tokens.js");
+  const { palettes } = await import("../apps/mobile/src/palette.js");
+  const { textSizes, textScale } =
+    await import("../apps/mobile/src/text-size.js");
+  const source = fs
+    .readFileSync(
+      new URL("../apps/mobile/src/theme.js", import.meta.url),
+      "utf8",
+    )
+    .replace(/^import .*;$/gm, "")
+    .replace("export { palettes };", "")
+    .replace("export function styles", "function styles");
+  const context = {
+    g: geometry,
+    n: noticeMetrics,
+    palettes,
+    StyleSheet: { create: (v) => v, absoluteFillObject: {} },
+  };
+  vm.runInNewContext(source + ";this.makeStyles = styles;", context);
+  for (const wide of [false, true]) {
+    const base = context.makeStyles(palettes.light, wide, false, 1);
+    for (const { value } of textSizes) {
+      const scaled = context.makeStyles(palettes.light, wide, false, 1, value);
+      assert.equal(scaled.title.fontSize, base.title.fontSize * value);
+      assert.equal(scaled.caption.lineHeight, base.caption.lineHeight * value);
+      assert.equal(
+        scaled.buttonLabel.fontSize,
+        base.buttonLabel.fontSize * value,
+      );
+      assert.equal(scaled.iconButton.width, base.iconButton.width);
+      assert.equal(scaled.detailTile.width, base.detailTile.width);
+      assert.equal(scaled.content.padding, base.content.padding);
+      assert.ok(scaled.input.height >= 26 * value + 18);
+    }
+  }
+  for (const invalid of [null, undefined, "garbage", -1, 2, Infinity])
+    assert.equal(textScale(invalid), 1);
+  assert.equal(textScale("1.15"), 1.15);
+});

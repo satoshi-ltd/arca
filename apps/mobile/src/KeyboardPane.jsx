@@ -1,8 +1,15 @@
-import React, { createContext, useEffect, useRef, useState } from "react";
-import { Keyboard, Platform, ScrollView, StyleSheet, View } from "react-native";
+import React, {
+  createContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Animated, Keyboard, Platform, StyleSheet, View } from "react-native";
 import { keyboardOverlap, focusScrollDelta } from "./keyboard.js";
 
 export const FieldFocus = createContext(null);
+export const ScrollPosition = createContext(null);
 
 export function useKeyboardVisible() {
   const [visible, setVisible] = useState(Keyboard.isVisible());
@@ -66,7 +73,16 @@ export function KeyboardPane({ children, style }) {
 
 // Used by every form, including sheets. Focus changes and viewport changes both
 // reveal the field; no fixed keyboard height or delayed scroll timers.
-export function KeyboardScrollView({ children, onScroll, onLayout, ...props }) {
+export function KeyboardScrollView({
+  children,
+  onScroll,
+  onLayout,
+  onContentSizeChange,
+  ...props
+}) {
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const [contentSize, setContentSize] = useState({ width: 0, height: 0 });
   const scroll = useRef(null),
     focused = useRef(null),
     offset = useRef(0);
@@ -96,18 +112,53 @@ export function KeyboardScrollView({ children, onScroll, onLayout, ...props }) {
       cancelAnimationFrame(frame.current);
     };
   }, []);
+  const position = useMemo(
+    () => ({
+      scrollY,
+      viewport,
+      contentSize,
+      measure: (node, callback) => {
+        scroll.current?.measureInWindow((x, top) => {
+          node?.measureInWindow((sx, sy, width, height) => {
+            callback({ top: sy - top + offset.current, height });
+          });
+        });
+      },
+    }),
+    [scrollY, viewport, contentSize],
+  );
   return (
-    <ScrollView
+    <Animated.ScrollView
       {...props}
       ref={scroll}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       scrollEventThrottle={16}
-      onScroll={(event) => {
-        offset.current = event.nativeEvent.contentOffset.y;
-        onScroll?.(event);
+      onScroll={Animated.event(
+        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+        {
+          useNativeDriver: true,
+          listener: (event) => {
+            offset.current = event.nativeEvent.contentOffset.y;
+            onScroll?.(event);
+          },
+        },
+      )}
+      onContentSizeChange={(width, height) => {
+        setContentSize((old) =>
+          old.width === width && old.height === height
+            ? old
+            : { width, height },
+        );
+        onContentSizeChange?.(width, height);
       }}
       onLayout={(event) => {
+        const { width, height } = event.nativeEvent.layout;
+        setViewport((old) =>
+          old.width === width && old.height === height
+            ? old
+            : { width, height },
+        );
         reveal();
         onLayout?.(event);
       }}
@@ -123,8 +174,10 @@ export function KeyboardScrollView({ children, onScroll, onLayout, ...props }) {
           },
         }}
       >
-        {children}
+        <ScrollPosition.Provider value={position}>
+          {children}
+        </ScrollPosition.Provider>
       </FieldFocus.Provider>
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }

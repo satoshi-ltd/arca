@@ -27,7 +27,7 @@ const versions = [
     read("apps/mobile/modules/arca-network/android/build.gradle"),
   )?.[1],
   /version:\s*"([^"]+)"/.exec(read("packages/daemon/network.js"))?.[1],
-  /Arca v([\d.]+) alpha/.exec(read("apps/desktop/src/app.js"))?.[1],
+  /Arca v([\d.]+)/.exec(read("apps/desktop/src/app.js"))?.[1],
   /version:\s*"([^"]+)"/.exec(read("apps/desktop/src/app.js"))?.[1],
   /Arca ([\d.]+) — personal drive/.exec(read("packages/cli/arca.js"))?.[1],
 ];

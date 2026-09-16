@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.8 — 2026-09-16
+
+- Keep folder/file information sidebars sticky in desktop/web and Fold two-column layouts, with internal scrolling when needed. Move detail summaries with the main content; preserve ordinary scrolling on compact phones.
+- Move app version and diagnostics into Service. Show the installed mobile version, build and runtime information; remove maturity suffixes from Settings versions and the site header.
+- Add persistent mobile text-size preferences using the same segmented control as Theme, while respecting system accessibility settings.
+- Align Fold/tablet Settings descriptions on the left and controls on the right, retaining stacked controls on phones.
+- Include the shared file-icon registry in EAS archives to fix production Android bundling, with regression coverage for shared build inputs.
+- Align all version manifests at 0.4.8 and mobile build 19.
+
 ## 0.4.7 — 2026-09-15
 
 - Keep mobile file opening, sharing and menus available during background sync; release the foreground action lock for manual sync, selection downloads and resume.

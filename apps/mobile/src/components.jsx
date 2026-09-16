@@ -438,6 +438,7 @@ export function CodeInput({ label, value, onChangeText, editable = true }) {
 export function Card({
   title,
   children,
+  actions,
   available = false,
   danger = false,
   grouped = false,
@@ -451,10 +452,23 @@ export function Card({
         available && s.available,
         danger && s.dangerCard,
         divider && s.separator,
+        actions && s.settingWithActions,
       ]}
     >
-      {title ? <Text style={s.heading}>{title}</Text> : null}
-      {children}
+      {actions ? (
+        <>
+          <View style={s.settingDescription}>
+            {title ? <Text style={s.heading}>{title}</Text> : null}
+            {children}
+          </View>
+          <View style={s.settingActions}>{actions}</View>
+        </>
+      ) : (
+        <>
+          {title ? <Text style={s.heading}>{title}</Text> : null}
+          {children}
+        </>
+      )}
     </View>
   );
 }

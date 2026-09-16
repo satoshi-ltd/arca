@@ -1,3 +1,4 @@
+import { StickyDetailSide } from "./StickyDetailSide";
 import { Scaffold } from "./components";
 import { Section } from "./components";
 import { ErrorNotice } from "./Notice";
@@ -145,7 +146,7 @@ export function FileHistory({
             />
           )}
         </View>
-        <View style={s.detailSide}>
+        <StickyDetailSide>
           <Section>
             <Text style={s.eyebrow}>FILE LOCATION</Text>
             <Card title={volume?.name || "Shared folder"}>
@@ -161,7 +162,7 @@ export function FileHistory({
               )}
             </Card>
           </Section>
-        </View>
+        </StickyDetailSide>
       </View>
     </>
   );
