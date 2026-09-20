@@ -249,11 +249,22 @@ test("mobile folder refresh retains its cached files and ignores an older folder
     source.indexOf("  const notices ="),
   );
   let entries, release;
+  const painted = [];
+  const persisted = [];
   const cache = new Map([["hub:A", [{ path: "last-known.jpg", size: 20 }]]]);
   const context = {
     engine: {
       current: {
         scope: "hub",
+        store: {
+          get: async (key, fallback) =>
+            key === "gallery-list:hub:B"
+              ? [{ path: "disk-cached.jpg" }]
+              : fallback,
+          set: async (key, value) => {
+            persisted.push({ key, value });
+          },
+        },
         files: {
           folder: (scope, id) => id,
           exists: async () => true,
@@ -272,6 +283,7 @@ test("mobile folder refresh retains its cached files and ignores an older folder
     folderLists: { current: cache },
     setEntries: (value) => {
       entries = value;
+      painted.push(value);
     },
     setFilesLoading: () => {},
   };
@@ -287,6 +299,11 @@ test("mobile folder refresh retains its cached files and ignores an older folder
     "a new folder must not show the previous folder's files",
   );
   await newRead;
+  assert.ok(
+    painted.some((rows) => rows[0]?.path === "disk-cached.jpg"),
+    "saved entries paint before the filesystem scan finishes",
+  );
+  assert.equal(persisted[0].key, "gallery-list:hub:B");
   release();
   await oldRead;
   assert.equal(entries[0].path, "B.jpg");

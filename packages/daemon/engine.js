@@ -831,6 +831,10 @@ export class Engine {
               state: "synced",
               lastCompleted: new Date().toISOString(),
             });
+            if (
+              this.config.catalog?.find((folder) => folder.id === v.id)?.gallery
+            )
+              this.gallery?.prepare(v.id);
           } catch (e) {
             if (this.syncAbort.signal.aborted)
               throw this.syncAbort.signal.reason;

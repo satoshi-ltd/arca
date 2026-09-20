@@ -15,6 +15,9 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 - No commits or pushes unless explicitly requested. Remote: `git@github.com:satoshi-ltd/arca.git`.
 - Every commit must increment the project version and include a matching entry in `changelog.md`. Keep package/lockfiles, Tauri manifests, displayed/reported versions and the changelog aligned. Default to a patch bump unless the user specifies another version. This does not authorize commits or pushes.
 - No TypeScript; avoid inline styles and overengineering.
+- Enable the repository hooks once per clone with `git config core.hooksPath .githooks`; `pre-push` runs the version check and the exact CI test command before anything leaves the machine.
+- Mobile build tooling tests live in `apps/mobile` (`npm test` there), not in the root suite; CI never builds or tests mobile installers.
+- Tests run on Ubuntu, macOS and Windows in CI. Build every filesystem expectation with `path.join`/`path.sep`, never a hardcoded `/`, and never assume the temp directory or line endings of one platform.
 - Before declaring a release ready, validate a clean checkout on the local Mac using the CI Node version, root-only `npm ci`, version-agreement check and the exact CI test command. Do not rely on installed mobile dependencies in the development workspace. Report local verification separately from actual GitHub macOS/Windows/Linux pipeline results.
 - All app-owned text is English through phases 1 and 2. Preserve user names, paths and content. i18n is phase 3; conversation may be Spanish.
 - The user authorized implementing the handoff and refining UI/UX beyond it. Use shared tokens/components and update the design section of `SPEC.md` for decisions. Do not treat the old designer-only restriction as current.

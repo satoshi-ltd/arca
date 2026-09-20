@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Arca",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "identifier": "com.soyjavi.arca",
   "build": {
     "frontendDist": "../src",
@@ -24,8 +24,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' http://127.0.0.1:*; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-src 'none'",
-      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:1425; object-src 'none'; base-uri 'none'; frame-src 'none'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: http://127.0.0.1:*; media-src 'self' http://127.0.0.1:*; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-src 'none'",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://127.0.0.1:*; media-src 'self' http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:1425; object-src 'none'; base-uri 'none'; frame-src 'none'"
     },
     "macOSPrivateApi": true
   },

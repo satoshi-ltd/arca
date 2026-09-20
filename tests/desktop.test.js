@@ -2437,6 +2437,11 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   });
   const retentionCalls = [];
   const largeRequests = [];
+  let releaseLarge;
+  const largeGate = new Promise((resolve) => {
+    releaseLarge = resolve;
+  });
+  t.after(() => releaseLarge());
   const galleryRequests = [];
   const requests = new Set();
   t.after(async () => {
@@ -2467,10 +2472,12 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
           return { remove: 3, confirmation: "preview" };
         }
         if (
-          args.route.includes("/gallery/preview?") &&
+          args.route.includes("/gallery/preview-url?") &&
           args.route.includes("size=large")
-        )
+        ) {
           largeRequests.push(args.route);
+          await largeGate;
+        }
         if (args.route.startsWith("/v1/gallery?"))
           galleryRequests.push(args.route);
         const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
@@ -2598,9 +2605,64 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     w.document.querySelector(".photo-day h2").textContent,
     /^[A-Za-z]+ \d{4}$/,
   );
+  await until(
+    () => w.document.querySelectorAll(".photo-open img").length === 3,
+  );
+  Object.defineProperty(w.document, "hidden", {
+    configurable: true,
+    value: false,
+  });
+  const galleryRoot = w.document.querySelector("#photo-gallery");
+  const galleryPage = w.document.querySelector(".page");
+  galleryPage.scrollTop = 77;
+  fs.copyFileSync(
+    path.join(v.path, "photo.jpg"),
+    path.join(v.path, "new-arrival.jpg"),
+  );
+  await daemon.engine.cycle();
+  await daemon.engine.gallery.background;
+  w.document.dispatchEvent(new w.Event("visibilitychange"));
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 4);
+  assert.equal(w.document.querySelector("#photo-gallery"), galleryRoot);
+  assert.equal(galleryPage.scrollTop, 77);
+  fs.unlinkSync(path.join(v.path, "new-arrival.jpg"));
+  await daemon.engine.cycle();
+  w.document.dispatchEvent(new w.Event("visibilitychange"));
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 3);
+  await until(
+    () => w.document.querySelectorAll(".photo-open img").length === 3,
+  );
+  const thumbnail = w.document.querySelector(".photo-open img").src;
   w.document.querySelector(".photo-open").click();
-  assert.ok(w.document.querySelector(".photo-viewer-image .busy-grid"));
-  await until(() => w.document.querySelector(".photo-viewer-image img"));
+  assert.equal(
+    w.document.querySelector(".photo-viewer-image img").src,
+    thumbnail,
+  );
+  assert.equal(
+    w.document.querySelector(".photo-viewer-image .busy-grid"),
+    null,
+  );
+  await until(() => largeRequests.length === 2);
+  assert.ok(
+    w.document.querySelector(".photo-preview-placeholder"),
+    "thumbnail stays visible while the full preview is stalled",
+  );
+  w.document.querySelector(".photo-next").click();
+  assert.equal(
+    w.document.querySelector(".photo-viewer-image img").alt,
+    "a-photo.jpg",
+  );
+  w.document.querySelector(".photo-previous").click();
+  assert.equal(
+    w.document.querySelector(".photo-viewer-image img").alt,
+    "photo.jpg",
+  );
+  releaseLarge();
+  await until(() =>
+    w.document.querySelector(
+      ".photo-viewer-image img:not(.photo-preview-placeholder)",
+    ),
+  );
   assert.equal(
     w.document.querySelector(".photo-viewer-image img").alt,
     "photo.jpg",
@@ -3110,6 +3172,7 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
       ? Promise.reject(new Error("Autoplay blocked"))
       : Promise.resolve();
   };
+  let activityReads = 0;
   w.setInterval = () => 0;
   w.HTMLMediaElement.prototype.pause = function () {
     paused++;
@@ -3130,9 +3193,7 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
         if (command === "bootstrap")
           return { setup: false, status: daemon.engine.status() };
         if (command !== "api") throw new Error(command);
-        // Keep the detail scaffold visible long enough to expose premature clicks.
-        if (args.route.startsWith("/v1/activity?volume="))
-          await new Promise((resolve) => setTimeout(resolve, 100));
+        if (args.route.startsWith("/v1/activity?volume=")) activityReads++;
         if (args.route.startsWith("/v1/gallery/preview?"))
           return new Promise((resolve) => {
             releasePoster = resolve;
@@ -3169,8 +3230,16 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
       w.document.querySelector('[data-action="gallery-mode"]') &&
       w.document.body.getAttribute("aria-busy") === "false",
   );
-  w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => w.document.querySelector(".photo-open"));
+  assert.equal(
+    activityReads,
+    0,
+    "gallery entry must not wait for folder history",
+  );
+  assert.match(
+    w.document.querySelector('[data-action="gallery-mode"]').textContent,
+    /Exit gallery/,
+  );
   assert.ok(w.document.querySelector(".photo-video-badge"));
   await until(() => w.document.body.getAttribute("aria-busy") === "false");
   const tile = w.document.querySelector(".photo-thumb");

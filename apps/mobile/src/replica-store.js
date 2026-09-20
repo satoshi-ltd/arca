@@ -90,6 +90,11 @@ export class ReplicaStore {
           id,
         );
       await this.db.runAsync(
+        "DELETE FROM settings WHERE key IN (?,?)",
+        `gallery-list:${scope}:${id}`,
+        `gallery-thumbnails:${scope}:${id}`,
+      );
+      await this.db.runAsync(
         "DELETE FROM folders WHERE scope=? AND id=?",
         scope,
         id,

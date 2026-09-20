@@ -62,6 +62,14 @@ export function styles(
       backgroundColor: c.surface,
       opacity: 0.92,
     },
+    localGalleryViewer: {
+      flex: 1,
+      backgroundColor: c.paper,
+      padding: 24,
+      paddingTop: 56,
+      gap: 16,
+    },
+    localGalleryPhoto: { flex: 1, width: "100%" },
     galleryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     galleryTile: {
       width: "23%",

@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.4.8 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.4.9 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -52,11 +52,11 @@ Expo/React Native JavaScript lives in `apps/mobile`. Expo Go cannot load its loc
 
 ```sh
 npm ci --prefix apps/mobile
-npm run mobile
+npm start --prefix apps/mobile
 npm run check --prefix apps/mobile
 ```
 
-`mobile` starts Metro for the installed development client over LAN with the `arca` scheme; it does not build or launch an emulator. `check` exports Android/iOS JavaScript, not native installers. Do not restart a user-managed Metro session just to refresh JavaScript.
+`start` starts Metro for the installed development client with the `arca` scheme; it does not build or launch an emulator. `check` exports Android/iOS JavaScript, not native installers. Do not restart a user-managed Metro session just to refresh JavaScript.
 
 Implemented locally: secure pairing, persistent whole-folder sync with verified resumable transfers, offline files, imports, history/restore/conflicts, themes and OS background/notification integration. Files, Recent and History lead to one file-detail view. Phone uses bottom navigation and stacked content; wide/Fold uses a sidebar and desktop-style composition with touch-sized controls.
 
@@ -68,32 +68,23 @@ Implemented locally: secure pairing, persistent whole-folder sync with verified 
 
 Native modules, incoming-share registration and icon/splash changes require a new binary. Metro does not install them. The hub needs the bounded-download `blobRanges` capability; Casa has received it, but the published v0.2.3 image predates these mobile-support changes.
 
-### Local Android builds
+### Android builds
 
-From the repository root (Android Studio/SDK and mobile dependencies installed):
-
-```sh
-npm run mobile:build:dev   # Build/install on Pixel_9_Pro_Fold; does not start Metro
-npm run mobile:build:prod  # Signed standalone APK in release-assets/
-npm run mobile:build:dev -- --install-only  # Reinstall the existing dev APK
-```
-
-Set `ARCA_ANDROID_AVD` to use a different emulator. Both commands compile locally with EAS and the existing signing credentials. Development boots the selected emulator and installs with `adb install -r`; start Metro yourself with `npm run mobile`. Installation preserves app data and stops on a signature mismatch; it never uninstalls the app.
-
-Production uses `eas build --local`: compilation runs on this Mac, consumes no cloud build quota, and retrieves the existing EAS signing credentials. Expo login and network access are required, but Metro is not. Rerunning a build replaces its generated APK. Do not replace the signing key when updating an installed app. Local native toolchain versions come from the machine, not the EAS cloud Node setting.
-
-### Optional EAS cloud builds
-
-Project: [satoshi-ltd/arca](https://expo.dev/accounts/satoshi-ltd/projects/arca).
+From `apps/mobile` (Android Studio/SDK, mobile dependencies and an Expo login):
 
 ```sh
-cd apps/mobile
-npm run build:dev      # Android development client; uses Metro
-npm run build:preview  # Internal standalone Android APK
-npm run build:prod     # Production-profile Android APK; no store submission
+npm run build:local:dev    # Compile on this machine and install on the device
+npm run build:local:prod   # Signed standalone APK in apps/mobile/release-assets/
+npm run build:dev          # Same development build on EAS cloud, downloaded and installed
+npm run build:prod         # Same signed APK built on EAS cloud and downloaded
+npm run build:local:dev -- --install-only  # Reinstall the existing dev APK
 ```
 
-EAS manages Android signing. Root aliases `mobile:build` and `mobile:build:preview` invoke development and preview builds. Build profiles currently use Node 24.14.1 and APK output. Increasing native build numbers and store distribution remain release work. The installed pilot APK predates the latest icon/splash and other native refinements; do not infer native acceptance from a successful export.
+Development builds install on the first USB device, otherwise on a running emulator, otherwise they boot `Pixel_9_Pro_Fold`; set `ANDROID_AVD` for another emulator or `ANDROID_SERIAL` to pin a device. Installation uses `adb install -r`, preserves app data and stops on a signature mismatch; it never uninstalls the app. Start Metro yourself with `npm start`.
+
+Local builds use `eas build --local`: compilation runs on this Mac, consumes no cloud build quota and retrieves the existing EAS signing credentials; native toolchain versions come from the machine. Cloud builds run in the [satoshi-ltd/arca](https://expo.dev/accounts/satoshi-ltd/projects/arca) EAS project, consume quota and download the finished APK. Every build runs `check:release` first and rerunning replaces its APK. Do not replace the signing key when updating an installed app. The repository root has no mobile scripts, and CI never builds or tests mobile installers: `npm test` inside `apps/mobile` checks the build script wiring.
+
+Build profiles currently use Node 24.14.1 and APK output. Increasing native build numbers and store distribution remain release work. The installed pilot APK predates the latest icon/splash and other native refinements; do not infer native acceptance from a successful export.
 
 ## Connect over the local network
 

@@ -14,6 +14,11 @@ export const files = {
   async destroy() {
     if (root.exists) root.delete();
     await this.clearIncoming();
+    this.clearGalleryCache();
+  },
+  clearGalleryCache() {
+    const directory = new Directory(Paths.cache, "arca-gallery");
+    if (directory.exists) directory.delete();
   },
   galleryStage: (scope, volume) =>
     new Directory(root, id(scope), "gallery-stage", id(volume)).uri,
@@ -58,6 +63,7 @@ export const files = {
     return Paths.availableDiskSpace;
   },
   async removeFolder(scope, volume) {
+    this.clearGalleryCache();
     const directory = new Directory(this.folder(scope, volume));
     if (directory.exists) directory.delete();
   },

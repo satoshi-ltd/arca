@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.9 — 2026-09-20
+
+- Open gallery folders directly in Gallery, bypass unrelated folder-history reads and retain Exit gallery access to files.
+- Prepare bounded thumbnail and large-preview caches on hubs and desktop replicas; serve local large JPEGs as binary images and show thumbnails immediately while neighboring photos preload. Original files remain unchanged.
+- Refresh desktop/web gallery contents in the background while preserving scroll and active interactions. Persist bounded gallery pages and thumbnails across app sessions.
+- Add offline mobile/Fold gallery browsing for synchronized working copies, including nested photos from other devices, with local thumbnail generation and persistent view caches. Mobile binaries must be rebuilt for the image-manipulator module.
+- Move Android build commands into apps/mobile, check release versions before building and exclude generated APKs from EAS archives.
+- Route every Android build through one shared script: `build:dev`/`build:prod` on EAS cloud, `build:local:dev`/`build:local:prod` on this machine, with development builds installed on the connected device or emulator. Force LF line endings on every checkout and keep mobile build tooling tests out of the root CI suite.
+- Align release manifests at 0.4.9 and mobile build 20.
+
 ## 0.4.8 — 2026-09-16
 
 - Publish verified installers through a GitHub draft release and Docker images directly to Docker Hub. Remove intermediate Actions artifacts and GHCR publication; preserve same-commit retries and existing site download URLs.

@@ -88,10 +88,8 @@ export async function start(home, options = {}) {
   }
   const webEnabled = config.installation !== "desktop";
   const network = new Network(engine, options.network);
-  if (config.role === "hub") {
-    engine.gallery = new Gallery(s);
-    engine.gallery.resume();
-  }
+  engine.gallery = new Gallery(s);
+  engine.gallery.resume();
   let web;
   try {
     if (webEnabled)
@@ -156,11 +154,11 @@ export async function start(home, options = {}) {
         return send(404, {
           error: "Web access is not available in the desktop installation",
         });
-      // Native video elements cannot attach the daemon bearer credential. A loopback-only
-      // ticket grants read access to one current video; never to other API routes.
+      // Native media elements cannot attach the daemon bearer credential. A loopback-only
+      // ticket grants read access to one current preview or video, never other API routes.
       const playbackUrl = new URL(req.url, "http://localhost");
       if (
-        pathname === "/v1/gallery/media" &&
+        ["/v1/gallery/media", "/v1/gallery/preview-image"].includes(pathname) &&
         playbackUrl.searchParams.has("ticket")
       ) {
         const ticket = playbackTickets.get(
@@ -170,6 +168,9 @@ export async function start(home, options = {}) {
           !["GET", "HEAD"].includes(req.method) ||
           !["127.0.0.1", "::1"].includes(remote) ||
           !ticket ||
+          (ticket.preview
+            ? pathname !== "/v1/gallery/preview-image"
+            : pathname !== "/v1/gallery/media") ||
           ticket.expires < Date.now() ||
           ticket.owner !== config.adminToken ||
           (req.headers.origin &&
@@ -181,6 +182,8 @@ export async function start(home, options = {}) {
             ].includes(req.headers.origin))
         )
           fail("Playback access expired", 401);
+        if (ticket.preview)
+          return await sendPreview(ticket.volume, ticket.name, ticket.hash);
         return streamGalleryMedia(
           req,
           res,
@@ -467,6 +470,88 @@ export async function start(home, options = {}) {
           412,
         );
 
+      async function sendPreview(volume, name, hash) {
+        engine.gallery ||= new Gallery(s);
+        const result = await engine.gallery.derivative(
+          volume,
+          name,
+          hash,
+          true,
+        );
+        if (!result.bytes) fail("Preview unavailable", 404);
+        res.writeHead(200, {
+          "Content-Type": "image/jpeg",
+          "Content-Length": result.bytes.length,
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(req.method === "HEAD" ? undefined : result.bytes);
+      }
+      if (
+        ["/v1/gallery/preview-url", "/v1/gallery/preview-image"].includes(route)
+      ) {
+        requireAdmin();
+        if (!["GET", "HEAD"].includes(req.method))
+          fail("Method not allowed", 405);
+        const volume = url.searchParams.get("volume"),
+          name = url.searchParams.get("path"),
+          hash = url.searchParams.get("hash");
+        const folder = s.volume(volume);
+        if (config.role !== "hub" && !folder.selected)
+          fail("Select this folder first", 403);
+        const row = s.current(volume, name);
+        if (
+          route.endsWith("preview-url") &&
+          config.role !== "hub" &&
+          config.hub &&
+          (!row || row.hash !== hash || !fs.existsSync(s.blob(hash)))
+        )
+          return send(
+            200,
+            await engine.json(
+              "/v1/gallery/preview?" +
+                new URLSearchParams({
+                  volume,
+                  path: name,
+                  hash,
+                  size: "large",
+                }),
+            ),
+          );
+        if (
+          !row ||
+          row.deleted ||
+          row.directory ||
+          row.hash !== hash ||
+          s.visibleRules(volume)(name, false)
+        )
+          fail("This photo is no longer available", 404);
+        if (route.endsWith("preview-image"))
+          return await sendPreview(volume, name, hash);
+        const query = new URLSearchParams({ volume, path: name, hash });
+        if (browserSession)
+          return send(200, { url: "/v1/gallery/preview-image?" + query });
+        if (!["127.0.0.1", "::1"].includes(remote))
+          fail("Use the local desktop application", 403);
+        for (const [key, value] of playbackTickets)
+          if (value.expires < Date.now()) playbackTickets.delete(key);
+        while (playbackTickets.size >= 32)
+          playbackTickets.delete(playbackTickets.keys().next().value);
+        const ticket = token(),
+          expires = Date.now() + 2 * 3600000;
+        playbackTickets.set(ticket, {
+          volume,
+          name,
+          hash,
+          preview: true,
+          owner: config.adminToken,
+          expires,
+        });
+        return send(200, {
+          url: `http://127.0.0.1:${server.address().port}/v1/gallery/preview-image?ticket=${ticket}`,
+          expires,
+        });
+      }
       if (["/v1/gallery/playback", "/v1/gallery/media"].includes(route)) {
         requireAdmin();
         if (!["GET", "HEAD"].includes(req.method))
@@ -540,7 +625,17 @@ export async function start(home, options = {}) {
         if (config.role !== "hub") {
           requireAdmin();
           if (!s.volume(volume).selected) fail("Select this folder first", 403);
-          if (config.hub)
+          const name = url.searchParams.get("path");
+          const hash = url.searchParams.get("hash");
+          const row = route.endsWith("/preview") && s.current(volume, name);
+          const localPreview =
+            row &&
+            !row.deleted &&
+            !row.directory &&
+            row.hash === hash &&
+            fs.statSync(s.blob(hash), { throwIfNoEntry: false })?.size ===
+              row.size;
+          if (config.hub && !localPreview)
             return send(200, await engine.json(route + url.search));
         }
         if (req.method !== "GET") fail("Method not allowed", 405);

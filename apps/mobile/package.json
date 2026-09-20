@@ -1,6 +1,6 @@
 {
   "name": "arca-mobile",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "private": true,
   "main": "index.js",
   "scripts": {
@@ -12,9 +12,12 @@
     "eas:login": "npx -y eas-cli login",
     "eas:whoami": "npx -y eas-cli whoami",
     "eas:init": "npx -y eas-cli project:init",
-    "build:dev": "npx -y eas-cli build --platform android --profile development",
-    "build:preview": "npx -y eas-cli build --platform android --profile preview",
-    "build:prod": "npx -y eas-cli build --platform android --profile production"
+    "build:dev": "node scripts/android-build.mjs dev",
+    "build:prod": "node scripts/android-build.mjs prod",
+    "build:local:dev": "node scripts/android-build.mjs dev --local",
+    "build:local:prod": "node scripts/android-build.mjs prod --local",
+    "check:release": "node ../../scripts/check-release.js",
+    "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/fragment-mono": "^0.4.0",
@@ -29,6 +32,7 @@
     "expo-document-picker": "~55.0.17",
     "expo-file-system": "~55.0.26",
     "expo-font": "~55.0.8",
+    "expo-image-manipulator": "~55.0.21",
     "expo-image-picker": "~55.0.24",
     "expo-media-library": "~55.0.21",
     "expo-network": "~55.0.18",

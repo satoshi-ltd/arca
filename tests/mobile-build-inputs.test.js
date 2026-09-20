@@ -6,7 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
-test("EAS archive includes every shared source imported by the mobile app", (t) => {
+test("EAS archive includes every shared source imported by the mobile app and excludes built APKs", (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "arca-eas-inputs-"));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   assert.equal(spawnSync("git", ["init", "-q", fixture]).status, 0);
@@ -36,15 +36,19 @@ test("EAS archive includes every shared source imported by the mobile app", (t) 
   }
   walk(path.join(root, "apps/mobile/src"));
   assert.ok(shared.has("apps/desktop/src/file-icons.js"));
-  for (const file of shared) {
-    const result = spawnSync("git", ["check-ignore", "--no-index", file], {
+  const ignored = (file) =>
+    spawnSync("git", ["check-ignore", "--no-index", file], {
       cwd: fixture,
       encoding: "utf8",
     });
+  for (const file of shared)
     assert.equal(
-      result.status,
+      ignored(file).status,
       1,
-      `Shared mobile input excluded from EAS: ${file}\n${result.stderr}`,
+      `Shared mobile input excluded from EAS: ${file}\n${ignored(file).stderr}`,
     );
-  }
+  assert.equal(
+    ignored("apps/mobile/release-assets/arca-0.1.0-android.apk").status,
+    0,
+  );
 });

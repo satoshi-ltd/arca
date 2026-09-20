@@ -68,6 +68,15 @@ export class Gallery {
     store.db.exec(
       "CREATE TABLE IF NOT EXISTS gallery_prepared(hash TEXT PRIMARY KEY, attempted INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS gallery_revision_lookup ON revisions(volume,path,hash,created)",
     );
+    if (
+      !store.db
+        .prepare("PRAGMA table_info(gallery_prepared)")
+        .all()
+        .some((column) => column.name === "large")
+    )
+      store.db.exec(
+        "ALTER TABLE gallery_prepared ADD COLUMN large INTEGER NOT NULL DEFAULT 0",
+      );
   }
   close() {
     this.closed = true;
@@ -77,6 +86,15 @@ export class Gallery {
     this.prepare(volume);
   }
   resume() {
+    if (this.s.config.role !== "hub") {
+      for (const volume of this.s.config.catalog || [])
+        if (
+          volume.gallery &&
+          this.s.volumes().some((v) => v.id === volume.id && v.selected)
+        )
+          this.prepare(volume.id);
+      return;
+    }
     for (const { volume } of this.s.db
       .prepare("SELECT volume FROM gallery_folders")
       .all())
@@ -95,6 +113,8 @@ export class Gallery {
       const volume = this.volumes.values().next().value;
       this.volumes.delete(volume);
       try {
+        if (this.s.config.role !== "hub" && !this.s.volume(volume).selected)
+          continue;
         while (!this.closed && (await this.index(volume)))
           await new Promise((r) => setImmediate(r));
         let after = "";
@@ -103,7 +123,7 @@ export class Gallery {
             .prepare(
               `SELECT f.path,f.hash FROM files f LEFT JOIN gallery_prepared p ON p.hash=f.hash
             WHERE f.volume=? AND f.path>? AND f.deleted=0 AND arca_media_kind(f.path) IS NOT NULL
-            AND (p.hash IS NULL OR p.attempted<?) ORDER BY f.path LIMIT 32`,
+            AND (p.hash IS NULL OR p.large=0 OR p.attempted<?) ORDER BY f.path LIMIT 32`,
             )
             .all(volume, after, Date.now() - 86400000);
           if (!rows.length) break;
@@ -111,13 +131,23 @@ export class Gallery {
             if (this.closed) return;
             after = row.path;
             try {
-              await this.preview(volume, row.path, row.hash);
+              if (
+                this.s.config.role !== "hub" &&
+                !this.s.volume(volume).selected
+              )
+                break;
+              if (!fs.existsSync(this.s.blob(row.hash))) continue;
+              await this.derivative(volume, row.path, row.hash);
+              if (mediaKind(row.path) === "image" && !this.closed)
+                await this.derivative(volume, row.path, row.hash, true);
             } catch {
               /* Hidden/deleted files are skipped. */
             }
             if (this.closed) return;
             this.s.db
-              .prepare("INSERT OR REPLACE INTO gallery_prepared VALUES(?,?)")
+              .prepare(
+                "INSERT OR REPLACE INTO gallery_prepared(hash,attempted,large) VALUES(?,?,1)",
+              )
               .run(row.hash, Date.now());
             await new Promise((r) => setImmediate(r));
           }
@@ -366,8 +396,16 @@ export class Gallery {
   }
 
   async preview(volume, name, hash, large = false) {
+    const result = await this.derivative(volume, name, hash, large);
+    return result.bytes
+      ? { data: `data:image/jpeg;base64,${result.bytes.toString("base64")}` }
+      : result;
+  }
+  async derivative(volume, name, hash, large = false) {
     const s = this.s;
-    s.volume(volume);
+    const folder = s.volume(volume);
+    if (s.config.role !== "hub" && !folder.selected)
+      fail("Select this folder first", 403);
     const row = s.current(volume, name);
     if (
       !row ||
@@ -391,7 +429,7 @@ export class Gallery {
         .prepare("UPDATE gallery_derivatives SET used=? WHERE key=?")
         .run(Date.now(), diskKey);
       return {
-        data: `data:image/jpeg;base64,${fs.readFileSync(disk).toString("base64")}`,
+        bytes: fs.readFileSync(disk),
       };
     }
     if (this.pending.has(key)) return this.pending.get(key);
@@ -449,18 +487,18 @@ export class Gallery {
           total -= old.size;
         }
       const value = {
-        data: `data:image/jpeg;base64,${data.toString("base64")}`,
+        bytes: data,
       };
       while (
-        this.cacheBytes + value.data.length > 32 * 1024 ** 2 &&
+        this.cacheBytes + value.bytes.length > 32 * 1024 ** 2 &&
         this.cache.size
       ) {
         const first = this.cache.keys().next().value;
-        this.cacheBytes -= this.cache.get(first).data.length;
+        this.cacheBytes -= this.cache.get(first).bytes.length;
         this.cache.delete(first);
       }
       this.cache.set(key, value);
-      this.cacheBytes += value.data.length;
+      this.cacheBytes += value.bytes.length;
       return value;
     } catch {
       return { unavailable: true };

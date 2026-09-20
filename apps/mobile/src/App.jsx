@@ -86,6 +86,7 @@ import config from "../app.json";
 import { HubConnection } from "./HubConnection";
 import { FileHistory } from "./FileHistory";
 import { IncomingShare } from "./IncomingShare";
+import { FolderGallery } from "./FolderGallery";
 import { FolderRecent } from "./FolderRecent";
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes } from "./format";
@@ -258,9 +259,21 @@ export default function App() {
     const r = engine.current;
     const scope = r.scope;
     const key = `${scope}:${id}`;
-    setEntries(folderLists.current.get(key) || []);
+    const known = folderLists.current.get(key);
+    setEntries(known || []);
     setFilesLoading(true);
     try {
+      if (!known) {
+        const cached = await r.store
+          .get(`gallery-list:${scope}:${id}`, [])
+          .catch(() => []);
+        if (
+          mounted.current &&
+          request === fileRequest.current &&
+          scope === r.scope
+        )
+          setEntries(cached);
+      }
       const list = [];
       const root = r.files.folder(scope, id);
       if (await r.files.exists(root))
@@ -275,6 +288,9 @@ export default function App() {
         while (folderLists.current.size > 20)
           folderLists.current.delete(folderLists.current.keys().next().value);
         setEntries(sorted);
+        await r.store
+          .set(`gallery-list:${scope}:${id}`, sorted.slice(0, 2000))
+          .catch(() => {});
       }
     } finally {
       if (mounted.current && request === fileRequest.current)
@@ -498,7 +514,12 @@ export default function App() {
     );
     setFolder(f);
     setSearchOpen(false);
-    setFileView("files");
+    setFileView(
+      (f.gallery || catalog?.volumes?.find((v) => v.id === f.id)?.gallery) &&
+        !galleryConfig(f)
+        ? "gallery"
+        : "files",
+    );
     setDirectory("");
     setVisibleCount(100);
     setSearch("");
@@ -1223,6 +1244,26 @@ export default function App() {
                         )}
                         {folder && screen === "Folders" && (
                           <View style={s.rowAction}>
+                            {!source &&
+                              (folder.gallery ||
+                                catalog?.volumes?.find(
+                                  (v) => v.id === folder.id,
+                                )?.gallery) && (
+                                <Button
+                                  label={
+                                    fileView === "gallery"
+                                      ? "Exit gallery"
+                                      : "Gallery"
+                                  }
+                                  onPress={() =>
+                                    setFileView(
+                                      fileView === "gallery"
+                                        ? "files"
+                                        : "gallery",
+                                    )
+                                  }
+                                />
+                              )}
                             {!wide && !source && fileView === "files" && (
                               <Button
                                 iconOnly
@@ -1374,6 +1415,7 @@ export default function App() {
                                     options={[
                                       { label: "Files", value: "files" },
                                       { label: "Recent", value: "recent" },
+                                      { label: "Gallery", value: "gallery" },
                                     ]}
                                     value={fileView}
                                     onChange={(value) => {
@@ -1425,7 +1467,19 @@ export default function App() {
                                   }}
                                 />
                               )}
-                              {fileView === "recent" ? (
+                              {fileView === "gallery" ? (
+                                <FolderGallery
+                                  store={engine.current.store}
+                                  scope={engine.current.scope}
+                                  volume={folder.id}
+                                  loading={filesLoading}
+                                  key={folder.id}
+                                  entries={entries}
+                                  open={(entry) =>
+                                    run(() => openFileDetail(entry))
+                                  }
+                                />
+                              ) : fileView === "recent" ? (
                                 <FolderRecent
                                   volume={folder.id}
                                   scope={engine.current?.scope}

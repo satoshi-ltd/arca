@@ -154,7 +154,7 @@ test("old photos use EXIF capture date and unsupported media keep a usable listi
   });
 });
 
-test("replicas inherit the gallery marker and proxy previews only for selected folders", async (t) => {
+test("replicas render selected local previews without hub requests and fall back for missing content", async (t) => {
   const f = await fixture(t);
   await f.api("/v1/gallery/link", { volume: f.v.id });
   const { hash } = await f.photo("photo.jpg", "2026-01-01T00:00:00.000Z");
@@ -188,10 +188,81 @@ test("replicas inherit the gallery marker and proxy previews only for selected f
     await replica.engine.cycle();
     assert.equal(replica.engine.status().volumes[0].gallery, true);
     assert.equal((await call(f.route)).items[0].path, "photo.jpg");
+    await replica.engine.gallery.background;
+    assert.ok(
+      fs.existsSync(path.join(home, "previews", `${hash}-large.jpg`)),
+      "sync prepares large previews without opening the viewer",
+    );
+    const remote = replica.engine.json.bind(replica.engine);
+    let previewRequests = 0;
+    replica.engine.json = async (route, ...args) => {
+      if (route.startsWith("/v1/gallery/preview?")) {
+        previewRequests++;
+        throw new Error("Hub unavailable");
+      }
+      return remote(route, ...args);
+    };
     assert.match(
       (await call(f.preview("photo.jpg", hash))).data,
       /^data:image\/jpeg;base64,/,
     );
+    assert.match(
+      (await call(f.preview("photo.jpg", hash) + "&size=large")).data,
+      /^data:image\/jpeg;base64,/,
+    );
+    assert.equal(
+      previewRequests,
+      0,
+      "local thumbnails and full previews never contact the hub",
+    );
+    const binary = await call(
+      f.preview("photo.jpg", hash).replace("/preview?", "/preview-url?"),
+    );
+    assert.equal(binary.data, undefined);
+    const image = await fetch(binary.url);
+    assert.equal(image.status, 200);
+    assert.equal(image.headers.get("content-type"), "image/jpeg");
+    assert.ok((await image.arrayBuffer()).byteLength > 0);
+    assert.equal(previewRequests, 0);
+    const localFolder = replica.engine.store.volume(f.v.id);
+    fs.writeFileSync(path.join(localFolder.path, ".arcaignore"), "photo.jpg\n");
+    await assert.rejects(call(f.preview("photo.jpg", hash)), { status: 404 });
+    assert.equal(
+      previewRequests,
+      0,
+      "exclusions still protect cached local previews",
+    );
+    fs.unlinkSync(path.join(localFolder.path, ".arcaignore"));
+    const blob = replica.engine.store.blob(hash);
+    const original = fs.readFileSync(blob);
+    fs.unlinkSync(blob);
+    replica.engine.json = async (route, ...args) => {
+      if (route.startsWith("/v1/gallery/preview?")) previewRequests++;
+      return remote(route, ...args);
+    };
+    assert.match(
+      (await call(f.preview("photo.jpg", hash))).data,
+      /^data:image\/jpeg;base64,/,
+    );
+    assert.equal(
+      previewRequests,
+      1,
+      "missing local content falls back to the hub",
+    );
+    fs.writeFileSync(blob, original);
+    await assert.rejects(call(f.preview("photo.jpg", "0".repeat(64))), {
+      status: 404,
+    });
+    replica.engine.store.db
+      .prepare("UPDATE files SET deleted=1 WHERE volume=? AND path=?")
+      .run(f.v.id, "photo.jpg");
+    // Cached local derivatives must not bypass the current remote deletion check.
+    await f.api("/v1/delete-file", {
+      volume: f.v.id,
+      path: "photo.jpg",
+      rev: f.s.current(f.v.id, "photo.jpg").rev,
+    });
+    await assert.rejects(call(f.preview("photo.jpg", hash)), { status: 404 });
     replica.engine.store.db
       .prepare("UPDATE volumes SET selected=0 WHERE id=?")
       .run(f.v.id);
@@ -578,7 +649,7 @@ test("gallery video playback streams ranges and scopes native access to a curren
   assert.equal((await fetch(url)).status, 404);
 });
 
-test("marking an existing gallery prepares every thumbnail without page requests and reuses them after restart", async (t) => {
+test("marking an existing gallery prepares both preview sizes without requests and reuses them after restart", async (t) => {
   const f = await fixture(t);
   // More than the old queue limit, with distinct originals and no gallery page calls.
   for (let i = 0; i < 260; i++) {
@@ -608,7 +679,7 @@ test("marking an existing gallery prepares every thumbnail without page requests
   );
   assert.equal(
     f.s.db.prepare("SELECT count(*) n FROM gallery_derivatives").get().n,
-    260,
+    520,
   );
   f.daemon.engine.gallery.close();
   const next = new Gallery(f.s);
@@ -622,6 +693,9 @@ test("marking an existing gallery prepares every thumbnail without page requests
   assert.match(
     (await next.preview(f.v.id, "0.png", row.hash)).data,
     /^data:image\/jpeg/,
+  );
+  assert.ok(
+    (await next.derivative(f.v.id, "0.png", row.hash, true)).bytes.length,
   );
 });
 
@@ -668,6 +742,91 @@ test("web video ranges require an active browser session, including after logout
         headers: { Cookie: cookie, Range: "bytes=4-7" },
       })
     ).status,
+    401,
+  );
+});
+
+test("binary photo previews are prepared before opening and keep native tickets scoped", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  const { hash, buffer } = await f.photo("one.jpg", "2026-01-01T00:00:00.000Z");
+  await f.daemon.engine.gallery.background;
+  const disk = path.join(f.home, "previews", `${hash}-large.jpg`);
+  assert.ok(fs.existsSync(disk));
+  assert.deepEqual(fs.readFileSync(f.s.blob(hash)), buffer);
+  const descriptor = await f.api(
+    f.preview("one.jpg", hash).replace("/preview?", "/preview-url?"),
+  );
+  assert.equal(descriptor.data, undefined);
+  assert.ok(descriptor.url.includes("ticket="));
+  const response = await fetch(descriptor.url, {
+    headers: { Origin: "http://tauri.localhost" },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "image/jpeg");
+  assert.deepEqual(
+    Buffer.from(await response.arrayBuffer()),
+    fs.readFileSync(disk),
+  );
+  assert.equal(
+    (await fetch(descriptor.url.replace("preview-image", "media"))).status,
+    401,
+  );
+  assert.equal(
+    (
+      await fetch(descriptor.url, {
+        headers: { Origin: "https://untrusted.example" },
+      })
+    ).status,
+    401,
+  );
+  const head = await fetch(descriptor.url, { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal((await head.arrayBuffer()).byteLength, 0);
+  fs.writeFileSync(path.join(f.v.path, ".arcaignore"), "one.jpg\n");
+  assert.equal((await fetch(descriptor.url)).status, 404);
+  fs.unlinkSync(path.join(f.v.path, ".arcaignore"));
+  await f.api("/v1/delete-file", {
+    volume: f.v.id,
+    path: "one.jpg",
+    rev: f.s.current(f.v.id, "one.jpg").rev,
+  });
+  assert.equal((await fetch(descriptor.url)).status, 404);
+});
+
+test("binary web previews require the browser session on every image request", async (t) => {
+  const f = await fixture(t);
+  const { issueWebCode } = await import("../packages/daemon/web.js");
+  const { hash } = await f.photo("one.jpg", "2026-01-01T00:00:00.000Z");
+  const base = `http://127.0.0.1:${f.daemon.port}`;
+  const login = await fetch(base + "/auth/login", {
+    method: "POST",
+    headers: { Origin: base, "Content-Type": "application/json" },
+    body: JSON.stringify({ code: issueWebCode(f.home).code }),
+  });
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const descriptor = await (
+    await fetch(
+      base + f.preview("one.jpg", hash).replace("/preview?", "/preview-url?"),
+      { headers: { Cookie: cookie } },
+    )
+  ).json();
+  assert.ok(descriptor.url.startsWith("/v1/gallery/preview-image?"));
+  assert.ok(!descriptor.url.includes("ticket="));
+  assert.equal((await fetch(base + descriptor.url)).status, 401);
+  const image = await fetch(base + descriptor.url, {
+    headers: { Cookie: cookie },
+  });
+  assert.equal(image.status, 200);
+  assert.equal(image.headers.get("content-type"), "image/jpeg");
+  await image.arrayBuffer();
+  await fetch(base + "/auth/logout", {
+    method: "POST",
+    headers: { Cookie: cookie, Origin: base },
+  });
+  assert.equal(
+    (await fetch(base + descriptor.url, { headers: { Cookie: cookie } }))
+      .status,
     401,
   );
 });

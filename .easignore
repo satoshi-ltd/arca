@@ -26,3 +26,4 @@ dist/
 /apps/mobile/ios/
 /apps/mobile/modules/**/android/build/
 /apps/mobile/modules/**/android/.gradle/
+release-assets/

@@ -27,6 +27,18 @@ let galleryEpoch = 0;
 function clearGalleryPages() {
   galleryEpoch++;
   galleryPages.clear();
+  void galleryDisk()
+    .then((db) => {
+      if (!db) return;
+      const store = db.transaction("views", "readwrite").objectStore("views");
+      const cursor = store.openCursor();
+      cursor.onsuccess = () => {
+        if (!cursor.result) return;
+        if (cursor.result.key.startsWith("page:")) cursor.result.delete();
+        cursor.result.continue();
+      };
+    })
+    .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
@@ -1241,28 +1253,95 @@ function fileHistorySide() {
   return `<aside class="detail-side">${section("File location", `<div class="panel"><strong>${escape(volume?.name || "Shared folder")}</strong><p class="path">${escape(historyPath)}</p>${folderLink}</div>`)}</aside>`;
 }
 
+// Disposable persistent view data, scoped by machine/hub. Never store credentials or tickets.
+let galleryDatabase;
+function galleryDisk() {
+  if (!globalThis.indexedDB) return Promise.resolve(null);
+  return (galleryDatabase ||= new Promise((resolve) => {
+    const request = indexedDB.open("arca-gallery", 1);
+    request.onupgradeneeded = () =>
+      request.result
+        .createObjectStore("views", { keyPath: "key" })
+        .createIndex("time", "time");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(null);
+    request.onblocked = () => resolve(null);
+  }));
+}
+async function storedGallery(key, value) {
+  try {
+    const db = await galleryDisk();
+    if (!db) return null;
+    return await new Promise((resolve) => {
+      const tx = db.transaction(
+        "views",
+        value === undefined ? "readonly" : "readwrite",
+      );
+      const store = tx.objectStore("views");
+      let result = null;
+      tx.oncomplete = () => resolve(result);
+      tx.onerror = tx.onabort = () => resolve(null);
+      if (value === undefined) {
+        const read = store.get(key);
+        read.onsuccess = () => {
+          result = read.result?.value || null;
+        };
+      } else {
+        if (JSON.stringify(value).length > 300000) return;
+        store.put({ key, value, time: Date.now() });
+        const count = store.count();
+        count.onsuccess = () => {
+          let excess = count.result - 128;
+          if (excess <= 0) return;
+          const cursor = store.index("time").openCursor();
+          cursor.onsuccess = () => {
+            if (cursor.result && excess-- > 0) {
+              cursor.result.delete();
+              cursor.result.continue();
+            }
+          };
+        };
+      }
+    });
+  } catch {
+    return null;
+  }
+}
+function clearStoredGallery() {
+  void galleryDisk()
+    .then((db) => {
+      if (db) db.transaction("views", "readwrite").objectStore("views").clear();
+    })
+    .catch(() => {});
+}
 // Content-addressed session cache survives leaving a gallery; never persisted with credentials.
 const photoCaches = {
   thumb: { entries: new Map(), bytes: 0, limit: 48 * 1024 ** 2, count: 2000 },
   large: { entries: new Map(), bytes: 0, limit: 16 * 1024 ** 2, count: 8 },
 };
 const photoRequests = new Map();
-async function galleryPage(route) {
-  const key = `${status.hubId || status.id}:${status.historyRevisions}:${JSON.stringify(status.volumes.map((v) => [v.id, v.selected, v.files, v.bytes]))}:${route}`;
-  const cached = galleryPages.get(key);
+async function galleryPage(route, fresh = false) {
+  const key = `${status.id}:${status.hubId || status.id}:${route}`;
   const epoch = galleryEpoch;
+  const cached =
+    galleryPages.get(key) || (!fresh && (await storedGallery(`page:${key}`)));
   const refresh = async () => {
     const data = await api(route);
     if (!data.indexing && epoch === galleryEpoch) {
       galleryPages.delete(key);
-      galleryPages.set(key, { time: Date.now(), data });
+      const entry = { time: Date.now(), data };
+      galleryPages.set(key, entry);
+      void storedGallery(`page:${key}`, entry);
       while (galleryPages.size > 40)
         galleryPages.delete(galleryPages.keys().next().value);
     }
     return data;
   };
-  if (cached) {
-    if (Date.now() - cached.time > 15000 && !cached.refreshing) {
+  if (cached && !fresh) {
+    if (
+      (!galleryPages.has(key) || Date.now() - cached.time > 15000) &&
+      !cached.refreshing
+    ) {
       cached.refreshing = true;
       void refresh().catch(() => galleryPages.delete(key));
     }
@@ -1277,13 +1356,30 @@ async function cachedPhoto(route) {
   if (photoCache.has(key)) {
     const value = photoCache.get(key);
     photoCache.delete(key);
-    photoCache.set(key, value);
-    return value;
+    if (!value.expires || value.expires > Date.now() + 60000) {
+      photoCache.set(key, value);
+      return value;
+    }
+    pool.bytes -= value.data.length * 2;
+  }
+  if (!route.includes("size=large")) {
+    const stored = await storedGallery(`thumb:${key}`);
+    if (stored?.data) return stored;
   }
   if (photoRequests.has(key)) return photoRequests.get(key);
-  const pending = api(route)
+  const pending = api(
+    route.includes("size=large")
+      ? route.replace("/gallery/preview?", "/gallery/preview-url?")
+      : route,
+  )
     .then((value) => {
+      if (value.url) value = { data: value.url, expires: value.expires };
       if (photoRequests.get(key) !== pending || !value.data) return value;
+      if (
+        !route.includes("size=large") &&
+        value.data?.startsWith("data:image/")
+      )
+        void storedGallery(`thumb:${key}`, value);
       photoCache.set(key, value);
       pool.bytes += value.data.length * 2;
       while (pool.bytes > pool.limit || photoCache.size > pool.count) {
@@ -1548,6 +1644,7 @@ function mountGallery(volume) {
       }
       const tile = document.createElement("div");
       tile.className = "photo-thumb";
+      tile.photoRatio = state.ratios?.get(item.path);
       tile.dataset.photo = index;
       tile.title = `${galleryPhotoDate(item)}${item.dateSource === "date added" ? " · Date added to Arca" : ""}`;
       const filename = escape(item.path.split("/").pop());
@@ -1572,8 +1669,47 @@ function mountGallery(volume) {
     layoutPhotos();
     icons();
   }
+  function updateTimeline(data) {
+    const rail = root.querySelector(".photo-timeline");
+    if (data.timeline && !rail.children.length) {
+      let year = "";
+      for (const date of data.timeline) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.month = date.month;
+        const label = new Date(date.month + "-01T12:00:00").toLocaleDateString(
+          "en",
+          { month: "short", year: "numeric" },
+        );
+        button.dataset.label = label;
+        button.title = `${label} · ${date.count} photos`;
+        button.setAttribute("aria-label", `Go to ${label}`);
+        button.textContent =
+          year !== date.month.slice(0, 4) ? date.month.slice(0, 4) : "";
+        button.innerHTML = `<span class="photo-year">${button.textContent}</span><span class="photo-date-dot"></span><span class="photo-date-label">${label}</span>`;
+        year = date.month.slice(0, 4);
+        button.onclick = () => {
+          if (state.loading || state.refreshing) return;
+          state.observer?.disconnect();
+          state.items = [];
+          state.paths.clear();
+          state.queue = [];
+          root.querySelector(".photo-days").replaceChildren();
+          state.next = "";
+          state.month = date.month;
+          root.closest(".page").scrollTop = 0;
+          for (const item of rail.children)
+            item.removeAttribute("aria-current");
+          button.setAttribute("aria-current", "date");
+          state.load();
+        };
+        rail.append(button);
+      }
+    }
+  }
   state.load = async () => {
-    if (!current() || state.loading || state.next === null) return;
+    if (!current() || state.loading || state.refreshing || state.next === null)
+      return;
     state.loading = true;
     const more = root.querySelector(".photo-more");
     more.disabled = true;
@@ -1610,41 +1746,7 @@ function mountGallery(volume) {
         root.querySelector(".photo-days").replaceChildren();
         root.querySelector(".photo-timeline").replaceChildren();
       }
-      const rail = root.querySelector(".photo-timeline");
-      if (data.timeline && !rail.children.length) {
-        let year = "";
-        for (const date of data.timeline) {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.dataset.month = date.month;
-          const label = new Date(
-            date.month + "-01T12:00:00",
-          ).toLocaleDateString("en", { month: "short", year: "numeric" });
-          button.dataset.label = label;
-          button.title = `${label} · ${date.count} photos`;
-          button.setAttribute("aria-label", `Go to ${label}`);
-          button.textContent =
-            year !== date.month.slice(0, 4) ? date.month.slice(0, 4) : "";
-          button.innerHTML = `<span class="photo-year">${button.textContent}</span><span class="photo-date-dot"></span><span class="photo-date-label">${label}</span>`;
-          year = date.month.slice(0, 4);
-          button.onclick = () => {
-            if (state.loading) return;
-            state.observer?.disconnect();
-            state.items = [];
-            state.paths.clear();
-            state.queue = [];
-            root.querySelector(".photo-days").replaceChildren();
-            state.next = "";
-            state.month = date.month;
-            root.closest(".page").scrollTop = 0;
-            for (const item of rail.children)
-              item.removeAttribute("aria-current");
-            button.setAttribute("aria-current", "date");
-            state.load();
-          };
-          rail.append(button);
-        }
-      }
+      updateTimeline(data);
       addItems(data.items);
       state.next = data.next;
       more.hidden = !data.next;
@@ -1670,6 +1772,80 @@ function mountGallery(volume) {
       }
     }
   };
+  // Refresh the loaded range without remounting the page or disturbing a viewer.
+  const refreshGallery = async () => {
+    if (
+      !current() ||
+      document.hidden ||
+      state.loading ||
+      state.refreshing ||
+      $("#dialog").open ||
+      state.selection.size
+    )
+      return;
+    state.refreshing = true;
+    const month = state.month;
+    try {
+      const items = [];
+      let after = "",
+        data;
+      const pages = Math.max(1, Math.ceil(state.items.length / 60));
+      for (let page = 0; page < pages; page++) {
+        data = await galleryPage(
+          "/v1/gallery?" + new URLSearchParams({ volume, month, after }),
+          true,
+        );
+        if (
+          !current() ||
+          state.loading ||
+          state.month !== month ||
+          $("#dialog").open ||
+          state.selection.size ||
+          data.indexing
+        )
+          return;
+        items.push(...data.items);
+        after = data.next;
+        if (!after) break;
+      }
+      if (JSON.stringify(items) === JSON.stringify(state.items)) return;
+      const page = root.closest(".page");
+      const top = page.getBoundingClientRect().top;
+      const anchor = [...root.querySelectorAll(".photo-thumb")].find(
+        (tile) => tile.getBoundingClientRect().bottom > top,
+      );
+      const anchorPath =
+        anchor && state.items[Number(anchor.dataset.photo)]?.path;
+      const offset = anchor?.getBoundingClientRect().top;
+      stopHover();
+      state.observer?.disconnect();
+      state.ratios = new Map(
+        [...root.querySelectorAll(".photo-thumb")].map((tile) => [
+          state.items[Number(tile.dataset.photo)]?.path,
+          tile.photoRatio,
+        ]),
+      );
+      state.items = [];
+      state.paths.clear();
+      state.queue = [];
+      root.querySelector(".photo-days").replaceChildren();
+      root.querySelector(".photo-timeline").replaceChildren();
+      updateTimeline(data);
+      addItems(items);
+      state.next = after;
+      root.querySelector(".photo-more").hidden = !after;
+      const index = state.items.findIndex((item) => item.path === anchorPath);
+      const nextAnchor = root.querySelector(`[data-photo="${index}"]`);
+      if (nextAnchor && offset != null)
+        page.scrollTop += nextAnchor.getBoundingClientRect().top - offset;
+    } catch {
+      /* Keep the visible gallery during temporary disconnection. */
+    } finally {
+      state.refreshing = false;
+    }
+  };
+  const refreshTimer = setInterval(refreshGallery, 5000);
+  document.addEventListener("visibilitychange", refreshGallery);
   root.querySelector(".photo-more").onclick = state.load;
   state.moreObserver =
     typeof IntersectionObserver === "function"
@@ -1704,6 +1880,8 @@ function mountGallery(volume) {
   resizeObserver?.observe(page);
   window.addEventListener("resize", sizeTimeline);
   state.cleanup = () => {
+    clearInterval(refreshTimer);
+    document.removeEventListener("visibilitychange", refreshGallery);
     stopHover();
     document.removeEventListener("visibilitychange", hideHover);
     resizeObserver?.disconnect();
@@ -1852,6 +2030,8 @@ async function galleryPreview(state, item) {
         const image = new Image();
         image.src = result.data;
         if (image.decode) await image.decode();
+        if (galleryView !== state || !state.root.isConnected || item.deleted)
+          return {};
         state.previews.set(key, { data: result.data, image });
         let total = [...state.previews.values()].reduce(
           (sum, value) => sum + value.data.length,
@@ -2051,6 +2231,17 @@ async function openGalleryPhoto(index) {
     : $("#cancel-dialog")
   ).focus();
   const target = $(".photo-viewer-image");
+  if (item.kind === "image") {
+    const available =
+      state.previews?.get(item.hash)?.image ||
+      state.root.querySelector(`[data-photo="${index}"] .photo-open img`);
+    if (available) {
+      const image = available.cloneNode();
+      image.className = "photo-preview-placeholder";
+      image.alt = item.path.split("/").pop();
+      target.replaceChildren(image);
+    }
+  }
   try {
     if (item.kind === "video") {
       const playback = await api(
@@ -2101,30 +2292,23 @@ async function openGalleryPhoto(index) {
       video.play().catch(() => {}); // Native controls remain available if autoplay is blocked.
       return;
     }
-    const result = await galleryPreview(state, item);
+    const pending = galleryPreview(state, item);
+    for (const neighbor of [nextIndex, previousIndex]) {
+      const photo = state.items[neighbor];
+      if (photo?.kind === "image")
+        void galleryPreview(state, photo).catch(() => {});
+    }
+    const result = await pending;
     if (!target.isConnected || !$("#dialog").open) return;
     if (result.data) {
       const img = result.image || document.createElement("img");
       if (!result.image) img.src = result.data;
       img.alt = item.path.split("/").pop();
       target.replaceChildren(img);
-      // Warm the next photo first, then the previous, only while this viewer is current.
-      (async () => {
-        for (const neighbor of [nextIndex, previousIndex]) {
-          if (
-            state.selected !== index ||
-            !target.isConnected ||
-            !$("#dialog").open
-          )
-            break;
-          const photo = state.items[neighbor];
-          if (photo?.kind === "image") await galleryPreview(state, photo);
-        }
-      })().catch(() => {});
-    } else
+    } else if (!target.querySelector("img"))
       target.innerHTML = `<div>${icon(item.kind === "video" ? "play" : "image-off")}<p>${item.kind === "video" ? "Open the file to play this video." : "Preview unavailable. The original file is preserved."}</p></div>`;
   } catch {
-    if (target.isConnected)
+    if (target.isConnected && !target.querySelector("img"))
       target.textContent = "Preview unavailable. Try opening the file.";
   }
   icons();
@@ -2243,8 +2427,17 @@ async function renderDetail(pending = false) {
   }
   if (folderViewId !== v.id) {
     folderViewId = v.id;
-    folderTab = "files";
+    folderTab = v.gallery ? "gallery" : "files";
     folderReturn = { tab: "files", scroll: 0 };
+  }
+  if (folderTab === "gallery") {
+    // The photo grid does not depend on activity, file browsing or copy reports.
+    $("#content").innerHTML =
+      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)}`, galleryModeButton(v))}</div><div class="page detail-page gallery-page">${await folderBrowser(v, [])}</div>`;
+    $("#content").dataset.detail = v.id;
+    icons();
+    mountGallery(v.id);
+    return;
   }
   if (status.role !== "hub" && !status.hub) {
     $("#content").innerHTML =
@@ -2852,7 +3045,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   html += section(
     "Service",
-    `<div class="settings-card">${setting("Arca v0.4.8", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
+    `<div class="settings-card">${setting("Arca v0.4.9", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
   );
   if (status.role === "replica" && status.hub)
     html += section(
@@ -3617,6 +3810,7 @@ async function handle(name, id, control) {
   }
   if (name === "folder-detail") {
     if (detailId !== id) {
+      folderViewId = null;
       folderTab = "files";
       folderPrefix = "";
       folderSearch = "";
@@ -3793,7 +3987,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.4.8",
+          version: "0.4.9",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -4508,6 +4702,7 @@ setInterval(() => {
   void checkWebApprovals();
 }, 3000);
 async function showLogin(message = "") {
+  clearStoredGallery();
   viewLoadSerial++;
   historyCache.clear();
   clearGalleryPages();
