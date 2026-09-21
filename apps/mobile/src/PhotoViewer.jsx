@@ -37,13 +37,13 @@ const begin = (touches, state, gesture) =>
       }
     : { pinch: false, state, dx: gesture.dx, dy: gesture.dy };
 
-function ZoomableImage({ uri, width, height, onTap, onZoomed, onError }) {
+function ZoomableImage({ uri, width, height, onZoomed, onError }) {
   const { s } = useDesign();
   const state = useRef(rest);
   const scale = useRef(new Animated.Value(1)).current;
   const offset = useRef(new Animated.ValueXY()).current;
   const gesture = useRef(null);
-  const taps = useRef({ at: 0, timer: null });
+  const taps = useRef({ at: 0 });
   const viewport = useMemo(() => ({ width, height }), [width, height]);
   const apply = (next, animated = false) => {
     state.current = next;
@@ -68,12 +68,11 @@ function ZoomableImage({ uri, width, height, onTap, onZoomed, onError }) {
   };
   useEffect(() => {
     apply(rest);
-    return () => clearTimeout(taps.current.timer);
+    taps.current.at = 0;
   }, [uri, width, height]);
   const tap = (x, y) => {
     const now = Date.now();
     if (now - taps.current.at < 300) {
-      clearTimeout(taps.current.timer);
       taps.current.at = 0;
       apply(
         toggleZoom(
@@ -86,7 +85,6 @@ function ZoomableImage({ uri, width, height, onTap, onZoomed, onError }) {
       return;
     }
     taps.current.at = now;
-    taps.current.timer = setTimeout(onTap, 300);
   };
   const responder = useMemo(
     () =>
@@ -185,7 +183,7 @@ function ZoomableImage({ uri, width, height, onTap, onZoomed, onError }) {
   );
 }
 
-function Page({ item, width, height, resolveLarge, open, onTap, onZoomed }) {
+function Page({ item, width, height, resolveLarge, open, onZoomed }) {
   const { s } = useDesign();
   const [uri, setUri] = useState(item.uri);
   const [failed, setFailed] = useState(false);
@@ -204,7 +202,7 @@ function Page({ item, width, height, resolveLarge, open, onTap, onZoomed }) {
   const frame = [s.viewerPage, { width, height }];
   if (item.kind === "video")
     return (
-      <Pressable style={frame} onPress={onTap} accessibilityLabel="Video">
+      <View style={frame} accessibilityLabel="Video">
         {!!item.poster && (
           <Image
             source={{ uri: item.poster }}
@@ -220,31 +218,30 @@ function Page({ item, width, height, resolveLarge, open, onTap, onZoomed }) {
         >
           <Icon name="play" color="#fff" size={32} />
         </Pressable>
-      </Pressable>
+      </View>
     );
   if (failed || (!uri && !item.hash))
     return (
-      <Pressable style={frame} onPress={onTap}>
+      <View style={frame}>
         <Icon name="image" color="rgba(255,255,255,0.6)" size={32} />
         <Text style={s.viewerCaption}>
           {item.uri
             ? "This photo could not be displayed."
             : "Preview unavailable. Connect to the hub to view it."}
         </Text>
-      </Pressable>
+      </View>
     );
   if (!uri)
     return (
-      <Pressable style={frame} onPress={onTap}>
+      <View style={frame}>
         <Busy color="#fff" />
-      </Pressable>
+      </View>
     );
   return (
     <ZoomableImage
       uri={uri}
       width={width}
       height={height}
-      onTap={onTap}
       onZoomed={onZoomed}
       onError={() => setFailed(true)}
     />
@@ -379,16 +376,16 @@ export function PhotoViewer({
   const { s } = useDesign();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [chrome, setChrome] = useState(true);
   const [zoomed, setZoomed] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [metadata, setMetadata] = useState({});
   const list = useRef(null);
   const visible = index != null && index >= 0 && index < items.length;
   const item = visible ? items[index] : null;
+  const canShare = !!item?.uri && !item?.upload && !!share;
+  const canDelete = deletable && !!item?.uri && !item?.upload && !!remove;
   useEffect(() => {
     if (visible) {
-      setChrome(true);
       setZoomed(false);
       setInfoOpen(false);
     }
@@ -461,11 +458,7 @@ export function PhotoViewer({
       presentationStyle="fullScreen"
       supportedOrientations={["portrait", "landscape"]}
     >
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor="#000"
-        hidden={!chrome}
-      />
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
       <View style={s.viewerRoot}>
         {visible && (
           <FlatList
@@ -499,7 +492,6 @@ export function PhotoViewer({
                 height={height}
                 resolveLarge={resolveLarge}
                 open={open}
-                onTap={() => setChrome((value) => !value)}
                 onZoomed={(value) => {
                   if (position === index) setZoomed(value);
                 }}
@@ -507,7 +499,7 @@ export function PhotoViewer({
             )}
           />
         )}
-        {chrome && item && (
+        {item && (
           <View
             style={[s.viewerChrome, s.viewerTop, { paddingTop: insets.top }]}
           >
@@ -526,37 +518,45 @@ export function PhotoViewer({
                   : "Uploading"
                 : dateLabel(item.date) || item.path.split("/").pop()}
             </Text>
-            {!!item.uri && !item.upload && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Share photo"
-                style={s.viewerIconButton}
-                onPress={() => share(item)}
-              >
-                <Icon name="export" color="#fff" />
-              </Pressable>
-            )}
-            {!item.upload && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Photo information"
-                accessibilityState={{ expanded: infoOpen }}
-                style={s.viewerIconButton}
-                onPress={() => setInfoOpen((value) => !value)}
-              >
-                <Icon name="info" color="#fff" />
-              </Pressable>
-            )}
-            {deletable && !!item.uri && !item.upload && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Delete photo"
-                style={s.viewerIconButton}
-                onPress={() => remove(item)}
-              >
-                <Icon name="trash" color="#fff" />
-              </Pressable>
-            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Share photo"
+              accessibilityState={{ disabled: !canShare }}
+              accessibilityHint={
+                !canShare
+                  ? "Available when the original is downloaded and its upload is complete."
+                  : undefined
+              }
+              disabled={!canShare}
+              style={[s.viewerIconButton, !canShare && s.disabled]}
+              onPress={() => share(item)}
+            >
+              <Icon name="export" color="#fff" />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Photo information"
+              accessibilityState={{ expanded: infoOpen }}
+              style={s.viewerIconButton}
+              onPress={() => setInfoOpen((value) => !value)}
+            >
+              <Icon name="info" color="#fff" />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete photo"
+              accessibilityState={{ disabled: !canDelete }}
+              accessibilityHint={
+                !canDelete
+                  ? "Available for downloaded photos in a synced folder. System gallery originals are managed in Photos."
+                  : undefined
+              }
+              disabled={!canDelete}
+              style={[s.viewerIconButton, !canDelete && s.disabled]}
+              onPress={() => remove(item)}
+            >
+              <Icon name="trash" color="#fff" />
+            </Pressable>
           </View>
         )}
         {infoOpen && item && (

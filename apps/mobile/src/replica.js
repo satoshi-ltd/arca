@@ -47,6 +47,7 @@ export class Replica {
     this.scope = null;
     this.error = null;
     this.active = null;
+    this.forceNext = false;
     this.hashCache = new Map();
     this.lastFullScan = 0;
   }
@@ -721,21 +722,26 @@ export class Replica {
   sync(force = false) {
     if (this.picking || this.importing || this.removing || this.renaming)
       return Promise.resolve();
-    if (this.active) return this.active;
-    this.force = force || Date.now() - this.lastFullScan > 3600000;
+    if (this.active) {
+      if (force) this.forceNext = true;
+      return this.active;
+    }
+    this.force =
+      force || this.forceNext || Date.now() - this.lastFullScan > 3600000;
+    this.forceNext = false;
     this.syncAbort = new AbortController();
     this.active = (async () => {
       try {
         do {
           await this.cycle();
-          // Continuation batches reuse the inventory cursor instead of forcing a new scan.
-          this.force = false;
+          // Continuation batches reuse the inventory cursor; a Sync now tap mid-cycle queues one full scan.
+          this.force = this.forceNext;
+          this.forceNext = false;
         } while (
-          this.transfer.active &&
-          this.moreGalleryWork &&
           !this.stopped &&
           !this.paused &&
-          !this.error
+          (this.force ||
+            (this.transfer.active && this.moreGalleryWork && !this.error))
         );
       } finally {
         await this.transfer.end();
@@ -849,8 +855,12 @@ export class Replica {
     // Returning from the native picker emits AppState.active. Reserve the
     // complete selection/import batch so foreground and background sync wait.
     this.picking = true;
+    this.changed();
     try {
-      if (this.active) await this.active;
+      if (this.active) {
+        this.stop();
+        await this.active;
+      }
       return await work();
     } finally {
       this.picking = false;
@@ -862,7 +872,11 @@ export class Replica {
     validPath(name);
     if (builtinExcluded(name))
       throw new Error("System metadata files are not synced.");
-    if (this.busy) throw new Error("Wait for synchronization to finish");
+    // Callers hold picking/importing, so no cycle restarts before the copy lands.
+    if (this.active) {
+      this.stop();
+      await this.active;
+    }
     const folder = await this.store.folder(this.scope, volume);
     if (!folder?.selected) throw new Error("Select this folder first");
     if (galleryConfig(folder))
@@ -883,10 +897,14 @@ export class Replica {
     this.changed();
   }
   async renameFile(volume, name, newName, rev) {
-    if (this.renaming || this.busy || this.active)
-      throw new Error("Wait for synchronization to finish");
+    if (this.renaming || this.removing || this.importing || this.picking)
+      throw new Error("Wait for the current operation to finish.");
     this.renaming = true;
     try {
+      if (this.active) {
+        this.stop();
+        await this.active;
+      }
       await this.requireActiveReplica();
       validPath(name);
       const destination = validPath(renamedPath(name, newName));
@@ -949,21 +967,31 @@ export class Replica {
     }
   }
   async removeFile(volume, name) {
-    await this.requireActiveReplica();
     validPath(name);
-    const folder = await this.store.folder(this.scope, volume);
-    if (galleryConfig(folder))
-      throw new Error("Gallery originals can only be managed in Photos.");
-    if (!folder?.selected) throw new Error("Select this folder first");
-    if (this.busy) throw new Error("Wait for synchronization to finish");
-    const row = await this.store.current(this.scope, volume, name);
-    const file = this.files.work(this.scope, volume, name);
-    const info = await this.files.stat(file);
-    if (!info || info.directory || !row || row.deleted || row.directory)
-      throw new Error("Only synced files can be deleted here.");
-    if ((await this.files.hash(file)) !== row.hash)
-      throw new Error("Local file changed. Sync before deleting.");
-    await this.files.remove(file);
-    this.changed();
+    if (this.renaming || this.removing || this.importing || this.picking)
+      throw new Error("Wait for the current operation to finish.");
+    this.removing = true;
+    try {
+      if (this.active) {
+        this.stop();
+        await this.active;
+      }
+      await this.requireActiveReplica();
+      const folder = await this.store.folder(this.scope, volume);
+      if (galleryConfig(folder))
+        throw new Error("Gallery originals can only be managed in Photos.");
+      if (!folder?.selected) throw new Error("Select this folder first");
+      const row = await this.store.current(this.scope, volume, name);
+      const file = this.files.work(this.scope, volume, name);
+      const info = await this.files.stat(file);
+      if (!info || info.directory || !row || row.deleted || row.directory)
+        throw new Error("Only synced files can be deleted here.");
+      if ((await this.files.hash(file)) !== row.hash)
+        throw new Error("Local file changed. Sync before deleting.");
+      await this.files.remove(file);
+      this.changed();
+    } finally {
+      this.removing = false;
+    }
   }
 }

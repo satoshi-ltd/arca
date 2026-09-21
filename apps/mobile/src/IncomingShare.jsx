@@ -1,4 +1,5 @@
 import { Busy } from "./components";
+import { useRetained } from "./motion";
 import { galleryConfig } from "./gallery.js";
 import { Section } from "./components";
 import { ErrorNotice } from "./Notice";
@@ -27,6 +28,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
   const { s } = useDesign();
   const [items, setItems] = useState([]),
     [open, setOpen] = useState(false);
+  const [shownOpen, releaseOpen] = useRetained(open);
   const [volume, setVolume] = useState(null),
     [directory, setDirectory] = useState("");
   const [directories, setDirectories] = useState([]),
@@ -163,7 +165,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
       setVolume(null);
       setDirectory("");
       await onSaved();
-      if (!r.paused) await r.sync();
+      if (!r.paused) r.sync().catch((e) => setError(e.message));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -198,8 +200,10 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
   );
   return (
     <>
-      {open && (
+      {shownOpen && (
         <Sheet
+          closing={!open}
+          onExited={releaseOpen}
           title={items.length > 1 ? "Save files" : "Save file"}
           busy={busy}
           onClose={discard}

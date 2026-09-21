@@ -30,7 +30,9 @@ for (const ending of ["\n", "\r\n"]) {
     status.volumes[1].files++;
     status.backup.revision++;
     assert.equal(signature(status, "folders", "a"), detail);
-    assert.notEqual(signature(status, "folders", null), list);
+    assert.equal(signature(status, "folders", null), list);
+    status.volumes[0].files++;
+    assert.notEqual(signature(status, "folders", "a"), detail);
     status.volumes[0].sync = { state: "error", error: "Disk full" };
     assert.notEqual(signature(status, "folders", "a"), detail);
   });
@@ -49,3 +51,16 @@ for (const ending of ["\n", "\r\n"]) {
     assert.notEqual(signature(status, "folders", "a"), detail);
   });
 }
+
+test("machine heartbeat timestamps do not invalidate the rendered roster", () => {
+  const signature = loadSignature(source);
+  const status = {
+    volumes: [],
+    devices: [{ id: "a", name: "Phone", last_seen: 1 }],
+  };
+  const initial = signature(status, "devices", null);
+  status.devices[0].last_seen = 2;
+  assert.equal(signature(status, "devices", null), initial);
+  status.devices[0].name = "Renamed";
+  assert.notEqual(signature(status, "devices", null), initial);
+});

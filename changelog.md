@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.11 — 2026-09-21
+
+- Animate desktop section/folder navigation only on route changes; slide photo information in/out and add Command-I / Control-I within the viewer. Respect reduced-motion durations.
+- Keep the mobile photo viewer toolbar visible when tapping or swiping; always show Info, Share and Delete, disabling unavailable actions without hiding them. Preserve double-tap zoom and system-gallery deletion restrictions.
+- Remove confirmed desktop gallery deletions immediately from the grid and viewer; keep deleted revisions hidden across stale hub responses and app reloads while allowing newer restored revisions.
+- Keep desktop navigation independent of pending mutations, queue writes with per-control feedback, preserve scroll during structural polling updates and patch folder counters in place.
+- Keep mobile navigation and summary refresh independent of synchronization; interrupt stalled transfers for local rename, deletion and import with regression coverage.
+- Yield during daemon transfer I/O and integrity checks, and reuse unchanged folder totals without weakening durable writes or exclusion handling.
+- Share motion tokens between desktop and mobile: 120 ms fast, 200 ms enter and 140 ms exit with one easing curve and the touch push distance, all collapsing to zero under system reduce-motion settings.
+- Use conventional navigation motion: desktop and web navigation uses a brief content entrance, mobile tabs cross-fade, and mobile details push in from the right and return from the left.
+- Animate mobile sheets like the platform bottom sheets: the panel slides up from the edge with a fading backdrop and slides back before unmounting; centered dialogs fade and scale. Replace system alerts with an in-app confirmation dialog that mirrors the desktop layout: icon tile, title, description, Cancel and a destructive or primary action.
+- Stabilize desktop motion: dialogs and menus animate on entry and close immediately, full-screen photos never scale or fade again during preview upgrades, and updated notices retain expanded details without replaying their entrance.
+- Align release manifests at 0.4.11 and mobile build 22.
+
+
 ## 0.4.10 — 2026-09-21
 
 - Unify mobile and Fold photo folders into a chronological gallery for source phones and downloaded copies, with cached hub metadata, local thumbnails and bounded remote previews. Preserve loaded pages during refresh and the current viewer session when new photos arrive.

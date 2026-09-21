@@ -1854,3 +1854,64 @@ test("mobile sync and rename accept accented Unicode filenames", async (t) => {
     "accented",
   );
 });
+
+for (const operation of ["rename", "delete", "import"]) {
+  test(
+    `mobile ${operation} interrupts a stalled cycle and releases its reservation`,
+    { timeout: 5000 },
+    async (t) => {
+      const f = await fixture(t);
+      fs.writeFileSync(path.join(f.volume.path, "action.txt"), "original");
+      await f.daemon.engine.cycle();
+      await f.replica.select(f.volume);
+      await sync(f);
+      const current = await f.store.current(
+        f.replica.scope,
+        f.volume.id,
+        "action.txt",
+      );
+      let entered;
+      const started = new Promise((resolve) => {
+        entered = resolve;
+      });
+      f.stall(() => {
+        entered();
+        return new Promise(() => {});
+      });
+      const active = f.replica.sync();
+      await started;
+      if (operation === "rename")
+        await f.replica.renameFile(
+          f.volume.id,
+          "action.txt",
+          "renamed.txt",
+          current.rev,
+        );
+      else if (operation === "delete")
+        await f.replica.removeFile(f.volume.id, "action.txt");
+      else
+        await f.replica.withImportPicker(() =>
+          f.replica.importFile(
+            f.volume.id,
+            "imported.txt",
+            path.join(f.volume.path, "action.txt"),
+          ),
+        );
+      await active;
+      const expected =
+        operation === "rename"
+          ? "renamed.txt"
+          : operation === "import"
+            ? "imported.txt"
+            : "action.txt";
+      assert.equal(
+        fs.existsSync(f.files.work(f.replica.scope, f.volume.id, expected)),
+        operation !== "delete",
+      );
+      assert.equal(f.replica.busy, false);
+      assert.equal(f.replica.error, null);
+      f.stall(null);
+      await sync(f);
+    },
+  );
+}

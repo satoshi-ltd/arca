@@ -25,6 +25,7 @@ import {
   digest,
   fail,
   hashFile,
+  hashFileAsync,
   validPath,
   atomic,
   requireSpace,
@@ -273,13 +274,23 @@ export class Engine {
       progress(size);
       return;
     }
-    const fd = fs.openSync(file, "r");
+    const fd = await fs.promises.open(file, "r");
     try {
       do {
         this.checkSyncInterrupted();
         const length = Math.min(chunk, size - offset);
         const buffer = Buffer.alloc(length);
-        fs.readSync(fd, buffer, 0, length, offset);
+        let read = 0;
+        while (read < length) {
+          const { bytesRead } = await fd.read(
+            buffer,
+            read,
+            length - read,
+            offset + read,
+          );
+          if (!bytesRead) fail("Upload content changed while reading", 409);
+          read += bytesRead;
+        }
         const r = await this.request(
           `/v1/uploads/${hash}?offset=${offset}&size=${size}`,
           { method: "PUT", body: buffer },
@@ -289,13 +300,13 @@ export class Engine {
         progress(offset);
       } while (!complete);
     } finally {
-      fs.closeSync(fd);
+      await fd.close();
     }
   }
   async download(hash, size) {
     const file = this.store.blob(hash);
     if (fs.existsSync(file)) {
-      if (hashFile(file) === hash) return;
+      if ((await hashFileAsync(file)) === hash) return;
       // Keep the damaged object until a verified replacement is ready.
     }
     if (this.progress)
@@ -317,21 +328,21 @@ export class Engine {
       });
       if (offset && response.status !== 206)
         fail("Hub did not honor the requested download range", 502);
-      const fd = fs.openSync(tmp, offset ? "a" : "w");
+      const fd = await fs.promises.open(tmp, offset ? "a" : "w");
       try {
         for await (const chunk of response.body) {
-          fs.writeSync(fd, chunk);
+          await fd.writeFile(chunk);
           this.transferred += chunk.length;
           if (this.progress)
             this.progress.bytesDone =
               (this.progress.bytesDone || offset) + chunk.length;
         }
-        fs.fsyncSync(fd);
+        await fd.sync();
       } finally {
-        fs.closeSync(fd);
+        await fd.close();
       }
     }
-    if (fs.statSync(tmp).size !== size || hashFile(tmp) !== hash) {
+    if (fs.statSync(tmp).size !== size || (await hashFileAsync(tmp)) !== hash) {
       fs.unlinkSync(tmp);
       fail("Downloaded content failed integrity verification", 409);
     }

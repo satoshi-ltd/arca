@@ -1,6 +1,7 @@
 import { brandMark } from "./palette.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
-import { geometry as g } from "./design-tokens.js";
+import { geometry as g, motion } from "./design-tokens.js";
+import { useMotion } from "./motion";
 import React, {
   createContext,
   useContext,
@@ -262,13 +263,17 @@ export function Button({
   quiet = false,
   size = "normal",
   danger = false,
+  activity = false,
 }) {
   const { s, c } = useDesign();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: disabled || busy, busy }}
+      accessibilityState={{
+        disabled: disabled || busy,
+        busy: busy || activity,
+      }}
       disabled={disabled || busy}
       onPress={onPress}
       hitSlop={size === "small" ? 6 : undefined}
@@ -284,7 +289,7 @@ export function Button({
         (disabled || busy) && s.disabled,
       ]}
     >
-      {busy ? (
+      {busy || activity ? (
         <Busy color={primary ? c.onAccent : danger ? c.danger : c.ink} />
       ) : icon ? (
         <Icon
@@ -621,6 +626,7 @@ export function Breadcrumbs({ name, directory, onChange }) {
   );
 }
 
+const AnimatedSafeArea = Animated.createAnimatedComponent(SafeAreaView);
 export function Sheet({
   overlay,
   title,
@@ -628,52 +634,154 @@ export function Sheet({
   children,
   busy = false,
   busyLabel = "",
+  centered = false,
+  closing = false,
+  onExited,
 }) {
   const { s, wide } = useDesign();
+  const { duration, easing } = useMotion();
+  const progress = useRef(new Animated.Value(0)).current;
+  const leaving = useRef(false);
+  const dialog = wide || centered;
+  const [height, setHeight] = useState(null);
+  const animate = (to, ms, then) =>
+    Animated.timing(progress, {
+      toValue: to,
+      duration: duration(ms),
+      easing,
+      useNativeDriver: true,
+    }).start(({ finished }) => finished && then?.());
+  // A bottom sheet travels its own height, so it starts once measured; dialogs start at once.
+  useEffect(() => {
+    if (dialog || height != null) animate(1, motion.enter);
+  }, [dialog, height != null]);
+  useEffect(() => {
+    if (closing) {
+      leaving.current = true;
+      animate(0, motion.exit, onExited);
+    }
+  }, [closing]);
+  const dismiss = () => {
+    if (leaving.current) return;
+    leaving.current = true;
+    animate(0, motion.exit, onClose);
+  };
+  const panel = dialog
+    ? {
+        opacity: progress,
+        transform: [
+          {
+            scale: progress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [motion.dialogScale, 1],
+            }),
+          },
+        ],
+      }
+    : {
+        transform: [
+          {
+            translateY: progress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [height ?? 1000, 0],
+            }),
+          },
+        ],
+      };
   return (
     <Modal
       visible
-      animationType={wide ? "fade" : "slide"}
+      animationType="none"
       supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
       transparent
       presentationStyle="overFullScreen"
-      onRequestClose={busy ? () => {} : onClose}
+      onRequestClose={dismiss}
     >
-      <KeyboardPane style={s.modalOverlay}>
-        <SafeAreaView style={s.modalPanel}>
-          {!title && <View style={s.sheetHandle} />}
-          {!!title && (
-            <View style={s.sheetHeader}>
-              <Text accessibilityRole="header" style={[s.heading, s.flex]}>
-                {title}
-              </Text>
-              <Button
-                label="Close"
-                quiet
-                icon="close"
-                iconOnly
-                disabled={busy}
-                onPress={onClose}
-              />
-            </View>
-          )}
-          <KeyboardScrollView
-            style={s.sheetScroll}
-            contentContainerStyle={s.content}
-            keyboardShouldPersistTaps="handled"
+      <View style={s.modalRoot}>
+        <Animated.View
+          pointerEvents="none"
+          style={[s.modalBackdrop, { opacity: progress }]}
+        />
+        <KeyboardPane
+          style={[s.modalOverlay, centered && s.modalOverlayCentered]}
+        >
+          <AnimatedSafeArea
+            style={[s.modalPanel, centered && s.confirmPanel, panel]}
+            onLayout={(event) =>
+              setHeight((known) => known ?? event.nativeEvent.layout.height)
+            }
           >
-            {busy && !!busyLabel && (
-              <View style={s.row} accessibilityLiveRegion="polite">
-                <Busy />
-                <Text style={s.text}>{busyLabel}</Text>
+            {!title && !centered && <View style={s.sheetHandle} />}
+            {!!title && (
+              <View style={s.sheetHeader}>
+                <Text accessibilityRole="header" style={[s.heading, s.flex]}>
+                  {title}
+                </Text>
+                <Button
+                  label="Close"
+                  quiet
+                  icon="close"
+                  iconOnly
+                  onPress={dismiss}
+                />
               </View>
             )}
-            {children}
-          </KeyboardScrollView>
-        </SafeAreaView>
-        {overlay}
-      </KeyboardPane>
+            <KeyboardScrollView
+              style={s.sheetScroll}
+              contentContainerStyle={s.content}
+              keyboardShouldPersistTaps="handled"
+            >
+              {busy && !!busyLabel && (
+                <View style={s.row} accessibilityLiveRegion="polite">
+                  <Busy />
+                  <Text style={s.text}>{busyLabel}</Text>
+                </View>
+              )}
+              {children}
+            </KeyboardScrollView>
+          </AnimatedSafeArea>
+          {overlay}
+        </KeyboardPane>
+      </View>
     </Modal>
+  );
+}
+// Same anatomy as the desktop confirmation dialog: icon tile, title, description, Cancel and one action.
+export function ConfirmDialog({
+  title,
+  message,
+  label,
+  icon = "alert",
+  destructive = false,
+  closing = false,
+  onExited,
+  onConfirm,
+  onCancel,
+}) {
+  const { s } = useDesign();
+  return (
+    <Sheet centered onClose={onCancel} closing={closing} onExited={onExited}>
+      <View style={s.confirmHeader}>
+        <View style={s.tile}>
+          <Icon name={icon} />
+        </View>
+        <View style={[s.flex, s.stack]}>
+          <Text accessibilityRole="header" style={s.heading}>
+            {title}
+          </Text>
+          <Text style={s.text}>{message}</Text>
+        </View>
+      </View>
+      <View style={s.confirmActions}>
+        <Button label="Cancel" onPress={onCancel} />
+        <Button
+          label={label}
+          primary
+          danger={destructive}
+          onPress={onConfirm}
+        />
+      </View>
+    </Sheet>
   );
 }
 

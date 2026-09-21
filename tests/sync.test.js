@@ -2403,3 +2403,31 @@ test("hub rename journals both paths and recovers after interrupted materializat
     0,
   );
 });
+
+test("status totals reuse unchanged rows and invalidate on policy and database changes", async (t) => {
+  const { hub, volume } = await setup(t);
+  write(hub, volume, "cached.txt", "visible");
+  await hub.sync();
+  const store = hub.engine.store;
+  const rows = store.rows.bind(store);
+  let scans = 0;
+  store.rows = (...args) => {
+    scans++;
+    return rows(...args);
+  };
+  const before = store.visibleTotals(volume.id);
+  const initial = scans;
+  before.files = -1;
+  assert.ok(store.visibleTotals(volume.id).files > 0);
+  assert.equal(
+    scans,
+    initial,
+    "unchanged status does not enumerate files again",
+  );
+  write(hub, volume, ".arcaignore", "cached.txt\n");
+  assert.equal(store.visibleTotals(volume.id).files, 1);
+  assert.ok(scans > initial, "an unscanned policy edit invalidates totals");
+  write(hub, volume, "added.txt", "another");
+  await hub.sync();
+  assert.equal(store.visibleTotals(volume.id).files, 2);
+});

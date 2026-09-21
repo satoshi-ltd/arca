@@ -57,11 +57,16 @@ export class Gallery {
         "Confirm replacing the Arca local copy with a gallery source first.",
       );
     await r.requireActiveReplica();
-    if (r.active || r.busy || r.removing || r.importing)
-      throw new Error("Wait for synchronization to finish.");
-    r.importing = r.busy = true;
-    r.stopped = false;
+    if (r.importing || r.removing || r.picking || r.renaming)
+      throw new Error("Wait for the current operation to finish.");
+    r.importing = true;
     try {
+      if (r.active) {
+        r.stop();
+        await r.active;
+      }
+      r.busy = true;
+      r.stopped = false;
       r.check();
       await r.client.refresh();
       const remote = r.client
@@ -282,10 +287,15 @@ export class Gallery {
     if (!confirmed)
       throw new Error("Confirm downloading a complete local copy first.");
     await r.requireActiveReplica();
-    if (r.active || r.busy || r.importing || r.removing)
-      throw new Error("Wait for synchronization to finish.");
-    r.importing = r.busy = true;
+    if (r.importing || r.removing || r.picking || r.renaming)
+      throw new Error("Wait for the current operation to finish.");
+    r.importing = true;
     try {
+      if (r.active) {
+        r.stop();
+        await r.active;
+      }
+      r.busy = true;
       await r.client.refresh();
       const remote = r.client
         .state()

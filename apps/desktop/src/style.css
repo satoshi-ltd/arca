@@ -2289,41 +2289,30 @@ label {
     transform: translateY(0);
   }
 }
-dialog {
-  opacity: 0;
-  transform: translateY(var(--motion-distance))
-    scale(var(--motion-dialog-scale));
-  transition:
-    opacity var(--motion-exit) var(--motion-ease),
-    transform var(--motion-exit) var(--motion-ease),
-    display var(--motion-exit) allow-discrete,
-    overlay var(--motion-exit) allow-discrete;
+/* Animate entry only: closing releases the top layer immediately, including
+   dialogs whose content is reused or whose parent is restored on close. */
+@keyframes dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-distance)) scale(var(--motion-dialog-scale));
+  }
+  to { opacity: 1; transform: none; }
+}
+@keyframes overlay-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 dialog[open] {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  transition-duration: var(--motion-enter);
-}
-dialog::backdrop {
-  opacity: 0;
-  transition:
-    opacity var(--motion-exit) var(--motion-ease),
-    display var(--motion-exit) allow-discrete,
-    overlay var(--motion-exit) allow-discrete;
+  animation: dialog-enter var(--motion-enter) var(--motion-ease);
 }
 dialog[open]::backdrop {
-  opacity: 1;
+  animation: overlay-enter var(--motion-enter) var(--motion-ease);
 }
-@starting-style {
-  dialog[open] {
-    opacity: 0;
-    transform: translateY(var(--motion-distance))
-      scale(var(--motion-dialog-scale));
-  }
-  dialog[open]::backdrop {
-    opacity: 0;
-  }
+/* Full-screen media must not scale, or fade again when its preview upgrades. */
+dialog.photo-viewer[open] {
+  animation-name: overlay-enter;
 }
+
 button,
 .folder-card,
 .nav-item {
@@ -2500,7 +2489,12 @@ progress::-webkit-progress-value {
   border: 1px solid var(--div);
   border-radius: var(--r-control);
   box-shadow: var(--shadow-menu);
+  animation: notice-enter var(--motion-enter) var(--motion-ease);
 }
+.dropdown-menu[hidden] {
+  display: none;
+}
+
 .dropdown-menu [role="option"] {
   display: flex;
   align-items: center;
@@ -2812,7 +2806,9 @@ section:has(> .replica-danger) > .section-label {
   color: var(--ink);
   overflow: hidden;
   box-shadow: var(--shadow-menu);
-  animation: notice-enter var(--notice-duration) ease-out;
+}
+.notice-card.notice-enter {
+  animation: notice-enter var(--motion-enter) var(--motion-ease);
 }
 .notice-main {
   display: flex;
@@ -3361,6 +3357,12 @@ dialog.photo-viewer {
   width: auto;
   border-radius: var(--r-control);
   border: 1px solid var(--line);
+}
+.photo-viewer-stage {
+  transition: width var(--motion-enter) var(--motion-ease);
+}
+.photo-viewer-head {
+  transition: right var(--motion-enter) var(--motion-ease);
 }
 .photo-info-open .photo-viewer-stage {
   width: calc(100% - 360px);

@@ -1,3 +1,4 @@
+import { ScreenEnter } from "./motion";
 import React, {
   createContext,
   useEffect,
@@ -78,6 +79,8 @@ export function KeyboardScrollView({
   onScroll,
   onLayout,
   onContentSizeChange,
+  enter,
+  enterStyle,
   ...props
 }) {
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -175,7 +178,13 @@ export function KeyboardScrollView({
         }}
       >
         <ScrollPosition.Provider value={position}>
-          {children}
+          {enter ? (
+            <ScreenEnter kind={enter} style={enterStyle}>
+              {children}
+            </ScreenEnter>
+          ) : (
+            children
+          )}
         </ScrollPosition.Provider>
       </FieldFocus.Provider>
     </Animated.ScrollView>

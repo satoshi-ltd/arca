@@ -52,6 +52,16 @@ export function hashFile(file) {
   }
   return hash.digest("hex");
 }
+// Transfer verification runs on the event loop; stream reads yield between chunks.
+export async function hashFileAsync(file) {
+  const hash = crypto.createHash("sha256");
+  const input = fs.createReadStream(file, {
+    flags: fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0),
+    highWaterMark: 1024 * 1024,
+  });
+  for await (const chunk of input) hash.update(chunk);
+  return hash.digest("hex");
+}
 export function requireSpace(location, additionalBytes) {
   let directory = location;
   while (!fs.existsSync(directory)) {
@@ -484,7 +494,7 @@ export class Store {
       bigint: true,
       throwIfNoEntry: false,
     });
-    if (!stat) return compileIgnore("");
+    if (!stat) return (this.emptyIgnore ||= compileIgnore(""));
     const stamp = `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
     this.ignoreCache ||= new Map();
     const old = this.ignoreCache.get(v.id);
@@ -511,7 +521,17 @@ export class Store {
     } catch (error) {
       return { files: null, bytes: null, policyError: error.message };
     }
-    return this.rows(volume).reduce(
+    const version = this.db.prepare("PRAGMA data_version").get().data_version;
+    const changes = this.db.prepare("SELECT total_changes() AS n").get().n;
+    this.totalsCache ||= new Map();
+    const cached = this.totalsCache.get(volume);
+    if (
+      cached?.version === version &&
+      cached.changes === changes &&
+      cached.excluded === excluded
+    )
+      return { ...cached.totals };
+    const totals = this.rows(volume).reduce(
       (totals, row) => {
         if (!row.deleted && !row.directory && !excluded(row.path, false)) {
           totals.files++;
@@ -521,6 +541,8 @@ export class Store {
       },
       { files: 0, bytes: 0 },
     );
+    this.totalsCache.set(volume, { version, changes, excluded, totals });
+    return { ...totals };
   }
   excluded(volume, name, directory = this.current(volume, name)?.directory) {
     return this.ignoreRules(this.volume(volume))(name, !!directory);

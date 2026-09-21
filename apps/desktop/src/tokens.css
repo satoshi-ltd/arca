@@ -8,6 +8,8 @@
   --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --motion-distance: 8px;
   --motion-dialog-scale: 0.985;
+  --motion-touch-push: 30px;
+  --motion-touch-dialog-scale: 0.9;
   --confirmation-width: 360px;
   --confirmation-title: 18px;
   --notice-width: 360px;
@@ -221,5 +223,7 @@
     --motion-exit: 0ms;
     --motion-distance: 0px;
     --motion-dialog-scale: 1;
+    --motion-touch-push: 0px;
+    --motion-touch-dialog-scale: 1;
   }
 }

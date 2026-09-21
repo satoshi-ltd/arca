@@ -22,6 +22,48 @@ async function readFolderPage(route, pending = false) {
     throw error;
   }
 }
+// A replica can delete locally before the hub accepts its next sync. Keep that
+// revision hidden across cached reads/restarts; a restored newer revision wins.
+let galleryDeletions;
+try {
+  galleryDeletions = JSON.parse(
+    localStorage.getItem("arca-gallery-deletions") || "{}",
+  );
+  if (
+    !galleryDeletions ||
+    typeof galleryDeletions !== "object" ||
+    Array.isArray(galleryDeletions)
+  )
+    galleryDeletions = {};
+} catch {
+  galleryDeletions = {};
+}
+function galleryDeletionKey(volume, path) {
+  return JSON.stringify([status.id, status.hubId || status.id, volume, path]);
+}
+function rememberGalleryDeletion(target) {
+  galleryDeletions[galleryDeletionKey(target.volume, target.path)] = Number(
+    target.rev,
+  );
+  try {
+    localStorage.setItem(
+      "arca-gallery-deletions",
+      JSON.stringify(galleryDeletions),
+    );
+  } catch {
+    /* Session filtering still works without storage. */
+  }
+}
+function visibleGalleryPage(route, data) {
+  const volume = new URLSearchParams(route.split("?")[1]).get("volume");
+  return {
+    ...data,
+    items: data.items.filter((item) => {
+      const deleted = galleryDeletions[galleryDeletionKey(volume, item.path)];
+      return deleted === undefined || Number(item.rev) > deleted;
+    }),
+  };
+}
 const galleryPages = new Map();
 let galleryEpoch = 0;
 function clearGalleryPages() {
@@ -273,6 +315,7 @@ const api = (route, body) => {
   })
     .then((value) => {
       if (body !== undefined) clearGalleryPages();
+      if (route === "/v1/delete-file" && body) rememberGalleryDeletion(body);
       if (
         cacheEpoch === folderCacheEpoch &&
         body === undefined &&
@@ -373,7 +416,7 @@ readRoute();
 window.addEventListener("hashchange", () => {
   readRoute();
   if (ready)
-    action(async () => {
+    navigate(async () => {
       await render();
       updateShell();
     });
@@ -508,8 +551,14 @@ function renderNotices() {
     template.innerHTML = markup;
     const card = template.content.firstElementChild;
     card.dataset.markup = markup;
-    if (old) old.replaceWith(card);
-    else box.append(card);
+    if (old) {
+      const details = card.querySelector("details");
+      if (details) details.open = Boolean(old.querySelector("details")?.open);
+      old.replaceWith(card);
+    } else {
+      card.classList.add("notice-enter");
+      box.append(card);
+    }
   }
   box.hidden = !items.length;
   icons();
@@ -521,11 +570,46 @@ function notice(message, error = false, options = {}) {
     : { kind: "info", title: message };
   return noticeStore.push({ ...item, ...options });
 }
-async function action(work) {
-  if (busy) return;
+let actionQueue = null;
+let activeUIRequests = 0;
+const pendingControls = new WeakSet();
+function action(work, control) {
+  if (control && pendingControls.has(control)) return Promise.resolve();
+  if (control) {
+    pendingControls.add(control);
+    control.disabled = true;
+  }
+  const execute = () =>
+    performAction(async () => {
+      try {
+        await work();
+      } finally {
+        if (control) {
+          pendingControls.delete(control);
+          control.disabled = false;
+        }
+      }
+    }, true);
+  const result = actionQueue ? actionQueue.then(execute) : execute();
+  actionQueue = result;
+  void result.finally(() => {
+    if (actionQueue === result) actionQueue = null;
+  });
+  return result;
+}
+function navigate(work) {
+  return performAction(work, false);
+}
+function background(work) {
+  return performAction(work, false, false);
+}
+async function performAction(work, exclusive, track = true) {
   statusRequestSerial++; // Discard status reads started before this user action.
-  busy = true;
-  document.body.setAttribute("aria-busy", "true");
+  if (track) {
+    activeUIRequests++;
+    document.body.setAttribute("aria-busy", "true");
+  }
+  if (exclusive) busy = true;
   updateBrandActivity();
   try {
     await work();
@@ -549,8 +633,11 @@ async function action(work) {
       });
     }
   } finally {
-    busy = false;
-    document.body.setAttribute("aria-busy", "false");
+    if (exclusive) busy = false;
+    if (track) {
+      activeUIRequests--;
+      document.body.setAttribute("aria-busy", String(activeUIRequests > 0));
+    }
     updateBrandActivity();
     icons();
   }
@@ -662,17 +749,33 @@ function synchronizationError() {
   return errors.length ? errors.join("\n") : status.error;
 }
 function viewRefreshSignature(status, view, detailId) {
-  return JSON.stringify([
-    view,
-    detailId,
+  const volumes =
     view === "folders" && detailId
       ? status.volumes.filter((volume) => volume.id === detailId)
-      : status.volumes,
-    status.phase,
-    view === "devices" ? status.backup : null,
-    view === "devices" ? status.devices : null,
-  ]);
+      : status.volumes;
+  return JSON.stringify(
+    [
+      view,
+      detailId,
+      volumes.map(({ files, bytes, sync, ...volume }) => ({
+        ...volume,
+        ...(detailId ? { files, bytes } : {}),
+        sync: sync && { state: sync.state, error: sync.error },
+      })),
+      status.phase,
+      view === "devices" ? status.backup : null,
+      view === "devices"
+        ? status.devices?.map(({ last_seen, ...device }) => ({
+            ...device,
+            seen: !!last_seen,
+          }))
+        : null,
+    ],
+    (key, value) =>
+      ["lastCompleted", "last_sync"].includes(key) ? undefined : value,
+  );
 }
+
 let statusRequestSerial = 0;
 async function refresh(renderView = true) {
   const request = ++statusRequestSerial;
@@ -708,14 +811,27 @@ async function refresh(renderView = true) {
     icons();
   }
   if (detailId && view === "folders") refreshCopies();
-  if (!renderView && status.phase !== "paused" && status.progress?.path) {
-    const p = status.progress;
-    const row = [...document.querySelectorAll(".folder-card[data-id]")].find(
-      (el) => el.dataset.id === p.volume,
-    );
-    if (row) {
-      row.querySelector(".meta").textContent = progressLabel(p);
+  if (!renderView) {
+    for (const row of document.querySelectorAll(".folder-card[data-id]")) {
+      const volume = status.volumes.find((v) => v.id === row.dataset.id);
+      if (!volume) continue;
+      const p =
+        status.phase !== "paused" &&
+        status.progress?.volume === volume.id &&
+        status.progress?.path
+          ? status.progress
+          : null;
+      row.querySelector(".meta").textContent =
+        volume.sync?.error ||
+        volume.policyError ||
+        (p
+          ? progressLabel(p)
+          : `${countLabel(volume.files || 0, "file")} · ${bytes(volume.bytes)} · ${volume.path || "No visible copy selected"}`);
       let progress = row.querySelector("progress");
+      if (!p) {
+        progress?.remove();
+        continue;
+      }
       if (!progress) {
         progress = document.createElement("progress");
         row.querySelector(".row-main").append(progress);
@@ -729,6 +845,16 @@ async function refresh(renderView = true) {
         progress.value = p.filesDone || 0;
       } else progress.removeAttribute("value");
     }
+  }
+  if (!renderView && view === "folders" && detailId) {
+    const volume = status.volumes.find((v) => v.id === detailId);
+    const completed = document.querySelector(
+      ".folder-stats .stat:first-child p",
+    );
+    if (completed && volume)
+      completed.textContent = volume.sync?.lastCompleted
+        ? `Completed ${relative(volume.sync.lastCompleted)}`
+        : "No completed sync yet";
   }
   const syncError = synchronizationError();
   const conditions = conditionNotices({ ...status, error: syncError });
@@ -957,6 +1083,15 @@ function viewRead(route) {
   }
   return viewReads.get(key);
 }
+let animatedRoute = null;
+let navigationAnimation = null;
+function motionDuration(token) {
+  return (
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue(token),
+    ) || 0
+  );
+}
 async function render({ refreshStatus = false } = {}) {
   galleryView?.observer?.disconnect();
   galleryView?.moreObserver?.disconnect();
@@ -969,6 +1104,20 @@ async function render({ refreshStatus = false } = {}) {
   $("#content").setAttribute("aria-busy", "true");
   try {
     const page = renderView(true, undefined, refreshStatus);
+    if (animatedRoute !== route) {
+      navigationAnimation?.cancel();
+      navigationAnimation = $("#content").animate?.(
+        [
+          { opacity: 0.65, transform: "translateY(6px)" },
+          { opacity: 1, transform: "translateY(0)" },
+        ],
+        {
+          duration: motionDuration("--motion-enter"),
+          easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        },
+      );
+      animatedRoute = route;
+    }
     const serial = renderSerial;
     const request = statusRequestSerial + 1;
     const state = refreshStatus
@@ -1345,9 +1494,9 @@ async function galleryPage(route, fresh = false) {
       cached.refreshing = true;
       void refresh().catch(() => galleryPages.delete(key));
     }
-    return cached.data;
+    return visibleGalleryPage(route, cached.data);
   }
-  return refresh();
+  return visibleGalleryPage(route, await refresh());
 }
 async function cachedPhoto(route) {
   const pool = photoCaches[route.includes("size=large") ? "large" : "thumb"];
@@ -1582,6 +1731,27 @@ function mountGallery(volume) {
   toolbar.querySelector(".photo-selection-delete").onclick = () =>
     deleteGalleryPhotos([...state.selection.values()]);
   state.updateSelection = updateSelection;
+  state.removePhoto = (item) => {
+    item.deleted = true;
+    state.selection.delete(item.path);
+    for (const tile of root.querySelectorAll(".photo-thumb")) {
+      if (state.items[Number(tile.dataset.photo)].path !== item.path) continue;
+      state.observer?.unobserve(tile);
+      state.queue = state.queue.filter((queued) => queued !== tile);
+      tile.remove();
+    }
+    for (const group of root.querySelectorAll(".photo-day"))
+      if (!group.querySelector(".photo-thumb")) group.remove();
+    updateSelection();
+    layoutPhotos();
+    if (!root.querySelector(".photo-thumb") && !state.next)
+      root.querySelector(".photo-days").innerHTML = empty(
+        "No photos yet",
+        "Photos uploaded to this folder will appear here.",
+        "",
+        "images",
+      );
+  };
   // Fit each complete row to the available width. The last row never grows
   // beyond the target height, so sparse months keep ordinary-sized photos.
   function layoutPhotos() {
@@ -1938,12 +2108,7 @@ function deleteGalleryPhotos(items) {
             path: item.path,
             rev: item.rev,
           });
-          item.deleted = true;
-          state.selection.delete(item.path);
-          const tile = [...state.root.querySelectorAll(".photo-thumb")].find(
-            (t) => state.items[Number(t.dataset.photo)].path === item.path,
-          );
-          tile?.remove();
+          state.removePhoto(item);
           completed++;
           remaining.shift();
         }
@@ -1962,11 +2127,11 @@ function deleteGalleryPhotos(items) {
           const previous = state.items.findLastIndex((item) => !item.deleted);
           if (next >= 0 || previous >= 0)
             await openGalleryPhoto(next >= 0 ? next : previous);
-          else {
-            $("#dialog").close();
-            await refresh();
-          }
+          else $("#dialog").close();
         };
+      // The current grid is already updated; do not replace it with a stale
+      // replica catalog while the background synchronization catches up.
+      return () => {};
     },
     "Delete",
     false,
@@ -2194,16 +2359,44 @@ async function openGalleryPhoto(index) {
       infoLoading = false;
     }
   };
+  let panelAnimation = null;
+  let infoExpanded = false;
   const toggleInfo = (open) => {
+    if (open === infoExpanded) return;
+    infoExpanded = open;
+    panelAnimation?.cancel();
+    panelAnimation = null;
     if (open) {
       infoPanel.querySelector(".photo-info-error")?.remove();
       loadInfo();
     }
-    $(".photo-info").hidden = !open;
+    infoPanel.hidden = false;
+    infoPanel.inert = !open;
+    infoPanel.setAttribute("aria-hidden", String(!open));
     $("#dialog").classList.toggle("photo-info-open", open);
     $(".photo-info-toggle").setAttribute("aria-expanded", String(open));
+    if (!open && infoPanel.contains(document.activeElement))
+      $(".photo-info-toggle").focus();
+    const frames = [
+      { opacity: 0, transform: "translateX(24px)" },
+      { opacity: 1, transform: "translateX(0)" },
+    ];
+    panelAnimation = infoPanel.animate?.(
+      open ? frames : [...frames].reverse(),
+      {
+        duration: motionDuration(open ? "--motion-enter" : "--motion-exit"),
+        easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      },
+    );
+    if (panelAnimation)
+      panelAnimation.onfinish = () => {
+        infoPanel.hidden = !infoExpanded;
+      };
+    else infoPanel.hidden = !open;
   };
-  $(".photo-info-toggle").onclick = () => toggleInfo($(".photo-info").hidden);
+  $(".photo-info-toggle").setAttribute("aria-keyshortcuts", "Meta+i Control+i");
+  $(".photo-info-toggle").title = "Info (⌘I / Ctrl+I)";
+  $(".photo-info-toggle").onclick = () => toggleInfo(!infoExpanded);
   $(".photo-info-close").onclick = () => toggleInfo(false);
   toggleInfo(false);
   $(".photo-previous").onclick = () => openGalleryPhoto(previousIndex);
@@ -2316,6 +2509,17 @@ async function openGalleryPhoto(index) {
 document.addEventListener("keydown", (event) => {
   if (!$("#dialog").open || !$("#dialog").classList.contains("photo-viewer"))
     return;
+  if (
+    (event.metaKey || event.ctrlKey) &&
+    !event.altKey &&
+    !event.shiftKey &&
+    event.key.toLowerCase() === "i" &&
+    !event.target.closest?.("input, textarea, select, [contenteditable]")
+  ) {
+    event.preventDefault();
+    if (!event.repeat) $(".photo-info-toggle")?.click();
+    return;
+  }
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     $(event.key === "ArrowLeft" ? ".photo-previous" : ".photo-next")?.click();
@@ -3045,7 +3249,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   html += section(
     "Service",
-    `<div class="settings-card">${setting("Arca v0.4.10", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
+    `<div class="settings-card">${setting("Arca v0.4.11", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
   );
   if (status.role === "replica" && status.hub)
     html += section(
@@ -3176,8 +3380,13 @@ function bindDialog(dialog) {
   // Dialogs close explicitly; backdrop interaction never discards a draft.
   form.onsubmit = (event) => {
     event.preventDefault();
+    const submit = submitDialog;
+    const data = new FormData(event.target);
+    const control = dialog.querySelector("#submit-dialog");
+    // Submission owns this dialog even while waiting behind another mutation.
+    dialogSubmitting = true;
+    cancel.disabled = true;
     action(async () => {
-      const control = dialog.querySelector("#submit-dialog");
       control.disabled = true;
       control.setAttribute("aria-busy", "true");
       control.insertAdjacentHTML("afterbegin", busyIcon());
@@ -3185,11 +3394,11 @@ function bindDialog(dialog) {
       cancel.disabled = true;
       try {
         dialog.querySelector("#dialog-error").hidden = true;
-        const complete = await submitDialog(new FormData(event.target));
+        const complete = await submit(data);
         if (complete === false) return;
         close();
         if (typeof complete === "function") await complete();
-        else await refresh();
+        else if (ready) void background(() => render({ refreshStatus: true }));
       } finally {
         dialogSubmitting = false;
         control.removeAttribute("aria-busy");
@@ -3197,7 +3406,7 @@ function bindDialog(dialog) {
         cancel.disabled = false;
         control.disabled = false;
       }
-    });
+    }, control);
   };
 }
 bindDialog($("#dialog"));
@@ -3987,7 +4196,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.4.10",
+          version: "0.4.11",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -4148,14 +4357,14 @@ async function handle(name, id, control) {
   }
   if (name === "sync") {
     await api("/v1/sync", { background: true });
-    await refresh();
+    void background(() => refresh());
     return;
   }
   if (name === "pause") {
     const paused = status.phase !== "paused";
     await api("/v1/pause", { paused });
     if (!paused) await api("/v1/sync", { background: true });
-    await refresh();
+    void background(() => refresh());
     return;
   }
   if (name === "start") {
@@ -4514,6 +4723,52 @@ async function handle(name, id, control) {
     return;
   }
 }
+const navigationActions = new Set([
+  "unselect",
+  "enable-gallery",
+  "delete-share",
+  "rename-share",
+  "rename-file",
+  "delete-file",
+  "connect",
+  "replacement-hub",
+  "refresh",
+  "gallery-mode",
+  "folder-tab",
+  "browse-directory",
+  "browse-page",
+  "folder-search-toggle",
+  "folder-search-apply",
+  "back-folders",
+  "folder-detail",
+  "folder-history",
+  "folder-conflicts",
+  "history-folder",
+  "history-filter",
+  "history-page",
+  "history-open-file",
+  "history-reveal-file",
+  "history-view-folder",
+  "history-back",
+  "file-back-folder",
+  "activity-file",
+  "versions",
+  "machines",
+  "backup-settings",
+  "folder-problem",
+  "review-conflict",
+  "open-conflict",
+  "copy",
+  "copy-notice",
+  "diagnostics",
+  "theme",
+  "open",
+]);
+function dispatchControl(control) {
+  const { action: name, id } = control.dataset;
+  const work = () => handle(name, id, control);
+  return navigationActions.has(name) ? navigate(work) : action(work, control);
+}
 document.addEventListener("click", (e) => {
   document.querySelectorAll(".file-actions-menu[open]").forEach((menu) => {
     if (!menu.contains(e.target) || e.target.closest("[data-action]"))
@@ -4534,16 +4789,15 @@ document.addEventListener("click", (e) => {
     const option = e.target.closest('[role="option"]');
     const triggerId = dropdownRoot.querySelector("[data-dropdown-trigger]").id;
     closeDropdown(dropdownRoot, true);
-    action(async () => {
-      await handle(option.dataset.action, option.dataset.id);
-      document.getElementById(triggerId)?.focus();
-    });
+    dispatchControl(option).then(() =>
+      document.getElementById(triggerId)?.focus(),
+    );
     return;
   }
   const nav = e.target.closest("[data-view]");
   if (nav) {
     e.preventDefault();
-    if (busy || !ready || $("#dialog").open) return;
+    if (!ready || $("#dialog").open) return;
     view = nav.dataset.view;
     detailId = null;
     historyPath = null;
@@ -4570,42 +4824,43 @@ document.addEventListener("click", (e) => {
     void handle(control.dataset.action, control.dataset.id, control);
     return;
   }
-  action(() => handle(control.dataset.action, control.dataset.id, control));
+  dispatchControl(control);
 });
 document.addEventListener("change", (e) => {
-  if (e.target.id === "allow-lan-http")
-    action(async () => {
-      const enabled = e.target.checked;
-      e.target.disabled = true;
-      try {
-        network = await api("/v1/network/lan", { enabled });
-      } catch (error) {
-        e.target.checked = !enabled;
-        throw error;
-      } finally {
-        e.target.disabled = false;
-      }
-    });
-  if (e.target.matches("[data-backup-toggle]")) {
-    const enabled = e.target.checked;
-    e.target.checked = Boolean(status.backup?.enabled);
-    action(() => handle(enabled ? "enable-backup" : "disable-backup", ""));
+  const control = e.target;
+  const enabled = control.checked;
+  if (control.matches("[data-backup-toggle]")) {
+    control.checked = Boolean(status.backup?.enabled);
+    action(
+      () => handle(enabled ? "enable-backup" : "disable-backup", ""),
+      control,
+    );
+    return;
   }
-  if (e.target.id === "launch-at-login")
-    action(async () => {
-      const enabled = e.target.checked;
-      try {
-        await invoke("set_launch_at_login", { enabled });
-      } catch (error) {
-        e.target.checked = !enabled;
-        throw error;
-      }
-    });
-  if (e.target.id === "notifications-enabled")
-    action(async () => {
-      await invoke("set_notifications", { enabled: e.target.checked });
-    });
+  if (
+    !["allow-lan-http", "launch-at-login", "notifications-enabled"].includes(
+      control.id,
+    )
+  )
+    return;
+  action(async () => {
+    try {
+      if (control.id === "allow-lan-http")
+        network = await api("/v1/network/lan", { enabled });
+      else
+        await invoke(
+          control.id === "launch-at-login"
+            ? "set_launch_at_login"
+            : "set_notifications",
+          { enabled },
+        );
+    } catch (error) {
+      control.checked = !enabled;
+      throw error;
+    }
+  }, control);
 });
+
 function requestReference(reference, label = "REQUEST", hint = "") {
   const digits = String(reference || "");
   return `<div class="request-reference"><div class="eyebrow">${escape(label)}</div><div class="request-number" aria-label="${escape(digits)}"><span>${escape(digits.slice(0, 3))}</span><span class="request-separator" aria-hidden="true">–</span><span>${escape(digits.slice(3))}</span></div>${hint ? `<p>${escape(hint)}</p>` : ""}</div>`;
@@ -5108,6 +5363,19 @@ async function boot() {
   } else await refresh();
 }
 await action(boot);
+let pointerPressed = false;
+window.addEventListener("pointerdown", () => {
+  pointerPressed = true;
+});
+window.addEventListener("pointerup", () => {
+  pointerPressed = false;
+});
+window.addEventListener("pointercancel", () => {
+  pointerPressed = false;
+});
+window.addEventListener("blur", () => {
+  pointerPressed = false;
+});
 let polling = false;
 setInterval(async () => {
   if (!ready || polling) return;
@@ -5119,6 +5387,7 @@ setInterval(async () => {
     // Background reads must neither swallow clicks nor replace a newer view.
     if (
       !busy &&
+      !pointerPressed &&
       !$("#dialog").open &&
       !document.querySelector(
         '.details-menu[open], .dropdown [aria-expanded="true"]',
@@ -5131,7 +5400,50 @@ setInterval(async () => {
       old !== signature &&
       !(view === "folders" && detailId && folderTab === "gallery")
     ) {
+      const positions = [...document.querySelectorAll("#content, #content *")]
+        .filter((el) => el.scrollTop || el.scrollLeft)
+        .map((el) => {
+          const path = [];
+          for (
+            let node = el;
+            node && node.id !== "content";
+            node = node.parentElement
+          )
+            path.unshift(
+              `:nth-child(${[...node.parentElement.children].indexOf(node) + 1})`,
+            );
+          return {
+            el,
+            id: el.id,
+            selector:
+              "#content" + (path.length ? " > " + path.join(" > ") : ""),
+            top: el.scrollTop,
+            left: el.scrollLeft,
+          };
+        });
+      const focused = document.activeElement;
+      const focusAction = focused?.dataset.action;
+      const focusId = focused?.dataset.id;
       await render();
+      if (serial + 1 === renderSerial) {
+        for (const position of positions) {
+          const element = position.el.isConnected
+            ? position.el
+            : (position.id && document.getElementById(position.id)) ||
+              document.querySelector(position.selector);
+          if (element) {
+            element.scrollTop = position.top;
+            element.scrollLeft = position.left;
+          }
+        }
+        if (focusAction)
+          [...document.querySelectorAll("[data-action]")]
+            .find(
+              (el) =>
+                el.dataset.action === focusAction && el.dataset.id === focusId,
+            )
+            ?.focus({ preventScroll: true });
+      }
       lastSignature = signature;
     }
   } catch (error) {

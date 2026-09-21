@@ -10,6 +10,8 @@ import { GallerySetup } from "./GallerySource";
 import { uploadStatus } from "./gallery-timeline";
 import { galleryConfig } from "./gallery.js";
 import { Section } from "./components";
+import { ConfirmDialog } from "./components";
+import { useRetained } from "./motion";
 import { subscribeNotificationResponse } from "./runtime";
 import { NoticeStack, ErrorNotice } from "./Notice";
 import {
@@ -115,18 +117,6 @@ const date = (value) =>
       })
     : "No completed sync yet";
 const tabs = ["Folders", "Machines", "History", "Settings"];
-function confirm(title, message, action, label = title, cancel) {
-  Alert.alert(title, message, [
-    { text: "Cancel", style: "cancel", onPress: cancel },
-    {
-      text: label,
-      onPress: action,
-      style: /destroy|delete|stop syncing|remove/i.test(label)
-        ? "destructive"
-        : "default",
-    },
-  ]);
-}
 export default function App() {
   const system = useColorScheme();
   const [prefs, setPrefs] = useState({});
@@ -228,6 +218,8 @@ export default function App() {
       retainSnapshot(old, {
         busy: r.busy,
         syncingVolume: r.syncingVolume,
+        picking: !!r.picking,
+        importing: !!r.importing,
         paused: r.paused,
         progress: r.progress,
         error: r.error,
@@ -300,6 +292,21 @@ export default function App() {
   }
   const notices = useMemo(() => createNoticeStore(), []);
   const [photoCount, setPhotoCount] = useState(null);
+  const [confirmation, setConfirmation] = useState(null);
+  const [shownConfirmation, releaseConfirmation] = useRetained(confirmation);
+  function ask(title, message, label = title, icon) {
+    return new Promise((resolve) =>
+      setConfirmation({ title, message, label, icon, resolve }),
+    );
+  }
+  function confirm(title, message, action, label = title, cancel) {
+    ask(title, message, label).then((ok) => (ok ? action() : cancel?.()));
+  }
+  const settle = (ok) => {
+    const current = confirmation;
+    setConfirmation(null);
+    current?.resolve(ok);
+  };
   const [timelineDemand, setTimelineDemand] = useState(0);
   const nearEnd = useRef(false);
   const [noticeItems, setNoticeItems] = useState([]);
@@ -316,7 +323,11 @@ export default function App() {
   }, [success, notices]);
   async function run(work, options = {}) {
     if (action.current) {
-      if (options.silent) return;
+      if (!options.silent)
+        notices.push({
+          kind: "info",
+          title: "Another action is still running.",
+        });
       return;
     }
     action.current = true;
@@ -336,16 +347,15 @@ export default function App() {
       retryAction.current.message = message;
       setError(message);
     } finally {
+      action.current = false;
       if (mounted.current) {
-        try {
-          await update();
-        } catch (e) {
-          setError(e.message || "Could not refresh this view.");
-        }
         setBusy(false);
         setActionLabel("");
+        void update().catch((e) => {
+          if (mounted.current)
+            setError(e.message || "Could not refresh this view.");
+        });
       }
-      action.current = false;
     }
   }
   useEffect(() => {
@@ -390,12 +400,12 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    if (!folder || status.busy || !engine.current) return;
+    if (!folder || !engine.current) return;
     listFiles(folder.id).catch((e) => setError(e.message));
     return () => {
       fileRequest.current++;
     };
-  }, [folder?.id, status.busy, status.last]);
+  }, [folder?.id, status.busy, status.syncingVolume, status.last]);
   const connection = state.connection,
     connected = connection?.linked,
     catalog = state.catalog,
@@ -477,7 +487,21 @@ export default function App() {
   );
   const historyDetail = sheet?.kind === "history";
   const detail = historyDetail;
+  const [shownSheet, releaseSheet] = useRetained(
+    sheet && !detail ? sheet : null,
+  );
   const screen = onboarding ? "Onboarding" : detail ? "File detail" : view;
+  const screenDepth = detail ? 2 : folder && screen === "Folders" ? 1 : 0;
+  const lastDepth = useRef(screenDepth);
+  const screenEnter =
+    screenDepth > lastDepth.current
+      ? "forward"
+      : screenDepth < lastDepth.current
+        ? "back"
+        : "fade";
+  useEffect(() => {
+    lastDepth.current = screenDepth;
+  }, [screenDepth]);
   useEffect(() => {
     let cancelled = false;
     if (
@@ -667,7 +691,7 @@ export default function App() {
               await engine.current.removeFile(folder.id, item.path);
               resolve(true);
               await listFiles();
-              if (connected && !status.paused) await engine.current.sync();
+              if (connected && !status.paused) startSync();
             },
             { success: "Photo deleted" },
           ).then(() => resolve(false)),
@@ -718,33 +742,36 @@ export default function App() {
   }
   async function imported(kind) {
     const replica = engine.current;
-    await replica.withImportPicker(async () => {
-      const result =
-        kind === "photos"
-          ? await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ["images"],
-              allowsMultipleSelection: true,
-              quality: 1,
-            })
-          : await DocumentPicker.getDocumentAsync({
-              multiple: true,
-              copyToCacheDirectory: true,
-            });
-      if (result.canceled) return;
-      if (kind === "photos" && source) {
-        await replica.gallery.addPhotos(folder.id, result.assets);
-      } else {
-        for (const asset of result.assets)
-          await replica.importFile(
-            folder.id,
-            directory +
-              (asset.name || asset.fileName || `photo-${Date.now()}.jpg`),
-            asset.uri,
-          );
-        await listFiles();
-      }
-    });
-    if (connected && !status.paused) await replica.sync();
+    try {
+      await replica.withImportPicker(async () => {
+        const result =
+          kind === "photos"
+            ? await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                allowsMultipleSelection: true,
+                quality: 1,
+              })
+            : await DocumentPicker.getDocumentAsync({
+                multiple: true,
+                copyToCacheDirectory: true,
+              });
+        if (result.canceled) return;
+        if (kind === "photos" && source) {
+          await replica.gallery.addPhotos(folder.id, result.assets);
+        } else {
+          for (const asset of result.assets)
+            await replica.importFile(
+              folder.id,
+              directory +
+                (asset.name || asset.fileName || `photo-${Date.now()}.jpg`),
+              asset.uri,
+            );
+          await listFiles();
+        }
+      });
+    } finally {
+      if (connected && !status.paused) startSync();
+    }
   }
   function choose(v) {
     setSheet({ kind: "select", volume: v });
@@ -756,7 +783,7 @@ export default function App() {
           await engine.current.gallery.configure(folder.id, options, true);
           setSheet(null);
           await listFiles();
-          await engine.current.sync();
+          startSync();
         },
         { label: source ? "Saving changes…" : "Enabling uploads…" },
       );
@@ -891,9 +918,9 @@ export default function App() {
         }
         notice={timelineNotice}
         folderName={folder.name}
-        open={(item) => run(() => openMedia(item))}
-        history={(item) => run(() => openFileDetail(item))}
-        share={(item) => run(() => shareMedia(item))}
+        open={(item) => openMedia(item).catch((e) => setError(e.message))}
+        history={(item) => openFileDetail(item)}
+        share={(item) => shareMedia(item).catch((e) => setError(e.message))}
         remove={!source && currentFolder?.selected ? deleteMedia : null}
       />
     ) : null;
@@ -945,7 +972,7 @@ export default function App() {
     const volume = sheet.volume;
     const previous = sheet.returnTo;
     setSheet(previous || null);
-    await engine.current.sync();
+    startSync();
     if (previous?.kind === "history") await getHistory(previous);
     notices.push({
       kind: "info",
@@ -967,7 +994,7 @@ export default function App() {
             path: row.path,
             rev: row.rev,
           });
-          await engine.current.sync();
+          startSync();
           if (folder) await listFiles();
           await getHistory(sheet?.kind === "history" ? sheet : null);
           notices.push({
@@ -989,12 +1016,11 @@ export default function App() {
       }
       if (sheet) {
         historyRequest.current++;
-        if (!busy)
-          setSheet(
-            ["conflict", "rename-file"].includes(sheet.kind)
-              ? sheet.returnTo || null
-              : null,
-          );
+        setSheet(
+          ["conflict", "rename-file"].includes(sheet.kind)
+            ? sheet.returnTo || null
+            : null,
+        );
         return true;
       }
       if (folder && view === "Folders") {
@@ -1004,7 +1030,7 @@ export default function App() {
       return false;
     });
     return () => listener.remove();
-  }, [sheet, folder, view, busy, fileActionsOpen]);
+  }, [sheet, folder, view, fileActionsOpen]);
   const selectTab = (tab) => {
     historyRequest.current++;
     setView(tab);
@@ -1036,9 +1062,11 @@ export default function App() {
       setHistoryFilter(item.action === "review" ? "conflicts" : "revisions");
       setSheet(null);
     } else if (item.action === "folder") {
+      const target = locals.find((f) => f.id === item.volume);
       setView("Folders");
-      setFolder(locals.find((f) => f.id === item.volume) || null);
       setSheet(null);
+      if (target) openFolder(target).catch((e) => setError(e.message));
+      else setFolder(null);
     } else if (item.action === "pair") {
       setView("Settings");
       setSheet(null);
@@ -1124,7 +1152,7 @@ export default function App() {
                 await engine.current.removeFile(target.volume, target.path);
                 setSheet(null);
                 if (folder) await listFiles();
-                if (connected && !status.paused) await engine.current.sync();
+                if (connected && !status.paused) startSync();
               },
               { success: "File deleted" },
             ),
@@ -1369,8 +1397,8 @@ export default function App() {
                             iconOnly={!!folder}
                             label="Sync now"
                             icon="refresh"
-                            busy={locked}
-                            disabled={status.paused}
+                            activity={status.busy}
+                            disabled={status.paused || !engine.current}
                             onPress={() => startSync(true)}
                           />
                         )}
@@ -1407,6 +1435,8 @@ export default function App() {
                     onboarding && s.setup,
                   ]}
                   keyboardShouldPersistTaps="handled"
+                  enter={screenEnter}
+                  enterStyle={[s.enter, onboarding && s.enterSetup]}
                 >
                   {folder && screen === "Folders" && !photoFolder && (
                     <View style={[s.group, s.statsGrid]}>
@@ -1551,12 +1581,10 @@ export default function App() {
                                   updated={status.last}
                                   date={date}
                                   open={(row) =>
-                                    run(() =>
-                                      getHistory({
-                                        volume: folder.id,
-                                        path: row.path,
-                                      }),
-                                    )
+                                    getHistory({
+                                      volume: folder.id,
+                                      path: row.path,
+                                    }).catch((e) => setError(e.message))
                                   }
                                 />
                               ) : (
@@ -1586,7 +1614,7 @@ export default function App() {
                                             if (e.directory) {
                                               setDirectory(e.path + "/");
                                               setVisibleCount(100);
-                                            } else run(() => openFileDetail(e));
+                                            } else openFileDetail(e);
                                           }}
                                           style={[s.settingRow, s.separator]}
                                         >
@@ -1772,7 +1800,11 @@ export default function App() {
                                                 ? "Up to date"
                                                 : "Incomplete"
                                     }
-                                    onPress={() => run(() => openFolder(f))}
+                                    onPress={() =>
+                                      openFolder(f).catch((e) =>
+                                        setError(e.message),
+                                      )
+                                    }
                                   />
                                 ))}
                               </View>
@@ -1796,7 +1828,7 @@ export default function App() {
                                       name={v.name}
                                       available
                                       description={`${v.files} files · ${bytes(v.bytes)}`}
-                                      disabled={!connected || locked}
+                                      disabled={!connected || actionLocked}
                                       onPress={() => choose(v)}
                                     />
                                   ))}
@@ -1826,7 +1858,11 @@ export default function App() {
                       loading={detailLoading}
                       error={detailError}
                       localEntry={sheet.localEntry}
-                      retry={() => run(() => getHistory(sheet))}
+                      retry={() =>
+                        getHistory(sheet).catch((e) =>
+                          setDetailError(e.message),
+                        )
+                      }
                       author={(id) =>
                         machines?.find(
                           (m) => m.machineId === id || m.credentialId === id,
@@ -1838,7 +1874,7 @@ export default function App() {
                         locals.find((v) => v.id === sheet.volume)
                       }
                       date={date}
-                      locked={locked}
+                      locked={actionLocked}
                       connected={connected}
                       restore={restore}
                       canResolve={locals.some(
@@ -1849,7 +1885,11 @@ export default function App() {
                           resolveConflict({ path: sheet.path }, sheet.volume),
                         )
                       }
-                      loadMore={() => run(() => getHistory(sheet, true))}
+                      loadMore={() =>
+                        getHistory(sheet, true).catch((e) =>
+                          setDetailError(e.message),
+                        )
+                      }
                       openFolder={
                         locals.some((f) => f.id === sheet.volume)
                           ? () => {
@@ -1858,7 +1898,9 @@ export default function App() {
                               );
                               setSheet(null);
                               setView("Folders");
-                              run(() => openFolder(target));
+                              openFolder(target).catch((e) =>
+                                setError(e.message),
+                              );
                             }
                           : null
                       }
@@ -1875,7 +1917,7 @@ export default function App() {
                       setCode={setCode}
                       catalog={catalog}
                       free={status.free}
-                      busy={locked}
+                      busy={actionLocked}
                       start={() =>
                         run(() =>
                           engine.current.store.set("onboarding", "pair"),
@@ -1926,7 +1968,7 @@ export default function App() {
                             connection={connection}
                             name={catalog?.name}
                             machine={machines?.find((m) => m.isHub)}
-                            busy={locked}
+                            busy={actionLocked}
                             disconnect={disconnect}
                             retry={() => run(() => client.refresh())}
                           />
@@ -1994,7 +2036,10 @@ export default function App() {
                                 );
                                 await client.pair(address, code, name.trim());
                                 setCode("");
-                                await engine.current.sync();
+                                const r = engine.current;
+                                r.scope = client.state().connection.hubId;
+                                await r.store.set("scope", r.scope);
+                                startSync();
                                 setView("Folders");
                               })
                             }
@@ -2076,10 +2121,10 @@ export default function App() {
                         <ErrorNotice
                           error={historyError}
                           retry={() =>
-                            run(async () => {
-                              await client.refresh();
-                              await getHistory();
-                            })
+                            client
+                              .refresh()
+                              .then(() => getHistory())
+                              .catch((e) => setHistoryError(e.message))
                           }
                         />
                       )}
@@ -2124,12 +2169,10 @@ export default function App() {
                                     accessibilityRole="button"
                                     accessibilityLabel={`View history for ${row.path}`}
                                     onPress={() =>
-                                      run(() =>
-                                        getHistory({
-                                          volume: row.volume,
-                                          path: row.path,
-                                        }),
-                                      )
+                                      getHistory({
+                                        volume: row.volume,
+                                        path: row.path,
+                                      }).catch((e) => setError(e.message))
                                     }
                                     style={[
                                       s.settingRow,
@@ -2207,8 +2250,12 @@ export default function App() {
                       {history.next && (
                         <Button
                           label="Load older revisions"
-                          busy={busy}
-                          onPress={() => run(() => getHistory(null, true))}
+                          busy={historyLoading}
+                          onPress={() =>
+                            getHistory(null, true).catch((e) =>
+                              setHistoryError(e.message),
+                            )
+                          }
                         />
                       )}
                     </>
@@ -2223,7 +2270,7 @@ export default function App() {
                               connection={connection}
                               name={catalog?.name}
                               machine={machines?.find((m) => m.isHub)}
-                              busy={locked}
+                              busy={actionLocked}
                               disconnect={disconnect}
                               retry={() => run(() => client.refresh())}
                             />
@@ -2348,8 +2395,8 @@ export default function App() {
                                 label="Copy diagnostics"
                                 icon="copy"
                                 onPress={() =>
-                                  run(async () => {
-                                    await native.copyText(
+                                  native
+                                    .copyText(
                                       JSON.stringify(
                                         {
                                           appVersion:
@@ -2365,9 +2412,14 @@ export default function App() {
                                         null,
                                         2,
                                       ),
-                                    );
-                                    setSuccess("Diagnostics copied");
-                                  })
+                                    )
+                                    .then(() =>
+                                      notices.push({
+                                        kind: "info",
+                                        title: "Diagnostics copied",
+                                      }),
+                                    )
+                                    .catch((e) => setError(e.message))
                                 }
                               />
                             }
@@ -2405,9 +2457,10 @@ export default function App() {
                                 )}
                                 value={prefs.theme || "system"}
                                 onChange={(value) =>
-                                  run(() =>
-                                    engine.current.store.set("theme", value),
-                                  )
+                                  engine.current.store
+                                    .set("theme", value)
+                                    .then(update)
+                                    .catch((e) => setError(e.message))
                                 }
                               />
                             }
@@ -2423,9 +2476,10 @@ export default function App() {
                                 options={textSizes}
                                 value={textScale(prefs.textSize)}
                                 onChange={(value) =>
-                                  run(() =>
-                                    engine.current.store.set("textSize", value),
-                                  )
+                                  engine.current.store
+                                    .set("textSize", value)
+                                    .then(update)
+                                    .catch((e) => setError(e.message))
                                 }
                               />
                             }
@@ -2450,7 +2504,7 @@ export default function App() {
                               icon="trash"
                               primary
                               danger
-                              busy={locked}
+                              busy={actionLocked}
                               onPress={destroy}
                             />
                           }
@@ -2480,10 +2534,32 @@ export default function App() {
               items={noticeItems}
               onDismiss={(id) => notices.remove(id)}
               onAction={noticeAction}
-              disabled={locked}
+              disabled={actionLocked}
             />
           )}
-          {webApproval && !sheet && !busy && (
+          {shownConfirmation && (
+            <ConfirmDialog
+              title={shownConfirmation.title}
+              message={shownConfirmation.message}
+              label={shownConfirmation.label}
+              icon={
+                shownConfirmation.icon ||
+                (/delete/i.test(shownConfirmation.label)
+                  ? "trash"
+                  : /stop syncing|unlink|remove/i.test(shownConfirmation.label)
+                    ? "unlink"
+                    : "alert")
+              }
+              destructive={/destroy|delete|stop syncing|remove/i.test(
+                shownConfirmation.label,
+              )}
+              closing={!confirmation}
+              onExited={releaseConfirmation}
+              onConfirm={() => settle(true)}
+              onCancel={() => settle(false)}
+            />
+          )}
+          {webApproval && !sheet && !status.picking && !status.importing && (
             <ApprovalSheet
               request={webApproval}
               hubName={catalog?.name || "hub"}
@@ -2492,47 +2568,49 @@ export default function App() {
               onDecision={answerWebApproval}
             />
           )}
-          {sheet && !detail && (
+          {shownSheet && (
             <Sheet
+              closing={!sheet || detail}
+              onExited={releaseSheet}
               overlay={
                 <NoticeStack
                   items={noticeItems.filter((n) => n.kind === "info")}
                   onDismiss={(id) => notices.remove(id)}
                   onAction={noticeAction}
-                  disabled={locked}
+                  disabled={actionLocked}
                 />
               }
               title={
-                sheet.kind === "rename-file"
+                shownSheet.kind === "rename-file"
                   ? "Rename file"
-                  : sheet.kind === "gallery"
+                  : shownSheet.kind === "gallery"
                     ? "Photo uploads"
-                    : sheet.kind === "history-filter"
+                    : shownSheet.kind === "history-filter"
                       ? "Shared folder"
-                      : sheet.kind === "folder-actions"
+                      : shownSheet.kind === "folder-actions"
                         ? folder.name
-                        : sheet.kind === "select"
-                          ? sheet.volume.name
-                          : sheet.kind === "history"
-                            ? sheet.path
-                            : sheet.kind === "conflict"
+                        : shownSheet.kind === "select"
+                          ? shownSheet.volume.name
+                          : shownSheet.kind === "history"
+                            ? shownSheet.path
+                            : shownSheet.kind === "conflict"
                               ? "Resolve conflict"
-                              : sheet.entry.path
+                              : shownSheet.entry.path
               }
               busy={busy}
               busyLabel={actionLabel}
               onClose={() =>
                 setSheet(
-                  ["conflict", "rename-file"].includes(sheet.kind)
-                    ? sheet.returnTo || null
+                  ["conflict", "rename-file"].includes(shownSheet.kind)
+                    ? shownSheet.returnTo || null
                     : null,
                 )
               }
             >
-              {!!error && sheet.kind !== "folder-actions" && (
+              {!!error && shownSheet.kind !== "folder-actions" && (
                 <ErrorNotice error={error} retry={retryAction.current} />
               )}
-              {sheet.kind === "rename-file" && (
+              {shownSheet.kind === "rename-file" && (
                 <View style={s.group}>
                   <Text style={s.text}>
                     The new name syncs to other copies. Earlier history stays
@@ -2544,19 +2622,19 @@ export default function App() {
                     onChangeText={setRenameName}
                     autoCapitalize="none"
                     autoCorrect={false}
-                    editable={!locked}
+                    editable={!actionLocked}
                   />
                   <Button
                     label="Rename"
                     disabled={
-                      locked ||
+                      actionLocked ||
                       !renameName ||
-                      renameName === sheet.path.split("/").at(-1)
+                      renameName === shownSheet.path.split("/").at(-1)
                     }
                     onPress={() =>
                       run(
                         async () => {
-                          const target = sheet.returnTo;
+                          const target = shownSheet.returnTo;
                           await engine.current.renameFile(
                             target.volume,
                             target.path,
@@ -2565,8 +2643,7 @@ export default function App() {
                           );
                           setSheet(null);
                           if (folder) await listFiles();
-                          if (connected && !status.paused)
-                            await engine.current.sync();
+                          if (connected && !status.paused) startSync();
                         },
                         { success: "File renamed" },
                       )
@@ -2574,15 +2651,15 @@ export default function App() {
                   />
                 </View>
               )}
-              {sheet.kind === "gallery" && (
+              {shownSheet.kind === "gallery" && (
                 <GallerySetup
                   gallery={engine.current.gallery}
                   source={source}
-                  locked={locked}
+                  locked={actionLocked}
                   enable={configureGallery}
                 />
               )}
-              {sheet.kind === "history-filter" && (
+              {shownSheet.kind === "history-filter" && (
                 <View style={s.group}>
                   {[
                     { id: "", name: "All folders" },
@@ -2603,14 +2680,14 @@ export default function App() {
                   ))}
                 </View>
               )}
-              {sheet.kind === "folder-actions" && (
+              {shownSheet.kind === "folder-actions" && (
                 <>
                   <View style={s.actionGroup}>
                     {!!folder.selected && !source && (
                       <ActionRow
                         label="Add files…"
                         icon="upload"
-                        disabled={locked}
+                        disabled={actionLocked}
                         onPress={() => {
                           setSheet(null);
                           run(() => imported("files"));
@@ -2621,7 +2698,7 @@ export default function App() {
                       <ActionRow
                         label="Add photos…"
                         icon="image"
-                        disabled={locked}
+                        disabled={actionLocked}
                         onPress={() => {
                           setSheet(null);
                           run(() => imported("photos"));
@@ -2637,15 +2714,17 @@ export default function App() {
                         }
                         onPress={() => {
                           setSheet(null);
-                          run(async () => {
-                            await engine.current.files.exportDirectory(
-                              engine.current.files.folder(
-                                engine.current.scope,
-                                folder.id,
+                          run(() =>
+                            engine.current.withImportPicker(() =>
+                              engine.current.files.exportDirectory(
+                                engine.current.files.folder(
+                                  engine.current.scope,
+                                  folder.id,
+                                ),
+                                "arca-folder",
                               ),
-                              "arca-folder",
-                            );
-                          });
+                            ),
+                          );
                         }}
                       />
                     )}
@@ -2653,7 +2732,7 @@ export default function App() {
                       label={source ? "Change album…" : "Link album…"}
                       icon="gallery"
                       disabled={
-                        locked ||
+                        actionLocked ||
                         !connected ||
                         (!source &&
                           (!currentFolder?.completed || !!currentFolder?.issue))
@@ -2700,15 +2779,15 @@ export default function App() {
                   </View>
                 </>
               )}
-              {sheet.kind === "select" && (
+              {shownSheet.kind === "select" && (
                 <>
                   <Card title="Keep a local copy">
                     <Text style={s.text}>
                       Download this folder and keep it in sync.
                     </Text>
                     <Text style={s.caption}>
-                      {bytes(sheet.volume.bytes)} on hub · {bytes(status.free)}{" "}
-                      free here
+                      {bytes(shownSheet.volume.bytes)} on hub ·{" "}
+                      {bytes(status.free)} free here
                     </Text>
                   </Card>
                   <Button
@@ -2717,7 +2796,7 @@ export default function App() {
                     busy={busy}
                     onPress={() =>
                       run(async () => {
-                        await engine.current.select(sheet.volume);
+                        await engine.current.select(shownSheet.volume);
                         setSheet(null);
                         startSync();
                       })
@@ -2725,34 +2804,35 @@ export default function App() {
                   />
                 </>
               )}
-              {sheet.kind === "conflict" && (
+              {shownSheet.kind === "conflict" && (
                 <>
                   <Text style={s.text}>
                     Choose which version to use for the original file.
                   </Text>
                   {[
-                    ["original", "Original file", sheet.original],
-                    ["conflict", "Conflict copy", sheet.conflict],
+                    ["original", "Original file", shownSheet.original],
+                    ["conflict", "Conflict copy", shownSheet.conflict],
                   ].map(([choice, label, row]) => (
                     <Pressable
                       key={choice}
                       accessibilityRole="radio"
                       accessibilityLabel={`${label}, ${row.path}`}
                       accessibilityState={{
-                        checked: sheet.choice === choice,
-                        disabled: locked || !!row.deleted,
+                        checked: shownSheet.choice === choice,
+                        disabled: actionLocked || !!row.deleted,
                       }}
-                      disabled={locked || !!row.deleted}
-                      onPress={() => setSheet({ ...sheet, choice })}
+                      disabled={actionLocked || !!row.deleted}
+                      onPress={() => setSheet({ ...shownSheet, choice })}
                       style={[
                         s.card,
                         s.conflictChoice,
-                        sheet.choice === choice && s.conflictChoiceSelected,
+                        shownSheet.choice === choice &&
+                          s.conflictChoiceSelected,
                       ]}
                     >
                       <View style={s.row}>
                         <Icon
-                          name={sheet.choice === choice ? "check" : "file"}
+                          name={shownSheet.choice === choice ? "check" : "file"}
                         />
                         <Text style={s.rowTitle}>{label}</Text>
                       </View>
@@ -2770,9 +2850,9 @@ export default function App() {
                     primary
                     label="Restore selected"
                     busy={busy}
-                    disabled={!connected || locked}
+                    disabled={!connected || actionLocked}
                     onPress={() =>
-                      run(() => chooseConflict(sheet.choice), {
+                      run(() => chooseConflict(shownSheet.choice), {
                         label: "Restoring selected version…",
                       })
                     }
@@ -2780,8 +2860,8 @@ export default function App() {
                   <Button
                     quiet
                     label="Keep both as they are"
-                    disabled={locked}
-                    onPress={() => setSheet(sheet.returnTo || null)}
+                    disabled={actionLocked}
+                    onPress={() => setSheet(shownSheet.returnTo || null)}
                   />
                 </>
               )}
@@ -2809,7 +2889,7 @@ export default function App() {
                   label="Rename…"
                   icon="edit"
                   disabled={
-                    locked ||
+                    actionLocked ||
                     !renameCurrentFile ||
                     !!fileHistory.versions[0]?.deleted
                   }
@@ -2824,7 +2904,7 @@ export default function App() {
                   danger
                   divider
                   disabled={
-                    locked ||
+                    actionLocked ||
                     !deleteCurrentFile ||
                     !!fileHistory.versions[0]?.deleted
                   }

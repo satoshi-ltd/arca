@@ -2261,6 +2261,12 @@ test("notices use a stable stack, expose Copy while collapsed, and preserve Deta
   w.queue.push(item);
   assert.equal(w.document.querySelector(".notice-card"), card);
   assert.equal(details.open, true);
+  assert.ok(card.classList.contains("notice-enter"));
+  w.queue.push({ ...item, body: "Connection still unavailable." });
+  const updated = w.document.querySelector(".notice-card");
+  assert.notEqual(updated, card);
+  assert.equal(updated.classList.contains("notice-enter"), false);
+  assert.equal(updated.querySelector("details").open, true);
   w.queue.push({ id: "info", title: "Saved" });
   w.queue.push({ id: "warning", kind: "warning", title: "Conflict" });
   w.queue.push({ id: "info2", title: "Restored" });
@@ -2281,7 +2287,11 @@ test("navigation paints before slow reads, retains updating feedback and ignores
   const w = dom.window,
     gates = new Map(),
     calls = [];
-  w.setInterval = () => 0;
+  let poll;
+  w.setInterval = (callback, ms) => {
+    if (ms === 5000) poll = callback;
+    return 0;
+  };
   const hold = (route) => {
     let release;
     const promise = new Promise((resolve) => {
@@ -2307,6 +2317,7 @@ test("navigation paints before slow reads, retains updating feedback and ignores
           `http://127.0.0.1:${daemon.port}${args.route}`,
           {
             method: args.method,
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
             headers: {
               authorization: `Bearer ${daemon.engine.config.adminToken}`,
             },
@@ -2401,6 +2412,55 @@ test("navigation paints before slow reads, retains updating feedback and ignores
   );
   releaseHistory();
   await until(() => !updating());
+  nav("folders");
+  await until(() => !updating());
+  const card = w.document.querySelector(".folder-card[data-id]");
+  w.document.querySelector("#content").scrollTop = 40;
+  fs.writeFileSync(path.join(volume.path, "arrived.txt"), "new photo bytes");
+  await daemon.engine.cycle();
+  // Establish the latest structural state before changing only counters.
+  await poll();
+  const stable = w.document.querySelector(".folder-card[data-id]");
+  fs.writeFileSync(path.join(volume.path, "another.txt"), "more bytes");
+  await daemon.engine.cycle();
+  await poll();
+  assert.equal(w.document.querySelector(".folder-card[data-id]"), stable);
+  assert.ok(
+    stable
+      .querySelector(".meta")
+      .textContent.startsWith(
+        `${daemon.engine.store.visibleTotals(volume.id).files} files`,
+      ),
+  );
+  const releaseSync = hold("/v1/sync");
+  nav("settings");
+  await until(() => !updating());
+  w.document.querySelector('[data-action="sync"]').click();
+  await until(() => calls.includes("/v1/sync"));
+  const pause = w.document.querySelector('[data-action="pause"]');
+  pause.click();
+  pause.click();
+  assert.equal(
+    pause.disabled,
+    true,
+    "queued mutation disables only its own control",
+  );
+  assert.equal(calls.filter((route) => route === "/v1/pause").length, 0);
+  nav("folders");
+  await until(() => title() === "Folders");
+  w.document.querySelector('[data-action="folder-detail"]').click();
+  await until(() => title() === "Documents");
+  releaseSync();
+  await until(
+    () =>
+      daemon.engine.paused &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  assert.equal(
+    calls.filter((route) => route === "/v1/pause").length,
+    1,
+    "queued clicks are retained, duplicate submission is suppressed",
+  );
 });
 
 test("gallery folders open a chronological grid, viewer and existing Files tab", async (t) => {
@@ -2443,6 +2503,8 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   });
   t.after(() => releaseLarge());
   const galleryRequests = [];
+  let staleGallery = null;
+  let replayStaleGallery = false;
   const requests = new Set();
   t.after(async () => {
     await until(
@@ -2490,6 +2552,10 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.error);
+        if (args.route.startsWith("/v1/gallery?")) {
+          if (replayStaleGallery) return structuredClone(staleGallery);
+          staleGallery = structuredClone(data);
+        }
         return data;
       },
     },
@@ -2673,6 +2739,14 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     "Back to gallery",
   );
   assert.ok(w.document.querySelector(".photo-download"));
+  w.document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "i", metaKey: true, bubbles: true }),
+  );
+  assert.equal(w.document.querySelector(".photo-info").hidden, false);
+  w.document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "i", ctrlKey: true, bubbles: true }),
+  );
+  assert.equal(w.document.querySelector(".photo-info").hidden, true);
   w.document.querySelector(".photo-info-toggle").click();
   assert.equal(w.document.querySelector(".photo-info").hidden, false);
   assert.match(
@@ -2753,6 +2827,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     w.document.querySelector(".photo-viewer-image img").alt,
     "photo.jpg",
   );
+  replayStaleGallery = true;
   w.document.querySelector(".photo-delete").click();
   w.document
     .querySelector("#dialog-form")
@@ -2765,7 +2840,17 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   await until(() => w.document.body.getAttribute("aria-busy") !== "true");
   assert.equal(daemon.engine.store.current(v.id, "photo.jpg").deleted, 1);
   assert.equal(w.document.querySelector(".photo-previous").disabled, true);
+  assert.equal(w.document.querySelector('[aria-label="Open photo.jpg"]'), null);
   w.document.querySelector("#cancel-dialog").click();
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => !w.document.querySelector("#photo-gallery"));
+  w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-select").length === 2);
+  assert.equal(
+    w.document.querySelector('[aria-label="Open photo.jpg"]'),
+    null,
+    "a stale hub page cannot revive the confirmed local deletion",
+  );
   for (const check of w.document.querySelectorAll(".photo-select"))
     check.click();
   assert.equal(w.document.querySelector("#photo-selection").hidden, false);
@@ -3520,4 +3605,50 @@ test("Review opens the folder error details without navigating away", async (t) 
   assert.ok(w.document.querySelector(".folder-card"));
   w.document.querySelector("#cancel-dialog").click();
   assert.equal(w.document.querySelector("#dialog").open, false);
+});
+
+test("gallery deletion filtering survives reload and permits restored revisions without hiding another folder", async (t) => {
+  const key = JSON.stringify(["replica", "hub", "photos", "photo.jpg"]);
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.localStorage.setItem(
+    "arca-gallery-deletions",
+    JSON.stringify({ [key]: 12 }),
+  );
+  await w.eval(
+    `(async()=>{${script.replace("await action(boot);", "")}\nstatus = { id: "replica", hubId: "hub" }; window.visiblePage = visibleGalleryPage; window.disposeNotices = () => noticeStore.dispose();})()`,
+  );
+  t.after(() => {
+    w.disposeNotices();
+    w.close();
+  });
+  const page = {
+    items: [
+      { path: "photo.jpg", rev: 12 },
+      { path: "other.jpg", rev: 11 },
+    ],
+    next: null,
+  };
+  assert.equal(
+    w.visiblePage("/v1/gallery?volume=photos", page).items.length,
+    1,
+  );
+  assert.equal(
+    page.items.length,
+    2,
+    "filtering does not mutate shared cached responses",
+  );
+  assert.equal(w.visiblePage("/v1/gallery?volume=other", page).items.length, 2);
+  assert.equal(
+    w.visiblePage("/v1/gallery?volume=photos", {
+      items: [{ path: "photo.jpg", rev: 13 }],
+      next: null,
+    }).items.length,
+    1,
+    "a newer restored revision remains visible",
+  );
 });

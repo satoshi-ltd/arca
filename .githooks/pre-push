@@ -2,4 +2,4 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 node scripts/check-release.js
-node --test --test-timeout=120000 tests/*.test.js
+node --test --test-reporter=tap --test-timeout=120000 tests/*.test.js
