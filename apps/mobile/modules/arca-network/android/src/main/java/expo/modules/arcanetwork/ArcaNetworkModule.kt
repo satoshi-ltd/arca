@@ -96,27 +96,11 @@ class ArcaNetworkModule : Module() {
     }
     AsyncFunction("request") Coroutine { address: String, method: String, headers: Map<String, String>, body: String? ->
       withContext(Dispatchers.IO) {
-      val url = URL(address)
-      check(url.protocol == "https" || url.protocol == "http")
-      check(url.userInfo == null)
-      val connection = (if(url.protocol=="http") { (if (isLanAddress(url.host)) lanNetwork(url.host) else privateNetwork(url.host)).openConnection(url) } else url.openConnection()) as HttpURLConnection
-      try {
-        connection.instanceFollowRedirects = false
-        connection.connectTimeout = 20000
-        connection.readTimeout = 20000
-        connection.requestMethod = method
-        headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
-        if (body != null) { connection.doOutput = true; connection.outputStream.use { it.write(Base64.decode(body, Base64.NO_WRAP)) } }
-        val status = connection.responseCode
-        val input = if (status >= 400) connection.errorStream else connection.inputStream
-        val data = input?.use { stream ->
-          val out = java.io.ByteArrayOutputStream()
-          val buffer = ByteArray(65536)
-          while (true) { val count = stream.read(buffer); if (count < 0) break; check(out.size() + count <= 8 * 1024 * 1024); out.write(buffer, 0, count) }
-          out.toByteArray()
-        } ?: ByteArray(0)
-        mapOf("status" to status, "headers" to connection.headerFields.filterKeys { it != null }.mapValues { it.value.joinToString(", ") }, "body" to Base64.encodeToString(data, Base64.NO_WRAP))
-      } finally { connection.disconnect() }
+        val url = URL(address)
+        check(url.protocol == "https" || url.protocol == "http")
+        check(url.userInfo == null)
+        try { perform(url, method, headers, body, emptySet()) }
+        catch (stale: StaleNetwork) { perform(url, method, headers, body, setOf(stale.network)) }
       }
     }
     AsyncFunction("exportDirectory") { source: String, destination: String, name: String ->
@@ -160,22 +144,58 @@ class ArcaNetworkModule : Module() {
     AsyncFunction("resolveLanHost") { host: String -> lanNetwork(host); host }
     AsyncFunction("resolvePrivateHost") { host: String -> privateNetwork(host).getAllByName(host).first().hostAddress!! }
   }
+  // A network handle that is being torn down rejects bind with EPERM before any byte is sent.
+  private class StaleNetwork(val network: android.net.Network, cause: java.net.SocketException) : java.net.SocketException(cause.message) {
+    init { initCause(cause) }
+  }
+  private fun perform(url: URL, method: String, headers: Map<String, String>, body: String?, excluded: Set<android.net.Network>): Map<String, Any> {
+    val network = if (url.protocol == "http") (if (isLanAddress(url.host)) lanNetwork(url.host, excluded) else privateNetwork(url.host)) else null
+    val connection = (network?.openConnection(url) ?: url.openConnection()) as HttpURLConnection
+    try {
+      connection.instanceFollowRedirects = false
+      connection.connectTimeout = 20000
+      connection.readTimeout = 20000
+      connection.requestMethod = method
+      headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
+      connection.doOutput = body != null
+      // Retry only before sending a body; later socket failures may follow an accepted write.
+      try { connection.connect() }
+      catch (error: java.net.SocketException) {
+        if (network != null && excluded.isEmpty() && error.message?.contains("Binding socket to network") == true) throw StaleNetwork(network, error)
+        throw error
+      }
+      if (body != null) connection.outputStream.use { it.write(Base64.decode(body, Base64.NO_WRAP)) }
+      val status = connection.responseCode
+      val input = if (status >= 400) connection.errorStream else connection.inputStream
+      val data = input?.use { stream ->
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(65536)
+        while (true) { val count = stream.read(buffer); if (count < 0) break; check(out.size() + count <= 8 * 1024 * 1024); out.write(buffer, 0, count) }
+        out.toByteArray()
+      } ?: ByteArray(0)
+      return mapOf("status" to status, "headers" to connection.headerFields.filterKeys { it != null }.mapValues { it.value.joinToString(", ") }, "body" to Base64.encodeToString(data, Base64.NO_WRAP))
+    } finally { connection.disconnect() }
+  }
   private fun isLanAddress(address: String): Boolean {
     val parts = address.split('.').mapNotNull { it.toIntOrNull() }
     return parts.size == 4 && parts.all { it in 0..255 } &&
       (parts[0] == 10 || (parts[0] == 172 && parts[1] in 16..31) || (parts[0] == 192 && parts[1] == 168))
   }
-  private fun lanNetwork(host: String): android.net.Network {
+  private fun lanNetwork(host: String, excluded: Set<android.net.Network> = emptySet()): android.net.Network {
     check(isLanAddress(host)) { "Use the hub's private IPv4 address" }
     val context = appContext.reactContext ?: error("App is unavailable")
     val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    // Bind the request to Wi-Fi/Ethernet, never a cellular or VPN fallback.
-    return manager.allNetworks.firstOrNull { network ->
+    val target = java.net.InetAddress.getByName(host)
+    // Bind the request to Wi-Fi/Ethernet, never a cellular or VPN fallback; prefer the active network over possibly stale handles.
+    val usable = { network: android.net.Network ->
       val caps = manager.getNetworkCapabilities(network)
-      caps != null && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+      network !in excluded && caps != null && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED) &&
         (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) &&
-        manager.getLinkProperties(network)?.routes?.any { it.matches(java.net.InetAddress.getByName(host)) } == true
-    } ?: error("Connect this device to the hub's local Wi-Fi network")
+        manager.getLinkProperties(network)?.routes?.any { it.matches(target) } == true
+    }
+    return manager.activeNetwork?.takeIf(usable) ?: manager.allNetworks.firstOrNull(usable)
+      ?: error("Connect this device to the hub's local Wi-Fi network")
   }
   private fun privateNetwork(host: String): android.net.Network {
       val context = appContext.reactContext ?: throw IllegalStateException("App is unavailable")

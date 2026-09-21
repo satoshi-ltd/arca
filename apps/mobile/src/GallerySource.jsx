@@ -1,9 +1,8 @@
-import { Busy, Scaffold } from "./components";
+import { Scaffold } from "./components";
 import React, { useEffect, useState } from "react";
 import { Image, Linking, Pressable, Text, View } from "react-native";
 import {
   Button,
-  Badge,
   Card,
   FolderRow,
   Icon,
@@ -11,7 +10,6 @@ import {
   Toggle,
   useDesign,
 } from "./components";
-import { recentGalleryPreviews } from "./gallery-previews";
 import { ErrorNotice } from "./Notice";
 
 function GalleryDetails({ children }) {
@@ -32,6 +30,36 @@ function GalleryDetails({ children }) {
       </Pressable>
       {expanded && children}
     </Section>
+  );
+}
+
+function PhotoTile({ item }) {
+  const { s, c } = useDesign();
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [item.uri]);
+  return (
+    <View
+      style={s.galleryTile}
+      accessible
+      accessibilityLabel={item.name || "Photo"}
+    >
+      {item.uri && !item.video && !failed ? (
+        <Image
+          source={{ uri: item.uri }}
+          style={s.galleryImage}
+          resizeMode="cover"
+          resizeMethod="resize"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <View style={s.galleryPlaceholder}>
+          <Icon name={item.video ? "file" : "image"} size={28} color={c.mute} />
+          <Text numberOfLines={1} style={s.caption}>
+            {item.name || "Preview unavailable"}
+          </Text>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -236,190 +264,6 @@ export function GallerySetup({ gallery, source, locked, enable }) {
             </Text>
           </GalleryDetails>
         </>
-      )}
-    </>
-  );
-}
-
-function PhotoTile({ item, pendingCount }) {
-  const { s, c } = useDesign();
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [item.uri]);
-  if (failed && item.state === "accepted") return null;
-  return (
-    <View
-      style={s.galleryTile}
-      accessible
-      accessibilityLabel={
-        pendingCount
-          ? `${pendingCount} photos pending`
-          : `${item.name || "Photo"} · ${item.state === "accepted" ? "Uploaded" : item.state === "failed" ? "Needs attention" : "Pending"}`
-      }
-    >
-      {item.uri && !item.video && !failed ? (
-        <Image
-          source={{ uri: item.uri }}
-          style={s.galleryImage}
-          resizeMode="cover"
-          resizeMethod="resize"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <View style={s.galleryPlaceholder}>
-          <Icon name={item.video ? "file" : "image"} size={28} color={c.mute} />
-          <Text numberOfLines={1} style={s.caption}>
-            {item.name || "Preview unavailable"}
-          </Text>
-        </View>
-      )}
-      {!!pendingCount && (
-        <View style={s.galleryCount}>
-          <View style={s.galleryCountBackdrop} />
-          <Text style={s.heading}>{pendingCount}</Text>
-          <Text style={s.caption}>pending</Text>
-        </View>
-      )}
-      {!pendingCount && item.state && item.state !== "accepted" && (
-        <View style={s.galleryTileStatus}>
-          <Icon
-            size={16}
-            name={
-              item.state === "accepted"
-                ? "check"
-                : item.state === "failed"
-                  ? "alert"
-                  : "upload"
-            }
-          />
-        </View>
-      )}
-    </View>
-  );
-}
-
-export function GallerySource({
-  source,
-  gallery,
-  volume,
-  connected,
-  paused,
-  retry,
-  busy,
-}) {
-  const { s, wide } = useDesign();
-  const summary = source.summary || {};
-  const [photos, setPhotos] = useState({ pending: [], recent: [] });
-  const [previewError, setPreviewError] = useState("");
-  useEffect(() => {
-    let active = true;
-    const r = gallery.r;
-    const scope = r.scope;
-    async function load() {
-      const [pending, recent] = await Promise.all([
-        r.store.galleryPreview(scope, volume, false, 4),
-        recentGalleryPreviews(
-          r.store,
-          gallery.media,
-          scope,
-          volume,
-          () => active && scope === r.scope,
-        ),
-      ]);
-      const resolve = async (item) => {
-        try {
-          return { ...item, ...(await gallery.media.preview(item.id)) };
-        } catch {
-          return item;
-        }
-      };
-      const next = {
-        pending: await Promise.all(pending.map(resolve)),
-        recent,
-      };
-      if (active && scope === r.scope) {
-        setPhotos(next);
-        setPreviewError("");
-      }
-    }
-    load().catch(
-      () => active && setPreviewError("Previews are unavailable right now."),
-    );
-    return () => {
-      active = false;
-    };
-  }, [
-    gallery,
-    volume,
-    summary.accepted,
-    summary.pending,
-    summary.failed,
-    source.scannedAt,
-  ]);
-  const status =
-    source.mode === "converting"
-      ? "Incomplete"
-      : !source.enabled
-        ? "Disabled"
-        : paused
-          ? "Paused"
-          : !connected || source.issue
-            ? "Needs attention"
-            : busy
-              ? "Syncing"
-              : summary.pending || !source.scannedAt || source.after
-                ? "Incomplete"
-                : "Up to date";
-  return (
-    <>
-      {!!summary.pending && (
-        <Section>
-          <View style={s.row}>
-            <Text style={[s.heading, s.flex]}>Pending</Text>
-            {status !== "Syncing" &&
-              status !== "Up to date" &&
-              status !== "Incomplete" && (
-                <Badge iconOnly={!wide}>{status}</Badge>
-              )}
-          </View>
-          {!!photos.pending.length ? (
-            <View style={s.galleryGrid}>
-              {photos.pending.map((item, index) => (
-                <PhotoTile
-                  key={item.id}
-                  item={item}
-                  pendingCount={index === 3 ? summary.pending : undefined}
-                />
-              ))}
-            </View>
-          ) : (
-            <Scaffold label="Loading previews" />
-          )}
-        </Section>
-      )}
-      <ErrorNotice error={source.issue} retry={retry} />
-      {!!previewError && <Text style={s.caption}>{previewError}</Text>}
-      {!!photos.recent.length && (
-        <Section>
-          <Text style={s.heading}>Recently uploaded</Text>
-          <View style={s.galleryGrid}>
-            {photos.recent.map((item) => (
-              <PhotoTile key={item.id} item={item} />
-            ))}
-          </View>
-        </Section>
-      )}
-      {!photos.pending.length && !photos.recent.length && !previewError && (
-        <View style={s.center}>
-          <Icon name="image" size={32} />
-          <Text style={s.heading}>
-            {source.scannedAt ? "No photos yet" : "Looking for photos"}
-          </Text>
-          <Text style={s.caption}>
-            {source.scannedAt
-              ? "New photos will appear here."
-              : "Your photos will appear here."}
-          </Text>
-        </View>
       )}
     </>
   );

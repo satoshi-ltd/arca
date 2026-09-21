@@ -6,11 +6,14 @@ export async function requestWithRecovery(request, url, method, headers, body) {
     try {
       return await request(url, method, headers, body);
     } catch (error) {
+      const message = error?.message || "";
+      // Only the native connection phase can prove that no write was sent.
+      const staleNetwork = /Binding socket to network \d+ failed/i.test(
+        message,
+      );
       const interrupted =
-        /unexpected end of stream|connection reset|broken pipe/i.test(
-          error?.message || "",
-        );
-      if (!interrupted) throw error;
+        /unexpected end of stream|connection reset|broken pipe/i.test(message);
+      if (!interrupted && !staleNetwork) throw error;
       if (readable && attempt === 0) {
         await new Promise((resolve) => setTimeout(resolve, 250));
         continue;

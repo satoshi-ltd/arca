@@ -4,6 +4,20 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 const root = new Directory(Paths.cache, "arca-gallery");
 const jobs = new Map();
+// Cache files are regenerable; originals live in a different directory.
+export function pruneCache(directory, limit, keep) {
+  const files = directory
+    .list()
+    .filter((file) => file instanceof File)
+    .sort((a, b) => (a.modificationTime || 0) - (b.modificationTime || 0));
+  let size = files.reduce((sum, file) => sum + file.size, 0);
+  for (const file of files) {
+    if (size <= limit) break;
+    if (file.uri === keep) continue;
+    size -= file.size;
+    file.delete();
+  }
+}
 export const thumbnailFiles = {
   async exists(uri) {
     return !!uri && new File(uri).exists;
@@ -32,18 +46,7 @@ export const thumbnailFiles = {
       } finally {
         if (temporary.exists) temporary.delete();
       }
-      // Cache files are regenerable; originals live in a different directory.
-      const files = root
-        .list()
-        .filter((file) => file instanceof File)
-        .sort((a, b) => (a.modificationTime || 0) - (b.modificationTime || 0));
-      let size = files.reduce((sum, file) => sum + file.size, 0);
-      for (const file of files) {
-        if (size <= 128 * 1024 ** 2) break;
-        if (file.uri === target.uri) continue;
-        size -= file.size;
-        file.delete();
-      }
+      pruneCache(root, 128 * 1024 ** 2, target.uri);
       return target.uri;
     })().finally(() => jobs.delete(key));
     jobs.set(key, job);

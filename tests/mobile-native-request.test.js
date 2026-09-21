@@ -84,3 +84,39 @@ test("HTTP failures and non-transport exceptions are not retried", async () => {
   );
   assert.equal(calls, 1);
 });
+test("stale Android network failures retry reads but never replay writes in JavaScript", async () => {
+  const stale = () =>
+    new Error(
+      "Call to function 'ArcaNetwork.request' has been rejected.\n→ Caused by: java.net.SocketException: Binding socket to network 105 failed: EPERM (Operation not permitted)",
+    );
+  for (const method of ["GET", "HEAD"]) {
+    let calls = 0;
+    const result = await requestWithRecovery(
+      async () => {
+        if (++calls === 1) throw stale();
+        return { status: 200 };
+      },
+      "http://192.168.1.2/v1/gallery/info",
+      method,
+      {},
+      method === "POST" ? "e30=" : null,
+    );
+    assert.equal(result.status, 200);
+    assert.equal(calls, 2);
+  }
+  let calls = 0;
+  await assert.rejects(
+    requestWithRecovery(
+      async () => {
+        calls++;
+        throw stale();
+      },
+      "test",
+      "POST",
+      {},
+      "e30=",
+    ),
+    /connection to the hub was interrupted/,
+  );
+  assert.equal(calls, 1);
+});

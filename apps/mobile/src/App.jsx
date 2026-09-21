@@ -6,7 +6,8 @@ import { fileIcon } from "../../desktop/src/file-icons.js";
 import { native } from "./private-network.js";
 import { canContinueInBackground } from "./runtime";
 import { BrandActivity, Busy, Scaffold } from "./components";
-import { GallerySetup, GallerySource } from "./GallerySource";
+import { GallerySetup } from "./GallerySource";
+import { uploadStatus } from "./gallery-timeline";
 import { galleryConfig } from "./gallery.js";
 import { Section } from "./components";
 import { subscribeNotificationResponse } from "./runtime";
@@ -114,9 +115,9 @@ const date = (value) =>
       })
     : "No completed sync yet";
 const tabs = ["Folders", "Machines", "History", "Settings"];
-function confirm(title, message, action, label = title) {
+function confirm(title, message, action, label = title, cancel) {
   Alert.alert(title, message, [
-    { text: "Cancel", style: "cancel" },
+    { text: "Cancel", style: "cancel", onPress: cancel },
     {
       text: label,
       onPress: action,
@@ -298,6 +299,9 @@ export default function App() {
     }
   }
   const notices = useMemo(() => createNoticeStore(), []);
+  const [photoCount, setPhotoCount] = useState(null);
+  const [timelineDemand, setTimelineDemand] = useState(0);
+  const nearEnd = useRef(false);
   const [noticeItems, setNoticeItems] = useState([]);
   useEffect(() => {
     const off = notices.subscribe(() => setNoticeItems(notices.snapshot()));
@@ -454,6 +458,13 @@ export default function App() {
   const source = sourceConfig
     ? { ...sourceConfig, issue: currentFolder.issue || sourceConfig.issue }
     : null;
+  const photoFolder =
+    !!folder &&
+    !!(
+      source ||
+      folder.gallery ||
+      catalog?.volumes?.find((v) => v.id === folder.id)?.gallery
+    );
   const onboarding = (!connection && !catalog) || !!prefs.onboarding;
   const onboardingStep = connection
     ? "folders"
@@ -513,6 +524,9 @@ export default function App() {
       folderLists.current.get(`${engine.current?.scope}:${f.id}`) || [],
     );
     setFolder(f);
+    setPhotoCount(null);
+    setTimelineDemand(0);
+    nearEnd.current = false;
     setSearchOpen(false);
     setFileView(
       (f.gallery || catalog?.volumes?.find((v) => v.id === f.id)?.gallery) &&
@@ -618,7 +632,7 @@ export default function App() {
       volume: folder.id,
       path: entry.path,
       originEntry: entry,
-      localEntry: entry,
+      localEntry: entry.uri ? entry : null,
     };
     setFileHistory({ versions: [], next: null });
     setDetailError("");
@@ -631,6 +645,41 @@ export default function App() {
     } finally {
       setDetailLoading(false);
     }
+  }
+  async function openMedia(item) {
+    if (item.uri && typeof native.openFile === "function") {
+      await native.openFile(item.uri);
+      return;
+    }
+    await openFileDetail(item);
+  }
+  function deleteMedia(item) {
+    return new Promise((resolve) =>
+      confirm(
+        "Delete this photo?",
+        "Deletes from synced folders. Originals in a phone’s system gallery are kept. Recovery depends on this folder’s revision retention." +
+          (!connected || status.paused
+            ? " Deletion will sync when connected and resumed."
+            : ""),
+        () =>
+          run(
+            async () => {
+              await engine.current.removeFile(folder.id, item.path);
+              resolve(true);
+              await listFiles();
+              if (connected && !status.paused) await engine.current.sync();
+            },
+            { success: "Photo deleted" },
+          ).then(() => resolve(false)),
+        "Delete photo",
+        () => resolve(false),
+      ),
+    );
+  }
+  async function shareMedia(item) {
+    if (!(await Sharing.isAvailableAsync()))
+      throw new Error("Sharing is unavailable on this device.");
+    await Sharing.shareAsync(item.uri);
   }
   async function currentFileURI() {
     const uri = engine.current.files.work(
@@ -802,6 +851,52 @@ export default function App() {
     }),
     [entries],
   );
+  const timelineNotice = source
+    ? ["Needs attention", "Disabled"].find(
+        (state) =>
+          state ===
+          uploadStatus(source, {
+            connected,
+            paused: status.paused,
+            busy: status.busy,
+          }),
+      ) || ""
+    : currentFolder?.issue || status.error
+      ? "Needs attention"
+      : "";
+  const timeline =
+    folder && engine.current ? (
+      <FolderGallery
+        key={folder.id}
+        api={galleryAPI}
+        connected={connected}
+        store={engine.current.store}
+        scope={engine.current.scope}
+        volume={folder.id}
+        entries={entries}
+        loading={filesLoading}
+        columns={wide ? 6 : 4}
+        refreshKey={status.last}
+        demand={timelineDemand}
+        onSummary={({ count }) => setPhotoCount(count)}
+        uploads={
+          source
+            ? {
+                store: engine.current.store,
+                media: engine.current.gallery.media,
+                summary: source.summary,
+                scannedAt: source.scannedAt,
+              }
+            : null
+        }
+        notice={timelineNotice}
+        folderName={folder.name}
+        open={(item) => run(() => openMedia(item))}
+        history={(item) => run(() => openFileDetail(item))}
+        share={(item) => run(() => shareMedia(item))}
+        remove={!source && currentFolder?.selected ? deleteMedia : null}
+      />
+    ) : null;
   async function resolveConflict(entry, volume = folder?.id) {
     if (!locals.find((f) => f.id === volume)?.selected)
       throw new Error(
@@ -1177,8 +1272,8 @@ export default function App() {
                                   : undefined
                               }
                               subtitle={
-                                source
-                                  ? `${source.summary?.accepted || 0} photos · ${source.summary?.bytes == null ? "—" : bytes(source.summary.bytes)} uploaded`
+                                photoFolder
+                                  ? `${photoCount ?? "—"} photos · ${source ? `${source.summary?.bytes == null ? "—" : bytes(source.summary.bytes)} uploaded` : `${bytes(entrySummary.bytes)} local`}${status.paused ? " · Paused" : ""}`
                                   : `${entrySummary.files} files · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`
                               }
                             >
@@ -1244,27 +1339,7 @@ export default function App() {
                         )}
                         {folder && screen === "Folders" && (
                           <View style={s.rowAction}>
-                            {!source &&
-                              (folder.gallery ||
-                                catalog?.volumes?.find(
-                                  (v) => v.id === folder.id,
-                                )?.gallery) && (
-                                <Button
-                                  label={
-                                    fileView === "gallery"
-                                      ? "Exit gallery"
-                                      : "Gallery"
-                                  }
-                                  onPress={() =>
-                                    setFileView(
-                                      fileView === "gallery"
-                                        ? "files"
-                                        : "gallery",
-                                    )
-                                  }
-                                />
-                              )}
-                            {!wide && !source && fileView === "files" && (
+                            {!wide && !photoFolder && fileView === "files" && (
                               <Button
                                 iconOnly
                                 label={
@@ -1314,6 +1389,17 @@ export default function App() {
                 />
                 <KeyboardScrollView
                   key={`${screen}:${folder?.id || ""}`}
+                  onScroll={(event) => {
+                    const { contentOffset, layoutMeasurement, contentSize } =
+                      event.nativeEvent;
+                    const near =
+                      contentOffset.y + layoutMeasurement.height >
+                      contentSize.height - 1200;
+                    if (near !== nearEnd.current) {
+                      nearEnd.current = near;
+                      if (near) setTimelineDemand((n) => n + 1);
+                    }
+                  }}
                   style={s.scroll}
                   contentContainerStyle={[
                     s.content,
@@ -1322,7 +1408,7 @@ export default function App() {
                   ]}
                   keyboardShouldPersistTaps="handled"
                 >
-                  {folder && screen === "Folders" && !source && (
+                  {folder && screen === "Folders" && !photoFolder && (
                     <View style={[s.group, s.statsGrid]}>
                       {[
                         [
@@ -1390,22 +1476,9 @@ export default function App() {
                           />
                         </Card>
                       )}
-                      {folder && source && (
-                        <Card title="Revision history">
-                          <Text style={s.statValue}>{retentionLabel}</Text>
-                        </Card>
-                      )}
                       {folder ? (
-                        source ? (
-                          <GallerySource
-                            source={source}
-                            busy={status.busy}
-                            gallery={engine.current.gallery}
-                            volume={folder.id}
-                            connected={connected}
-                            paused={status.paused}
-                            retry={() => run(() => engine.current.sync(true))}
-                          />
+                        photoFolder ? (
+                          timeline
                         ) : (
                           <View style={s.detailGrid}>
                             <View style={s.detailMain}>
@@ -1468,17 +1541,7 @@ export default function App() {
                                 />
                               )}
                               {fileView === "gallery" ? (
-                                <FolderGallery
-                                  store={engine.current.store}
-                                  scope={engine.current.scope}
-                                  volume={folder.id}
-                                  loading={filesLoading}
-                                  key={folder.id}
-                                  entries={entries}
-                                  open={(entry) =>
-                                    run(() => openFileDetail(entry))
-                                  }
-                                />
+                                timeline
                               ) : fileView === "recent" ? (
                                 <FolderRecent
                                   volume={folder.id}
@@ -2777,4 +2840,8 @@ export default function App() {
       </Design.Provider>
     </SafeAreaProvider>
   );
+}
+
+function galleryAPI(route) {
+  return client.api(route);
 }

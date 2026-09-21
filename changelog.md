@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.10 — 2026-09-21
+
+- Unify mobile and Fold photo folders into a chronological gallery for source phones and downloaded copies, with cached hub metadata, local thumbnails and bounded remote previews. Preserve loaded pages during refresh and the current viewer session when new photos arrive.
+- Add a full-screen mobile photo viewer with swipe navigation, pinch and double-tap zoom, local sharing and confirmed deletion for ordinary working copies.
+- Read JPEG capture details locally and organize photo information into cards for file details, camera, exposure and location, with a phone sheet and Fold side panel. Keep metadata loading recoverable after closing the panel. Original photos remain unchanged.
+- Share filename-based gallery date handling between the daemon and mobile. Improve Android LAN network selection and stale-handle recovery; bound device discovery waits and build ARM64 development APKs. Native networking changes require a rebuilt mobile binary.
+- Align release manifests at 0.4.10 and mobile build 21.
+
 ## 0.4.9 — 2026-09-20
 
 - Open gallery folders directly in Gallery, bypass unrelated folder-history reads and retain Exit gallery access to files.

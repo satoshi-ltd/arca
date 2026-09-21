@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.4.9 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.4.10 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -82,7 +82,7 @@ npm run build:local:dev -- --install-only  # Reinstall the existing dev APK
 
 Development builds install on the first USB device, otherwise on a running emulator, otherwise they boot `Pixel_9_Pro_Fold`; set `ANDROID_AVD` for another emulator or `ANDROID_SERIAL` to pin a device. Installation uses `adb install -r`, preserves app data and stops on a signature mismatch; it never uninstalls the app. Start Metro yourself with `npm start`.
 
-Local builds use `eas build --local`: compilation runs on this Mac, consumes no cloud build quota and retrieves the existing EAS signing credentials; native toolchain versions come from the machine. Cloud builds run in the [satoshi-ltd/arca](https://expo.dev/accounts/satoshi-ltd/projects/arca) EAS project, consume quota and download the finished APK. Every build runs `check:release` first and rerunning replaces its APK. Do not replace the signing key when updating an installed app. The repository root has no mobile scripts, and CI never builds or tests mobile installers: `npm test` inside `apps/mobile` checks the build script wiring.
+Development builds compile only `arm64-v8a`, the ABI of every supported phone and of the Apple Silicon emulator, so the debug APK stays small enough for a crowded emulator; production keeps all ABIs. Local builds use `eas build --local`: compilation runs on this Mac, consumes no cloud build quota and retrieves the existing EAS signing credentials; native toolchain versions come from the machine. Cloud builds run in the [satoshi-ltd/arca](https://expo.dev/accounts/satoshi-ltd/projects/arca) EAS project, consume quota and download the finished APK. Every build runs `check:release` first and rerunning replaces its APK. Do not replace the signing key when updating an installed app. The repository root has no mobile scripts, and CI never builds or tests mobile installers: `npm test` inside `apps/mobile` checks the build script wiring.
 
 Build profiles currently use Node 24.14.1 and APK output. Increasing native build numbers and store distribution remain release work. The installed pilot APK predates the latest icon/splash and other native refinements; do not infer native acceptance from a successful export.
 

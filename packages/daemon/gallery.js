@@ -5,50 +5,9 @@ import path from "node:path";
 import sharp from "sharp";
 import exifr from "exifr";
 import { fail } from "./storage.js";
+import { mediaKind, galleryDate } from "../core/gallery-date.js";
 
-const images = new Set([
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".webp",
-  ".avif",
-  ".heic",
-  ".heif",
-  ".tif",
-  ".tiff",
-  ".gif",
-]);
-const videos = new Set([".mp4", ".mov", ".m4v", ".webm"]);
-export function mediaKind(name) {
-  const extension = path.extname(name).toLowerCase();
-  return images.has(extension)
-    ? "image"
-    : videos.has(extension)
-      ? "video"
-      : null;
-}
-// File names retain dates for screenshots whose original format has no EXIF.
-export function galleryDate(name, captured, added) {
-  if (captured) return { date: captured, source: "metadata" };
-  const filename = path.basename(name);
-  const match = filename.match(
-    /^(?:Screenshot[ _-]?|IMG[_-]?|VID[_-]?|PXL[_-]?)(\d{4})[-_]?([01]\d)[-_]?([0-3]\d)/i,
-  );
-  if (match) {
-    const day = `${match[1]}-${match[2]}-${match[3]}`;
-    const date = new Date(day);
-    if (
-      Number.isFinite(date.getTime()) &&
-      date.toISOString().slice(0, 10) === day
-    )
-      return { date: day, source: "filename" };
-  }
-  const month = name.match(
-    /^(?:Phone|Machine)-[a-f0-9]+\/(\d{4})\/(0[1-9]|1[0-2])\//,
-  );
-  if (month) return { date: `${month[1]}-${month[2]}`, source: "album folder" };
-  return { date: added, source: "date added" };
-}
+export { mediaKind, galleryDate };
 // Revisit videos checked before container capture dates were supported.
 const needsCaptureDate = `(m.hash IS NULL OR (m.captured IS NULL AND
   (m.date_checked=0 OR (arca_media_kind(f.path)='video' AND m.date_checked<2))))`;

@@ -72,8 +72,8 @@ if (mode === 'dev') {
   const avd = process.env.ANDROID_AVD || 'Pixel_9_Pro_Fold';
 
   const query = (args) => {
-    const result = spawnSync(adb, args, { env, encoding: 'utf8' });
-    if (result.error) throw result.error;
+    const result = spawnSync(adb, args, { env, encoding: 'utf8', timeout: 15000 });
+    if (result.error && result.error.code !== 'ETIMEDOUT') throw result.error;
     return result.status === 0 ? result.stdout.trim() : '';
   };
   const attached = () =>
