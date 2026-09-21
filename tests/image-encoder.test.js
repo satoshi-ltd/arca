@@ -96,8 +96,10 @@ test("orientation preparation preserves partial edge pixels without JPEG recompr
   );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   for (let orientation = 1; orientation <= 8; orientation++) {
-    const input = path.join(directory, "input.jpg");
-    const output = path.join(directory, "upright.png");
+    // Sharp can retain file handles in its cache after a pipeline completes.
+    // Each orientation needs independent files, including on Windows.
+    const input = path.join(directory, `input-${orientation}.jpg`);
+    const output = path.join(directory, `upright-${orientation}.png`);
     await sharp({
       create: { width: 101, height: 67, channels: 3, background: "orange" },
     })

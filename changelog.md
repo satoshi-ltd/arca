@@ -2,6 +2,7 @@
 
 ## 0.4.12 — 2026-09-21
 
+- Fix Windows gallery and orientation tests by reusing immutable image objects and using separate fixture files for each orientation, avoiding overwrites of files retained by image readers.
 - Restore the mobile gallery's Pending uploads preview row with tappable thumbnails, remaining count and upload/error markers.
 - Drain outstanding UI requests before closing onboarding and conflict-review test windows, fixing the CI teardown race.
 

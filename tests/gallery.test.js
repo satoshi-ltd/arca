@@ -43,7 +43,9 @@ async function fixture(t) {
       .jpeg()
       .toBuffer();
     const hash = digest(buffer);
-    fs.writeFileSync(s.blob(hash), buffer);
+    // Content-addressed objects are immutable and may already be open by Sharp.
+    // Reuse identical bytes instead of truncating a live reader's file on Windows.
+    if (!fs.existsSync(s.blob(hash))) fs.writeFileSync(s.blob(hash), buffer);
     await api("/v1/propose", {
       volume: v.id,
       path: name,

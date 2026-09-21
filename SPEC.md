@@ -18,7 +18,9 @@ Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AG
 
 ## Resume work here
 
-Current development version: **0.4.12, mobile build 23**. HEIC viewing, native source resolution, album-source machine listings and hub image maintenance are implemented locally; no commit or push is requested for this change. Native device acceptance and Casa deployment remain outstanding.
+Current development version: **0.4.12, mobile build 23**. HEIC viewing, native source resolution, album-source machine listings and hub image maintenance are committed and pushed. Native device acceptance and Casa deployment remain outstanding.
+
+September 21 Windows CI follow-up: release run 18 passed Ubuntu/macOS tests but failed three Windows tests while overwriting fixture files retained by image readers. Gallery fixtures now reuse existing immutable content-addressed objects; the orientation fixture uses distinct input/output paths for each EXIF orientation. All 25 gallery/encoder tests pass locally. The isolated release checkout with root-only dependencies and CI Node 24.14.0 also passes the exact CI command (393 passed, 2 skipped). The Windows rerun remains pending; local success is not Windows qualification.
 
 September 14 v0.4.6 validation: a clean staged-source checkout on macOS with Node 24.14.0 and root-only `npm ci` passed version agreement and the exact CI test command: 333 passed, 0 failed, 2 platform skips (335 tests). Desktop Vite build from that checkout and Android/iOS JavaScript exports passed. The new file-opening module compiled for Android and iOS Simulator; the user confirmed mobile Open works. GitHub macOS/Windows/Linux results for this version are pending push. Samsung Fold scaling remains unresolved.
 
