@@ -1,6 +1,6 @@
 FROM node:24.14.0-bookworm-slim
 LABEL org.opencontainers.image.source="https://github.com/satoshi-ltd/arca"
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libheif-examples && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force

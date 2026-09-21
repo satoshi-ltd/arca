@@ -1076,7 +1076,33 @@ test("gallery source uploads originals without working copies, ignores phone/rem
   await f.enable();
   assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), false);
   await sync(f);
+  const roster = await f.client.api("/v1/machines");
+  const source = roster.machines.find((m) => !m.isHub);
+  assert.deepEqual(source.albumFolderIds, [volume.id]);
+  await assert.rejects(
+    f.client.api("/v1/machine-report", {
+      ...source,
+      albumFolderIds: ["invalid"],
+    }),
+    /albumFolderIds/,
+  );
+  assert.deepEqual(source.folderIds, []);
+  assert.equal(
+    source.selectedFolders,
+    0,
+    "album sources are not full local copies",
+  );
   const item = await f.uploaded();
+  assert.equal(
+    (await store.galleryNativeAsset(r.scope, volume.id, item.path, item.hash))
+      ?.id,
+    "photo-1",
+  );
+  assert.equal(
+    await store.galleryNativeAsset(r.scope, volume.id, item.path, "wrong-hash"),
+    null,
+  );
+
   assert.deepEqual(
     fs.readFileSync(path.join(volume.path, item.path)),
     f.data.get("photo-1"),
@@ -1119,6 +1145,11 @@ test("gallery source uploads originals without working copies, ignores phone/rem
   assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), false);
   await r.gallery.useLocalCopy(volume.id, true);
   await sync(f);
+  const localReport = (await f.client.api("/v1/machines")).machines.find(
+    (m) => !m.isHub,
+  );
+  assert.deepEqual(localReport.albumFolderIds, []);
+  assert.deepEqual(localReport.folderIds, [volume.id]);
   assert.equal(
     fs.readFileSync(files.work(r.scope, volume.id, "from-desktop.txt"), "utf8"),
     "remote content",

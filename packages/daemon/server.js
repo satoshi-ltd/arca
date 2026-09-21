@@ -1,3 +1,4 @@
+import { ImageMaintenance } from "./image-maintenance.js";
 import { galleryMedia, streamGalleryMedia } from "./gallery-media.js";
 import { Gallery } from "./gallery.js";
 import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
@@ -90,6 +91,7 @@ export async function start(home, options = {}) {
   const network = new Network(engine, options.network);
   engine.gallery = new Gallery(s);
   engine.gallery.resume();
+  const images = new ImageMaintenance(engine);
   let web;
   try {
     if (webEnabled)
@@ -400,6 +402,11 @@ export async function start(home, options = {}) {
               .prepare("SELECT id FROM devices WHERE id=? AND revoked=0")
               .get(id),
           ));
+      if (req.method === "GET" && route === "/v1/images") {
+        requireAdmin();
+        requireHub();
+        return send(200, await images.status());
+      }
       if (req.method === "GET" && route === "/v1/web-approvals") {
         if (config.role !== "hub") {
           requireAdmin();
@@ -980,6 +987,15 @@ export async function start(home, options = {}) {
       if (req.method === "POST") {
         const b = await jsonBody();
         checkCredential();
+        if (route === "/v1/images") {
+          requireAdmin();
+          requireHub();
+          if (b.action === "cancel") {
+            images.cancel();
+            return send(200, { cancelled: true });
+          }
+          return send(202, images.start(b.action, b.confirmation));
+        }
         if (route === "/v1/web-approvers") {
           requireAdmin();
           requireHub();
@@ -1545,6 +1561,8 @@ export async function start(home, options = {}) {
           requireAdmin();
           if (b.confirmed !== true)
             fail("Confirm permanent destruction first", 400);
+          images.cancel();
+          await images.task;
           const result = await (route === "/v1/destroy-hub"
             ? engine.destroyHub()
             : engine.destroyReplica());
@@ -1986,6 +2004,7 @@ export async function start(home, options = {}) {
       clearTimeout(timer);
       await network.close();
       await new Promise((resolve) => server.close(resolve));
+      await images.close();
       await engine.tail;
       engine.close();
       fs.unlinkSync(lock);

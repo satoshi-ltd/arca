@@ -185,13 +185,29 @@ function ZoomableImage({ uri, width, height, onZoomed, onError }) {
 
 function Page({ item, width, height, resolveLarge, open, onZoomed }) {
   const { s } = useDesign();
-  const [uri, setUri] = useState(item.uri);
+  const compatiblePreview = !item.nativeSource && /\.hei[cf]$/i.test(item.path);
+  const [uri, setUri] = useState(compatiblePreview ? null : item.uri);
   const [failed, setFailed] = useState(false);
+  const fallbackRef = useRef(null);
   useEffect(() => {
     let active = true;
+    let retried = false;
+    fallbackRef.current = () => {
+      if (retried) {
+        setFailed(true);
+        return;
+      }
+      retried = true;
+      resolveLarge(item, true)
+        .then((value) => active && setUri(value))
+        .catch(() => active && setFailed(true));
+    };
     setFailed(false);
-    setUri(item.uri);
-    if (!item.uri && item.kind === "image" && item.hash)
+    setUri(compatiblePreview ? null : item.uri);
+    if (
+      item.kind === "image" &&
+      (compatiblePreview || (!item.uri && item.hash))
+    )
       resolveLarge(item)
         .then((value) => active && setUri(value))
         .catch(() => active && setFailed(true));
@@ -220,7 +236,7 @@ function Page({ item, width, height, resolveLarge, open, onZoomed }) {
         </Pressable>
       </View>
     );
-  if (failed || (!uri && !item.hash))
+  if (failed || (!uri && !item.hash && !compatiblePreview))
     return (
       <View style={frame}>
         <Icon name="image" color="rgba(255,255,255,0.6)" size={32} />
@@ -243,7 +259,7 @@ function Page({ item, width, height, resolveLarge, open, onZoomed }) {
       width={width}
       height={height}
       onZoomed={onZoomed}
-      onError={() => setFailed(true)}
+      onError={() => fallbackRef.current?.()}
     />
   );
 }

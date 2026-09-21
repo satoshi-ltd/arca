@@ -154,6 +154,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS gallery_derivatives(key TEXT PRIMARY KEY,size INTEGER NOT NULL,used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS gallery_folders(volume TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS gallery_metadata(hash TEXT PRIMARY KEY,captured TEXT);
+      CREATE TABLE IF NOT EXISTS gallery_origins(volume TEXT,path TEXT,hash TEXT,sourcePath TEXT,sourceHash TEXT,PRIMARY KEY(volume,path,hash));
       CREATE TABLE IF NOT EXISTS volumes(id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, selected INTEGER NOT NULL DEFAULT 1,last_sync TEXT);
       CREATE TABLE IF NOT EXISTS revisions(rev INTEGER PRIMARY KEY AUTOINCREMENT, volume TEXT NOT NULL, path TEXT NOT NULL, hash TEXT, size INTEGER NOT NULL, deleted INTEGER NOT NULL, author TEXT NOT NULL, created TEXT NOT NULL,directory INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,directory INTEGER NOT NULL DEFAULT 0,path_key TEXT NOT NULL,PRIMARY KEY(volume,path));
@@ -256,6 +257,7 @@ export class Store {
         )
         .run(id);
       this.db.prepare("DELETE FROM gallery_folders WHERE volume=?").run(id);
+      this.db.prepare("DELETE FROM gallery_origins WHERE volume=?").run(id);
       this.db.prepare("DELETE FROM volumes WHERE id=?").run(id);
       if (removeMarker) fs.unlinkSync(marker);
       this.db.exec("COMMIT");
@@ -1004,7 +1006,7 @@ export class Store {
     if (write) this.materialize(row, expected);
     return row;
   }
-  renameFile(current, destination, author) {
+  renameFile(current, destination, author, replacement = current) {
     const volume = current.volume;
     const selected = this.volume(volume).selected;
     // Reuse the existing atomic case-transition contract and recovery path.
@@ -1029,19 +1031,31 @@ export class Store {
       const added = insert.run(
         volume,
         destination,
-        current.hash,
-        current.size,
+        replacement.hash,
+        replacement.size,
         0,
         author,
         created,
       );
       renamed = {
         ...current,
+        hash: replacement.hash,
+        size: replacement.size,
         path: destination,
         rev: Number(added.lastInsertRowid),
         author,
         created,
       };
+      if (replacement.hash !== current.hash)
+        this.db
+          .prepare("INSERT OR REPLACE INTO gallery_origins VALUES(?,?,?,?,?)")
+          .run(
+            volume,
+            destination,
+            replacement.hash,
+            current.path,
+            current.hash,
+          );
       const deleted = insert.run(
         volume,
         current.path,

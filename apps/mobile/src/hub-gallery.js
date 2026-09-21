@@ -1,6 +1,10 @@
 const compact = (item) => ({
   path: item.path,
   hash: item.hash,
+  ...(item.rev != null ? { rev: item.rev } : {}),
+  ...(item.sourcePath && item.sourceHash
+    ? { sourcePath: item.sourcePath, sourceHash: item.sourceHash }
+    : {}),
   size: item.size,
   date: item.date,
   kind: item.kind,
@@ -51,6 +55,20 @@ export function hubGallery({ api, store, scope, volume }) {
           state.next = next.next;
         }
         return remember(state);
+      }),
+    forget: (path) =>
+      serial(async () => {
+        const state = current || (await store.get(key, null).catch(() => null));
+        if (!state) return;
+        const items = state.items.filter((item) => item.path !== path);
+        return remember({
+          ...state,
+          items,
+          total: Math.max(
+            0,
+            (state.total || 0) - (state.items.length - items.length),
+          ),
+        });
       }),
     more: (previous) =>
       serial(async () => {

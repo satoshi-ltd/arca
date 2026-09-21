@@ -2431,3 +2431,91 @@ test("status totals reuse unchanged rows and invalidate on policy and database c
   await hub.sync();
   assert.equal(store.visibleTotals(volume.id).files, 2);
 });
+
+test("repeated gallery optimization reaches passive replicas, restores JPEG history and releases expired originals", async (t) => {
+  const sharp = (await import("sharp")).default;
+  const { ImageMaintenance } =
+    await import("../packages/daemon/image-maintenance.js");
+  const { applyFolderRetention } =
+    await import("../packages/daemon/maintenance.js");
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("photo-copy");
+  await hub.api("/v1/gallery/link", { volume: volume.id, enabled: true });
+  const heic = fs.readFileSync(
+    new URL("./fixtures/gallery.heic", import.meta.url),
+  );
+  const manager = new ImageMaintenance(hub.engine, async (_, destination) => {
+    fs.writeFileSync(destination, heic);
+    return heic.length;
+  });
+  t.after(() => manager.close());
+  const originals = [];
+  for (const [name, color] of [
+    ["first", "orange"],
+    ["second", "blue"],
+  ]) {
+    const jpeg = await sharp({
+      create: { width: 1000, height: 500, channels: 3, background: color },
+    })
+      .jpeg()
+      .toBuffer();
+    write(hub, volume, name + ".jpg", jpeg);
+    await hub.sync();
+    await replica.sync();
+    const original = hub.engine.store.current(volume.id, name + ".jpg");
+    originals.push({ ...original, jpeg });
+    manager.start("analyze");
+    await manager.task;
+    assert.equal(
+      manager.job.total,
+      1,
+      "only newly added JPEG remains a candidate",
+    );
+    manager.start("optimize", manager.job.confirmation);
+    await manager.task;
+    assert.equal(manager.job.changed, 1);
+    await replica.sync();
+    const copy = replica.engine.store.volume(volume.id).path;
+    assert.equal(fs.existsSync(path.join(copy, name + ".jpg")), false);
+    assert.deepEqual(fs.readFileSync(path.join(copy, name + ".heic")), heic);
+    assert.deepEqual(
+      fs.readFileSync(hub.engine.store.blob(original.hash)),
+      jpeg,
+    );
+  }
+  await hub.api("/v1/restore", {
+    volume: volume.id,
+    path: "first.jpg",
+    rev: originals[0].rev,
+  });
+  await replica.sync();
+  assert.deepEqual(
+    fs.readFileSync(
+      path.join(replica.engine.store.volume(volume.id).path, "first.jpg"),
+    ),
+    originals[0].jpeg,
+  );
+  const store = hub.engine.store;
+  const ago = new Date(Date.now() - 2 * 86400000);
+  store.db
+    .prepare("UPDATE revisions SET created=? WHERE volume=? AND path=?")
+    .run(ago.toISOString(), volume.id, "second.jpg");
+  fs.utimesSync(store.blob(originals[1].hash), ago, ago);
+  store.config.folderRetention = { [volume.id]: "1d" };
+  applyFolderRetention(store);
+  assert.equal(
+    fs.existsSync(store.blob(originals[1].hash)),
+    false,
+    "expired JPEG storage is reclaimed",
+  );
+  assert.equal(
+    fs.existsSync(store.blob(originals[0].hash)),
+    true,
+    "restored original stays live",
+  );
+  assert.equal(
+    fs.existsSync(store.blob(digest(heic))),
+    true,
+    "current HEIC stays live",
+  );
+});

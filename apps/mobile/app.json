@@ -2,12 +2,12 @@
   "expo": {
     "name": "arca",
     "slug": "arca",
-    "version": "0.4.11",
+    "version": "0.4.12",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.satoshilimited.arca",
-      "buildNumber": "22",
+      "buildNumber": "23",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.satoshilimited.arca",
-      "versionCode": 22,
+      "versionCode": 23,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"

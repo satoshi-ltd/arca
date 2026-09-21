@@ -430,7 +430,9 @@ function renderCopies() {
   const v = status?.volumes.find((v) => v.id === detailId);
   if (!box || !v) return;
   const known = (copiesRoster?.machines || []).filter(
-    (m) => m.machineId !== status.id && m.folderIds?.includes(v.id),
+    (m) =>
+      m.machineId !== status.id &&
+      (m.folderIds?.includes(v.id) || m.albumFolderIds?.includes(v.id)),
   );
   if (v.selected)
     known.push({
@@ -446,7 +448,7 @@ function renderCopies() {
     known
       .map(
         (m) =>
-          `<div class="copy-row">${icon(m.isHub ? "server" : "monitor")}<strong>${escape(m.name)}</strong><span class="tag ${m.machineId === status.id ? "self" : m.isHub ? "hub" : ""}">${m.machineId === status.id ? "This machine" : m.revoked ? "Access revoked" : copiesUnavailable || m.freshness === "stale" ? "Last reported" : m.isHub ? "Hub" : "Replica"}</span></div>`,
+          `<div class="copy-row">${icon(m.isHub ? "server" : /android|ios/.test(m.platform) ? "smartphone" : "monitor")}<strong>${escape(m.name)}</strong><span class="tag ${m.machineId === status.id ? "self" : m.isHub ? "hub" : ""}">${m.machineId === status.id ? "This machine" : m.revoked ? "Access revoked" : m.albumFolderIds?.includes(v.id) ? (copiesUnavailable || m.freshness === "stale" ? "Album source · last reported" : "Album source") : copiesUnavailable || m.freshness === "stale" ? "Last reported" : m.isHub ? "Hub" : "Replica"}</span></div>`,
       )
       .join("") +
     (copiesUnavailable
@@ -3216,6 +3218,11 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
       "History retention",
       `<div class="settings-card">${setting("Kept", `${status.historyRevisions} accepted revisions. Automatic retention is configured in each folder.`, button("Preview cleanup…", "retention", "", "secondary small-button", "history"))}${setting("Limits", "Preview always precedes applying. Current versions, pending writes and history not yet received by backups are protected.", `<span class="mono">${status.retention.days || 0} days · ${status.retention.versions || 0} versions</span>`)}</div>`,
     );
+  if (status.role === "hub")
+    html += section(
+      "Images",
+      '<div id="image-settings" class="image-settings"><p class="hint">Loading gallery library…</p></div>',
+    );
   html += section(
     "Tailscale",
     `<div class="settings-card">${setting(
@@ -3241,7 +3248,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   if (status.role === "hub")
     html += section(
       "Local network",
-      `<div class="settings-card">${setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Files and credentials are not encrypted.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))}</div><p class="hint">Can be used alongside Tailscale. The hub’s port must be reachable on your LAN; do not forward it to the Internet.</p>`,
+      `<div class="settings-card">${setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Files and credentials are not encrypted.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))}</div>`,
     );
   html += section(
     "Machine discovery",
@@ -3249,7 +3256,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   html += section(
     "Service",
-    `<div class="settings-card">${setting("Arca v0.4.11", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
+    `<div class="settings-card">${setting("Arca v0.4.12", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
   );
   if (status.role === "replica" && status.hub)
     html += section(
@@ -3304,7 +3311,99 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
       });
   }
   icons();
+  if (status.role === "hub") void imageLibrary();
 }
+let imageSettingsRequest = 0;
+async function imageLibrary() {
+  const root = $("#image-settings");
+  if (!root) return;
+  const request = ++imageSettingsRequest;
+  const active = () =>
+    !!window.document &&
+    view === "settings" &&
+    root.isConnected &&
+    request === imageSettingsRequest;
+  const update = async () => {
+    if (!active()) return;
+    try {
+      const current = await api("/v1/images");
+      if (!active()) return;
+      if (!root.querySelector("#image-inventory"))
+        root.innerHTML = `
+        <div class="settings-card">
+          <div id="image-inventory"></div>
+          <div class="setting-row image-process-row">
+            <div class="row-main"><strong>Previews</strong><div class="image-process-hint">
+              <p id="image-regenerate-hint">Refresh photo previews without changing your files.</p>
+              <div id="image-regenerate-job" class="image-job" role="status" aria-live="polite" hidden></div>
+            </div></div>
+            <div id="image-regenerate-control" class="image-process-control"></div>
+          </div>
+          <div class="setting-row image-process-row">
+            <div class="row-main"><strong>Optimize space</strong><div class="image-process-hint">
+              <p id="image-convert-hint">${current.encoder.available ? "Save space by converting photos to HEIC. Check potential savings first." : "Photo optimization is unavailable on this hub."}</p>
+              <div id="image-convert-job" class="image-job" role="status" aria-live="polite" hidden></div>
+            </div></div>
+            <div id="image-convert-control" class="image-process-control"></div>
+          </div>
+        </div>`;
+      root.querySelector("#image-inventory").innerHTML =
+        current.folders
+          .map((folder) =>
+            setting(
+              escape(folder.name),
+              `${folder.photos} ${folder.photos === 1 ? "photo" : "photos"} · ${folder.videos} ${folder.videos === 1 ? "video" : "videos"}`,
+              bytes(folder.bytes),
+            ),
+          )
+          .join("") ||
+        setting("Gallery library", "No indexed gallery media yet.", "");
+      const job = current.job;
+      for (const kind of ["regenerate", "convert"]) {
+        const target = root.querySelector(`#image-${kind}-job`);
+        const selected = job && (job.kind === "regenerate" ? kind === "regenerate" : kind === "convert");
+        target.hidden = !selected;
+        const hint = root.querySelector(`#image-${kind}-hint`);
+        hint.classList.toggle("image-hint-replaced", !!selected);
+        hint.setAttribute("aria-hidden", String(!!selected));
+        const running = selected && job.state === "running";
+        const control = root.querySelector(`#image-${kind}-control`);
+        const markup = running
+          ? button("Stop process", "images-cancel", "", "secondary small-button", "square")
+          : selected && job.confirmation
+            ? button("Optimize space…", "images-optimize", job.confirmation, "secondary small-button", "images")
+            : kind === "regenerate"
+              ? button("Regenerate previews", "images-regenerate", "", "secondary small-button", "refresh-cw")
+              : current.encoder.available ? button("Check savings", "images-analyze", "", "secondary small-button", "images") : "";
+        if (control.dataset.markup !== markup) {
+          control.innerHTML = markup;
+          control.dataset.markup = markup;
+        }
+        const actionButton = control.querySelector("button");
+        if (actionButton) actionButton.disabled = job?.state === "running" && !running;
+        if (!selected) {
+          target.innerHTML = "";
+          continue;
+        }
+        const label = { regenerate: "Refreshing previews", analyze: "Checking savings", optimize: "Optimizing photos" }[job.kind] || "Processing";
+        const state = { complete: "Completed", cancelled: "Stopped", failed: "Could not finish. Try again." }[job.state] || label;
+        const savings = !running && job.before
+          ? ` · ${job.kind === "analyze" ? "Sample savings" : "Photo size reduced"}: ${bytes(job.before - job.after)}`
+          : "";
+        const summary = `${state} · ${job.done} / ${job.total} processed${savings}`;
+        target.innerHTML = `<p class="hint" title="${escape(summary)}">${escape(summary)}</p>
+          <progress aria-label="${escape(label)}" value="${Number(job.done) || 0}" max="${Math.max(1, Number(job.total) || 0)}"></progress>`;
+      }
+      icons();
+      if (job?.state === "running") setTimeout(update, 1500);
+    } catch (error) {
+      if (active())
+        root.innerHTML = `<p class="hint">${escape(error.message)}</p>${button("Retry", "images-refresh", "", "secondary small-button", "refresh-cw")}`;
+    }
+  };
+  await update();
+}
+
 function modalHeader(heading, description, symbol = "folder") {
   return `<div class="modal-title"><div class="tile">${icon(symbol)}</div><div><h2 id="dialog-title">${heading}</h2><p>${description}</p></div></div>`;
 }
@@ -4196,7 +4295,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.4.11",
+          version: "0.4.12",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -4639,6 +4738,30 @@ async function handle(name, id, control) {
         await api("/v1/backup", { enabled: false });
       },
       "Disable backup",
+    );
+    return;
+  }
+  if (name === "images-refresh") return imageLibrary();
+  if (name === "images-cancel") {
+    await api("/v1/images", { action: "cancel" });
+    return imageLibrary();
+  }
+  if (["images-analyze", "images-regenerate"].includes(name)) {
+    await api("/v1/images", { action: name.slice(7) });
+    return imageLibrary();
+  }
+  if (name === "images-optimize") {
+    modal(
+      modalHeader(
+        "Convert JPEG library to HEIC?",
+        "This replaces eligible JPEG paths with verified HEIC files and synchronizes the change to working replicas. Conversion is lossy at quality 85, without resizing. Files that lose checked metadata or save less than 10% are skipped. Linked phone originals stay unchanged. Old JPEG revisions and backups continue to occupy space until their retention policies allow cleanup. Changed files and occupied destinations are skipped.",
+        "images",
+      ),
+      async () => {
+        await api("/v1/images", { action: "optimize", confirmation: id });
+        return () => imageLibrary();
+      },
+      "Convert library",
     );
     return;
   }

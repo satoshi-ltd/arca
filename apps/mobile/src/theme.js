@@ -51,6 +51,15 @@ export function styles(
       gap: 8,
       minHeight: 24,
     },
+    pendingUploads: {
+      padding: 12,
+      gap: 12,
+      borderWidth: 1,
+      borderColor: c.divider,
+      borderRadius: g.cardRadius,
+      backgroundColor: c.surface,
+    },
+    pendingUploadStrip: { gap: 8 },
     timelineGroup: { gap: 8 },
     timelineMonth: {
       fontFamily: "InstrumentSans_600SemiBold",

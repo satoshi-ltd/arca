@@ -174,6 +174,21 @@ export class ReplicaStore {
       )
     ).map((r) => JSON.parse(r.row));
   }
+  async galleryNativeAsset(scope, volume, path, hash) {
+    const row = await this.db.getFirstAsync(
+      `SELECT asset.row FROM gallery_assets AS asset,
+       json_each(asset.row, '$.resources') AS resource
+       WHERE asset.scope=? AND asset.volume=? AND asset.state='accepted'
+       AND json_extract(resource.value, '$.accepted')=1
+       AND json_extract(resource.value, '$.path')=?
+       AND json_extract(resource.value, '$.hash')=? LIMIT 1`,
+      scope,
+      volume,
+      path,
+      hash,
+    );
+    return row ? JSON.parse(row.row) : null;
+  }
   async galleryReceipt(scope, volume, hash, size, pickedOnly = false) {
     const row = await this.db.getFirstAsync(
       `SELECT resource.value AS receipt FROM gallery_assets AS asset,

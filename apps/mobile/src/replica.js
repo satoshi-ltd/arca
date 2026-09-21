@@ -693,9 +693,13 @@ export class Replica {
     }
   }
   async report(client = this.client) {
-    const folders = (await this.store.folders(this.scope)).filter(
-      (f) => f.selected && !galleryConfig(f),
+    const selected = (await this.store.folders(this.scope)).filter(
+      (f) => f.selected,
     );
+    const folders = selected.filter((f) => !galleryConfig(f));
+    const albumFolderIds = selected
+      .filter((f) => galleryConfig(f))
+      .map((f) => f.id);
     const counts = await Promise.all(
       folders.map((f) => this.store.rows(this.scope, f.id)),
     );
@@ -715,6 +719,7 @@ export class Replica {
       lastSync: await this.store.get(`lastSync:${this.scope}`),
       selectedFolders: folders.length,
       folderIds: folders.map((f) => f.id),
+      albumFolderIds,
       indexedFiles: rows.length,
       indexedBytes: rows.reduce((n, r) => n + r.size, 0),
     });

@@ -1,3 +1,4 @@
+import { isHeic, heicPreview } from "./heic-preview.js";
 import { videoPreview, videoCaptureDate } from "./video-preview.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -234,6 +235,11 @@ export class Gallery {
       timeline,
       items: rows.slice(0, 60).map((row) => ({
         ...row,
+        ...s.db
+          .prepare(
+            "SELECT sourcePath,sourceHash FROM gallery_origins WHERE volume=? AND path=? AND hash=?",
+          )
+          .get(volume, row.path, row.hash),
         dateSource: galleryDate(row.path, row.captured, row.added).source,
         kind: mediaKind(row.path),
       })),
@@ -360,7 +366,7 @@ export class Gallery {
       ? { data: `data:image/jpeg;base64,${result.bytes.toString("base64")}` }
       : result;
   }
-  async derivative(volume, name, hash, large = false) {
+  async derivative(volume, name, hash, large = false, regenerate = false) {
     const s = this.s;
     const folder = s.volume(volume);
     if (s.config.role !== "hub" && !folder.selected)
@@ -375,6 +381,16 @@ export class Gallery {
       fail("This photo is no longer available", 404);
     if (!mediaKind(name)) return { unavailable: true };
     const key = `${hash}:${large ? "large" : "thumb"}`;
+    if (regenerate) {
+      await this.pending.get(key);
+      if (this.closed) fail("Gallery is stopping", 409);
+      const previous = this.cache.get(key);
+      if (previous) this.cacheBytes -= previous.bytes.length;
+      this.cache.delete(key);
+      const diskKey = `${hash}-${large ? "large" : "thumb"}.jpg`;
+      fs.rmSync(path.join(this.directory, diskKey), { force: true });
+      s.db.prepare("DELETE FROM gallery_derivatives WHERE key=?").run(diskKey);
+    }
     if (this.cache.has(key)) {
       const value = this.cache.get(key);
       this.cache.delete(key);
@@ -406,18 +422,20 @@ export class Gallery {
       const data =
         mediaKind(name) === "video"
           ? await videoPreview(s.blob(hash), name, large)
-          : await sharp(s.blob(hash), {
-              limitInputPixels: 100000000,
-              sequentialRead: true,
-            })
-              .rotate()
-              .resize(large ? 2048 : 360, large ? 2048 : 360, {
-                fit: "inside",
-                withoutEnlargement: true,
+          : isHeic(name)
+            ? await heicPreview(s.blob(hash), large)
+            : await sharp(s.blob(hash), {
+                limitInputPixels: 100000000,
+                sequentialRead: true,
               })
-              .jpeg({ quality: large ? 85 : 75 })
-              .timeout({ seconds: 10 })
-              .toBuffer();
+                .rotate()
+                .resize(large ? 2048 : 360, large ? 2048 : 360, {
+                  fit: "inside",
+                  withoutEnlargement: true,
+                })
+                .jpeg({ quality: large ? 85 : 75 })
+                .timeout({ seconds: 10 })
+                .toBuffer();
       if (this.closed) return { unavailable: true };
       const temporary = disk + `.${crypto.randomUUID()}.tmp`;
       try {

@@ -251,7 +251,14 @@ test("hub index pages through the gallery, caches a bounded copy and works from 
   assert.equal(calls[0], "/v1/gallery?volume=v");
   assert.deepEqual(first, {
     items: [
-      { path: "a.jpg", hash: "h1", size: 1, date: "2026-09-02", kind: "image" },
+      {
+        path: "a.jpg",
+        hash: "h1",
+        size: 1,
+        date: "2026-09-02",
+        kind: "image",
+        rev: 9,
+      },
     ],
     next: "c1",
     total: 3,
@@ -662,4 +669,42 @@ test("bounded hub cache keeps its matching cursor instead of truncating a page",
   assert.equal(cached.next, "page2");
   const complete = await reopened.more(cached);
   assert.equal(new Set(complete.items.map((item) => item.path)).size, 3000);
+});
+
+test("optimized gallery source references survive refresh and offline cache", async () => {
+  let saved;
+  const store = {
+    get: async () => saved,
+    set: async (_, state) => {
+      saved = state;
+    },
+  };
+  const photo = {
+    path: "phone/a.heic",
+    hash: "converted",
+    rev: 42,
+    sourcePath: "phone/a.jpg",
+    sourceHash: "original",
+  };
+  const api = async () => ({ items: [photo], next: null });
+  const gallery = hubGallery({ api, store, scope: "s", volume: "v" });
+  await gallery.first();
+  const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
+  const [item] = (await reopened.cached()).items;
+  assert.equal(item.rev, 42);
+  assert.equal(item.sourcePath, photo.sourcePath);
+  assert.equal(item.sourceHash, photo.sourceHash);
+  await gallery.forget(photo.path);
+  const afterDeletion = hubGallery({ api, store, scope: "s", volume: "v" });
+  assert.deepEqual((await afterDeletion.cached()).items, []);
+});
+
+test("mobile gallery retains the hub revision when a deleted local copy disappears or is restored", () => {
+  const photo = { path: "a.heic", hash: "same-bytes", rev: 42 };
+  const local = { path: photo.path, uri: "file:a.heic", size: 100, mtime: 1 };
+  const [before] = mergeTimeline({ index: [photo], entries: [local] });
+  const [stale] = mergeTimeline({ index: [photo] });
+  const [restored] = mergeTimeline({ index: [{ ...photo, rev: 44 }] });
+  assert.equal(before.rev, stale.rev);
+  assert.ok(restored.rev > before.rev);
 });

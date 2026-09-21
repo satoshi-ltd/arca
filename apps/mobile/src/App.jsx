@@ -1708,7 +1708,10 @@ export default function App() {
                                         (m) =>
                                           !m.isHub &&
                                           m.credentialId !== connection?.id &&
-                                          m.folderIds?.includes(folder.id),
+                                          (m.folderIds?.includes(folder.id) ||
+                                            m.albumFolderIds?.includes(
+                                              folder.id,
+                                            )),
                                       )
                                       .map((m) => (
                                         <View
@@ -1729,7 +1732,13 @@ export default function App() {
                                           <Text style={[s.heading, s.flex]}>
                                             {m.name}
                                           </Text>
-                                          <Tag>Replica</Tag>
+                                          <Tag>
+                                            {m.albumFolderIds?.includes(
+                                              folder.id,
+                                            )
+                                              ? "Album source"
+                                              : "Replica"}
+                                          </Tag>
                                         </View>
                                       ))}
                                   </View>

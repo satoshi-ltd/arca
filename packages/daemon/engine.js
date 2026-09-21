@@ -1553,7 +1553,7 @@ export class Engine {
     this.lastReport = null;
     return local;
   }
-  async renameFile(volume, name, newName, rev) {
+  async renameFile(volume, name, newName, rev, replacement = null) {
     name = validPath(name);
     let destination;
     try {
@@ -1611,7 +1611,12 @@ export class Engine {
         return { path: destination };
       }
     }
-    return s.renameFile(current, destination, this.config.id);
+    return s.renameFile(
+      current,
+      destination,
+      this.config.id,
+      replacement || current,
+    );
   }
   async deleteFile(volume, name, rev) {
     validPath(name);

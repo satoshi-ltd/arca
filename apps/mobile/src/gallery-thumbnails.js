@@ -22,10 +22,12 @@ export const thumbnailFiles = {
   async exists(uri) {
     return !!uri && new File(uri).exists;
   },
-  async render(entry) {
+  async render(entry, large = false) {
     const key = bytesToHex(
       sha256(
-        new TextEncoder().encode(`${entry.uri}:${entry.size}:${entry.mtime}`),
+        new TextEncoder().encode(
+          `${entry.uri}:${entry.size}:${entry.mtime}:${large ? "large" : "thumb"}`,
+        ),
       ),
     );
     const target = new File(root, `${key}.jpg`);
@@ -35,8 +37,8 @@ export const thumbnailFiles = {
       root.create({ intermediates: true, idempotent: true });
       const result = await manipulateAsync(
         entry.uri,
-        [{ resize: { width: 360 } }],
-        { compress: 0.75, format: SaveFormat.JPEG },
+        [{ resize: { width: large ? 2048 : 360 } }],
+        { compress: large ? 0.85 : 0.75, format: SaveFormat.JPEG },
       );
       const temporary = new File(result.uri);
       try {

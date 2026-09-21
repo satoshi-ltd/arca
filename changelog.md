@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.12 — 2026-09-21
+
+- Restore the mobile gallery's Pending uploads preview row with tappable thumbnails, remaining count and upload/error markers.
+- Drain outstanding UI requests before closing onboarding and conflict-review test windows, fixing the CI teardown race.
+
+- Preserve every edge pixel when orienting JPEGs for HEIC conversion, without an intermediate lossy encode. Verify repeated optimization, passive-replica delivery, JPEG history restoration and retention cleanup.
+- Keep optimized-photo native source references in the mobile gallery cache, prefer local HEIC previews and refresh open galleries while foregrounded. Clarify that optimization reports photo-size reduction rather than immediately freed disk space.
+
+- Group gallery inventory and image-maintenance actions in one hub Settings card, with progress bars and processed counts beneath each action title. Keep row height stable while running, replace Start with Stop process in the same position, and simplify Optimize space copy without per-file skip logs. Keep conversion details in the JPEG replacement confirmation.
+
+- Fix HEIC analysis on Linux: use the fast encoder preset, preserve orientation through a lossless JPEG transform, read embedded TIFF metadata directly and verify decoded dimensions. Show the active file, processing stage and elapsed time; preserve expanded errors while polling.
+
+- Add hub Settings → Images with gallery photo/video counts, sizes, background preview regeneration and cancellable JPEG → HEIC optimization after a measured sample and explicit confirmation. Skip changed files, collisions, metadata mismatches and savings below 10%; reuse the durable rename journal and preserve retained JPEG history. Include the Linux encoder in Docker.
+- Resolve accepted gallery photos to the linked phone’s unchanged native original, including hub-optimized HEIC derivatives; replicas use compatible previews.
+- Align release manifests at 0.4.12 and mobile build 23.
+- Show linked mobile albums in folder machine lists as Album source, separately from complete working copies.
+
+- Decode HEIC/HEIF gallery previews with a bundled libheif WebAssembly worker on desktop/server, retaining original bytes and bounded JPEG caches.
+- Display compatible HEIC previews in mobile; fall back to cached/hub previews when native thumbnail conversion fails.
+
 ## 0.4.11 — 2026-09-21
 
 - Animate desktop section/folder navigation only on route changes; slide photo information in/out and add Command-I / Control-I within the viewer. Respect reduced-motion durations.

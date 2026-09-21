@@ -1,6 +1,14 @@
+import { nativeGallerySources, galleryDisplay } from "./gallery-display";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
-import { Badge, Button, Icon, Scaffold, useDesign } from "./components";
+import {
+  AppState,
+  Image,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
+import { Button, Icon, Scaffold, useDesign } from "./components";
 import { groupByMonth, mergeTimeline, photoCount } from "./gallery-timeline";
 import { hubGallery } from "./hub-gallery";
 import { hubPreviewFiles } from "./hub-previews";
@@ -87,6 +95,27 @@ export function FolderGallery({
     [api, store, scope, volume],
   );
   const previews = useMemo(() => hubPreviewFiles(api, volume), [api, volume]);
+  const nativeSource = useMemo(
+    () =>
+      uploads
+        ? nativeGallerySources({
+            store: uploads.store,
+            media: uploads.media,
+            scope,
+            volume,
+          })
+        : undefined,
+    [uploads?.store, uploads?.media, scope, volume, refreshKey],
+  );
+  const display = (item, large = false, fallback = false) =>
+    galleryDisplay(item, {
+      large,
+      fallback,
+      nativeSource,
+      localPreview: thumbnailFiles.render,
+      hubPreview: (photo, full) =>
+        full ? previews.large(photo) : previews.thumbnail(photo),
+    });
   const [index, setIndex] = useState(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -108,10 +137,18 @@ export function FolderGallery({
   }, []);
   useEffect(() => {
     let active = true;
-    (async () => {
-      const cached = await hub.cached();
-      if (active && cached) setIndex(cached);
-      if (!connected) return;
+    let timer;
+    let reading = false;
+    const refresh = async () => {
+      if (
+        !active ||
+        reading ||
+        !connected ||
+        AppState.currentState === "background"
+      )
+        return;
+      reading = true;
+      clearTimeout(timer);
       try {
         const fresh = await hub.first();
         if (active) {
@@ -119,11 +156,25 @@ export function FolderGallery({
           setError("");
         }
       } catch (e) {
-        if (active && !cached) setError(e.message);
+        if (active) setError(e.message);
+      } finally {
+        reading = false;
+        if (active) timer = setTimeout(refresh, 5000);
       }
+    };
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refresh();
+      else clearTimeout(timer);
+    });
+    (async () => {
+      const cached = await hub.cached();
+      if (active && cached) setIndex(cached);
+      await refresh();
     })();
     return () => {
       active = false;
+      clearTimeout(timer);
+      subscription.remove();
     };
   }, [hub, connected, refreshKey, retry]);
   useEffect(() => {
@@ -156,13 +207,42 @@ export function FolderGallery({
     uploads?.summary?.pending,
     uploads?.summary?.failed,
     uploads?.scannedAt,
+    refreshKey,
   ]);
-  const items = useMemo(
+  const baseItems = useMemo(
     () =>
       mergeTimeline({ index: index?.items, entries, uploads: pending }).filter(
-        (item) => hidden.get(item.path) !== item.signature,
+        (item) =>
+          !hidden.has(item.path) || Number(item.rev) > hidden.get(item.path),
       ),
     [index, entries, pending, hidden],
+  );
+  const [nativeUris, setNativeUris] = useState({ resolver: null, values: {} });
+  useEffect(() => {
+    let active = true;
+    if (!nativeSource) return;
+    (async () => {
+      const values = {};
+      for (const item of baseItems.slice(0, limit)) {
+        if (!active) return;
+        const uri = await nativeSource(item);
+        if (uri) values[`${item.path}:${item.hash}`] = uri;
+      }
+      if (active) setNativeUris({ resolver: nativeSource, values });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [baseItems, limit, nativeSource]);
+  const withNative = (item) => {
+    const uri =
+      nativeUris.resolver === nativeSource &&
+      nativeUris.values[`${item.path}:${item.hash}`];
+    return uri ? { ...item, uri, nativeSource: true } : item;
+  };
+  const items = useMemo(
+    () => baseItems.map(withNative),
+    [baseItems, nativeUris, nativeSource],
   );
   const count = photoCount(items);
   useEffect(() => {
@@ -195,17 +275,9 @@ export function FolderGallery({
     () => ({
       exists: thumbnailFiles.exists,
       render: (item) =>
-        item.kind === "video"
-          ? item.hash && connected
-            ? previews.thumbnail(item)
-            : Promise.reject(new Error("No poster"))
-          : item.uri
-            ? thumbnailFiles.render(item)
-            : connected
-              ? previews.thumbnail(item)
-              : Promise.reject(new Error("Offline")),
+        item.kind === "video" ? previews.thumbnail(item) : display(item),
     }),
-    [previews, connected],
+    [previews, nativeSource],
   );
   useEffect(() => {
     let active = true;
@@ -231,7 +303,14 @@ export function FolderGallery({
   }, [shown, loading, store, scope, volume, io]);
   const gap = 4;
   const tile = width ? Math.floor((width - gap * (columns - 1)) / columns) : 0;
-  const groups = useMemo(() => groupByMonth(shown), [shown]);
+  const pendingItems = useMemo(
+    () => items.filter((item) => item.upload),
+    [items],
+  );
+  const groups = useMemo(
+    () => groupByMonth(shown.filter((item) => !item.upload)),
+    [shown],
+  );
   const photos = useMemo(
     () =>
       items.map((item) =>
@@ -254,12 +333,38 @@ export function FolderGallery({
       style={s.timeline}
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
     >
-      {(!!notice || !!pending.length) && (
-        <View style={s.timelineStatus}>
-          <Text style={[s.caption, s.flex]}>{notice}</Text>
-          {!!pending.length && (
-            <Badge>{`Uploading ${uploads?.summary?.pending || pending.length}`}</Badge>
-          )}
+      {!!notice && <Text style={s.caption}>{notice}</Text>}
+      {!!pendingItems.length && (
+        <View style={s.pendingUploads}>
+          <View style={s.timelineStatus}>
+            <Text style={[s.timelineMonth, s.flex]}>Pending uploads</Text>
+            <Text style={s.caption}>
+              {Math.max(pendingItems.length, uploads?.summary?.pending || 0)}{" "}
+              remaining
+            </Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.pendingUploadStrip}
+          >
+            {pendingItems.map((item) => (
+              <Tile
+                key={item.path}
+                item={item}
+                size={72}
+                uri={item.uri}
+                onPress={() =>
+                  setViewer({
+                    items: photos,
+                    index: photos.findIndex(
+                      (photo) => photo.path === item.path,
+                    ),
+                  })
+                }
+              />
+            ))}
+          </ScrollView>
         </View>
       )}
       {!!error && !items.length && (
@@ -332,13 +437,13 @@ export function FolderGallery({
         />
       )}
       <PhotoViewer
-        items={viewer?.items || photos}
+        items={viewer ? viewer.items.map(withNative) : photos}
         index={viewer?.index ?? null}
         onClose={() => setViewer(null)}
         onIndexChange={(index) =>
           setViewer((value) => value && { ...value, index })
         }
-        resolveLarge={(item) => previews.large(item)}
+        resolveLarge={(item, fallback = false) => display(item, true, fallback)}
         info={(item) =>
           api(
             `/v1/gallery/info?${new URLSearchParams({ volume, path: item.path, hash: item.hash })}`,
@@ -351,7 +456,10 @@ export function FolderGallery({
         deletable={!uploads && !!remove}
         remove={async (item) => {
           if (!(await remove(item))) return;
-          setHidden((value) => new Map(value).set(item.path, item.signature));
+          setHidden((value) =>
+            new Map(value).set(item.path, Number(item.rev) || 0),
+          );
+          void hub.forget(item.path).catch(() => {});
           setViewer((value) => {
             if (!value) return null;
             const remaining = value.items.filter(

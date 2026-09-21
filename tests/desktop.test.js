@@ -525,6 +525,14 @@ test("desktop onboarding submits chosen role and root without a browser credenti
       },
     },
   };
+  const requests = new Set();
+  const invoke = w.__TAURI__.core.invoke;
+  w.__TAURI__.core.invoke = (...args) => {
+    const request = invoke(...args);
+    requests.add(request);
+    request.then(() => requests.delete(request), () => requests.delete(request));
+    return request;
+  };
   try {
     await w.eval(`(async()=>{${script}\n})()`);
     const submit = () =>
@@ -565,6 +573,7 @@ test("desktop onboarding submits chosen role and root without a browser credenti
     assert.equal(received.root, "/tmp/Arca");
     assert.equal(w.localStorage?.length || 0, 0);
   } finally {
+    await drainRequests(requests);
     w.close();
   }
 });
@@ -1375,21 +1384,33 @@ for (const surface of ["web", "desktop"]) {
         runScripts: "outside-only",
         url: "http://localhost/#/settings",
       });
+      const requests = new Set();
       t.after(async () => {
+        await drainRequests(requests);
         dom.window.close();
         await daemon.close();
         fs.rmSync(home, { recursive: true, force: true });
       });
       const w = dom.window;
+      w.HTMLDialogElement.prototype.showModal = function () {
+        this.setAttribute("open", "");
+      };
+      w.HTMLDialogElement.prototype.close = function () {
+        this.removeAttribute("open");
+      };
       w.setInterval = () => 0;
-      const request = (route, options = {}) =>
-        fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+      const request = (route, options = {}) => {
+        const pending = fetch(`http://127.0.0.1:${daemon.port}${route}`, {
           ...options,
           headers: {
             Authorization: `Bearer ${daemon.engine.config.adminToken}`,
             "Content-Type": "application/json",
           },
         });
+        requests.add(pending);
+        void pending.finally(() => requests.delete(pending));
+        return pending;
+      };
       w.fetch = request;
       if (surface === "desktop")
         w.__TAURI__ = {
@@ -1432,6 +1453,28 @@ for (const surface of ["web", "desktop"]) {
         Boolean(w.document.querySelector("#notifications-enabled")),
         surface === "desktop",
       );
+      assert.equal(
+        Boolean(w.document.querySelector("#image-settings")),
+        role === "hub",
+      );
+      if (role === "hub") {
+        await until(
+          () =>
+            w.document.querySelector("#image-regenerate-job") &&
+            w.document.body.getAttribute("aria-busy") === "false",
+        );
+        assert.equal(w.document.querySelectorAll("#image-settings .settings-card").length, 1);
+        assert.ok(w.document.querySelector("#image-regenerate-job").hidden);
+        w.document.querySelector('[data-action="images-regenerate"]').click();
+        await until(
+          () =>
+            w.document
+              .querySelector("#image-regenerate-job")
+              ?.textContent.includes("Completed") &&
+            w.document.body.getAttribute("aria-busy") === "false",
+        );
+        assert.equal(w.document.querySelector("#dialog").open, false);
+      }
       if (surface === "desktop") {
         assert.equal(w.document.querySelector("#service-control"), null);
         assert.equal(w.document.body.textContent.includes("this Mac"), false);
@@ -1512,6 +1555,12 @@ test("desktop connection confirms disconnect, retains files and offers a fresh p
   });
   const w = dom.window;
   t.after(async () => {
+    await until(
+      () =>
+        w.document.body.getAttribute("aria-busy") !== "true" &&
+        w.document.querySelector("#content").getAttribute("aria-busy") !==
+          "true",
+    );
     dom.window.close();
     for (const n of nodes.reverse()) await n.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -1899,7 +1948,9 @@ test("conflict file detail opens a guarded version choice and restores the selec
     runScripts: "outside-only",
     url: `http://tauri.localhost/#history?volume=${volume.id}&path=${conflict}`,
   });
+  const requests = new Set();
   t.after(async () => {
+    await drainRequests(requests);
     dom.window.close();
     await daemon.close();
     fs.rmSync(home, { recursive: true, force: true });
@@ -1936,6 +1987,13 @@ test("conflict file detail opens a guarded version choice and restores the selec
         return value;
       },
     },
+  };
+  const invoke = w.__TAURI__.core.invoke;
+  w.__TAURI__.core.invoke = (...args) => {
+    const request = invoke(...args);
+    requests.add(request);
+    request.then(() => requests.delete(request), () => requests.delete(request));
+    return request;
   };
   await w.eval(`(async()=>{${script}\n})()`);
   const q = (selector) => w.document.querySelector(selector);
@@ -3651,4 +3709,42 @@ test("gallery deletion filtering survives reload and permits restored revisions 
     1,
     "a newer restored revision remains visible",
   );
+});
+
+test("folder copies include linked phone albums without labeling them as replicas", async (t) => {
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  await w.eval(`(async()=>{${script.replace("await action(boot);", "")}
+
+    status = { id: "hub", name: "casa", role: "hub", volumes: [{ id: "photos", selected: true }] };
+    detailId = "photos";
+    copiesRoster = { machines: [
+      { machineId: "phone", name: "phone", platform: "android", folderIds: [], albumFolderIds: ["photos"], freshness: "recent" },
+      { machineId: "fold", name: "phone-fold", platform: "android", folderIds: [], albumFolderIds: ["photos"], freshness: "stale" },
+      { machineId: "mac", name: "macbook-pro", folderIds: ["photos"], freshness: "recent" },
+      { machineId: "other", name: "other", folderIds: [], albumFolderIds: ["unrelated"] }
+    ] };
+    document.querySelector("#content").innerHTML = '<div id="folder-copies"></div>';
+    renderCopies();
+    window.disposeNotices = () => noticeStore.dispose();
+  })()`);
+  t.after(() => {
+    w.disposeNotices();
+    w.close();
+  });
+  const rows = [...w.document.querySelectorAll(".copy-row")];
+  assert.equal(rows.length, 4);
+  const row = (name) =>
+    rows.find((r) => r.querySelector("strong").textContent === name);
+  assert.equal(row("phone").querySelector(".tag").textContent, "Album source");
+  assert.equal(
+    row("phone-fold").querySelector(".tag").textContent,
+    "Album source · last reported",
+  );
+  assert.equal(row("macbook-pro").querySelector(".tag").textContent, "Replica");
+  assert.equal(row("casa").querySelector(".tag").textContent, "This machine");
 });

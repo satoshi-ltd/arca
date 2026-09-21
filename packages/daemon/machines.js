@@ -54,16 +54,17 @@ export function acceptReport(store, device, body) {
     /[\x00-\x1f]/.test(clean.name)
   )
     fail("Invalid machine report: name");
-  if (body.folderIds !== undefined) {
+  for (const key of ["folderIds", "albumFolderIds"]) {
+    if (body[key] === undefined) continue;
     if (
-      !Array.isArray(body.folderIds) ||
-      body.folderIds.length > 10000 ||
-      body.folderIds.some(
+      !Array.isArray(body[key]) ||
+      body[key].length > 10000 ||
+      body[key].some(
         (id) => typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id),
       )
     )
-      fail("Invalid machine report: folderIds");
-    clean.folderIds = [...new Set(body.folderIds)];
+      fail(`Invalid machine report: ${key}`);
+    clean[key] = [...new Set(body[key])];
   }
   clean.name = clean.name.trim();
   clean.lastSync = body.lastSync;

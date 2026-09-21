@@ -29,6 +29,7 @@ export const mediaLibrary = {
           ? asset.uri
           : null),
       video: asset.mediaType === "video",
+      modificationTime: asset.modificationTime,
     };
   },
   export: (id, destination) => native.exportGalleryAsset(id, destination),

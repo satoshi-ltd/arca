@@ -815,6 +815,51 @@ main {
   gap: var(--space-3);
   font-size: var(--text-body);
 }
+.image-settings {
+  display: grid;
+  gap: var(--space-3);
+}
+.image-settings > p {
+  margin: 0;
+}
+#image-inventory {
+  border-bottom: 1px solid var(--div);
+}
+.image-process-row .row-main {
+  flex: 1;
+  min-width: 0;
+}
+.image-process-hint {
+  position: relative;
+  padding-bottom: 8px;
+}
+.image-hint-replaced {
+  visibility: hidden;
+}
+.image-job {
+  position: absolute;
+  inset: 0;
+}
+.image-job > p {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.image-job > progress {
+  position: absolute;
+  bottom: 0;
+}
+.image-process-control {
+  flex: 0 0 auto;
+  width: 200px;
+  max-width: 100%;
+  display: flex;
+  justify-content: flex-end;
+}
+.image-process-control > button {
+  width: 100%;
+}
 .settings-card {
   border: 1px solid var(--div);
   border-radius: var(--r-control);

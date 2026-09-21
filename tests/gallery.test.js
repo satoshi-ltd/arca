@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -829,4 +830,212 @@ test("binary web previews require the browser session on every image request", a
       .status,
     401,
   );
+});
+
+test("HEIC originals produce cached JPEG previews without changing synchronized bytes", async (t) => {
+  const f = await fixture(t);
+  const original = fs.readFileSync(
+    new URL("./fixtures/gallery.heic", import.meta.url),
+  );
+  const name = "20260921_144956-3a0b1cb3045c204758a9ae81.heic";
+  fs.writeFileSync(path.join(f.v.path, name), original);
+  await f.daemon.engine.cycle();
+  const row = f.s.current(f.v.id, name);
+  assert.equal(row.hash, digest(original));
+  let responsive = false;
+  const timer = setTimeout(() => {
+    responsive = true;
+  }, 0);
+  t.after(() => clearTimeout(timer));
+  const thumbnail = await f.api(f.preview(name, row.hash));
+  assert.ok(responsive, "decoding allows the event loop to serve other work");
+  for (const data of [
+    thumbnail,
+    await f.api(f.preview(name, row.hash) + "&size=large"),
+  ]) {
+    const jpeg = Buffer.from(data.data.split(",")[1], "base64");
+    const meta = await sharp(jpeg).metadata();
+    assert.equal(meta.format, "jpeg");
+    assert.equal(meta.width, 80);
+    assert.equal(meta.height, 60);
+    const { data: pixel } = await sharp(jpeg)
+      .resize(1, 1)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    assert.ok(
+      pixel[0] > pixel[1] && pixel[1] > pixel[2],
+      "decoded colors are retained",
+    );
+  }
+  assert.deepEqual(fs.readFileSync(path.join(f.v.path, name)), original);
+  assert.deepEqual(fs.readFileSync(f.s.blob(row.hash)), original);
+  assert.deepEqual(await f.api(f.preview(name, row.hash)), thumbnail);
+  const info = await f.api(
+    "/v1/gallery/info?" +
+      new URLSearchParams({ volume: f.v.id, path: name, hash: row.hash }),
+  );
+  assert.equal(info.width, 80);
+  assert.equal(info.height, 60);
+});
+
+test("hub image inventory is scoped and preview regeneration preserves original bytes", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id, enabled: true });
+  const { hash, buffer } = await f.photo("one.jpg");
+  await f.daemon.engine.gallery.background;
+  const inventory = await f.api("/v1/images");
+  assert.equal(inventory.folders[0].photos, 1);
+  assert.equal(inventory.folders[0].jpeg, 1);
+  await f.api("/v1/images", { action: "regenerate" });
+  let status;
+  for (let i = 0; i < 200; i++) {
+    status = await f.api("/v1/images");
+    if (status.job.state !== "running") break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(status.job.state, "complete");
+  assert.equal(status.job.changed, 1);
+  assert.deepEqual(fs.readFileSync(f.s.blob(hash)), buffer);
+  await assert.rejects(
+    f.api("/v1/images", { action: "optimize", confirmation: "invented" }),
+    /Analyze/,
+  );
+  const device = await f.api("/v1/devices", {
+    name: "Reader",
+    role: "replica",
+  });
+  await assert.rejects(
+    f.api("/v1/images", undefined, device.token),
+    /administrator/,
+  );
+  await assert.rejects(
+    f.api("/v1/images", { action: "regenerate" }, device.token),
+    /administrator/,
+  );
+  // Unauthenticated callers cannot inspect library statistics or start jobs.
+  await assert.rejects(f.api("/v1/images", undefined, "invalid"));
+});
+
+test("image conversion requires analysis, journals both paths, retains history and skips stale photos", async (t) => {
+  const { ImageMaintenance } =
+    await import("../packages/daemon/image-maintenance.js");
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id, enabled: true });
+  const original = await f.photo("one.jpg", "2020-01-02T00:00:00.000Z");
+  const encoder = async (_, destination) => {
+    fs.copyFileSync(
+      new URL("./fixtures/gallery.heic", import.meta.url),
+      destination,
+    );
+    return fs.statSync(destination).size;
+  };
+  const manager = new ImageMaintenance(f.daemon.engine, encoder);
+  t.after(() => manager.close());
+  manager.start("analyze");
+  await manager.task;
+  assert.equal(f.s.current(f.v.id, "one.jpg").deleted, 0);
+  assert.ok(manager.job.confirmation);
+  manager.start("optimize", manager.job.confirmation);
+  await manager.task;
+  assert.equal(manager.job.changed, 1, JSON.stringify(manager.job));
+  assert.equal(f.s.current(f.v.id, "one.jpg").deleted, 1);
+  assert.equal(f.s.current(f.v.id, "one.heic").deleted, 0);
+  assert.deepEqual(fs.readFileSync(f.s.blob(original.hash)), original.buffer);
+  assert.ok(
+    f.s.history(f.v.id, "one.jpg").some((r) => r.hash === original.hash),
+  );
+  const listing = await f.api(f.route);
+  assert.equal(listing.items[0].sourcePath, "one.jpg");
+  assert.equal(listing.items[0].sourceHash, original.hash);
+  await f.photo("changed.jpg");
+  manager.start("analyze");
+  await manager.task;
+  const confirmation = manager.job.confirmation;
+  const revised = await f.photo("other.jpg", null, "blue");
+  f.s.commit(
+    f.v.id,
+    "changed.jpg",
+    { hash: revised.hash, size: revised.buffer.length },
+    f.s.config.id,
+    true,
+    f.s.current(f.v.id, "changed.jpg").hash,
+  );
+  manager.start("optimize", confirmation);
+  await manager.task;
+  assert.equal(manager.job.changed, 0);
+  assert.match(manager.job.errors[0].error, /changed/);
+  assert.equal(f.s.current(f.v.id, "changed.jpg").deleted, 0);
+});
+
+test("converted path recovery materializes HEIC before removing JPEG after an interrupted write", async (t) => {
+  const f = await fixture(t);
+  const original = await f.photo("recover.jpg");
+  const replacement = f.s.capture(
+    fileURLToPath(new URL("./fixtures/gallery.heic", import.meta.url)),
+  );
+  const current = f.s.current(f.v.id, "recover.jpg");
+  const materialize = f.s.materialize.bind(f.s);
+  f.s.materialize = () => {
+    throw new Error("interrupted conversion");
+  };
+  assert.throws(
+    () => f.s.renameFile(current, "recover.heic", f.s.config.id, replacement),
+    /interrupted/,
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.v.path, "recover.jpg")),
+    original.buffer,
+  );
+  f.s.materialize = (row, expected) => {
+    if (row.deleted && row.path === "recover.jpg") {
+      // Recovery may visit the deletion first; its renameDestination dependency
+      // must materialize the new file before the actual removal.
+      materialize(row, expected);
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.v.path, "recover.heic")),
+        fs.readFileSync(f.s.blob(replacement.hash)),
+      );
+      return;
+    }
+    return materialize(row, expected);
+  };
+  f.s.recover();
+  assert.equal(fs.existsSync(path.join(f.v.path, "recover.jpg")), false);
+  assert.deepEqual(fs.readFileSync(f.s.blob(original.hash)), original.buffer);
+});
+
+test("an unprofitable sample does not block optimization of untested new photos", async (t) => {
+  const { ImageMaintenance } =
+    await import("../packages/daemon/image-maintenance.js");
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id, enabled: true });
+  let eligible;
+  for (let i = 0; i < 11; i++) {
+    const photo = await f.photo(
+      String(i).padStart(2, "0") + ".jpg",
+      null,
+      i === 1 ? "blue" : "red",
+    );
+    if (i === 1) eligible = photo;
+  }
+  const manager = new ImageMaintenance(
+    f.daemon.engine,
+    async (source, destination) => {
+      if (source !== f.s.blob(eligible.hash)) return Number.MAX_SAFE_INTEGER;
+      fs.copyFileSync(
+        new URL("./fixtures/gallery.heic", import.meta.url),
+        destination,
+      );
+      return fs.statSync(destination).size;
+    },
+  );
+  t.after(() => manager.close());
+  manager.start("analyze");
+  await manager.task;
+  assert.equal(manager.job.changed, 0);
+  assert.ok(manager.job.confirmation);
+  manager.start("optimize", manager.job.confirmation);
+  await manager.task;
+  assert.equal(manager.job.changed, 1);
+  assert.equal(f.s.current(f.v.id, "01.heic").deleted, 0);
 });
