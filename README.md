@@ -37,15 +37,15 @@ Requires Node.js 24+. Desktop also requires Rust and the platform's Tauri prereq
 
 ```sh
 npm ci
-npm run desktop
+npm start --prefix apps/desktop
 ```
 
-`npm run dev` is an alias. `pnpm dev:clean` (or `npm run dev:clean`) clears only Vite caches before the same desktop startup. It preserves state, pairing, files and pause. Startup checks port 1425 first and stops with a clear error if another session owns it; it never kills an unknown port owner. When the same checkout/state is managed by the macOS login service, the launcher unloads and reloads that service around runtime preparation, preserving its login setting and avoiding automatic-restart races. Each `npm run desktop` stops the existing local daemon, stages the current runtime, starts it and waits for readiness before opening Tauri. It uses `ARCA_HOME` when set, otherwise the real `~/.arca`, preserving pairing, folders and pause. First-run setup still initializes a new state directory. Closing the app leaves the daemon running; the next development launch replaces it. Automated tests use isolated state. Vite serves development UI on port 1425. The daemon uses 17831; Docker/server installations also serve web there.
+Each environment owns its commands: the repository root keeps the daemon, tests and site, `apps/desktop` the desktop app and `apps/mobile` the phone app. Run them with `--prefix` or from inside the directory. `npm run start:clean --prefix apps/desktop` clears only Vite caches before the same desktop startup. It preserves state, pairing, files and pause. Startup checks port 1425 first and stops with a clear error if another session owns it; it never kills an unknown port owner. When the same checkout/state is managed by the macOS login service, the launcher unloads and reloads that service around runtime preparation, preserving its login setting and avoiding automatic-restart races. Each start stops the existing local daemon, stages the current runtime, starts it and waits for readiness before opening Tauri. It uses `ARCA_HOME` when set, otherwise the real `~/.arca`, preserving pairing, folders and pause. First-run setup still initializes a new state directory. Closing the app leaves the daemon running; the next development launch replaces it. Automated tests use isolated state. Vite serves development UI on port 1425. The daemon uses 17831; Docker/server installations also serve web there.
 
 ```sh
 npm test
-npm run desktop:build
-npm run verify:bundle
+npm run build --prefix apps/desktop
+npm run verify:bundle --prefix apps/desktop
 ```
 
 For isolated hub metadata/API load qualification, run `node scripts/verify-hub-load.js . 100000`. It creates temporary state and a child daemon, tests three concurrent snapshots alongside a verified 1 MiB upload/download, checks HTTP responsiveness and pause/resume, then removes only its fixtures. It never uses the live `~/.arca`. Docker execution and measured limits are in [hub load qualification](SPEC.md#05-docker-hub-load-qualification--september-22).

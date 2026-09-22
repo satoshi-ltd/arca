@@ -157,7 +157,7 @@ jobs:
           rm "$RUNNER_TEMP/arca.p12"
       - name: Build unsigned installers
         if: runner.os != 'macOS' || !inputs.sign_macos
-        run: npm run desktop:release
+        run: npm run release --prefix apps/desktop
       - name: Build signed macOS installers
         if: runner.os == 'macOS' && inputs.sign_macos
         env:
@@ -166,7 +166,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run desktop:release
+        run: npm run release --prefix apps/desktop
       - name: Verify runtime inside macOS installer
         if: runner.os == 'macOS'
         run: |

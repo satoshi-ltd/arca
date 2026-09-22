@@ -3,6 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --config vite.config.js"
+    "start": "node ../../scripts/desktop-dev.js",
+    "start:clean": "node ../../scripts/desktop-dev.js --clean",
+    "ui": "vite --config vite.config.js",
+    "build": "node ../../scripts/stage-runtime.js && tauri build",
+    "postbuild": "node ../../scripts/sign-local.js",
+    "release": "node ../../scripts/build-release.js",
+    "verify:bundle": "node ../../scripts/verify-bundle.js"
   }
 }

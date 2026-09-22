@@ -140,3 +140,43 @@ test("development service matching excludes another installation or state direct
   );
   assert.equal(matchingService([...args, "--extra"], home, runtime), false);
 });
+
+test("desktop development commands live in apps/desktop and the root keeps none", () => {
+  const read = (file) =>
+    JSON.parse(fs.readFileSync(path.join(repo, file), "utf8"));
+  const desktop = read("apps/desktop/package.json").scripts;
+  assert.deepEqual(desktop, {
+    start: "node ../../scripts/desktop-dev.js",
+    "start:clean": "node ../../scripts/desktop-dev.js --clean",
+    ui: "vite --config vite.config.js",
+    build: "node ../../scripts/stage-runtime.js && tauri build",
+    postbuild: "node ../../scripts/sign-local.js",
+    release: "node ../../scripts/build-release.js",
+    "verify:bundle": "node ../../scripts/verify-bundle.js",
+  });
+  for (const script of Object.values(desktop))
+    for (const reference of script.match(/\.\.\/\.\.\/[\w./-]+/g) || [])
+      assert.ok(
+        fs.existsSync(path.join(repo, "apps/desktop", reference)),
+        reference,
+      );
+  assert.deepEqual(
+    Object.keys(read("package.json").scripts).filter((name) =>
+      /desktop|^dev|verify:bundle/.test(name),
+    ),
+    [],
+  );
+  const { beforeDevCommand } = read(
+    "apps/desktop/src-tauri/tauri.conf.json",
+  ).build;
+  assert.ok(
+    desktop[beforeDevCommand.replace("npm run ", "")],
+    beforeDevCommand,
+  );
+  const workflow = fs.readFileSync(
+    path.join(repo, ".github/workflows/publish.yml"),
+    "utf8",
+  );
+  assert.match(workflow, /npm run release --prefix apps\/desktop/);
+  assert.doesNotMatch(workflow, /npm run desktop:/);
+});

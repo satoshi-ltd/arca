@@ -691,15 +691,15 @@ Requirements: Node.js 24+, Rust and the platform's Tauri prerequisites.
 
 ```sh
 npm ci
-npm run dev
+npm start --prefix apps/desktop
 ```
 
 Keep the terminal running. Vite serves the frontend on loopback port 1425: CSS updates live and HTML/JS reload the window; Rust changes rebuild/restart Tauri. This development port is not another Arca service port. The normal daemon uses `~/.arca`; editing daemon code requires a separate service update/restart.
 
 ```sh
 npm test
-npm run desktop:build
-npm run verify:bundle
+npm run build --prefix apps/desktop
+npm run verify:bundle --prefix apps/desktop
 ```
 
 macOS output: `apps/desktop/src-tauri/target/release/bundle/macos/Arca.app`. The build downloads official Node 24.14.0, verifies its checksum and bundles it; first build requires network. Cache: `.cache/runtime`. The local macOS app is ad-hoc signed, not notarized. Close the compiled app through its tray menu to avoid confusing it with the development window. Closing a window hides it; quitting the app leaves normal daemon synchronization running.
@@ -825,7 +825,7 @@ Authenticated `GET /v1/machines` supplies a read-only hub roster, backup acknowl
 
 The shared frontend implements `design_handoff_arca_v0.1`: local fonts/icons, Light/Dark/System appearance, folder details, history filters, Machines, access codes and confirmation dialogs. Native Tauri also has four-step onboarding, folder selection, a menu-bar popover, notification opt-in and a launch-at-login setting. Quit leaves the daemon running. See [design and interaction contract](#design-system-and-interactions) for corrections to unsupported statements in the export.
 
-Reopen the rebuilt Arca app to load native changes; `npm run dev` still enables frontend hot reload. Reload the Casa web page after deployment. Changes to the daemon require restarting its service, which invalidates browser sessions. No commit or push is performed by the build or deployment.
+Reopen the rebuilt Arca app to load native changes; the desktop start command still enables frontend hot reload. Reload the Casa web page after deployment. Changes to the daemon require restarting its service, which invalidates browser sessions. No commit or push is performed by the build or deployment.
 
 Casa deployment uses container `arca` (Compose project `arca`). The existing installation/state directory remains `/home/atlas/arca-pilot` to preserve persistent paths. On Casa, the native user service is disabled; Docker owns the daemon. The Mac LaunchAgent is separate. `/home/atlas/alpi/data` is mounted read/write at the identical container path, so all descendants are available without individual mounts. Mounting does not automatically publish or synchronize them. Existing shares retain their IDs; a parent share cannot overlap an already published child. Use absolute mounted paths in Docker; `~` is rejected because it refers to the container user.
 
@@ -945,7 +945,7 @@ Create `satoshiltd/arca` in Docker Hub, with the intended visibility. Add `DOCKE
 
 Docker upload and GitHub publication are separate operations: if the last step fails after image upload, that versioned image and latest alias can already exist. Retry the failed jobs from the same commit; the draft is reusable only for that checkout SHA. A different commit with the same version is rejected while the draft exists, preventing mixed installers. Inspect the draft rather than silently reusing it. No installed daemon is restarted by publishing. The site continues reading only published releases and already links Docker Hub, so its code and installer URLs do not change.
 
-Local packaging: `npm run desktop:release` creates platform installers, while `npm run desktop:build` retains the existing local macOS app workflow. The release script signs embedded Node on macOS before signing the app. Windows signing and automatic updating remain separate, unimplemented work.
+Local packaging: `npm run release --prefix apps/desktop` creates platform installers, while `npm run build --prefix apps/desktop` retains the existing local macOS app workflow. The release script signs embedded Node on macOS before signing the app. Windows signing and automatic updating remain separate, unimplemented work.
 
 ## Documentation and private deployment maintenance — September 8
 
@@ -1585,7 +1585,7 @@ Validation for v0.3.4: full local CI test command passes (170 passed, one platfo
 
 ### Desktop development runtime — September 10
 
-`npm run desktop` (and its `npm run dev` alias) runs `scripts/desktop-dev.js`: identify the local daemon using the state lock and process command, stop that process, wait for exit, stage the checkout's runtime, start the daemon and wait for its IPC-ready notification plus authenticated identity/lock verification before opening Tauri. `ARCA_HOME` selects state consistently for the launcher and native bridge; the default remains `~/.arca`. No state is initialized automatically when config is absent; Tauri opens the existing first-run onboarding. The launcher refuses an unrelated PID and fails visibly if stopping or starting times out, rather than opening a frontend against stale code. The CLI interrupts active synchronization when handling termination. Installed-app closing behavior remains unchanged: the daemon stays running, and the next development launch explicitly replaces it. This does not update Docker/Casa or restart Metro.
+`npm start --prefix apps/desktop` runs `scripts/desktop-dev.js`: identify the local daemon using the state lock and process command, stop that process, wait for exit, stage the checkout's runtime, start the daemon and wait for its IPC-ready notification plus authenticated identity/lock verification before opening Tauri. `ARCA_HOME` selects state consistently for the launcher and native bridge; the default remains `~/.arca`. No state is initialized automatically when config is absent; Tauri opens the existing first-run onboarding. The launcher refuses an unrelated PID and fails visibly if stopping or starting times out, rather than opening a frontend against stale code. The CLI interrupts active synchronization when handling termination. Installed-app closing behavior remains unchanged: the daemon stays running, and the next development launch explicitly replaces it. This does not update Docker/Casa or restart Metro.
 
 Two isolated launcher tests verify a new daemon PID and changed runtime code with identity, hub credentials, local bytes and pause retained, plus refusal of an unrelated lock PID and untouched first-run state. This is local macOS validation; Windows/Linux runner execution remains separate.
 
@@ -1958,7 +1958,7 @@ Hub-reset deployment completed on the Umbrel pilot using `npm run update-umbrel`
 
 September 13 staged review: fixed the Docker upgrade port mismatch by explicitly binding the daemon to container port 17831 and adding Compose `ARCA_PORT` (default 17831). Docker is unavailable on this Mac, so the updated container smoke test (now seeds old port 47831) remains unexecuted locally. Existing deployments can preserve external port 47831 with `ARCA_PORT=47831`; persisted configuration is not rewritten. Umbrel continues to pin the published 0.4.1 image/digest until its separately managed packaging update.
 
-September 13 development startup: `dev:clean` clears only the repository Vite caches and then uses the normal desktop launcher. A loopback-port preflight runs before daemon replacement, so a busy Vite port fails without restarting the daemon. No Metro process, user state or native build output is cleaned.
+September 13 development startup: `start:clean` clears only the repository Vite caches and then uses the normal desktop launcher. A loopback-port preflight runs before daemon replacement, so a busy Vite port fails without restarting the daemon. No Metro process, user state or native build output is cleaned.
 
 September 13 launcher service fix: a loaded macOS LaunchAgent whose exact executable, CLI and state arguments match this checkout is unloaded before runtime staging and bootstrapped afterward. Staging failure restores service supervision. Other installations/services are not touched. Verified the real local managed daemon restarted and authenticated readiness succeeded, preserving identity, hub credentials and pause. Four launcher tests cover ordinary restart, unknown PID refusal, busy port and service identity matching.
 

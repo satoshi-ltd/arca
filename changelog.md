@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 — 2026-09-22
+
+- Give each environment its own commands: `apps/desktop` now owns `start`, `start:clean`, `ui`, `build`, `release` and `verify:bundle`, and the repository root keeps only the daemon, tests and site. Release pipelines and documentation use the relocated commands.
+
 ## 0.5.0 — 2026-09-22
 
 **Alpha prerelease — stabilization and user acceptance are still in progress. Not release-qualified.**
