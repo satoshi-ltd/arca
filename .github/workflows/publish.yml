@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish the prerelease and Docker Hub image
+        description: Publish the prerelease installers
         type: boolean
         default: false
       sign_macos:
@@ -40,7 +40,14 @@ jobs:
       - name: Check version agreement
         run: node scripts/check-release.js
       - name: Run tests
-        run: node --test --test-reporter=tap --test-timeout=120000 tests/*.test.js
+        run: |
+          set -euo pipefail
+          files=$(ls tests/*.test.js)
+          if [[ "$RUNNER_OS" != Linux ]]; then
+            files=$(printf '%s\n' "$files" | grep -v '^tests/mobile-')
+          fi
+          # shellcheck disable=SC2086
+          node --test --test-reporter=tap --test-timeout=120000 $files
         timeout-minutes: 10
   prepare:
     needs: tests
@@ -63,8 +70,6 @@ jobs:
       - name: Check whether the version needs publishing
         id: gate
         env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
           SIGN: ${{ inputs.sign_macos }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -78,10 +83,7 @@ jobs:
           set -euo pipefail
           if [[ "$PUBLISH" == true ]]; then
             test "$GITHUB_REF" = refs/heads/main || { echo 'Publish from main only'; exit 1; }
-            for key in DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
-              test -n "${!key}" || { echo "Missing secret: $key"; exit 1; }
-            done
-          fi
+                fi
           if [[ "$SIGN" == true ]]; then
             for key in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
               test -n "${!key}" || { echo "Missing secret: $key"; exit 1; }
@@ -223,58 +225,9 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/arca-signing.keychain-db" || true
           rm -f "$RUNNER_TEMP/arca.p12"
-  docker:
-    needs: [prepare, desktop]
-    env:
-      DOCKER_BUILD_RECORD_UPLOAD: "false"
-    if: needs.prepare.outputs.build == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "24.14.0"
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/Dockerfile
-          platforms: linux/amd64
-          load: true
-          tags: arca-smoke:local
-      - run: node scripts/verify-docker.js arca-smoke:local
-      - name: Build ARM image for smoke verification
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/Dockerfile
-          platforms: linux/arm64
-          load: true
-          tags: arca-smoke:arm64
-      - run: node scripts/verify-docker.js arca-smoke:arm64
-      - name: Sign in to Docker Hub
-        if: needs.prepare.outputs.publish == 'true'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Publish verified multiarch image to Docker Hub
-        if: needs.prepare.outputs.publish == 'true'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            satoshiltd/arca:${{ needs.prepare.outputs.version }}
-            satoshiltd/arca:latest
-          provenance: false
   publish:
     if: needs.prepare.outputs.publish == 'true'
-    needs: [prepare, desktop, docker]
+    needs: [prepare, desktop]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -293,8 +246,8 @@ jobs:
             gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir assets
             test -s "assets/$asset"
           done
-          (cd assets && sha256sum * > SHA256SUMS)
+          (cd assets && sha256sum -- * > SHA256SUMS)
           gh release upload "$TAG" assets/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
           macos_status="ad-hoc signed, not notarized (macOS may block downloaded apps)"
           if [[ "$SIGN" == true ]]; then macos_status="Developer ID signed and notarized"; fi
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION (amd64/arm64; also tagged latest). No automatic updates or pilot deployment."
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION (amd64/arm64; also tagged latest) ships from publish-docker right after this release. No automatic updates or pilot deployment."

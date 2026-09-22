@@ -1,0 +1,124 @@
+name: publish-docker
+# The image ships after its release, like publish-site: a successful publish run
+# on main builds, smoke-tests and pushes that version. A `docker-vX.Y.Z` tag
+# records what is already out, so re-runs never republish the same version.
+on:
+  workflow_run:
+    workflows: [publish]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Publish even if this version already shipped
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - deploy/**
+      - packages/**
+      - scripts/verify-docker.js
+      - .github/workflows/publish-docker.yml
+permissions:
+  contents: read
+concurrency:
+  group: arca-docker-${{ github.event.pull_request.number || 'release' }}
+  cancel-in-progress: false
+jobs:
+  gate:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
+      publish: ${{ steps.gate.outputs.publish }}
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: gate
+        env:
+          FORCE: ${{ inputs.force }}
+          PUBLISHING: ${{ github.event_name != 'pull_request' }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          tag="docker-v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$PUBLISHING" != true ]]; then
+            echo "Pull request: build and smoke-test $version without publishing"
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for key in DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
+            test -n "${!key}" || { echo "Missing secret: $key"; exit 1; }
+          done
+          if [[ "$FORCE" != true ]] && git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
+            echo "$tag already exists; this version already shipped"
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing satoshiltd/arca:$version"
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          fi
+  docker:
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: "false"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.14.0"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: arca-smoke:local
+      - run: node scripts/verify-docker.js arca-smoke:local
+      - name: Build ARM image for smoke verification
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/arm64
+          load: true
+          tags: arca-smoke:arm64
+      - run: node scripts/verify-docker.js arca-smoke:arm64
+      - name: Sign in to Docker Hub
+        if: needs.gate.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish verified multiarch image to Docker Hub
+        if: needs.gate.outputs.publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            satoshiltd/arca:${{ needs.gate.outputs.version }}
+            satoshiltd/arca:latest
+          provenance: false
+      - name: Record the published version
+        if: needs.gate.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: docker-v${{ needs.gate.outputs.version }}
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA"

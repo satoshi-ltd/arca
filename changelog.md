@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3 — 2026-09-23
+
+- Give each release artifact its own workflow: `publish` builds the desktop installers and the GitHub release, the new `publish-docker` ships the image after that release and records the version it published, and `publish-site` is unchanged. A pull request touching the image or its verifier smoke-tests it without pushing.
+- Run the phone app's tests on Ubuntu only. They exercise sync logic that ships to phones, so a macOS or Windows runner proves nothing about it and made desktop releases wait on unrelated failures.
+
 ## 0.5.2 — 2026-09-22
 
 - Move the phone app to Expo SDK 57 with React Native 0.86 and React 19.2.3, realigning every Expo package. Copy and move now await the asynchronous file API, the gallery reads the media library through its legacy entry after the object-oriented rewrite, and the iOS deployment target rises to 16.4. React Native ships the corrected Gradle toolchain plugin, so the postinstall patch is gone. Restore the full-screen overlays after React Native removed `StyleSheet.absoluteFillObject`. A new mobile binary is required.
