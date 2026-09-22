@@ -1,4 +1,8 @@
-import { abortable } from "./request-control.js";
+import {
+  abortable,
+  abortRequest,
+  cancellationReason,
+} from "./request-control.js";
 // Platform-independent replica client. Native persistence is injected.
 export function hubAddress(input, privateNetwork = false) {
   let url;
@@ -37,6 +41,7 @@ export function createClient({
   cache,
   fetcher = globalThis.fetch,
   timeout = 15000,
+  fileTransfers = false,
   resolvePrivateURL = null,
 }) {
   let connection = null;
@@ -47,22 +52,24 @@ export function createClient({
       throw new Error("Invalid hub route");
     const deadline = Date.now() + timeout;
     const controller = new AbortController();
-    const cancel = () => controller.abort(options.signal.reason);
+    const cancel = () =>
+      abortRequest(controller, cancellationReason(options.signal));
     if (options.signal?.aborted) cancel();
     else options.signal?.addEventListener("abort", cancel, { once: true });
     const timer = setTimeout(
-      () => controller.abort(new Error("Hub request timed out")),
+      () => abortRequest(controller, new Error("Hub request timed out")),
       timeout,
     );
     let response;
     try {
-      response = await abortable(async () => {
+      const perform = async () => {
         if (url.startsWith("http:")) {
           if (!resolvePrivateURL)
             throw new Error("Private network verification is unavailable");
           url = await resolvePrivateURL(url);
         }
-        if (controller.signal.aborted) throw controller.signal.reason;
+        if (controller.signal.aborted)
+          throw cancellationReason(controller.signal);
         return fetcher(url + route, {
           ...options,
           redirect: "error",
@@ -74,18 +81,30 @@ export function createClient({
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
-      }, controller.signal);
+      };
+      // File writes finish in native code before cancellation releases the sync
+      // turn, so a resumed download cannot race a late write to its partial file.
+      response = options.transfer
+        ? await perform()
+        : await abortable(perform, controller.signal);
+      if (controller.signal.aborted)
+        throw cancellationReason(controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted)
+        throw cancellationReason(controller.signal);
+      throw error;
     } finally {
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", cancel);
     }
     const consume = async (method) => {
       const remaining = deadline - Date.now();
-      if (remaining <= 0) controller.abort(new Error("Hub request timed out"));
+      if (remaining <= 0)
+        abortRequest(controller, new Error("Hub request timed out"));
       if (options.signal?.aborted) cancel();
       else options.signal?.addEventListener("abort", cancel, { once: true });
       const bodyTimer = setTimeout(
-        () => controller.abort(new Error("Hub request timed out")),
+        () => abortRequest(controller, new Error("Hub request timed out")),
         Math.max(0, remaining),
       );
       try {
@@ -100,7 +119,8 @@ export function createClient({
       try {
         data = await consume("json");
       } catch (error) {
-        if (controller.signal.aborted) throw controller.signal.reason || error;
+        if (controller.signal.aborted)
+          throw cancellationReason(controller.signal) || error;
       }
       if (
         [401, 403].includes(response.status) &&
@@ -120,6 +140,7 @@ export function createClient({
       ok: response.ok,
       status: response.status,
       headers: response.headers,
+      bytesWritten: response.bytesWritten,
       json: () => consume("json"),
       arrayBuffer: () => consume("arrayBuffer"),
       text: () => consume("text"),
@@ -229,6 +250,7 @@ export function createClient({
   }
   return {
     state,
+    fileTransfers,
     raw: authenticated,
     async api(route, body, options = {}) {
       const r = await authenticated(route, {

@@ -3,6 +3,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import { validPath, validRow } from "./validation.js";
+import { errorNotice } from "../../desktop/src/notice-contract.js";
 
 const digest = (value) => bytesToHex(sha256(new TextEncoder().encode(value)));
 export function galleryConfig(folder) {
@@ -191,7 +192,12 @@ export class Gallery {
         try {
           await this.send(folder, item, policy);
         } catch (error) {
-          if (error.code === "SYNC_INTERRUPTED") throw error;
+          if (r.syncAbort?.signal.aborted) r.check();
+          if (
+            ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
+            errorNotice(error.message).offline
+          )
+            throw error;
           item.state = "failed";
           item.issue = error.message;
           item.retryAt = Date.now() + 60000;
@@ -656,7 +662,12 @@ export class Gallery {
         try {
           await this.send(folder, item, policy);
         } catch (error) {
-          if (error.code === "SYNC_INTERRUPTED") throw error;
+          if (r.syncAbort?.signal.aborted) r.check();
+          if (
+            ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
+            errorNotice(error.message).offline
+          )
+            throw error;
           item.state = "failed";
           item.issue = error.message;
           item.retryAt = Date.now() + 60000;
@@ -683,8 +694,9 @@ export class Gallery {
         folder.id,
       );
     } catch (error) {
-      source.issue =
-        error.code === "SYNC_INTERRUPTED" ? source.issue : error.message;
+      source.issue = ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code)
+        ? source.issue
+        : error.message;
       source.summary = await r.store.gallerySummary(r.scope, folder.id);
       await r.store.setGallery(r.scope, folder.id, source);
       throw error;

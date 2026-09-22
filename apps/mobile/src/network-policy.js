@@ -1,3 +1,8 @@
+// Share concurrent discovery reads, but recheck permission on later requests.
+const permissions = new Map();
+export function clearNetworkVerification() {
+  permissions.clear();
+}
 export async function verifyPrivateURL(value, native, nativeFetch) {
   const url = new URL(value);
   const parts = url.hostname.split(".").map(Number);
@@ -16,12 +21,31 @@ export async function verifyPrivateURL(value, native, nativeFetch) {
       );
     }
     // Check permission without sending a pairing code or saved credential.
-    const response = await nativeFetch(`${url.origin}/.well-known/arca`);
-    const info = response.ok ? await response.json() : null;
-    if (info?.access?.allowLanHttp !== true)
+    let cached = permissions.get(url.origin);
+    if (!cached) {
+      cached = {
+        promise: (async () => {
+          const response = await nativeFetch(`${url.origin}/.well-known/arca`);
+          return response.ok ? response.json() : null;
+        })(),
+      };
+      permissions.set(url.origin, cached);
+      if (permissions.size > 8)
+        permissions.delete(permissions.keys().next().value);
+    }
+    let info;
+    try {
+      info = await cached.promise;
+    } finally {
+      if (permissions.get(url.origin) === cached)
+        permissions.delete(url.origin);
+    }
+    if (info?.access?.allowLanHttp !== true) {
+      permissions.delete(url.origin);
       throw new Error(
         "Enable Allow HTTP on local network in the hub's Settings first.",
       );
+    }
     return url.origin;
   }
   let address;

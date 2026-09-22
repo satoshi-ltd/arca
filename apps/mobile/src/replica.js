@@ -1,7 +1,9 @@
+import { remoteView, warmViews } from "./remote-views.js";
+import { abortRequest } from "./request-control.js";
 import { renamedPath } from "../../../packages/core/file-rename.js";
 import { validPath, validRow } from "./validation.js";
 import { Gallery, galleryConfig } from "./gallery.js";
-import { conditionNotices } from "../../desktop/src/notice-contract.js";
+import { conditionNotices, errorNotice } from "../../desktop/src/notice-contract.js";
 import { entryKey, directoryItem } from "../../../packages/core/entries.js";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
@@ -46,11 +48,15 @@ export class Replica {
     this.progress = null;
     this.scope = null;
     this.error = null;
+    this.connectionChecked = false;
+    this.connectionEpoch = 0;
     this.active = null;
     this.forceNext = false;
     this.hashCache = new Map();
+    this.lastInventory = new Map();
     this.lastFullScan = 0;
   }
+  remoteView(route) { return remoteView(this, route); }
   async load() {
     await this.store.init();
     if (await this.store.get("destroyPending", false)) {
@@ -61,11 +67,14 @@ export class Replica {
       }
     }
     this.scope = await this.store.get("scope");
+    await this.store.clearInterrupted(this.scope);
     if (this.files.clearGalleryStage && this.scope)
       for (const folder of await this.store.folders(this.scope))
         if (galleryConfig(folder)) {
           await this.files.clearGalleryStage(this.scope, folder.id);
           const source = galleryConfig(folder);
+          if (/^(Request cancelled|Sync paused)$/.test(source.issue || ""))
+            source.issue = null;
           source.summary = await this.store.gallerySummary(
             this.scope,
             folder.id,
@@ -73,6 +82,7 @@ export class Replica {
           await this.store.setGallery(this.scope, folder.id, source);
         }
     this.paused = await this.store.get("paused", false);
+    this.lastFullScan = await this.store.get(`fullScan:${this.scope}`, 0);
   }
   async requireActiveReplica() {
     if (await this.store.get("destroyPending", false))
@@ -123,9 +133,22 @@ export class Replica {
   }
   stop() {
     this.stopped = true;
-    this.syncAbort?.abort(
-      Object.assign(new Error("Sync paused"), { code: "SYNC_INTERRUPTED" }),
-    );
+    if (this.syncAbort)
+      abortRequest(
+        this.syncAbort,
+        Object.assign(new Error("Sync paused"), { code: "SYNC_INTERRUPTED" }),
+      );
+  }
+  checkTransferTurn() {
+    this.check();
+    // Slow local preparation must not consume the next network transfer's turn.
+    if (this.turnDeadline && !this.turnTransferred)
+      this.turnDeadline = Date.now() + 10000;
+    this.turnTransferred = true;
+    if (this.turnDeadline && Date.now() >= this.turnDeadline)
+      throw Object.assign(new Error("Continuing next turn"), {
+        code: "SYNC_YIELD",
+      });
   }
   async space(bytes) {
     if ((await this.files.free()) < bytes + HEADROOM)
@@ -223,10 +246,20 @@ export class Replica {
     if (!(await this.files.exists(tmp)))
       await this.files.write(tmp, new Uint8Array());
     while (offset < size) {
-      this.check();
+      this.checkTransferTurn();
       const end = Math.min(offset + CHUNK, size) - 1;
       const response = await this.client.raw(`/v1/blobs/${hash}`, {
         headers: { Range: `bytes=${offset}-${end}` },
+        ...(this.client.fileTransfers
+          ? {
+              transfer: {
+                destination: tmp,
+                offset: String(offset),
+                length: String(end - offset + 1),
+                range: `bytes ${offset}-${end}/${size}`,
+              },
+            }
+          : {}),
       });
       if (
         response.status !== 206 ||
@@ -234,11 +267,13 @@ export class Replica {
           `bytes ${offset}-${end}/${size}`
       )
         throw new Error("The hub did not return the requested file block");
-      const data = new Uint8Array(await response.arrayBuffer());
-      if (data.length !== end - offset + 1)
+      const data = this.client.fileTransfers
+        ? null
+        : new Uint8Array(await response.arrayBuffer());
+      if ((data?.length ?? response.bytesWritten) !== end - offset + 1)
         throw new Error("Incomplete download block");
-      await this.files.write(tmp, data, offset);
-      offset += data.length;
+      if (data) await this.files.write(tmp, data, offset);
+      offset = end + 1;
       this.progress = {
         direction: "download",
         bytesDone: offset,
@@ -324,9 +359,10 @@ export class Replica {
   }
   async localHash(uri) {
     const stat = await this.files.stat(uri),
-      cached = this.hashCache.get(uri);
+      cached = this.hashCache.get(uri) || (await this.store.cachedHash(uri));
     if (
       !this.force &&
+      !this.fullScanPending?.has(this.syncingVolume) &&
       stat?.mtime != null &&
       cached?.size === stat.size &&
       cached.mtime === stat.mtime
@@ -334,7 +370,12 @@ export class Replica {
       return cached.hash;
     if (stat?.directory) return "directory";
     const hash = await this.files.hash(uri);
-    this.hashCache.set(uri, { ...stat, hash });
+    const after = await this.files.stat(uri);
+    if (!after || after.size !== stat.size || after.mtime !== stat.mtime)
+      throw new Error("File changed while being checked. Sync will retry.");
+    const record = { ...stat, hash };
+    this.hashCache.set(uri, record);
+    await this.store.cacheHash(uri, record);
     return hash;
   }
   async scan(folder) {
@@ -439,15 +480,28 @@ export class Replica {
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > op.size)
       throw new Error("Invalid upload offset");
     while (!complete) {
-      this.check();
-      const data = await this.files.read(
-        object,
-        offset,
-        Math.min(CHUNK, op.size - offset),
-      );
+      this.checkTransferTurn();
+      const data = this.client.fileTransfers
+        ? null
+        : await this.files.read(
+            object,
+            offset,
+            Math.min(CHUNK, op.size - offset),
+          );
       const response = await this.client.raw(
         `/v1/uploads/${op.hash}?offset=${offset}&size=${op.size}`,
-        { method: "PUT", body: data },
+        {
+          method: "PUT",
+          ...(this.client.fileTransfers
+            ? {
+                transfer: {
+                  source: object,
+                  offset: String(offset),
+                  length: String(Math.min(CHUNK, op.size - offset)),
+                },
+              }
+            : { body: data }),
+        },
       );
       const next = await response.json();
       if (!next.complete && (next.offset <= offset || next.offset > op.size))
@@ -700,10 +754,7 @@ export class Replica {
     const albumFolderIds = selected
       .filter((f) => galleryConfig(f))
       .map((f) => f.id);
-    const counts = await Promise.all(
-      folders.map((f) => this.store.rows(this.scope, f.id)),
-    );
-    const rows = counts.flat().filter((r) => !r.deleted && !r.directory);
+
     const name = await this.store.get(
       "name",
       this.platform === "ios" ? "iPhone" : "Android",
@@ -720,20 +771,28 @@ export class Replica {
       selectedFolders: folders.length,
       folderIds: folders.map((f) => f.id),
       albumFolderIds,
-      indexedFiles: rows.length,
-      indexedBytes: rows.reduce((n, r) => n + r.size, 0),
+      indexedFiles: folders.reduce((n, f) => n + f.files, 0),
+      indexedBytes: folders.reduce((n, f) => n + f.bytes, 0),
     });
   }
-  sync(force = false) {
+  sync(force = false, { scheduled = false } = {}) {
     if (this.picking || this.importing || this.removing || this.renaming)
       return Promise.resolve();
     if (this.active) {
+      if (this.stopped && !this.paused)
+        return this.active.then(() => this.sync(force, { scheduled }));
       if (force) this.forceNext = true;
       return this.active;
     }
+    this.lastScheduledAt = Date.now();
+    this.scheduled = scheduled;
     this.force =
       force || this.forceNext || Date.now() - this.lastFullScan > 3600000;
     this.forceNext = false;
+    // A transfer can yield before inventory. Keep that folder's full hash
+    // verification pending across turns without rescanning completed folders.
+    this.fullScanPending = new Set();
+    this.fullScanRequested = false;
     this.syncAbort = new AbortController();
     this.active = (async () => {
       try {
@@ -746,7 +805,8 @@ export class Replica {
           !this.stopped &&
           !this.paused &&
           (this.force ||
-            (this.transfer.active && this.moreGalleryWork && !this.error))
+            (this.transfer.active && this.moreGalleryWork && !this.error) ||
+            this.moreFolderWork)
         );
       } finally {
         await this.transfer.end();
@@ -766,10 +826,15 @@ export class Replica {
     this.busy = true;
     this.stopped = false;
     this.moreGalleryWork = false;
-    this.error = null;
+    this.moreFolderWork = false;
+    if (!this.hubUnavailable) this.error = null;
     this.changed();
     try {
       await this.client.refresh();
+      this.connectionEpoch++;
+      this.hubUnavailable = false;
+      this.error = null;
+      this.connectionChecked = true;
       const connection = this.client.state().connection;
       if (!connection?.linked) return;
       if (this.scope !== connection.hubId) {
@@ -785,9 +850,14 @@ export class Replica {
           "Update the hub to synchronize directories and path changes safely.",
         );
       const errors = [];
-      for (const folder of (await this.store.folders(this.scope)).filter(
+      const folders = (await this.store.folders(this.scope)).filter(
         (f) => f.selected,
-      )) {
+      );
+      if (this.force) {
+        this.fullScanRequested = true;
+        for (const folder of folders) this.fullScanPending.add(folder.id);
+      }
+      for (const folder of folders) {
         this.check();
         if (await this.store.get(`removing:${this.scope}:${folder.id}`, false))
           continue;
@@ -802,10 +872,13 @@ export class Replica {
         this.syncingVolume = folder.id;
         this.changed();
         try {
+          this.turnDeadline = Date.now() + 10000;
+          this.turnTransferred = false;
           const remote = catalog.volumes.find((v) => v.id === folder.id);
           if (remote.policyError) throw new Error(remote.policyError);
           if (galleryConfig(folder)) {
             await this.gallery.cycle(folder);
+            this.fullScanPending?.delete(folder.id);
             continue;
           }
           this.policy = null;
@@ -814,15 +887,33 @@ export class Replica {
           ).sort((a, b) => b.path.localeCompare(a.path)))
             await this.apply(row, true);
           await this.syncIgnore(folder);
-          await this.scan(folder);
+          if (
+            !this.scheduled ||
+            this.force ||
+            this.fullScanPending?.has(folder.id) ||
+            Date.now() - (this.lastInventory.get(folder.id) || 0) >= 60000 ||
+            (await this.store.pending(this.scope, folder.id)).length
+          ) {
+            await this.scan(folder);
+            this.lastInventory.set(folder.id, Date.now());
+            this.fullScanPending?.delete(folder.id);
+          }
+          this.turnDeadline = Date.now() + 10000;
           await this.push(folder);
           await this.pull(folder);
         } catch (e) {
+          if (e.code === "SYNC_YIELD") {
+            this.moreFolderWork = true;
+            continue;
+          }
+          if (this.syncAbort?.signal.aborted) this.check();
+          if (errorNotice(e.message).offline) throw e;
           if (e.code !== "SYNC_INTERRUPTED")
             await this.store.issue(this.scope, folder.id, e.message);
           if (e.code === "SYNC_INTERRUPTED") throw e;
           errors.push(`${folder.name}: ${e.message}`);
         } finally {
+          this.turnDeadline = null;
           this.syncingVolume = null;
           this.changed();
         }
@@ -832,13 +923,22 @@ export class Replica {
         await this.report();
         throw new Error(this.error);
       }
-      if (this.force) this.lastFullScan = Date.now();
+      if (this.fullScanRequested && !this.fullScanPending.size) {
+        this.lastFullScan = Date.now();
+        await this.store.set(`fullScan:${this.scope}`, this.lastFullScan);
+        this.fullScanRequested = false;
+      }
+      if (this.moreFolderWork) return;
+      await warmViews(this, folders);
       await this.store.set(`lastSync:${this.scope}`, new Date().toISOString());
       await this.report();
     } catch (e) {
       if (e.code === "SYNC_INTERRUPTED") return;
+      this.connectionChecked = true;
+      this.hubUnavailable = !!errorNotice(e.message).offline;
       this.error = e.message;
     } finally {
+      this.syncingVolume = null;
       this.busy = false;
       this.progress = null;
       if (!this.stopped && !this.paused) {

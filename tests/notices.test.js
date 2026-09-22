@@ -203,3 +203,10 @@ test("authoritative conflict resolution clears local notices and a new revision 
   assert.equal(store.snapshot().length, 0);
   store.dispose();
 });
+
+
+test("mobile LAN policy reachability failure is a connection condition", () => {
+  const message = "Cannot reach the hub over the local network. Connect this device to the hub’s Wi-Fi or Ethernet network and try again.";
+  assert.equal(errorNotice(message).offline, true);
+  assert.equal(errorNotice(message).cause, "connection");
+});

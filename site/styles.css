@@ -572,11 +572,20 @@ footer > span {
 }
 footer .footer-identity {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 12px;
 }
+/* inline-block, not flex: a flex lockup takes its baseline from the icon. */
 footer .brand {
+  display: inline-block;
   font-size: 23px;
+}
+footer .brand img {
+  vertical-align: middle;
+  margin-right: 12px;
+}
+footer .eyebrow {
+  letter-spacing: normal;
 }
 @media (min-width: 1500px) {
   .hero {

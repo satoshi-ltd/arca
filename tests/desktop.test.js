@@ -158,6 +158,27 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
   try {
     await w.eval(`(async()=>{${script}\n})()`);
     assert.equal(w.document.querySelectorAll(".folder-card").length, 1);
+    assert.equal(
+      w.document.querySelector('#content [data-action="sync"]'),
+      null,
+    );
+    assert.equal(
+      w.document.querySelector('#content [data-action="pause"]'),
+      null,
+    );
+    assert.equal(w.document.querySelector('#sync-controls [data-action="pause"]').getAttribute("aria-label"), "Pause sync");
+    assert.equal(w.document.querySelector('#sync-controls [data-action="sync"]').getAttribute("data-tooltip"), "Sync now");
+    assert.match(w.document.querySelector("#last-sync").textContent, /Last sync|Not synced yet/);
+    assert.equal(w.document.querySelector("#backup-summary").textContent.trim(), "No backup reported");
+    const tooltipControl = w.document.querySelector('#sync-controls [data-action="pause"]');
+    tooltipControl.focus();
+    await until(() => w.document.querySelector('[role="tooltip"]'));
+    assert.equal(w.document.querySelector('[role="tooltip"]').textContent, "Pause sync");
+    assert.equal(tooltipControl.getAttribute("aria-describedby"), "arca-tooltip");
+    tooltipControl.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert.equal(w.document.querySelector('[role="tooltip"]'), null);
+    assert.equal(tooltipControl.hasAttribute("aria-describedby"), false);
+
     w.document.querySelector('[data-action="folder-detail"]').click();
     await until(
       () =>
@@ -334,6 +355,18 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
       w.document.querySelector("#connection").textContent.includes("Paused"),
     );
     assert.equal(daemon.engine.paused, true);
+    assert.equal(w.document.querySelector(".sync-actions-menu"), null);
+    assert.equal(
+      w.document
+        .querySelector('#sync-controls [data-action="pause"]')
+        .getAttribute("aria-label"),
+      "Resume sync",
+    );
+    assert.equal(
+      w.document.querySelector('#content [data-action="pause"]'),
+      null,
+    );
+
     await until(() => w.document.body.getAttribute("aria-busy") === "false");
     w.document.querySelector('[data-view="devices"]').click();
     await until(
@@ -530,7 +563,10 @@ test("desktop onboarding submits chosen role and root without a browser credenti
   w.__TAURI__.core.invoke = (...args) => {
     const request = invoke(...args);
     requests.add(request);
-    request.then(() => requests.delete(request), () => requests.delete(request));
+    request.then(
+      () => requests.delete(request),
+      () => requests.delete(request),
+    );
     return request;
   };
   try {
@@ -709,10 +745,7 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
   assert.equal(w.document.querySelector("#notice").hidden, true);
   assert.equal(w.document.querySelectorAll("#node-name").length, 0);
   assert.equal(w.document.querySelector("#managed-role").textContent, "Hub");
-  assert.equal(
-    w.document.querySelector("#backup-summary").textContent,
-    "Hub backup",
-  );
+  assert.equal(w.document.querySelector("#backup-summary").textContent.trim(), "No backup reported");
   assert.equal(w.document.querySelectorAll('[data-code="web"]').length, 0);
   assert.equal(w.localStorage.length, 0);
   w.document.querySelector('[data-action="logout"]').click();
@@ -874,6 +907,7 @@ test("local folders render while the hub catalog is still pending", async (t) =>
           return {
             ...daemon.engine.status(),
             role: "replica",
+            hubUnavailable: true,
             hub: "http://127.0.0.1:49999",
           };
         if (args.route === "/v1/remote") {
@@ -887,6 +921,8 @@ test("local folders render while the hub catalog is still pending", async (t) =>
   w.eval(`(async()=>{${script}\n})()`);
   await until(() => w.document.querySelector(".folder-card"));
   assert.equal(remoteRequested, true);
+  assert.match(w.document.querySelector("#connection").textContent, /Offline/);
+  assert.doesNotMatch(w.document.querySelector(".folder-card").textContent, /Offline/);
   assert.match(
     w.document.querySelector("#content").textContent,
     /Local documents/,
@@ -1286,8 +1322,8 @@ test("unlink confirms and completes while a native background status read is pen
     release = resolve;
   });
   let inflight = 0;
-  w.setInterval = (callback) => {
-    poll = callback;
+  w.setInterval = (callback, ms) => {
+    if (ms === 5000) poll = callback;
     return 0;
   };
   w.HTMLDialogElement.prototype.showModal = function () {
@@ -1463,7 +1499,10 @@ for (const surface of ["web", "desktop"]) {
             w.document.querySelector("#image-regenerate-job") &&
             w.document.body.getAttribute("aria-busy") === "false",
         );
-        assert.equal(w.document.querySelectorAll("#image-settings .settings-card").length, 1);
+        assert.equal(
+          w.document.querySelectorAll("#image-settings .settings-card").length,
+          1,
+        );
         assert.ok(w.document.querySelector("#image-regenerate-job").hidden);
         w.document.querySelector('[data-action="images-regenerate"]').click();
         await until(
@@ -1772,8 +1811,8 @@ test("Machines refreshes backup acknowledgements without navigation", async (t) 
   });
   const w = dom.window;
   let poll;
-  w.setInterval = (fn) => {
-    poll = fn;
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) poll = fn;
     return 0;
   };
   w.fetch = (route, options = {}) =>
@@ -1810,6 +1849,8 @@ test("Machines refreshes backup acknowledgements without navigation", async (t) 
     w.document.querySelector("#devices-list").textContent,
     /Backup Mac backs up this hub/,
   );
+  assert.equal(w.document.querySelector("#backup-summary").textContent.trim(), "1 backup reported");
+  assert.equal(w.document.querySelector("#backup-summary").dataset.action, "machines");
   assert.match(
     w.document.querySelector("#devices-list").textContent,
     /Backs up hub/,
@@ -1992,7 +2033,10 @@ test("conflict file detail opens a guarded version choice and restores the selec
   w.__TAURI__.core.invoke = (...args) => {
     const request = invoke(...args);
     requests.add(request);
-    request.then(() => requests.delete(request), () => requests.delete(request));
+    request.then(
+      () => requests.delete(request),
+      () => requests.delete(request),
+    );
     return request;
   };
   await w.eval(`(async()=>{${script}\n})()`);
@@ -3545,7 +3589,7 @@ test("folder reentry keeps known files and revision while the brand shows refres
     w.document.querySelectorAll(".detail-revisions .scaffold-row").length,
     0,
   );
-  assert.ok(w.document.querySelector(".brand-mark.is-busy .busy-grid"));
+  await until(() => w.document.querySelector(".brand-mark.is-busy .busy-grid"));
   assert.equal(
     w.document.querySelector(".brand-mark").getAttribute("aria-busy"),
     "true",

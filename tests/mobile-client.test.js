@@ -312,3 +312,57 @@ test("cancelling an unfinished unauthorized response does not erase the connecti
   assert.ok(client.state().connection);
   assert.ok(await store.secrets.read());
 });
+
+test("hub change waits authenticate, wake on committed files and recheck revocation", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-events-"));
+  init(root, { port: 0 });
+  const daemon = await start(root, { timer: false });
+  t.after(async () => {
+    await daemon.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const volume = daemon.engine.store.addVolume("Events");
+  const admin = {
+    Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+    "Content-Type": "application/json",
+  };
+  assert.equal((await fetch(base + "/v1/events")).status, 401);
+  const invite = await (
+    await fetch(base + "/v1/pairing", {
+      method: "POST",
+      headers: admin,
+      body: JSON.stringify({ name: "Events" }),
+    })
+  ).json();
+  const paired = await (
+    await fetch(base + "/pair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: invite.code }),
+    })
+  ).json();
+  const headers = { Authorization: `Bearer ${paired.token}` };
+  const initial = await (await fetch(base + "/v1/events", { headers })).json();
+  const pending = fetch(base + `/v1/events?after=${initial.cursor}`, {
+    headers,
+  });
+  fs.writeFileSync(path.join(volume.path, "new.txt"), "new file");
+  await daemon.engine.cycle();
+  const next = await (await pending).json();
+  assert.notEqual(next.cursor, initial.cursor);
+  daemon.engine.store.db.prepare("UPDATE devices SET last_seen=NULL WHERE id=?").run(paired.id);
+  const blocked = fetch(base + `/v1/events?after=${next.cursor}`, { headers });
+  // Wait until authentication has happened, then revoke the waiting request.
+  for (let attempts = 0; attempts < 100; attempts++) {
+    if (daemon.engine.store.db.prepare("SELECT last_seen FROM devices WHERE id=?").get(paired.id).last_seen) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.ok(daemon.engine.store.db.prepare("SELECT last_seen FROM devices WHERE id=?").get(paired.id).last_seen);
+  daemon.engine.store.db
+    .prepare("UPDATE devices SET revoked=1 WHERE id=?")
+    .run(paired.id);
+  fs.writeFileSync(path.join(volume.path, "new.txt"), "wake after revocation");
+  await daemon.engine.cycle();
+  assert.equal((await blocked).status, 401);
+});

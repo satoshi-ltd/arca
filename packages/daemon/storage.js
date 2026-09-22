@@ -158,11 +158,23 @@ export class Store {
       CREATE TABLE IF NOT EXISTS volumes(id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, selected INTEGER NOT NULL DEFAULT 1,last_sync TEXT);
       CREATE TABLE IF NOT EXISTS revisions(rev INTEGER PRIMARY KEY AUTOINCREMENT, volume TEXT NOT NULL, path TEXT NOT NULL, hash TEXT, size INTEGER NOT NULL, deleted INTEGER NOT NULL, author TEXT NOT NULL, created TEXT NOT NULL,directory INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,directory INTEGER NOT NULL DEFAULT 0,path_key TEXT NOT NULL,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS history_views(hub TEXT,volume TEXT,filter TEXT,version TEXT,updated INTEGER,value TEXT,PRIMARY KEY(hub,volume,filter));
+      CREATE TABLE IF NOT EXISTS file_generations(volume TEXT PRIMARY KEY,generation INTEGER NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS files_generation_insert AFTER INSERT ON files BEGIN
+        INSERT INTO file_generations VALUES(NEW.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS files_generation_update AFTER UPDATE ON files BEGIN
+        INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+        INSERT INTO file_generations SELECT NEW.volume,1 WHERE NEW.volume<>OLD.volume ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS files_generation_delete AFTER DELETE ON files BEGIN
+        INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+      END;
       CREATE TABLE IF NOT EXISTS pending(volume TEXT NOT NULL,path TEXT NOT NULL,row TEXT NOT NULL,expected TEXT,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL,role TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,last_seen TEXT,last_address TEXT);
       CREATE TABLE IF NOT EXISTS conflict_resolutions(volume TEXT NOT NULL,path TEXT NOT NULL,conflict_rev INTEGER NOT NULL,resolution_rev INTEGER NOT NULL,choice TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS transitions(id TEXT PRIMARY KEY);
-      CREATE TABLE IF NOT EXISTS snapshot_sessions(id TEXT PRIMARY KEY,owner TEXT NOT NULL,volume TEXT NOT NULL,expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS snapshot_sessions(id TEXT PRIMARY KEY,owner TEXT NOT NULL,volume TEXT NOT NULL,expires INTEGER NOT NULL,total INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS snapshot_files(session TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,row TEXT NOT NULL,PRIMARY KEY(session,path));
       CREATE INDEX IF NOT EXISTS revisions_volume_path ON revisions(volume,path,rev);
       CREATE TABLE IF NOT EXISTS machine_reports(device TEXT PRIMARY KEY,report TEXT NOT NULL);
@@ -172,6 +184,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS sync_dirty(seq INTEGER PRIMARY KEY AUTOINCREMENT,volume TEXT NOT NULL,path TEXT NOT NULL,UNIQUE(volume,path));
       CREATE TABLE IF NOT EXISTS sync_state(volume TEXT PRIMARY KEY,cursor INTEGER NOT NULL DEFAULT 0,full_at INTEGER NOT NULL DEFAULT 0,policy TEXT);
       CREATE INDEX IF NOT EXISTS files_volume_rev ON files(volume,rev);
+      CREATE INDEX IF NOT EXISTS files_visible_totals ON files(volume,path,size) WHERE deleted=0 AND directory=0;
+      CREATE INDEX IF NOT EXISTS files_conflict_rev ON files(volume,rev) WHERE instr(path,'.conflict-')>0;
       CREATE TABLE IF NOT EXISTS scan_cache(path TEXT PRIMARY KEY,signature TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,verified INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS backup_history(rev INTEGER PRIMARY KEY,row TEXT NOT NULL);
     `);
@@ -184,6 +198,10 @@ export class Store {
       this.db.exec(
         "ALTER TABLE gallery_metadata ADD COLUMN date_checked INTEGER NOT NULL DEFAULT 0",
       );
+    if (!this.db.prepare("PRAGMA table_info(snapshot_sessions)").all().some((column) => column.name === "total")) {
+      this.db.exec(`ALTER TABLE snapshot_sessions ADD COLUMN total INTEGER NOT NULL DEFAULT 0;
+        UPDATE snapshot_sessions SET total=(SELECT COUNT(*) FROM snapshot_files WHERE session=snapshot_sessions.id);`);
+    }
     this.db.exec(
       "CREATE INDEX IF NOT EXISTS files_volume_path_key ON files(volume,path_key)",
     );
@@ -243,6 +261,7 @@ export class Store {
         )
         .run(id);
       for (const table of [
+        "history_views",
         "snapshot_sessions",
         "sync_dirty",
         "sync_state",
@@ -510,11 +529,15 @@ export class Store {
     const v = this.volume(volume);
     if (v.selected) return this.ignoreRules(v);
     const policy = this.current(volume, IGNORE_FILE);
-    return compileIgnore(
-      policy && !policy.deleted && policy.hash
-        ? fs.readFileSync(this.blob(policy.hash), "utf8")
-        : "",
+    const hash = policy && !policy.deleted ? policy.hash : null;
+    this.remoteIgnoreCache ||= new Map();
+    const cached = this.remoteIgnoreCache.get(volume);
+    if (cached?.hash === hash) return cached.match;
+    const match = compileIgnore(
+      hash ? fs.readFileSync(this.blob(hash), "utf8") : "",
     );
+    this.remoteIgnoreCache.set(volume, { hash, match });
+    return match;
   }
   visibleTotals(volume) {
     let excluded;
@@ -523,19 +546,17 @@ export class Store {
     } catch (error) {
       return { files: null, bytes: null, policyError: error.message };
     }
-    const version = this.db.prepare("PRAGMA data_version").get().data_version;
-    const changes = this.db.prepare("SELECT total_changes() AS n").get().n;
+    const generation =
+      this.db
+        .prepare("SELECT generation FROM file_generations WHERE volume=?")
+        .get(volume)?.generation || 0;
     this.totalsCache ||= new Map();
     const cached = this.totalsCache.get(volume);
-    if (
-      cached?.version === version &&
-      cached.changes === changes &&
-      cached.excluded === excluded
-    )
+    if (cached?.generation === generation && cached.excluded === excluded)
       return { ...cached.totals };
-    const totals = this.rows(volume).reduce(
+    const totals = this.db.prepare("SELECT path,size FROM files WHERE volume=? AND deleted=0 AND directory=0").all(volume).reduce(
       (totals, row) => {
-        if (!row.deleted && !row.directory && !excluded(row.path, false)) {
+        if (!excluded(row.path, false)) {
           totals.files++;
           totals.bytes += row.size;
         }
@@ -543,8 +564,39 @@ export class Store {
       },
       { files: 0, bytes: 0 },
     );
-    this.totalsCache.set(volume, { version, changes, excluded, totals });
+    this.totalsCache.set(volume, { generation, excluded, totals });
     return { ...totals };
+  }
+  async allVisibleTotals() {
+    const result = new Map();
+    for (const volume of this.volumes()) {
+      let excluded;
+      try {
+        excluded = this.visibleRules(volume.id);
+      } catch (error) {
+        result.set(volume.id, { files: null, bytes: null, policyError: error.message });
+        continue;
+      }
+      const generation = this.db.prepare("SELECT generation FROM file_generations WHERE volume=?").get(volume.id)?.generation || 0;
+      this.totalsCache ||= new Map();
+      const cached = this.totalsCache.get(volume.id);
+      if (cached?.generation === generation && cached.excluded === excluded) {
+        result.set(volume.id, { ...cached.totals });
+        continue;
+      }
+      // Capture only countable fields, then yield during policy evaluation.
+      // The response represents this read; later mutations invalidate its cache.
+      const rows = this.db.prepare("SELECT path,size FROM files WHERE volume=? AND deleted=0 AND directory=0").all(volume.id);
+      const totals = { files: 0, bytes: 0 };
+      for (let i = 0; i < rows.length; i++) {
+        if (i % 500 === 0) await new Promise((resolve) => setImmediate(resolve));
+        const row = rows[i];
+        if (!excluded(row.path, false)) { totals.files++; totals.bytes += row.size; }
+      }
+      this.totalsCache.set(volume.id, { generation, excluded, totals });
+      result.set(volume.id, { ...totals });
+    }
+    return result;
   }
   excluded(volume, name, directory = this.current(volume, name)?.directory) {
     return this.ignoreRules(this.volume(volume))(name, !!directory);
@@ -557,7 +609,7 @@ export class Store {
     const unicodeNames = new Map();
     // Include indexed names outside a partial scan to detect portable collisions.
     if (scopes !== null)
-      for (const row of this.rows(v.id).filter((r) => !r.deleted)) {
+      for (const row of this.db.prepare("SELECT path FROM files WHERE volume=? AND deleted=0").all(v.id)) {
         const parts = row.path.split("/");
         for (let i = 1; i <= parts.length; i++) {
           const name = parts.slice(0, i).join("/");

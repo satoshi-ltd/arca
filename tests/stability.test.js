@@ -155,21 +155,21 @@ test("snapshot pages remain stable through hub edits and cannot be read by anoth
     fs.writeFileSync(path.join(v.path, name), name);
   s.scanHub();
   const { snapshotPage } = await import("../packages/daemon/snapshots.js");
-  const first = snapshotPage(s, "device", v.id, { limit: 2 });
+  const first = await snapshotPage(s, "device", v.id, { limit: 2 });
   assert.deepEqual(
     first.files.map((f) => f.path),
     [".arcaignore", "a"],
   );
   fs.writeFileSync(path.join(v.path, "b"), "changed");
   s.scanHub();
-  const second = snapshotPage(s, "device", v.id, {
+  const second = await snapshotPage(s, "device", v.id, {
     session: first.session,
     after: first.next,
     limit: 1,
   });
   assert.equal(second.files[0].path, "b");
   assert.notEqual(second.files[0].hash, s.current(v.id, "b").hash);
-  assert.throws(
+  await assert.rejects(
     () =>
       snapshotPage(s, "intruder", v.id, {
         session: first.session,

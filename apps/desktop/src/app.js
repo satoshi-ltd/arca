@@ -289,24 +289,46 @@ const invoke =
     throw new Error("This action requires the desktop application");
   });
 let activeRequests = 0;
+let brandShowTimer = null, brandHideTimer = null, brandShownAt = 0;
 function updateBrandActivity() {
   const mark = $(".sidebar .brand-mark");
   if (!mark) return;
-  const active =
-    activeRequests > 0 ||
-    busy ||
+  const active = activeRequests > 0 || busy ||
     document.body.classList.contains("view-loading") ||
-    ["syncing", "scanning"].includes(status?.phase);
-  mark.classList.toggle("is-busy", active);
-  mark.setAttribute("aria-label", active ? "Arca: updating" : "Arca");
-  mark.setAttribute("aria-busy", String(active));
-  const indicator = mark.querySelector(".brand-busy");
-  if (indicator && !indicator.firstChild) indicator.innerHTML = busyIcon();
+    (!status?.hubUnavailable && ["syncing", "scanning"].includes(status?.phase));
+  const paint = (visible) => {
+    if (!mark.isConnected) return;
+    mark.classList.toggle("is-busy", visible);
+    mark.setAttribute("aria-label", visible ? "Arca: updating" : "Arca");
+    mark.setAttribute("aria-busy", String(visible));
+    const indicator = mark.querySelector(".brand-busy");
+    if (visible && indicator && !indicator.firstChild) indicator.innerHTML = busyIcon();
+  };
+  if (active) {
+    clearTimeout(brandHideTimer);
+    brandHideTimer = null;
+    if (!brandShowTimer && !mark.classList.contains("is-busy"))
+      brandShowTimer = setTimeout(() => {
+        brandShowTimer = null;
+        brandShownAt = Date.now();
+        paint(true);
+      }, 300);
+  } else {
+    clearTimeout(brandShowTimer);
+    brandShowTimer = null;
+    if (mark.classList.contains("is-busy")) {
+      if (!brandHideTimer) brandHideTimer = setTimeout(() => {
+        brandHideTimer = null;
+        paint(false);
+      }, Math.max(0, 500 - (Date.now() - brandShownAt)));
+    } else paint(false);
+  }
 }
 const api = (route, body) => {
   const cacheKey = folderPageKey(route),
     cacheEpoch = folderCacheEpoch;
-  activeRequests++;
+  const showActivity = body !== undefined || !["/v1/status", "/v1/web-approvals"].includes(route);
+  if (showActivity) activeRequests++;
   updateBrandActivity();
   return invoke("api", {
     route,
@@ -341,7 +363,7 @@ const api = (route, body) => {
           );
     })
     .finally(() => {
-      activeRequests--;
+      if (showActivity) activeRequests--;
       updateBrandActivity();
     });
 };
@@ -662,6 +684,7 @@ function stateFor(v) {
       "circle-alert",
     ];
   if (v.conflicts) return ["Conflict", "wa", "triangle-alert"];
+  if (status.hubUnavailable) return ["Offline", "wa", "wifi-off"];
   if (v.sync?.state === "scanning") return ["Scanning", "sy", "busy"];
   if (v.sync?.state === "syncing") return ["Syncing", "sy", "busy"];
   if (v.sync?.state === "synced") return ["Up to date", "ok", "circle-check"];
@@ -702,7 +725,9 @@ function updateShell() {
     "needs-folder": ["No shared folders", "id", "folder"],
   };
   const conflicts = status.volumes.reduce((n, v) => n + v.conflicts, 0);
-  const [label, color, symbol] = (status.phase === "idle" && conflicts
+  const [label, color, symbol] = (status.hubUnavailable && status.phase !== "paused"
+    ? ["Offline", "wa", "wifi-off"]
+    : status.phase === "idle" && conflicts
     ? ["Conflicts to review", "wa", "triangle-alert"]
     : status.phase === "idle" && !status.lastSync
       ? ["Checking sync", "id", "clock"]
@@ -713,26 +738,17 @@ function updateShell() {
   $("#last-sync").textContent =
     status.role !== "hub" && !status.hub
       ? "Local files are kept on this machine"
-      : `${status.role === "hub" ? "This hub" : "Hub"}${status.lastSync ? ` · verified ${relative(status.lastSync)}` : ""}`;
-  let backupText =
-    status.role === "hub"
-      ? "Hub backup"
-      : status.backup?.enabled
-        ? "Backup on"
-        : "Backup off";
-  $("#backup-summary").innerHTML =
-    icon(
-      status.role === "hub"
-        ? "shield"
-        : status.backup?.enabled
-          ? "shield-check"
-          : "shield",
-    ) + backupText;
-  $("#backup-summary").hidden = status.role !== "hub" && !status.hub;
-  $("#backup-summary").title =
-    status.role === "hub"
-      ? "View reported hub backups"
-      : "Manage the hub backup on this machine";
+      : status.lastSync ? `Last sync ${relative(status.lastSync)}` : "Not synced yet";
+  const backup = $("#backup-summary");
+  const hubBackups = (status.devices || []).filter(device => !device.revoked && device.backup_enabled);
+  const reported = hubBackups.filter(device => device.backup_updated).length;
+  const backupLabel = status.role === "hub"
+    ? reported ? `${reported} ${reported === 1 ? "backup" : "backups"} reported` : hubBackups.length ? "Backup pending" : "No backup reported"
+    : status.backup?.enabled ? status.backup.error ? "Full backup needs attention" : status.backup.lastSync ? "Full backup enabled" : "Full backup pending" : "Full backup off";
+  backup.hidden = status.role !== "hub" && !status.hub;
+  backup.dataset.action = status.role === "hub" ? "machines" : "backup-settings";
+  backup.innerHTML = icon(status.role === "hub" ? reported ? "shield-check" : "shield" : status.backup?.enabled ? "shield-check" : "shield") + `<span>${backupLabel}</span>`;
+  backup.title = status.role === "hub" ? "View backup reports from your machines" : "Manage this machine’s additional full copy of the hub and its history";
   $("#conflict-count").textContent = conflicts;
   $("#conflict-count").hidden = !conflicts;
   document.querySelectorAll("nav [data-view]").forEach((el) => {
@@ -742,6 +758,7 @@ function updateShell() {
     else el.removeAttribute("aria-current");
   });
   $(".sign-out").hidden = native;
+  updateSyncControls();
   icons();
 }
 function synchronizationError() {
@@ -765,6 +782,7 @@ function viewRefreshSignature(status, view, detailId) {
         sync: sync && { state: sync.state, error: sync.error },
       })),
       status.phase,
+      !!status.hubUnavailable,
       view === "devices" ? status.backup : null,
       view === "devices"
         ? status.devices?.map(({ last_seen, ...device }) => ({
@@ -840,7 +858,7 @@ async function refresh(renderView = true) {
       }
       progress.setAttribute(
         "aria-label",
-        p.stage === "upload" ? "Files sent" : "Files checked",
+        p.stage === "upload" ? "Changes sent" : "Entries checked",
       );
       if (Number.isFinite(p.filesTotal) && p.filesTotal > 0) {
         progress.max = p.filesTotal;
@@ -957,29 +975,25 @@ async function changeFolderRetention(mode, control) {
   }
 }
 
-function syncControls() {
-  if (status.role !== "hub" && !status.hub) return "";
+function updateSyncControls() {
+  const root = $("#sync-controls");
+  const linked = status.role === "hub" || Boolean(status.hub);
   const paused = status.phase === "paused";
-  return (
-    button(
-      paused ? "Resume sync" : "Pause sync",
-      "pause",
-      "",
-      "secondary",
-      paused ? "play" : "pause",
-    ) +
-    (!paused
-      ? status.phase === "syncing"
-        ? `<button type="button" class="secondary" data-action="sync" disabled aria-busy="true">${busyIcon()}Syncing…</button>`
-        : button("Sync now", "sync", "", "secondary", "refresh-cw")
-      : "")
-  );
+  const syncing = !status.hubUnavailable && ["syncing", "scanning"].includes(status.phase);
+  const signature = `${linked}:${paused}:${syncing}`;
+  if (root.dataset.state === signature) return;
+  root.dataset.state = signature;
+  root.hidden = !linked;
+  const pauseLabel = paused ? "Resume sync" : "Pause sync";
+  root.innerHTML = !linked ? "" :
+    iconAction(pauseLabel, "pause", paused ? "play" : "pause") +
+    (syncing ? "" : iconAction("Sync now", "sync", "refresh-cw", paused));
 }
 function progressLabel(p) {
   const sending = p.stage === "upload" || p.direction === "upload";
   const count = Number.isFinite(p.filesTotal)
-    ? `${(p.filesDone || 0).toLocaleString("en")} / ${p.filesTotal.toLocaleString("en")} files ${sending ? "sent" : "checked"}`
-    : `${(p.filesDone || 0).toLocaleString("en")} files checked`;
+    ? `${(p.filesDone || 0).toLocaleString("en")} / ${p.filesTotal.toLocaleString("en")} ${sending ? "changes sent" : "entries checked"}`
+    : `${(p.filesDone || 0).toLocaleString("en")} entries checked`;
   const transfer =
     p.bytesTotal > 0 ? ` · ${bytes(p.bytesDone)} / ${bytes(p.bytesTotal)}` : "";
   return `${count} · ${p.path || (sending ? "Preparing upload" : "Checking hub files")}${transfer}`;
@@ -1024,7 +1038,7 @@ function folderRow(v, available = false) {
   if (p) meta = escape(progressLabel(p));
   if (v.sync?.error || v.policyError)
     meta = escape(v.sync?.error || v.policyError);
-  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}><div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(v.gallery ? "images" : "folder")}</div><div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p>${p ? `<progress aria-label="${p.stage === "upload" ? "Files sent" : "Files checked"}" ${p.filesTotal > 0 ? `value="${Number(p.filesDone) || 0}" max="${Number(p.filesTotal)}"` : ""}></progress>` : ""}</div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || state[0] === "Up to date" ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
+  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}><div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(v.gallery ? "images" : "folder")}</div><div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p>${p ? `<progress aria-label="${p.stage === "upload" ? "Changes sent" : "Entries checked"}" ${p.filesTotal > 0 ? `value="${Number(p.filesDone) || 0}" max="${Number(p.filesTotal)}"` : ""}></progress>` : ""}</div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || ["Up to date", "Offline"].includes(state[0]) ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
 }
 async function loadCatalog() {
   if (status.role !== "hub" && !status.hub) {
@@ -1175,16 +1189,15 @@ async function renderView(
     let html = title(
       "Folders",
       status.role !== "hub" && !status.hub ? "Disconnected" : "",
-      syncControls() +
-        (status.role !== "hub" && !status.hub
-          ? button("Connect to hub…", "connect", "", "primary", "link")
-          : button(
-              status.role === "hub" ? "Create shared folder" : "Choose folders",
-              status.role === "hub" ? "share" : "add",
-              "",
-              "primary",
-              "folder-plus",
-            )),
+      status.role !== "hub" && !status.hub
+        ? button("Connect to hub…", "connect", "", "primary", "link")
+        : button(
+            status.role === "hub" ? "Create shared folder" : "Choose folders",
+            status.role === "hub" ? "share" : "add",
+            "",
+            "primary",
+            "folder-plus",
+          ),
     );
     html += '<div class="page">';
     if (status.role !== "hub" && !status.hub)
@@ -1386,6 +1399,8 @@ function fileHistoryHeader() {
 
 function fileHistorySummary() {
   const current = historyVersions[0];
+  if (current && !current.created)
+    return `<div class="file-history-summary"><p class="hint">Local copy · ${bytes(current.size)} · hub history unavailable</p></div>`;
   const available = current && !current.deleted;
   return `<div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : "No retained revisions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
 }
@@ -2018,6 +2033,7 @@ function mountGallery(volume) {
   };
   const refreshTimer = setInterval(refreshGallery, 5000);
   document.addEventListener("visibilitychange", refreshGallery);
+  document.addEventListener("arca-changes", refreshGallery);
   root.querySelector(".photo-more").onclick = state.load;
   state.moreObserver =
     typeof IntersectionObserver === "function"
@@ -2054,6 +2070,7 @@ function mountGallery(volume) {
   state.cleanup = () => {
     clearInterval(refreshTimer);
     document.removeEventListener("visibilitychange", refreshGallery);
+    document.removeEventListener("arca-changes", refreshGallery);
     stopHover();
     document.removeEventListener("visibilitychange", hideHover);
     resizeObserver?.disconnect();
@@ -2723,7 +2740,12 @@ async function renderHistory(
     historyVersions = append
       ? [...historyVersions, ...data.versions]
       : data.versions;
+    if (data.localOnly) {
+      list.innerHTML = section("File revisions", '<p class="hint">History is unavailable while the hub is offline. Your local file is still available.</p>');
+      return;
+    }
     list.innerHTML =
+      (data.offline ? '<p class="hint">Offline · showing saved history</p>' : "") +
       section(
         "File revisions",
         historyVersions.length
@@ -2746,6 +2768,10 @@ async function renderHistory(
   }
   if (!target) list = $("#history-list");
   if (!list) return;
+  if (data.offline && !data.versions.length) {
+    list.innerHTML = empty("History unavailable offline", "Your local files remain available. Connect to the hub to load their history.");
+    return;
+  }
   historyRows = append ? [...historyRows, ...data.versions] : data.versions;
   historyNext = data.next;
   const groups = new Map();
@@ -2758,7 +2784,7 @@ async function renderHistory(
     if (!groups.has(day)) groups.set(day, []);
     groups.get(day).push(r);
   }
-  list.innerHTML = historyRows.length
+  list.innerHTML = (data.offline ? '<p class="hint">Showing saved history · recent entries only. Connect to the hub for updated retention and older revisions.</p>' : "") + (historyRows.length
     ? [...groups]
         .map(([day, rows]) =>
           section(
@@ -2768,7 +2794,7 @@ async function renderHistory(
         )
         .join("") +
       `${historyNext ? `<div class="pagination">${button("Load more", "history-page", historyNext)}</div>` : ""}`
-    : empty("Every change has a history", "Changes to your files appear here.");
+    : empty("Every change has a history", "Changes to your files appear here."));
   icons();
 }
 const machineRow = (
@@ -2825,7 +2851,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
   const platform = (p) =>
     p ? escape(platformLabel(p.os || p.arca.platform)) : "";
   const row = machineRow;
-  const summary = "";
+  const summary = roster?.offline ? '<p class="hint">Offline · showing saved machine information</p>' : "";
   let machineRows = "";
   let html =
     status.role === "replica" ? section("Hub connection", hubConnection()) : "";
@@ -3169,17 +3195,6 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
       return;
   }
   if (view !== "settings" || serial !== renderSerial) return;
-  const controls =
-    status.role !== "hub" && !status.hub
-      ? ""
-      : button(
-          status.phase === "paused" ? "Resume sync" : "Pause sync",
-          "pause",
-          "",
-          "secondary small-button",
-          status.phase === "paused" ? "play" : "pause",
-        ) +
-        button("Sync now", "sync", "", "secondary small-button", "refresh-cw");
   let html = title("Settings", "") + '<div class="page">';
   if (status.role !== "hub") html += section("Hub connection", hubConnection());
   html += section(
@@ -3188,7 +3203,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   html += section(
     status.role === "hub" ? "Hub synchronization" : "Local synchronization",
-    `<div class="settings-card">${setting(status.role !== "hub" && !status.hub ? "Disconnected" : status.phase === "paused" ? "Paused" : "Enabled", status.role === "hub" ? "Synchronizes this hub’s working folders with connected replicas." : "Synchronizes the folders selected on this machine.", `<div class="form-actions">${controls}</div>`)}</div>`,
+    `<div class="settings-card">${setting(status.role !== "hub" && !status.hub ? "Disconnected" : status.phase === "paused" ? "Paused" : "Enabled", status.role === "hub" ? "Synchronizes this hub’s working folders with connected replicas." : "Synchronizes the folders selected on this machine.", "")}</div>`,
   );
   if (status.role === "hub")
     html += section(
@@ -3256,7 +3271,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   html += section(
     "Service",
-    `<div class="settings-card">${setting("Arca v0.4.13", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
+    `<div class="settings-card">${setting("Arca v0.5.0", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
   );
   if (status.role === "replica" && status.hub)
     html += section(
@@ -4295,7 +4310,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.4.13",
+          version: "0.5.0",
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -4893,10 +4908,12 @@ function dispatchControl(control) {
   return navigationActions.has(name) ? navigate(work) : action(work, control);
 }
 document.addEventListener("click", (e) => {
-  document.querySelectorAll(".file-actions-menu[open]").forEach((menu) => {
-    if (!menu.contains(e.target) || e.target.closest("[data-action]"))
-      menu.open = false;
-  });
+  document
+    .querySelectorAll(".file-actions-menu[open]")
+    .forEach((menu) => {
+      if (!menu.contains(e.target) || e.target.closest("[data-action]"))
+        menu.open = false;
+    });
   const dropdownRoot = e.target.closest(".dropdown");
   document.querySelectorAll(".dropdown").forEach((root) => {
     if (root !== dropdownRoot) closeDropdown(root);
@@ -5499,9 +5516,20 @@ window.addEventListener("pointercancel", () => {
 window.addEventListener("blur", () => {
   pointerPressed = false;
 });
-let polling = false;
-setInterval(async () => {
+let polling = false,
+  eventsHealthyAt = 0,
+  lastStatusPoll = 0;
+async function pollStatus(force = false) {
   if (!ready || polling) return;
+  if (
+    !force &&
+    Date.now() - eventsHealthyAt < 20000 &&
+    Date.now() - lastStatusPoll < 30000 &&
+    !busy &&
+    !["syncing", "scanning"].includes(status?.phase)
+  )
+    return;
+  lastStatusPoll = Date.now();
   polling = true;
   const serial = renderSerial;
   try {
@@ -5577,7 +5605,35 @@ setInterval(async () => {
   } finally {
     polling = false;
   }
-}, 5000);
+}
+setInterval(pollStatus, 5000);
+let eventRequest = false,
+  eventCursor = null,
+  eventRetry = 0;
+setInterval(async () => {
+  if (!ready || document.hidden || eventRequest || Date.now() < eventRetry)
+    return;
+  eventRequest = true;
+  try {
+    // Waiting for events is idle work, not visible loading activity.
+    const next = await invoke("api", {
+      route: `/v1/events?${new URLSearchParams(eventCursor ? { after: eventCursor } : {})}`,
+      method: "GET",
+      body: null,
+    });
+    if (!document?.body || !ready) return;
+    eventsHealthyAt = Date.now();
+    if (next.cursor !== eventCursor) {
+      eventCursor = next.cursor;
+      document.dispatchEvent(new Event("arca-changes"));
+      await pollStatus(true);
+    }
+  } catch {
+    eventRetry = Date.now() + 30000;
+  } finally {
+    eventRequest = false;
+  }
+}, 1000);
 if (native && window.__TAURI__.event) {
   window.__TAURI__.event.listen("notice-action", (event) =>
     action(async () => {
@@ -5701,7 +5757,9 @@ document.addEventListener("keydown", (event) => {
 
 // File actions use a native disclosure, with keyboard dismissal and focus return.
 document.addEventListener("keydown", (event) => {
-  const menu = event.target.closest(".file-actions-menu[open]");
+  const menu = event.target.closest(
+    ".file-actions-menu[open]",
+  );
   if (menu && event.key === "Escape") {
     event.preventDefault();
     menu.open = false;
@@ -5709,7 +5767,62 @@ document.addEventListener("keydown", (event) => {
   }
 });
 document.addEventListener("focusin", (event) => {
-  document.querySelectorAll(".file-actions-menu[open]").forEach((menu) => {
-    if (!menu.contains(event.target)) menu.open = false;
-  });
+  document
+    .querySelectorAll(".file-actions-menu[open]")
+    .forEach((menu) => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
 });
+
+
+// Shared icon action: its tooltip is also its accessible name.
+function iconAction(label, action, symbol, disabled = false) {
+  return `<button type="button" class="ghost icon-button" data-action="${escape(action)}" data-tooltip="${escape(label)}" aria-label="${escape(label)}" ${disabled ? "disabled" : ""}>${icon(symbol)}</button>`;
+}
+function installTooltips() {
+  let timer, trigger, tip;
+  const close = () => {
+    clearTimeout(timer);
+    if (trigger && tip) {
+      const ids = (trigger.getAttribute("aria-describedby") || "").split(" ").filter(id => id && id !== tip.id);
+      if (ids.length) trigger.setAttribute("aria-describedby", ids.join(" "));
+      else trigger.removeAttribute("aria-describedby");
+    }
+    tip?.remove();
+    tip = trigger = null;
+  };
+  const open = (target) => {
+    if (target === trigger) return;
+    close();
+    if (!target || target.disabled) return;
+    trigger = target;
+    timer = setTimeout(() => {
+      if (!target.isConnected) return close();
+      tip = document.createElement("span");
+      tip.id = "arca-tooltip";
+      tip.className = "tooltip";
+      tip.setAttribute("role", "tooltip");
+      tip.textContent = target.dataset.tooltip;
+      (target.closest("dialog[open]") || document.body).append(tip);
+      target.setAttribute("aria-describedby", [target.getAttribute("aria-describedby"), tip.id].filter(Boolean).join(" "));
+      const rect = target.getBoundingClientRect();
+      const bounds = tip.getBoundingClientRect();
+      const left = Math.max(8, Math.min(rect.right - bounds.width, window.innerWidth - bounds.width - 8));
+      const top = rect.top >= bounds.height + 14 ? rect.top - bounds.height - 6 : rect.bottom + 6;
+      tip.style.left = `${left}px`;
+      tip.style.top = `${Math.max(8, Math.min(top, window.innerHeight - bounds.height - 8))}px`;
+    }, 200);
+  };
+  document.addEventListener("pointerover", event => open(event.target.closest("[data-tooltip]")));
+  document.addEventListener("pointerout", event => {
+    if (trigger && !trigger.contains(event.relatedTarget)) close();
+  });
+  document.addEventListener("focusin", event => open(event.target.closest("[data-tooltip]")));
+  document.addEventListener("focusout", close);
+  document.addEventListener("pointerdown", close);
+  document.addEventListener("keydown", event => { if (event.key === "Escape") close(); });
+  document.addEventListener("scroll", close, true);
+  window.addEventListener("resize", close);
+  new MutationObserver(() => { if (trigger && !trigger.isConnected) close(); }).observe(document.body, { childList: true, subtree: true });
+}
+installTooltips();

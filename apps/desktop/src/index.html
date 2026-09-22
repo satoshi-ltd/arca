@@ -66,15 +66,12 @@
         </nav>
         <div class="sidebar-bottom">
           <div class="status-card">
-            <strong id="connection">Connecting…</strong
-            ><span id="last-sync">Checking your daemon</span
-            ><button
-              class="backup-link"
-              data-action="backup-settings"
-              id="backup-summary"
-            >
-              Hub backup status unknown
-            </button>
+            <div class="sync-status-heading">
+              <strong id="connection">Connecting…</strong>
+            </div>
+            <span id="last-sync">Checking your daemon</span>
+            <div id="sync-controls" hidden></div>
+            <button class="backup-link" id="backup-summary" data-action="backup-settings" hidden></button>
           </div>
           <button class="ghost sign-out" data-action="logout" hidden>
             <span data-icon="log-out"></span>Sign out

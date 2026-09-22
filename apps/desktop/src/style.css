@@ -201,7 +201,7 @@ svg.lucide {
   height: 16px;
 }
 .nav-item:hover {
-  background: var(--hover);
+  background: var(--surface);
 }
 .nav-item.active {
   background: var(--tint);
@@ -226,9 +226,10 @@ svg.lucide {
   border: 1px solid var(--div);
   border-radius: var(--r-card);
   padding: 12px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-2);
+  align-items: center;
 }
 .status-card strong {
   display: flex;
@@ -246,19 +247,6 @@ svg.lucide {
   font-size: var(--text-caption);
   color: var(--soft);
   line-height: 1.4;
-}
-.backup-link {
-  background: none;
-  border: 0;
-  border-top: 1px solid var(--div);
-  padding: 8px 0 0;
-  text-align: left;
-  font-size: var(--text-body);
-  font-weight: 600;
-  color: var(--waFg);
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
 }
 .backup-link svg {
   width: 14px;
@@ -351,7 +339,7 @@ main {
 }
 .secondary:hover,
 .icon-button:hover {
-  background: var(--hover);
+  background: var(--surface);
 }
 .small-button {
   min-height: var(--button-small-height);
@@ -428,7 +416,7 @@ main {
   flex: none;
 }
 .unselected .tile {
-  background: var(--hover);
+  background: var(--surface);
   color: var(--mute);
 }
 .tile.large {
@@ -715,7 +703,7 @@ main {
   display: flex;
   gap: 2px;
   padding: 3px;
-  background: var(--hover);
+  background: var(--surface);
   border-radius: var(--r-control);
   flex-wrap: wrap;
 }
@@ -1736,7 +1724,7 @@ html:has(.tray-body) {
 }
 .tray-folders button:hover,
 .tray-menu button:hover {
-  background: var(--hover);
+  background: var(--surface);
 }
 .tray-folders button svg {
   width: 13px;
@@ -1912,7 +1900,7 @@ html:has(.tray-body) {
   outline-offset: -2px;
 }
 .field-with-icon > .field-picker:hover {
-  background: var(--hover);
+  background: var(--surface);
 }
 .field-with-icon input {
   min-width: 0;
@@ -2162,7 +2150,7 @@ label {
   color: var(--waFg);
 }
 .status-card strong.sy {
-  color: var(--syFg);
+  color: var(--green);
 }
 .status-card strong.id {
   color: var(--idFg);
@@ -2513,7 +2501,7 @@ progress::-webkit-progress-value {
 }
 .dropdown-trigger:hover,
 .dropdown-trigger[aria-expanded="true"] {
-  background: var(--hover);
+  background: var(--surface);
   border-color: var(--green);
 }
 .dropdown-trigger[aria-expanded="true"] > .icon {
@@ -2568,7 +2556,7 @@ progress::-webkit-progress-value {
 }
 .dropdown-menu [role="option"]:hover,
 .dropdown-menu [role="option"]:focus-visible {
-  background: var(--hover);
+  background: var(--surface);
   outline: 1px solid var(--green);
   outline-offset: -1px;
   box-shadow: none;
@@ -2592,12 +2580,6 @@ progress::-webkit-progress-value {
   color: var(--mute);
   font-size: var(--text-caption);
   font-weight: 400;
-}
-.status-card .backup-link {
-  font-size: var(--text-body);
-  font-weight: 400;
-  color: var(--soft);
-  min-height: 0;
 }
 
 /* Native chrome behaves like an app; useful content remains selectable. */
@@ -3972,4 +3954,78 @@ dialog.photo-viewer {
 }
 .photo-hover-video.ready {
   opacity: 1;
+}
+
+/* Compact, visible controls within the sidebar status card. */
+.sync-status-heading { min-width: 0; }
+#last-sync { grid-column: 1 / -1; }
+#sync-controls {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  gap: 4px;
+}
+#sync-controls[hidden] { display: none; }
+#sync-controls button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 6px;
+  flex-shrink: 0;
+}
+
+.status-card .backup-link {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  border: 0;
+  border-top: 1px solid var(--div);
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 0 0;
+  min-height: 0;
+  text-align: left;
+  color: var(--soft);
+  font-size: var(--text-caption);
+  font-weight: 400;
+}
+.status-card .backup-link[hidden] { display: none; }
+.status-card .backup-link:hover { color: var(--green); }
+
+/* Ghost icon actions and shared, keyboard-accessible tooltip. */
+.ghost.icon-button {
+  border: 0;
+  background: transparent;
+  color: var(--soft);
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 5px;
+}
+.ghost.icon-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--green);
+  text-decoration: none;
+}
+#sync-controls .ghost.icon-button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 5px;
+}
+.tooltip {
+  position: fixed;
+  z-index: 200;
+  max-width: min(240px, calc(100vw - 16px));
+  padding: 6px 10px;
+  border-radius: var(--r-control);
+  background: var(--ink);
+  color: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: 1.4;
+  box-shadow: var(--shadow-menu);
+  pointer-events: none;
 }

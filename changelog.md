@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.5.0 — 2026-09-22
+
+**Alpha prerelease — stabilization and user acceptance are still in progress. Not release-qualified.**
+
+- Add a persistent global mobile Offline indicator; recognize LAN reachability failures and keep saved Machines and recent History available across offline cold starts, with bounded metadata preparation during sync.
+
+- Show Offline once in the desktop sidebar rather than on every folder. Prepare bounded recent History metadata during replica sync for offline browsing and refresh it when folder retention changes.
+
+- Prevent mobile Folder actions from crashing during its closing animation after a local folder or album link is removed, including shares already deleted on the hub.
+
+- Pin the DOM test dependency to a version supporting the CI Node 24.14.0 runtime.
+
+- Close snapshot worker SQLite handles before reporting completion, preventing a Windows file-lock race during immediate cleanup.
+
+- Align desktop, daemon, CLI, Expo and native module versions at 0.5.0; advance the mobile native build number to 24.
+
+- Prevent large sync snapshots from scanning newer revisions for every deleted entry; use the path-key index for replacement lookups. Read-only Casa diagnostics reproduced the expensive query behind prolonged HTTP unavailability; deployment of the fix remains pending.
+
+- Capture sync snapshots in the existing worker, share overlapping captures of unchanged folders, and persist independent authenticated snapshots in bounded batches so HTTP remains available. Preserve content during concurrent retention and clean up interrupted snapshot construction.
+- Index conflict summaries, calculate cold folder totals cooperatively, and stream upload/download hash verification instead of blocking the HTTP thread. Add an isolated Docker-capable hub load qualification command.
+- Persist snapshot entry counts instead of recounting every page; index only live files for visible totals, distinguish sync entries from existing files in progress, and aggregate retention summaries in one traversal. Preserve deletion propagation and independent per-folder history policies when retention changes.
+
+- Preserve newer successful connection state when an older remote view times out; finish mobile full verification across yielded transfer turns and stop gallery batches on connection loss without failing remaining photos.
+
+- Keep offline, paused and folder-sync indicators consistent across desktop/web and mobile; ignore optional event-channel failures when determining connectivity and prevent late failed requests from overriding newer successful connections.
+
+- Add shared keyboard-accessible tooltips and compact ghost sync controls; hide manual sync while a cycle is running.
+
+- Avoid brand-animation flashes from brief requests and background status checks.
+
+- Keep folder-total caches across unrelated database activity and stop repeated per-folder waits after a hub connection failure.
+- Reuse each folder's ignore policy during hub reconciliation instead of querying and checking the policy file for every indexed entry.
+- Serve replica galleries and known catalogs locally; retain bounded saved machine/history views with explicit offline feedback.
+
+- Consolidate desktop/web synchronization controls in the sidebar status card, with aligned Pause/Resume and Sync now icon buttons, tooltips and a last-sync timestamp; a backup status row links to configuration or reported copies.
+
+- Wake replica synchronization and open desktop/web galleries on hub changes, retaining periodic fallback checks.
+- Reuse mobile hash verification across cold starts, reduce idle inventories and reports, and give folders bounded transfer turns.
+- Keep lifecycle cancellation out of folder errors, preserve last successful sync, and avoid replaying stale connection alerts at startup.
+- Transfer mobile file blocks through native file I/O with real request cancellation; updated Android/iOS binaries are required.
+
 ## 0.4.13 — 2026-09-21
 
 - Rework the site footer: the brand keeps the version beside it using the shared masthead style, the tagline is gone, and the credit reads "By Satoshi Ltd. · no telemetry" with the company linked.

@@ -4,9 +4,11 @@ export class ReplicaStore {
   }
   async init() {
     await this.db.execAsync(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
+      CREATE TABLE IF NOT EXISTS view_cache(scope TEXT,route TEXT,updated INTEGER,row TEXT,PRIMARY KEY(scope,route));
       CREATE TABLE IF NOT EXISTS gallery_sources (scope TEXT, volume TEXT, config TEXT NOT NULL, PRIMARY KEY(scope,volume));
       CREATE TABLE IF NOT EXISTS gallery_assets (scope TEXT, volume TEXT, asset TEXT, state TEXT NOT NULL, retryAt INTEGER DEFAULT 0, row TEXT NOT NULL, PRIMARY KEY(scope,volume,asset));
       CREATE INDEX IF NOT EXISTS gallery_work ON gallery_assets(scope,volume,state,retryAt);
+      CREATE TABLE IF NOT EXISTS scan_cache (uri TEXT PRIMARY KEY, row TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS folders (scope TEXT, id TEXT, name TEXT, selected INTEGER DEFAULT 1, cursor INTEGER DEFAULT 0, initialized INTEGER DEFAULT 0, completed TEXT, issue TEXT, PRIMARY KEY(scope,id));
       CREATE TABLE IF NOT EXISTS files (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
@@ -18,6 +20,8 @@ export class ReplicaStore {
     await this.db.execAsync("PRAGMA secure_delete=ON; BEGIN IMMEDIATE");
     try {
       for (const table of [
+        "view_cache",
+        "scan_cache",
         "gallery_assets",
         "gallery_sources",
         "files",
@@ -33,6 +37,37 @@ export class ReplicaStore {
       throw error;
     }
     await this.db.execAsync("PRAGMA wal_checkpoint(TRUNCATE)");
+  }
+  async clearInterrupted(scope) {
+    await this.db.runAsync(
+      "UPDATE folders SET issue=NULL WHERE scope=? AND issue IN ('Request cancelled','Sync paused')",
+      scope,
+    );
+    const rows = await this.db.getAllAsync(
+      "SELECT volume,row FROM gallery_assets WHERE scope=? AND state='failed' AND json_extract(row,'$.issue') IN ('Request cancelled','Sync paused')",
+      scope,
+    );
+    for (const item of rows)
+      await this.putGalleryAsset(scope, item.volume, {
+        ...JSON.parse(item.row),
+        state: "pending",
+        retryAt: 0,
+        issue: null,
+      });
+  }
+  async cachedHash(uri) {
+    const row = await this.db.getFirstAsync(
+      "SELECT row FROM scan_cache WHERE uri=?",
+      uri,
+    );
+    return row ? JSON.parse(row.row) : null;
+  }
+  async cacheHash(uri, value) {
+    await this.db.runAsync(
+      "INSERT OR REPLACE INTO scan_cache VALUES (?,?)",
+      uri,
+      JSON.stringify(value),
+    );
   }
   async get(key, fallback = null) {
     const row = await this.db.getFirstAsync(
@@ -77,6 +112,10 @@ export class ReplicaStore {
   async forgetFolder(scope, id) {
     await this.db.execAsync("BEGIN IMMEDIATE");
     try {
+      const views = await this.db.getAllAsync("SELECT route FROM view_cache WHERE scope=?", scope);
+      for (const view of views)
+        if (new URLSearchParams(view.route.split("?")[1]).get("volume") === id)
+          await this.db.runAsync("DELETE FROM view_cache WHERE scope=? AND route=?", scope, view.route);
       for (const table of [
         "files",
         "pending",
@@ -257,7 +296,7 @@ export class ReplicaStore {
   }
   async issue(scope, id, message) {
     await this.db.runAsync(
-      "UPDATE folders SET issue=?,completed=NULL WHERE scope=? AND id=?",
+      "UPDATE folders SET issue=? WHERE scope=? AND id=?",
       message,
       scope,
       id,

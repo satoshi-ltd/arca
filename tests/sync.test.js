@@ -65,6 +65,70 @@ const write = (n, v, name, content) => {
 const read = (n, v, name) =>
   fs.readFileSync(path.join(n.engine.store.volume(v.id).path, name), "utf8");
 
+test("upload verification yields to HTTP reads while preserving content verification", async (t) => {
+  const { hub } = await setup(t);
+  const data = Buffer.alloc(1024 * 1024, 42);
+  const hash = digest(data);
+  const blob = hub.engine.store.blob(hash);
+  fs.writeFileSync(blob, data);
+  let entered, release;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  const createReadStream = fs.createReadStream;
+  t.mock.method(fs, "createReadStream", (file, options) => {
+    const stream = createReadStream(file, options);
+    if (file !== blob) return stream;
+    return (async function* () {
+      entered();
+      await gate;
+      yield* stream;
+    })();
+  });
+  const pending = hub.api(`/v1/uploads/${hash}`);
+  try {
+    await Promise.race([
+      started,
+      pending.then(() => { throw new Error("Verification did not yield through the stream"); }),
+    ]);
+    const response = await fetch(`http://127.0.0.1:${hub.port}/.well-known/arca`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    assert.equal(response.status, 200);
+    await response.json();
+  } finally {
+    release();
+  }
+  assert.equal((await pending).complete, true);
+  // A matching filename is insufficient: corrupted stored bytes still fail verification.
+  fs.writeFileSync(blob, Buffer.alloc(data.length, 43));
+  assert.equal((await hub.api(`/v1/uploads/${hash}`)).complete, false);
+});
+
+test("concurrent snapshot requests share a capture and retain independent leases", async (t) => {
+  const { hub, volume } = await setup(t);
+  write(hub, volume, "shared.txt", "one immutable capture");
+  await hub.sync();
+  const scan = hub.engine.scanHub.bind(hub.engine);
+  const snapshot = hub.engine.scanner.snapshot.bind(hub.engine.scanner);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let scans = 0, captures = 0;
+  t.mock.method(hub.engine, "scanHub", async (...args) => {
+    await scan(...args);
+    if (++scans === 3) setImmediate(release);
+  });
+  t.mock.method(hub.engine.scanner, "snapshot", async (...args) => {
+    captures++;
+    await gate;
+    return snapshot(...args);
+  });
+  const pages = await Promise.all([1, 2, 3].map(() => hub.api(`/v1/snapshot?volume=${volume.id}`)));
+  assert.equal(captures, 1);
+  assert.equal(new Set(pages.map((page) => page.session)).size, 3);
+  assert.deepEqual(pages[0].files, pages[1].files);
+  assert.deepEqual(pages[1].files, pages[2].files);
+});
+
 test("full files, edits in both directions, deletion and historical restore", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const mac = await connect("mac");
@@ -2409,12 +2473,12 @@ test("status totals reuse unchanged rows and invalidate on policy and database c
   write(hub, volume, "cached.txt", "visible");
   await hub.sync();
   const store = hub.engine.store;
-  const rows = store.rows.bind(store);
+  const prepare = store.db.prepare.bind(store.db);
   let scans = 0;
-  store.rows = (...args) => {
-    scans++;
-    return rows(...args);
-  };
+  t.mock.method(store.db, "prepare", (sql) => {
+    if (sql.startsWith("SELECT path,size FROM files")) scans++;
+    return prepare(sql);
+  });
   const before = store.visibleTotals(volume.id);
   const initial = scans;
   before.files = -1;
@@ -2518,4 +2582,176 @@ test("repeated gallery optimization reaches passive replicas, restores JPEG hist
     true,
     "current HEIC stays live",
   );
+});
+
+test("folder totals survive unrelated writes and invalidate only changed folders and policies", async (t) => {
+  const { hub, volume } = await setup(t);
+  const s = hub.engine.store;
+  write(hub, volume, "one.txt", "hello");
+  await hub.sync();
+  const initial = s.visibleTotals(volume.id);
+  const prepare = s.db.prepare.bind(s.db);
+  let reads = 0;
+  t.mock.method(s.db, "prepare", (sql) => {
+    if (sql.startsWith("SELECT path,size FROM files")) reads++;
+    return prepare(sql);
+  });
+  s.db
+    .prepare(
+      "INSERT OR REPLACE INTO gallery_metadata(hash,captured) VALUES(?,?)",
+    )
+    .run("test", null);
+  assert.deepEqual(s.visibleTotals(volume.id), initial);
+  assert.equal(
+    reads,
+    0,
+    "metadata and connection activity must not reload folder rows",
+  );
+  s.db
+    .prepare("UPDATE files SET size=size+1 WHERE volume=? AND path=?")
+    .run(volume.id, "one.txt");
+  assert.equal(s.visibleTotals(volume.id).bytes, initial.bytes + 1);
+  assert.equal(reads, 1);
+  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "one.txt\n");
+  assert.equal(s.visibleTotals(volume.id).files, initial.files - 1);
+  assert.equal(reads, 2, "policy edits invalidate cached totals");
+});
+
+test("offline replica keeps local browsing, file actions and saved remote views available", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "offline.txt", "kept locally");
+  await hub.sync();
+  const replica = await connect("offline-viewer");
+  await replica.sync();
+  const machines = await replica.api("/v1/machines");
+  const historyRoute = `/v1/history?volume=${volume.id}&path=offline.txt&limit=50`;
+  const history = await replica.api(historyRoute);
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  await assert.rejects(replica.sync());
+  assert.equal(replica.engine.status().hubUnavailable, true);
+  const local = await replica.api(`/v1/browse?volume=${volume.id}`);
+  assert.ok(local.entries.some((row) => row.path === "offline.txt"));
+  assert.ok(
+    (await replica.api("/v1/remote")).volumes.some(
+      (row) => row.id === volume.id,
+    ),
+  );
+  const savedMachines = await replica.api("/v1/machines");
+  assert.equal(savedMachines.offline, true);
+  assert.deepEqual(savedMachines.machines, machines.machines);
+  assert.deepEqual(
+    (await replica.api(historyRoute)).versions,
+    history.versions,
+  );
+  const localHistory = await replica.api(
+    historyRoute.replace("limit=50", "limit=49"),
+  );
+  assert.equal(localHistory.localOnly, true);
+  assert.equal(localHistory.versions[0].path, "offline.txt");
+  const activity = await replica.api("/v1/activity?limit=50");
+  assert.equal(activity.offline, true);
+
+  const current = replica.engine.store.current(volume.id, "offline.txt");
+  await replica.api("/v1/rename-file", {
+    volume: volume.id,
+    path: "offline.txt",
+    name: "renamed.txt",
+    rev: current.rev,
+  });
+  assert.equal(read(replica, volume, "renamed.txt"), "kept locally");
+});
+
+test("event-channel failure does not mark sync offline and reconnection clears offline state", async (t) => {
+  const { volume, connect } = await setup(t);
+  const replica = await connect("connection-state");
+  const engine = replica.engine;
+  const url = engine.config.hub.url;
+  engine.config.hub.url = "http://127.0.0.1:1";
+  await assert.rejects(engine.request("/v1/events", { trackConnection: false }));
+  assert.equal(engine.status().hubUnavailable, false);
+  engine.folderStates.set(volume.id, { state: "syncing", lastCompleted: null });
+  engine.phase = "syncing";
+  await assert.rejects(engine.request("/v1/catalog"));
+  assert.equal(engine.status().phase, "offline");
+  assert.equal(engine.status().volumes[0].sync.state, "pending");
+  assert.equal(engine.status().progress, null);
+  engine.setPaused(true);
+  assert.equal(engine.status().phase, "paused");
+  engine.setPaused(false);
+  assert.equal(engine.status().phase, "offline", "resume does not invent a successful connection");
+  engine.config.hub.url = url;
+  await engine.request("/.well-known/arca");
+  assert.equal(engine.status().hubUnavailable, false);
+  await replica.sync();
+  assert.equal(engine.status().phase, "idle");
+  assert.ok(engine.status().volumes.every(v => !["syncing", "scanning"].includes(v.sync.state)));
+});
+
+test("a remote view timeout cannot override a newer successful hub response", async (t) => {
+  const { hub, connect } = await setup(t);
+  const replica = await connect("overlapping-remote-views");
+  let rejectOlder, entered;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const fetcher = globalThis.fetch;
+  t.mock.method(globalThis, "fetch", (url, options) => {
+    if (url === `http://127.0.0.1:${hub.port}/v1/machines`)
+      return new Promise((resolve, reject) => {
+        rejectOlder = reject;
+        entered();
+      });
+    return fetcher(url, options);
+  });
+  const older = replica.api("/v1/machines");
+  await started;
+  await replica.engine.request("/.well-known/arca");
+  rejectOlder(new DOMException("View timed out", "TimeoutError"));
+  assert.equal((await older).offline, true);
+  assert.equal(replica.engine.status().hubUnavailable, false);
+});
+
+test("a late failed request cannot override a newer successful hub response", async (t) => {
+  const { connect } = await setup(t);
+  const { engine } = await connect("overlapping-connection-checks");
+  let rejectOlder;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (url.endsWith("/older")) return new Promise((resolve, reject) => { rejectOlder = reject; });
+    return new Response("{}", { status: 200 });
+  });
+  const older = engine.request("/older");
+  const rejected = assert.rejects(older, TypeError);
+  await engine.request("/newer");
+  rejectOlder(new TypeError("fetch failed"));
+  await rejected;
+  assert.equal(engine.status().hubUnavailable, false);
+  t.mock.restoreAll();
+});
+
+
+test("replica prepares bounded offline history without opening History and refreshes changed retention", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "cached-history.txt", "first");
+  await hub.sync();
+  write(hub, volume, "cached-history.txt", "second");
+  await hub.sync();
+  const replica = await connect("offline-history");
+  await replica.sync();
+  await replica.api(`/v1/activity?filter=revisions&volume=${volume.id}&limit=49`);
+  const address = replica.engine.config.hub.url;
+  replica.engine.hubUnavailable = true;
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  const page = await replica.api(`/v1/activity?filter=revisions&volume=${volume.id}&limit=49`);
+  assert.equal(page.offline, true);
+  assert.equal(page.versions.filter((r) => r.path === "cached-history.txt").length, 2);
+  const small = await replica.api(`/v1/activity?volume=${volume.id}&limit=1&filter=revisions`);
+  assert.equal(small.versions.length, 1);
+  assert.equal(small.next, small.versions[0].rev);
+  replica.engine.config.hub.url = address;
+  const preview = await hub.api("/v1/folder-retention", { id: volume.id, mode: "off" });
+  await hub.api("/v1/folder-retention", { id: volume.id, mode: "off", apply: true, confirmation: preview.confirmation });
+  await replica.sync();
+  replica.engine.hubUnavailable = true;
+  const refreshed = await replica.api(`/v1/activity?volume=${volume.id}&limit=49&filter=revisions`);
+  assert.equal(refreshed.versions.filter((r) => r.path === "cached-history.txt").length, 1);
+  const count = replica.engine.store.db.prepare("SELECT COUNT(*) n FROM history_views").get().n;
+  assert.equal(count, 3, "one bounded page per filter for the selected folder");
 });

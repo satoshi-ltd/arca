@@ -6,6 +6,12 @@ export class Scanner {
     this.pending = new Map();
   }
   scan(volume, paths = null) {
+    return this.request({ volume, paths });
+  }
+  snapshot(volume) {
+    return this.request({ operation: "snapshot", volume });
+  }
+  request(message) {
     if (!this.worker) {
       const worker = new Worker(
         new URL("./scanner-worker.js", import.meta.url),
@@ -25,7 +31,7 @@ export class Scanner {
               syncInterrupted: m.syncInterrupted,
             }),
           );
-        else job.resolve(new Map(m.entries));
+        else job.resolve(m.rows || new Map(m.entries));
       });
       const failed = (e) => {
         if (this.worker !== worker) return;
@@ -43,7 +49,7 @@ export class Scanner {
       const cancellation = new Int32Array(new SharedArrayBuffer(4));
       this.pending.set(id, { resolve, reject, cancellation });
       this.worker.ref();
-      this.worker.postMessage({ id, volume, paths, cancellation });
+      this.worker.postMessage({ id, ...message, cancellation });
     });
   }
   interrupt() {
@@ -51,6 +57,9 @@ export class Scanner {
       Atomics.store(job.cancellation, 0, 1);
   }
   close() {
+    for (const job of this.pending.values())
+      job.reject(new Error("Scanner closed"));
+    this.pending.clear();
     this.worker?.terminate();
     this.worker = null;
   }

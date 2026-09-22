@@ -213,15 +213,26 @@ export default function App() {
       ]);
     if (!mounted.current) return;
     setState((old) => retainSnapshot(old, client.state()));
-    setLocals((old) => retainSnapshot(old, folders));
+    const visibleFolders = folders.map((folder) => {
+      const transient =
+        folder.issue &&
+        (errorNotice(folder.issue).offline ||
+          /^(Request cancelled|Sync paused)$/.test(folder.issue));
+      return transient &&
+        (!r.connectionChecked || errorNotice(r.error || "").offline)
+        ? { ...folder, issue: null }
+        : folder;
+    });
+    setLocals((old) => retainSnapshot(old, visibleFolders));
     setStatus((old) =>
       retainSnapshot(old, {
         busy: r.busy,
-        syncingVolume: r.syncingVolume,
+        offline: !!r.hubUnavailable,
+        syncingVolume: r.paused || r.hubUnavailable ? null : r.syncingVolume,
         picking: !!r.picking,
         importing: !!r.importing,
         paused: r.paused,
-        progress: r.progress,
+        progress: r.paused || r.hubUnavailable ? null : r.progress,
         error: r.error,
         last,
         free,
@@ -378,17 +389,28 @@ export default function App() {
           ),
         );
         await update();
-        engine.current.sync();
+        engine.current.sync(false, { scheduled: true });
       },
       { silent: true },
     );
     const app = AppState.addEventListener("change", (value) => {
-      if (value === "active") engine.current?.sync();
-      else if (!canContinueInBackground()) engine.current?.stop();
+      if (value === "active") {
+        engine.current?.lastInventory.clear();
+        engine.current?.sync(false, { scheduled: true });
+      } else if (!canContinueInBackground()) engine.current?.stop();
     });
     const timer = setInterval(() => {
-      if (AppState.currentState === "active" && !action.current)
-        engine.current?.sync();
+      const r = engine.current;
+      if (
+        AppState.currentState === "active" &&
+        !action.current &&
+        r &&
+        !(
+          Date.now() - (r.eventsHealthyAt || 0) < 20000 &&
+          Date.now() - (r.lastScheduledAt || 0) < 60000
+        )
+      )
+        r.sync(false, { scheduled: true });
     }, 15000);
     return () => {
       mounted.current = false;
@@ -410,6 +432,47 @@ export default function App() {
     connected = connection?.linked,
     catalog = state.catalog,
     volumes = catalog?.volumes || [];
+  useEffect(() => {
+    if (!connected || !catalog?.changeEvents) return;
+    let controller;
+    let disposed = false;
+    const start = () => {
+      controller?.abort();
+      if (disposed || AppState.currentState !== "active") return;
+      controller = new AbortController();
+      const signal = controller.signal;
+      void (async () => {
+        let cursor = null;
+        while (!signal.aborted) {
+          try {
+            const next = await client.api(
+              `/v1/events?${new URLSearchParams(cursor ? { after: cursor } : {})}`,
+              undefined,
+              { signal },
+            );
+            if (signal.aborted) break;
+            if (engine.current) engine.current.eventsHealthyAt = Date.now();
+            if (next.cursor !== cursor) {
+              cursor = next.cursor;
+              void engine.current?.sync(false, { scheduled: true });
+            }
+          } catch {
+            // The ordinary scheduler remains the fallback for connection failures.
+            break;
+          }
+        }
+      })();
+    };
+    start();
+    const listener = AppState.addEventListener("change", start);
+    const retry = setInterval(start, 60000);
+    return () => {
+      disposed = true;
+      controller?.abort();
+      listener.remove();
+      clearInterval(retry);
+    };
+  }, [connected, connection?.hubId, catalog?.changeEvents]);
   const [webApproval, setWebApproval] = useState(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [approvalError, setApprovalError] = useState("");
@@ -511,8 +574,8 @@ export default function App() {
       setMachines(null);
       return;
     }
-    client
-      .api("/v1/machines")
+    engine.current
+      .remoteView("/v1/machines")
       .then((data) => {
         if (!cancelled) setMachines(data.machines);
       })
@@ -566,7 +629,7 @@ export default function App() {
   async function getHistory(target = null, more = false) {
     const selectedIds = historyFolderIds(
       await engine.current.store.folders(engine.current.scope),
-      client.state().catalog.volumes,
+      client.state().catalog?.volumes || [],
     );
     if (target && !selectedIds.includes(target.volume))
       throw new Error("Select this folder to view its history.");
@@ -609,9 +672,9 @@ export default function App() {
     let page;
     try {
       page = target
-        ? await client.api(`/v1/history?${q}`)
+        ? await engine.current.remoteView(`/v1/history?${q}`)
         : await scopedActivity(
-            (query) => client.api(`/v1/activity?${query}`),
+            (query) => engine.current.remoteView(`/v1/activity?${query}`),
             selectedIds,
             q,
           );
@@ -640,6 +703,7 @@ export default function App() {
     (target ? setFileHistory : setHistory)({
       versions: more ? [...previous.versions, ...page.versions] : page.versions,
       next: page.next,
+      offline: !!page.offline,
     });
     if (target)
       setSheet({
@@ -885,7 +949,7 @@ export default function App() {
           uploadStatus(source, {
             connected,
             paused: status.paused,
-            busy: status.busy,
+            busy: !status.offline && status.busy && status.syncingVolume === folder?.id,
           }),
       ) || ""
     : currentFolder?.issue || status.error
@@ -1386,7 +1450,7 @@ export default function App() {
                               label="Folder actions"
                               icon="more"
                               onPress={() =>
-                                setSheet({ kind: "folder-actions" })
+                                setSheet({ kind: "folder-actions", volume: folder })
                               }
                             />
                           </View>
@@ -1397,7 +1461,7 @@ export default function App() {
                             iconOnly={!!folder}
                             label="Sync now"
                             icon="refresh"
-                            activity={status.busy}
+                            activity={!status.offline && status.busy}
                             disabled={status.paused || !engine.current}
                             onPress={() => startSync(true)}
                           />
@@ -1405,6 +1469,12 @@ export default function App() {
                       </View>
                     )}
                     {screen === "History" && !wide && historyControls}
+                  </View>
+                )}
+                {connected && status.offline && (
+                  <View style={s.offlineStatus} accessibilityRole="text">
+                    <Icon name="wifi-off" />
+                    <Text style={s.caption}>Offline</Text>
                   </View>
                 )}
                 <IncomingShare
@@ -1443,11 +1513,13 @@ export default function App() {
                       {[
                         [
                           "Status",
-                          currentFolder?.issue || status.error
-                            ? "Needs attention"
-                            : status.paused
-                              ? "Paused"
-                              : status.busy
+                          status.paused
+                            ? "Paused"
+                            : status.offline
+                              ? "Offline"
+                              : currentFolder?.issue || status.error
+                                ? "Needs attention"
+                                : status.busy && status.syncingVolume === currentFolder?.id
                                 ? "Syncing"
                                 : currentFolder?.completed
                                   ? "Up to date"
@@ -1788,7 +1860,9 @@ export default function App() {
                                             ? "Disabled"
                                             : status.paused
                                               ? "Paused"
-                                              : status.busy &&
+                                              : status.offline
+                                                ? "Offline"
+                                                : status.busy &&
                                                   status.syncingVolume === f.id
                                                 ? "Syncing"
                                                 : galleryConfig(f).summary
@@ -1802,7 +1876,9 @@ export default function App() {
                                           ? "Paused"
                                           : f.issue
                                             ? "Needs attention"
-                                            : status.busy &&
+                                            : status.offline
+                                              ? "Offline"
+                                              : status.busy &&
                                                 status.syncingVolume === f.id
                                               ? "Syncing"
                                               : f.completed
@@ -1972,7 +2048,8 @@ export default function App() {
                       {connection ? (
                         <Section>
                           <Text style={s.eyebrow}>HUB CONNECTION</Text>
-                          {!machines && <Scaffold label="Loading machines" />}
+                          {status.offline && !!machines?.length && <Text style={s.caption}>Showing saved machine information.</Text>}
+                          {!machines && !status.offline && <Scaffold label="Loading machines" />}
                           <HubConnection
                             connection={connection}
                             name={catalog?.name}
@@ -2075,7 +2152,7 @@ export default function App() {
                                 state={
                                   status.paused
                                     ? "Paused"
-                                    : status.error ||
+                                    : status.offline ? "Offline" : status.error ||
                                         locals.some(
                                           (f) => f.selected && f.issue,
                                         )
@@ -2091,7 +2168,7 @@ export default function App() {
                                             : "Not yet synced"
                                 }
                               />
-                              {machines ? (
+                              {machines?.length ? (
                                 machines
                                   .filter(
                                     (m) =>
@@ -2109,7 +2186,7 @@ export default function App() {
                                   ))
                               ) : (
                                 <Text style={s.caption}>
-                                  Machine list unavailable
+                                  No saved machine information. Sync online to save it.
                                 </Text>
                               )}
                             </View>
@@ -2123,6 +2200,7 @@ export default function App() {
                       {!connected && (
                         <Text style={s.text}>Connect to view hub history.</Text>
                       )}
+                      {history.offline && <Text style={s.caption}>Showing saved history · recent entries only.</Text>}
                       {historyLoading && !history.versions.length && (
                         <Scaffold kind="history" label="Loading history" />
                       )}
@@ -2143,13 +2221,13 @@ export default function App() {
                         !history.versions.length && (
                           <Card
                             title={
-                              historyFilter !== "revisions" || historyVolume
+                              history.offline ? "No saved history" : historyFilter !== "revisions" || historyVolume
                                 ? "No matching revisions"
                                 : "No history yet"
                             }
                           >
                             <Text style={s.text}>
-                              Try another filter or sync to check for revisions.
+                              Try another filter or sync online to save recent history.
                             </Text>
                           </Card>
                         )}
@@ -2597,7 +2675,7 @@ export default function App() {
                     : shownSheet.kind === "history-filter"
                       ? "Shared folder"
                       : shownSheet.kind === "folder-actions"
-                        ? folder.name
+                        ? shownSheet.volume.name
                         : shownSheet.kind === "select"
                           ? shownSheet.volume.name
                           : shownSheet.kind === "history"
@@ -2689,7 +2767,7 @@ export default function App() {
                   ))}
                 </View>
               )}
-              {shownSheet.kind === "folder-actions" && (
+              {shownSheet.kind === "folder-actions" && folder?.id === shownSheet.volume.id && (
                 <>
                   <View style={s.actionGroup}>
                     {!!folder.selected && !source && (

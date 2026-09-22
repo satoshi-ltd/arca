@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.4.12 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.5.0 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -16,6 +16,8 @@ A personal drive for your own machines: complete files on disk, bidirectional sy
 - Mobile (phone and Fold) is exclusively a replica: it cannot act as a hub or keep a full hub backup. Optional desktop/server **full backup** is independent of working copies and requires explicit enablement. Quit leaves the desktop daemon running.
 
 Desktop/server sync uses incremental remote changes, changed local paths and periodic reconciliation: 15-second active checks, 60-second idle checks. Mobile resumes durable work on launch/resume and through OS-scheduled background tasks; it is not a continuously running daemon.
+
+The current checkout adds hub change notifications with polling fallback, persistent mobile hash verification, bounded turns between mobile folders, and native file-block transfers with cancellation. These changes require an updated hub/desktop daemon and rebuilt mobile apps; a Metro reload alone cannot install the native transport.
 
 Files and directories, including empty nested directories, are synchronized in the current checkout. Safe file/directory replacements and case-only renames require updated hub and replica clients advertising `pathTransitions`; older clients receive an upgrade error. File counts exclude directories.
 
@@ -45,6 +47,8 @@ npm test
 npm run desktop:build
 npm run verify:bundle
 ```
+
+For isolated hub metadata/API load qualification, run `node scripts/verify-hub-load.js . 100000`. It creates temporary state and a child daemon, tests three concurrent snapshots alongside a verified 1 MiB upload/download, checks HTTP responsiveness and pause/resume, then removes only its fixtures. It never uses the live `~/.arca`. Docker execution and measured limits are in [hub load qualification](SPEC.md#05-docker-hub-load-qualification--september-22).
 
 Web/Tauri share `apps/desktop/src`. Vite reloads frontend changes; daemon changes require deployment/restart. Building a bundle does not replace an already running app. macOS local bundles are ad-hoc signed, not notarized.
 

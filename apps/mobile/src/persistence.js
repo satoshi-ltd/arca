@@ -15,6 +15,7 @@ async function db() {
 export const client = createClient({
   resolvePrivateURL,
   fetcher: nativeFetch,
+  fileTransfers: true,
   secrets: {
     async read() {
       const value = await SecureStore.getItemAsync(KEY);

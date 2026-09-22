@@ -745,6 +745,11 @@ export function styles(
       maxWidth: 1400,
       alignSelf: "center",
     },
+    offlineStatus: {
+      flexDirection: "row", alignItems: "center", gap: 8,
+      paddingHorizontal: wide ? g.workspaceInset : 16,
+      paddingBottom: 8, width: "100%", maxWidth: 1400, alignSelf: "center",
+    },
     detailViewHeader: {
       paddingTop: g.detailHeaderTop,
       gap: g.detailNavigationGap,

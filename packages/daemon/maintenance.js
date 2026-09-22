@@ -66,8 +66,8 @@ export function retentionPlan(
   )
     fail("Retention values must be non-negative integers");
   const revisions = volume
-    ? store.db.prepare("SELECT * FROM revisions WHERE volume=? ORDER BY rev DESC").all(volume)
-    : store.db.prepare("SELECT * FROM revisions ORDER BY rev DESC").all();
+    ? store.db.prepare("SELECT rev,volume,path,created FROM revisions WHERE volume=? ORDER BY rev DESC").all(volume)
+    : store.db.prepare("SELECT rev,volume,path,created FROM revisions ORDER BY rev DESC").all();
   const pinned = new Set(
     (volume
       ? store.db.prepare("SELECT rev FROM files WHERE volume=?").all(volume)
@@ -86,6 +86,11 @@ export function retentionPlan(
   const counts = new Map(),
     newerDates = new Map(),
     remove = [];
+  const folders = (volume ? [store.volume(volume)] : store.volumes()).map((v) => ({
+    id: v.id, name: v.name, remove: 0, retained: 0,
+  }));
+  const byFolder = new Map(folders.map((folder) => [folder.id, folder]));
+  let protectedCount = 0;
   const cutoff = Date.now() - days * 86400000;
   for (const r of revisions) {
     const key = JSON.stringify([r.volume, r.path]);
@@ -93,34 +98,26 @@ export function retentionPlan(
     counts.set(key, count);
     const ageFrom = volume ? newerDates.get(key) : r.created;
     newerDates.set(key, r.created);
-    if (
+    const protectedRevision = pinned.has(r.rev) || (floor !== null && r.rev > floor);
+    if (protectedRevision) protectedCount++;
+    const removable = (
       (!volume || r.volume === volume) &&
       (floor === null || r.rev <= floor) &&
       !pinned.has(r.rev) &&
       (days || versions) &&
       (!days || Date.parse(ageFrom) < cutoff) &&
       (!versions || count > versions)
-    )
-      remove.push(r.rev);
+    );
+    if (removable) remove.push(r.rev);
+    const folder = byFolder.get(r.volume);
+    if (folder) folder[removable ? "remove" : "retained"]++;
   }
-  const removed = new Set(remove);
-  const folders = (volume ? [store.volume(volume)] : store.volumes()).map((v) => {
-    const rows = revisions.filter((r) => r.volume === v.id);
-    return {
-      id: v.id,
-      name: v.name,
-      remove: rows.filter((r) => removed.has(r.rev)).length,
-      retained: rows.filter((r) => !removed.has(r.rev)).length,
-    };
-  });
   return {
     days,
     versions,
     remove,
     retained: revisions.length - remove.length,
-    protected: revisions.filter(
-      (r) => pinned.has(r.rev) || (floor !== null && r.rev > floor),
-    ).length,
+    protected: protectedCount,
     folders,
     hasBackup: floor !== null,
   };
@@ -143,6 +140,9 @@ export function applyRetention(store, options, collect = true, plan = retentionP
 }
 
 function collectUnusedObjects(store) {
+  // A worker may have captured old heads whose snapshot pins are still being
+  // persisted. History pruning can continue, but content GC must wait for pins.
+  if (store.snapshotBuilds) return 0;
   // Content GC is conservative: preserve current, historical, backup and pending hashes.
   const hashes = new Set(
     store.db

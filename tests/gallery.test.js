@@ -205,6 +205,18 @@ test("replicas render selected local previews without hub requests and fall back
       }
       return remote(route, ...args);
     };
+    const onlineRequest = replica.engine.request.bind(replica.engine);
+    replica.engine.request = async () => {
+      throw new Error("Hub offline");
+    };
+    assert.equal((await call(f.route)).items[0].path, "photo.jpg");
+    assert.equal((await call("/v1/remote")).volumes[0].id, f.v.id);
+    const info = await call(
+      "/v1/gallery/info?" +
+        new URLSearchParams({ volume: f.v.id, path: "photo.jpg", hash }),
+    );
+    assert.ok(info);
+    replica.engine.request = onlineRequest;
     assert.match(
       (await call(f.preview("photo.jpg", hash))).data,
       /^data:image\/jpeg;base64,/,

@@ -18,6 +18,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class ArcaNetworkModule : Module() {
+  private class RequestState {
+    @Volatile var cancelled = false
+    @Volatile var connection: HttpURLConnection? = null
+  }
+  private val requests = java.util.concurrent.ConcurrentHashMap<String, RequestState>()
   override fun definition() = ModuleDefinition {
     Name("ArcaNetwork")
     AsyncFunction("openFile") Coroutine { uri: String ->
@@ -94,13 +99,20 @@ class ArcaNetworkModule : Module() {
       val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
       clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Arca details", text))
     }
-    AsyncFunction("request") Coroutine { address: String, method: String, headers: Map<String, String>, body: String? ->
+    Function("beginRequest") { id: String, privateNetwork: Boolean -> requests[id] = RequestState() }
+    Function("cancelRequest") { id: String ->
+      requests[id]?.let { it.cancelled = true; it.connection?.disconnect() }
+    }
+    AsyncFunction("request") Coroutine { address: String, method: String, headers: Map<String, String>, body: String?, id: String, transfer: Map<String, String> ->
       withContext(Dispatchers.IO) {
         val url = URL(address)
         check(url.protocol == "https" || url.protocol == "http")
         check(url.userInfo == null)
-        try { perform(url, method, headers, body, emptySet()) }
-        catch (stale: StaleNetwork) { perform(url, method, headers, body, setOf(stale.network)) }
+        val state = requests[id] ?: error("Request cancelled")
+        try {
+          try { perform(url, method, headers, body, emptySet(), state, transfer) }
+          catch (stale: StaleNetwork) { perform(url, method, headers, body, setOf(stale.network), state, transfer) }
+        } finally { requests.remove(id) }
       }
     }
     AsyncFunction("exportDirectory") { source: String, destination: String, name: String ->
@@ -148,21 +160,32 @@ class ArcaNetworkModule : Module() {
   private class StaleNetwork(val network: android.net.Network, cause: java.net.SocketException) : java.net.SocketException(cause.message) {
     init { initCause(cause) }
   }
-  private fun perform(url: URL, method: String, headers: Map<String, String>, body: String?, excluded: Set<android.net.Network>): Map<String, Any> {
+  private fun perform(url: URL, method: String, headers: Map<String, String>, body: String?, excluded: Set<android.net.Network>, state: RequestState, transfer: Map<String, String>): Map<String, Any> {
     val network = if (url.protocol == "http") (if (isLanAddress(url.host)) lanNetwork(url.host, excluded) else privateNetwork(url.host)) else null
     val connection = (network?.openConnection(url) ?: url.openConnection()) as HttpURLConnection
+    state.connection = connection
     try {
+      check(!state.cancelled) { "Request cancelled" }
       connection.instanceFollowRedirects = false
       connection.connectTimeout = 20000
       connection.readTimeout = 20000
       connection.requestMethod = method
       headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
-      connection.doOutput = body != null
+      val offset = transfer["offset"]?.toLong() ?: 0L
+      val length = transfer["length"]?.toInt() ?: 0
+      check(offset >= 0 && length in 0..1048576)
+      val source = transfer["source"]?.let { privateFile(it) }
+      connection.doOutput = body != null || source != null
       // Retry only before sending a body; later socket failures may follow an accepted write.
       try { connection.connect() }
       catch (error: java.net.SocketException) {
         if (network != null && excluded.isEmpty() && error.message?.contains("Binding socket to network") == true) throw StaleNetwork(network, error)
         throw error
+      }
+      if (source != null) {
+        val bytes = ByteArray(length)
+        java.io.RandomAccessFile(source, "r").use { it.seek(offset); it.readFully(bytes) }
+        connection.outputStream.use { it.write(bytes) }
       }
       if (body != null) connection.outputStream.use { it.write(Base64.decode(body, Base64.NO_WRAP)) }
       val status = connection.responseCode
@@ -173,8 +196,26 @@ class ArcaNetworkModule : Module() {
         while (true) { val count = stream.read(buffer); if (count < 0) break; check(out.size() + count <= 8 * 1024 * 1024); out.write(buffer, 0, count) }
         out.toByteArray()
       } ?: ByteArray(0)
-      return mapOf("status" to status, "headers" to connection.headerFields.filterKeys { it != null }.mapValues { it.value.joinToString(", ") }, "body" to Base64.encodeToString(data, Base64.NO_WRAP))
+      var written = 0
+      if (transfer["destination"] != null && status == 206) {
+        check(connection.getHeaderField("Content-Range") == transfer["range"] && data.size == length) { "Invalid download range" }
+        check(!state.cancelled) { "Request cancelled" }
+        java.io.RandomAccessFile(privateFile(transfer.getValue("destination")), "rw").use {
+          check(it.length() == offset) { "Partial download changed" }
+          it.seek(offset); it.write(data); it.fd.sync()
+        }
+        written = data.size
+      }
+      return mapOf("bytesWritten" to written, "status" to status, "headers" to connection.headerFields.filterKeys { it != null }.mapValues { it.value.joinToString(", ") }, "body" to Base64.encodeToString(if (written > 0) ByteArray(0) else data, Base64.NO_WRAP))
     } finally { connection.disconnect() }
+  }
+  private fun privateFile(uri: String): File {
+    val parsed = java.net.URI(uri)
+    check(parsed.scheme == "file")
+    val file = File(parsed).canonicalFile
+    val context = appContext.reactContext ?: error("App unavailable")
+    check(listOf(context.filesDir, context.cacheDir).any { file.path.startsWith(it.canonicalPath + "/") }) { "File is outside Arca storage" }
+    return file
   }
   private fun isLanAddress(address: String): Boolean {
     val parts = address.split('.').mapNotNull { it.toIntOrNull() }

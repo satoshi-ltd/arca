@@ -1,3 +1,4 @@
+import { warmHistory } from "./history-cache.js";
 import { renamedPath } from "../core/file-rename.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -118,7 +119,7 @@ export class Engine {
     this.tail = next.catch(() => {});
     return next;
   }
-  status() {
+  status(visibleTotals) {
     const s = this.store;
     return {
       protocol: 1,
@@ -136,7 +137,9 @@ export class Engine {
             ? "unlinked"
             : this.paused
               ? "paused"
-              : this.phase,
+              : this.hubUnavailable
+                ? "offline"
+                : this.phase,
       needsSetup: !!this.config.needsSetup,
       onboarding: !!this.config.onboarding,
       destroyPending: !!this.config.destroyPending,
@@ -150,15 +153,16 @@ export class Engine {
         error: this.backupError || null,
       },
       error: this.error,
+      hubUnavailable: !!this.hubUnavailable,
       lastSync: this.lastSync,
       transferred: this.transferred,
-      progress: this.progress,
+      progress: this.paused || this.hubUnavailable ? null : this.progress,
       hub: this.config.hub?.url || null,
       hubId: this.config.hub?.id || null,
       hubName: this.config.hub?.name || null,
       disconnectedHub: this.config.disconnectedHub || null,
       volumes: s.volumes().map((v) => {
-        const totals = s.visibleTotals(v.id);
+        const totals = visibleTotals?.get(v.id) || s.visibleTotals(v.id);
         return {
           ...v,
           historyRetention:
@@ -174,7 +178,9 @@ export class Engine {
               : !!this.config.catalog?.find((row) => row.id === v.id)?.gallery,
           sync: totals.policyError
             ? { state: "error", error: totals.policyError, lastCompleted: null }
-            : this.folderStates.get(v.id) || {
+            : (this.paused || this.hubUnavailable) && v.selected
+              ? { state: this.paused ? "paused" : "pending", lastCompleted: v.last_sync }
+              : this.folderStates.get(v.id) || {
                 state: v.selected ? "pending" : "unselected",
                 lastCompleted: v.last_sync,
               },
@@ -206,24 +212,43 @@ export class Engine {
     };
   }
   async request(route, options = {}) {
+    const { trackConnection = true, ...fetchOptions } = options;
+    const connectionVersion = this.connectionVersion || 0;
     const hub = this.config.hub;
     if (!hub) fail("Connect this node to a hub first");
-    const response = await fetch(`${hub.url}${route}`, {
-      ...options,
-      redirect: "error",
-      headers: {
-        Authorization: `Bearer ${hub.token}`,
-        "X-Arca-Directories": "1",
-        "X-Arca-Path-Transitions": "1",
-        ...options.headers,
-      },
-      signal: AbortSignal.any([
-        options.signal || AbortSignal.timeout(60000),
-        ...(this.requestContext.getStore()
-          ? [this.requestContext.getStore().signal]
-          : []),
-      ]),
-    });
+    let response;
+    try {
+      response = await fetch(`${hub.url}${route}`, {
+        ...fetchOptions,
+        redirect: "error",
+        headers: {
+          Authorization: `Bearer ${hub.token}`,
+          "X-Arca-Directories": "1",
+          "X-Arca-Path-Transitions": "1",
+          ...options.headers,
+        },
+        signal: AbortSignal.any([
+          options.signal || AbortSignal.timeout(60000),
+          ...(this.requestContext.getStore()
+            ? [this.requestContext.getStore().signal]
+            : []),
+        ]),
+      });
+    } catch (error) {
+      if (
+        !this.requestContext.getStore()?.signal.aborted &&
+        (error.name === "TimeoutError" || error instanceof TypeError)
+      ) {
+        error.hubUnavailable = true;
+        if (trackConnection && this.config.hub === hub && connectionVersion === (this.connectionVersion || 0))
+          this.hubUnavailable = true;
+      }
+      throw error;
+    }
+    if (trackConnection && this.config.hub === hub) {
+      this.connectionVersion = (this.connectionVersion || 0) + 1;
+      this.hubUnavailable = false;
+    }
     if (!response.ok) {
       if (
         response.status === 401 &&
@@ -496,7 +521,7 @@ export class Engine {
     }
     this.phase = "syncing";
     this.syncAbort = this.requestContext.getStore();
-    this.error = null;
+    if (!this.hubUnavailable) this.error = null;
     try {
       if (!this.lastCleanup || Date.now() - this.lastCleanup > 3600000) {
         cleanupTransfers(this.store);
@@ -509,6 +534,8 @@ export class Engine {
         await this.scanHub(undefined, { incremental });
       else if (this.config.hub) {
         const catalog = await this.json("/v1/catalog");
+        this.hubUnavailable = false;
+        this.error = null;
         if (
           !catalog.directories ||
           !catalog.changes ||
@@ -849,7 +876,7 @@ export class Engine {
           } catch (e) {
             if (this.syncAbort.signal.aborted)
               throw this.syncAbort.signal.reason;
-            if (e.syncInterrupted) throw e;
+            if (e.syncInterrupted || e.hubUnavailable) throw e;
             this.folderStates.set(v.id, {
               state: "error",
               error: e.message,
@@ -922,6 +949,7 @@ export class Engine {
         this.progress = null;
         fail(folderErrors.join("; "), 409);
       }
+      await warmHistory(this);
       this.lastSync = new Date().toISOString();
       this.phase = "idle";
       this.progress = null;
@@ -936,17 +964,27 @@ export class Engine {
         this.error = null;
         return;
       }
-      if (this.progress?.volume)
+      if (this.progress?.volume && !e.hubUnavailable)
         this.folderStates.set(this.progress.volume, {
           state: "error",
           error: e.message,
+        });
+      if (e.hubUnavailable && this.progress?.volume)
+        this.folderStates.set(this.progress.volume, {
+          state: "pending",
+          lastCompleted: this.store.volume(this.progress.volume).last_sync,
         });
       this.progress = null;
       this.phase = "error";
       this.error = e.message;
       throw e;
     } finally {
-      if (!this.syncAbort.signal.aborted) await this.reportMachine();
+      for (const [id, state] of this.folderStates) {
+        if (["syncing", "scanning"].includes(state.state))
+          this.folderStates.set(id, { state: "pending", lastCompleted: state.lastCompleted });
+      }
+      if (!this.syncAbort.signal.aborted && !this.hubUnavailable)
+        await this.reportMachine();
       this.syncAbort = null;
     }
   }
@@ -1226,6 +1264,7 @@ export class Engine {
         const disk = await this.scanner.scan(v, plan.paths);
         checkpoint();
         const known = s.rowsInScope(v.id, plan.paths);
+        const excluded = s.ignoreRules(v);
         const diskNames = new Set(
           [...disk.keys()].map((name) => name.toLowerCase()),
         );
@@ -1235,9 +1274,9 @@ export class Engine {
           if (
             !row.deleted &&
             covers(plan.paths, row.path) &&
-            !s.excluded(v.id, row.path, row.directory) &&
             !disk.has(row.path) &&
-            !diskNames.has(row.path.toLowerCase())
+            !diskNames.has(row.path.toLowerCase()) &&
+            !excluded(row.path, !!row.directory)
           )
             s.commit(v.id, row.path, null, this.config.id);
         }

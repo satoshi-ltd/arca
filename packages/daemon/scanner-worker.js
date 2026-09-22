@@ -1,6 +1,27 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { Store } from "./storage.js";
-parentPort.on("message", ({ id, volume, paths, cancellation }) => {
+import { DatabaseSync } from "node:sqlite";
+import path from "node:path";
+import { snapshotRows } from "./snapshots.js";
+parentPort.on("message", ({ id, operation, volume, paths, cancellation }) => {
+  if (operation === "snapshot") {
+    let db, result;
+    try {
+      // A read-only connection captures one consistent SQLite read snapshot.
+      // Never hold a write lock in this worker: HTTP handlers also use SQLite.
+      db = new DatabaseSync(path.join(workerData.home, "index.sqlite"), {
+        readOnly: true,
+      });
+      result = { id, rows: snapshotRows(db, volume) };
+    } catch (error) {
+      result = { id, error: error.message, status: error.status };
+    } finally {
+      db?.close();
+    }
+    // Completion must mean the SQLite handle is closed, including on Windows.
+    parentPort.postMessage(result);
+    return;
+  }
   let store, result;
   try {
     store = new Store(workerData.home);

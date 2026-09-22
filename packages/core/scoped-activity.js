@@ -27,6 +27,7 @@ export async function scopedActivity(fetchPage, selected, query) {
     .sort((a, b) => b.rev - a.rev);
   const versions = rows.slice(0, limit);
   return {
+    ...(pages.some((page) => page.offline) ? { offline: true } : {}),
     versions,
     next:
       versions.length &&

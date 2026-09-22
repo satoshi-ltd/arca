@@ -1,3 +1,5 @@
+import { cachedActivity } from "./history-cache.js";
+import { ChangeFeed } from "./change-feed.js";
 import { ImageMaintenance } from "./image-maintenance.js";
 import { galleryMedia, streamGalleryMedia } from "./gallery-media.js";
 import { Gallery } from "./gallery.js";
@@ -33,7 +35,7 @@ import {
   digest,
   token,
   fail,
-  hashFile,
+  hashFileAsync,
   atomic,
   requireSpace,
   syncDirectory,
@@ -105,7 +107,76 @@ export async function start(home, options = {}) {
     throw error;
   }
   const playbackTickets = new Map();
+  const snapshotReads = new Map();
+  const readSnapshot = (volume) => {
+    const generation = s.db.prepare("SELECT generation FROM file_generations WHERE volume=?").get(volume)?.generation || 0;
+    const key = `${volume}:${generation}`;
+    if (!snapshotReads.has(key)) {
+      const read = engine.scanner.snapshot(volume).finally(() => snapshotReads.delete(key));
+      snapshotReads.set(key, read);
+    }
+    // Overlapping readers can share one immutable capture. Each request still
+    // gets its own authenticated lease and durable content pins.
+    return snapshotReads.get(key);
+  };
   const pairingAttempts = new Attempts();
+  const feed = new ChangeFeed(() =>
+    digest(
+      JSON.stringify([
+        s.db
+          .prepare("SELECT seq FROM sqlite_sequence WHERE name='revisions'")
+          .get()?.seq || 0,
+        s.volumes().map((v) => [v.id, v.name, v.selected]),
+        config.folderRetention,
+        config.name,
+        s.db.prepare("SELECT COUNT(*) n FROM pending").get().n,
+        s.db.prepare("SELECT * FROM gallery_folders ORDER BY volume").all(),
+      ]),
+    ),
+  );
+  // Remote-only views have a short deadline and retain their last successful data.
+  s.db.exec(
+    "CREATE TABLE IF NOT EXISTS remote_views(key TEXT PRIMARY KEY, value TEXT NOT NULL, used INTEGER NOT NULL)",
+  );
+  async function remoteView(route, fallback) {
+    const normalized = new URL(route, "http://local");
+    normalized.searchParams.sort();
+    const key = `${config.hub?.id || ""}:${normalized.pathname}${normalized.search}`;
+    try {
+      if (engine.hubUnavailable)
+        throw Object.assign(new Error("Hub unavailable"), {
+          hubUnavailable: true,
+        });
+      const response = await engine.request(route, {
+        signal: AbortSignal.timeout(3000),
+      });
+      const value = await response.json();
+      s.db
+        .prepare("INSERT OR REPLACE INTO remote_views VALUES(?,?,?)")
+        .run(key, JSON.stringify(value), Date.now());
+      s.db.exec(
+        "DELETE FROM remote_views WHERE key NOT IN (SELECT key FROM remote_views ORDER BY used DESC LIMIT 64)",
+      );
+      return value;
+    } catch (error) {
+      // request() owns connection ordering. A slow view may use cached data
+      // without overriding a newer successful request's connectivity state.
+      if (error.name === "TimeoutError") {
+        error.hubUnavailable = true;
+      }
+      if (!error.hubUnavailable) throw error;
+      const cached = s.db
+        .prepare("SELECT value,used FROM remote_views WHERE key=?")
+        .get(key);
+      const prepared = fallback?.();
+      if (cached && (!prepared?.savedAt || cached.used > prepared.savedAt))
+        return { ...JSON.parse(cached.value), offline: true };
+      if (prepared) return { ...prepared, offline: true };
+      throw new Error(
+        "Hub unavailable. This information is not saved on this machine.",
+      );
+    }
+  }
   const server = http.createServer(async (req, res) => {
     const send = (status, data) => {
       res.writeHead(status, {
@@ -410,7 +481,7 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/web-approvals") {
         if (config.role !== "hub") {
           requireAdmin();
-          return send(200, await engine.json(route));
+          return send(200, await remoteView(route, () => ({ requests: [] })));
         }
         if (!web) return send(200, { requests: [] });
         return send(200, {
@@ -432,7 +503,10 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/machines") {
         if (config.role !== "hub") {
           requireAdmin();
-          return send(200, await engine.json("/v1/machines"));
+          return send(
+            200,
+            await remoteView("/v1/machines", () => ({ machines: [] })),
+          );
         }
         return send(200, machines(engine));
       }
@@ -450,7 +524,7 @@ export async function start(home, options = {}) {
       }
       if (req.method === "GET" && route === "/v1/status") {
         requireAdmin();
-        const status = engine.status();
+        const status = engine.status(await s.allVisibleTotals());
         return send(200, {
           ...status,
           webApprovers: config.webApprovers || [],
@@ -608,8 +682,9 @@ export async function start(home, options = {}) {
         )
           fail("This photo is no longer available", 404);
         const file = config.role === "hub" ? s.blob(hash) : s.filePath(v, name);
-        if (!fs.existsSync(file) || hashFile(file) !== hash)
+        if (!fs.existsSync(file) || (await hashFileAsync(file)) !== hash)
           fail("File changed. Sync before downloading.", 409);
+        checkCredential();
         res.writeHead(200, {
           "Content-Type": "application/octet-stream",
           "Content-Length": fs.statSync(file).size,
@@ -642,7 +717,9 @@ export async function start(home, options = {}) {
             row.hash === hash &&
             fs.statSync(s.blob(hash), { throwIfNoEntry: false })?.size ===
               row.size;
-          if (config.hub && !localPreview)
+          // Selected replicas own complete files and a local gallery index.
+          // Only a missing derivative may need the hub; listing/info stay local.
+          if (config.hub && route.endsWith("/preview") && !localPreview)
             return send(200, await engine.json(route + url.search));
         }
         if (req.method !== "GET") fail("Method not allowed", 405);
@@ -667,10 +744,13 @@ export async function start(home, options = {}) {
       }
       if (req.method === "GET" && route === "/v1/catalog") {
         requireHub();
+        const totals = await s.allVisibleTotals();
+        checkCredential();
         return send(200, {
           protocol: 1,
           gallery: true,
           changes: true,
+          changeEvents: true,
           conflictResolution: true,
           blobRanges: true,
           directories: true,
@@ -687,12 +767,13 @@ export async function start(home, options = {}) {
               .get(v.id),
             conflicts: s.unresolvedConflicts(v.id),
             conflictRevision: s.conflictRevision(v.id),
-            ...s.visibleTotals(v.id),
+            ...totals.get(v.id),
           })),
         });
       }
       if (req.method === "GET" && route === "/v1/remote") {
         requireAdmin();
+        const totals = config.role === "hub" ? await s.allVisibleTotals() : null;
         return send(
           200,
           config.role === "hub"
@@ -705,12 +786,44 @@ export async function start(home, options = {}) {
                     gallery: !!s.db
                       .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
                       .get(v.id),
-                    ...s.visibleTotals(v.id),
+                    ...totals.get(v.id),
                   };
                 }),
               }
-            : await engine.json("/v1/catalog"),
+            : {
+                name: config.hub?.name || "Hub",
+                volumes: config.catalog || [],
+              },
         );
+      }
+      if (req.method === "GET" && route === "/v1/events") {
+        if (!admin) requireHub();
+        if (feed.waiters.size >= 256) fail("Too many waiting clients", 503);
+        const controller = new AbortController();
+        const disconnect = () => controller.abort();
+        res.once("close", disconnect);
+        try {
+          const cursor = await feed.wait(
+            url.searchParams.get("after"),
+            controller.signal,
+          );
+          if (res.destroyed) return;
+          if (browserSession && !web.session(req)) fail("Unauthorized", 401);
+          if (
+            !admin &&
+            !s.db
+              .prepare(
+                "SELECT id FROM devices WHERE id=? AND token_hash=? AND revoked=0",
+              )
+              .get(device.id, digest(credential))
+          )
+            fail("Unauthorized", 401);
+          if (!admin && lanHttp && config.network?.allowLanHttp !== true)
+            fail("LAN access disabled", 403);
+          return send(200, { cursor });
+        } finally {
+          res.off("close", disconnect);
+        }
       }
       if (req.method === "GET" && route === "/v1/changes") {
         requireHub();
@@ -754,14 +867,23 @@ export async function start(home, options = {}) {
         if (!url.searchParams.get("session") && engine.phase !== "syncing")
           await authorizedWork(() => engine.scanHub(volume));
         checkCredential();
-        return send(
-          200,
-          snapshotPage(s, device.id, volume, {
+        const controller = new AbortController();
+        const disconnect = () => controller.abort();
+        res.once("close", disconnect);
+        try {
+          const page = await snapshotPage(s, device.id, volume, {
             session: url.searchParams.get("session"),
             after: url.searchParams.get("after") || "",
             limit: Number(url.searchParams.get("limit") ?? 500),
-          }),
-        );
+            readRows: () => readSnapshot(volume),
+            signal: controller.signal,
+          });
+          checkCredential();
+          if (!res.destroyed) return send(200, page);
+          return;
+        } finally {
+          res.off("close", disconnect);
+        }
       }
       if (req.method === "GET" && route === "/v1/archive") {
         requireHub();
@@ -813,7 +935,9 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/activity") {
         if (config.role !== "hub") {
           requireAdmin();
-          const shared = await engine.json("/v1/catalog");
+          const shared = await remoteView("/v1/catalog", () => ({
+            volumes: config.catalog || [],
+          }));
           const selectedIds = historyFolderIds(s.volumes(), shared.volumes);
           const requested = url.searchParams.get("volume");
           if (requested && !selectedIds.includes(requested))
@@ -821,7 +945,8 @@ export async function start(home, options = {}) {
           return send(
             200,
             await scopedActivity(
-              (query) => engine.json(`/v1/activity?${query}`),
+              (query) =>
+                remoteView(`/v1/activity?${query}`, () => cachedActivity(s, config.hub?.id, query)),
               selectedIds,
               url.searchParams,
             ),
@@ -860,7 +985,16 @@ export async function start(home, options = {}) {
           requireAdmin();
           if (!s.volumes().some((v) => v.id === volume && v.selected))
             fail("Select this folder to view its history", 403);
-          return send(200, await engine.json(`/v1/history${url.search}`));
+          return send(
+            200,
+            await remoteView(`/v1/history${url.search}`, () => ({
+              versions: s.current(volume, name)
+                ? [s.current(volume, name)]
+                : [],
+              localOnly: true,
+              next: null,
+            })),
+          );
         }
         s.volume(volume);
         return send(
@@ -931,12 +1065,15 @@ export async function start(home, options = {}) {
         const hash = route.split("/").at(-1);
         const file = s.blob(hash);
         const tmp = path.join(s.uploads, `${device.id}-${hash}.part`);
-        if (req.method === "GET")
+        if (req.method === "GET") {
+          const complete = fs.existsSync(file) && (await hashFileAsync(file)) === hash;
+          checkCredential();
           return send(200, {
-            complete: fs.existsSync(file) && hashFile(file) === hash,
+            complete,
             maxChunkBytes: 8 * 1024 * 1024,
             offset: fs.existsSync(tmp) ? fs.statSync(tmp).size : 0,
           });
+        }
         if (req.method === "PUT") {
           const data = await body(req, 8 * 1024 * 1024);
           const offset = Number(url.searchParams.get("offset"));
@@ -952,11 +1089,11 @@ export async function start(home, options = {}) {
             fail("Invalid upload bounds");
           return send(
             200,
-            await authorizedWork(() => {
+            await authorizedWork(async () => {
               if (
                 fs.existsSync(file) &&
                 fs.statSync(file).size === size &&
-                hashFile(file) === hash
+                (await hashFileAsync(file)) === hash
               )
                 return { complete: true, offset: size };
               const actual = fs.existsSync(tmp) ? fs.statSync(tmp).size : 0;
@@ -966,7 +1103,7 @@ export async function start(home, options = {}) {
               fs.appendFileSync(tmp, data, { mode: 0o600 });
               const complete = offset + data.length === size;
               if (complete) {
-                if (hashFile(tmp) !== hash) {
+                if ((await hashFileAsync(tmp)) !== hash) {
                   fs.unlinkSync(tmp);
                   fail("Upload hash mismatch", 409);
                 }
@@ -1356,7 +1493,7 @@ export async function start(home, options = {}) {
             return send(202, { accepted: true });
           }
           await authorizedWork(() => engine.cycle());
-          return send(200, engine.status());
+          return send(200, engine.status(await s.allVisibleTotals()));
         }
         if (route === "/v1/pause") {
           if (
@@ -1370,7 +1507,7 @@ export async function start(home, options = {}) {
             Boolean(b.paused),
             b.seconds ? Date.now() + b.seconds * 1000 : null,
           );
-          return send(200, engine.status());
+          return send(200, engine.status(await s.allVisibleTotals()));
         }
         if (route === "/v1/path-check") {
           const location = s.resolveLocation(b.path);
@@ -1991,6 +2128,46 @@ export async function start(home, options = {}) {
         });
     });
   }
+  const remoteEvents =
+    options.timer !== false && config.role === "replica"
+      ? new AbortController()
+      : null;
+  if (remoteEvents)
+    void (async () => {
+      let cursor = null;
+      while (!remoteEvents.signal.aborted) {
+        try {
+          if (!config.hub || engine.paused)
+            throw new Error("Waiting for connection");
+          const response = await engine.request(
+            `/v1/events?${new URLSearchParams(cursor ? { after: cursor } : {})}`,
+            {
+              trackConnection: false,
+              signal: AbortSignal.any([
+                remoteEvents.signal,
+                AbortSignal.timeout(15000),
+              ]),
+            },
+          );
+          const next = (await response.json()).cursor;
+          if (next !== cursor) {
+            cursor = next;
+            void tick();
+          }
+        } catch {
+          await new Promise((resolve) => {
+            const done = () => {
+              clearTimeout(timer);
+              remoteEvents.signal.removeEventListener("abort", done);
+              resolve();
+            };
+            const timer = setTimeout(done, 15000);
+            remoteEvents.signal.addEventListener("abort", done, { once: true });
+            if (remoteEvents.signal.aborted) done();
+          });
+        }
+      }
+    })();
   return {
     engine,
     network,
@@ -1998,6 +2175,8 @@ export async function start(home, options = {}) {
     port: server.address().port,
     async close() {
       stopping = true;
+      remoteEvents?.abort();
+      feed.close();
       clearTimeout(changedTimer);
       for (const w of watchers.values()) w.close();
       flushEvents();

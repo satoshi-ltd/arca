@@ -364,3 +364,17 @@ test("app text size scales typography without zooming layout or icons", async ()
     assert.equal(textScale(invalid), 1);
   assert.equal(textScale("1.15"), 1.15);
 });
+
+
+test("closing folder actions retain their title after local removal without rendering stale actions", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const title = app.slice(app.indexOf("{shownSheet && (")).match(/title=\{([\s\S]*?)\}\s+busy=/)[1];
+  const actions = app.match(/\{(shownSheet.kind === "folder-actions"[^{]*?) && \(/)[1];
+  const volume = { id: "removed-share", name: "photos-demo", selected: 1 };
+  assert.match(app, /setSheet\(\{ kind: "folder-actions", volume: folder \}\)/);
+  const shownSheet = { kind: "folder-actions", volume };
+  assert.equal(vm.runInNewContext(title, { shownSheet, folder: null }), "photos-demo");
+  assert.equal(vm.runInNewContext(actions, { shownSheet, folder: volume }), true);
+  assert.equal(vm.runInNewContext(actions, { shownSheet, folder: null }), false);
+  assert.equal(vm.runInNewContext(actions, { shownSheet, folder: { id: "other" } }), false);
+});

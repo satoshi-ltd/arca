@@ -181,9 +181,13 @@ test("mobile downloads verified blocks, sends edits, resumes offline edits and r
   f.offline();
   await replica.sync();
   assert.equal(replica.error, "offline");
+  assert.equal(replica.hubUnavailable, true);
+  assert.equal(replica.syncingVolume, null);
+  assert.equal(replica.busy, false);
   assert.equal(fs.readFileSync(local, "utf8"), "mobile edit");
   f.online();
   await sync(f);
+  assert.equal(replica.hubUnavailable, false);
   assert.equal(
     fs.readFileSync(path.join(volume.path, "large.bin"), "utf8"),
     "mobile edit",
@@ -642,6 +646,19 @@ test("a missing hub share retains the mobile index and reports an actionable iss
     fs.readFileSync(files.work(replica.scope, volume.id, "saved.txt"), "utf8"),
     "saved content",
   );
+  // The hub's removal must not prevent confirmed local cleanup, even offline.
+  await store.setGallery(replica.scope, volume.id, { mode: "source", enabled: true });
+  const original = path.join(f.root, "system-gallery-original.jpg");
+  fs.writeFileSync(original, "phone original");
+  f.offline();
+  const requestCount = f.requests.length;
+  await replica.unselect(volume.id);
+  assert.ok(!(await store.folder(replica.scope, volume.id)));
+  assert.equal(await store.gallery(replica.scope, volume.id), null);
+  assert.equal(fs.existsSync(files.folder(replica.scope, volume.id)), false);
+  assert.equal(fs.readFileSync(original, "utf8"), "phone original");
+  assert.equal(f.requests.length, requestCount, "unlink does not require the deleted hub share");
+
 });
 
 test("mobile synchronizes empty directories both ways", async (t) => {
@@ -1946,3 +1963,225 @@ for (const operation of ["rename", "delete", "import"]) {
     },
   );
 }
+
+test("mobile cold start reuses verified hashes and preserves last success across interruptions", async (t) => {
+  const f = await fixture(t);
+  const stat = f.files.stat;
+  f.files.stat = async (uri) => {
+    const value = await stat(uri);
+    return value ? { ...value, mtime: fs.statSync(uri).mtimeMs } : null;
+  };
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const folder = await f.store.folder(f.replica.scope, f.volume.id);
+  const uri = f.files.work(f.replica.scope, f.volume.id, "hello.txt");
+  fs.writeFileSync(uri, "cached local bytes");
+  await sync(f);
+  await sync(f);
+  const originalHash = f.files.hash;
+  let reads = 0;
+  f.files.hash = async (...args) => {
+    reads++;
+    return originalHash(...args);
+  };
+  const reopened = new Replica({
+    store: f.store,
+    files: f.files,
+    client: f.client,
+  });
+  await reopened.load();
+  reopened.force = false;
+  await reopened.localHash(uri);
+  assert.equal(reads, 0, "a new engine reuses the persisted verification");
+  fs.writeFileSync(uri, "new bytes with another size");
+  await reopened.localHash(uri);
+  assert.equal(reads, 1, "modified files are rehashed");
+  const completed = (await f.store.folder(f.replica.scope, f.volume.id))
+    .completed;
+  await f.store.issue(f.replica.scope, f.volume.id, "Request cancelled");
+  await reopened.load();
+  const recovered = await f.store.folder(f.replica.scope, f.volume.id);
+  assert.equal(recovered.issue, null);
+  assert.equal(recovered.completed, completed);
+  assert.ok(folder.completed);
+});
+
+test("mobile transfer turns yield without persisting a synchronization error", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  const push = f.replica.push.bind(f.replica);
+  let turns = 0;
+  f.replica.push = async (folder) => {
+    if (++turns === 1) {
+      f.replica.turnTransferred = true;
+      f.replica.turnDeadline = Date.now() - 1;
+      f.replica.checkTransferTurn();
+    }
+    return push(folder);
+  };
+  await sync(f);
+  assert.equal(turns, 2);
+  assert.equal(
+    (await f.store.folder(f.replica.scope, f.volume.id)).issue,
+    null,
+  );
+});
+
+test("forced verification survives a yielded folder with a recent inventory and cached hash", async (t) => {
+  const f = await fixture(t);
+  const r = f.replica;
+  fs.writeFileSync(path.join(f.volume.path, "hello.txt"), "verified bytes");
+  await f.daemon.engine.cycle();
+  await r.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const stat = f.files.stat;
+  f.files.stat = async (uri) => {
+    const value = await stat(uri);
+    return value ? { ...value, mtime: fs.statSync(uri).mtimeMs } : null;
+  };
+  const uri = f.files.work(r.scope, f.volume.id, "hello.txt");
+  await r.localHash(uri);
+  const previousScan = r.lastFullScan;
+  r.lastInventory.set(f.volume.id, Date.now());
+  const syncIgnore = r.syncIgnore.bind(r);
+  let turns = 0;
+  r.syncIgnore = async (folder) => {
+    if (++turns === 1) {
+      r.turnTransferred = true;
+      r.turnDeadline = Date.now() - 1;
+      r.checkTransferTurn();
+    }
+    assert.equal(await f.store.get(`fullScan:${r.scope}`), previousScan);
+    return syncIgnore(folder);
+  };
+  const hash = f.files.hash;
+  let rehashed = 0;
+  f.files.hash = async (file) => {
+    if (file === uri) rehashed++;
+    return hash(file);
+  };
+  const scan = r.scan.bind(r);
+  let scans = 0;
+  r.scan = async (folder) => { scans++; return scan(folder); };
+  await r.sync(true, { scheduled: true });
+  assert.equal(r.error, null);
+  assert.equal(turns, 2);
+  assert.equal(scans, 1);
+  assert.ok(rehashed > 0, "continuation must bypass the verified hash cache");
+  assert.equal(r.fullScanPending.size, 0);
+  assert.equal(await f.store.get(`fullScan:${r.scope}`), r.lastFullScan);
+});
+
+test("gallery connection loss stops the batch without failing every photo and resumes online", async (t) => {
+  const f = await galleryFixture(t, [1, 2, 3].map((id) => ({
+    id: `photo-${id}`, filename: `${id}.jpg`, creationTime: 1750000000000,
+  })));
+  await f.enable();
+  const r = f.replica;
+  const upload = r.upload.bind(r);
+  let attempts = 0;
+  r.upload = async () => { attempts++; throw new Error("Network request failed"); };
+  await r.sync();
+  assert.equal(attempts, 1);
+  assert.equal(r.hubUnavailable, true);
+  assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).failed, 0);
+  r.upload = upload;
+  await sync(f);
+  assert.equal(r.hubUnavailable, false);
+  assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).accepted, 3);
+});
+
+test("native file transfer adapter resumes ranges and never returns payload bytes through JS", async (t) => {
+  const f = await fixture(t);
+  const data = crypto.randomBytes(CHUNK * 2 + 53);
+  fs.writeFileSync(path.join(f.volume.path, "native.bin"), data);
+  await f.daemon.engine.cycle();
+  await f.client.refresh();
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  const raw = f.replica.client.raw;
+  let downloads = 0,
+    uploads = 0;
+  f.replica.client.fileTransfers = true;
+  f.replica.client.raw = async (route, options) => {
+    const transfer = options?.transfer;
+    if (!transfer) return raw(route, options);
+    const offset = Number(transfer.offset),
+      length = Number(transfer.length);
+    if (transfer.source) {
+      uploads++;
+      return raw(route, {
+        ...options,
+        body: fs
+          .readFileSync(transfer.source)
+          .subarray(offset, offset + length),
+      });
+    }
+    downloads++;
+    const response = await raw(route, options);
+    assert.equal(response.headers.get("content-range"), transfer.range);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assert.equal(bytes.length, length);
+    await f.files.write(transfer.destination, bytes, offset);
+    return {
+      ...response,
+      bytesWritten: bytes.length,
+      arrayBuffer() {
+        throw new Error("Payload crossed JS bridge");
+      },
+    };
+  };
+  await sync(f);
+  const local = f.files.work(f.replica.scope, f.volume.id, "native.bin");
+  assert.deepEqual(fs.readFileSync(local), data);
+  const changed = crypto.randomBytes(CHUNK + 29);
+  fs.writeFileSync(local, changed);
+  await sync(f);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.volume.path, "native.bin")),
+    changed,
+  );
+  assert.ok(downloads >= 3 && uploads >= 2);
+});
+
+
+test("mobile cold start preserves Machines and recent History offline without repeated requests", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.volume.path, "hello.txt"), "offline content");
+  await f.daemon.engine.cycle();
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const reopened = new Replica({ store:f.store, files:f.files, client:f.client });
+  await reopened.load();
+  f.stall(() => { throw new Error("Cannot reach the hub over the local network. Connect this device to the hub’s Wi-Fi or Ethernet network and try again."); });
+  await reopened.sync();
+  assert.equal(reopened.hubUnavailable, true);
+  const requests = f.requests.length;
+  const machines = await reopened.remoteView("/v1/machines");
+  assert.equal(machines.offline, true);
+  assert.ok(machines.machines.some((m) => m.isHub));
+  const history = await reopened.remoteView(`/v1/activity?limit=49&volume=${f.volume.id}&filter=revisions`);
+  assert.equal(history.offline, true);
+  assert.ok(history.versions.some((r) => r.path === "hello.txt"));
+  const file = await reopened.remoteView(`/v1/history?volume=${f.volume.id}&path=hello.txt&limit=50`);
+  assert.ok(file.versions.every((r) => r.path === "hello.txt"));
+  assert.ok(file.versions.length);
+  assert.equal(f.requests.length, requests, "offline navigation reads SQLite immediately");
+  f.stall(null);
+  await reopened.sync();
+  assert.equal(reopened.hubUnavailable, false);
+  assert.ok(!(await reopened.remoteView("/v1/machines")).offline);
+  const api = f.client.api;
+  let rejectOld;
+  f.client.api = (route, ...args) => route === "/v1/machines"
+    ? new Promise((_, reject) => { rejectOld = reject; }) : api(route, ...args);
+  const oldView = reopened.remoteView("/v1/machines");
+  await reopened.sync();
+  rejectOld(new Error("Network request failed"));
+  assert.equal((await oldView).offline, true);
+  assert.equal(reopened.hubUnavailable, false, "an older view failure cannot override a fresh successful sync");
+  f.client.api = api;
+  await reopened.unselect(f.volume.id);
+  assert.equal((await f.store.db.getAllAsync("SELECT route FROM view_cache WHERE scope=?", reopened.scope)).some((v) => new URLSearchParams(v.route.split("?")[1]).get("volume") === f.volume.id), false);
+  t.mock.method(f.client, "api", async () => { throw new Error("401 Unauthorized"); });
+  await assert.rejects(reopened.remoteView("/v1/machines"), /401/);
+});

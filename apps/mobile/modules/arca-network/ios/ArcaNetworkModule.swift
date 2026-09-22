@@ -4,6 +4,27 @@ import UIKit
 import Darwin
 
 public class ArcaNetworkModule: Module {
+  private let requestLock = NSLock()
+  private var requests: [String: URLSession] = [:]
+  private func privateFile(_ value: String) throws -> URL {
+    guard let url = URL(string: value), url.isFileURL else { throw NetworkUnavailable() }
+    let target = url.resolvingSymlinksInPath()
+    let roots = [FileManager.SearchPathDirectory.documentDirectory, .cachesDirectory].compactMap {
+      FileManager.default.urls(for: $0, in: .userDomainMask).first?.resolvingSymlinksInPath().path
+    }
+    guard roots.contains(where: { target.path.hasPrefix($0 + "/") }) else { throw NetworkUnavailable() }
+    return target
+  }
+  private func requestSession(_ id: String) -> URLSession? {
+    requestLock.lock(); defer { requestLock.unlock() }
+    return requests[id]
+  }
+  private func endRequest(_ id: String) {
+    requestLock.lock()
+    let session = requests.removeValue(forKey: id)
+    requestLock.unlock()
+    session?.invalidateAndCancel()
+  }
   private var documentController: UIDocumentInteractionController?
 
   public func definition() -> ModuleDefinition {
@@ -32,7 +53,19 @@ public class ArcaNetworkModule: Module {
     AsyncFunction("copyText") { (text: String) async in
       await MainActor.run { UIPasteboard.general.string = text }
     }
-    AsyncFunction("request") { (address: String, method: String, headers: [String: String], body: String?) async throws -> [String: Any] in
+    Function("beginRequest") { (id: String, privateNetwork: Bool) in
+      let configuration = URLSessionConfiguration.ephemeral
+      configuration.allowsCellularAccess = !privateNetwork
+      configuration.httpCookieStorage = nil
+      configuration.urlCache = nil
+      let session = URLSession(configuration: configuration)
+      self.requestLock.lock()
+      self.requests[id] = session
+      self.requestLock.unlock()
+    }
+    Function("cancelRequest") { (id: String) in self.requestSession(id)?.invalidateAndCancel() }
+    AsyncFunction("request") { (address: String, method: String, headers: [String: String], body: String?, id: String, transfer: [String: String]) async throws -> [String: Any] in
+      defer { self.endRequest(id) }
       guard let url = URL(string: address), ["http", "https"].contains(url.scheme ?? ""), url.user == nil, url.password == nil else { throw NetworkUnavailable() }
       if url.scheme == "http" {
         guard let host = url.host, try self.verifiedAddress(host, lan: self.isLanAddress(host)) == host else { throw NetworkUnavailable() }
@@ -41,17 +74,34 @@ public class ArcaNetworkModule: Module {
       request.httpMethod = method
       for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
       if let body { request.httpBody = Data(base64Encoded: body) }
-      let configuration = URLSessionConfiguration.ephemeral
-      if url.scheme == "http" { configuration.allowsCellularAccess = false }
-      configuration.httpCookieStorage = nil
-      configuration.urlCache = nil
-      let session = URLSession(configuration: configuration)
-      defer { session.invalidateAndCancel() }
+      let offset = UInt64(transfer["offset"] ?? "0")
+      let length = Int(transfer["length"] ?? "0")
+      guard let offset, let length, (0...1048576).contains(length) else { throw NetworkUnavailable() }
+      if let source = transfer["source"] {
+        let file = try FileHandle(forReadingFrom: self.privateFile(source))
+        defer { try? file.close() }
+        try file.seek(toOffset: offset)
+        let bytes = try file.read(upToCount: length) ?? Data()
+        guard bytes.count == length else { throw NetworkUnavailable() }
+        request.httpBody = bytes
+      }
+      guard let session = self.requestSession(id) else { throw NetworkUnavailable() }
       let (data, response) = try await session.data(for: request, delegate: NoRedirect())
       guard let http = response as? HTTPURLResponse, data.count <= 8 * 1024 * 1024 else { throw NetworkUnavailable() }
       var fields = [String: String]()
       for (key, value) in http.allHeaderFields { fields[String(describing: key)] = String(describing: value) }
-      return ["status": http.statusCode, "headers": fields, "body": data.base64EncodedString()]
+      var written = 0
+      if let destination = transfer["destination"], http.statusCode == 206 {
+        guard http.value(forHTTPHeaderField: "Content-Range") == transfer["range"], data.count == length else { throw NetworkUnavailable() }
+        let file = try FileHandle(forWritingTo: self.privateFile(destination))
+        defer { try? file.close() }
+        guard try file.seekToEnd() == offset else { throw NetworkUnavailable() }
+        try file.seek(toOffset: offset)
+        try file.write(contentsOf: data)
+        try file.synchronize()
+        written = data.count
+      }
+      return ["status": http.statusCode, "headers": fields, "bytesWritten": written, "body": written > 0 ? "" : data.base64EncodedString()]
     }
     AsyncFunction("exportDirectory") { (source: String, destination: String, name: String) -> String in
       guard let from = URL(string: source), let to = URL(string: destination), from.isFileURL, to.isFileURL,
