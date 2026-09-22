@@ -24,11 +24,17 @@ async function fixture(t) {
     db.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
+  const yielded =
+    (work) =>
+    async (...args) => {
+      await new Promise((resolve) => setImmediate(resolve));
+      return work(...args);
+    };
   const store = new ReplicaStore({
-    execAsync: (s) => db.exec(s),
-    runAsync: (s, ...v) => db.prepare(s).run(...v),
-    getFirstAsync: (s, ...v) => db.prepare(s).get(...v),
-    getAllAsync: (s, ...v) => db.prepare(s).all(...v),
+    execAsync: yielded((s) => db.exec(s)),
+    runAsync: yielded((s, ...v) => db.prepare(s).run(...v)),
+    getFirstAsync: yielded((s, ...v) => db.prepare(s).get(...v)),
+    getAllAsync: yielded((s, ...v) => db.prepare(s).all(...v)),
   });
   let saved = null,
     cached = null,
@@ -52,12 +58,21 @@ async function fixture(t) {
         cached = v;
       },
     },
-    fetcher: (url, options) => {
+    fetcher: async (url, options) => {
       requests.push(new URL(url).pathname);
       if (!online) throw new Error("offline");
       if (stalled) return stalled(url, options);
       if (options.headers.Range) ranges.push(options.headers.Range);
-      return fetch(url.replace("https://fixture.invalid", base), options);
+      const target = url.replace("https://fixture.invalid", base);
+      const readable =
+        !options.method || ["GET", "HEAD"].includes(options.method);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await fetch(target, options);
+        } catch (error) {
+          if (!readable || attempt) throw error;
+        }
+      }
     },
   });
   const local = path.join(root, "mobile");
@@ -647,7 +662,10 @@ test("a missing hub share retains the mobile index and reports an actionable iss
     "saved content",
   );
   // The hub's removal must not prevent confirmed local cleanup, even offline.
-  await store.setGallery(replica.scope, volume.id, { mode: "source", enabled: true });
+  await store.setGallery(replica.scope, volume.id, {
+    mode: "source",
+    enabled: true,
+  });
   const original = path.join(f.root, "system-gallery-original.jpg");
   fs.writeFileSync(original, "phone original");
   f.offline();
@@ -657,8 +675,11 @@ test("a missing hub share retains the mobile index and reports an actionable iss
   assert.equal(await store.gallery(replica.scope, volume.id), null);
   assert.equal(fs.existsSync(files.folder(replica.scope, volume.id)), false);
   assert.equal(fs.readFileSync(original, "utf8"), "phone original");
-  assert.equal(f.requests.length, requestCount, "unlink does not require the deleted hub share");
-
+  assert.equal(
+    f.requests.length,
+    requestCount,
+    "unlink does not require the deleted hub share",
+  );
 });
 
 test("mobile synchronizes empty directories both ways", async (t) => {
@@ -2062,7 +2083,10 @@ test("forced verification survives a yielded folder with a recent inventory and 
   };
   const scan = r.scan.bind(r);
   let scans = 0;
-  r.scan = async (folder) => { scans++; return scan(folder); };
+  r.scan = async (folder) => {
+    scans++;
+    return scan(folder);
+  };
   await r.sync(true, { scheduled: true });
   assert.equal(r.error, null);
   assert.equal(turns, 2);
@@ -2073,14 +2097,22 @@ test("forced verification survives a yielded folder with a recent inventory and 
 });
 
 test("gallery connection loss stops the batch without failing every photo and resumes online", async (t) => {
-  const f = await galleryFixture(t, [1, 2, 3].map((id) => ({
-    id: `photo-${id}`, filename: `${id}.jpg`, creationTime: 1750000000000,
-  })));
+  const f = await galleryFixture(
+    t,
+    [1, 2, 3].map((id) => ({
+      id: `photo-${id}`,
+      filename: `${id}.jpg`,
+      creationTime: 1750000000000,
+    })),
+  );
   await f.enable();
   const r = f.replica;
   const upload = r.upload.bind(r);
   let attempts = 0;
-  r.upload = async () => { attempts++; throw new Error("Network request failed"); };
+  r.upload = async () => {
+    attempts++;
+    throw new Error("Network request failed");
+  };
   await r.sync();
   assert.equal(attempts, 1);
   assert.equal(r.hubUnavailable, true);
@@ -2088,7 +2120,10 @@ test("gallery connection loss stops the batch without failing every photo and re
   r.upload = upload;
   await sync(f);
   assert.equal(r.hubUnavailable, false);
-  assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).accepted, 3);
+  assert.equal(
+    (await f.store.gallerySummary(r.scope, f.volume.id)).accepted,
+    3,
+  );
 });
 
 test("native file transfer adapter resumes ranges and never returns payload bytes through JS", async (t) => {
@@ -2143,45 +2178,82 @@ test("native file transfer adapter resumes ranges and never returns payload byte
   assert.ok(downloads >= 3 && uploads >= 2);
 });
 
-
 test("mobile cold start preserves Machines and recent History offline without repeated requests", async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(path.join(f.volume.path, "hello.txt"), "offline content");
   await f.daemon.engine.cycle();
   await f.replica.select(f.client.state().catalog.volumes[0]);
   await sync(f);
-  const reopened = new Replica({ store:f.store, files:f.files, client:f.client });
+  const reopened = new Replica({
+    store: f.store,
+    files: f.files,
+    client: f.client,
+  });
   await reopened.load();
-  f.stall(() => { throw new Error("Cannot reach the hub over the local network. Connect this device to the hub’s Wi-Fi or Ethernet network and try again."); });
+  f.stall(() => {
+    throw new Error(
+      "Cannot reach the hub over the local network. Connect this device to the hub’s Wi-Fi or Ethernet network and try again.",
+    );
+  });
   await reopened.sync();
   assert.equal(reopened.hubUnavailable, true);
   const requests = f.requests.length;
   const machines = await reopened.remoteView("/v1/machines");
   assert.equal(machines.offline, true);
   assert.ok(machines.machines.some((m) => m.isHub));
-  const history = await reopened.remoteView(`/v1/activity?limit=49&volume=${f.volume.id}&filter=revisions`);
+  const history = await reopened.remoteView(
+    `/v1/activity?limit=49&volume=${f.volume.id}&filter=revisions`,
+  );
   assert.equal(history.offline, true);
   assert.ok(history.versions.some((r) => r.path === "hello.txt"));
-  const file = await reopened.remoteView(`/v1/history?volume=${f.volume.id}&path=hello.txt&limit=50`);
+  const file = await reopened.remoteView(
+    `/v1/history?volume=${f.volume.id}&path=hello.txt&limit=50`,
+  );
   assert.ok(file.versions.every((r) => r.path === "hello.txt"));
   assert.ok(file.versions.length);
-  assert.equal(f.requests.length, requests, "offline navigation reads SQLite immediately");
+  assert.equal(
+    f.requests.length,
+    requests,
+    "offline navigation reads SQLite immediately",
+  );
   f.stall(null);
   await reopened.sync();
   assert.equal(reopened.hubUnavailable, false);
   assert.ok(!(await reopened.remoteView("/v1/machines")).offline);
   const api = f.client.api;
   let rejectOld;
-  f.client.api = (route, ...args) => route === "/v1/machines"
-    ? new Promise((_, reject) => { rejectOld = reject; }) : api(route, ...args);
+  f.client.api = (route, ...args) =>
+    route === "/v1/machines"
+      ? new Promise((_, reject) => {
+          rejectOld = reject;
+        })
+      : api(route, ...args);
   const oldView = reopened.remoteView("/v1/machines");
   await reopened.sync();
   rejectOld(new Error("Network request failed"));
   assert.equal((await oldView).offline, true);
-  assert.equal(reopened.hubUnavailable, false, "an older view failure cannot override a fresh successful sync");
+  assert.equal(
+    reopened.hubUnavailable,
+    false,
+    "an older view failure cannot override a fresh successful sync",
+  );
   f.client.api = api;
   await reopened.unselect(f.volume.id);
-  assert.equal((await f.store.db.getAllAsync("SELECT route FROM view_cache WHERE scope=?", reopened.scope)).some((v) => new URLSearchParams(v.route.split("?")[1]).get("volume") === f.volume.id), false);
-  t.mock.method(f.client, "api", async () => { throw new Error("401 Unauthorized"); });
+  assert.equal(
+    (
+      await f.store.db.getAllAsync(
+        "SELECT route FROM view_cache WHERE scope=?",
+        reopened.scope,
+      )
+    ).some(
+      (v) =>
+        new URLSearchParams(v.route.split("?")[1]).get("volume") ===
+        f.volume.id,
+    ),
+    false,
+  );
+  t.mock.method(f.client, "api", async () => {
+    throw new Error("401 Unauthorized");
+  });
   await assert.rejects(reopened.remoteView("/v1/machines"), /401/);
 });
