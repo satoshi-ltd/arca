@@ -64,7 +64,7 @@ const busyStyles = StyleSheet.create({
     justifyContent: "center",
   },
   brandBusy: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
   },

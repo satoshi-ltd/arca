@@ -44,7 +44,7 @@ export const thumbnailFiles = {
       try {
         if (!new File(entry.uri).exists)
           throw new Error("Original no longer available");
-        temporary.copy(target);
+        await temporary.copy(target);
       } finally {
         if (temporary.exists) temporary.delete();
       }

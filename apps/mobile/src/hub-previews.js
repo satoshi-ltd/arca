@@ -25,7 +25,7 @@ export function hubPreviewFiles(api, volume) {
       const temporary = new File(root, `${name}.${Date.now()}.tmp`);
       temporary.write(toByteArray(data));
       if (target.exists) temporary.delete();
-      else temporary.move(target);
+      else await temporary.move(target);
       pruneCache(root, 192 * 1024 ** 2, target.uri);
       return target.uri;
     })().finally(() => jobs.delete(target.uri));

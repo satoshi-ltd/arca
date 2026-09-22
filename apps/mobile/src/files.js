@@ -75,12 +75,12 @@ export const files = {
   },
   async copy(from, to) {
     if (new File(to).exists) new File(to).delete();
-    new File(from).copy(new File(to));
+    await new File(from).copy(new File(to));
   },
   async move(from, to) {
     if (Paths.info(from).isDirectory)
-      new Directory(from).move(new Directory(to));
-    else new File(from).move(new File(to));
+      await new Directory(from).move(new Directory(to));
+    else await new File(from).move(new File(to));
   },
   // Callers journal replacements before entering this operation.
   async replace(from, to) {

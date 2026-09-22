@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2 — 2026-09-22
+
+- Move the phone app to Expo SDK 57 with React Native 0.86 and React 19.2.3, realigning every Expo package. Copy and move now await the asynchronous file API, the gallery reads the media library through its legacy entry after the object-oriented rewrite, and the iOS deployment target rises to 16.4. React Native ships the corrected Gradle toolchain plugin, so the postinstall patch is gone. Restore the full-screen overlays after React Native removed `StyleSheet.absoluteFillObject`. A new mobile binary is required.
+
+- Add verbose desktop packaging diagnostics and limit the macOS retry to packaging the already compiled application; persistent errors still fail the release. Allow the hardened embedded Node runtime to load its third-party native image libraries, fixing the packaged sharp Team ID validation failure.
+
 ## 0.5.1 — 2026-09-22
 
 - Give each environment its own commands: `apps/desktop` now owns `start`, `start:clean`, `ui`, `build`, `release` and `verify:bundle`, and the repository root keeps only the daemon, tests and site. Release pipelines and documentation use the relocated commands.

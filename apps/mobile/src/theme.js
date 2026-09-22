@@ -278,7 +278,7 @@ export function styles(
     },
     codeSeparator: { fontSize: 24, color: c.line },
     codeCapture: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       opacity: 0.02,
       color: "transparent",
       fontSize: 24,
@@ -643,11 +643,11 @@ export function styles(
     historyRevision: { width: 64 },
     historyDate: { width: 90 },
     fileMenuOverlay: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       zIndex: 20,
       elevation: 8,
     },
-    fileMenuDismiss: StyleSheet.absoluteFillObject,
+    fileMenuDismiss: StyleSheet.absoluteFill,
     fileActionMenu: {
       position: "absolute",
       backgroundColor: c.surface,
@@ -746,9 +746,14 @@ export function styles(
       alignSelf: "center",
     },
     offlineStatus: {
-      flexDirection: "row", alignItems: "center", gap: 8,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
       paddingHorizontal: wide ? g.workspaceInset : 16,
-      paddingBottom: 8, width: "100%", maxWidth: 1400, alignSelf: "center",
+      paddingBottom: 8,
+      width: "100%",
+      maxWidth: 1400,
+      alignSelf: "center",
     },
     detailViewHeader: {
       paddingTop: g.detailHeaderTop,
@@ -964,6 +969,7 @@ export function styles(
     },
   };
   for (const rule of Object.values(rules)) {
+    if (!rule || typeof rule !== "object") continue;
     if (typeof rule.fontSize === "number") rule.fontSize *= textScale;
     if (typeof rule.lineHeight === "number") rule.lineHeight *= textScale;
   }

@@ -1,12 +1,12 @@
 Pod::Spec.new do |s|
   s.name = 'ArcaNetwork'
-  s.version = '0.5.1'
+  s.version = '0.5.2'
   s.summary = 'Arca private network checks'
   s.description = s.summary
   s.license = 'MIT'
   s.author = 'Arca'
   s.homepage = 'https://github.com/satoshi-ltd/arca'
-  s.platforms = { :ios => '15.1' }
+  s.platforms = { :ios => '16.4' }
   s.source = { :git => 'https://github.com/satoshi-ltd/arca' }
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
