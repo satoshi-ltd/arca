@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.5 — 2026-09-23
+
+- Keep folder copy badges focused on machine roles: Hub, Replica, Album source and This machine. Stale reports or an unavailable hub no longer replace those roles with Last reported; revoked access and the shared cached-list explanation remain explicit.
+
 ## 0.5.4 — 2026-09-23
 
 - Update the packaged desktop application from inside it. A card appears at the bottom of the sidebar only when a signed update exists, showing the current and offered versions, and one action downloads it, installs it and restarts the app. Checks run at startup, every six hours and on reconnection, and stay silent when the manifest is unreachable.

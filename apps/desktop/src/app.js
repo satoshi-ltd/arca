@@ -83,7 +83,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.5.4";
+const APP_VERSION = "0.5.5";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -471,7 +471,7 @@ function renderCopies() {
     known
       .map(
         (m) =>
-          `<div class="copy-row">${icon(m.isHub ? "server" : /android|ios/.test(m.platform) ? "smartphone" : "monitor")}<strong>${escape(m.name)}</strong><span class="tag ${m.machineId === status.id ? "self" : m.isHub ? "hub" : ""}">${m.machineId === status.id ? "This machine" : m.revoked ? "Access revoked" : m.albumFolderIds?.includes(v.id) ? (copiesUnavailable || m.freshness === "stale" ? "Album source · last reported" : "Album source") : copiesUnavailable || m.freshness === "stale" ? "Last reported" : m.isHub ? "Hub" : "Replica"}</span></div>`,
+          `<div class="copy-row">${icon(m.isHub ? "server" : /android|ios/.test(m.platform) ? "smartphone" : "monitor")}<strong>${escape(m.name)}</strong><span class="tag ${m.machineId === status.id ? "self" : m.isHub ? "hub" : ""}">${m.machineId === status.id ? "This machine" : m.revoked ? "Access revoked" : m.albumFolderIds?.includes(v.id) ? "Album source" : m.isHub ? "Hub" : "Replica"}</span></div>`,
       )
       .join("") +
     (copiesUnavailable

@@ -3825,7 +3825,7 @@ test("folder copies include linked phone albums without labeling them as replica
   assert.equal(row("phone").querySelector(".tag").textContent, "Album source");
   assert.equal(
     row("phone-fold").querySelector(".tag").textContent,
-    "Album source · last reported",
+    "Album source",
   );
   assert.equal(row("macbook-pro").querySelector(".tag").textContent, "Replica");
   assert.equal(row("casa").querySelector(".tag").textContent, "This machine");
