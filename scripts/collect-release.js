@@ -36,4 +36,33 @@ for (const extension of extensions) {
     path.join(destination, `arca-${version}-${platform}${extension}`),
   );
 }
-console.log(`Collected ${extensions.length} installers for ${platform}`);
+const updaters =
+  process.platform === "darwin"
+    ? [{ directory: "macos", suffix: ".app.tar.gz", payload: true }]
+    : process.platform === "win32"
+      ? [{ directory: "nsis", suffix: ".exe" }]
+      : [
+          { directory: "appimage", suffix: ".AppImage" },
+          { directory: "deb", suffix: ".deb" },
+        ];
+for (const updater of updaters) {
+  const source = path.join(bundle, updater.directory);
+  const signature = fs
+    .readdirSync(source)
+    .find((file) => file.endsWith(`${updater.suffix}.sig`));
+  if (!signature)
+    throw new Error(`Missing updater signature in ${updater.directory}`);
+  const target = `arca-${version}-${platform}${updater.suffix}`;
+  fs.copyFileSync(
+    path.join(source, signature),
+    path.join(destination, `${target}.sig`),
+  );
+  if (updater.payload)
+    fs.copyFileSync(
+      path.join(source, signature.replace(/\.sig$/, "")),
+      path.join(destination, target),
+    );
+}
+console.log(
+  `Collected ${extensions.length} installers and ${updaters.length} updater signatures for ${platform}`,
+);

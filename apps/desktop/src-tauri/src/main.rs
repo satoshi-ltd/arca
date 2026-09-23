@@ -3,7 +3,7 @@ mod notifications;
 use serde_json::{json, Value};
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     time::Duration,
 };
@@ -86,7 +86,8 @@ async fn api(app: tauri::AppHandle, route: String, method: Option<String>, body:
     Ok(result)
 }
 #[tauri::command]
-async fn bootstrap() -> Result<Value, String> {
+async fn bootstrap(app: tauri::AppHandle) -> Result<Value, String> {
+    let resumed = resume_daemon(&app).await.err();
     if !home().join("config.json").exists() {
         let root = home().parent().unwrap_or(&home()).join("arca");
         let name = Command::new("hostname").output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
@@ -94,15 +95,11 @@ async fn bootstrap() -> Result<Value, String> {
     }
     match request("/v1/status", "GET", None).await {
         Ok(status) => Ok(json!({"setup":false,"status":status})),
-        Err(_) => Ok(json!({"setup":false,"stopped":true})),
+        Err(_) => Ok(json!({"setup":false,"stopped":true,"error":resumed})),
     }
 }
-#[tauri::command]
-async fn start_daemon(app: tauri::AppHandle) -> Result<(), String> {
-    if request("/v1/status", "GET", None).await.is_ok() {
-        return Ok(());
-    }
-    let (node, cli) = runtime(&app)?;
+fn spawn_daemon(app: &tauri::AppHandle) -> Result<(), String> {
+    let (node, cli) = runtime(app)?;
     fs::create_dir_all(home()).map_err(|e| e.to_string())?;
     let log = fs::OpenOptions::new()
         .create(true)
@@ -123,6 +120,131 @@ async fn start_daemon(app: tauri::AppHandle) -> Result<(), String> {
         cmd.creation_flags(0x08000000);
     }
     cmd.spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+#[tauri::command]
+async fn start_daemon(app: tauri::AppHandle) -> Result<(), String> {
+    if request("/v1/status", "GET", None).await.is_ok() {
+        return Ok(());
+    }
+    spawn_daemon(&app)
+}
+const RESTART_MARKER: &str = "restart-daemon";
+const LAUNCH_AGENT: &str = "com.soyjavi.arca.daemon";
+fn launchd_domain() -> Result<String, String> {
+    let uid = Command::new("id").arg("-u").output().map_err(|e| e.to_string())?;
+    Ok(format!("gui/{}", String::from_utf8_lossy(&uid.stdout).trim()))
+}
+fn launchctl(args: &[&str]) -> Result<bool, String> {
+    Ok(Command::new("launchctl").args(args).output().map_err(|e| e.to_string())?.status.success())
+}
+fn launch_agent_loaded() -> Result<bool, String> {
+    Ok(cfg!(target_os = "macos") && launchctl(&["print", &format!("{}/{LAUNCH_AGENT}", launchd_domain()?)])?)
+}
+fn daemon_command(command: &str, home: &str) -> bool {
+    command.contains("arca.js")
+        && command.split_whitespace().any(|part| part == "daemon")
+        && [format!("--home {home}"), format!("--home \"{home}\"")]
+            .iter()
+            .any(|tail| command.ends_with(tail.as_str()))
+}
+fn listed_command(listing: std::process::Output) -> Result<Option<String>, String> {
+    let command = String::from_utf8_lossy(&listing.stdout).trim().to_string();
+    let absent = listing.status.success() || (cfg!(unix) && listing.status.code() == Some(1));
+    if command.is_empty() && listing.stderr.is_empty() && absent {
+        return Ok(None);
+    }
+    if !listing.status.success() || command.is_empty() {
+        return Err(format!(
+            "Could not inspect the local daemon before updating. {}",
+            String::from_utf8_lossy(&listing.stderr).trim()
+        ));
+    }
+    Ok(Some(command))
+}
+fn running_daemon(home: &Path) -> Result<Option<u32>, String> {
+    let lock = match fs::read_to_string(home.join("daemon.lock")) {
+        Ok(lock) => lock,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    let pid = lock
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|pid| *pid > 1)
+        .ok_or("Invalid daemon lock; refusing to stop an unknown process.")?;
+    let listing = if cfg!(windows) {
+        Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("$ProgressPreference = 'SilentlyContinue'; (Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}').CommandLine"),
+            ])
+            .output()
+    } else {
+        Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "command="])
+            .output()
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(listed_command(listing)?
+        .filter(|command| daemon_command(command, &home.to_string_lossy()))
+        .map(|_| pid))
+}
+async fn stop_daemon(home: &Path, service: bool) -> Result<(), String> {
+    if service && !launchctl(&["bootout", &format!("{}/{LAUNCH_AGENT}", launchd_domain()?)])? {
+        return Err("Could not stop the Arca login service before updating.".into());
+    }
+    if let Some(pid) = running_daemon(home)? {
+        let pid = pid.to_string();
+        let signalled = if cfg!(windows) {
+            Command::new("taskkill").args(["/PID", &pid, "/T", "/F"]).status()
+        } else {
+            Command::new("kill").args(["-TERM", &pid]).status()
+        }
+        .map_err(|e| e.to_string())?;
+        if !signalled.success() && running_daemon(home)?.is_some() {
+            return Err("Could not stop the local daemon before updating.".into());
+        }
+    }
+    for _ in 0..300 {
+        if running_daemon(home)?.is_none() {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Err("The local daemon is still finishing its work. Try the update again shortly.".into())
+}
+async fn daemon_answers() -> bool {
+    for _ in 0..100 {
+        if request("/v1/status", "GET", None).await.is_ok() {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+async fn resume_daemon(app: &tauri::AppHandle) -> Result<(), String> {
+    let marker = home().join(RESTART_MARKER);
+    let mode = match fs::read_to_string(&marker) {
+        Ok(mode) => mode,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    if request("/v1/status", "GET", None).await.is_err() {
+        if mode == "service" {
+            if !launchctl(&["bootstrap", &launchd_domain()?, &launch_agent().to_string_lossy()])? {
+                return Err("Could not restart the Arca login service after the update.".into());
+            }
+        } else {
+            spawn_daemon(app)?;
+        }
+        if !daemon_answers().await {
+            return Err("The local daemon did not start after the update. Arca retries on its next launch.".into());
+        }
+    }
+    let _ = fs::remove_file(&marker);
     Ok(())
 }
 #[tauri::command]
@@ -240,7 +362,7 @@ fn save_preferences(value: &Value) -> Result<(), String> {
     fs::write(home().join("desktop.json"), serde_json::to_vec(value).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
 }
 fn launch_agent() -> PathBuf {
-    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join("Library/LaunchAgents/com.soyjavi.arca.daemon.plist")
+    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(format!("Library/LaunchAgents/{LAUNCH_AGENT}.plist"))
 }
 #[tauri::command]
 fn desktop_preferences() -> Value {
@@ -267,17 +389,15 @@ fn set_notifications(app: tauri::AppHandle, enabled: bool) -> Result<(), String>
 #[tauri::command]
 fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     if !cfg!(target_os="macos") { return Err("Launch at login is currently supported on macOS".into()); }
-    let uid=Command::new("id").arg("-u").output().map_err(|e|e.to_string())?;
-    let uid=String::from_utf8_lossy(&uid.stdout).trim().to_string();
     if enabled {
         let (node,cli)=runtime(&app)?;
         let xml=|value:&str|value.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;").replace('\"',"&quot;");
         let args=[node.to_string_lossy().to_string(),cli.to_string_lossy().to_string(),"daemon".into(),"--home".into(),home().to_string_lossy().to_string()];
-        let content=format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>Label</key><string>com.soyjavi.arca.daemon</string><key>ProgramArguments</key><array>{}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>StandardOutPath</key><string>{}</string><key>StandardErrorPath</key><string>{}</string></dict></plist>",args.iter().map(|a|format!("<string>{}</string>",xml(a))).collect::<String>(),xml(&home().join("service.log").to_string_lossy()),xml(&home().join("service.log").to_string_lossy()));
+        let content=format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>Label</key><string>{LAUNCH_AGENT}</string><key>ProgramArguments</key><array>{}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>StandardOutPath</key><string>{}</string><key>StandardErrorPath</key><string>{}</string></dict></plist>",args.iter().map(|a|format!("<string>{}</string>",xml(a))).collect::<String>(),xml(&home().join("service.log").to_string_lossy()),xml(&home().join("service.log").to_string_lossy()));
         let destination=launch_agent();fs::create_dir_all(destination.parent().unwrap()).map_err(|e|e.to_string())?;
         fs::write(destination,content).map_err(|e|e.to_string())?;
     }
-    let result=Command::new("launchctl").args([if enabled {"enable"} else {"disable"}, &format!("gui/{uid}/com.soyjavi.arca.daemon")]).output().map_err(|e|e.to_string())?;
+    let result=Command::new("launchctl").args([if enabled {"enable"} else {"disable"}, &format!("{}/{LAUNCH_AGENT}", launchd_domain()?)]).output().map_err(|e|e.to_string())?;
     if !result.status.success(){return Err(String::from_utf8_lossy(&result.stderr).to_string());}
     let mut p=preferences();p["launchAtLogin"]=json!(enabled);save_preferences(&p)
 }
@@ -285,6 +405,26 @@ fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
 fn show_main(app: tauri::AppHandle, folder: Option<String>) {
     if let Some(w)=app.get_webview_window("main") { let _=w.show();let _=w.set_focus(); if let Some(folder)=folder {let _=w.emit("open-folder-detail",folder);} }
     if let Some(w)=app.get_webview_window("tray") {let _=w.hide();}
+}
+#[tauri::command]
+fn hide_tray(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("tray") {
+        let _ = w.hide();
+    }
+}
+#[cfg(target_os = "macos")]
+fn hide_tray_on_outside_click(app: &tauri::AppHandle) {
+    use objc2_app_kit::{NSEvent, NSEventMask};
+    let app = app.clone();
+    let handler = block2::RcBlock::new(move |_: std::ptr::NonNull<NSEvent>| hide_tray(app.clone()));
+    let clicks = NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
+    std::mem::forget(NSEvent::addGlobalMonitorForEventsMatchingMask_handler(clicks, &handler));
+}
+#[tauri::command]
+fn main_window_open(app: tauri::AppHandle) -> bool {
+    app.get_webview_window("main")
+        .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
+        .unwrap_or(false)
 }
 #[tauri::command]
 fn resize_tray(app: tauri::AppHandle, height: f64) -> Result<(), String> {
@@ -337,9 +477,80 @@ fn update_tray_icon(app: &tauri::AppHandle, status: &Value) -> Result<(), String
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+struct UpdateStatus {
+    available: bool,
+    version: Option<String>,
+    notes: Option<String>,
+}
+
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<UpdateStatus, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(match update {
+        Some(update) => UpdateStatus {
+            available: true,
+            version: Some(update.version.clone()),
+            notes: update.body.clone(),
+        },
+        None => UpdateStatus {
+            available: false,
+            version: None,
+            notes: None,
+        },
+    })
+}
+
+async fn with_recovery(app: &tauri::AppHandle, error: String) -> String {
+    match resume_daemon(app).await {
+        Ok(()) => error,
+        Err(restart) => format!("{error} {restart}"),
+    }
+}
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "This version is already current.".to_string())?;
+    let bytes = update
+        .download(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    let state = home();
+    let service = launch_agent_loaded()?;
+    let running = running_daemon(&state)?.is_some();
+    if !service && !running && request("/v1/status", "GET", None).await.is_ok() {
+        return Err("An Arca daemon this app did not start is serving this machine. Stop it before updating.".into());
+    }
+    // The daemon executes the runtime inside the installation being replaced.
+    if service || running {
+        fs::write(state.join(RESTART_MARKER), if service { "service" } else { "process" })
+            .map_err(|e| e.to_string())?;
+        if let Err(error) = stop_daemon(&state, service).await {
+            return Err(with_recovery(&app, error).await);
+        }
+    }
+    if let Err(error) = update.install(bytes) {
+        return Err(with_recovery(&app, error.to_string()).await);
+    }
+    app.restart();
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             api,
             bootstrap,
@@ -357,7 +568,11 @@ fn main() {
             set_notifications,
             show_main,
             quit_app,
-            resize_tray
+            resize_tray,
+            main_window_open,
+            hide_tray,
+            check_update,
+            install_update
         ])
         .setup(|app| {
             tauri::WebviewWindowBuilder::new(app,"tray",tauri::WebviewUrl::App("tray.html".into()))
@@ -460,10 +675,13 @@ fn main() {
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
             });
+            #[cfg(target_os = "macos")]
+            hide_tray_on_outside_click(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
             if window.label()=="tray" && matches!(event,tauri::WindowEvent::Focused(false)) {let _=window.hide();}
+            if window.label()=="main" && matches!(event,tauri::WindowEvent::Focused(true)) {hide_tray(window.app_handle().clone());}
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -500,5 +718,72 @@ mod tray_tests {
         s["volumes"][0]["conflicts"] = json!(0);
         s["lastSync"] = json!(null);
         assert_eq!(tray_state(&s), "default");
+    }
+}
+
+#[cfg(test)]
+mod daemon_tests {
+    use super::*;
+    #[test]
+    fn only_a_daemon_for_this_state_directory_matches() {
+        let home = "/Users/a b/.arca";
+        assert!(daemon_command("/App/runtime/node /App/runtime/packages/cli/arca.js daemon --home /Users/a b/.arca", home));
+        assert!(daemon_command(r#""C:\App\node.exe" "C:\App\arca.js" daemon --home "/Users/a b/.arca""#, home));
+        assert!(!daemon_command("/App/node /App/arca.js daemon --home /tmp/Users/a b/.arca", home));
+        assert!(!daemon_command("/App/node /App/arca.js daemon --home /Users/a b/.arca-test", home));
+        assert!(!daemon_command("/App/node /App/arca.js status --home /Users/a b/.arca", home));
+        assert!(!daemon_command("/App/node /App/daemon.js --home /Users/a b/.arca", home));
+        assert!(!daemon_command("/bin/sleep 30", home));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_process_listing_never_counts_as_stopped() {
+        use std::os::unix::process::ExitStatusExt;
+        let listing = |raw: i32, stdout: &str, stderr: &str| std::process::Output {
+            status: std::process::ExitStatus::from_raw(raw),
+            stdout: stdout.into(),
+            stderr: stderr.into(),
+        };
+        assert_eq!(listed_command(listing(0, "node arca.js daemon --home /h\n", "")), Ok(Some("node arca.js daemon --home /h".into())));
+        assert_eq!(listed_command(listing(1 << 8, "", "")), Ok(None));
+        assert!(listed_command(listing(1 << 8, "", "ps: illegal option")).is_err());
+        assert!(listed_command(listing(2 << 8, "", "")).is_err());
+        assert!(listed_command(listing(9, "", "")).is_err());
+    }
+    #[test]
+    fn a_stale_or_foreign_lock_names_no_process_to_stop() {
+        let home = std::env::temp_dir().join(format!("arca-lock-foreign-{}", std::process::id()));
+        fs::create_dir_all(&home).unwrap();
+        assert_eq!(running_daemon(&home), Ok(None));
+        fs::write(home.join("daemon.lock"), "not a pid").unwrap();
+        assert!(running_daemon(&home).is_err());
+        fs::write(home.join("daemon.lock"), std::process::id().to_string()).unwrap();
+        assert_eq!(running_daemon(&home), Ok(None));
+        fs::remove_dir_all(&home).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn a_live_daemon_for_this_state_directory_is_found() {
+        let home = std::env::temp_dir().join(format!("arca-lock-live-{}", std::process::id()));
+        let other = std::env::temp_dir().join(format!("arca-lock-other-{}", std::process::id()));
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        let mut child = Command::new("sh")
+            .args(["-c", "sleep 10; :", "arca.js", "daemon", "--home"])
+            .arg(&home)
+            .spawn()
+            .unwrap();
+        fs::write(home.join("daemon.lock"), child.id().to_string()).unwrap();
+        fs::write(other.join("daemon.lock"), child.id().to_string()).unwrap();
+        let found = running_daemon(&home);
+        let foreign = running_daemon(&other);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        let exited = running_daemon(&home);
+        fs::remove_dir_all(&home).unwrap();
+        fs::remove_dir_all(&other).unwrap();
+        assert_eq!(found, Ok(Some(child.id())));
+        assert_eq!(foreign, Ok(None));
+        assert_eq!(exited, Ok(None));
     }
 }

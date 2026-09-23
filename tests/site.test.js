@@ -134,6 +134,11 @@ test("downloads use actual GitHub release assets and Linux appears once", () => 
   assert.doesNotMatch(html, /\.deb|Coming soon|\{\{[A-Z_]+\}\}|<nav/);
   assert.equal((html.match(/Linux · AppImage/g) || []).length, 1);
 });
+test("the Docker command never pins a version the registry may not have yet", () => {
+  const html = render(template, release);
+  assert.match(html, /docker pull satoshiltd\/arca:latest/);
+  assert.doesNotMatch(html, /docker pull satoshiltd\/arca:\d/);
+});
 test("missing assets never get guessed download links; generic stores are explicit defaults", () => {
   const html = render(template, release);
   assert.doesNotMatch(html, /href="[^"]+\.(apk|exe|deb|AppImage)"/);

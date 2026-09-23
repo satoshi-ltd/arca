@@ -29,7 +29,11 @@ let state = null,
   running = false;
 async function refresh() {
   try {
-    state = await api("/v1/status");
+    const [status, windowOpen] = await Promise.all([
+      api("/v1/status"),
+      invoke("main_window_open").catch(() => false),
+    ]);
+    state = status;
     const labels = {
       idle: "Up to date",
       syncing: "Syncing",
@@ -67,7 +71,7 @@ async function refresh() {
         })
         .join(
           "",
-        )}</div><div class="tray-menu"><button data-action="sync">${icon("refresh-cw")}Sync now<kbd>⌘R</kbd></button><button data-action="pause">${icon(state.phase === "paused" ? "play" : "pause")}${state.phase === "paused" ? "Resume sync" : "Pause for 1 hour"}</button><hr><button data-action="open">${icon("app-window-mac")}Open Arca<kbd>⌘O</kbd></button><button data-action="quit">${icon("power")}Quit Arca<kbd>⌘Q</kbd></button></div><p class="tray-note">Quitting the app keeps the daemon running.</p><p id="tray-error" role="alert"></p>`;
+        )}</div><div class="tray-menu"><button data-action="sync">${icon("refresh-cw")}Sync now<kbd>⌘R</kbd></button><button data-action="pause">${icon(state.phase === "paused" ? "play" : "pause")}${state.phase === "paused" ? "Resume sync" : "Pause for 1 hour"}</button><hr>${windowOpen ? "" : `<button data-action="open">${icon("app-window-mac")}Open Arca<kbd>⌘O</kbd></button>`}<button data-action="quit">${icon("power")}Quit Arca<kbd>⌘Q</kbd></button></div><p id="tray-error" role="alert"></p>`;
     document.querySelector(".tray-folders").scrollTop = folderScroll;
     window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
   } catch {
@@ -92,6 +96,8 @@ document.addEventListener("click", async (e) => {
         paused: state.phase !== "paused",
         seconds: 3600,
       });
+    if (["sync", "pause"].includes(el.dataset.action))
+      await invoke("hide_tray");
     await refresh();
   } catch (error) {
     const el = document.querySelector("#tray-error");
@@ -128,6 +134,9 @@ await refresh();
 setInterval(() => {
   if (!running) refresh();
 }, 2000);
+addEventListener("focus", () => {
+  if (!running) refresh();
+});
 
 document.addEventListener("keydown", (event) => {
   if (!event.metaKey && !event.ctrlKey) return;

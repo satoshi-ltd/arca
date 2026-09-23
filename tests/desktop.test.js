@@ -166,16 +166,42 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
       w.document.querySelector('#content [data-action="pause"]'),
       null,
     );
-    assert.equal(w.document.querySelector('#sync-controls [data-action="pause"]').getAttribute("aria-label"), "Pause sync");
-    assert.equal(w.document.querySelector('#sync-controls [data-action="sync"]').getAttribute("data-tooltip"), "Sync now");
-    assert.match(w.document.querySelector("#last-sync").textContent, /Last sync|Not synced yet/);
-    assert.equal(w.document.querySelector("#backup-summary").textContent.trim(), "No backup reported");
-    const tooltipControl = w.document.querySelector('#sync-controls [data-action="pause"]');
+    assert.equal(
+      w.document
+        .querySelector('#sync-controls [data-action="pause"]')
+        .getAttribute("aria-label"),
+      "Pause sync",
+    );
+    assert.equal(
+      w.document
+        .querySelector('#sync-controls [data-action="sync"]')
+        .getAttribute("data-tooltip"),
+      "Sync now",
+    );
+    assert.match(
+      w.document.querySelector("#last-sync").textContent,
+      /Last sync|Not synced yet/,
+    );
+    assert.equal(
+      w.document.querySelector("#backup-summary").textContent.trim(),
+      "No backup reported",
+    );
+    const tooltipControl = w.document.querySelector(
+      '#sync-controls [data-action="pause"]',
+    );
     tooltipControl.focus();
     await until(() => w.document.querySelector('[role="tooltip"]'));
-    assert.equal(w.document.querySelector('[role="tooltip"]').textContent, "Pause sync");
-    assert.equal(tooltipControl.getAttribute("aria-describedby"), "arca-tooltip");
-    tooltipControl.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert.equal(
+      w.document.querySelector('[role="tooltip"]').textContent,
+      "Pause sync",
+    );
+    assert.equal(
+      tooltipControl.getAttribute("aria-describedby"),
+      "arca-tooltip",
+    );
+    tooltipControl.dispatchEvent(
+      new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
     assert.equal(w.document.querySelector('[role="tooltip"]'), null);
     assert.equal(tooltipControl.hasAttribute("aria-describedby"), false);
 
@@ -745,7 +771,10 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
   assert.equal(w.document.querySelector("#notice").hidden, true);
   assert.equal(w.document.querySelectorAll("#node-name").length, 0);
   assert.equal(w.document.querySelector("#managed-role").textContent, "Hub");
-  assert.equal(w.document.querySelector("#backup-summary").textContent.trim(), "No backup reported");
+  assert.equal(
+    w.document.querySelector("#backup-summary").textContent.trim(),
+    "No backup reported",
+  );
   assert.equal(w.document.querySelectorAll('[data-code="web"]').length, 0);
   assert.equal(w.localStorage.length, 0);
   w.document.querySelector('[data-action="logout"]').click();
@@ -922,7 +951,10 @@ test("local folders render while the hub catalog is still pending", async (t) =>
   await until(() => w.document.querySelector(".folder-card"));
   assert.equal(remoteRequested, true);
   assert.match(w.document.querySelector("#connection").textContent, /Offline/);
-  assert.doesNotMatch(w.document.querySelector(".folder-card").textContent, /Offline/);
+  assert.doesNotMatch(
+    w.document.querySelector(".folder-card").textContent,
+    /Offline/,
+  );
   assert.match(
     w.document.querySelector("#content").textContent,
     /Local documents/,
@@ -1849,8 +1881,14 @@ test("Machines refreshes backup acknowledgements without navigation", async (t) 
     w.document.querySelector("#devices-list").textContent,
     /Backup Mac backs up this hub/,
   );
-  assert.equal(w.document.querySelector("#backup-summary").textContent.trim(), "1 backup reported");
-  assert.equal(w.document.querySelector("#backup-summary").dataset.action, "machines");
+  assert.equal(
+    w.document.querySelector("#backup-summary").textContent.trim(),
+    "1 backup reported",
+  );
+  assert.equal(
+    w.document.querySelector("#backup-summary").dataset.action,
+    "machines",
+  );
   assert.match(
     w.document.querySelector("#devices-list").textContent,
     /Backs up hub/,
@@ -3791,4 +3829,176 @@ test("folder copies include linked phone albums without labeling them as replica
   );
   assert.equal(row("macbook-pro").querySelector(".tag").textContent, "Replica");
   assert.equal(row("casa").querySelector(".tag").textContent, "This machine");
+});
+
+test("the status card shows the last sync only when the machine is not up to date", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-last-sync-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Documents");
+  t.after(async () => {
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const card = async (phase) => {
+    const dom = new JSDOM(html, {
+      runScripts: "outside-only",
+      url: "http://tauri.localhost",
+    });
+    const w = dom.window;
+    const pending = new Set();
+    w.setInterval = () => 0;
+    const status = () => ({
+      ...daemon.engine.status(),
+      phase,
+      lastSync: new Date().toISOString(),
+    });
+    w.__TAURI__ = {
+      core: {
+        invoke: async (command, args) => {
+          if (command === "bootstrap") return { setup: false, status: status() };
+          if (command === "check_update")
+            return { available: false, version: null, notes: null };
+          if (args?.route === "/v1/status") return status();
+          const work = fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            headers: {
+              Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+            },
+          }).then((r) => r.json());
+          pending.add(work);
+          try {
+            return await work;
+          } finally {
+            pending.delete(work);
+          }
+        },
+      },
+    };
+    try {
+      await w.eval(`(async()=>{${script}\n})()`);
+      await until(() => !pending.size);
+      const line = w.document.querySelector("#last-sync");
+      return {
+        state: w.document.querySelector("#connection").textContent,
+        hidden: line.hidden,
+        text: line.textContent,
+      };
+    } finally {
+      await drainRequests(pending);
+      w.close();
+    }
+  };
+  const current = await card("idle");
+  assert.equal(current.state, "Up to date");
+  assert.equal(current.hidden, true);
+  const paused = await card("paused");
+  assert.equal(paused.state, "Paused");
+  assert.equal(paused.hidden, false);
+  assert.match(paused.text, /^Last sync /);
+});
+test("a daemon that failed to restart after an update explains why on the stopped page", async () => {
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command) => {
+        if (command === "bootstrap")
+          return {
+            setup: false,
+            stopped: true,
+            error: "The local daemon did not start <after> the update.",
+          };
+        if (command === "check_update")
+          return { available: false, version: null, notes: null };
+        throw new Error(command);
+      },
+    },
+  };
+  try {
+    await w.eval(`(async()=>{${script}\n})()`);
+    const content = w.document.querySelector("#content");
+    await until(() => /Daemon stopped/.test(content.textContent));
+    assert.match(
+      content.textContent,
+      /The local daemon did not start <after> the update\./,
+    );
+    assert.equal(content.querySelector("after"), null);
+    assert.ok(content.querySelector('[data-action="start"]'));
+  } finally {
+    w.close();
+  }
+});
+test("the sidebar offers a signed update only when one exists and installs it on request", async () => {
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  let update = { available: false, version: null, notes: null };
+  const installs = [];
+  let installError = null;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command) => {
+        if (command === "bootstrap") return { setup: true, root: "/tmp/Arca" };
+        if (command === "check_update") return update;
+        if (command === "install_update") {
+          installs.push(update.version);
+          if (installError) throw installError;
+          return;
+        }
+        if (command === "setup_info")
+          return { root: "/tmp/Arca", freeBytes: 1 };
+        throw new Error(command);
+      },
+    },
+  };
+  const requests = new Set();
+  const invoke = w.__TAURI__.core.invoke;
+  w.__TAURI__.core.invoke = (...args) => {
+    const request = invoke(...args);
+    requests.add(request);
+    request.then(
+      () => requests.delete(request),
+      () => requests.delete(request),
+    );
+    return request;
+  };
+  try {
+    await w.eval(`(async()=>{${script}\n})()`);
+    const card = w.document.querySelector("#update-card");
+    const button = w.document.querySelector("#update-install");
+    await until(() => !requests.size);
+    assert.equal(card.hidden, true, "no card without an update");
+    update = { available: true, version: "9.9.9", notes: null };
+    w.dispatchEvent(new w.Event("online"));
+    await until(() => !card.hidden);
+    assert.match(card.textContent, /Update available/);
+    assert.match(
+      w.document.querySelector("#update-versions").textContent,
+      /→ 9\.9\.9/,
+    );
+    installError = new Error("Update signature check failed");
+    button.click();
+    await until(() => installs.length === 1 && !button.disabled);
+    assert.match(
+      button.textContent,
+      /Restart and install/,
+      "a failed install stays retryable",
+    );
+    installError = null;
+    button.click();
+    await until(() => installs.length === 2);
+    assert.deepEqual(installs, ["9.9.9", "9.9.9"]);
+    assert.equal(button.disabled, true);
+    assert.match(button.textContent, /Installing/);
+  } finally {
+    await drainRequests(requests);
+    w.close();
+  }
 });

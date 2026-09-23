@@ -92,6 +92,10 @@ Development builds compile only `arm64-v8a`, the ABI of every supported phone an
 
 Build profiles currently use Node 24.14.1 and APK output. Increasing native build numbers and store distribution remain release work. The installed pilot APK predates the latest icon/splash and other native refinements; do not infer native acceptance from a successful export.
 
+## Desktop updates
+
+The packaged desktop application checks for a signed update at startup, every six hours and when the machine reconnects. When one exists, a card appears at the bottom of the sidebar with the current and offered versions and a single action that downloads it, installs it and restarts the app. The daemon runs from inside the installation, so it stops just before the install and starts again from the new files; synchronization resumes as soon as it answers. Updates are verified against the public key built into the application; the browser interface never updates itself.
+
 ## Connect over the local network
 
 Enable the hub's **Settings → Local network → Allow HTTP connections**, then use its private IPv4 address. The listener and Docker binding must also be reachable. This is unencrypted local traffic, not public Internet hosting. Tailscale/HTTPS remain alternatives. A Tailscale hostname/address requires Tailscale connectivity on the mobile device itself.

@@ -15,6 +15,7 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 - No commits or pushes unless explicitly requested. Remote: `git@github.com:satoshi-ltd/arca.git`.
 - Every commit must increment the project version and include a matching entry in `changelog.md`. Keep package/lockfiles, Tauri manifests, displayed/reported versions and the changelog aligned. Default to a patch bump unless the user specifies another version. This does not authorize commits or pushes.
 - No TypeScript; avoid inline styles and overengineering.
+- The desktop updater signs every payload with the key in `TAURI_SIGNING_PRIVATE_KEY`; its public half lives in `tauri.conf.json`. Never commit the private key, and keep `apps/desktop/src/app.js` reporting its version from the single `APP_VERSION` constant.
 - Enable the repository hooks once per clone with `git config core.hooksPath .githooks`; `pre-push` runs the version check and the exact CI test command before anything leaves the machine.
 - Each environment owns its commands: the root keeps the daemon, the test suite and the site; `apps/desktop` has `start`, `start:clean`, `ui`, `build`, `release` and `verify:bundle`; `apps/mobile` has its build scripts. Run them with `--prefix` and do not add aliases back to the root.
 - Mobile build tooling tests live in `apps/mobile` (`npm test` there), not in the root suite; CI never builds or tests mobile installers.

@@ -221,6 +221,30 @@ svg.lucide {
   flex-direction: column;
   gap: var(--space-3);
 }
+.update-card {
+  background: var(--surface);
+  border: 1px solid var(--green);
+  border-radius: var(--r-card);
+  padding: 12px;
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+.update-card strong {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-body);
+}
+.update-card span {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--mute);
+}
+.update-card button {
+  width: 100%;
+  justify-content: center;
+}
 .status-card {
   background: var(--surface);
   border: 1px solid var(--div);
@@ -1767,12 +1791,6 @@ html:has(.tray-body) {
   border: 0;
   border-top: 1px solid var(--div);
   margin: 4px 8px;
-}
-.tray-note {
-  margin: 0;
-  font-size: var(--text-caption);
-  color: var(--mute);
-  padding: 4px 10px 6px;
 }
 .tray-body #tray-error {
   margin: 0;

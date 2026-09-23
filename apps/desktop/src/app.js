@@ -83,6 +83,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
+const APP_VERSION = "0.5.4";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -739,6 +740,7 @@ function updateShell() {
     status.role !== "hub" && !status.hub
       ? "Local files are kept on this machine"
       : status.lastSync ? `Last sync ${relative(status.lastSync)}` : "Not synced yet";
+  $("#last-sync").hidden = label === "Up to date";
   const backup = $("#backup-summary");
   const hubBackups = (status.devices || []).filter(device => !device.revoked && device.backup_enabled);
   const reported = hubBackups.filter(device => device.backup_updated).length;
@@ -3271,7 +3273,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   html += section(
     "Service",
-    `<div class="settings-card">${setting("Arca v0.5.3", `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
+    `<div class="settings-card">${setting(`Arca v${APP_VERSION}`, `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
   );
   if (status.role === "replica" && status.hub)
     html += section(
@@ -3949,6 +3951,19 @@ async function reviewConflict(item) {
   icons();
 }
 async function handle(name, id, control) {
+  if (name === "install-update") {
+    const button = $("#update-install");
+    button.disabled = true;
+    button.textContent = "Installing…";
+    try {
+      await invoke("install_update");
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Restart and install";
+      throw error;
+    }
+    return;
+  }
   if (name === "web-approver") {
     const enabled = !status.webApprovers?.includes(id);
     modal(
@@ -4310,7 +4325,7 @@ async function handle(name, id, control) {
       control,
       JSON.stringify(
         {
-          version: "0.5.3",
+          version: APP_VERSION,
           platform: status.platform,
           nodeVersion: status.nodeVersion,
           protocol: status.protocol,
@@ -5498,7 +5513,7 @@ async function boot() {
     ready = false;
     $("#content").innerHTML =
       title("Daemon stopped") +
-      `<div class="page">${empty("Your files remain on disk", "Start the local daemon to check your folders.", button("Start service", "start", "", "primary", "power"))}</div>`;
+      `<div class="page">${empty("Your files remain on disk", state.error ? escape(state.error) : "Start the local daemon to check your folders.", button("Start service", "start", "", "primary", "power"))}</div>`;
     icons();
   } else await refresh();
 }
@@ -5607,6 +5622,30 @@ async function pollStatus(force = false) {
   }
 }
 setInterval(pollStatus, 5000);
+const UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
+async function checkForUpdate() {
+  if (!native || navigator.onLine === false) return null;
+  try {
+    const update = await invoke("check_update");
+    showUpdate(update);
+    return update;
+  } catch {
+    // Offline, an unreachable manifest or a rejected signature must stay silent.
+    return null;
+  }
+}
+function showUpdate(update) {
+  const card = $("#update-card");
+  if (!card) return;
+  card.hidden = !update?.available;
+  if (!update?.available) return;
+  $("#update-versions").textContent = `${APP_VERSION} → ${update.version}`;
+}
+if (native) {
+  void checkForUpdate();
+  setInterval(checkForUpdate, UPDATE_INTERVAL);
+  window.addEventListener("online", () => void checkForUpdate());
+}
 let eventRequest = false,
   eventCursor = null,
   eventRetry = 0;

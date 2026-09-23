@@ -159,6 +159,9 @@ jobs:
           rm "$RUNNER_TEMP/arca.p12"
       - name: Build unsigned installers
         if: runner.os != 'macOS' || !inputs.sign_macos
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run release --prefix apps/desktop
       - name: Build signed macOS installers
         if: runner.os == 'macOS' && inputs.sign_macos
@@ -168,6 +171,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run release --prefix apps/desktop
       - name: Verify runtime inside macOS installer
         if: runner.os == 'macOS'
@@ -251,3 +256,37 @@ jobs:
           macos_status="ad-hoc signed, not notarized (macOS may block downloaded apps)"
           if [[ "$SIGN" == true ]]; then macos_status="Developer ID signed and notarized"; fi
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION (amd64/arm64; also tagged latest) ships from publish-docker right after this release. No automatic updates or pilot deployment."
+  updater:
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.14.0"
+      - name: Publish the updater manifest on the rolling desktop-latest tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          for target in macos-arm64.app.tar.gz windows-x64.exe linux-x64.AppImage linux-x64.deb; do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "arca-$VERSION-$target.sig" --dir release-assets
+          done
+          node scripts/updater-manifest.js release-assets
+          sha=$(git rev-parse HEAD)
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/desktop-latest" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/desktop-latest" -f sha="$sha" -F force=true
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/desktop-latest -f sha="$sha"
+          fi
+          gh release view desktop-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create desktop-latest --repo "$GITHUB_REPOSITORY" --title "Desktop updater manifest" \
+              --notes "Rolling manifest the desktop updater reads. Installers live on their own version release."
+          gh release upload desktop-latest release-assets/latest.json --repo "$GITHUB_REPOSITORY" --clobber

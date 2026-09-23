@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4 — 2026-09-23
+
+- Update the packaged desktop application from inside it. A card appears at the bottom of the sidebar only when a signed update exists, showing the current and offered versions, and one action downloads it, installs it and restarts the app. Checks run at startup, every six hours and on reconnection, and stay silent when the manifest is unreachable.
+- Stop the local daemon before installing a desktop update and start it again from the new files, because it runs the bundled runtime from inside the installation being replaced. The payload is downloaded and verified first, so a network failure never interrupts synchronization. Only a daemon for this state directory is stopped; an unreadable lock or process listing, or a daemon that cannot be identified, refuses the update. A loaded Launch at login agent is unloaded during the install and loaded again afterwards. The daemon stays marked for restart until it answers again, and the Daemon stopped page explains a failed restart. Offer Debian installations their own package rather than an AppImage they would reject.
+- Sign every desktop payload with the release key and publish a rolling updater manifest after each release; a manifest missing any platform is refused rather than published. The browser interface is unchanged.
+- Report the desktop version from one constant instead of two literals that could drift apart.
+- Show the sidebar's Last sync line only when the machine is not up to date. The tray offers Open Arca only while the main window is hidden or minimized, closes after Sync now or Pause succeeds like any menu, closes on a click anywhere outside it even when another app was active, and drops its footer note about quitting.
+
 ## 0.5.3 — 2026-09-23
 
 - Give each release artifact its own workflow: `publish` builds the desktop installers and the GitHub release, the new `publish-docker` ships the image after that release and records the version it published, and `publish-site` is unchanged. A pull request touching the image or its verifier smoke-tests it without pushing.
