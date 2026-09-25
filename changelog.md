@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.6 — 2026-09-25
+
+- Make the desktop update card more compact, with a neutral border matching the sync card, a single available-version heading and a small secondary Update and restart button.
+
 ## 0.5.5 — 2026-09-23
 
 - Keep folder copy badges focused on machine roles: Hub, Replica, Album source and This machine. Stale reports or an unavailable hub no longer replace those roles with Last reported; revoked access and the shared cached-list explanation remain explicit.

@@ -223,7 +223,7 @@ svg.lucide {
 }
 .update-card {
   background: var(--surface);
-  border: 1px solid var(--green);
+  border: 1px solid var(--div);
   border-radius: var(--r-card);
   padding: 12px;
   display: grid;
@@ -231,15 +231,9 @@ svg.lucide {
   justify-items: start;
 }
 .update-card strong {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   font-size: var(--text-body);
-}
-.update-card span {
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  color: var(--mute);
+  font-weight: 600;
+  line-height: 1.4;
 }
 .update-card button {
   width: 100%;

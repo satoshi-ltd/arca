@@ -3978,17 +3978,17 @@ test("the sidebar offers a signed update only when one exists and installs it on
     update = { available: true, version: "9.9.9", notes: null };
     w.dispatchEvent(new w.Event("online"));
     await until(() => !card.hidden);
-    assert.match(card.textContent, /Update available/);
+    assert.match(card.textContent, /Arca 9\.9\.9 is available/);
     assert.match(
-      w.document.querySelector("#update-versions").textContent,
-      /→ 9\.9\.9/,
+      w.document.querySelector("#update-heading").textContent,
+      /Arca 9\.9\.9 is available/,
     );
     installError = new Error("Update signature check failed");
     button.click();
     await until(() => installs.length === 1 && !button.disabled);
     assert.match(
       button.textContent,
-      /Restart and install/,
+      /Update and restart/,
       "a failed install stays retryable",
     );
     installError = null;

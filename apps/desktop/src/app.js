@@ -83,7 +83,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.5.5";
+const APP_VERSION = "0.5.6";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -3959,7 +3959,7 @@ async function handle(name, id, control) {
       await invoke("install_update");
     } catch (error) {
       button.disabled = false;
-      button.textContent = "Restart and install";
+      button.textContent = "Update and restart";
       throw error;
     }
     return;
@@ -5639,7 +5639,7 @@ function showUpdate(update) {
   if (!card) return;
   card.hidden = !update?.available;
   if (!update?.available) return;
-  $("#update-versions").textContent = `${APP_VERSION} → ${update.version}`;
+  $("#update-heading").textContent = `Arca ${update.version} is available`;
 }
 if (native) {
   void checkForUpdate();
