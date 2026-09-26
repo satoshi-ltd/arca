@@ -28,15 +28,64 @@ export function safeDetails(value) {
     )
     .replace(/https?:\/\/[^\s/@]+:[^\s/@]+@/gi, "https://[redacted]@");
 }
+const connectionCodes = new Set([
+  "HUB_UNREACHABLE",
+  "HUB_TIMEOUT",
+  "CONNECTION_LOST",
+]);
+const localCodes = new Set(["SOURCE_UNAVAILABLE", "GALLERY_ITEMS_FAILED"]);
+const localText = /keep arca open and retry|from the app that provides it/i;
+const connectionText = new RegExp(
+  [
+    "cannot reach the hub",
+    "cannot connect using this address",
+    "connect this device to the hub",
+    "connect tailscale (?:first|on this device)",
+    "tailscale access unavailable",
+    "hub unavailable",
+    "connection to the hub was interrupted",
+    "\\bHub 50[234]\\b",
+    "fetch failed",
+    "network request failed",
+    "\\bECONN(?:REFUSED|RESET|ABORTED)\\b",
+    "\\bENOTFOUND\\b",
+    "\\bE(?:HOST|NET)UNREACH\\b",
+    "\\bEAI_AGAIN\\b",
+    "ETIMEDOUT",
+    "(?:request|connection|connect|read|socket|operation) timed out",
+    "aborted due to timeout",
+    "(?:network|host|hub) is unreachable",
+    "appears to be offline",
+    "ConnectException",
+    "failed to connect",
+    "connection refused",
+    "connection reset",
+    "broken pipe",
+    "unexpected end of stream",
+    "SocketTimeoutException",
+    "NoRouteToHostException",
+    "UnknownHostException",
+    "could not connect to the server",
+    "network connection was lost",
+    "server with the specified hostname could not be found",
+    "data connection is not currently allowed",
+  ].join("|"),
+  "i",
+);
+export function isHubUnreachable(error) {
+  if (error && typeof error === "object") {
+    if (localCodes.has(error.code)) return false;
+    if (error.hubUnavailable || connectionCodes.has(error.code)) return true;
+  }
+  const text = String(error?.message || error || "");
+  return !localText.test(text) && connectionText.test(text);
+}
 export function errorNotice(
   error,
   { id = "action", hubName = "your hub", action = "retry" } = {},
 ) {
   const details = safeDetails(error?.message || error);
-  const offline =
-    /cannot reach the hub|fetch failed|network request failed|ECONN|ENOTFOUND|timed? ?out|unreachable|ETIMEDOUT|offline|ConnectException|failed to connect|connection refused|SocketTimeoutException|NoRouteToHostException/i.test(
-      details,
-    );
+  const offline = isHubUnreachable(error);
   const revoked = /\b401\b|revoked|unauthorized|hub refused credential/i.test(
     details,
   );

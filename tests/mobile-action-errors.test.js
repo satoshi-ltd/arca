@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isPickerCancelled } from "../apps/mobile/src/action-errors.js";
+import {
+  isPickerCancelled,
+  sourceUnavailable,
+} from "../apps/mobile/src/action-errors.js";
+import {
+  errorNotice,
+  isHubUnreachable,
+} from "../apps/desktop/src/notice-contract.js";
 
 test("native picker cancellation is a normal exit, including wrapped Expo errors", () => {
   assert.equal(
@@ -29,4 +36,18 @@ test("real export and filesystem failures are never suppressed as cancellation",
     assert.equal(isPickerCancelled(new Error(message)), false);
   }
   assert.equal(isPickerCancelled(null), false);
+});
+
+test("provider failures during a pick are local source errors, never a hub outage", () => {
+  const cause = new Error(
+    "java.net.SocketTimeoutException: timeout while reading content://provider/doc",
+  );
+  const error = sourceUnavailable(cause);
+  assert.equal(error.code, "SOURCE_UNAVAILABLE");
+  assert.equal(error.cause, cause);
+  assert.match(error.message, /from the app that provides it/);
+  assert.equal(isHubUnreachable(error), false);
+  assert.equal(errorNotice(error).cause, "");
+  const cancelled = new Error("The file picker was cancelled by the user");
+  assert.equal(sourceUnavailable(cancelled), cancelled);
 });

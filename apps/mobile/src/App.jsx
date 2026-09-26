@@ -18,6 +18,7 @@ import {
   createNoticeStore,
   errorNotice,
   conditionNotices,
+  isHubUnreachable,
 } from "../../desktop/src/notice-contract.js";
 import { Onboarding } from "./Onboarding";
 import { selectFirstFolders } from "./onboarding";
@@ -77,7 +78,8 @@ import {
   ApprovalSheet,
 } from "./components";
 import { client } from "./persistence";
-import { isPickerCancelled } from "./action-errors.js";
+import { isPickerCancelled, sourceUnavailable } from "./action-errors.js";
+import { shouldStopSync } from "./transfer-session.js";
 import {
   runtime,
   subscribe,
@@ -329,9 +331,27 @@ export default function App() {
     };
   }, [notices]);
   const retryAction = useRef(null);
+  const errorCode = useRef({});
+  const localAction = useRef(false);
   useEffect(() => {
     if (success) notices.push({ kind: "info", title: success });
   }, [success, notices]);
+  async function runLocal(work) {
+    if (localAction.current) return;
+    localAction.current = true;
+    try {
+      await work();
+    } catch (e) {
+      if (!mounted.current || isPickerCancelled(e)) return;
+      const message = e.message || "Could not complete this action.";
+      retryAction.current = () => runLocal(work);
+      retryAction.current.message = message;
+      errorCode.current = { message, code: e.code };
+      setError(message);
+    } finally {
+      localAction.current = false;
+    }
+  }
   async function run(work, options = {}) {
     if (action.current) {
       if (!options.silent)
@@ -356,6 +376,7 @@ export default function App() {
       retryAction.current = () => run(work, options);
       const message = e.message || "Could not complete this action.";
       retryAction.current.message = message;
+      errorCode.current = { message, code: e.code };
       setError(message);
     } finally {
       action.current = false;
@@ -397,7 +418,8 @@ export default function App() {
       if (value === "active") {
         engine.current?.lastInventory.clear();
         engine.current?.sync(false, { scheduled: true });
-      } else if (!canContinueInBackground()) engine.current?.stop();
+      } else if (shouldStopSync(value, canContinueInBackground()))
+        engine.current?.stop();
     });
     const timer = setInterval(() => {
       const r = engine.current;
@@ -427,7 +449,7 @@ export default function App() {
     return () => {
       fileRequest.current++;
     };
-  }, [folder?.id, status.busy, status.syncingVolume, status.last]);
+  }, [folder?.id, status.syncingVolume, status.last]);
   const connection = state.connection,
     connected = connection?.linked,
     catalog = state.catalog,
@@ -452,7 +474,7 @@ export default function App() {
             );
             if (signal.aborted) break;
             if (engine.current) engine.current.eventsHealthyAt = Date.now();
-            if (next.cursor !== cursor) {
+            if (next.cursor !== cursor || engine.current?.hubUnavailable) {
               cursor = next.cursor;
               void engine.current?.sync(false, { scheduled: true });
             }
@@ -485,6 +507,10 @@ export default function App() {
       pending = false;
     const check = async () => {
       if (!active || pending || AppState.currentState !== "active") return;
+      if (engine.current?.hubUnavailable) {
+        setWebApproval(null);
+        return;
+      }
       pending = true;
       try {
         const data = await client.api("/v1/web-approvals");
@@ -502,6 +528,12 @@ export default function App() {
       clearInterval(timer);
     };
   }, [connected, connection?.hubId]);
+  useEffect(() => setApprovalError(""), [webApproval?.id]);
+  const approvalRequest =
+    webApproval && !sheet && !status.picking && !status.importing
+      ? webApproval
+      : null;
+  const [shownApproval, releaseApproval] = useRetained(approvalRequest);
   const answerWebApproval = async (decision) => {
     if (!webApproval || approvalBusy) return;
     setApprovalBusy(true);
@@ -592,6 +624,7 @@ export default function App() {
   }, [
     screen,
     connected,
+    status.offline,
     historyVolume,
     historyFilter,
     catalog?.volumes
@@ -605,7 +638,6 @@ export default function App() {
       .join(","),
   ]);
   const actionLocked = busy || !engine.current;
-  const locked = actionLocked || status.busy;
   async function openFolder(f) {
     setEntries(
       folderLists.current.get(`${engine.current?.scope}:${f.id}`) || [],
@@ -699,6 +731,12 @@ export default function App() {
           info && !info.directory ? { ...info, path: target.path, uri } : null;
       } catch {}
     }
+    const saved =
+      target && page.offline && !more
+        ? await engine.current.store
+            .current(engine.current.scope, target.volume, target.path)
+            .catch(() => null)
+        : null;
     if (request !== historyRequest.current || !mounted.current) return;
     (target ? setFileHistory : setHistory)({
       versions: more ? [...previous.versions, ...page.versions] : page.versions,
@@ -711,7 +749,11 @@ export default function App() {
         originEntry: target.originEntry || null,
         ...target,
         localEntry,
-        currentRev: more ? target.currentRev : page.versions[0]?.rev,
+        currentRev: more
+          ? target.currentRev
+          : saved && !saved.deleted
+            ? saved.rev
+            : page.versions[0]?.rev,
       });
   }
   async function openFileDetail(entry) {
@@ -808,28 +850,36 @@ export default function App() {
     const replica = engine.current;
     try {
       await replica.withImportPicker(async () => {
-        const result =
+        const result = await (
           kind === "photos"
-            ? await ImagePicker.launchImageLibraryAsync({
+            ? ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ["images"],
                 allowsMultipleSelection: true,
                 quality: 1,
               })
-            : await DocumentPicker.getDocumentAsync({
+            : DocumentPicker.getDocumentAsync({
                 multiple: true,
                 copyToCacheDirectory: true,
-              });
+              })
+        ).catch((error) => {
+          throw sourceUnavailable(error);
+        });
         if (result.canceled) return;
         if (kind === "photos" && source) {
           await replica.gallery.addPhotos(folder.id, result.assets);
         } else {
-          for (const asset of result.assets)
-            await replica.importFile(
-              folder.id,
-              directory +
-                (asset.name || asset.fileName || `photo-${Date.now()}.jpg`),
-              asset.uri,
-            );
+          try {
+            for (const asset of result.assets)
+              await replica.importFile(
+                folder.id,
+                directory +
+                  (asset.name || asset.fileName || `photo-${Date.now()}.jpg`),
+                asset.uri,
+              );
+          } finally {
+            for (const asset of result.assets)
+              await replica.files.discardPicked(asset.uri).catch(() => {});
+          }
           await listFiles();
         }
       });
@@ -1111,11 +1161,14 @@ export default function App() {
     notices.reconcile(conditions);
     if (error)
       notices.push(
-        errorNotice(error, {
-          id: "action",
-          hubName: state.catalog?.name,
-          action: retryAction.current ? "retry" : null,
-        }),
+        errorNotice(
+          errorCode.current.message === error ? errorCode.current : error,
+          {
+            id: "action",
+            hubName: state.catalog?.name,
+            action: retryAction.current ? "retry" : null,
+          },
+        ),
       );
     else notices.clear("action");
   }, [error, status.error, locals, state.catalog, notices]);
@@ -1174,7 +1227,7 @@ export default function App() {
             wide,
             active:
               busy ||
-              status.busy ||
+              (status.busy && !status.offline) ||
               detailLoading ||
               historyLoading ||
               !!(folder && (filesLoading || recentLoading)),
@@ -1262,7 +1315,7 @@ export default function App() {
           wide,
           active:
             busy ||
-            status.busy ||
+            (status.busy && !status.offline) ||
             detailLoading ||
             historyLoading ||
             !!(folder && (filesLoading || recentLoading)),
@@ -1381,8 +1434,8 @@ export default function App() {
                               label="Open"
                               icon="external"
                               iconOnly={!wide}
-                              disabled={actionLocked || !sheet.localEntry}
-                              onPress={() => run(openCurrentFile)}
+                              disabled={!engine.current || !sheet.localEntry}
+                              onPress={() => runLocal(openCurrentFile)}
                             />
                             <View>
                               <Pressable
@@ -1650,6 +1703,9 @@ export default function App() {
                                   scope={engine.current?.scope}
                                   onLoading={setRecentLoading}
                                   connected={connected}
+                                  load={(route) =>
+                                    engine.current.remoteView(route)
+                                  }
                                   updated={status.last}
                                   date={date}
                                   open={(row) =>
@@ -1920,12 +1976,12 @@ export default function App() {
                               </View>
                             </Section>
                           )}
-                          {connected && !catalog && (
+                          {connected && !catalog && !status.offline && (
                             <Scaffold dashed label="Loading shared folders" />
                           )}
                           {!locals.length &&
                             !volumes.length &&
-                            (!connected || catalog) && (
+                            (!connected || catalog || status.offline) && (
                               <Card title="No folders yet">
                                 <Text style={s.text}>
                                   Shared folders from your hub appear here.
@@ -1961,6 +2017,7 @@ export default function App() {
                       date={date}
                       locked={actionLocked}
                       connected={connected}
+                      offline={status.offline || !!fileHistory.offline}
                       restore={restore}
                       canResolve={locals.some(
                         (f) => f.id === sheet.volume && f.selected,
@@ -2023,7 +2080,13 @@ export default function App() {
                       download={(ids) =>
                         run(async () => {
                           const r = engine.current;
-                          await client.refresh();
+                          await client.refresh().catch((error) => {
+                            if (
+                              !client.state().catalog ||
+                              !isHubUnreachable(error)
+                            )
+                              throw error;
+                          });
                           r.scope = client.state().connection.hubId;
                           await r.store.set("scope", r.scope);
                           await selectFirstFolders(
@@ -2646,13 +2709,15 @@ export default function App() {
               onCancel={() => settle(false)}
             />
           )}
-          {webApproval && !sheet && !status.picking && !status.importing && (
+          {shownApproval && (
             <ApprovalSheet
-              request={webApproval}
+              request={shownApproval}
               hubName={catalog?.name || "hub"}
               busy={approvalBusy}
               error={approvalError}
               onDecision={answerWebApproval}
+              closing={!approvalRequest}
+              onExited={releaseApproval}
             />
           )}
           {shownSheet && (
@@ -2797,20 +2862,22 @@ export default function App() {
                         label="Export folder…"
                         icon="export"
                         disabled={
-                          locked || (!!source && source.mode !== "converting")
+                          actionLocked ||
+                          (!!source && source.mode !== "converting")
                         }
                         onPress={() => {
                           setSheet(null);
                           run(() =>
-                            engine.current.withImportPicker(() =>
-                              engine.current.files.exportDirectory(
+                            engine.current.withImportPicker(async () => {
+                              await engine.current.settle();
+                              return engine.current.files.exportDirectory(
                                 engine.current.files.folder(
                                   engine.current.scope,
                                   folder.id,
                                 ),
                                 "arca-folder",
-                              ),
-                            ),
+                              );
+                            }),
                           );
                         }}
                       />
@@ -2822,7 +2889,9 @@ export default function App() {
                         actionLocked ||
                         !connected ||
                         (!source &&
-                          (!currentFolder?.completed || !!currentFolder?.issue))
+                          (status.offline ||
+                            !currentFolder?.completed ||
+                            !!currentFolder?.issue))
                       }
                       onPress={() => setSheet({ kind: "gallery" })}
                     />
@@ -2937,7 +3006,7 @@ export default function App() {
                     primary
                     label="Restore selected"
                     busy={busy}
-                    disabled={!connected || actionLocked}
+                    disabled={!connected || status.offline || actionLocked}
                     onPress={() =>
                       run(() => chooseConflict(shownSheet.choice), {
                         label: "Restoring selected version…",
@@ -2966,10 +3035,10 @@ export default function App() {
                 <ActionRow
                   label="Share"
                   icon="export"
-                  disabled={actionLocked || !sheet.localEntry}
+                  disabled={!engine.current || !sheet.localEntry}
                   onPress={() => {
                     setFileActionsOpen(false);
-                    run(shareCurrentFile);
+                    runLocal(shareCurrentFile);
                   }}
                 />
                 <ActionRow

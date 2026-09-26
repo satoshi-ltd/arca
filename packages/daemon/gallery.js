@@ -1,4 +1,4 @@
-import { isHeic, heicPreview } from "./heic-preview.js";
+import { isHeic, isHeifContent, heicPreview } from "./heic-preview.js";
 import { videoPreview, videoCaptureDate } from "./video-preview.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -8,7 +8,13 @@ import exifr from "exifr";
 import { fail } from "./storage.js";
 import { mediaKind, galleryDate } from "../core/gallery-date.js";
 
+// Cached input files keep working copies open, which blocks renames and deletes on Windows.
+sharp.cache({ files: 0 });
+
 export { mediaKind, galleryDate };
+// Thumbnails are never evicted by large previews; each kind has its own disk budget.
+const THUMB_BUDGET = 1024 ** 3;
+const LARGE_BUDGET = 512 * 1024 ** 2;
 // Revisit videos checked before container capture dates were supported.
 const needsCaptureDate = `(m.hash IS NULL OR (m.captured IS NULL AND
   (m.date_checked=0 OR (arca_media_kind(f.path)='video' AND m.date_checked<2))))`;
@@ -77,43 +83,85 @@ export class Gallery {
           continue;
         while (!this.closed && (await this.index(volume)))
           await new Promise((r) => setImmediate(r));
-        let after = "";
-        while (!this.closed) {
-          const rows = this.s.db
-            .prepare(
-              `SELECT f.path,f.hash FROM files f LEFT JOIN gallery_prepared p ON p.hash=f.hash
-            WHERE f.volume=? AND f.path>? AND f.deleted=0 AND arca_media_kind(f.path) IS NOT NULL
-            AND (p.hash IS NULL OR p.large=0 OR p.attempted<?) ORDER BY f.path LIMIT 32`,
-            )
-            .all(volume, after, Date.now() - 86400000);
-          if (!rows.length) break;
-          for (const row of rows) {
-            if (this.closed) return;
-            after = row.path;
-            try {
-              if (
-                this.s.config.role !== "hub" &&
-                !this.s.volume(volume).selected
-              )
-                break;
-              if (!fs.existsSync(this.s.blob(row.hash))) continue;
-              await this.derivative(volume, row.path, row.hash);
-              if (mediaKind(row.path) === "image" && !this.closed)
-                await this.derivative(volume, row.path, row.hash, true);
-            } catch {
-              /* Hidden/deleted files are skipped. */
-            }
-            if (this.closed) return;
-            this.s.db
-              .prepare(
-                "INSERT OR REPLACE INTO gallery_prepared(hash,attempted,large) VALUES(?,?,1)",
-              )
-              .run(row.hash, Date.now());
-            await new Promise((r) => setImmediate(r));
-          }
-        }
+        await this.prepareThumbnails(volume);
+        await this.prepareLarge(volume);
       } catch {
         /* Folder removal or bad policy must not stop other galleries. */
+      }
+    }
+  }
+  available(volume) {
+    return this.s.config.role === "hub" || this.s.volume(volume).selected;
+  }
+  async prepareThumbnails(volume) {
+    const used = this.s.db
+      .prepare(
+        "SELECT coalesce(sum(size),0) AS total FROM gallery_derivatives WHERE key LIKE '%-thumb.jpg'",
+      )
+      .get().total;
+    if (used >= THUMB_BUDGET) return;
+    let after = "";
+    while (!this.closed) {
+      const rows = this.s.db
+        .prepare(
+          `SELECT f.path,f.hash,p.large FROM files f LEFT JOIN gallery_prepared p ON p.hash=f.hash
+          LEFT JOIN gallery_derivatives d ON d.key=f.hash || '-thumb.jpg'
+          WHERE f.volume=? AND f.path>? AND f.deleted=0 AND arca_media_kind(f.path) IS NOT NULL
+          AND d.key IS NULL AND (p.hash IS NULL OR p.large=1 OR p.attempted<?) ORDER BY f.path LIMIT 32`,
+        )
+        .all(volume, after, Date.now() - 86400000);
+      if (!rows.length) return;
+      for (const row of rows) {
+        if (this.closed || !this.available(volume)) return;
+        after = row.path;
+        let rendered = false;
+        try {
+          if (this.s.localContent(volume, row.path, row.hash))
+            rendered = !(await this.derivative(volume, row.path, row.hash)).unavailable;
+        } catch (error) {
+          if (error.status === 429) return;
+        }
+        if (this.closed) return;
+        this.s.db
+          .prepare(
+            "INSERT OR REPLACE INTO gallery_prepared(hash,attempted,large) VALUES(?,?,?)",
+          )
+          .run(row.hash, Date.now(), rendered ? (row.large ?? 0) : 0);
+        await new Promise((r) => setImmediate(r));
+      }
+    }
+  }
+  async prepareLarge(volume) {
+    while (!this.closed) {
+      const used = this.s.db
+        .prepare(
+          "SELECT coalesce(sum(size),0) AS total FROM gallery_derivatives WHERE key LIKE '%-large.jpg'",
+        )
+        .get().total;
+      if (used >= LARGE_BUDGET * 0.9) return;
+      const rows = this.s.db
+        .prepare(
+          `SELECT f.path,f.hash FROM files f JOIN gallery_prepared p ON p.hash=f.hash
+          LEFT JOIN gallery_metadata m ON m.hash=f.hash
+          WHERE f.volume=? AND f.deleted=0 AND arca_media_kind(f.path)='image' AND p.large=0
+          ORDER BY m.captured DESC NULLS LAST, f.path DESC LIMIT 32`,
+        )
+        .all(volume);
+      if (!rows.length) return;
+      for (const row of rows) {
+        if (this.closed || !this.available(volume) || this.volumes.size) return;
+        let rendered = false;
+        try {
+          if (this.s.localContent(volume, row.path, row.hash))
+            rendered = !(await this.derivative(volume, row.path, row.hash, true)).unavailable;
+        } catch (error) {
+          if (error.status === 429) return;
+        }
+        if (this.closed) return;
+        this.s.db
+          .prepare("UPDATE gallery_prepared SET large=? WHERE hash=?")
+          .run(rendered ? 1 : 2, row.hash);
+        await new Promise((r) => setImmediate(r));
       }
     }
   }
@@ -140,14 +188,19 @@ export class Gallery {
       WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL AND ${needsCaptureDate} GROUP BY f.hash LIMIT 64`,
       )
       .all(volume);
+    let handled = 0;
     for (const row of rows) {
       let captured = null;
       const video = mediaKind(row.path) === "video";
+      const source = s.localContent(volume, row.path, row.hash);
+      // A file edited since its last scan is dated after the rescan gives it a new hash.
+      if (!source && s.config.role !== "hub") continue;
+      handled++;
       try {
-        if (video)
-          captured = await videoCaptureDate(s.blob(row.hash), row.path);
+        if (!source) fail("Content is not available locally", 404);
+        if (video) captured = await videoCaptureDate(source, row.path);
         else {
-          const meta = await sharp(s.blob(row.hash), {
+          const meta = await sharp(source, {
             limitInputPixels: 100000000,
           }).metadata();
           if (meta.exif?.length <= 4 * 1024 ** 2) {
@@ -182,7 +235,7 @@ export class Gallery {
         .run(row.hash, captured, video ? 2 : 1);
       await new Promise((resolve) => setImmediate(resolve));
     }
-    return rows.length === 64;
+    return rows.length === 64 && handled > 0;
   }
   async page(volume, query) {
     const s = this.s;
@@ -205,24 +258,52 @@ export class Gallery {
     if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
       fail("Invalid gallery month");
     const after = query.get("after") || (month ? month + "~" : "");
-    if (after.length > 4096) fail("Invalid gallery cursor");
+    const from = query.get("after") ? "" : query.get("from") || "";
+    const before = query.get("before") || "";
+    if (Math.max(after.length, from.length, before.length) > 4096)
+      fail("Invalid gallery cursor");
     s.db.function(
       "arca_gallery_date",
-      (name, captured, added) => galleryDate(name, captured, added).date,
+      (name, captured, added, modified) =>
+        galleryDate(name, captured, added, modified).date,
     );
     const source = `WITH media AS (
-      SELECT f.path,f.hash,f.size,f.rev,m.captured,
+      SELECT f.path,f.hash,f.size,f.rev,m.captured,m.modified,
         (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash) AS added
       FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
       WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_gallery_visible(f.path)=1
-    ), dated AS (SELECT *,arca_gallery_date(path,captured,added) AS date FROM media)`;
-    const rows = s.db
-      .prepare(
-        source +
-          ` SELECT *,date || '|' || path AS cursor FROM dated
-      WHERE (?='' OR date || '|' || path < ?) ORDER BY cursor DESC LIMIT 61`,
-      )
-      .all(volume, after, after);
+    ), dated AS (SELECT *,arca_gallery_date(path,captured,added,modified) AS date FROM media)`;
+    const cursor = "coalesce(date, '') || '|' || path";
+    const select = (bound, order) =>
+      s.db
+        .prepare(
+          source +
+            ` SELECT *,${cursor} AS cursor FROM dated WHERE ${bound} ORDER BY cursor ${order} LIMIT 61`,
+        )
+        .all(volume, before || after || from);
+    let rows, previous, next;
+    if (before) {
+      const newer = select(`${cursor} > ?`, "ASC");
+      rows = newer.slice(0, 60).reverse();
+      previous = newer.length > 60 ? rows[0].cursor : null;
+      next = null;
+    } else {
+      const older = select(
+        after ? `${cursor} < ?` : from ? `${cursor} <= ?` : "?=''",
+        "DESC",
+      );
+      rows = older.slice(0, 60);
+      next = older.length > 60 ? rows[59].cursor : null;
+      previous =
+        (month || from) &&
+        !query.get("after") &&
+        rows.length &&
+        s.db
+          .prepare(source + ` SELECT 1 FROM dated WHERE ${cursor} > ? LIMIT 1`)
+          .get(volume, rows[0].cursor)
+          ? rows[0].cursor
+          : null;
+    }
     const timeline = s.db
       .prepare(
         source +
@@ -233,17 +314,14 @@ export class Gallery {
     return {
       indexing,
       timeline,
-      items: rows.slice(0, 60).map((row) => ({
+      items: rows.map((row) => ({
         ...row,
-        ...s.db
-          .prepare(
-            "SELECT sourcePath,sourceHash FROM gallery_origins WHERE volume=? AND path=? AND hash=?",
-          )
-          .get(volume, row.path, row.hash),
-        dateSource: galleryDate(row.path, row.captured, row.added).source,
+        dateSource: galleryDate(row.path, row.captured, row.added, row.modified)
+          .source,
         kind: mediaKind(row.path),
       })),
-      next: rows.length > 60 ? rows[59].cursor : null,
+      next,
+      previous,
     };
   }
 
@@ -282,7 +360,7 @@ export class Gallery {
     if (mediaKind(name) !== "image") return result;
     let meta;
     try {
-      meta = await sharp(this.s.blob(hash), {
+      meta = await sharp(this.s.localContent(volume, name, hash), {
         limitInputPixels: 100000000,
       }).metadata();
     } catch {
@@ -408,23 +486,25 @@ export class Gallery {
       };
     }
     if (this.pending.has(key)) return this.pending.get(key);
-    const job = this.render(name, hash, large, key, diskKey, disk).finally(() =>
+    const source = s.localContent(volume, name, hash);
+    if (!source) fail("Sync this photo before previewing it", 409);
+    const job = this.render(name, source, large, key, diskKey, disk).finally(() =>
       this.pending.delete(key),
     );
     this.pending.set(key, job);
     return job;
   }
-  async render(name, hash, large, key, diskKey, disk) {
+  async render(name, source, large, key, diskKey, disk) {
     const s = this.s;
     if (this.running >= 4) fail("Previews are busy. Try again.", 429);
     this.running++;
     try {
       const data =
         mediaKind(name) === "video"
-          ? await videoPreview(s.blob(hash), name, large)
-          : isHeic(name)
-            ? await heicPreview(s.blob(hash), large)
-            : await sharp(s.blob(hash), {
+          ? await videoPreview(source, name, large)
+          : isHeic(name) && isHeifContent(source)
+            ? await heicPreview(source, large)
+            : await sharp(source, {
                 limitInputPixels: 100000000,
                 sequentialRead: true,
               })
@@ -447,16 +527,20 @@ export class Gallery {
       s.db
         .prepare("INSERT OR REPLACE INTO gallery_derivatives VALUES(?,?,?)")
         .run(diskKey, data.length, Date.now());
+      const kind = `%-${large ? "large" : "thumb"}.jpg`;
+      const budget = large ? LARGE_BUDGET : THUMB_BUDGET;
       let total = s.db
         .prepare(
-          "SELECT coalesce(sum(size),0) AS total FROM gallery_derivatives",
+          "SELECT coalesce(sum(size),0) AS total FROM gallery_derivatives WHERE key LIKE ?",
         )
-        .get().total;
-      if (total > 512 * 1024 ** 2)
+        .get(kind).total;
+      if (total > budget)
         for (const old of s.db
-          .prepare("SELECT key,size FROM gallery_derivatives ORDER BY used")
-          .all()) {
-          if (total <= 512 * 1024 ** 2) break;
+          .prepare(
+            "SELECT key,size FROM gallery_derivatives WHERE key LIKE ? ORDER BY used",
+          )
+          .all(kind)) {
+          if (total <= budget) break;
           fs.rmSync(path.join(this.directory, old.key), { force: true });
           s.db
             .prepare("DELETE FROM gallery_derivatives WHERE key=?")

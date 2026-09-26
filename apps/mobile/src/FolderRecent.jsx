@@ -2,7 +2,6 @@ import { Scaffold } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { client } from "./persistence";
 import { Icon, Button, useDesign } from "./components";
 import { bytes } from "./format";
 
@@ -13,6 +12,7 @@ export function FolderRecent({
   volume,
   scope,
   connected,
+  load,
   updated,
   date,
   open,
@@ -30,8 +30,7 @@ export function FolderRecent({
     onLoading?.(!!connected);
     setError("");
     if (connected)
-      client
-        .api(`/v1/activity?${new URLSearchParams({ volume, limit: "4" })}`)
+      load(`/v1/activity?${new URLSearchParams({ volume, limit: "4" })}`)
         .then((value) => {
           if (active) {
             knownRecent.set(key, value);
@@ -63,7 +62,7 @@ export function FolderRecent({
   return (
     <View style={s.section}>
       {error && <ErrorNotice error={error} retry={() => retry((n) => n + 1)} />}
-      {!connected && (
+      {(!connected || page.offline) && (
         <Text style={s.caption}>Offline · last known revisions</Text>
       )}
       <View style={s.group}>

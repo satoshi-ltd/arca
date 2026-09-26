@@ -655,16 +655,19 @@ export function Sheet({
   useEffect(() => {
     if (dialog || height != null) animate(1, motion.enter);
   }, [dialog, height != null]);
+  // Only the parent's closing prop animates out, so a refused close never leaves an invisible modal.
   useEffect(() => {
     if (closing) {
       leaving.current = true;
       animate(0, motion.exit, onExited);
+    } else if (leaving.current) {
+      leaving.current = false;
+      animate(1, motion.enter);
     }
   }, [closing]);
   const dismiss = () => {
-    if (leaving.current) return;
-    leaving.current = true;
-    animate(0, motion.exit, onClose);
+    if (busy || leaving.current) return;
+    onClose?.();
   };
   const panel = dialog
     ? {
@@ -697,7 +700,7 @@ export function Sheet({
       presentationStyle="overFullScreen"
       onRequestClose={dismiss}
     >
-      <View style={s.modalRoot}>
+      <View style={s.modalRoot} pointerEvents={closing ? "none" : "auto"}>
         <Animated.View
           pointerEvents="none"
           style={[s.modalBackdrop, { opacity: progress }]}
@@ -722,6 +725,7 @@ export function Sheet({
                   quiet
                   icon="close"
                   iconOnly
+                  disabled={busy}
                   onPress={dismiss}
                 />
               </View>
@@ -1045,7 +1049,15 @@ export function SegmentedControl({ options, value, onChange }) {
 }
 
 // Approval is composed from the shared sheet, reference panel, rows and controls.
-export function ApprovalSheet({ request, hubName, busy, error, onDecision }) {
+export function ApprovalSheet({
+  request,
+  hubName,
+  busy,
+  error,
+  onDecision,
+  closing = false,
+  onExited,
+}) {
   const { s, c } = useDesign();
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -1056,8 +1068,14 @@ export function ApprovalSheet({ request, hubName, busy, error, onDecision }) {
   const remaining = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   const age = Math.max(0, Math.floor((now - request.created) / 60000));
   const requested = age > 0 ? `${age} min ago` : "Just now";
+  const reference = String(request.reference || "");
   return (
-    <Sheet onClose={() => onDecision("deny")} busy={busy}>
+    <Sheet
+      onClose={() => onDecision("deny")}
+      busy={busy}
+      closing={closing}
+      onExited={onExited}
+    >
       <Icon name="login" size={28} color={c.accent} />
       <Text accessibilityRole="header" style={s.approvalTitle}>
         Allow this browser to open {hubName}?
@@ -1070,10 +1088,10 @@ export function ApprovalSheet({ request, hubName, busy, error, onDecision }) {
         <Text style={[s.eyebrow, s.centerText]}>
           REQUEST · must match the browser
         </Text>
-        <Text accessibilityLabel={request.reference} style={s.requestNumber}>
-          {request.reference.slice(0, 3)}
+        <Text accessibilityLabel={reference} style={s.requestNumber}>
+          {reference.slice(0, 3)}
           <Text style={s.requestSeparator}> – </Text>
-          {request.reference.slice(3)}
+          {reference.slice(3)}
         </Text>
       </View>
       <View style={s.group}>

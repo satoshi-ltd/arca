@@ -221,6 +221,7 @@ test("mobile single-line fields reserve stable geometry and grow only for access
       assert.equal(s.buttonLabel.fontSize, geometry.touchControlFont);
       assert.equal(s.caption.fontSize, geometry.touchCaptionFont);
       assert.equal(s.rowTitle.fontSize, geometry.touchRowFont);
+      assert.equal(s.statValue.fontSize, geometry.touchRowFont, "summary values read like row titles, not headings");
       assert.equal(
         s.folderRow.minHeight,
         s.button.minHeight + 2 * s.folderRow.paddingVertical + 2,
@@ -377,4 +378,72 @@ test("closing folder actions retain their title after local removal without rend
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: volume }), true);
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: null }), false);
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: { id: "other" } }), false);
+});
+
+test("local Open and Share stay available while hub-bound actions hold the action lock", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const open = app.slice(app.indexOf('label="Open"'), app.indexOf("/>", app.indexOf('label="Open"')));
+  assert.match(open, /onPress=\{\(\) => runLocal\(openCurrentFile\)\}/);
+  assert.doesNotMatch(open, /actionLocked/);
+  const share = app.slice(app.indexOf('label="Share"'), app.indexOf("/>", app.indexOf('label="Share"')));
+  assert.match(share, /runLocal\(shareCurrentFile\)/);
+  assert.match(
+    app.slice(app.indexOf("async function runLocal"), app.indexOf("async function run(")),
+    /retryAction\.current = \(\) => runLocal\(work\)/,
+    "a failed local action retries itself, never an older action",
+  );
+  assert.doesNotMatch(share, /actionLocked|\brun\(/);
+  const exporting = app.slice(app.indexOf('label="Export folder…"'), app.indexOf("/>", app.indexOf('label="Export folder…"')));
+  assert.match(exporting, /actionLocked \|\|/);
+  assert.doesNotMatch(exporting, /status\.busy|\blocked\b/);
+  assert.match(exporting, /await engine\.current\.settle\(\);/);
+  const restoreSelected = app.slice(app.indexOf('label="Restore selected"'), app.indexOf("/>", app.indexOf('label="Restore selected"')));
+  assert.match(restoreSelected, /status\.offline/);
+  const history = fs.readFileSync(new URL("../apps/mobile/src/FileHistory.jsx", import.meta.url), "utf8");
+  assert.equal((history.match(/!reachable/g) || []).length, 2);
+  assert.match(app, /offline=\{status\.offline \|\| !!fileHistory\.offline\}/);
+});
+
+test("sheets close only through their parent and never become invisible touch traps", () => {
+  const components = fs.readFileSync(new URL("../apps/mobile/src/components.jsx", import.meta.url), "utf8");
+  const sheet = components.slice(components.indexOf("export function Sheet("), components.indexOf("export function ConfirmDialog("));
+  const dismiss = sheet.slice(sheet.indexOf("const dismiss = () => {"), sheet.indexOf("};", sheet.indexOf("const dismiss = () => {")));
+  assert.match(dismiss, /if \(busy \|\| leaving\.current\) return;/);
+  assert.doesNotMatch(dismiss, /animate\(/);
+  assert.match(sheet, /pointerEvents=\{closing \? "none" : "auto"\}/);
+  assert.match(sheet, /disabled=\{busy\}\s+onPress=\{dismiss\}/);
+  assert.match(sheet, /else if \(leaving\.current\) \{\s+leaving\.current = false;\s+animate\(1, motion\.enter\);/);
+  const approval = components.slice(components.indexOf("export function ApprovalSheet("));
+  assert.match(approval, /closing=\{closing\}\s+onExited=\{onExited\}/);
+  assert.match(approval, /String\(request\.reference \|\| ""\)/);
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /useRetained\(approvalRequest\)/);
+  assert.match(app, /closing=\{!approvalRequest\}\s+onExited=\{releaseApproval\}/);
+});
+
+test("the mobile root renders behind a self-contained error boundary", () => {
+  const index = fs.readFileSync(new URL("../apps/mobile/index.js", import.meta.url), "utf8");
+  assert.match(index, /React\.createElement\(ErrorBoundary, null, React\.createElement\(App\)\)/);
+  const boundary = fs.readFileSync(new URL("../apps/mobile/src/ErrorBoundary.jsx", import.meta.url), "utf8");
+  assert.match(boundary, /static getDerivedStateFromError/);
+  assert.match(boundary, /SplashScreen\.hideAsync\(\)/);
+  assert.match(boundary, /safeDetails\(/);
+  assert.doesNotMatch(boundary, /from "\.\/components"|useDesign|Design\b/);
+});
+
+test("cancelling a stalled share frees later shares and a superseded read never clears them", () => {
+  const share = fs.readFileSync(new URL("../apps/mobile/src/IncomingShare.jsx", import.meta.url), "utf8");
+  const receive = share.slice(share.indexOf("async function receive()"), share.indexOf("receive();"));
+  assert.match(receive, /const current = \+\+attempt\.current;/);
+  assert.match(receive, /if \(superseded\(\)\) return;\s+Sharing\.clearSharedPayloads\(\);/);
+  assert.match(receive, /finally \{\s+if \(!superseded\(\)\) \{/);
+  const discard = share.slice(share.indexOf("async function discard()"), share.indexOf("const destinations"));
+  assert.match(discard, /attempt\.current\+\+;\s+receiving\.current = false;\s+setPreparing\(false\);/);
+});
+
+test("offline onboarding selects from the saved catalog and Folders never shows an endless skeleton offline", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const download = app.slice(app.indexOf("await client.refresh().catch((error) => {"), app.indexOf("await selectFirstFolders("));
+  assert.match(download, /!client\.state\(\)\.catalog \|\|\s+!isHubUnreachable\(error\)/);
+  assert.match(app, /connected && !catalog && !status\.offline && \(\s+<Scaffold dashed label="Loading shared folders" \/>/);
 });

@@ -1,4 +1,5 @@
 import { entryKey, directoryItem } from "../core/entries.js";
+import { builtinExcluded } from "../core/builtin-exclusions.js";
 import {
   ensureIgnore,
   readIgnore,
@@ -14,8 +15,8 @@ import { DatabaseSync } from "node:sqlite";
 export const digest = (data) =>
   crypto.createHash("sha256").update(data).digest("hex");
 export const token = () => crypto.randomBytes(32).toString("hex");
-export function fail(message, status = 400) {
-  throw Object.assign(new Error(message), { status });
+export function fail(message, status = 400, code) {
+  throw Object.assign(new Error(message), { status, ...(code && { code }) });
 }
 export function validPath(value) {
   if (typeof value !== "string" || !value || value.length > 1024)
@@ -76,6 +77,84 @@ export function requireSpace(location, additionalBytes) {
       "Insufficient free disk space; synchronization will retry when space is available",
       507,
     );
+}
+const WEEK = 7 * 86400000;
+const reverifyAfter = (hash) => WEEK + (parseInt(hash.slice(0, 8), 16) % WEEK);
+export function fileSignature(file) {
+  const stat = fs.lstatSync(file, { bigint: true, throwIfNoEntry: false });
+  return stat?.isFile()
+    ? [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(":")
+    : null;
+}
+export function onContainerMount(location, mountinfo) {
+  return mountinfo
+    .split("\n")
+    .map((line) => line.split(" ")[4])
+    .filter(Boolean)
+    .map((point) =>
+      point.replace(/\\([0-7]{3})/g, (_, code) =>
+        String.fromCharCode(parseInt(code, 8)),
+      ),
+    )
+    .some(
+      (point) =>
+        point !== "/" && (location === point || location.startsWith(point + "/")),
+    );
+}
+export function requirePersistentBackup(location) {
+  if (
+    fs.existsSync("/.dockerenv") &&
+    !onContainerMount(location, fs.readFileSync("/proc/self/mountinfo", "utf8"))
+  )
+    fail(
+      `In Docker, back up to a mounted folder. ${location} is inside the container and is lost whenever the container is recreated.`,
+      409,
+    );
+}
+function countFiles(directory) {
+  let count = 0;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true }))
+    count += entry.isDirectory() ? countFiles(path.join(directory, entry.name)) : 1;
+  return count;
+}
+// Runs after the folder is unlinked, so a partial failure only leaves files on disk.
+export async function deleteSyncedCopy({ root, files, directories }) {
+  let deleted = 0,
+    bytes = 0;
+  for (const [index, item] of files.entries()) {
+    if (index % 50 === 0) await new Promise((r) => setImmediate(r));
+    try {
+      const before = fileSignature(item.file);
+      if (
+        !before ||
+        fs.statSync(item.file).size !== item.size ||
+        fs.realpathSync(path.dirname(item.file)) !== path.dirname(item.file) ||
+        (await hashFileAsync(item.file)) !== item.hash ||
+        fileSignature(item.file) !== before
+      )
+        continue;
+      fs.unlinkSync(item.file);
+      deleted++;
+      bytes += item.size;
+    } catch {
+      /* A file that cannot be verified or removed stays on disk. */
+    }
+  }
+  for (const directory of [...directories].sort((a, b) => b.length - a.length))
+    try {
+      const entries = fs.readdirSync(directory, { withFileTypes: true });
+      if (!entries.every((entry) => entry.isFile() && builtinExcluded(entry.name)))
+        continue;
+      for (const entry of entries) fs.unlinkSync(path.join(directory, entry.name));
+      fs.rmdirSync(directory);
+    } catch {
+      /* A directory that changed meanwhile stays. */
+    }
+  return {
+    deleted,
+    deletedBytes: bytes,
+    kept: fs.existsSync(root) ? countFiles(root) : 0,
+  };
 }
 export function syncDirectory(directory) {
   if (process.platform === "win32") return;
@@ -153,8 +232,10 @@ export class Store {
       .exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS gallery_derivatives(key TEXT PRIMARY KEY,size INTEGER NOT NULL,used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS gallery_folders(volume TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS accepted_proposals(id TEXT PRIMARY KEY,volume TEXT NOT NULL,device TEXT NOT NULL,base INTEGER NOT NULL,revision INTEGER);
+      CREATE INDEX IF NOT EXISTS accepted_proposals_revision ON accepted_proposals(revision);
+      CREATE INDEX IF NOT EXISTS accepted_proposals_volume ON accepted_proposals(volume);
       CREATE TABLE IF NOT EXISTS gallery_metadata(hash TEXT PRIMARY KEY,captured TEXT);
-      CREATE TABLE IF NOT EXISTS gallery_origins(volume TEXT,path TEXT,hash TEXT,sourcePath TEXT,sourceHash TEXT,PRIMARY KEY(volume,path,hash));
       CREATE TABLE IF NOT EXISTS volumes(id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, selected INTEGER NOT NULL DEFAULT 1,last_sync TEXT);
       CREATE TABLE IF NOT EXISTS revisions(rev INTEGER PRIMARY KEY AUTOINCREMENT, volume TEXT NOT NULL, path TEXT NOT NULL, hash TEXT, size INTEGER NOT NULL, deleted INTEGER NOT NULL, author TEXT NOT NULL, created TEXT NOT NULL,directory INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,directory INTEGER NOT NULL DEFAULT 0,path_key TEXT NOT NULL,PRIMARY KEY(volume,path));
@@ -198,6 +279,13 @@ export class Store {
       this.db.exec(
         "ALTER TABLE gallery_metadata ADD COLUMN date_checked INTEGER NOT NULL DEFAULT 0",
       );
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(gallery_metadata)")
+        .all()
+        .some((column) => column.name === "modified")
+    )
+      this.db.exec("ALTER TABLE gallery_metadata ADD COLUMN modified TEXT");
     if (!this.db.prepare("PRAGMA table_info(snapshot_sessions)").all().some((column) => column.name === "total")) {
       this.db.exec(`ALTER TABLE snapshot_sessions ADD COLUMN total INTEGER NOT NULL DEFAULT 0;
         UPDATE snapshot_sessions SET total=(SELECT COUNT(*) FROM snapshot_files WHERE session=snapshot_sessions.id);`);
@@ -242,6 +330,33 @@ export class Store {
     if (!v) fail("Unknown volume", 404);
     return v;
   }
+  syncedCopyPlan(id) {
+    const v = this.volume(id);
+    this.assertVolume(v);
+    const excluded = this.ignoreRules(v);
+    const files = [],
+      directories = new Set([v.path]);
+    for (const row of this.db
+      .prepare("SELECT path,hash,size,directory FROM files WHERE volume=? AND deleted=0")
+      .all(id)) {
+      if (excluded(row.path, !!row.directory)) continue;
+      let file;
+      try {
+        file = this.filePath(v, row.path);
+      } catch {
+        continue;
+      }
+      if (row.directory) directories.add(file);
+      else if (row.hash) files.push({ file, hash: row.hash, size: row.size });
+      for (
+        let parent = path.dirname(file);
+        parent.startsWith(v.path + path.sep);
+        parent = path.dirname(parent)
+      )
+        directories.add(parent);
+    }
+    return { root: v.path, files, directories };
+  }
   forgetVolume(id) {
     const v = this.volume(id);
     // Remove only Arca's matching marker; never remove user files.
@@ -261,6 +376,7 @@ export class Store {
         )
         .run(id);
       for (const table of [
+        "accepted_proposals",
         "history_views",
         "snapshot_sessions",
         "sync_dirty",
@@ -276,7 +392,6 @@ export class Store {
         )
         .run(id);
       this.db.prepare("DELETE FROM gallery_folders WHERE volume=?").run(id);
-      this.db.prepare("DELETE FROM gallery_origins WHERE volume=?").run(id);
       this.db.prepare("DELETE FROM volumes WHERE id=?").run(id);
       if (removeMarker) fs.unlinkSync(marker);
       this.db.exec("COMMIT");
@@ -369,7 +484,7 @@ export class Store {
     const marker = path.join(location, ".arca-volume");
     if (fs.existsSync(marker) && fs.readFileSync(marker, "utf8") !== id)
       fail("Directory belongs to another volume");
-    if (createIgnore && this.config.role !== "backup") ensureIgnore(location);
+    if (createIgnore) ensureIgnore(location);
     atomic(marker, id);
     this.db
       .prepare(
@@ -419,6 +534,37 @@ export class Store {
       )
       .get(volume, name.toLowerCase());
   }
+  rememberFileDate(hash, modified) {
+    if (
+      !hash ||
+      typeof modified !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(modified) ||
+      !Number.isFinite(Date.parse(modified))
+    )
+      return;
+    this.db
+      .prepare(
+        "INSERT INTO gallery_metadata(hash,modified) VALUES(?,?) ON CONFLICT(hash) DO UPDATE SET modified=min(coalesce(gallery_metadata.modified,excluded.modified),excluded.modified)",
+      )
+      .run(hash, modified);
+  }
+  withFileDates(rows) {
+    const hashes = [
+      ...new Set(rows.filter((row) => row.hash && !row.deleted).map((row) => row.hash)),
+    ];
+    if (!hashes.length) return rows;
+    const dates = new Map(
+      this.db
+        .prepare(
+          `SELECT hash,modified FROM gallery_metadata WHERE modified IS NOT NULL AND hash IN (${hashes.map(() => "?").join(",")})`,
+        )
+        .all(...hashes)
+        .map((row) => [row.hash, row.modified]),
+    );
+    return dates.size
+      ? rows.map((row) => (dates.has(row.hash) ? { ...row, modified: dates.get(row.hash) } : row))
+      : rows;
+  }
   syncRow(row) {
     if (!row.deleted) return row;
     const next = this.caseAlias(row.volume, row.path);
@@ -461,7 +607,7 @@ export class Store {
     if (!/^[a-f0-9]{64}$/.test(hash || "")) fail("Invalid content hash");
     return path.join(this.objects, hash);
   }
-  capture(file) {
+  capture(file, accepted = null) {
     const signature = () => {
       const s = fs.statSync(file, { bigint: true });
       return [s.dev, s.ino, s.size, s.mtimeNs, s.ctimeNs].join(":");
@@ -470,13 +616,31 @@ export class Store {
     const cached = this.db
       .prepare("SELECT * FROM scan_cache WHERE path=?")
       .get(file);
+    const record = (entry) => {
+      if (this.scanCacheWrites) this.scanCacheWrites.push(entry);
+      else
+        this.db
+          .prepare("INSERT OR REPLACE INTO scan_cache VALUES(?,?,?,?,?)")
+          .run(...entry);
+    };
     if (
       cached &&
       cached.signature === before &&
-      Date.now() - cached.verified < 600000 &&
-      fs.existsSync(this.blob(cached.hash))
-    )
-      return { hash: cached.hash, size: cached.size };
+      (cached.hash === accepted || fs.existsSync(this.blob(cached.hash)))
+    ) {
+      // Coarse-timestamp filesystems can hide a same-size rewrite, so trusted content is re-hashed every one to two weeks.
+      if (Date.now() - cached.verified < reverifyAfter(cached.hash))
+        return { hash: cached.hash, size: cached.size };
+      const object = this.blob(cached.hash);
+      if (
+        hashFile(file) === cached.hash &&
+        signature() === before &&
+        (!fs.existsSync(object) || hashFile(object) === cached.hash)
+      ) {
+        record([file, before, cached.hash, cached.size, Date.now()]);
+        return { hash: cached.hash, size: cached.size };
+      }
+    }
     requireSpace(this.objects, fs.statSync(file).size);
     const tmp = path.join(this.objects, `${crypto.randomUUID()}.tmp`);
     try {
@@ -498,19 +662,13 @@ export class Store {
         fs.renameSync(tmp, object);
         syncDirectory(this.objects);
       }
-      const entry = [file, before, hash, size, Date.now()];
-      if (this.scanCacheWrites) this.scanCacheWrites.push(entry);
-      else
-        this.db
-          .prepare("INSERT OR REPLACE INTO scan_cache VALUES(?,?,?,?,?)")
-          .run(...entry);
+      record([file, before, hash, size, Date.now()]);
       return { hash, size };
     } finally {
       if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
     }
   }
   ignoreRules(v) {
-    if (this.config.role === "backup") return compileIgnore("");
     const stat = fs.lstatSync(path.join(v.path, IGNORE_FILE), {
       bigint: true,
       throwIfNoEntry: false,
@@ -655,8 +813,17 @@ export class Store {
       if (entry.isDirectory()) {
         result.set(name, directoryItem());
         walk(name);
-      } else if (entry.isFile())
-        result.set(name, this.capture(this.filePath(v, name)));
+      } else if (entry.isFile()) {
+        const known =
+          this.config.role === "hub" ? null : this.current(v.id, name);
+        result.set(
+          name,
+          this.capture(
+            this.filePath(v, name),
+            known && !known.deleted ? known.hash : null,
+          ),
+        );
+      }
       else fail(`Unsupported file: ${name}`, 409);
     };
     const walk = (relative) => {
@@ -862,17 +1029,52 @@ export class Store {
       }
     }
     if (fs.existsSync(path.dirname(file))) syncDirectory(path.dirname(file));
+    const written = !row.deleted && !row.directory && fileSignature(file);
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.setFile(row);
       this.db
         .prepare("DELETE FROM pending WHERE volume=? AND path=?")
         .run(row.volume, row.path);
+      if (written)
+        this.db
+          .prepare("INSERT OR REPLACE INTO scan_cache VALUES(?,?,?,?,?)")
+          .run(file, written, row.hash, row.size, Date.now());
       this.db.exec("COMMIT");
     } catch (e) {
       this.db.exec("ROLLBACK");
       throw e;
     }
+  }
+  // A replica's content lives in its working copy; its object store only holds transfers in flight.
+  releaseObject(hash) {
+    if (
+      this.config.role !== "replica" ||
+      this.db
+        .prepare(
+          "SELECT 1 FROM pending WHERE json_extract(row, '$.hash')=? LIMIT 1",
+        )
+        .get(hash)
+    )
+      return;
+    try {
+      fs.rmSync(this.blob(hash), { force: true });
+    } catch {
+      /* A locked object is collected after the cycle. */
+    }
+  }
+  localContent(volume, name, hash) {
+    const object = this.blob(hash);
+    if (fs.existsSync(object)) return object;
+    const v = this.volume(volume);
+    if (this.config.role === "hub" || !v.selected) return null;
+    const file = this.filePath(v, name);
+    const signature = fileSignature(file);
+    if (!signature) return null;
+    const cached = this.db
+      .prepare("SELECT signature,hash FROM scan_cache WHERE path=?")
+      .get(file);
+    return cached?.signature === signature && cached.hash === hash ? file : null;
   }
   recover(volume) {
     const rows = this.db
@@ -1058,7 +1260,7 @@ export class Store {
     if (write) this.materialize(row, expected);
     return row;
   }
-  renameFile(current, destination, author, replacement = current) {
+  renameFile(current, destination, author) {
     const volume = current.volume;
     const selected = this.volume(volume).selected;
     // Reuse the existing atomic case-transition contract and recovery path.
@@ -1083,31 +1285,19 @@ export class Store {
       const added = insert.run(
         volume,
         destination,
-        replacement.hash,
-        replacement.size,
+        current.hash,
+        current.size,
         0,
         author,
         created,
       );
       renamed = {
         ...current,
-        hash: replacement.hash,
-        size: replacement.size,
         path: destination,
         rev: Number(added.lastInsertRowid),
         author,
         created,
       };
-      if (replacement.hash !== current.hash)
-        this.db
-          .prepare("INSERT OR REPLACE INTO gallery_origins VALUES(?,?,?,?,?)")
-          .run(
-            volume,
-            destination,
-            replacement.hash,
-            current.path,
-            current.hash,
-          );
       const deleted = insert.run(
         volume,
         current.path,

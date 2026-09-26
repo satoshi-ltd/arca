@@ -960,3 +960,179 @@ test("canonically equivalent local names never overwrite one another", async (t)
   assert.equal(read(hub, volume, decomposed), "second");
   assert.equal(hub.engine.store.current(volume.id, composed), undefined);
 });
+
+const loseNextProposeReply = (replica) => {
+  const json = replica.engine.json.bind(replica.engine);
+  let lost = false;
+  replica.engine.json = async (route, body, options) => {
+    const result = await json(route, body, options);
+    if (route === "/v1/propose" && body?.hash && !lost) {
+      lost = true;
+      throw new Error("Proposal reply lost");
+    }
+    return result;
+  };
+};
+const conflicts = (n, v) =>
+  fs
+    .readdirSync(n.engine.store.volume(v.id).path)
+    .filter((name) => name.includes(".conflict-"));
+
+test("a device's edit after its own lost proposal reply is not a conflict", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const phone = await connect("phone");
+  await phone.sync();
+  loseNextProposeReply(phone);
+  write(phone, volume, "note.txt", "first edit");
+  await assert.rejects(phone.sync(), /reply lost/);
+  assert.equal(read(hub, volume, "note.txt"), "first edit");
+  write(phone, volume, "note.txt", "second edit");
+  await phone.sync();
+  assert.equal(read(hub, volume, "note.txt"), "second edit");
+  assert.equal(read(phone, volume, "note.txt"), "second edit");
+  assert.deepEqual(conflicts(hub, volume), []);
+  assert.deepEqual(conflicts(phone, volume), []);
+
+  loseNextProposeReply(phone);
+  write(phone, volume, "note.txt", "third edit");
+  await assert.rejects(phone.sync(), /reply lost/);
+  fs.unlinkSync(localPath(phone, volume, "note.txt"));
+  await phone.sync();
+  assert.equal(hub.engine.store.current(volume.id, "note.txt").deleted, 1);
+  assert.equal(fs.existsSync(localPath(phone, volume, "note.txt")), false);
+  assert.deepEqual(conflicts(hub, volume), []);
+});
+
+test("an old request repeated after newer edits by the same device never changes later content", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("replay");
+  write(mac, volume, "note.txt", "first");
+  await mac.sync();
+  const base = hub.engine.store.current(volume.id, "note.txt").rev;
+  const deletion = { volume: volume.id, path: "note.txt", base, hash: null };
+  await hub.api("/v1/propose", deletion, mac.invite.token);
+  await mac.sync();
+  write(mac, volume, "note.txt", "recreated");
+  await mac.sync();
+  const advance = async (content) => {
+    write(mac, volume, "unrelated.txt", content);
+    await mac.sync();
+  };
+  for (const content of ["one", "two"]) {
+    await hub.api("/v1/propose", deletion, mac.invite.token);
+    assert.equal(hub.engine.store.current(volume.id, "note.txt").deleted, 0, "a repeated deletion never removes the recreated file");
+    await advance(content);
+  }
+  assert.equal(read(hub, volume, "note.txt"), "recreated");
+  const older = Buffer.from("older content");
+  const olderHash = digest(older);
+  fs.writeFileSync(hub.engine.store.blob(olderHash), older);
+  const current = hub.engine.store.current(volume.id, "note.txt").rev;
+  const write1 = { volume: volume.id, path: "note.txt", base: current, hash: olderHash, size: older.length };
+  await hub.api("/v1/propose", write1, mac.invite.token);
+  write(mac, volume, "note.txt", "newest");
+  await mac.sync();
+  await mac.sync();
+  for (const content of ["three", "four"]) {
+    await hub.api("/v1/propose", write1, mac.invite.token);
+    assert.equal(read(hub, volume, "note.txt"), "newest", "a repeated write never overwrites a later edit");
+    await advance(content);
+  }
+});
+
+test("another author's revision after a lost proposal reply still produces a conflict", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  write(hub, volume, "hub.txt", "original");
+  await hub.sync();
+  const phone = await connect("phone");
+  const laptop = await connect("laptop");
+  await phone.sync();
+  await laptop.sync();
+  loseNextProposeReply(phone);
+  write(phone, volume, "note.txt", "phone first");
+  await assert.rejects(phone.sync(), /reply lost/);
+  await laptop.sync();
+  write(laptop, volume, "note.txt", "laptop edit");
+  await laptop.sync();
+  write(phone, volume, "note.txt", "phone second");
+  await phone.sync();
+  assert.equal(read(hub, volume, "note.txt"), "laptop edit");
+  assert.equal(conflicts(hub, volume).length, 1);
+  assert.equal(read(hub, volume, conflicts(hub, volume)[0]), "phone second");
+
+  loseNextProposeReply(phone);
+  write(phone, volume, "hub.txt", "phone first");
+  await assert.rejects(phone.sync(), /reply lost/);
+  write(hub, volume, "hub.txt", "hub edit");
+  await hub.sync();
+  write(phone, volume, "hub.txt", "phone second");
+  await phone.sync();
+  assert.equal(read(hub, volume, "hub.txt"), "hub edit");
+  assert.equal(conflicts(hub, volume).length, 2);
+});
+
+test("accepted requests survive response-cache eviction, restart and repeated conflicts", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("durable-replay");
+  write(mac, volume, "note.txt", "first");
+  await mac.sync();
+  const deletion = { volume: volume.id, path: "note.txt", base: hub.engine.store.current(volume.id, "note.txt").rev, hash: null };
+  await hub.api("/v1/propose", deletion, mac.invite.token);
+  await mac.sync();
+  write(mac, volume, "note.txt", "recreated");
+  await mac.sync();
+  const oldWrite = { volume: volume.id, path: "note.txt", base: hub.engine.store.current(volume.id, "note.txt").rev, hash: digest("older"), size: 5 };
+  fs.writeFileSync(hub.engine.store.blob(oldWrite.hash), "older");
+  await hub.api("/v1/propose", oldWrite, mac.invite.token);
+  await mac.sync();
+  write(mac, volume, "note.txt", "newest");
+  await mac.sync();
+  const op = (body) => digest(JSON.stringify([mac.invite.id, volume.id, body.path, body.base, body.hash, false]));
+  const db = hub.engine.store.db;
+  const fill = db.prepare("INSERT OR REPLACE INTO proposals VALUES(?,?)");
+  db.exec("BEGIN");
+  for (let i = 0; i < 10001; i++) fill.run(`eviction-fixture-${i}`, "{}");
+  db.exec("COMMIT");
+  write(mac, volume, "other.txt", "trigger normal cache cleanup");
+  await mac.sync();
+  for (const body of [deletion, oldWrite])
+    assert.equal(db.prepare("SELECT 1 FROM proposals WHERE id=?").get(op(body)), undefined);
+  const reopened = new Engine(hub.engine.store.home);
+  try {
+    for (const body of [deletion, oldWrite, deletion, oldWrite]) {
+      const result = await reopened.propose(body, { id: mac.invite.id, role: "replica" });
+      assert.equal(result.conflict, true);
+      assert.equal(read(hub, volume, "note.txt"), "newest");
+      // Force every attempt to consult durable receipts instead of the response cache.
+      db.exec("DELETE FROM proposals");
+    }
+  } finally {
+    reopened.close();
+  }
+  await hub.api("/v1/delete-share", { id: volume.id, confirmedName: volume.name });
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM accepted_proposals WHERE volume=?").get(volume.id).n, 0);
+});
+
+test("pruned foreign edits cannot be mistaken for a lost reply from the same replica", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("pruned-replay");
+  write(mac, volume, "note.txt", "first");
+  await mac.sync();
+  const base = hub.engine.store.current(volume.id, "note.txt").rev;
+  write(hub, volume, "note.txt", "hub edit");
+  await hub.sync();
+  await mac.sync();
+  write(mac, volume, "note.txt", "newest");
+  await mac.sync();
+  const { applyRetention } = await import("../packages/daemon/maintenance.js");
+  applyRetention(hub.engine.store, { versions: 1 }, false);
+  assert.equal(hub.engine.store.db.prepare("SELECT 1 FROM revisions WHERE rev=?").get(base), undefined);
+  const hash = digest("stale");
+  fs.writeFileSync(hub.engine.store.blob(hash), "stale");
+  const result = await hub.api("/v1/propose", { volume: volume.id, path: "note.txt", base, hash, size: 5 }, mac.invite.token);
+  assert.equal(result.conflict, true);
+  assert.equal(read(hub, volume, "note.txt"), "newest");
+});

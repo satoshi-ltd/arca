@@ -198,6 +198,10 @@ export function runtime() {
     });
   return runtimePromise;
 }
+if (Platform.OS === "ios")
+  try {
+    BackgroundTask.addExpirationListener(() => currentReplica?.stop());
+  } catch {}
 TaskManager.defineTask(BACKGROUND_TASK, async () => {
   try {
     const replica = await runtime();

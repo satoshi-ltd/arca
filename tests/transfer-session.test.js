@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TransferSession } from "../apps/mobile/src/transfer-session.js";
+import {
+  TransferSession,
+  shouldStopSync,
+} from "../apps/mobile/src/transfer-session.js";
 
 test("photo transfer lease starts once, stays active when hidden and releases on completion", async () => {
   let visible = true,
@@ -72,4 +75,11 @@ test("ending during native startup releases the acquired service", async () => {
   await Promise.all([start, end]);
   assert.equal(stopped, true);
   assert.equal(session.active, false);
+});
+
+test("sync stops only when the app is backgrounded without a transfer lease", () => {
+  assert.equal(shouldStopSync("inactive", false), false);
+  assert.equal(shouldStopSync("active", false), false);
+  assert.equal(shouldStopSync("background", false), true);
+  assert.equal(shouldStopSync("background", true), false);
 });

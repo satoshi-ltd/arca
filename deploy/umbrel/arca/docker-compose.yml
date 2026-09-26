@@ -14,9 +14,11 @@ services:
     environment:
       ARCA_HOME: /data/state
       ARCA_FILES: /data/files
+      ARCA_BACKUP: /data/backup
     volumes:
       - ${APP_DATA_DIR}/data/state:/data/state
       - ${APP_DATA_DIR}/data/files:/data/files
+      - ${APP_DATA_DIR}/data/backup:/data/backup
       - ${APP_DATA_DIR}/server-setup.js:/app/packages/daemon/setup.js:ro
       - ${APP_DATA_DIR}/umbrel-init.mjs:/app/umbrel-init.mjs:ro
     cap_drop: [ALL]
@@ -40,6 +42,7 @@ services:
     volumes:
       - ${APP_DATA_DIR}/data/state:/data/state
       - ${APP_DATA_DIR}/data/files:/data/files
+      - ${APP_DATA_DIR}/data/backup:/data/backup
       - ${APP_DATA_DIR}/server-setup.js:/app/packages/daemon/setup.js:ro
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

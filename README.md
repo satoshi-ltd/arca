@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.5.0 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.6.0 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -29,7 +29,7 @@ First-run desktop and server setup walks through welcome, machine name, role, pa
 
 In-app feedback shares one notice contract across web, desktop and mobile: info, warning and error, with grouped incidents and optional collapsible diagnostics. Mobile confirmations use the shared in-app dialog. System alerts retain OS styling and are reserved for unresolved conditions while Arca is in the background.
 
-Hub Settings → Images shows gallery counts and sizes, rebuilds disposable previews and offers an explicit JPEG → HEIC analysis and conversion. Conversion is lossy, keeps resolution, verifies supported metadata and skips files without at least 10% savings. macOS uses its system encoder; the Docker image includes `heif-enc`. Other hubs need libheif with an HEVC encoder installed. Existing HEIC files pass through unchanged. Historical JPEG objects remain subject to retention and backup protection. Linked phone originals are never replaced.
+Hub Settings → Images shows gallery counts and sizes and rebuilds disposable previews. Originals are never converted or recompressed.
 
 ## Development
 

@@ -10,8 +10,6 @@
   --motion-dialog-scale: 0.985;
   --motion-touch-push: 30px;
   --motion-touch-dialog-scale: 0.9;
-  --confirmation-width: 360px;
-  --confirmation-title: 18px;
   --notice-width: 360px;
   --toast-bg: #121a16;
   --toast-fg: #f4f6f1;
@@ -87,9 +85,14 @@
   --sidebar-width: 200px;
   --detail-side-width: 320px;
   --dialog-width: 480px;
+  --dialog-wide-width: 640px;
+  --dialog-padding: 24px;
+  --dialog-tile: 36px;
+  --dialog-title: 16px;
+  --dialog-title-line: 22px;
+  --dialog-body-line: 20px;
   /* Access surfaces: CSS dimensions, independent of screenshot pixel density. */
   --access-width: 380px;
-  --approval-width: 440px;
   --access-padding: 22px;
   --access-mark: 38px;
   --access-brand-font: 28px;
@@ -98,7 +101,6 @@
   --access-reference-font: 30px;
   --approval-reference-font: 28px;
   --reference-tracking: 4px;
-  --approval-tile: 36px;
   --button-small-height: 32px;
   --button-small-icon: 16px;
   --button-icon: 20px;
@@ -134,9 +136,6 @@
   --ok: #2e6350;
   --okBg: #dce9d6;
   --okFg: #244d3e;
-  --sy: #3b6fb0;
-  --syBg: #e1eaf5;
-  --syFg: #2a507f;
   --wa: #b8791c;
   --waBg: #f6ebd4;
   --waFg: #7a4e0e;
@@ -193,9 +192,6 @@
   --ok: #7fb893;
   --okBg: #1e3328;
   --okFg: #accb80;
-  --sy: #6c9bd6;
-  --syBg: #1c2a3b;
-  --syFg: #9dbee6;
   --wa: #d9a24a;
   --waBg: #332a18;
   --waFg: #e3b86a;

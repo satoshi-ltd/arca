@@ -365,3 +365,88 @@ test("replica credentials cannot administer the hub; replica administrators cann
       route,
     );
 });
+
+test("the photo timeline fits the visible height instead of scrolling", () => {
+  const css = fs.readFileSync(
+    new URL("../apps/desktop/src/style.css", import.meta.url),
+    "utf8",
+  );
+  const rule = (selector) =>
+    css.match(new RegExp(`\\n${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`))[1];
+  assert.match(rule("#photo-gallery"), /grid-template-rows: auto auto 1fr;/, "a short gallery leaves no gap above its photos");
+  const rail = rule(".photo-timeline");
+  assert.match(rail, /height: var\(--timeline-height/);
+  assert.doesNotMatch(rail, /overflow-y: auto/);
+  const month = rule(".photo-timeline button");
+  assert.match(month, /position: absolute;/);
+  assert.match(month, /top: calc\(var\(--space-4\) \+ var\(--segment-top, 0px\)\);/);
+  assert.match(month, /height: var\(--segment-height, 0px\);/);
+});
+
+test("the viewer cell is bounded so portrait videos fit the screen", () => {
+  const css = fs.readFileSync(
+    new URL("../apps/desktop/src/style.css", import.meta.url),
+    "utf8",
+  );
+  const viewer = css.match(/\n\.photo-viewer-image \{([^}]*)\}/)[1];
+  assert.match(viewer, /grid-template: minmax\(0, 1fr\) \/ minmax\(0, 1fr\);/);
+  const video = css.match(/\n\.photo-viewer-image video \{([^}]*)\}/)[1];
+  assert.match(video, /object-fit: contain;/);
+  assert.match(video, /max-height: 100dvh;/);
+});
+
+test("sync activity uses the accent and the palette has no separate blue state", () => {
+  const read = (file) =>
+    fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
+  const css = read("style.css");
+  const tokens = read("tokens.css");
+  assert.doesNotMatch(tokens + css, /--sy(Bg|Fg)?\b/);
+  for (const selector of [".sy", ".status-card strong.sy", ".stat-status.sy"])
+    assert.match(
+      css.match(new RegExp(`\\n${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`))[1],
+      /color: var\(--green\);/,
+      selector,
+    );
+  assert.doesNotMatch(read("app.js"), /pill\("Arca detected", "sy"/);
+});
+
+test("dialogs share one default width and one wide variant", () => {
+  const read = (file) =>
+    fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
+  const tokens = read("tokens.css");
+  const css = read("style.css");
+  assert.match(tokens, /--dialog-width: 480px;/);
+  assert.match(tokens, /--dialog-wide-width: 640px;/);
+  assert.doesNotMatch(tokens, /--(confirmation|approval)-width/);
+  for (const name of ["confirmation", "approval", "pair", "restore", "recovery", "conflict"])
+    for (const [, body] of css.matchAll(new RegExp(`\\n\\.${name}-dialog \\{([^}]*)\\}`, "g")))
+      assert.doesNotMatch(body, /(^|\s)(max-)?width:/, `.${name}-dialog sets its own width`);
+  assert.match(css.match(/\n\.wide-dialog \{([^}]*)\}/)[1], /width: var\(--dialog-wide-width\);/);
+});
+
+test("every dialog shares one type scale, with body text as large as its buttons", () => {
+  const read = (file) =>
+    fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
+  const tokens = read("tokens.css");
+  const css = read("style.css");
+  const rule = (selector) =>
+    css.match(new RegExp(`\\n${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`))?.[1];
+  for (const token of ["--dialog-padding", "--dialog-tile", "--dialog-title", "--dialog-title-line", "--dialog-body-line"])
+    assert.match(tokens, new RegExp(`${token}: `), token);
+  assert.doesNotMatch(tokens, /--(confirmation-title|approval-tile):/);
+  assert.match(rule("dialog"), /padding: var\(--dialog-padding\);/);
+  assert.match(rule(".modal-title h2"), /font-size: var\(--dialog-title\);/);
+  assert.match(rule(".modal-title p"), /font-size: var\(--text-control\);/);
+  assert.match(css, /\.text-button \{[^}]*font-size: var\(--text-control\);/, "buttons use the body size");
+  assert.doesNotMatch(css, /\n\.(confirmation|approval)-dialog \.modal-title/, "variants never restyle the header");
+  assert.match(rule("dialog:has(:where(#submit-dialog.danger)) .modal-title .tile"), /background: var\(--erBg\);/);
+  assert.doesNotMatch(read("app.js"), /#submit-dialog"\)\.className = "secondary danger"/);
+});
+
+test("the timeline date chip uses the accent like primary buttons", () => {
+  const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  const chip = css.match(/\n\.photo-timeline-hover \{([^}]*)\}/)[1];
+  assert.match(chip, /background: var\(--green\);/);
+  assert.match(chip, /color: var\(--onGreen\);/);
+  assert.match(css.match(/\n\.primary \{([^}]*)\}/)[1], /background: var\(--green\);/);
+});

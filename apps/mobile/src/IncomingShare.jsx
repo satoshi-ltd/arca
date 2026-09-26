@@ -37,7 +37,8 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
   const [preparing, setPreparing] = useState(false);
   const receiving = useRef(false),
     saving = useRef(false),
-    session = useRef(null);
+    session = useRef(null),
+    attempt = useRef(0);
   useEffect(() => {
     setVolume(null);
     setDirectory("");
@@ -47,6 +48,8 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
     async function receive() {
       if (receiving.current || saving.current) return;
       receiving.current = true;
+      const current = ++attempt.current;
+      const superseded = () => current !== attempt.current;
       try {
         const r = await runtime();
         session.current ||= new IncomingSession(r);
@@ -76,6 +79,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
             },
             `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           );
+          if (superseded()) return;
           Sharing.clearSharedPayloads();
         }
         if (active && pending?.length) {
@@ -86,14 +90,17 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
           setOpen(true);
         } else if (!active) await session.current.cancel();
       } catch (e) {
+        if (superseded()) return;
         Sharing.clearSharedPayloads();
         if (active) {
           setError(e.message);
           setOpen(true);
         }
       } finally {
-        if (active) setPreparing(false);
-        receiving.current = false;
+        if (!superseded()) {
+          if (active) setPreparing(false);
+          receiving.current = false;
+        }
       }
     }
     receive();
@@ -177,6 +184,9 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
     if (saving.current) return;
     saving.current = true;
     setBusy(true);
+    attempt.current++;
+    receiving.current = false;
+    setPreparing(false);
     try {
       await session.current?.cancel();
       setItems([]);

@@ -403,3 +403,40 @@ test("snapshot worker releases SQLite before reporting completion", async (t) =>
   fs.renameSync(path.join(home, "index.sqlite"), path.join(home, "moved.sqlite"));
   assert.ok(fs.existsSync(path.join(home, "moved.sqlite")));
 });
+
+test("a device's new first page supersedes its abandoned lease for that folder only", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-snapshot-lease-"));
+  init(home, { role: "hub" });
+  const store = new Store(home);
+  t.after(() => {
+    store.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const volumes = Array.from(
+    { length: 9 },
+    (_, i) => store.addVolume(`Folder ${i}`).id,
+  );
+  const sessions = (owner) =>
+    store.db
+      .prepare("SELECT COUNT(*) AS n FROM snapshot_sessions WHERE owner=?")
+      .get(owner).n;
+  for (let i = 0; i < 9; i++)
+    await snapshotPage(store, "phone", volumes[0], { replace: true });
+  assert.equal(sessions("phone"), 1);
+  for (const volume of volumes.slice(1, 8))
+    await snapshotPage(store, "phone", volume, { replace: true });
+  await assert.rejects(
+    snapshotPage(store, "phone", volumes[8], { replace: true }),
+    { status: 429, code: "SNAPSHOT_BUSY" },
+  );
+  for (let i = 0; i < 8; i++)
+    await snapshotPage(store, "admin", volumes[0], {});
+  await assert.rejects(snapshotPage(store, "admin", volumes[0], {}), {
+    status: 429,
+  });
+  assert.equal(sessions("admin"), 8);
+  await assert.rejects(
+    snapshotPage(store, "phone", volumes[0], { session: "missing" }),
+    { status: 409, code: "SNAPSHOT_EXPIRED" },
+  );
+});

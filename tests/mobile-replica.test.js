@@ -60,7 +60,7 @@ async function fixture(t) {
     },
     fetcher: async (url, options) => {
       requests.push(new URL(url).pathname);
-      if (!online) throw new Error("offline");
+      if (!online) throw new TypeError("Network request failed");
       if (stalled) return stalled(url, options);
       if (options.headers.Range) ranges.push(options.headers.Range);
       const target = url.replace("https://fixture.invalid", base);
@@ -195,7 +195,7 @@ test("mobile downloads verified blocks, sends edits, resumes offline edits and r
   fs.writeFileSync(local, "mobile edit");
   f.offline();
   await replica.sync();
-  assert.equal(replica.error, "offline");
+  assert.equal(replica.error, "Network request failed");
   assert.equal(replica.hubUnavailable, true);
   assert.equal(replica.syncingVolume, null);
   assert.equal(replica.busy, false);
@@ -377,7 +377,7 @@ test("failed system notification does not reject sync or hide its connection err
   await replica.load();
   f.offline();
   await assert.doesNotReject(replica.sync());
-  assert.match(replica.error, /offline/);
+  assert.match(replica.error, /Network request failed/);
   assert.equal(replica.busy, false);
   f.online();
   await replica.sync();
@@ -2256,4 +2256,350 @@ test("mobile cold start preserves Machines and recent History offline without re
     throw new Error("401 Unauthorized");
   });
   await assert.rejects(reopened.remoteView("/v1/machines"), /401/);
+});
+
+test("the import picker opens without waiting for a settling cycle and the copy waits for it", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.volume);
+  await sync(f);
+  const work = f.files.work(f.replica.scope, f.volume.id, "local.txt");
+  fs.writeFileSync(work, "local");
+  const hash = f.files.hash;
+  let entered, release;
+  const hashing = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  f.files.hash = async (p) => {
+    if (p === work) {
+      entered();
+      await gate;
+    }
+    return hash(p);
+  };
+  const active = f.replica.sync(true);
+  await hashing;
+  const source = path.join(f.root, "picked.txt");
+  fs.writeFileSync(source, "picked");
+  await f.replica.withImportPicker(async () => {
+    assert.ok(f.replica.active, "the picker opens while the cycle is still settling");
+    assert.equal(await f.replica.sync(), undefined);
+    const importing = f.replica.importFile(f.volume.id, "picked.txt", source);
+    release();
+    await importing;
+    assert.equal(f.replica.active, null);
+  });
+  await active;
+  f.files.hash = hash;
+  assert.equal(
+    fs.readFileSync(
+      f.files.work(f.replica.scope, f.volume.id, "picked.txt"),
+      "utf8",
+    ),
+    "picked",
+  );
+  await sync(f);
+  assert.ok(f.daemon.engine.store.current(f.volume.id, "picked.txt"));
+});
+
+test("settle waits for the active cycle before local export work", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.volume);
+  await sync(f);
+  fs.writeFileSync(
+    f.files.work(f.replica.scope, f.volume.id, "local.txt"),
+    "local",
+  );
+  const hash = f.files.hash;
+  let entered, release;
+  const hashing = new Promise((resolve) => {
+    entered = resolve;
+  });
+  f.files.hash = async (p) => {
+    entered();
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    f.files.hash = hash;
+    return hash(p);
+  };
+  const active = f.replica.sync(true);
+  await hashing;
+  let settled = false;
+  const settling = f.replica.settle().then(() => {
+    settled = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  release();
+  await settling;
+  assert.equal(f.replica.active, null);
+  await active;
+});
+
+test("a device rename while the hub is known offline is saved without a request", async (t) => {
+  const f = await fixture(t);
+  f.replica.hubUnavailable = true;
+  const requests = f.requests.length;
+  assert.equal(await f.replica.rename("Travel phone"), false);
+  assert.equal(f.requests.length, requests);
+  assert.equal(await f.store.get("name"), "Travel phone");
+  f.replica.hubUnavailable = false;
+  await sync(f);
+  const report = JSON.parse(
+    f.daemon.engine.store.db
+      .prepare("SELECT report FROM machine_reports WHERE device=?")
+      .get(f.client.state().connection.id).report,
+  );
+  assert.equal(report.name, "Travel phone");
+});
+
+test("stopping an initial snapshot releases its hub lease even though sync was aborted", async (t) => {
+  const f = await fixture(t);
+  for (let i = 0; i < 3; i++)
+    fs.writeFileSync(path.join(f.volume.path, `file-${i}.txt`), `file ${i}`);
+  await f.daemon.engine.cycle();
+  const sessions = () =>
+    f.daemon.engine.store.db
+      .prepare("SELECT COUNT(*) AS n FROM snapshot_sessions")
+      .get().n;
+  await f.replica.select(f.volume);
+  const replace = f.files.replace;
+  f.files.replace = async (...args) => {
+    f.files.replace = replace;
+    assert.equal(sessions(), 1);
+    f.replica.stop();
+    return replace(...args);
+  };
+  await f.replica.sync();
+  for (let i = 0; i < 200 && sessions(); i++)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(sessions(), 0);
+  await sync(f);
+  assert.ok((await f.store.folder(f.replica.scope, f.volume.id)).initialized);
+});
+
+test("a busy snapshot capacity is a retryable wait, not a stored folder failure", async (t) => {
+  const f = await fixture(t);
+  const other = f.daemon.engine.store.addVolume("Other");
+  fs.writeFileSync(path.join(other.path, "other.txt"), "other");
+  await f.daemon.engine.cycle();
+  await f.client.refresh();
+  await f.replica.select(f.volume);
+  await sync(f);
+  await f.replica.select(
+    f.client.state().catalog.volumes.find((v) => v.id === other.id),
+  );
+  const seed = f.daemon.engine.store.db.prepare(
+    "INSERT INTO snapshot_sessions(id,owner,volume,expires) VALUES(?,?,?,?)",
+  );
+  for (let i = 0; i < 8; i++)
+    seed.run(
+      `seeded-${i}`,
+      f.client.state().connection.id,
+      `elsewhere-${i}`,
+      Date.now() + 600000,
+    );
+  fs.writeFileSync(
+    f.files.work(f.replica.scope, f.volume.id, "edit.txt"),
+    "edit",
+  );
+  await f.replica.sync();
+  assert.equal(f.replica.error, null);
+  assert.equal(f.replica.hubUnavailable, false);
+  assert.equal((await f.store.folder(f.replica.scope, other.id)).issue, null);
+  assert.ok(f.daemon.engine.store.current(f.volume.id, "edit.txt"));
+  f.daemon.engine.store.db
+    .prepare("DELETE FROM snapshot_sessions WHERE id LIKE 'seeded-%'")
+    .run();
+  await sync(f);
+  assert.ok((await f.store.folder(f.replica.scope, other.id)).initialized);
+});
+
+test("a file added and renamed offline reaches the hub only under its new name", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.volume);
+  await sync(f);
+  f.offline();
+  const source = path.join(f.root, "wrong-name.txt");
+  fs.writeFileSync(source, "content");
+  await f.replica.withImportPicker(() =>
+    f.replica.importFile(f.volume.id, "wrong-name.txt", source),
+  );
+  await f.replica.sync();
+  assert.equal(f.replica.hubUnavailable, true);
+  await f.replica.renameFile(f.volume.id, "wrong-name.txt", "right-name.txt");
+  f.online();
+  await sync(f);
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, "right-name.txt").hash,
+    crypto.createHash("sha256").update("content").digest("hex"),
+  );
+  assert.equal(f.daemon.engine.store.current(f.volume.id, "wrong-name.txt"), undefined);
+});
+
+test("a retried upload does not hash the pending file again", async (t) => {
+  const f = await fixture(t);
+  const stat = f.files.stat;
+  f.files.stat = async (p) => {
+    const info = await stat(p);
+    return info && { ...info, mtime: fs.statSync(p).mtimeMs };
+  };
+  await f.replica.select(f.volume);
+  await sync(f);
+  const work = f.files.work(f.replica.scope, f.volume.id, "video.bin");
+  fs.writeFileSync(work, crypto.randomBytes(CHUNK + 10));
+  const hash = f.files.hash;
+  let hashes = 0;
+  f.files.hash = async (p) => {
+    if (!p.endsWith(".arcaignore")) hashes++;
+    return hash(p);
+  };
+  const base = `http://127.0.0.1:${f.daemon.port}`;
+  f.stall((url, options) => {
+    if (options.method === "PUT") throw new Error("Network request failed");
+    return fetch(url.replace("https://fixture.invalid", base), options);
+  });
+  await f.replica.sync();
+  assert.equal(f.replica.hubUnavailable, true);
+  assert.equal((await f.store.pending(f.replica.scope, f.volume.id)).length, 1);
+  hashes = 0;
+  await f.replica.sync();
+  assert.equal(hashes, 0, "retry reuses the verified queued object");
+  f.stall(null);
+  await sync(f);
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, "video.bin").hash,
+    await hash(work),
+  );
+});
+
+test("a slow optional view serves saved data without marking the hub offline", async (t) => {
+  const f = await fixture(t);
+  await f.replica.remoteView("/v1/machines");
+  const api = f.client.api;
+  f.client.api = (route, body, options) =>
+    route === "/v1/machines"
+      ? new Promise((_, reject) =>
+          options.signal.addEventListener("abort", () =>
+            reject(options.signal.reason),
+          ),
+        )
+      : api(route, body, options);
+  const view = await f.replica.remoteView("/v1/machines");
+  f.client.api = api;
+  assert.equal(view.offline, true);
+  assert.equal(f.replica.hubUnavailable, false);
+  assert.ok(!(await f.replica.remoteView("/v1/machines")).offline);
+});
+
+test("a Tailscale route failure is an outage with saved views, and a lost chunk keeps the queue without a folder issue", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.volume);
+  await sync(f);
+  await f.replica.remoteView("/v1/machines");
+  f.stall(() => {
+    throw Object.assign(
+      new Error(
+        "Cannot connect using this address. For local Wi-Fi, enter the hub’s private IP address. To use a Tailscale name or address, connect Tailscale on this device and the hub.",
+      ),
+      { code: "HUB_UNREACHABLE" },
+    );
+  });
+  await f.replica.sync();
+  assert.equal(f.replica.hubUnavailable, true);
+  assert.equal((await f.replica.remoteView("/v1/machines")).offline, true);
+  const base = `http://127.0.0.1:${f.daemon.port}`;
+  let puts = 0;
+  f.stall((url, options) => {
+    if (options.method === "PUT" && ++puts === 2)
+      throw Object.assign(
+        new Error(
+          "The connection to the hub was interrupted. Check the connection and try again.",
+        ),
+        { code: "CONNECTION_LOST" },
+      );
+    return fetch(url.replace("https://fixture.invalid", base), options);
+  });
+  fs.writeFileSync(
+    f.files.work(f.replica.scope, f.volume.id, "large.bin"),
+    crypto.randomBytes(CHUNK * 2 + 5),
+  );
+  await f.replica.sync();
+  assert.equal(f.replica.hubUnavailable, true);
+  assert.equal((await f.store.folder(f.replica.scope, f.volume.id)).issue, null);
+  assert.equal((await f.store.pending(f.replica.scope, f.volume.id)).length, 1);
+  f.stall(null);
+  await sync(f);
+  assert.ok(f.daemon.engine.store.current(f.volume.id, "large.bin"));
+});
+
+test("a photo export timeout fails that photo only and never marks the hub offline", async (t) => {
+  const f = await galleryFixture(
+    t,
+    [1, 2].map((id) => ({
+      id: `photo-${id}`,
+      filename: `${id}.jpg`,
+      creationTime: 1750000000000,
+    })),
+  );
+  const zeta = f.daemon.engine.store.addVolume("Zeta");
+  await f.daemon.engine.cycle();
+  await f.client.refresh();
+  await f.replica.select(
+    f.client.state().catalog.volumes.find((v) => v.id === zeta.id),
+  );
+  await sync(f);
+  await f.enable();
+  const exporter = f.media.export;
+  f.media.export = async (id, ...args) => {
+    if (id === "photo-1")
+      throw new Error("Original download timed out. Keep Arca open and retry.");
+    return exporter(id, ...args);
+  };
+  fs.writeFileSync(f.files.work(f.replica.scope, zeta.id, "z.txt"), "zeta");
+  await f.replica.sync();
+  assert.equal(f.replica.hubUnavailable, false);
+  const summary = await f.store.gallerySummary(f.replica.scope, f.volume.id);
+  assert.equal(summary.failed, 1);
+  assert.equal(summary.accepted, 1);
+  assert.ok(f.daemon.engine.store.current(zeta.id, "z.txt"));
+});
+
+test("changing the album of an existing gallery source works while the hub is offline", async (t) => {
+  const f = await galleryFixture(t);
+  await f.enable();
+  await sync(f);
+  f.offline();
+  await f.replica.gallery.configure(
+    f.volume.id,
+    { albumId: null, albumName: "All accessible photos", videos: true },
+    true,
+  );
+  const source = await f.store.gallery(f.replica.scope, f.volume.id);
+  assert.equal(source.albumId, null);
+  assert.equal(source.mode, "source");
+});
+
+test("a queued object the hub rejects is verified again before the next attempt", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.volume);
+  await sync(f);
+  const work = f.files.work(f.replica.scope, f.volume.id, "doc.bin");
+  fs.writeFileSync(work, crypto.randomBytes(2048));
+  const base = `http://127.0.0.1:${f.daemon.port}`;
+  f.stall((url, options) => {
+    if (options.method === "PUT")
+      return Response.json({ error: "Upload verification failed" }, { status: 409 });
+    return fetch(url.replace("https://fixture.invalid", base), options);
+  });
+  await f.replica.sync();
+  assert.match(f.replica.error, /Upload verification failed/);
+  const object = f.files.object(f.replica.scope, await f.files.hash(work));
+  assert.equal(f.replica.verified.has(object), false);
+  f.stall(null);
+  await sync(f);
+  assert.ok(f.daemon.engine.store.current(f.volume.id, "doc.bin"));
 });

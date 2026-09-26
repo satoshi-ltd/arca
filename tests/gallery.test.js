@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -81,6 +80,65 @@ test("accepted photos prepare persistent bounded thumbnails and preserve origina
     { status: 401 },
   );
   await assert.rejects(f.api(f.preview("other.jpg", hash)), { status: 404 });
+});
+
+test("every photo keeps a thumbnail while large previews fill only their own budget", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  const older = await f.photo("older.jpg", "2020-01-01T00:00:00.000Z", "blue");
+  const newer = await f.photo("newer.jpg", "2026-01-01T00:00:00.000Z", "green");
+  const gallery = f.daemon.engine.gallery;
+  await gallery.background;
+  const derivative = (hash, kind) => f.s.db.prepare("SELECT 1 FROM gallery_derivatives WHERE key=?").get(`${hash}-${kind}.jpg`);
+  for (const { hash } of [older, newer]) {
+    assert.ok(derivative(hash, "thumb"), "every photo is thumbnailed");
+    assert.ok(derivative(hash, "large"));
+  }
+  const forget = (hash, kind) => {
+    f.s.db.prepare("DELETE FROM gallery_derivatives WHERE key=?").run(`${hash}-${kind}.jpg`);
+    fs.rmSync(path.join(f.home, "previews", `${hash}-${kind}.jpg`), { force: true });
+  };
+  forget(older.hash, "thumb");
+  forget(newer.hash, "large");
+  f.s.db.prepare("UPDATE gallery_prepared SET large=0 WHERE hash=?").run(newer.hash);
+  f.s.db.prepare("INSERT INTO gallery_derivatives VALUES('filler-large.jpg',?,0)").run(512 * 1024 ** 2);
+  f.s.db.prepare("INSERT INTO gallery_derivatives VALUES('filler-thumb.jpg',1,0)").run();
+  gallery.cache.clear();
+  gallery.cacheBytes = 0;
+  gallery.prepare(f.v.id);
+  await gallery.background;
+  assert.ok(derivative(older.hash, "thumb"), "a thumbnail evicted by the former shared budget is rebuilt");
+  assert.equal(derivative(newer.hash, "large"), undefined, "background previews stop at their budget");
+  await f.api(f.preview("newer.jpg", newer.hash) + "&size=large");
+  assert.ok(derivative(newer.hash, "large"), "opening a photo still renders its large preview");
+  assert.equal(f.s.db.prepare("SELECT 1 FROM gallery_derivatives WHERE key='filler-large.jpg'").get(), undefined, "a new large preview evicts only large previews");
+  assert.ok(f.s.db.prepare("SELECT 1 FROM gallery_derivatives WHERE key='filler-thumb.jpg'").get(), "large previews never evict thumbnails");
+  f.s.db.prepare("UPDATE gallery_prepared SET large=0 WHERE hash=?").run(older.hash);
+  f.s.db.prepare("DELETE FROM gallery_derivatives WHERE key LIKE '%-large.jpg'").run();
+  const derive = gallery.derivative.bind(gallery);
+  gallery.derivative = async () => {
+    throw Object.assign(new Error("Previews are busy. Try again."), { status: 429 });
+  };
+  await gallery.prepareLarge(f.v.id);
+  assert.equal(f.s.db.prepare("SELECT large FROM gallery_prepared WHERE hash=?").get(older.hash).large, 0, "a busy renderer is retried later, not marked failed");
+  gallery.derivative = derive;
+  forget(older.hash, "thumb");
+  f.s.db.prepare("UPDATE gallery_derivatives SET size=? WHERE key='filler-thumb.jpg'").run(1024 ** 3);
+  await gallery.prepareThumbnails(f.v.id);
+  assert.equal(derivative(older.hash, "thumb"), undefined, "a full thumbnail budget never churns in the background");
+});
+
+test("photos without any date still page through the whole gallery", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  for (let i = 0; i < 62; i++) await f.photo(`undated-${String(i).padStart(2, "0")}.jpg`, null, `rgb(${i},${i},${i})`);
+  await f.daemon.engine.gallery.background;
+  f.s.db.prepare("DELETE FROM revisions").run();
+  const first = await f.api(f.route);
+  assert.equal(first.items.length, 60);
+  assert.ok(first.next, "an undated page still has a cursor");
+  const second = await f.api(f.route + "&after=" + encodeURIComponent(first.next));
+  assert.equal(second.items.length, 2);
 });
 
 test("gallery is explicit, chronological, scoped and respects exclusions even for cached previews", async (t) => {
@@ -189,6 +247,11 @@ test("replicas render selected local previews without hub requests and fall back
     });
     await call("/v1/select", { id: f.v.id });
     await replica.engine.cycle();
+    assert.equal(
+      fs.existsSync(replica.engine.store.blob(hash)),
+      false,
+      "a replica keeps the photo only in its working copy",
+    );
     assert.equal(replica.engine.status().volumes[0].gallery, true);
     assert.equal((await call(f.route)).items[0].path, "photo.jpg");
     await replica.engine.gallery.background;
@@ -248,9 +311,9 @@ test("replicas render selected local previews without hub requests and fall back
       "exclusions still protect cached local previews",
     );
     fs.unlinkSync(path.join(localFolder.path, ".arcaignore"));
-    const blob = replica.engine.store.blob(hash);
-    const original = fs.readFileSync(blob);
-    fs.unlinkSync(blob);
+    const local = path.join(localFolder.path, "photo.jpg");
+    const original = fs.readFileSync(local);
+    fs.unlinkSync(local);
     replica.engine.json = async (route, ...args) => {
       if (route.startsWith("/v1/gallery/preview?")) previewRequests++;
       return remote(route, ...args);
@@ -264,7 +327,12 @@ test("replicas render selected local previews without hub requests and fall back
       1,
       "missing local content falls back to the hub",
     );
-    fs.writeFileSync(blob, original);
+    fs.writeFileSync(local, original);
+    assert.equal(
+      replica.engine.store.localContent(f.v.id, "photo.jpg", hash),
+      null,
+      "a rewrite not yet rescanned is never read under the old hash",
+    );
     await assert.rejects(call(f.preview("photo.jpg", "0".repeat(64))), {
       status: 404,
     });
@@ -899,7 +967,7 @@ test("hub image inventory is scoped and preview regeneration preserves original 
   await f.daemon.engine.gallery.background;
   const inventory = await f.api("/v1/images");
   assert.equal(inventory.folders[0].photos, 1);
-  assert.equal(inventory.folders[0].jpeg, 1);
+  assert.equal("encoder" in inventory, false);
   await f.api("/v1/images", { action: "regenerate" });
   let status;
   for (let i = 0; i < 200; i++) {
@@ -910,10 +978,8 @@ test("hub image inventory is scoped and preview regeneration preserves original 
   assert.equal(status.job.state, "complete");
   assert.equal(status.job.changed, 1);
   assert.deepEqual(fs.readFileSync(f.s.blob(hash)), buffer);
-  await assert.rejects(
-    f.api("/v1/images", { action: "optimize", confirmation: "invented" }),
-    /Analyze/,
-  );
+  for (const action of ["analyze", "optimize"])
+    await assert.rejects(f.api("/v1/images", { action }), /Unknown image operation/);
   const device = await f.api("/v1/devices", {
     name: "Reader",
     role: "replica",
@@ -930,126 +996,79 @@ test("hub image inventory is scoped and preview regeneration preserves original 
   await assert.rejects(f.api("/v1/images", undefined, "invalid"));
 });
 
-test("image conversion requires analysis, journals both paths, retains history and skips stale photos", async (t) => {
-  const { ImageMaintenance } =
-    await import("../packages/daemon/image-maintenance.js");
+test("photos without capture metadata use the earliest source file date before the date added", async (t) => {
   const f = await fixture(t);
-  await f.api("/v1/gallery/link", { volume: f.v.id, enabled: true });
-  const original = await f.photo("one.jpg", "2020-01-02T00:00:00.000Z");
-  const encoder = async (_, destination) => {
-    fs.copyFileSync(
-      new URL("./fixtures/gallery.heic", import.meta.url),
-      destination,
-    );
-    return fs.statSync(destination).size;
-  };
-  const manager = new ImageMaintenance(f.daemon.engine, encoder);
-  t.after(() => manager.close());
-  manager.start("analyze");
-  await manager.task;
-  assert.equal(f.s.current(f.v.id, "one.jpg").deleted, 0);
-  assert.ok(manager.job.confirmation);
-  manager.start("optimize", manager.job.confirmation);
-  await manager.task;
-  assert.equal(manager.job.changed, 1, JSON.stringify(manager.job));
-  assert.equal(f.s.current(f.v.id, "one.jpg").deleted, 1);
-  assert.equal(f.s.current(f.v.id, "one.heic").deleted, 0);
-  assert.deepEqual(fs.readFileSync(f.s.blob(original.hash)), original.buffer);
-  assert.ok(
-    f.s.history(f.v.id, "one.jpg").some((r) => r.hash === original.hash),
+  const buffer = await sharp({
+    create: { width: 400, height: 300, channels: 3, background: "purple" },
+  })
+    .jpeg()
+    .toBuffer();
+  const hash = digest(buffer);
+  if (!fs.existsSync(f.s.blob(hash))) fs.writeFileSync(f.s.blob(hash), buffer);
+  const propose = (name, modified) =>
+    f.api("/v1/propose", {
+      volume: f.v.id,
+      path: name,
+      hash,
+      size: buffer.length,
+      ...(modified === undefined ? {} : { modified }),
+    });
+  await propose("immich/aa/bb/uuid.jpg", "2023-03-19T00:21:52.000Z");
+  await propose("copy/uuid.jpg", "2021-12-11T12:35:20.000Z");
+  await propose("again/uuid.jpg", "2024-01-01T00:00:00.000Z");
+  await propose("bad/uuid.jpg", "yesterday");
+  await propose("notes/readme.txt", "2020-01-01T00:00:00.000Z");
+  const data = await f.api(f.route);
+  const item = data.items.find((row) => row.path === "immich/aa/bb/uuid.jpg");
+  assert.equal(item.date, "2021-12-11T12:35:20.000Z");
+  assert.equal(item.dateSource, "file date");
+  assert.deepEqual(data.timeline.map((row) => row.month), ["2021-12"]);
+  await f.photo("Screenshot 2022-03-04 image.jpg", null, "orange");
+  assert.equal(
+    (await f.api(f.route)).items.find((row) => row.path.startsWith("Screenshot"))
+      .dateSource,
+    "filename",
   );
-  const listing = await f.api(f.route);
-  assert.equal(listing.items[0].sourcePath, "one.jpg");
-  assert.equal(listing.items[0].sourceHash, original.hash);
-  await f.photo("changed.jpg");
-  manager.start("analyze");
-  await manager.task;
-  const confirmation = manager.job.confirmation;
-  const revised = await f.photo("other.jpg", null, "blue");
-  f.s.commit(
-    f.v.id,
-    "changed.jpg",
-    { hash: revised.hash, size: revised.buffer.length },
-    f.s.config.id,
-    true,
-    f.s.current(f.v.id, "changed.jpg").hash,
+  const { galleryDate } = await import("../packages/core/gallery-date.js");
+  assert.equal(
+    galleryDate("download.jpg", null, "2026-01-01T00:00:00.000Z", "2026-02-01T00:00:00.000Z").source,
+    "date added",
+    "a copy written after the photo was added is not its original date",
   );
-  manager.start("optimize", confirmation);
-  await manager.task;
-  assert.equal(manager.job.changed, 0);
-  assert.match(manager.job.errors[0].error, /changed/);
-  assert.equal(f.s.current(f.v.id, "changed.jpg").deleted, 0);
 });
 
-test("converted path recovery materializes HEIC before removing JPEG after an interrupted write", async (t) => {
+test("a JPEG saved with a .HEIC name still gets a preview", async (t) => {
   const f = await fixture(t);
-  const original = await f.photo("recover.jpg");
-  const replacement = f.s.capture(
-    fileURLToPath(new URL("./fixtures/gallery.heic", import.meta.url)),
-  );
-  const current = f.s.current(f.v.id, "recover.jpg");
-  const materialize = f.s.materialize.bind(f.s);
-  f.s.materialize = () => {
-    throw new Error("interrupted conversion");
-  };
-  assert.throws(
-    () => f.s.renameFile(current, "recover.heic", f.s.config.id, replacement),
-    /interrupted/,
-  );
+  const { hash } = await f.photo("export/IMG_0001.HEIC", null, "teal");
+  await f.daemon.engine.gallery.background;
+  const thumbnail = await f.api(f.preview("export/IMG_0001.HEIC", hash));
+  const meta = await sharp(
+    Buffer.from(thumbnail.data.split(",")[1], "base64"),
+  ).metadata();
+  assert.equal(meta.format, "jpeg");
+  assert.equal(meta.width, 360);
+});
+
+test("gallery pages load newer photos above a jumped-to month and report when more exist", async (t) => {
+  const f = await fixture(t);
+  const months = ["2026-03", "2025-07", "2024-05", "2023-01"];
+  for (const [index, month] of months.entries())
+    for (let i = 0; i < 2; i++)
+      await f.photo(`${month}-${i}.jpg`, `${month}-1${i}T12:00:00.000Z`, ["red", "green", "blue", "gray"][index]);
+  const top = await f.api(f.route);
+  assert.equal(top.previous, null, "nothing is newer than the first page");
+  const jump = await f.api(f.route + "&month=2024-05");
+  assert.equal(jump.items[0].path, "2024-05-1.jpg");
+  assert.equal(jump.previous, jump.items[0].cursor);
+  const newer = await f.api(f.route + "&before=" + encodeURIComponent(jump.previous));
   assert.deepEqual(
-    fs.readFileSync(path.join(f.v.path, "recover.jpg")),
-    original.buffer,
+    newer.items.map((row) => row.path),
+    ["2026-03-1.jpg", "2026-03-0.jpg", "2025-07-1.jpg", "2025-07-0.jpg"],
   );
-  f.s.materialize = (row, expected) => {
-    if (row.deleted && row.path === "recover.jpg") {
-      // Recovery may visit the deletion first; its renameDestination dependency
-      // must materialize the new file before the actual removal.
-      materialize(row, expected);
-      assert.deepEqual(
-        fs.readFileSync(path.join(f.v.path, "recover.heic")),
-        fs.readFileSync(f.s.blob(replacement.hash)),
-      );
-      return;
-    }
-    return materialize(row, expected);
-  };
-  f.s.recover();
-  assert.equal(fs.existsSync(path.join(f.v.path, "recover.jpg")), false);
-  assert.deepEqual(fs.readFileSync(f.s.blob(original.hash)), original.buffer);
-});
-
-test("an unprofitable sample does not block optimization of untested new photos", async (t) => {
-  const { ImageMaintenance } =
-    await import("../packages/daemon/image-maintenance.js");
-  const f = await fixture(t);
-  await f.api("/v1/gallery/link", { volume: f.v.id, enabled: true });
-  let eligible;
-  for (let i = 0; i < 11; i++) {
-    const photo = await f.photo(
-      String(i).padStart(2, "0") + ".jpg",
-      null,
-      i === 1 ? "blue" : "red",
-    );
-    if (i === 1) eligible = photo;
-  }
-  const manager = new ImageMaintenance(
-    f.daemon.engine,
-    async (source, destination) => {
-      if (source !== f.s.blob(eligible.hash)) return Number.MAX_SAFE_INTEGER;
-      fs.copyFileSync(
-        new URL("./fixtures/gallery.heic", import.meta.url),
-        destination,
-      );
-      return fs.statSync(destination).size;
-    },
-  );
-  t.after(() => manager.close());
-  manager.start("analyze");
-  await manager.task;
-  assert.equal(manager.job.changed, 0);
-  assert.ok(manager.job.confirmation);
-  manager.start("optimize", manager.job.confirmation);
-  await manager.task;
-  assert.equal(manager.job.changed, 1);
-  assert.equal(f.s.current(f.v.id, "01.heic").deleted, 0);
+  assert.equal(newer.previous, null);
+  const from = await f.api(f.route + "&from=" + encodeURIComponent(newer.items[2].cursor));
+  assert.equal(from.items[0].path, "2025-07-1.jpg", "from includes its own cursor");
+  assert.equal(from.previous, from.items[0].cursor);
+  const next = await f.api(f.route + "&month=2024-05&after=" + encodeURIComponent(jump.items[0].cursor));
+  assert.equal(next.previous, null, "continuation pages keep the first page's answer");
 });

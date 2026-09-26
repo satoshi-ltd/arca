@@ -210,3 +210,55 @@ test("mobile LAN policy reachability failure is a connection condition", () => {
   assert.equal(errorNotice(message).offline, true);
   assert.equal(errorNotice(message).cause, "connection");
 });
+
+test("connection outages are recognised by code or transport text, never by local source failures", async () => {
+  const { isHubUnreachable } =
+    await import("../apps/desktop/src/notice-contract.js");
+  for (const value of [
+    "Cannot connect using this address. For local Wi-Fi, enter the hub’s private IP address. To use a Tailscale name or address, connect Tailscale on this device and the hub.",
+    "The connection to the hub was interrupted. Check the connection and try again.",
+    "Call to function 'ArcaNetwork.request' has been rejected.\n→ Caused by: java.net.SocketException: Connection reset",
+    "Call to function 'ArcaNetwork.request' has been rejected.\n→ Caused by: java.lang.IllegalStateException: Connect Tailscale on this device and the hub",
+    "Call to function 'ArcaNetwork.request' has been rejected.\n→ Caused by: java.net.UnknownHostException: Unable to resolve host",
+    "UnexpectedException: Could not connect to the server. (at ExpoModulesCore/ConcurrentFunctionDefinition.swift:90)",
+    "UnexpectedException: The network connection was lost.",
+    "A server with the specified hostname could not be found.",
+    "A data connection is not currently allowed.",
+    "Tailscale access unavailable",
+    "Hub 503: Service Unavailable",
+    "Hub unavailable (HTTP 502).",
+    "connect ECONNREFUSED 127.0.0.1:17831",
+    "getaddrinfo ENOTFOUND casa.local",
+    Object.assign(new Error("Anything"), { code: "HUB_UNREACHABLE" }),
+    Object.assign(new Error("Anything"), { code: "CONNECTION_LOST" }),
+    "The request timed out.",
+    "The operation was aborted due to timeout",
+    "The Internet connection appears to be offline.",
+    "connect EHOSTUNREACH: host is unreachable",
+    Object.assign(new Error("Anything"), { hubUnavailable: true }),
+  ]) {
+    assert.equal(isHubUnreachable(value), true, String(value?.message || value));
+    const notice = errorNotice(value, { hubName: "Casa" });
+    assert.equal(notice.cause, "connection");
+    assert.equal(notice.title, "Hub Casa unreachable");
+  }
+  for (const value of [
+    "java.io.FileNotFoundException: Inputstream for content://provider/doc was null.",
+    "Reconnect from Machines.",
+    "Too many active snapshots; retry after snapshots expire",
+    "Original download timed out. Keep Arca open and retry.",
+    "Photo export timed out. Keep Arca open and retry.",
+    "Could not read offline-notes.txt from the app that provides it. Download it on this phone and add it again.",
+    "ENOENT: no such file or directory, open '/storage/emulated/0/Download/offline-maps.zip'",
+    "EACCES: permission denied, open '/Photos/unreachable peaks/timed out.jpg'",
+    "Enable Allow HTTP on local network in the hub's Settings first.",
+    Object.assign(new Error("Hub request timed out"), {
+      code: "SOURCE_UNAVAILABLE",
+    }),
+  ])
+    assert.equal(
+      isHubUnreachable(value),
+      false,
+      String(value?.message || value),
+    );
+});

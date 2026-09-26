@@ -107,17 +107,42 @@ test("mobile preserves consumed pairing credentials when first catalog fetch fai
         token: "fixture-secret",
         hubId: "hub",
       });
-    if (!online) throw new Error("offline");
+    if (!online) throw new TypeError("Network request failed");
     return Response.json({ id: "hub", protocol: 1, name: "Hub", volumes: [] });
   };
   const client = createClient({ ...store, fetcher });
-  await assert.rejects(client.pair("https://hub", "000123"), /offline/);
+  await assert.rejects(client.pair("https://hub", "000123"), /Network request failed/);
   assert.equal((await store.secrets.read()).token, "fixture-secret");
   const restarted = createClient({ ...store, fetcher });
   await restarted.load();
   online = true;
   await restarted.refresh();
   assert.equal(restarted.state().catalog.name, "Hub");
+});
+
+test("a refresh joined by the interface survives the sync that started it being stopped", async () => {
+  const store = persistence();
+  await store.secrets.write({ url: "https://hub", token: "fixture-secret", hubId: "hub", id: "replica" });
+  let answer;
+  const catalogReply = new Promise((resolve) => {
+    answer = resolve;
+  });
+  const client = createClient({
+    ...store,
+    fetcher: async () => {
+      await catalogReply;
+      return Response.json({ id: "hub", protocol: 1, name: "Hub", volumes: [] });
+    },
+  });
+  await client.load();
+  const sync = new AbortController();
+  const bySync = client.refresh({ signal: sync.signal });
+  const byInterface = client.refresh();
+  sync.abort(new Error("Synchronization stopped"));
+  await assert.rejects(bySync, /Synchronization stopped/);
+  answer();
+  await byInterface;
+  assert.equal(client.state().catalog.name, "Hub");
 });
 
 test("mobile persists pending disconnect across restart and never refreshes folders before leaving", async () => {
@@ -131,11 +156,11 @@ test("mobile persists pending disconnect across restart and never refreshes fold
   const offline = createClient({
     ...store,
     fetcher: async () => {
-      throw new Error("offline");
+      throw new TypeError("Network request failed");
     },
   });
   await offline.load();
-  await assert.rejects(offline.disconnect(), /offline/);
+  await assert.rejects(offline.disconnect(), /Network request failed/);
   assert.equal(offline.state().connection.linked, false);
   const calls = [];
   const resumed = createClient({
@@ -365,4 +390,160 @@ test("hub change waits authenticate, wake on committed files and recheck revocat
   fs.writeFileSync(path.join(volume.path, "new.txt"), "wake after revocation");
   await daemon.engine.cycle();
   assert.equal((await blocked).status, 401);
+});
+
+test("private-network verification of a transfer is bounded and cancellable before any native request", async () => {
+  const store = persistence();
+  await store.secrets.write({
+    url: "http://192.168.1.5:17831",
+    token: "secret",
+    id: "replica",
+    hubId: "hub",
+  });
+  let fetched = 0;
+  const client = createClient({
+    ...store,
+    timeout: 50,
+    fetcher: async () => {
+      fetched++;
+      return Response.json({});
+    },
+    resolvePrivateURL: () => new Promise(() => {}),
+  });
+  await client.load();
+  const started = Date.now();
+  await assert.rejects(
+    client.raw("/v1/uploads/x", { method: "PUT", transfer: {} }),
+    (error) => {
+      assert.equal(error.message, "Hub request timed out");
+      assert.equal(error.code, "HUB_TIMEOUT");
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 1000);
+  const controller = new AbortController();
+  const pending = client.raw("/v1/blobs/x", {
+    transfer: {},
+    signal: controller.signal,
+    timeout: 60000,
+  });
+  const rejected = assert.rejects(pending, /stop sync/);
+  const aborted = Date.now();
+  controller.abort(new Error("stop sync"));
+  await rejected;
+  assert.ok(Date.now() - aborted < 100);
+  assert.equal(fetched, 0);
+});
+
+test("only an explicit 401 unpairs; network gating and gateways are outages", async () => {
+  const { isHubUnreachable } =
+    await import("../apps/desktop/src/notice-contract.js");
+  const store = persistence();
+  await store.secrets.write({
+    url: "https://hub",
+    token: "secret",
+    id: "replica",
+    hubId: "hub",
+  });
+  let answer = () =>
+    Response.json({ error: "Tailscale access unavailable" }, { status: 403 });
+  const client = createClient({ ...store, fetcher: async () => answer() });
+  await client.load();
+  for (const call of [() => client.refresh(), () => client.api("/v1/machines")])
+    await assert.rejects(call(), (error) => {
+      assert.equal(error.status, 403);
+      assert.equal(isHubUnreachable(error), true);
+      return true;
+    });
+  assert.ok(client.state().connection);
+  assert.ok(await store.secrets.read());
+  answer = () =>
+    Response.json(
+      { error: "Tailscale access unavailable" },
+      { status: 503 },
+    );
+  await assert.rejects(client.refresh(), (error) => {
+    assert.equal(error.hubUnavailable, true);
+    return true;
+  });
+  answer = () => new Response("<html>Bad gateway</html>", { status: 502 });
+  await assert.rejects(client.api("/v1/machines"), (error) => {
+    assert.equal(error.message, "Hub unavailable (HTTP 502).");
+    assert.equal(isHubUnreachable(error.message), true);
+    return true;
+  });
+  assert.ok(await store.secrets.read());
+  answer = () => Response.json({ error: "Revoked" }, { status: 401 });
+  await assert.rejects(client.refresh(), /Revoked/);
+  assert.equal(client.state().connection, null);
+  assert.equal(await store.secrets.read(), null);
+});
+
+test("concurrent catalog refreshes share one request and a joined caller can still cancel", async () => {
+  const store = persistence();
+  await store.secrets.write({
+    url: "https://hub",
+    token: "secret",
+    id: "replica",
+    hubId: "hub",
+  });
+  let requests = 0,
+    release;
+  const client = createClient({
+    ...store,
+    fetcher: async () => {
+      requests++;
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      return Response.json({ id: "hub", protocol: 1, name: "Hub", volumes: [] });
+    },
+  });
+  await client.load();
+  const first = client.refresh();
+  const second = client.refresh();
+  const controller = new AbortController();
+  const third = client.refresh({ signal: controller.signal });
+  controller.abort(new Error("sync stopped"));
+  await assert.rejects(third, /sync stopped/);
+  for (let i = 0; !release && i < 100; i++)
+    await new Promise((resolve) => setImmediate(resolve));
+  release();
+  assert.equal((await first).catalog.name, "Hub");
+  assert.equal((await second).catalog.name, "Hub");
+  assert.equal(requests, 1);
+});
+
+test("per-request deadlines override the default and buffered bodies are never timed out late", async () => {
+  const store = persistence();
+  await store.secrets.write({
+    url: "https://hub",
+    token: "secret",
+    id: "replica",
+    hubId: "hub",
+  });
+  let delay = 0;
+  const client = createClient({
+    ...store,
+    timeout: 20,
+    fetcher: async () => {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      const data = new TextEncoder().encode('{"ok":true}');
+      return {
+        ok: true,
+        status: 200,
+        buffered: true,
+        headers: new Headers(),
+        json: async () => JSON.parse(new TextDecoder().decode(data)),
+      };
+    },
+  });
+  await client.load();
+  delay = 60;
+  await assert.rejects(client.raw("/v1/slow"), /timed out/);
+  assert.equal((await (await client.raw("/v1/slow", { timeout: 500 })).json()).ok, true);
+  delay = 0;
+  const response = await client.raw("/v1/fast");
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.deepEqual(await response.json(), { ok: true });
 });

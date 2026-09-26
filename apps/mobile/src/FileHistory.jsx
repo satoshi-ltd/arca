@@ -14,6 +14,7 @@ export function FileHistory({
   date,
   locked,
   connected,
+  offline = false,
   restore,
   reviewConflict,
   canResolve,
@@ -27,12 +28,18 @@ export function FileHistory({
 }) {
   const { s, c, wide } = useDesign();
   const current = history.versions[0];
+  const reachable = connected && !offline;
   return (
     <>
       <ErrorNotice error={error} retry={retry} />
       {!connected && (
         <Text style={s.caption}>
           Offline. Local files are available; connect to load hub revisions.
+        </Text>
+      )}
+      {connected && offline && (
+        <Text style={s.caption}>
+          Showing saved revisions. Reconnect to restore or resolve.
         </Text>
       )}
       {target.path.includes(".conflict-") &&
@@ -53,7 +60,7 @@ export function FileHistory({
             <Button
               label="Resolve conflict…"
               icon="conflict"
-              disabled={locked || !connected || !canResolve}
+              disabled={locked || !reachable || !canResolve}
               onPress={reviewConflict}
             />
           </Card>
@@ -123,7 +130,7 @@ export function FileHistory({
                             quiet
                             label="Restore"
                             icon="restore"
-                            disabled={locked || !connected}
+                            disabled={locked || !reachable}
                             onPress={() => restore(row)}
                           />
                         )

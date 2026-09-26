@@ -38,8 +38,11 @@ test("Umbrel initialization preserves existing identity, pause and files; refuse
   t.after(() => remove(root));
   const home = path.join(root, "state");
   const files = path.join(root, "files");
+  const backup = path.join(root, "backup");
   fs.mkdirSync(files);
+  fs.mkdirSync(backup);
   fs.writeFileSync(path.join(files, ".gitkeep"), "");
+  fs.writeFileSync(path.join(backup, ".gitkeep"), "");
   const run = () =>
     execFileSync(process.execPath, [path.join(root, "umbrel-init.mjs")], {
       env: {
@@ -47,10 +50,12 @@ test("Umbrel initialization preserves existing identity, pause and files; refuse
         ARCA_APP_DIR: repo,
         ARCA_HOME: home,
         ARCA_FILES: files,
+        ARCA_BACKUP: backup,
       },
       stdio: "pipe",
     });
   run();
+  assert.deepEqual(fs.readdirSync(backup), [], "the backup mount starts empty");
   const configPath = path.join(home, "config.json");
   const config = JSON.parse(fs.readFileSync(configPath));
   assert.equal(config.role, "replica");
@@ -72,6 +77,15 @@ test("Umbrel initialization preserves existing identity, pause and files; refuse
   fs.writeFileSync(path.join(home, "index.sqlite"), "existing state");
   assert.throws(run, /State exists without its configuration/);
   assert.equal(fs.existsSync(configPath), false);
+});
+
+test("Umbrel mounts the backup folder so a hub backup survives container recreation", () => {
+  const compose = fs.readFileSync(path.join(source, "docker-compose.yml"), "utf8").replace(/\r\n/g, "\n");
+  const service = (name) => compose.split(/\n  (?=\w+:\n)/).find((block) => block.startsWith(name + ":"));
+  for (const name of ["initialize", "server"])
+    assert.match(service(name), /- \$\{APP_DATA_DIR\}\/data\/backup:\/data\/backup\n/, name);
+  assert.match(service("initialize"), /ARCA_BACKUP: \/data\/backup/);
+  assert.equal(fs.statSync(path.join(source, "data", "backup", ".gitkeep")).size, 0);
 });
 
 test("Umbrel access uses real single-use codes, preserves CSRF, pairing, streaming sync and restart persistence", async (t) => {

@@ -1,5 +1,5 @@
 import { abortRequest } from "./request-control.js";
-import { errorNotice } from "../../desktop/src/notice-contract.js";
+import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 
 function key(route) {
   const [pathname, search = ""] = route.split("?");
@@ -17,12 +17,14 @@ export async function remoteView(replica, route, options = {}) {
   const cancel = () => abortRequest(controller, new Error("Request cancelled"));
   if (options.signal?.aborted) cancel();
   else options.signal?.addEventListener("abort", cancel, { once: true });
-  const timer = setTimeout(
-    () => abortRequest(controller, new Error("Hub request timed out")),
-    3000,
-  );
+  let expired = false;
+  const timer = setTimeout(() => {
+    expired = true;
+    abortRequest(controller, Object.assign(new Error("Hub request timed out"), { code: "HUB_TIMEOUT" }));
+  }, 3000);
   try {
-    if (replica.hubUnavailable) throw new Error("Hub offline");
+    if (replica.hubUnavailable)
+      throw Object.assign(new Error("Hub offline"), { code: "HUB_UNREACHABLE" });
     const value = await replica.interactiveClient.api(route, undefined, {
       signal: controller.signal,
     });
@@ -45,8 +47,12 @@ export async function remoteView(replica, route, options = {}) {
     );
     return value;
   } catch (error) {
-    if (options.signal?.aborted || !errorNotice(error).offline) throw error;
-    if (!options.silent && replica.connectionEpoch === connectionEpoch) {
+    if (options.signal?.aborted || !isHubUnreachable(error)) throw error;
+    if (
+      !options.silent &&
+      !expired &&
+      replica.connectionEpoch === connectionEpoch
+    ) {
       replica.hubUnavailable = true;
       replica.connectionChecked = true;
       replica.changed();

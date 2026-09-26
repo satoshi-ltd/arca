@@ -15,7 +15,7 @@ test('brand activity suppresses brief requests and keeps sustained activity stab
     querySelector: () => indicator,
   };
   const context = vm.createContext({
-    $: () => mark, busy: false, status: { phase: 'idle' },
+    $: () => mark, busy: false, daemonStopped: false, status: { phase: 'idle' },
     document: { body: { classList: { contains: () => false } } },
     Date: { now: () => now }, busyIcon: () => 'busy',
     setTimeout: (fn, delay) => { timers.set(++serial, { fn, at: now + delay }); return serial; },

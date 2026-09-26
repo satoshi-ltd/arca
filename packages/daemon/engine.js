@@ -7,6 +7,7 @@ import {
   finishInstallationReset,
 } from "./installation-reset.js";
 import { entryKey, directoryItem } from "../core/entries.js";
+import { mediaKind } from "../core/gallery-date.js";
 import {
   IGNORE_FILE,
   DEFAULT_IGNORE,
@@ -14,7 +15,11 @@ import {
   readIgnore,
 } from "./exclusions.js";
 import { machineReport } from "./machines.js";
-import { cleanupTransfers, applyFolderRetention } from "./maintenance.js";
+import {
+  cleanupTransfers,
+  applyFolderRetention,
+  releaseReplicaObjects,
+} from "./maintenance.js";
 import { SyncWork, covers } from "./sync-work.js";
 import { Scanner } from "./scanner.js";
 import fs from "node:fs";
@@ -30,10 +35,21 @@ import {
   validPath,
   atomic,
   requireSpace,
+  requirePersistentBackup,
   syncDirectory,
 } from "./storage.js";
 
 const CHUNK = 1024 * 1024;
+const MIN_UPLOAD_CHUNK = 256 * 1024;
+const HUB_UNAVAILABLE = "Hub unavailable. Try again when it is reachable.";
+const MISSING_LOCAL =
+  "This file is no longer in the local copy. The list updates after the next sync.";
+function fileDate(file) {
+  const time = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
+  return time > Date.UTC(1990, 0, 1) && time < Date.now() + 86400000
+    ? new Date(time).toISOString()
+    : null;
+}
 export class Engine {
   constructor(home) {
     this.store = new Store(home);
@@ -76,6 +92,7 @@ export class Engine {
     this.stopVolumes = new Set();
     this.transferred = 0;
     this.tail = Promise.resolve();
+    this.transferIdleMs = 60000;
     this.requestContext = new AsyncLocalStorage();
     this.store.db.exec(
       "CREATE TABLE IF NOT EXISTS proposals(id TEXT PRIMARY KEY,response TEXT NOT NULL)",
@@ -151,6 +168,8 @@ export class Engine {
         enabled: false,
         ...this.config.backup,
         error: this.backupError || null,
+        waiting: Boolean(this.backupWaiting),
+        progress: this.backupProgress(),
       },
       error: this.error,
       hubUnavailable: !!this.hubUnavailable,
@@ -211,11 +230,31 @@ export class Engine {
       ),
     };
   }
+  connectionLost(error, hub = null, version = null) {
+    if (
+      this.requestContext.getStore()?.signal.aborted ||
+      !(error?.name === "TimeoutError" || error instanceof TypeError)
+    )
+      return error;
+    error.hubUnavailable = true;
+    if (
+      hub &&
+      this.config.hub === hub &&
+      version === (this.connectionVersion || 0)
+    )
+      this.hubUnavailable = true;
+    return error;
+  }
   async request(route, options = {}) {
-    const { trackConnection = true, ...fetchOptions } = options;
+    const {
+      trackConnection = true,
+      timeoutUnavailable = true,
+      ...fetchOptions
+    } = options;
     const connectionVersion = this.connectionVersion || 0;
     const hub = this.config.hub;
     if (!hub) fail("Connect this node to a hub first");
+    const tracked = trackConnection ? hub : null;
     let response;
     try {
       response = await fetch(`${hub.url}${route}`, {
@@ -235,48 +274,64 @@ export class Engine {
         ]),
       });
     } catch (error) {
-      if (
-        !this.requestContext.getStore()?.signal.aborted &&
-        (error.name === "TimeoutError" || error instanceof TypeError)
-      ) {
-        error.hubUnavailable = true;
-        if (trackConnection && this.config.hub === hub && connectionVersion === (this.connectionVersion || 0))
-          this.hubUnavailable = true;
-      }
-      throw error;
+      if (error.name === "TimeoutError" && !timeoutUnavailable) throw error;
+      throw this.connectionLost(error, tracked, connectionVersion);
     }
+    // A gateway answers for a hub it cannot reach.
+    const unavailable = [502, 503, 504].includes(response.status);
     if (trackConnection && this.config.hub === hub) {
-      this.connectionVersion = (this.connectionVersion || 0) + 1;
-      this.hubUnavailable = false;
+      if (!unavailable) {
+        this.connectionVersion = (this.connectionVersion || 0) + 1;
+        this.hubUnavailable = false;
+      } else if (connectionVersion === (this.connectionVersion || 0))
+        this.hubUnavailable = true;
     }
+    if (
+      response.status === 401 &&
+      this.config.role === "replica" &&
+      this.config.hub === hub
+    )
+      this.clearHubConnection();
     if (!response.ok) {
-      if (
-        response.status === 401 &&
-        this.config.role === "replica" &&
-        this.config.hub === hub
-      )
-        this.clearHubConnection();
-      const message = await response.text();
-      fail(`Hub ${response.status}: ${message.slice(0, 200)}`, response.status);
+      const version = this.connectionVersion || 0;
+      const message = await response.text().catch((error) => {
+        throw this.connectionLost(error, tracked, version);
+      });
+      const error = new Error(
+        `Hub ${response.status}: ${message.slice(0, 200)}`,
+      );
+      throw Object.assign(error, {
+        status: response.status,
+        ...(unavailable && { hubUnavailable: true }),
+      });
     }
     return response;
   }
-  async json(route, body) {
-    const r = await this.request(
-      route,
-      body === undefined
+  async json(route, body, options = {}) {
+    const hub = options.trackConnection === false ? null : this.config.hub;
+    const r = await this.request(route, {
+      ...options,
+      ...(body === undefined
         ? {}
         : {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
-          },
-    );
-    return r.json();
+          }),
+    });
+    const version = this.connectionVersion || 0;
+    return r.json().catch((error) => {
+      throw this.connectionLost(error, hub, version);
+    });
+  }
+  hubAction(route, body, timeout = 10000) {
+    if (this.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
+    return this.json(route, body, { signal: AbortSignal.timeout(timeout) });
   }
   async upload(hash, onProgress) {
     const file = this.store.blob(hash);
     const size = fs.statSync(file).size;
+    const hub = this.config.hub;
     const progress = (done) => {
       if (onProgress) onProgress(done, size);
       else if (this.progress)
@@ -290,7 +345,7 @@ export class Engine {
     let { offset, complete, maxChunkBytes } = await this.json(
       `/v1/uploads/${hash}`,
     );
-    const chunk =
+    const limit =
       Number.isSafeInteger(maxChunkBytes) && maxChunkBytes > 0
         ? Math.min(maxChunkBytes, 8 * CHUNK)
         : CHUNK;
@@ -303,6 +358,7 @@ export class Engine {
     try {
       do {
         this.checkSyncInterrupted();
+        const chunk = Math.min(limit, this.uploadChunk || limit);
         const length = Math.min(chunk, size - offset);
         const buffer = Buffer.alloc(length);
         let read = 0;
@@ -316,11 +372,36 @@ export class Engine {
           if (!bytesRead) fail("Upload content changed while reading", 409);
           read += bytesRead;
         }
-        const r = await this.request(
-          `/v1/uploads/${hash}?offset=${offset}&size=${size}`,
-          { method: "PUT", body: buffer },
-        );
-        ({ offset, complete } = await r.json());
+        const started = Date.now();
+        let r;
+        try {
+          // The hub keeps only complete blocks, so a slow link needs smaller blocks rather than a longer wait.
+          r = await this.request(
+            `/v1/uploads/${hash}?offset=${offset}&size=${size}`,
+            {
+              method: "PUT",
+              body: buffer,
+              signal: AbortSignal.timeout(this.transferIdleMs),
+              timeoutUnavailable: length <= MIN_UPLOAD_CHUNK,
+            },
+          );
+        } catch (error) {
+          if (error.name !== "TimeoutError" || length <= MIN_UPLOAD_CHUNK)
+            throw error;
+          this.uploadChunk = Math.max(
+            MIN_UPLOAD_CHUNK,
+            Math.floor(length / 2),
+          );
+          ({ offset, complete } = await this.json(`/v1/uploads/${hash}`));
+          progress(offset);
+          continue;
+        }
+        const version = this.connectionVersion || 0;
+        ({ offset, complete } = await r.json().catch((error) => {
+          throw this.connectionLost(error, hub, version);
+        }));
+        if (Date.now() - started < this.transferIdleMs / 6)
+          this.uploadChunk = Math.min(limit, chunk * 2);
         this.transferred += length;
         progress(offset);
       } while (!complete);
@@ -348,23 +429,48 @@ export class Engine {
     }
     if (offset < size || !fs.existsSync(tmp)) {
       requireSpace(this.store.uploads, size - offset);
-      const response = await this.request(`/v1/blobs/${hash}`, {
-        headers: offset ? { Range: `bytes=${offset}-` } : {},
-      });
-      if (offset && response.status !== 206)
-        fail("Hub did not honor the requested download range", 502);
-      const fd = await fs.promises.open(tmp, offset ? "a" : "w");
+      const hub = this.config.hub;
+      const stalled = new AbortController();
+      let idle;
+      const wait = () => {
+        clearTimeout(idle);
+        idle = setTimeout(
+          () =>
+            stalled.abort(
+              new DOMException("Hub transfer stalled", "TimeoutError"),
+            ),
+          this.transferIdleMs,
+        );
+      };
+      wait();
       try {
-        for await (const chunk of response.body) {
-          await fd.writeFile(chunk);
-          this.transferred += chunk.length;
-          if (this.progress)
-            this.progress.bytesDone =
-              (this.progress.bytesDone || offset) + chunk.length;
+        const response = await this.request(`/v1/blobs/${hash}`, {
+          headers: offset ? { Range: `bytes=${offset}-` } : {},
+          signal: stalled.signal,
+        });
+        const version = this.connectionVersion || 0;
+        if (offset && response.status !== 206)
+          fail("Hub did not honor the requested download range", 502);
+        const fd = await fs.promises.open(tmp, offset ? "a" : "w");
+        try {
+          try {
+            for await (const chunk of response.body) {
+              wait();
+              await fd.writeFile(chunk);
+              this.transferred += chunk.length;
+              if (this.progress)
+                this.progress.bytesDone =
+                  (this.progress.bytesDone || offset) + chunk.length;
+            }
+          } catch (error) {
+            throw this.connectionLost(error, hub, version);
+          }
+          await fd.sync();
+        } finally {
+          await fd.close();
         }
-        await fd.sync();
       } finally {
-        await fd.close();
+        clearTimeout(idle);
       }
     }
     if (fs.statSync(tmp).size !== size || (await hashFileAsync(tmp)) !== hash) {
@@ -428,27 +534,47 @@ export class Engine {
     const cached = s.db
       .prepare("SELECT response FROM proposals WHERE id=?")
       .get(op);
+    const old = s.pathHead(volume, name);
     if (cached) {
       const saved = JSON.parse(cached.response);
       if (saved.revision === revision()) return saved.result;
     }
-    const old = s.pathHead(volume, name);
+    const replayed = s.db
+      .prepare("SELECT 1 FROM accepted_proposals WHERE id=?")
+      .get(op);
+    // Persist before a mutation: a crash can cause a conservative conflict, never an unsafe replay.
+    const remember = () =>
+      s.db
+        .prepare(
+          "INSERT OR IGNORE INTO accepted_proposals(id,volume,device,base) VALUES(?,?,?,?)",
+        )
+        .run(op, volume, device.id, base);
+    // A request already applied is judged stale, so only a new edit takes the lost-reply shortcut.
+    const stale =
+      (old?.rev ?? 0) !== base &&
+      !(
+        !replayed &&
+        !directory &&
+        name !== IGNORE_FILE &&
+        this.ownProposalAtBase(volume, name, old, base, device)
+      );
     let result;
     if (old?.path === name && entryKey(old) === entryKey(item))
       result = { row: old || null, conflict: false };
-    else if ((old?.rev ?? 0) !== base && (directory || old?.directory)) {
-      if (old?.directory && directory && old.deleted)
+    else if (stale && (directory || old?.directory)) {
+      if (old?.directory && directory && old.deleted) {
+        remember();
         result = {
           row: s.commit(volume, name, item, device.id, true),
           conflict: false,
         };
-      else if (old?.directory && !item) result = { row: old, conflict: false };
+      } else if (old?.directory && !item) result = { row: old, conflict: false };
       else
         fail(
           "Path type changed on the hub; reconcile the local path before retrying",
           409,
         );
-    } else if ((old?.rev ?? 0) !== base) {
+    } else if (stale) {
       if (name === IGNORE_FILE)
         fail(
           "Sync paused: .arcaignore differs between this machine and the hub. Use the same rules on both before retrying.",
@@ -469,7 +595,8 @@ export class Engine {
             : s.commit(volume, conflictName, { hash, size }, device.id, true);
         result = { row: old || null, conflict: true, conflictPath: row.path };
       }
-    } else
+    } else {
+      remember();
       result = {
         row: s.commit(
           volume,
@@ -483,13 +610,49 @@ export class Engine {
         ),
         conflict: false,
       };
+    }
+    if (!result.conflict) {
+      remember();
+      if (result.row && result.row.rev !== old?.rev)
+        s.db
+          .prepare("UPDATE accepted_proposals SET revision=? WHERE id=?")
+          .run(result.row.rev, op);
+    }
     s.db
       .prepare("INSERT OR REPLACE INTO proposals VALUES(?,?)")
-      .run(op, JSON.stringify({ volume, revision: revision(), result }));
+      .run(
+        op,
+        JSON.stringify({
+          volume,
+          revision: revision(),
+          result,
+        }),
+      );
     s.db.exec(
       "DELETE FROM proposals WHERE rowid NOT IN (SELECT rowid FROM proposals ORDER BY rowid DESC LIMIT 10000)",
     );
     return result;
+  }
+  // An interrupted cycle must not propose again what the hub already accepted.
+  recordAccepted(result, volume, name, key) {
+    const row = result?.row;
+    if (result?.conflict || row?.path !== name || entryKey(row) !== key) return;
+    this.store.setFile({ ...row, volume });
+  }
+  // A proposal whose lost reply the device never saw must not conflict with that device's own edits.
+  ownProposalAtBase(volume, name, old, base, device) {
+    return (
+      device.role === "replica" &&
+      old?.path === name &&
+      !old.directory &&
+      base < old.rev &&
+      !(this.store.caseAlias(volume, name)?.rev > base) &&
+      this.store.db
+        .prepare(
+          "SELECT 1 FROM accepted_proposals WHERE revision=? AND volume=? AND device=? AND base=? LIMIT 1",
+        )
+        .get(old.rev, volume, device.id, base)
+    );
   }
   cycle(options = {}) {
     return this.requestContext.run(new AbortController(), () =>
@@ -508,7 +671,7 @@ export class Engine {
       this.setPaused(false);
     }
     if (this.paused) {
-      await this.reportMachine();
+      if (!this.hubUnavailable) await this.reportMachine();
       return;
     }
     if (this.config.role === "hub" && !this.store.volumes().length) {
@@ -530,10 +693,18 @@ export class Engine {
       }
       const s = this.store;
       const folderErrors = [];
+      if (this.config.role === "replica")
+        for (const v of s.volumes().filter((v) => v.selected))
+          try {
+            s.recover(v.id);
+          } catch {
+            /* The folder pass below reports recovery failures. */
+          }
       if (this.config.role === "hub")
         await this.scanHub(undefined, { incremental });
       else if (this.config.hub) {
         const catalog = await this.json("/v1/catalog");
+        this.hubListsRetained = catalog.retainedRevisions === true;
         this.hubUnavailable = false;
         this.error = null;
         if (
@@ -564,9 +735,7 @@ export class Engine {
         }));
         this.store.saveConfig();
         if (this.config.role === "backup")
-          for (const v of catalog.volumes)
-            if (!s.volumes().some((local) => local.id === v.id))
-              s.addVolume(v.name, null, v.id);
+          for (const v of catalog.volumes) this.registerBackupVolume(v);
         for (const remote of catalog.volumes)
           s.db
             .prepare("UPDATE volumes SET name=? WHERE id=?")
@@ -580,9 +749,10 @@ export class Engine {
             }
           }
         }
+        // A backup engine never scans or proposes, whatever an older layout left selected.
         for (const v of s
           .volumes()
-          .filter((v) => v.selected && activeIds.has(v.id))) {
+          .filter((v) => this.config.role !== "backup" && v.selected && activeIds.has(v.id))) {
           try {
             this.folderStates.set(v.id, {
               state: "syncing",
@@ -595,123 +765,134 @@ export class Engine {
                 catalog.volumes.find((row) => row.id === v.id)?.policyError,
                 409,
               );
-            if (this.config.role !== "backup") await this.syncIgnore(v);
+            await this.syncIgnore(v);
             const policy = digest(readIgnore(v.path));
             if (this.work.state(v.id).policy !== policy) {
               this.work.mark(v.id);
               this.work.cursor(v.id, 0);
             }
-            const plan = this.work.plan(
-              v,
-              incremental && this.config.role !== "backup",
-            );
+            const plan = this.work.plan(v, incremental);
             const disk =
               plan.paths?.length === 0
                 ? new Map()
                 : await this.scanner.scan(v, plan.paths);
-            if (this.config.role !== "backup") {
-              const known = new Map(
-                s.rowsInScope(v.id, plan.paths).map((r) => [r.path, r]),
-              );
-              const diskNames = new Set(
-                [...disk.keys()].map((name) => name.toLowerCase()),
-              );
-              const changed = [...disk]
-                .sort(([a], [b]) =>
-                  a === IGNORE_FILE ? -1 : b === IGNORE_FILE ? 1 : 0,
-                )
-                .filter(([name, item]) => {
-                  const old = known.get(name);
-                  return (
-                    !old || old.deleted || entryKey(old) !== entryKey(item)
-                  );
-                });
-              Object.assign(this.progress, {
-                stage: "upload",
-                filesDone: 0,
-                filesTotal: changed.length,
+            const known = new Map(
+              s.rowsInScope(v.id, plan.paths).map((r) => [r.path, r]),
+            );
+            const diskNames = new Set(
+              [...disk.keys()].map((name) => name.toLowerCase()),
+            );
+            const changed = [...disk]
+              .sort(([a], [b]) =>
+                a === IGNORE_FILE ? -1 : b === IGNORE_FILE ? 1 : 0,
+              )
+              .filter(([name, item]) => {
+                const old = known.get(name);
+                return (
+                  !old || old.deleted || entryKey(old) !== entryKey(item)
+                );
               });
-              for (const row of [...known.values()].sort((a, b) =>
-                b.path.localeCompare(a.path),
-              ))
-                if (
-                  !row.deleted &&
-                  covers(plan.paths, row.path) &&
-                  !s.excluded(v.id, row.path, row.directory) &&
-                  !disk.has(row.path) &&
-                  !diskNames.has(row.path.toLowerCase())
-                )
+            Object.assign(this.progress, {
+              stage: "upload",
+              filesDone: 0,
+              filesTotal: changed.length,
+            });
+            for (const row of [...known.values()].sort((a, b) =>
+              b.path.localeCompare(a.path),
+            ))
+              if (
+                !row.deleted &&
+                covers(plan.paths, row.path) &&
+                !s.excluded(v.id, row.path, row.directory) &&
+                !disk.has(row.path) &&
+                !diskNames.has(row.path.toLowerCase())
+              )
+                this.recordAccepted(
                   await this.json("/v1/propose", {
                     volume: v.id,
                     path: row.path,
                     base: row.rev,
                     hash: null,
-                  });
-              for (let cursor = 0; cursor < changed.length;) {
-                this.checkSyncInterrupted();
-                // Keep policy, directories and empty files ordered. Only stage file bytes concurrently.
-                const batch = [changed[cursor++]];
-                const parallel = ([name, item]) =>
-                  name !== IGNORE_FILE && item.hash && item.size > 0;
-                if (parallel(batch[0]))
-                  while (
-                    batch.length < 3 &&
-                    cursor < changed.length &&
-                    parallel(changed[cursor])
-                  )
-                    batch.push(changed[cursor++]);
-                const pending = batch.filter(([name, item]) => {
-                  if (s.excluded(v.id, name, item.directory)) return false;
-                  const old = s.pathHead(v.id, name);
-                  return (
-                    !old ||
-                    old.path !== name ||
-                    old.deleted ||
-                    entryKey(old) !== entryKey(item)
-                  );
-                });
-                const uploads = new Map();
-                for (const [name, item] of pending)
-                  if (item.hash && !uploads.has(item.hash))
-                    uploads.set(item.hash, { name, size: item.size, done: 0 });
-                const update = () => {
-                  Object.assign(this.progress, {
-                    direction: "upload",
-                    path: pending.length === 1 ? pending[0][0] : null,
-                    bytesDone: [...uploads.values()].reduce(
-                      (sum, item) => sum + item.done,
-                      0,
-                    ),
-                    bytesTotal: [...uploads.values()].reduce(
-                      (sum, item) => sum + item.size,
-                      0,
-                    ),
-                  });
-                };
-                update();
-                const results = await Promise.allSettled(
-                  [...uploads].map(([hash, item]) =>
-                    this.upload(hash, (done) => {
-                      item.done = done;
-                      update();
-                    }),
+                  }),
+                  v.id,
+                  row.path,
+                  null,
+                );
+            for (let cursor = 0; cursor < changed.length;) {
+              this.checkSyncInterrupted();
+              // Keep policy, directories and empty files ordered. Only stage file bytes concurrently.
+              const batch = [changed[cursor++]];
+              const parallel = ([name, item]) =>
+                name !== IGNORE_FILE && item.hash && item.size > 0;
+              if (parallel(batch[0]))
+                while (
+                  batch.length < 3 &&
+                  cursor < changed.length &&
+                  parallel(changed[cursor])
+                )
+                  batch.push(changed[cursor++]);
+              const pending = batch.filter(([name, item]) => {
+                if (s.excluded(v.id, name, item.directory)) return false;
+                const old = s.pathHead(v.id, name);
+                return (
+                  !old ||
+                  old.path !== name ||
+                  old.deleted ||
+                  entryKey(old) !== entryKey(item)
+                );
+              });
+              const uploads = new Map();
+              for (const [name, item] of pending)
+                if (item.hash && !uploads.has(item.hash))
+                  uploads.set(item.hash, { name, size: item.size, done: 0 });
+              const update = () => {
+                Object.assign(this.progress, {
+                  direction: "upload",
+                  path: pending.length === 1 ? pending[0][0] : null,
+                  bytesDone: [...uploads.values()].reduce(
+                    (sum, item) => sum + item.done,
+                    0,
                   ),
-                );
-                const failed = results.find(
-                  (result) => result.status === "rejected",
-                );
-                if (failed) throw failed.reason;
-                for (const [name, item] of pending) {
-                  this.checkSyncInterrupted();
-                  const old = s.pathHead(v.id, name);
+                  bytesTotal: [...uploads.values()].reduce(
+                    (sum, item) => sum + item.size,
+                    0,
+                  ),
+                });
+              };
+              update();
+              const results = await Promise.allSettled(
+                [...uploads].map(([hash, item]) =>
+                  this.upload(hash, (done) => {
+                    item.done = done;
+                    update();
+                  }),
+                ),
+              );
+              const failed = results.find(
+                (result) => result.status === "rejected",
+              );
+              if (failed) throw failed.reason;
+              for (const [name, item] of pending) {
+                this.checkSyncInterrupted();
+                const old = s.pathHead(v.id, name);
+                const modified =
+                  item.hash && mediaKind(name)
+                    ? fileDate(s.filePath(v, name))
+                    : null;
+                if (modified) s.rememberFileDate(item.hash, modified);
+                this.recordAccepted(
                   await this.json("/v1/propose", {
                     volume: v.id,
                     path: name,
                     base: old?.rev ?? 0,
                     ...item,
-                  });
-                  this.progress.filesDone++;
-                }
+                    ...(modified && { modified }),
+                  }),
+                  v.id,
+                  name,
+                  entryKey(item),
+                );
+                this.progress.filesDone++;
               }
             }
             Object.assign(this.progress, {
@@ -723,138 +904,146 @@ export class Engine {
               bytesTotal: 0,
             });
             this.checkSyncInterrupted();
-            const useChanges = incremental && this.config.role !== "backup";
+            const useChanges = incremental;
             let cursor = plan.full ? 0 : this.work.state(v.id).cursor;
             let through;
             const directoryDeletes = [];
             const deferredFiles = [];
+            const written = new Set();
             let page,
               session,
               after = "";
-            do {
-              try {
-                page = await this.json(
-                  useChanges
-                    ? `/v1/changes?volume=${encodeURIComponent(v.id)}&after=${cursor}${through === undefined ? "" : `&through=${through}`}`
-                    : `/v1/snapshot?volume=${encodeURIComponent(v.id)}&limit=500${session ? `&session=${encodeURIComponent(session)}&after=${encodeURIComponent(after)}` : ""}`,
-                );
-              } catch (e) {
-                if (useChanges && /409/.test(e.message)) {
-                  this.work.cursor(v.id, 0);
-                  this.work.mark(v.id);
+            try {
+              do {
+                try {
+                  page = await this.json(
+                    useChanges
+                      ? `/v1/changes?volume=${encodeURIComponent(v.id)}&after=${cursor}${through === undefined ? "" : `&through=${through}`}`
+                      : `/v1/snapshot?volume=${encodeURIComponent(v.id)}&limit=500${session ? `&session=${encodeURIComponent(session)}&after=${encodeURIComponent(after)}` : ""}`,
+                  );
+                } catch (e) {
+                  if (useChanges && /409/.test(e.message)) {
+                    this.work.cursor(v.id, 0);
+                    this.work.mark(v.id);
+                  }
+                  throw e;
                 }
-                throw e;
-              }
-              if (useChanges) {
-                through = page.through;
-                cursor = page.next ?? through;
-              }
-              if (page.files.length) this.activity++;
-              // A missed local event must never let a remote change overwrite an
-              // unsubmitted edit. Inspect only incoming paths outside this scan.
-              if (plan.paths !== null) {
-                const paths = page.files
-                  .filter(
-                    (r) =>
-                      !s.excluded(v.id, r.path) && !covers(plan.paths, r.path),
-                  )
-                  .map((r) => r.path);
-                const incomingDisk = paths.length
-                  ? await this.scanner.scan(v, paths)
-                  : new Map();
-                for (const name of paths) {
-                  const local = incomingDisk.get(name),
-                    known = s.current(v.id, name);
-                  if (entryKey(local) !== entryKey(known)) {
-                    this.work.mark(v.id, name);
+                session = page.session;
+                if (useChanges) {
+                  through = page.through;
+                  cursor = page.next ?? through;
+                }
+                if (page.files.length) this.activity++;
+                // A missed local event must never let a remote change overwrite an unsubmitted edit.
+                if (plan.paths !== null) {
+                  const paths = page.files
+                    .filter(
+                      (r) =>
+                        !s.excluded(v.id, r.path) && !covers(plan.paths, r.path),
+                    )
+                    .map((r) => r.path);
+                  const incomingDisk = paths.length
+                    ? await this.scanner.scan(v, paths)
+                    : new Map();
+                  for (const name of paths) {
+                    const local = incomingDisk.get(name),
+                      known = s.current(v.id, name);
+                    if (entryKey(local) !== entryKey(known)) {
+                      this.work.mark(v.id, name);
+                      throw Object.assign(
+                        new Error("Local edits need synchronization"),
+                        { syncInterrupted: true },
+                      );
+                    }
+                    if (local) disk.set(name, local);
+                  }
+                }
+                this.progress.filesTotal = page.total ?? null;
+                after = page.next;
+                for (const row of page.files) {
+                  this.checkSyncInterrupted();
+                  if (
+                    useChanges &&
+                    row.path === IGNORE_FILE &&
+                    !row.deleted &&
+                    row.hash !== digest(readIgnore(v.path))
+                  ) {
+                    this.work.mark(v.id);
                     throw Object.assign(
-                      new Error("Local edits need synchronization"),
+                      new Error("Exclusions changed during synchronization"),
                       { syncInterrupted: true },
                     );
                   }
-                  if (local) disk.set(name, local);
-                }
-              }
-              this.progress.filesTotal = page.total ?? null;
-              session = page.session;
-              after = page.next;
-              for (const row of page.files) {
-                this.checkSyncInterrupted();
-                if (
-                  useChanges &&
-                  row.path === IGNORE_FILE &&
-                  !row.deleted &&
-                  row.hash !== digest(readIgnore(v.path))
-                ) {
-                  this.work.mark(v.id);
-                  throw Object.assign(
-                    new Error("Exclusions changed during synchronization"),
-                    { syncInterrupted: true },
-                  );
-                }
-                if (
-                  this.config.role !== "backup" &&
-                  s.excluded(v.id, row.path, row.directory)
-                ) {
-                  this.progress.filesDone++;
-                  continue;
-                }
-                this.progress.path = row.path;
-                Object.assign(this.progress, {
-                  direction: "download",
-                  bytesDone: 0,
-                  bytesTotal: 0,
-                });
-                const local = disk.get(row.path);
-                if (row.hash && !row.deleted)
-                  await this.download(row.hash, row.size);
-                if (row.directory && row.deleted) {
-                  directoryDeletes.push(row);
-                  continue;
-                }
-                const target = path.join(v.path, row.path);
-                if (
-                  !row.deleted &&
-                  !row.directory &&
-                  fs.existsSync(target) &&
-                  fs.lstatSync(target).isDirectory()
-                ) {
-                  deferredFiles.push(row);
-                  continue;
-                }
-                this.checkSyncInterrupted();
-                if (
-                  (row.deleted && !local) ||
-                  (!row.deleted && entryKey(local) === entryKey(row))
-                ) {
-                  const indexed = s.current(v.id, row.path);
+                  if (s.excluded(v.id, row.path, row.directory)) {
+                    this.progress.filesDone++;
+                    continue;
+                  }
+                  this.progress.path = row.path;
+                  Object.assign(this.progress, {
+                    direction: "download",
+                    bytesDone: 0,
+                    bytesTotal: 0,
+                  });
+                  const local = disk.get(row.path);
+                  if (row.modified && !row.deleted)
+                    s.rememberFileDate(row.hash, row.modified);
+                  const current =
+                    (row.deleted && !local) ||
+                    (!row.deleted && entryKey(local) === entryKey(row));
+                  if (row.hash && !row.deleted && !current)
+                    await this.download(row.hash, row.size);
+                  if (row.directory && row.deleted) {
+                    directoryDeletes.push(row);
+                    continue;
+                  }
+                  const target = path.join(v.path, row.path);
                   if (
-                    !indexed ||
-                    indexed.rev !== row.rev ||
-                    indexed.hash !== row.hash ||
-                    indexed.deleted !== row.deleted ||
-                    indexed.size !== row.size ||
-                    indexed.directory !== row.directory
-                  )
-                    s.setFile(row);
-                } else {
-                  s.queue(row, local?.hash);
-                  s.materialize(row, local?.hash);
+                    !row.deleted &&
+                    !row.directory &&
+                    fs.existsSync(target) &&
+                    fs.lstatSync(target).isDirectory()
+                  ) {
+                    deferredFiles.push(row);
+                    continue;
+                  }
+                  this.checkSyncInterrupted();
+                  if (current) {
+                    const indexed = s.current(v.id, row.path);
+                    if (
+                      !indexed ||
+                      indexed.rev !== row.rev ||
+                      indexed.hash !== row.hash ||
+                      indexed.deleted !== row.deleted ||
+                      indexed.size !== row.size ||
+                      indexed.directory !== row.directory
+                    )
+                      s.setFile(row);
+                  } else {
+                    s.queue(row, local?.hash);
+                    s.materialize(row, local?.hash);
+                    if (row.hash && !row.deleted) written.add(row.hash);
+                  }
+                  this.progress.filesDone++;
                 }
-                this.progress.filesDone++;
+                // Identical files in one page share a single download.
+                for (const hash of written)
+                  if (!deferredFiles.some((row) => row.hash === hash))
+                    s.releaseObject(hash);
+                written.clear();
+              } while (after);
+              for (const row of directoryDeletes.sort((a, b) =>
+                b.path.localeCompare(a.path),
+              )) {
+                s.queue(row);
+                s.materialize(row);
               }
-            } while (after);
-            for (const row of directoryDeletes.sort((a, b) =>
-              b.path.localeCompare(a.path),
-            )) {
-              s.queue(row);
-              s.materialize(row);
+              for (const row of deferredFiles) {
+                s.queue(row);
+                s.materialize(row);
+              }
+            } finally {
+              if (session) await this.releaseSnapshot(session);
             }
-            for (const row of deferredFiles) {
-              s.queue(row);
-              s.materialize(row);
-            }
-            if (session) await this.json("/v1/snapshot-release", { session });
             if (useChanges) this.work.cursor(v.id, through);
             this.work.complete(v, plan);
             s.db
@@ -885,8 +1074,6 @@ export class Engine {
             folderErrors.push(`${v.name}: ${e.message}`);
           }
         }
-        if (this.config.role === "backup" && folderErrors.length)
-          fail(folderErrors.join("; "), 409);
         if (this.config.role === "backup") {
           let after = s.db
               .prepare("SELECT COALESCE(MAX(rev),0) AS n FROM backup_history")
@@ -898,10 +1085,12 @@ export class Engine {
               `/v1/archive?limit=500&after=${after}${through !== undefined ? `&through=${through}` : ""}`,
             );
             through = page.through;
-            for (const v of page.volumes || [])
-              if (!s.volumes().some((local) => local.id === v.id))
-                s.addVolume(v.name, null, v.id);
+            for (const v of page.volumes || []) this.registerBackupVolume(v);
             for (const row of page.revisions) {
+              this.progress = {
+                stage: "history",
+                filesDone: (this.progress?.stage === "history" ? this.progress.filesDone : 0) + 1,
+              };
               if (row.hash) await this.download(row.hash, row.size);
               s.db
                 .prepare("INSERT OR REPLACE INTO backup_history VALUES(?,?)")
@@ -914,11 +1103,14 @@ export class Engine {
               enabled: true,
               revision: through,
             });
+          await this.pruneBackup(new Set((page.volumes || []).map((v) => v.id)));
         }
       }
       if (this.config.role === "replica" && this.config.backup?.enabled) {
+        let backup;
         try {
-          const backup = this.openBackup();
+          backup = this.openBackup();
+          this.backupRunning = true;
           await backup.cycle();
           this.config.backup.lastSync = backup.lastSync;
           this.config.backup.revisions = backup.status().backupRevisions;
@@ -940,9 +1132,14 @@ export class Engine {
           );
           this.store.saveConfig();
           this.backupError = null;
+          this.backupWaiting = false;
         } catch (e) {
           if (this.syncAbort.signal.aborted) throw this.syncAbort.signal.reason;
-          this.backupError = e.message;
+          const offline = Boolean(e.hubUnavailable || backup?.hubUnavailable);
+          this.backupWaiting = offline;
+          this.backupError = offline ? null : e.message;
+        } finally {
+          this.backupRunning = false;
         }
       }
       if (folderErrors.length) {
@@ -983,17 +1180,93 @@ export class Engine {
         if (["syncing", "scanning"].includes(state.state))
           this.folderStates.set(id, { state: "pending", lastCompleted: state.lastCompleted });
       }
+      try {
+        await releaseReplicaObjects(this.store);
+      } catch {
+        /* A locked or vanished object is retried after the next cycle. */
+      }
       if (!this.syncAbort.signal.aborted && !this.hubUnavailable)
         await this.reportMachine();
       this.syncAbort = null;
     }
   }
-  async reportMachine(force = false) {
+  registerBackupVolume(v) {
+    this.store.db
+      .prepare(
+        "INSERT OR IGNORE INTO volumes(id,name,path,selected) VALUES(?,?,?,0)",
+      )
+      .run(v.id, v.name, path.join(this.config.root, v.id));
+  }
+  // Mirrors the hub's retention: drop what the hub pruned, but keep deleted shares and never empty a folder.
+  async pruneBackup(listed) {
+    if (!this.hubListsRetained || Date.now() - (this.prunedAt || 0) < 6 * 3600000)
+      return;
+    this.prunedAt = Date.now();
+    const s = this.store;
+    const retained = new Set();
+    let after = 0;
+    do {
+      const page = await this.json(`/v1/archive?retained=1&after=${after}`);
+      if (!Array.isArray(page.revs)) return;
+      for (const rev of page.revs) retained.add(rev);
+      after = page.next;
+    } while (after);
+    const rows = s.db
+      .prepare("SELECT rev,row FROM backup_history")
+      .all()
+      .map((r) => ({ rev: r.rev, volume: JSON.parse(r.row).volume }));
+    const covered = new Set(
+      rows.filter((r) => retained.has(r.rev)).map((r) => r.volume),
+    );
+    const remove = rows.filter(
+      (r) => listed.has(r.volume) && covered.has(r.volume) && !retained.has(r.rev),
+    );
+    if (remove.length) {
+      s.db.exec("BEGIN IMMEDIATE");
+      try {
+        const drop = s.db.prepare("DELETE FROM backup_history WHERE rev=?");
+        for (const r of remove) drop.run(r.rev);
+        s.db.exec("COMMIT");
+      } catch (e) {
+        s.db.exec("ROLLBACK");
+        throw e;
+      }
+    }
+    const keep = new Set();
+    for (const r of s.db.prepare("SELECT row FROM backup_history").all()) {
+      const hash = JSON.parse(r.row).hash;
+      if (hash) keep.add(hash);
+    }
+    for (const name of await fs.promises.readdir(s.objects))
+      if (/^[a-f0-9]{64}$/.test(name) && !keep.has(name))
+        await fs.promises.rm(path.join(s.objects, name), { force: true }).catch(() => {});
+  }
+  backupProgress() {
+    const progress = this.backupRunning && this.backupEngine?.progress;
+    return progress?.stage === "history"
+      ? { revisions: progress.filesDone ?? 0 }
+      : null;
+  }
+  releaseSnapshot(session) {
+    // Leave the interrupted cycle's context so the release is not cancelled with it.
+    return this.requestContext.exit(() =>
+      this.request("/v1/snapshot-release", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session }),
+        signal: AbortSignal.timeout(3000),
+        trackConnection: false,
+      })
+        .then((response) => response.body?.cancel())
+        .catch(() => {}),
+    );
+  }
+  async reportMachine(force = false, signal = AbortSignal.timeout(10000)) {
     if (this.config.role === "hub" || !this.config.hub) return;
     if (!force && this.lastReport && Date.now() - this.lastReport < 15000)
       return;
     try {
-      await this.json("/v1/machine-report", machineReport(this));
+      await this.json("/v1/machine-report", machineReport(this), { signal });
       this.lastReport = Date.now();
     } catch {
       // A failed presence report must not prevent durable file synchronization.
@@ -1072,6 +1345,8 @@ export class Engine {
         409,
       );
     this.store.recover();
+    // A hub serves content from its object store, which a replica only fills for transfers.
+    this.store.db.exec("DELETE FROM scan_cache");
     const scans = [];
     for (const v of this.store.volumes().filter((v) => v.selected))
       scans.push([v, await this.scanner.scan(v)]);
@@ -1095,7 +1370,7 @@ export class Engine {
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec(
-        "DELETE FROM files; DELETE FROM revisions; DELETE FROM pending; DELETE FROM proposals; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
+        "DELETE FROM files; DELETE FROM revisions; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
       );
       const add = db.prepare(
         "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,0,?,?,?)",
@@ -1147,7 +1422,7 @@ export class Engine {
       this.config.backup = { ...this.config.backup, enabled: false };
       this.store.saveConfig();
       try {
-        await this.json("/v1/backup-ack", { enabled: false, revision: 0 });
+        await this.hubAction("/v1/backup-ack", { enabled: false, revision: 0 });
         this.backupError = null;
       } catch (e) {
         this.backupError =
@@ -1177,14 +1452,31 @@ export class Engine {
           "Backup location must be outside synchronized folders and daemon state",
           409,
         );
-    if (!this.config.backup?.path) {
-      if (fs.existsSync(destination))
-        fail("Choose a new dedicated backup directory", 409);
-      const state = path.join(destination, "state");
+    requirePersistentBackup(destination);
+    const state = path.join(destination, "state");
+    const configured = Boolean(this.config.backup?.path);
+    if (!configured || !fs.existsSync(path.join(state, "config.json"))) {
+      if (fs.existsSync(destination)) {
+        if (
+          !fs.statSync(destination).isDirectory() ||
+          fs.readdirSync(destination).length
+        )
+          fail(
+            configured
+              ? `Backup data is missing from ${destination}, and the folder is not empty.`
+              : "Choose a new dedicated backup directory",
+            409,
+          );
+      } else if (configured)
+        fail(
+          `Backup location ${destination} is unavailable. Reconnect it and retry.`,
+          409,
+        );
+      this.requireBackupDisk(destination);
       init(state, {
         role: "backup",
         name: `${this.config.name} backup`,
-        root: path.join(destination, "files"),
+        root: path.join(state, "files"),
         port: 0,
       });
       const child = new Store(state);
@@ -1196,14 +1488,41 @@ export class Engine {
       ...this.config.backup,
       path: destination,
       enabled: true,
+      device: String(fs.statSync(destination).dev),
     };
     this.store.saveConfig();
-    await this.json("/v1/backup-ack", { enabled: true, revision: 0 });
+    try {
+      await this.hubAction("/v1/backup-ack", { enabled: true, revision: 0 });
+      this.backupError = null;
+    } catch (e) {
+      if (!e.hubUnavailable && e.status !== 503) throw e;
+      this.backupError = "Backup enabled; waiting for the hub to acknowledge";
+    }
     return this.status().backup;
+  }
+  // An unmounted Linux disk leaves an empty mount point on the system disk; never start a backup there.
+  requireBackupDisk(location) {
+    const device = this.config.backup?.device;
+    if (device && fs.existsSync(location) && String(fs.statSync(location).dev) !== device)
+      fail(
+        `The backup disk for ${location} is not mounted. Mount it and retry.`,
+        409,
+      );
   }
   openBackup() {
     if (this.backupEngine) return this.backupEngine;
+    requirePersistentBackup(this.config.backup.path);
+    this.requireBackupDisk(this.config.backup.path);
     const home = path.join(this.config.backup.path, "state");
+    if (!fs.existsSync(path.join(home, "config.json")))
+      fail(
+        `Backup data is missing from ${this.config.backup.path}. Disable and enable backup to start a new one there.`,
+        409,
+      );
+    if (!this.config.backup.device) {
+      this.config.backup.device = String(fs.statSync(this.config.backup.path).dev);
+      this.store.saveConfig();
+    }
     const lock = path.join(home, "daemon.lock");
     if (fs.existsSync(lock)) {
       const pid = Number(fs.readFileSync(lock, "utf8"));
@@ -1555,12 +1874,12 @@ export class Engine {
     this.folderStates.clear();
     return { disconnected: true, filesRetained: true };
   }
-  async select(id, location) {
+  async select(id, location, volumes = null) {
     const s = this.store;
-    const volumes =
+    volumes ??=
       this.config.role === "hub"
         ? s.volumes()
-        : (await this.json("/v1/catalog")).volumes;
+        : (await this.hubAction("/v1/catalog")).volumes;
     const v = volumes.find((v) => v.id === id);
     if (!v) fail("Unknown remote volume", 404);
     const existing = s.volumes().find((v) => v.id === id);
@@ -1592,7 +1911,7 @@ export class Engine {
     this.lastReport = null;
     return local;
   }
-  async renameFile(volume, name, newName, rev, replacement = null) {
+  async renameFile(volume, name, newName, rev) {
     name = validPath(name);
     let destination;
     try {
@@ -1603,7 +1922,6 @@ export class Engine {
     validPath(destination);
     const s = this.store,
       v = s.volume(volume);
-    if (this.config.role === "backup") fail("Backup is read-only", 403);
     if (this.config.role !== "hub" && !v.selected)
       fail("Select this folder first", 403);
     if (this.config.role === "hub")
@@ -1625,6 +1943,8 @@ export class Engine {
     if (v.selected) {
       const file = s.filePath(v, name);
       const target = s.filePath(v, destination);
+      if (!fs.lstatSync(file, { throwIfNoEntry: false }))
+        fail(MISSING_LOCAL, 409);
       const siblings = fs.readdirSync(path.dirname(file));
       if (
         siblings.some(
@@ -1650,17 +1970,11 @@ export class Engine {
         return { path: destination };
       }
     }
-    return s.renameFile(
-      current,
-      destination,
-      this.config.id,
-      replacement || current,
-    );
+    return s.renameFile(current, destination, this.config.id);
   }
   async deleteFile(volume, name, rev) {
     validPath(name);
     const v = this.store.volume(volume);
-    if (this.config.role === "backup") fail("Backup is read-only", 403);
     if (this.config.role !== "hub" && !v.selected)
       fail("Select this folder first", 403);
     if (this.store.excluded(volume, name))
@@ -1682,15 +1996,28 @@ export class Engine {
         current.hash,
       );
     const file = this.store.filePath(v, name);
-    if (!fs.lstatSync(file).isFile() || hashFile(file) !== current.hash)
+    const local = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (!local) fail(MISSING_LOCAL, 409);
+    if (!local.isFile() || hashFile(file) !== current.hash)
       fail("Local file changed. Sync before deleting.", 409);
     fs.unlinkSync(file);
     this.work.mark(volume, name);
     return { deleted: true };
   }
+  async chooseConflict(choice) {
+    if (this.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
+    const signal = AbortSignal.timeout(25000);
+    // The hub accepts a choice only for folders listed in this machine's latest report.
+    await this.reportMachine(true, signal);
+    return this.json("/v1/conflict-choice", choice, { signal });
+  }
   async restore(volume, name, rev) {
     if (this.config.role !== "hub")
-      return this.json("/v1/restore", { volume, path: name, rev });
+      return this.hubAction(
+        "/v1/restore",
+        { volume, path: name, rev },
+        25000,
+      );
     await this.scanHub(volume, { paths: [name, IGNORE_FILE] });
     const version = this.store
       .history(volume, name)

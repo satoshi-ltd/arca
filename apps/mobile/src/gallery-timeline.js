@@ -21,8 +21,6 @@ export function mergeTimeline({ index = [], entries = [], uploads = [] }) {
         path: row.path,
         hash: row.hash,
         rev: row.rev,
-        sourcePath: row.sourcePath,
-        sourceHash: row.sourceHash,
         size: row.size,
         date: row.date,
         kind,

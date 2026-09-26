@@ -83,7 +83,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.5.6";
+const APP_VERSION = "0.6.0";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -240,39 +240,68 @@ const section = (name, body) =>
   `<section><div class="section-label">${name}</div>${body}</section>`;
 const setting = (name, description, control = "", leading = "") =>
   `<div class="setting-row">${leading}<div class="row-main"><strong>${name}</strong><p>${description}</p></div>${control}</div>`;
+const unboundedRequests = new Set([
+  "/v1/unselect",
+  "/v1/move-folder",
+  "/v1/promote",
+  "/v1/destroy-replica",
+  "/v1/destroy-hub",
+]);
+function browserTimeout(route, body) {
+  if (body !== undefined) return unboundedRequests.has(route) ? 0 : 30000;
+  if (route.startsWith("/v1/events")) return 25000;
+  return /^\/v1\/(gallery\/|discovery)/.test(route) ? 65000 : 20000;
+}
+function transportError(body) {
+  return Object.assign(
+    new Error(
+      body === undefined
+        ? "Cannot reach this machine. Check your connection and retry."
+        : "Connection interrupted. The result is unknown. Refresh before trying again.",
+    ),
+    { transportError: true, readOnly: body === undefined },
+  );
+}
 async function browserRequest(route, body) {
-  let response;
+  const limit = browserTimeout(route, body);
+  let response, data, unreadable;
   for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timer = limit ? setTimeout(() => controller.abort(), limit) : null;
     try {
       response = await fetch(route, {
         method: body === undefined ? "GET" : "POST",
         credentials: "same-origin",
+        signal: controller.signal,
         headers:
           body === undefined ? {} : { "Content-Type": "application/json" },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
+      try {
+        data = await response.json();
+        unreadable = false;
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        unreadable = true;
+      }
       break;
     } catch {
-      if (body === undefined && attempt === 0) {
+      if (body === undefined && attempt === 0 && !controller.signal.aborted) {
         await new Promise((resolve) => setTimeout(resolve, 300));
         continue;
       }
-      throw Object.assign(
-        new Error(
-          body === undefined
-            ? "Cannot reach this machine. Check your connection and retry."
-            : "Connection interrupted. The result is unknown. Refresh before trying again.",
-        ),
-        { transportError: true, readOnly: body === undefined },
-      );
+      throw transportError(body);
+    } finally {
+      clearTimeout(timer);
     }
   }
-  let data;
-  try {
-    data = await response.json();
-  } catch {
+  if (
+    [502, 503, 504].includes(response.status) &&
+    (unreadable || body === undefined)
+  )
+    throw transportError(body);
+  if (unreadable)
     throw new Error("The server returned an unreadable response. Try again.");
-  }
   if (!response.ok)
     throw Object.assign(new Error(data.error || "Request failed"), {
       status: response.status,
@@ -296,7 +325,7 @@ function updateBrandActivity() {
   if (!mark) return;
   const active = activeRequests > 0 || busy ||
     document.body.classList.contains("view-loading") ||
-    (!status?.hubUnavailable && ["syncing", "scanning"].includes(status?.phase));
+    (!daemonStopped && !status?.hubUnavailable && ["syncing", "scanning"].includes(status?.phase));
   const paint = (visible) => {
     if (!mark.isConnected) return;
     mark.classList.toggle("is-busy", visible);
@@ -374,6 +403,8 @@ let status,
   detailId = null,
   busy = false,
   ready = false,
+  daemonStopped = false,
+  daemonProbe = null,
   discovered = null,
   network = null,
   roster = null,
@@ -393,6 +424,7 @@ let status,
   historyRows = [],
   historyNext = null,
   historyVersions = [],
+  fileRevision = null,
   submitDialog,
   renderSerial = 0,
   lastSignature = "",
@@ -644,6 +676,7 @@ async function performAction(work, exclusive, track = true) {
       return;
     }
     const message = e?.message || String(e);
+    if (daemonUnavailable(e)) showDaemonStopped();
     if ($("#dialog").open) {
       $("#dialog-error").innerHTML = noticeMarkup({
         ...errorNotice(message),
@@ -651,7 +684,7 @@ async function performAction(work, exclusive, track = true) {
         action: null,
       });
       $("#dialog-error").hidden = false;
-    } else {
+    } else if (!daemonUnavailable(e)) {
       notice(message, true, {
         id: e.transportError && e.readOnly ? "connection" : "action",
         action: e.transportError && e.readOnly ? "refresh" : null,
@@ -726,7 +759,9 @@ function updateShell() {
     "needs-folder": ["No shared folders", "id", "folder"],
   };
   const conflicts = status.volumes.reduce((n, v) => n + v.conflicts, 0);
-  const [label, color, symbol] = (status.hubUnavailable && status.phase !== "paused"
+  const [label, color, symbol] = (daemonStopped
+    ? ["Service stopped", "er", "power"]
+    : status.hubUnavailable && status.phase !== "paused"
     ? ["Offline", "wa", "wifi-off"]
     : status.phase === "idle" && conflicts
     ? ["Conflicts to review", "wa", "triangle-alert"]
@@ -746,7 +781,7 @@ function updateShell() {
   const reported = hubBackups.filter(device => device.backup_updated).length;
   const backupLabel = status.role === "hub"
     ? reported ? `${reported} ${reported === 1 ? "backup" : "backups"} reported` : hubBackups.length ? "Backup pending" : "No backup reported"
-    : status.backup?.enabled ? status.backup.error ? "Full backup needs attention" : status.backup.lastSync ? "Full backup enabled" : "Full backup pending" : "Full backup off";
+    : status.backup?.enabled ? status.backup.progress ? "Backing up…" : status.backup.waiting ? "Full backup waiting for hub" : status.backup.error ? "Full backup needs attention" : status.backup.lastSync ? "Full backup enabled" : "Full backup pending" : "Full backup off";
   backup.hidden = status.role !== "hub" && !status.hub;
   backup.dataset.action = status.role === "hub" ? "machines" : "backup-settings";
   backup.innerHTML = icon(status.role === "hub" ? reported ? "shield-check" : "shield" : status.backup?.enabled ? "shield-check" : "shield") + `<span>${backupLabel}</span>`;
@@ -804,6 +839,7 @@ async function refresh(renderView = true) {
   const next = await api("/v1/status");
   if (request !== statusRequestSerial) return lastSignature;
   status = next;
+  if (daemonStopped) daemonRecovered();
   updateBrandActivity();
   if (status.needsSetup || status.onboarding) {
     ready = false;
@@ -979,7 +1015,7 @@ async function changeFolderRetention(mode, control) {
 
 function updateSyncControls() {
   const root = $("#sync-controls");
-  const linked = status.role === "hub" || Boolean(status.hub);
+  const linked = !daemonStopped && (status.role === "hub" || Boolean(status.hub));
   const paused = status.phase === "paused";
   const syncing = !status.hubUnavailable && ["syncing", "scanning"].includes(status.phase);
   const signature = `${linked}:${paused}:${syncing}`;
@@ -1035,7 +1071,9 @@ function folderRow(v, available = false) {
             )
           : "";
   let meta = available
-    ? `${countLabel(v.files || 0, "file")} · ${bytes(v.bytes)}`
+    ? Number.isFinite(v.files)
+      ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`
+      : "Not counted yet"
     : `${countLabel(v.files, "file")} · ${bytes(v.bytes)} · ${escape(v.path || "No visible copy selected")}`;
   if (p) meta = escape(progressLabel(p));
   if (v.sync?.error || v.policyError)
@@ -1103,6 +1141,13 @@ function viewRead(route) {
 }
 let animatedRoute = null;
 let navigationAnimation = null;
+function tokenPixels(token, fallback) {
+  return (
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue(token),
+    ) || fallback
+  );
+}
 function motionDuration(token) {
   return (
     parseFloat(
@@ -1111,8 +1156,10 @@ function motionDuration(token) {
   );
 }
 async function render({ refreshStatus = false } = {}) {
+  if (daemonStopped) return renderDaemonStopped();
   galleryView?.observer?.disconnect();
   galleryView?.moreObserver?.disconnect();
+  galleryView?.newerObserver?.disconnect();
   galleryView?.cleanup?.();
   const loading = ++viewLoadSerial;
   const route = routeURL();
@@ -1399,6 +1446,13 @@ function fileHistoryHeader() {
   return `<div class="detail-head file-detail-head">${button(fileOriginFolder ? "Folder" : "History", fileOriginFolder ? "file-back-folder" : "history-back", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(fileIcon(historyPath))}</div><div><h1>${escape(filename)}</h1></div></div><div class="file-header-actions">${conflictAction}${access}${fileMenu}</div></div></div>`;
 }
 
+function currentFileRev() {
+  const opened =
+    fileRevision?.volume === historyVolume && fileRevision.path === historyPath
+      ? fileRevision.rev
+      : 0;
+  return Math.max(opened, historyVersions[0]?.rev || 0) || undefined;
+}
 function fileHistorySummary() {
   const current = historyVersions[0];
   if (current && !current.created)
@@ -1569,6 +1623,7 @@ let galleryView = null,
 function mountGallery(volume) {
   galleryView?.observer?.disconnect();
   galleryView?.moreObserver?.disconnect();
+  galleryView?.newerObserver?.disconnect();
   galleryView?.cleanup?.();
   const root = $("#photo-gallery");
   if (!root) return;
@@ -1581,6 +1636,10 @@ function mountGallery(volume) {
     next: "",
     loading: false,
     month: "",
+    range: {},
+    previous: null,
+    seek: 0,
+    poll: null,
     queue: [],
     workers: 0,
   });
@@ -1835,7 +1894,7 @@ function mountGallery(volume) {
       tile.className = "photo-thumb";
       tile.photoRatio = state.ratios?.get(item.path);
       tile.dataset.photo = index;
-      tile.title = `${galleryPhotoDate(item)}${item.dateSource === "date added" ? " · Date added to Arca" : ""}`;
+      tile.title = `${galleryPhotoDate(item)}${item.dateSource === "date added" ? " · Date added to Arca" : item.dateSource === "file date" ? " · File date" : ""}`;
       const filename = escape(item.path.split("/").pop());
       tile.innerHTML = `<button type="button" class="photo-open" aria-label="Open ${filename}">${icon(item.kind === "video" ? "play" : "image")}</button>${item.kind === "video" ? `<span class="photo-video-badge" aria-label="Video">${icon("video")}</span>` : ""}<button type="button" class="photo-select" aria-label="Select ${filename}" aria-pressed="${state.selection.has(item.path)}">${icon("check")}</button>`;
       if (item.kind === "video") {
@@ -1858,6 +1917,108 @@ function mountGallery(volume) {
     layoutPhotos();
     icons();
   }
+  function seekMonth(month) {
+    if (state.refreshing) return;
+    clearTimeout(state.poll);
+    state.poll = null;
+    state.seek += 1;
+    state.loading = false;
+    state.observer?.disconnect();
+    state.items = [];
+    state.paths.clear();
+    state.queue = [];
+    root.querySelector(".photo-days").replaceChildren();
+    state.next = "";
+    state.month = month;
+    state.range = { month };
+    state.previous = null;
+    root.closest(".page").scrollTop = 0;
+    for (const button of root.querySelectorAll(".photo-timeline button"))
+      button.toggleAttribute("aria-current", button.dataset.month === month);
+    state.load();
+  }
+  function layoutTimeline() {
+    const rail = root.querySelector(".photo-timeline");
+    const buttons = [...rail.querySelectorAll("button")];
+    if (!buttons.length) return;
+    const style = getComputedStyle(rail);
+    const height =
+      rail.clientHeight -
+      (parseFloat(style.paddingTop) || 0) -
+      (parseFloat(style.paddingBottom) || 0);
+    if (state.timelineHeight === height && state.timeline?.length === buttons.length)
+      return;
+    state.timelineHeight = height;
+    const segments = timelineSegments(
+      buttons.map((button) => Number(button.dataset.count)),
+      height,
+      tokenPixels("--space-1", 4),
+    );
+    const dotGap = tokenPixels("--space-2", 8);
+    const labelGap = tokenPixels("--space-5", 20);
+    const years = [];
+    let lastDot = -Infinity;
+    buttons.forEach((button, index) => {
+      const segment = segments[index];
+      Object.assign(segment, {
+        month: button.dataset.month,
+        label: button.dataset.label,
+        count: Number(button.dataset.count),
+      });
+      button.style.setProperty("--segment-top", `${segment.top}px`);
+      button.style.setProperty("--segment-height", `${segment.size}px`);
+      const dot = segment.top - lastDot >= dotGap;
+      button.classList.toggle("photo-dot-hidden", !dot);
+      if (dot) lastDot = segment.top;
+      if (button.dataset.year) years.push({ button, top: segment.top });
+    });
+    const shown = [];
+    years.forEach((year, index) => {
+      const oldest = index === years.length - 1;
+      while (oldest && shown.length > 1 && year.top - shown.at(-1).top < labelGap)
+        shown.pop();
+      if (oldest || !shown.length || year.top - shown.at(-1).top >= labelGap)
+        shown.push(year);
+    });
+    for (const year of years)
+      year.button.classList.toggle(
+        "photo-year-hidden",
+        !shown.includes(year),
+      );
+    state.timeline = segments;
+  }
+  function timelineAt(clientY) {
+    const rail = root.querySelector(".photo-timeline");
+    const y =
+      clientY -
+      rail.getBoundingClientRect().top -
+      (parseFloat(getComputedStyle(rail).paddingTop) || 0);
+    const segments = state.timeline || [];
+    const segment =
+      segments.find((item) => y < item.top + item.size) || segments.at(-1);
+    const last = segments.at(-1);
+    return segment && {
+      segment,
+      y: Math.max(0, Math.min(y, last.top + last.size)),
+    };
+  }
+  function markHovered(month) {
+    for (const button of root.querySelectorAll(".photo-timeline button"))
+      button.classList.toggle("photo-date-hovered", button.dataset.month === month);
+  }
+  function showScrub(position) {
+    const hover = root.querySelector(".photo-timeline-hover");
+    if (!hover || !position) return;
+    hover.hidden = false;
+    hover.style.setProperty("--hover-top", `${position.y}px`);
+    hover.textContent = position.segment.label;
+    markHovered(position.segment.month);
+  }
+  function hideScrub() {
+    const hover = root.querySelector(".photo-timeline-hover");
+    if (hover) hover.hidden = true;
+    markHovered(null);
+  }
   function updateTimeline(data) {
     const rail = root.querySelector(".photo-timeline");
     if (data.timeline && !rail.children.length) {
@@ -1866,40 +2027,50 @@ function mountGallery(volume) {
         const button = document.createElement("button");
         button.type = "button";
         button.dataset.month = date.month;
+        button.dataset.count = String(date.count);
         const label = new Date(date.month + "-01T12:00:00").toLocaleDateString(
           "en",
           { month: "short", year: "numeric" },
         );
         button.dataset.label = label;
-        button.title = `${label} · ${date.count} photos`;
-        button.setAttribute("aria-label", `Go to ${label}`);
-        button.textContent =
-          year !== date.month.slice(0, 4) ? date.month.slice(0, 4) : "";
-        button.innerHTML = `<span class="photo-year">${button.textContent}</span><span class="photo-date-dot"></span><span class="photo-date-label">${label}</span>`;
+        button.setAttribute(
+          "aria-label",
+          `Go to ${label}, ${date.count} ${date.count === 1 ? "photo" : "photos"}`,
+        );
+        const first = year !== date.month.slice(0, 4);
+        if (first) button.dataset.year = date.month.slice(0, 4);
+        button.innerHTML = `<span class="photo-year">${first ? date.month.slice(0, 4) : ""}</span><span class="photo-date-dot"></span>`;
         year = date.month.slice(0, 4);
-        button.onclick = () => {
-          if (state.loading || state.refreshing) return;
-          state.observer?.disconnect();
-          state.items = [];
-          state.paths.clear();
-          state.queue = [];
-          root.querySelector(".photo-days").replaceChildren();
-          state.next = "";
-          state.month = date.month;
-          root.closest(".page").scrollTop = 0;
-          for (const item of rail.children)
-            item.removeAttribute("aria-current");
-          button.setAttribute("aria-current", "date");
-          state.load();
+        // Pointer scrubbing seeks on release; this click path serves the keyboard.
+        button.onclick = (event) => {
+          if (event.detail === 0) seekMonth(date.month);
         };
+        button.onfocus = () => {
+          const segment = state.timeline?.find(
+            (row) => row.month === date.month,
+          );
+          if (segment) showScrub({ segment, y: segment.top });
+        };
+        button.onblur = hideScrub;
+        if (state.month === date.month)
+          button.setAttribute("aria-current", "date");
         rail.append(button);
       }
+      state.timeline = null;
+      rail.insertAdjacentHTML(
+        "beforeend",
+        '<div class="photo-timeline-hover" aria-hidden="true" hidden></div>',
+      );
+      layoutTimeline();
     }
   }
   state.load = async () => {
     if (!current() || state.loading || state.refreshing || state.next === null)
       return;
+    const seek = state.seek;
+    const live = () => current() && state.seek === seek;
     state.loading = true;
+    let waiting = false;
     const more = root.querySelector(".photo-more");
     more.disabled = true;
     more.innerHTML = busyIcon();
@@ -1911,16 +2082,20 @@ function mountGallery(volume) {
           new URLSearchParams({
             volume,
             after: state.next,
-            month: state.month,
+            ...state.range,
           }),
       );
-      if (!current()) return;
+      const first = !state.next;
+      if (!live()) return;
       if (data.indexing) {
         state.indexing = true;
+        updateTimeline(data);
         if (!state.items.length) addItems(data.items);
         more.innerHTML = busyIcon();
         more.setAttribute("aria-label", "Preparing gallery");
-        setTimeout(() => {
+        waiting = true;
+        state.poll = setTimeout(() => {
+          state.poll = null;
           state.loading = false;
           state.load();
         }, 250);
@@ -1937,6 +2112,7 @@ function mountGallery(volume) {
       }
       updateTimeline(data);
       addItems(data.items);
+      if (first) state.previous = data.previous ?? null;
       state.next = data.next;
       more.hidden = !data.next;
       more.textContent = "Load more";
@@ -1949,17 +2125,83 @@ function mountGallery(volume) {
           "images",
         );
     } catch {
-      if (current()) {
+      if (live()) {
         more.textContent = "Could not load gallery. Retry";
         more.removeAttribute("aria-label");
       }
     } finally {
-      if (current()) {
+      if (live() && !waiting) {
         state.loading = false;
         more.disabled = false;
         more.removeAttribute("aria-busy");
       }
     }
+    if (live()) loadNewerIfNear();
+  };
+  function replaceItems(items) {
+    const page = root.closest(".page");
+    const top = page.getBoundingClientRect().top;
+    const anchor = [...root.querySelectorAll(".photo-thumb")].find(
+      (tile) => tile.getBoundingClientRect().bottom > top,
+    );
+    const anchorPath =
+      anchor && state.items[Number(anchor.dataset.photo)]?.path;
+    const offset = anchor?.getBoundingClientRect().top;
+    stopHover();
+    state.observer?.disconnect();
+    state.ratios = new Map(
+      [...root.querySelectorAll(".photo-thumb")].map((tile) => [
+        state.items[Number(tile.dataset.photo)]?.path,
+        tile.photoRatio,
+      ]),
+    );
+    state.items = [];
+    state.paths.clear();
+    state.queue = [];
+    root.querySelector(".photo-days").replaceChildren();
+    addItems(items);
+    const index = state.items.findIndex((item) => item.path === anchorPath);
+    const nextAnchor = root.querySelector(`[data-photo="${index}"]`);
+    if (nextAnchor && offset != null)
+      page.scrollTop += nextAnchor.getBoundingClientRect().top - offset;
+  }
+  // IntersectionObserver stays silent while the top sentinel remains visible across loads.
+  const loadNewerIfNear = () => {
+    const sentinel = root.querySelector(".photo-newer");
+    if (
+      state.previous &&
+      sentinel &&
+      sentinel.getBoundingClientRect().bottom >
+        root.closest(".page").getBoundingClientRect().top - 400
+    )
+      void state.loadNewer();
+  };
+  state.loadNewer = async () => {
+    if (!current() || state.loading || state.refreshing || !state.previous)
+      return;
+    const seek = state.seek;
+    const live = () => current() && state.seek === seek;
+    state.loading = true;
+    try {
+      const data = await galleryPage(
+        "/v1/gallery?" +
+          new URLSearchParams({ volume, before: state.previous }),
+      );
+      if (!live()) return;
+      if (!data.items.length) {
+        state.previous = null;
+        return;
+      }
+      replaceItems([...data.items, ...state.items]);
+      state.range = { from: data.items[0].cursor };
+      state.previous = data.previous ?? null;
+    } catch {
+      setTimeout(() => live() && loadNewerIfNear(), 5000);
+      return;
+    } finally {
+      if (live()) state.loading = false;
+    }
+    loadNewerIfNear();
   };
   // Refresh the loaded range without remounting the page or disturbing a viewer.
   const refreshGallery = async () => {
@@ -1973,21 +2215,23 @@ function mountGallery(volume) {
     )
       return;
     state.refreshing = true;
-    const month = state.month;
+    const range = state.range;
     try {
       const items = [];
       let after = "",
+        previous = null,
         data;
       const pages = Math.max(1, Math.ceil(state.items.length / 60));
       for (let page = 0; page < pages; page++) {
         data = await galleryPage(
-          "/v1/gallery?" + new URLSearchParams({ volume, month, after }),
+          "/v1/gallery?" + new URLSearchParams({ volume, ...range, after }),
           true,
         );
+        if (!page) previous = data.previous ?? null;
         if (
           !current() ||
           state.loading ||
-          state.month !== month ||
+          state.range !== range ||
           $("#dialog").open ||
           state.selection.size ||
           data.indexing
@@ -1997,36 +2241,13 @@ function mountGallery(volume) {
         after = data.next;
         if (!after) break;
       }
+      state.previous = previous;
       if (JSON.stringify(items) === JSON.stringify(state.items)) return;
-      const page = root.closest(".page");
-      const top = page.getBoundingClientRect().top;
-      const anchor = [...root.querySelectorAll(".photo-thumb")].find(
-        (tile) => tile.getBoundingClientRect().bottom > top,
-      );
-      const anchorPath =
-        anchor && state.items[Number(anchor.dataset.photo)]?.path;
-      const offset = anchor?.getBoundingClientRect().top;
-      stopHover();
-      state.observer?.disconnect();
-      state.ratios = new Map(
-        [...root.querySelectorAll(".photo-thumb")].map((tile) => [
-          state.items[Number(tile.dataset.photo)]?.path,
-          tile.photoRatio,
-        ]),
-      );
-      state.items = [];
-      state.paths.clear();
-      state.queue = [];
-      root.querySelector(".photo-days").replaceChildren();
       root.querySelector(".photo-timeline").replaceChildren();
       updateTimeline(data);
-      addItems(items);
+      replaceItems(items);
       state.next = after;
       root.querySelector(".photo-more").hidden = !after;
-      const index = state.items.findIndex((item) => item.path === anchorPath);
-      const nextAnchor = root.querySelector(`[data-photo="${index}"]`);
-      if (nextAnchor && offset != null)
-        page.scrollTop += nextAnchor.getBoundingClientRect().top - offset;
     } catch {
       /* Keep the visible gallery during temporary disconnection. */
     } finally {
@@ -2047,6 +2268,17 @@ function mountGallery(volume) {
         )
       : null;
   state.moreObserver?.observe(root.querySelector(".photo-more"));
+  state.newerObserver =
+    typeof IntersectionObserver === "function"
+      ? new IntersectionObserver(
+          (entries) => {
+            if (entries.some((entry) => entry.isIntersecting))
+              state.loadNewer();
+          },
+          { rootMargin: "400px" },
+        )
+      : null;
+  state.newerObserver?.observe(root.querySelector(".photo-newer"));
   const page = root.closest(".page");
   const rail = root.querySelector(".photo-timeline");
   const sizeTimeline = () => {
@@ -2062,6 +2294,44 @@ function mountGallery(volume) {
       "--timeline-height",
       `${Math.max(120, bounds.bottom - top - bottom)}px`,
     );
+    layoutTimeline();
+  };
+  let scrubbing = false;
+  rail.onpointerdown = (event) => {
+    if (event.button !== 0 || !state.timeline?.length) return;
+    scrubbing = true;
+    rail.setPointerCapture?.(event.pointerId);
+    showScrub(timelineAt(event.clientY));
+    event.preventDefault();
+  };
+  rail.onpointermove = (event) => showScrub(timelineAt(event.clientY));
+  rail.onpointerup = (event) => {
+    if (!scrubbing) return;
+    scrubbing = false;
+    const position = timelineAt(event.clientY);
+    hideScrub();
+    if (position) seekMonth(position.segment.month);
+  };
+  rail.onpointercancel = () => {
+    scrubbing = false;
+    hideScrub();
+  };
+  let hovering = false;
+  rail.onpointerenter = () => {
+    hovering = true;
+  };
+  rail.onpointerleave = () => {
+    hovering = false;
+    if (!scrubbing) hideScrub();
+  };
+  const showScrollDate = (month) => {
+    const segment = state.timeline?.find((row) => row.month === month);
+    if (!segment || hovering || scrubbing) return;
+    showScrub({ segment, y: segment.top });
+    clearTimeout(state.scrollDate);
+    state.scrollDate = setTimeout(() => {
+      if (!hovering && !scrubbing) hideScrub();
+    }, 1000);
   };
   const resizeObserver =
     typeof ResizeObserver === "function"
@@ -2071,6 +2341,8 @@ function mountGallery(volume) {
   window.addEventListener("resize", sizeTimeline);
   state.cleanup = () => {
     clearInterval(refreshTimer);
+    clearTimeout(state.scrollDate);
+    clearTimeout(state.poll);
     document.removeEventListener("visibilitychange", refreshGallery);
     document.removeEventListener("arca-changes", refreshGallery);
     stopHover();
@@ -2091,16 +2363,31 @@ function mountGallery(volume) {
     const active = groups.find(
       (group) => group.getBoundingClientRect().bottom > top + 80,
     );
-    if (active)
-      for (const button of root.querySelectorAll(".photo-timeline button")) {
-        if (button.dataset.month === active.dataset.day.slice(0, 7))
-          button.setAttribute("aria-current", "date");
-        else button.removeAttribute("aria-current");
-      }
+    if (!active) return;
+    for (const button of root.querySelectorAll(".photo-timeline button")) {
+      if (button.dataset.month === active.dataset.day.slice(0, 7))
+        button.setAttribute("aria-current", "date");
+      else button.removeAttribute("aria-current");
+    }
+    showScrollDate(active.dataset.day.slice(0, 7));
   };
   page.addEventListener("scroll", state.onScroll, { passive: true });
   sizeTimeline();
   state.load();
+}
+// Square-root weights keep busy months larger without leaving long empty stretches below their dot.
+function timelineSegments(counts, height, floor) {
+  const weights = counts.map((count) => Math.sqrt(Math.max(0, count)));
+  const total = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+  const minimum = Math.min(floor, height / Math.max(1, counts.length));
+  const spare = Math.max(0, height - minimum * counts.length);
+  let top = 0;
+  return weights.map((weight) => {
+    const size = minimum + (spare * weight) / total;
+    const segment = { top, size };
+    top += size;
+    return segment;
+  });
 }
 function galleryCanDelete() {
   return (
@@ -2158,7 +2445,7 @@ function deleteGalleryPhotos(items) {
     false,
     inViewer,
   );
-  $("#submit-dialog").className = "secondary danger";
+  $("#submit-dialog").classList.add("danger");
 }
 async function downloadGalleryPhoto(item) {
   if (native) {
@@ -2278,7 +2565,7 @@ function galleryInfo(item, volume, meta = {}) {
     : "";
   return `<div class="photo-info-summary"><p class="mono">${escape(item.path.split("/").pop())}</p><p class="hint">${escape([bytes(item.size), dimensions, meta.format].filter(Boolean).join(" · "))}</p></div>
     <section class="photo-info-section"><h3 class="section-label">Capture</h3><dl>
-    ${row(meta.captured ? "Taken" : item.dateSource === "date added" ? "Date added" : "Date", date, "calendar", meta.offset ? `UTC${meta.offset}` : "")}
+    ${row(meta.captured ? "Taken" : item.dateSource === "date added" ? "Date added" : item.dateSource === "file date" ? "File date" : "Date", date, "calendar", meta.offset ? `UTC${meta.offset}` : "")}
     ${row("Camera", camera, "camera", meta.lens || "")}</dl>
     ${metrics.length ? `<dl class="photo-capture-stats">${metrics.map(([label, value]) => `<div><dt>${label}</dt><dd class="mono">${escape(String(value))}</dd></div>`).join("")}</dl>` : ""}
     <dl>${row("Location", coordinates, "map-pin", "", map)}</dl></section>
@@ -2585,7 +2872,7 @@ async function folderBrowser(v, recent, pending = false) {
     ],
   )}<div>${folderTab === "files" ? `<button class="icon-button" data-action="folder-search-toggle" aria-label="${folderSearchOpen ? "Close search" : "Search files"}">${icon(folderSearchOpen ? "x" : "search")}</button>` : folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
   if (folderTab === "gallery")
-    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><button type="button" class="secondary photo-more" aria-label="Loading gallery" aria-busy="true" disabled>${busyIcon()}</button></div>`;
+    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><button type="button" class="secondary photo-more" aria-label="Loading gallery" aria-busy="true" disabled>${busyIcon()}</button></div>`;
   if (pending && folderTab === "recent" && !recent)
     return tools + scaffoldRow("history");
   if (folderTab === "recent")
@@ -2919,7 +3206,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
   if (status.role !== "hub")
     machineRows += row(
       status.name,
-      `<span class="tag">${escape(status.role)}</span>${status.backup?.enabled ? '<span class="tag backup">Backs up hub</span>' : ""}`,
+      `<span class="tag">${escape(status.role)}</span>${status.backup?.enabled ? '<span class="tag">Backs up hub</span>' : ""}`,
       selfAddress ? `Tailscale · ${escape(selfAddress)}` : "",
       "",
       pill(
@@ -2974,7 +3261,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
           : !d.last_seen
             ? pill("Invitation only", "wa", "clock")
             : pill("Linked", "id", "link");
-      const tags = `<span class="tag">${escape(d.role)}</span>${d.backup_enabled ? '<span class="tag backup">Backs up hub</span>' : ""}`;
+      const tags = `<span class="tag">${escape(d.role)}</span>${d.backup_enabled ? '<span class="tag">Backs up hub</span>' : ""}`;
       records += row(
         report?.name || d.name,
         tags,
@@ -3058,7 +3345,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
             "",
             p.arca.state === "incompatible"
               ? pill("Incompatible Arca", "er", "circle-alert")
-              : pill("Arca detected", "sy", "circle-dot"),
+              : pill("Arca detected", "id", "circle-dot"),
             p.arca.state === "available"
               ? status.role === "hub"
                 ? button(
@@ -3103,26 +3390,38 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     ) + `<div class="page" id="devices-list">${html}</div>`;
   icons();
 }
+function backupActivity() {
+  const p = status.backup?.progress;
+  return p
+    ? `Copying history${p.revisions ? ` · ${countLabel(p.revisions, "revision")}` : ""}`
+    : "";
+}
 function backupCompletionSetting() {
+  const backup = status.backup || {};
   return setting(
     "Last completed backup",
-    `${date(status.backup?.lastSync)}${!status.backup?.lastSync || status.backup?.contentBytes == null ? "" : ` · ${bytes(status.backup.contentBytes)}`}${status.backup?.error ? ` · ${escape(status.backup.error)}` : ""}`,
-    pill(
-      status.backup?.error
-        ? "Needs attention"
-        : status.backup?.enabled
-          ? status.backup.lastSync
-            ? "Completed"
-            : "Pending"
-          : "Off",
-      status.backup?.error ? "er" : "id",
-      "shield",
-    ),
+    backupActivity() ||
+      `${date(backup.lastSync)}${!backup.lastSync || backup.contentBytes == null ? "" : ` · ${bytes(backup.contentBytes)}`}${backup.waiting ? " · Waiting for the hub" : backup.error ? ` · ${escape(backup.error)}` : ""}`,
+    backup.progress
+      ? pill("Running", "sy", "busy")
+      : backup.waiting
+        ? pill("Offline", "wa", "wifi-off")
+        : pill(
+            backup.error
+              ? "Needs attention"
+              : backup.enabled
+                ? backup.lastSync
+                  ? "Completed"
+                  : "Pending"
+                : "Off",
+            backup.error ? "er" : "id",
+            "shield",
+          ),
   ).replace("<div ", '<div id="backup-completion" ');
 }
 function backupSummary() {
   if (status.role !== "hub")
-    return `<div class="backup-card">${icon(status.backup?.enabled ? "shield-check" : "shield-off")}<div class="row-main"><strong>${status.backup?.enabled ? "On this machine" : "Off on this machine"}</strong><p>${status.backup?.enabled ? (status.backup.error ? `Needs attention: ${escape(status.backup.error)}` : status.backup.lastSync ? `${status.backup.folders || 0} folders · ${Number(status.backup.revisions || 0).toLocaleString()} revisions · Last completed ${relative(status.backup.lastSync)}` : "Waiting for the first completed backup") : "Keep a full copy of the hub and its history."}</p></div>${button("Backup settings", "backup-settings", "", "secondary small-button")}</div>`;
+    return `<div class="backup-card">${icon(status.backup?.enabled ? "shield-check" : "shield-off")}<div class="row-main"><strong>${status.backup?.enabled ? "On this machine" : "Off on this machine"}</strong><p>${status.backup?.enabled ? (status.backup.progress ? backupActivity() : status.backup.waiting ? "Waiting for the hub to continue." : status.backup.error ? `Needs attention: ${escape(status.backup.error)}` : status.backup.lastSync ? `${status.backup.folders || 0} folders · ${Number(status.backup.revisions || 0).toLocaleString()} revisions · Last completed ${relative(status.backup.lastSync)}` : "Waiting for the first completed backup") : "Keep a full copy of the hub and its history."}</p></div>${button("Backup settings", "backup-settings", "", "secondary small-button")}</div>`;
   const a = status.devices.filter((d) => !d.revoked && d.backup_enabled);
   return a.length
     ? a
@@ -3356,13 +3655,6 @@ async function imageLibrary() {
             </div></div>
             <div id="image-regenerate-control" class="image-process-control"></div>
           </div>
-          <div class="setting-row image-process-row">
-            <div class="row-main"><strong>Optimize space</strong><div class="image-process-hint">
-              <p id="image-convert-hint">${current.encoder.available ? "Save space by converting photos to HEIC. Check potential savings first." : "Photo optimization is unavailable on this hub."}</p>
-              <div id="image-convert-job" class="image-job" role="status" aria-live="polite" hidden></div>
-            </div></div>
-            <div id="image-convert-control" class="image-process-control"></div>
-          </div>
         </div>`;
       root.querySelector("#image-inventory").innerHTML =
         current.folders
@@ -3376,41 +3668,27 @@ async function imageLibrary() {
           .join("") ||
         setting("Gallery library", "No indexed gallery media yet.", "");
       const job = current.job;
-      for (const kind of ["regenerate", "convert"]) {
-        const target = root.querySelector(`#image-${kind}-job`);
-        const selected = job && (job.kind === "regenerate" ? kind === "regenerate" : kind === "convert");
-        target.hidden = !selected;
-        const hint = root.querySelector(`#image-${kind}-hint`);
-        hint.classList.toggle("image-hint-replaced", !!selected);
-        hint.setAttribute("aria-hidden", String(!!selected));
-        const running = selected && job.state === "running";
-        const control = root.querySelector(`#image-${kind}-control`);
-        const markup = running
-          ? button("Stop process", "images-cancel", "", "secondary small-button", "square")
-          : selected && job.confirmation
-            ? button("Optimize space…", "images-optimize", job.confirmation, "secondary small-button", "images")
-            : kind === "regenerate"
-              ? button("Regenerate previews", "images-regenerate", "", "secondary small-button", "refresh-cw")
-              : current.encoder.available ? button("Check savings", "images-analyze", "", "secondary small-button", "images") : "";
-        if (control.dataset.markup !== markup) {
-          control.innerHTML = markup;
-          control.dataset.markup = markup;
-        }
-        const actionButton = control.querySelector("button");
-        if (actionButton) actionButton.disabled = job?.state === "running" && !running;
-        if (!selected) {
-          target.innerHTML = "";
-          continue;
-        }
-        const label = { regenerate: "Refreshing previews", analyze: "Checking savings", optimize: "Optimizing photos" }[job.kind] || "Processing";
+      const target = root.querySelector("#image-regenerate-job");
+      target.hidden = !job;
+      const hint = root.querySelector("#image-regenerate-hint");
+      hint.classList.toggle("image-hint-replaced", !!job);
+      hint.setAttribute("aria-hidden", String(!!job));
+      const running = job?.state === "running";
+      const control = root.querySelector("#image-regenerate-control");
+      const markup = running
+        ? button("Stop process", "images-cancel", "", "secondary small-button", "square")
+        : button("Regenerate previews", "images-regenerate", "", "secondary small-button", "refresh-cw");
+      if (control.dataset.markup !== markup) {
+        control.innerHTML = markup;
+        control.dataset.markup = markup;
+      }
+      if (job) {
+        const label = "Refreshing previews";
         const state = { complete: "Completed", cancelled: "Stopped", failed: "Could not finish. Try again." }[job.state] || label;
-        const savings = !running && job.before
-          ? ` · ${job.kind === "analyze" ? "Sample savings" : "Photo size reduced"}: ${bytes(job.before - job.after)}`
-          : "";
-        const summary = `${state} · ${job.done} / ${job.total} processed${savings}`;
+        const summary = `${state} · ${job.done} / ${job.total} processed`;
         target.innerHTML = `<p class="hint" title="${escape(summary)}">${escape(summary)}</p>
           <progress aria-label="${escape(label)}" value="${Number(job.done) || 0}" max="${Math.max(1, Number(job.total) || 0)}"></progress>`;
-      }
+      } else target.innerHTML = "";
       icons();
       if (job?.state === "running") setTimeout(update, 1500);
     } catch (error) {
@@ -3456,11 +3734,16 @@ function modal(html, submit, label = "Save", wide = false, layered = false) {
   $("#dialog-content").innerHTML = html;
   $("#dialog").className = wide ? "wide-dialog" : "";
   if (
-    !$("#dialog-content").querySelector(
-      "input, select, textarea, table, .folder-selection",
-    )
+    ![
+      ...$("#dialog-content").querySelectorAll(
+        "input, select, textarea, table, .folder-selection",
+      ),
+    ].some((field) => !field.closest(".confirmation-option"))
   )
     $("#dialog").classList.add("confirmation-dialog");
+  $("#cancel-dialog").autofocus = Boolean(
+    $("#dialog-content").querySelector(".confirmation-option"),
+  );
   $("#submit-dialog").textContent = label;
   $("#submit-dialog").hidden = false;
   $("#submit-dialog").disabled = false;
@@ -3478,51 +3761,74 @@ function modal(html, submit, label = "Save", wide = false, layered = false) {
   if (!$("#dialog").open) $("#dialog").showModal();
   icons();
 }
-let dialogSubmitting = false;
 function bindDialog(dialog) {
   const cancel = dialog.querySelector("#cancel-dialog");
   const form = dialog.querySelector("#dialog-form");
+  const control = dialog.querySelector("#submit-dialog");
+  let pending = null;
+  const idle = () => {
+    control.removeAttribute("aria-busy");
+    control.querySelector(".busy-grid")?.remove();
+    control.disabled = false;
+  };
   const close = () => {
     dialog.close();
     dialog.restore?.();
   };
-  cancel.onclick = () => {
-    if (!dialogSubmitting) close();
+  const dismiss = () => {
+    if (pending) {
+      pending.detached = true;
+      pending = null;
+      idle();
+    }
+    close();
   };
+  cancel.onclick = dismiss;
   dialog.addEventListener("cancel", (event) => {
     event.preventDefault();
-    if (!dialogSubmitting) close();
+    dismiss();
   });
   // Dialogs close explicitly; backdrop interaction never discards a draft.
   form.onsubmit = (event) => {
     event.preventDefault();
+    if (pending) return;
     const submit = submitDialog;
     const data = new FormData(event.target);
-    const control = dialog.querySelector("#submit-dialog");
-    // Submission owns this dialog even while waiting behind another mutation.
-    dialogSubmitting = true;
-    cancel.disabled = true;
+    const submission = { detached: false };
+    pending = submission;
+    control.disabled = true;
     action(async () => {
-      control.disabled = true;
+      if (submission.detached) return;
       control.setAttribute("aria-busy", "true");
       control.insertAdjacentHTML("afterbegin", busyIcon());
-      dialogSubmitting = true;
-      cancel.disabled = true;
       try {
         dialog.querySelector("#dialog-error").hidden = true;
-        const complete = await submit(data);
+        let complete;
+        try {
+          complete = await submit(data);
+        } catch (error) {
+          if (!submission.detached || (!native && error?.status === 401))
+            throw error;
+          if (daemonUnavailable(error)) showDaemonStopped();
+          else notice(error?.message || String(error), true, { id: "action" });
+          return;
+        }
+        if (submission.detached) {
+          if (complete === undefined && ready)
+            void background(() => render({ refreshStatus: true }));
+          return;
+        }
         if (complete === false) return;
         close();
         if (typeof complete === "function") await complete();
         else if (ready) void background(() => render({ refreshStatus: true }));
       } finally {
-        dialogSubmitting = false;
-        control.removeAttribute("aria-busy");
-        control.querySelector(".busy-grid")?.remove();
-        cancel.disabled = false;
-        control.disabled = false;
+        if (pending === submission) {
+          pending = null;
+          idle();
+        }
       }
-    }, control);
+    });
   };
 }
 bindDialog($("#dialog"));
@@ -3776,7 +4082,6 @@ async function pairModal(name = "") {
     async () => {},
     "Done",
   );
-  $("#dialog").classList.add("pair-dialog");
   $("#cancel-dialog").hidden = false;
   $("#dialog").addEventListener(
     "close",
@@ -4196,7 +4501,7 @@ async function handle(name, id, control) {
     const target = {
       volume: historyVolume,
       path: historyPath,
-      rev: historyVersions[0]?.rev,
+      rev: currentFileRev(),
     };
     modal(
       modalHeader(
@@ -4220,7 +4525,7 @@ async function handle(name, id, control) {
     const target = {
       volume: historyVolume,
       path: historyPath,
-      rev: historyVersions[0]?.rev,
+      rev: currentFileRev(),
     };
     modal(
       modalHeader(
@@ -4238,7 +4543,7 @@ async function handle(name, id, control) {
       },
       "Delete file",
     );
-    $("#submit-dialog").className = "secondary danger";
+    $("#submit-dialog").classList.add("danger");
     return;
   }
   if (name === "history-view-folder") {
@@ -4267,6 +4572,9 @@ async function handle(name, id, control) {
     view = "history";
     historyVolume = item.volume;
     historyPath = item.path;
+    fileRevision = Number.isSafeInteger(item.rev)
+      ? { volume: item.volume, path: item.path, rev: item.rev }
+      : null;
     await render();
     updateShell();
     return;
@@ -4311,7 +4619,6 @@ async function handle(name, id, control) {
       },
       "Restore as new revision",
     );
-    $("#dialog").classList.add("restore-dialog");
     $("#submit-dialog").innerHTML = icon("undo-2") + "Restore as new revision";
     icons();
     return;
@@ -4371,6 +4678,7 @@ async function handle(name, id, control) {
       },
       "Sign out all",
     );
+    $("#submit-dialog").classList.add("danger");
     return;
   }
   if (name === "scan-tailnet") {
@@ -4552,28 +4860,45 @@ async function handle(name, id, control) {
       throw new Error(
         "This folder is no longer linked. Refresh the folder list.",
       );
+    const deleteLabel = `Delete the files on ${machineLabel()}`;
     modal(
-      modalHeader(
-        status.role === "hub"
-          ? "Disable the hub’s local sync?"
-          : `Unlink “${escape(folder.name)}”?`,
-        status.role === "hub"
-          ? "Stops this hub’s local copy. The shared folder and history remain available."
-          : "Removes this machine’s folder link and Arca marker. Your files and .arcaignore stay on disk. The hub keeps the shared folder and history.",
-        "unlink",
-      ),
-      async () => {
-        await api("/v1/unselect", { id });
+      status.role === "hub"
+        ? modalHeader(
+            "Disable the hub’s local sync?",
+            "Stops this hub’s local copy. The shared folder and history remain available.",
+            "unlink",
+          )
+        : modalHeader(
+            `Unlink “${escape(folder.name)}”?`,
+            `Stops syncing it on ${machineLabel()}. The hub keeps the shared folder, its files and history.`,
+            "unlink",
+          ) +
+          `<div class="confirmation-option">${toggleControl("unlink-delete", deleteLabel, false, 'name="deleteFiles"')}<label for="unlink-delete">${deleteLabel}</label></div>`,
+      async (f) => {
+        const deleteFiles = f.get("deleteFiles") === "on";
+        const result = await api(
+          "/v1/unselect",
+          deleteFiles ? { id, deleteFiles } : { id },
+        );
         detailId = null;
         notice(
           status.role === "hub"
             ? "Local sync disabled. The shared folder remains available."
-            : "Folder unlinked. Your files remain on disk.",
+            : deleteFiles
+              ? `Folder unlinked. ${countLabel(result.deleted, "file")} (${bytes(result.deletedBytes)}) deleted from ${machineLabel()}${result.kept ? `; ${countLabel(result.kept, "file")} not on the hub stay on disk` : ""}.`
+              : "Folder unlinked. Your files remain on disk.",
         );
       },
       status.role === "hub" ? "Disable local sync" : "Unlink folder",
     );
     $("#submit-dialog").classList.add("danger");
+    const option = $('#dialog [name="deleteFiles"]');
+    if (option)
+      option.onchange = () => {
+        $("#submit-dialog").textContent = option.checked
+          ? "Unlink and delete"
+          : "Unlink folder";
+      };
     return;
   }
   if (name === "locate-folder") {
@@ -4748,7 +5073,7 @@ async function handle(name, id, control) {
         "shield-check",
       ) +
         pathInput("Backup location", "path", status.backup?.path || "") +
-        '<p class="hint">Use a new dedicated directory outside synchronized folders and the state directory. Disabling backup later retains its files.</p>',
+        '<p class="hint">Use an empty dedicated folder outside synchronized folders and Arca’s state; in Docker, a mounted folder. Disabling backup keeps its data.</p>',
       async (f) => {
         await api("/v1/backup", { enabled: true, path: f.get("path") });
       },
@@ -4776,24 +5101,9 @@ async function handle(name, id, control) {
     await api("/v1/images", { action: "cancel" });
     return imageLibrary();
   }
-  if (["images-analyze", "images-regenerate"].includes(name)) {
-    await api("/v1/images", { action: name.slice(7) });
+  if (name === "images-regenerate") {
+    await api("/v1/images", { action: "regenerate" });
     return imageLibrary();
-  }
-  if (name === "images-optimize") {
-    modal(
-      modalHeader(
-        "Convert JPEG library to HEIC?",
-        "This replaces eligible JPEG paths with verified HEIC files and synchronizes the change to working replicas. Conversion is lossy at quality 85, without resizing. Files that lose checked metadata or save less than 10% are skipped. Linked phone originals stay unchanged. Old JPEG revisions and backups continue to occupy space until their retention policies allow cleanup. Changed files and occupied destinations are skipped.",
-        "images",
-      ),
-      async () => {
-        await api("/v1/images", { action: "optimize", confirmation: id });
-        return () => imageLibrary();
-      },
-      "Convert library",
-    );
-    return;
   }
   if (name === "retention") {
     let preview = null;
@@ -4831,7 +5141,6 @@ async function handle(name, id, control) {
       },
       "Preview cleanup",
     );
-    $("#dialog").classList.add("recovery-dialog");
     return;
   }
   if (name === "promote") {
@@ -4865,7 +5174,6 @@ async function handle(name, id, control) {
       },
       "Make this machine the hub",
     );
-    $("#dialog").classList.add("recovery-dialog");
     const confirmation = $('#dialog [name="confirmed"]');
     const updatePromotion = () => {
       $("#submit-dialog").disabled =
@@ -4962,6 +5270,7 @@ document.addEventListener("click", (e) => {
       if (!window.document || loading !== viewLoadSerial) return;
       if (!native && error.status === 401)
         void showLogin("Your session has ended. Enter a new web access code.");
+      else if (daemonUnavailable(error)) showDaemonStopped();
       else
         notice(error.message, true, {
           id: "view:" + view,
@@ -5509,13 +5818,43 @@ async function boot() {
       code: "",
     };
     renderOnboarding();
-  } else if (state.stopped) {
-    ready = false;
-    $("#content").innerHTML =
-      title("Daemon stopped") +
-      `<div class="page">${empty("Your files remain on disk", state.error ? escape(state.error) : "Start the local daemon to check your folders.", button("Start service", "start", "", "primary", "power"))}</div>`;
-    icons();
-  } else await refresh();
+  } else if (state.stopped) showDaemonStopped(state.error);
+  else await refresh();
+}
+function daemonUnavailable(error) {
+  return (
+    native &&
+    (error?.message || String(error)) ===
+      "The daemon is unavailable. Use Start service."
+  );
+}
+function showDaemonStopped(error) {
+  ready = false;
+  daemonStopped = { error: error ?? daemonStopped?.error ?? "" };
+  updateBrandActivity();
+  if (status) updateShell();
+  renderDaemonStopped();
+  if (daemonProbe) return;
+  let probing = false;
+  daemonProbe = setInterval(async () => {
+    if (probing) return;
+    probing = true;
+    await refresh().catch(() => {});
+    probing = false;
+  }, 5000);
+}
+function renderDaemonStopped() {
+  $("#content").innerHTML =
+    title("Daemon stopped") +
+    `<div class="page">${empty("Your files remain on disk", daemonStopped.error ? escape(daemonStopped.error) : "Start the local daemon to check your folders.", button("Start service", "start", "", "primary", "power"))}</div>`;
+  icons();
+}
+function daemonRecovered() {
+  daemonStopped = false;
+  clearInterval(daemonProbe);
+  daemonProbe = null;
+  noticeStore.clear("action");
+  noticeStore.reconcile([], "view:");
 }
 await action(boot);
 let pointerPressed = false;
@@ -5613,7 +5952,10 @@ async function pollStatus(force = false) {
       lastSignature = signature;
     }
   } catch (error) {
-    if (!busy && !$("#dialog").open)
+    if (daemonUnavailable(error)) showDaemonStopped();
+    else if (error.transportError && error.readOnly)
+      notice(error.message, true, { id: "connection", action: "refresh" });
+    else if (!busy && !$("#dialog").open)
       await action(() => {
         throw error;
       });

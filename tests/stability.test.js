@@ -443,3 +443,16 @@ test("one-day retention expires deleted file content without resurrecting it", (
   assert.equal(fs.existsSync(s.blob(original.hash)), false);
   assert.equal(fs.existsSync(file), false);
 });
+test("a full scan reuses a capture whose file signature is unchanged, however old", (t) => {
+  const { s, v } = fixture(t),
+    file = path.join(v.path, "large.bin");
+  fs.writeFileSync(file, "stable content");
+  const first = s.scan(v).get("large.bin");
+  s.db.prepare("UPDATE scan_cache SET verified=0 WHERE path=?").run(file);
+  const copies = t.mock.method(fs, "copyFileSync");
+  assert.equal(s.scan(v).get("large.bin").hash, first.hash);
+  assert.equal(copies.mock.callCount(), 0);
+  fs.appendFileSync(file, " and more");
+  assert.notEqual(s.scan(v).get("large.bin").hash, first.hash);
+  assert.equal(copies.mock.callCount(), 1);
+});

@@ -10,8 +10,8 @@ export function nativeGallerySources({ store, media, scope, volume }) {
         const asset = await store.galleryNativeAsset(
           scope,
           volume,
-          item.sourcePath || item.path,
-          item.sourceHash || item.hash,
+          item.path,
+          item.hash,
         );
         if (!asset || asset.id.startsWith("picked-")) return null;
         const native = await media.preview(asset.id);

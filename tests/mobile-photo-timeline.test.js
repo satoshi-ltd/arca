@@ -272,13 +272,13 @@ test("hub index pages through the gallery, caches a bounded copy and works from 
   assert.deepEqual(await gallery.cached(), more);
   const failing = hubGallery({
     api: async () => {
-      throw new Error("offline");
+      throw new TypeError("Network request failed");
     },
     store,
     scope: "s",
     volume: "v",
   });
-  await assert.rejects(failing.first(), /offline/);
+  await assert.rejects(failing.first(), /Network request failed/);
   assert.equal((await failing.cached()).items.length, 2);
 });
 
@@ -671,7 +671,7 @@ test("bounded hub cache keeps its matching cursor instead of truncating a page",
   assert.equal(new Set(complete.items.map((item) => item.path)).size, 3000);
 });
 
-test("optimized gallery source references survive refresh and offline cache", async () => {
+test("gallery revisions survive refresh and offline cache", async () => {
   let saved;
   const store = {
     get: async () => saved,
@@ -681,10 +681,8 @@ test("optimized gallery source references survive refresh and offline cache", as
   };
   const photo = {
     path: "phone/a.heic",
-    hash: "converted",
+    hash: "cached",
     rev: 42,
-    sourcePath: "phone/a.jpg",
-    sourceHash: "original",
   };
   const api = async () => ({ items: [photo], next: null });
   const gallery = hubGallery({ api, store, scope: "s", volume: "v" });
@@ -692,8 +690,6 @@ test("optimized gallery source references survive refresh and offline cache", as
   const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
   const [item] = (await reopened.cached()).items;
   assert.equal(item.rev, 42);
-  assert.equal(item.sourcePath, photo.sourcePath);
-  assert.equal(item.sourceHash, photo.sourceHash);
   await gallery.forget(photo.path);
   const afterDeletion = hubGallery({ api, store, scope: "s", volume: "v" });
   assert.deepEqual((await afterDeletion.cached()).items, []);

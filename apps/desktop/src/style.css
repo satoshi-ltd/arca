@@ -504,8 +504,7 @@ main {
   background: var(--okBg);
 }
 .sy {
-  color: var(--syFg);
-  background: var(--syBg);
+  color: var(--green);
 }
 .wa {
   color: var(--waFg);
@@ -542,11 +541,6 @@ main {
 .tag.self {
   background: var(--tint);
   color: var(--deep);
-  border-color: transparent;
-}
-.tag.backup {
-  background: var(--syBg);
-  color: var(--syFg);
   border-color: transparent;
 }
 .row-tags {
@@ -1016,7 +1010,7 @@ input[type="radio"] {
 }
 dialog {
   border: 0;
-  padding: var(--access-padding);
+  padding: var(--dialog-padding);
   width: var(--dialog-width);
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 40px);
@@ -1034,21 +1028,26 @@ dialog::backdrop {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
-  margin-bottom: 18px;
+  margin-bottom: var(--space-5);
 }
 .modal-title .tile {
-  width: 36px;
-  height: 36px;
+  width: var(--dialog-tile);
+  height: var(--dialog-tile);
+}
+dialog:has(:where(#submit-dialog.danger)) .modal-title .tile {
+  background: var(--erBg);
+  color: var(--er);
 }
 .modal-title h2 {
-  font-size: 15px;
+  font-size: var(--dialog-title);
+  line-height: var(--dialog-title-line);
   letter-spacing: -0.01em;
 }
 .modal-title p {
   font-size: var(--text-control);
   color: var(--soft);
-  margin-top: 4px;
-  line-height: 1.5;
+  margin-top: var(--space-1);
+  line-height: var(--dialog-body-line);
 }
 #dialog-content > p {
   font-size: var(--text-body);
@@ -1065,7 +1064,7 @@ dialog::backdrop {
   display: flex;
   gap: var(--space-2);
   justify-content: flex-end;
-  margin-top: 18px;
+  margin-top: var(--space-5);
 }
 .dialog-error,
 #login-error {
@@ -1504,7 +1503,7 @@ progress::-moz-progress-bar {
   border: 0;
 }
 .wide-dialog {
-  width: 640px;
+  width: var(--dialog-wide-width);
 }
 .conflict-options {
   display: flex;
@@ -1841,9 +1840,6 @@ html:has(.tray-body) {
   user-select: none;
 }
 
-.folder-selection .modal-title {
-  margin-bottom: 20px;
-}
 .selection-summary {
   display: flex;
   align-items: center;
@@ -1935,15 +1931,6 @@ html:has(.tray-body) {
 .modal-title .tile svg {
   width: 18px;
   height: 18px;
-}
-.pair-dialog {
-  width: 460px;
-}
-.restore-dialog {
-  width: 420px;
-}
-.recovery-dialog {
-  width: 500px;
 }
 .restore-current {
   margin-top: 12px;
@@ -2074,9 +2061,6 @@ html:has(.tray-body) {
 }
 .stat > strong.mono {
   font-weight: 400;
-}
-.modal-title .tile {
-  border-radius: 9px;
 }
 .modal-title .tile .icon {
   width: 18px;
@@ -2222,7 +2206,7 @@ label {
   color: var(--waFg);
 }
 .stat-status.sy {
-  color: var(--syFg);
+  color: var(--green);
 }
 .stat-status.id {
   color: var(--idFg);
@@ -2981,40 +2965,23 @@ section:has(> .replica-danger) > .section-label {
   font: 12px/18px var(--font-mono);
   color: var(--soft);
 }
-.confirmation-dialog {
-  max-width: min(
-    var(--confirmation-width),
-    calc(100vw - 2 * var(--notice-inset))
-  );
-  padding: var(--space-6);
+.confirmation-dialog .dialog-actions,
+.confirmation-option {
+  margin-left: calc(var(--dialog-tile) + var(--space-3));
 }
-.confirmation-dialog .modal-title {
-  align-items: flex-start;
-  gap: 16px;
+.confirmation-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
-.confirmation-dialog .modal-title .tile {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: var(--erBg);
-  color: var(--er);
+.confirmation-option label {
+  margin: 0;
 }
-.confirmation-dialog .modal-title .tile .icon {
-  width: 22px;
-  height: 22px;
-}
-.confirmation-dialog .modal-title h2 {
-  font-size: var(--confirmation-title);
-  line-height: 23px;
-}
-.confirmation-dialog .modal-title p {
-  font-size: 15px;
-  line-height: 23px;
-}
-.confirmation-dialog .dialog-actions {
-  margin-left: 60px;
-  gap: 10px;
+.confirmation-option label:not(.toggle) {
+  font-size: var(--text-control);
+  font-weight: 400;
+  line-height: var(--dialog-body-line);
+  color: var(--ink);
 }
 .dialog-error .notice-card {
   box-shadow: none;
@@ -3182,74 +3149,97 @@ section:has(> .replica-danger) > .section-label {
 #photo-gallery {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 76px;
+  grid-template-rows: auto auto 1fr;
   column-gap: var(--space-4);
   align-items: start;
 }
+.photo-newer,
 .photo-days {
   grid-column: 1;
 }
+.photo-newer {
+  height: 1px;
+}
 .photo-timeline {
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
   position: sticky;
   top: 0;
   height: var(--timeline-height, calc(100dvh - 220px));
   box-sizing: border-box;
-  overflow-y: auto;
+  overflow: visible;
   padding: var(--space-4) 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  touch-action: none;
+  user-select: none;
 }
 .photo-timeline button {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  min-height: 28px;
-  flex-shrink: 0;
-  padding: 0 var(--space-2);
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--space-4) + var(--segment-top, 0px));
+  height: var(--segment-height, 0px);
+  min-height: 0;
+  padding: 0;
   background: transparent;
   border: 0;
   border-radius: 0;
   color: var(--mute);
   font-size: var(--text-caption);
+  cursor: pointer;
+}
+.photo-year,
+.photo-date-dot {
+  position: absolute;
+  top: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.photo-year {
+  right: var(--space-5);
+  line-height: 1;
+  white-space: nowrap;
+}
+.photo-year:empty,
+.photo-year-hidden .photo-year {
+  display: none;
 }
 .photo-date-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--line);
-  flex: none;
-}
-.photo-date-label {
-  display: none;
-  position: absolute;
-  right: 0;
-  bottom: 100%;
-  white-space: nowrap;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--r-control);
-  background: var(--deep);
-  color: var(--onGreen);
-  font-size: var(--text-caption);
-}
-.photo-timeline button:hover .photo-date-label,
-.photo-timeline button:focus-visible .photo-date-label {
-  display: block;
-}
-.photo-timeline button[aria-current]::after {
-  content: "";
-  position: absolute;
-  width: 24px;
   right: var(--space-2);
-  top: 0;
-  height: 1px;
-  background: var(--green);
+  width: var(--space-1);
+  height: var(--space-1);
+  border-radius: var(--r-pill);
+  background: var(--line);
+}
+.photo-dot-hidden .photo-date-dot {
+  display: none;
+}
+.photo-timeline button.photo-date-hovered .photo-date-dot {
+  display: block;
+  background: var(--ink);
 }
 .photo-timeline button[aria-current] .photo-date-dot {
+  display: block;
   background: var(--green);
+}
+.photo-timeline-hover {
+  position: absolute;
+  right: var(--space-5);
+  top: calc(var(--space-4) + var(--hover-top, 0px));
+  transform: translateY(-50%);
+  z-index: 2;
+  white-space: nowrap;
+  padding: var(--pill-y) var(--pill-right) var(--pill-y) var(--pill-left);
+  border-radius: var(--r-pill);
+  background: var(--green);
+  color: var(--onGreen);
+  font-size: var(--pill-font);
+  font-weight: 600;
+  line-height: var(--pill-line);
+  box-shadow: var(--shadow-menu);
+  pointer-events: none;
+}
+.photo-timeline-hover[hidden] {
+  display: none;
 }
 #photo-gallery > .photo-more {
   grid-column: 1;
@@ -3306,6 +3296,7 @@ dialog.photo-viewer {
   margin: 0;
   padding: 0;
   display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
 }
 .photo-viewer-image img {
@@ -3773,28 +3764,6 @@ dialog.photo-viewer {
 #access-approval button {
   width: 100%;
 }
-.approval-dialog {
-  width: var(--approval-width);
-  max-width: calc(100vw - 32px);
-  padding: var(--access-padding);
-}
-.approval-dialog .modal-title {
-  gap: var(--space-3);
-}
-.approval-dialog .modal-title h2 {
-  font-size: var(--touch-row-font);
-  line-height: var(--touch-control-line);
-}
-.approval-dialog .modal-title p {
-  font-size: var(--text-control);
-  line-height: var(--touch-control-line);
-}
-.approval-dialog .modal-title .tile {
-  width: var(--approval-tile);
-  height: var(--approval-tile);
-  background: var(--tint);
-  color: var(--green);
-}
 .approval-dialog .request-reference {
   margin-top: var(--space-5);
   padding: var(--space-4) var(--space-3);
@@ -3873,9 +3842,6 @@ dialog.photo-viewer {
     height: var(--access-code-height);
     font-size: var(--text-title);
   }
-  .approval-dialog {
-    padding: var(--access-padding);
-  }
   .approval-detail {
     padding: var(--space-3);
     gap: var(--space-2);
@@ -3943,6 +3909,7 @@ dialog.photo-viewer {
 .photo-viewer-image video {
   width: 100%;
   height: 100%;
+  max-height: 100dvh;
   object-fit: contain;
 }
 .video-error {

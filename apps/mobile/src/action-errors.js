@@ -4,3 +4,13 @@ export function isPickerCancelled(error) {
     error?.message || "",
   );
 }
+export function sourceUnavailable(error) {
+  if (isPickerCancelled(error)) return error;
+  return Object.assign(
+    new Error(
+      "Could not read the selected files from the app that provides it. Download it on this phone and add it again.",
+      { cause: error },
+    ),
+    { code: "SOURCE_UNAVAILABLE" },
+  );
+}

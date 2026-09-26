@@ -2,7 +2,7 @@ import { cachedActivity } from "./history-cache.js";
 import { ChangeFeed } from "./change-feed.js";
 import { ImageMaintenance } from "./image-maintenance.js";
 import { galleryMedia, streamGalleryMedia } from "./gallery-media.js";
-import { Gallery } from "./gallery.js";
+import { Gallery, mediaKind } from "./gallery.js";
 import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
 import { inspectSetupRoot } from "./setup.js";
 import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
@@ -20,8 +20,9 @@ import {
   retentionPlan,
   applyRetention,
   folderRetentionOptions,
+  releaseReplicaObjects,
 } from "./maintenance.js";
-import { snapshotPage } from "./snapshots.js";
+import { snapshotCapacity, snapshotPage } from "./snapshots.js";
 import { Web } from "./web.js";
 import { Engine } from "./engine.js";
 import {
@@ -38,6 +39,7 @@ import {
   hashFileAsync,
   atomic,
   requireSpace,
+  deleteSyncedCopy,
   syncDirectory,
 } from "./storage.js";
 
@@ -85,6 +87,7 @@ export async function start(home, options = {}) {
   }
   const s = engine.store;
   const config = engine.config;
+  if (options.transferIdleMs) engine.transferIdleMs = options.transferIdleMs;
   if (runtimeInstallation === "desktop" && config.installation !== "desktop") {
     config.installation = "desktop";
     s.saveConfig();
@@ -149,8 +152,11 @@ export async function start(home, options = {}) {
         });
       const response = await engine.request(route, {
         signal: AbortSignal.timeout(3000),
+        trackConnection: false,
       });
-      const value = await response.json();
+      const value = await response.json().catch((error) => {
+        throw engine.connectionLost(error);
+      });
       s.db
         .prepare("INSERT OR REPLACE INTO remote_views VALUES(?,?,?)")
         .run(key, JSON.stringify(value), Date.now());
@@ -159,11 +165,7 @@ export async function start(home, options = {}) {
       );
       return value;
     } catch (error) {
-      // request() owns connection ordering. A slow view may use cached data
-      // without overriding a newer successful request's connectivity state.
-      if (error.name === "TimeoutError") {
-        error.hubUnavailable = true;
-      }
+      // Optional views never decide connectivity; a slow view only falls back to saved data.
       if (!error.hubUnavailable) throw error;
       const cached = s.db
         .prepare("SELECT value,used FROM remote_views WHERE key=?")
@@ -208,8 +210,9 @@ export async function start(home, options = {}) {
       ) {
         requireLanAccess();
         const state = await network.detector.read();
+        if (state.state !== "connected")
+          fail("Tailscale access unavailable", 503);
         if (
-          state.state !== "connected" ||
           ![state.self, ...state.peers].some((p) =>
             p.addresses.includes(remote),
           )
@@ -476,7 +479,7 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/images") {
         requireAdmin();
         requireHub();
-        return send(200, await images.status());
+        return send(200, images.status());
       }
       if (req.method === "GET" && route === "/v1/web-approvals") {
         if (config.role !== "hub") {
@@ -585,7 +588,7 @@ export async function start(home, options = {}) {
           route.endsWith("preview-url") &&
           config.role !== "hub" &&
           config.hub &&
-          (!row || row.hash !== hash || !fs.existsSync(s.blob(hash)))
+          (!row || row.hash !== hash || !s.localContent(volume, name, hash))
         )
           return send(
             200,
@@ -715,8 +718,7 @@ export async function start(home, options = {}) {
             !row.deleted &&
             !row.directory &&
             row.hash === hash &&
-            fs.statSync(s.blob(hash), { throwIfNoEntry: false })?.size ===
-              row.size;
+            Boolean(s.localContent(volume, name, hash));
           // Selected replicas own complete files and a local gallery index.
           // Only a missing derivative may need the hub; listing/info stay local.
           if (config.hub && route.endsWith("/preview") && !localPreview)
@@ -750,6 +752,7 @@ export async function start(home, options = {}) {
           protocol: 1,
           gallery: true,
           changes: true,
+          retainedRevisions: true,
           changeEvents: true,
           conflictResolution: true,
           blobRanges: true,
@@ -819,7 +822,7 @@ export async function start(home, options = {}) {
           )
             fail("Unauthorized", 401);
           if (!admin && lanHttp && config.network?.allowLanHttp !== true)
-            fail("LAN access disabled", 403);
+            fail("LAN access disabled", 412);
           return send(200, { cursor });
         } finally {
           res.off("close", disconnect);
@@ -854,7 +857,7 @@ export async function start(home, options = {}) {
           )
           .all(volume, after, through);
         return send(200, {
-          files: files.map((row) => s.syncRow(row)),
+          files: s.withFileDates(files.map((row) => s.syncRow(row))),
           through,
           next: files.length === 500 ? files.at(-1).rev : null,
         });
@@ -862,24 +865,31 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/snapshot") {
         requireHub();
         const volume = s.volume(url.searchParams.get("volume")).id;
-        // An active hub scan already refreshes the catalog. Readers can use
-        // committed revisions without waiting behind that entire scan.
-        if (!url.searchParams.get("session") && engine.phase !== "syncing")
-          await authorizedWork(() => engine.scanHub(volume));
-        checkCredential();
         const controller = new AbortController();
         const disconnect = () => controller.abort();
         res.once("close", disconnect);
         try {
+          if (!url.searchParams.get("session")) {
+            snapshotCapacity(s.db, device.id, volume, !admin);
+            // Readers use committed revisions instead of waiting behind an active hub scan.
+            if (engine.phase !== "syncing")
+              await authorizedWork(() =>
+                controller.signal.aborted ? null : engine.scanHub(volume),
+              );
+          }
+          checkCredential();
+          if (controller.signal.aborted) return;
           const page = await snapshotPage(s, device.id, volume, {
             session: url.searchParams.get("session"),
             after: url.searchParams.get("after") || "",
             limit: Number(url.searchParams.get("limit") ?? 500),
             readRows: () => readSnapshot(volume),
             signal: controller.signal,
+            replace: !admin,
           });
           checkCredential();
-          if (!res.destroyed) return send(200, page);
+          if (!res.destroyed)
+            return send(200, { ...page, files: s.withFileDates(page.files) });
           return;
         } finally {
           res.off("close", disconnect);
@@ -893,6 +903,18 @@ export async function start(home, options = {}) {
               "INSERT INTO backup_ack(device,revision,enabled) VALUES(?,0,1) ON CONFLICT(device) DO UPDATE SET enabled=1",
             )
             .run(device.id);
+        if (url.searchParams.get("retained") === "1") {
+          const after = Number(url.searchParams.get("after") || 0);
+          if (!Number.isSafeInteger(after) || after < 0)
+            fail("Invalid archive cursor", 409);
+          const rows = s.db
+            .prepare("SELECT rev FROM revisions WHERE rev>? ORDER BY rev LIMIT ?")
+            .all(after, 10001);
+          return send(200, {
+            revs: rows.slice(0, 10000).map((row) => row.rev),
+            next: rows.length > 10000 ? rows[9999].rev : null,
+          });
+        }
         if (url.searchParams.has("limit")) {
           const highest = s.db
             .prepare("SELECT COALESCE(MAX(rev),0) AS n FROM revisions")
@@ -985,16 +1007,18 @@ export async function start(home, options = {}) {
           requireAdmin();
           if (!s.volumes().some((v) => v.id === volume && v.selected))
             fail("Select this folder to view its history", 403);
-          return send(
-            200,
-            await remoteView(`/v1/history${url.search}`, () => ({
-              versions: s.current(volume, name)
-                ? [s.current(volume, name)]
-                : [],
-              localOnly: true,
-              next: null,
-            })),
-          );
+          const local = name ? s.current(volume, name) : null;
+          const view = await remoteView(`/v1/history${url.search}`, () => ({
+            versions: local ? [local] : [],
+            localOnly: true,
+            next: null,
+          }));
+          if (view.offline && local && !(view.versions?.[0]?.rev >= local.rev))
+            view.versions = [
+              local,
+              ...(view.versions || []).filter((row) => row.rev !== local.rev),
+            ];
+          return send(200, view);
         }
         s.volume(volume);
         return send(
@@ -1131,7 +1155,7 @@ export async function start(home, options = {}) {
             images.cancel();
             return send(200, { cancelled: true });
           }
-          return send(202, images.start(b.action, b.confirmation));
+          return send(202, images.start(b.action));
         }
         if (route === "/v1/web-approvers") {
           requireAdmin();
@@ -1173,7 +1197,7 @@ export async function start(home, options = {}) {
           config.name = b.name.trim();
           s.saveConfig();
           engine.lastReport = null;
-          await engine.reportMachine(true);
+          void engine.reportMachine(true);
           return send(200, { name: config.name });
         }
         if (route === "/v1/web-sessions/revoke") {
@@ -1238,13 +1262,13 @@ export async function start(home, options = {}) {
             requireAdmin();
             if (!s.volume(b.volume).selected)
               fail("Select this folder first", 403);
-            const result = await engine.json(route, { volume: b.volume });
+            const result = await engine.hubAction(route, { volume: b.volume });
             const known = config.catalog?.find(
               (folder) => folder.id === b.volume,
             );
             if (known) {
               known.gallery = true;
-              saveConfig(s.home, config);
+              s.saveConfig();
             }
             return send(200, result);
           }
@@ -1276,6 +1300,7 @@ export async function start(home, options = {}) {
                     "INSERT INTO gallery_metadata(hash,captured) VALUES(?,?) ON CONFLICT(hash) DO UPDATE SET captured=coalesce(gallery_metadata.captured,excluded.captured)",
                   )
                   .run(b.hash, b.captured);
+              if (mediaKind(b.path)) s.rememberFileDate(b.hash, b.modified);
               if (b.hash) {
                 engine.gallery ||= new Gallery(s);
                 engine.gallery.schedule(
@@ -1296,13 +1321,9 @@ export async function start(home, options = {}) {
                 "Select this folder for synchronization before resolving conflicts.",
                 409,
               );
-            return send(
-              200,
-              await authorizedWork(async () => {
-                await engine.reportMachine(true);
-                return engine.json("/v1/conflict-choice", b);
-              }),
-            );
+            const chosen = await engine.chooseConflict(b);
+            engine.interruptCycle();
+            return send(200, chosen);
           }
           if (!admin) {
             const report = s.db
@@ -1369,6 +1390,11 @@ export async function start(home, options = {}) {
           );
         }
         if (route === "/v1/restore") {
+          if (config.role !== "hub") {
+            const restored = await engine.restore(b.volume, b.path, b.rev);
+            engine.interruptCycle();
+            return send(200, restored);
+          }
           return send(
             200,
             await authorizedWork(() => engine.restore(b.volume, b.path, b.rev)),
@@ -1580,11 +1606,16 @@ export async function start(home, options = {}) {
             ),
           );
         }
-        if (route === "/v1/select")
+        if (route === "/v1/select") {
+          const volumes =
+            config.role === "hub"
+              ? null
+              : (await engine.hubAction("/v1/catalog")).volumes;
           return send(
             200,
-            await authorizedWork(() => engine.select(b.id, b.path)),
+            await authorizedWork(() => engine.select(b.id, b.path, volumes)),
           );
+        }
         if (route === "/v1/delete-share") {
           requireHub();
           const v = s.volume(b.id);
@@ -1607,12 +1638,17 @@ export async function start(home, options = {}) {
         }
         if (route === "/v1/unselect") {
           s.volume(b.id);
+          if (b.deleteFiles !== undefined && typeof b.deleteFiles !== "boolean")
+            fail("Choose whether to delete local files");
+          if (b.deleteFiles && config.role !== "replica")
+            fail("Only a replica can delete its local copy when unlinking", 409);
           engine.stopVolumes.add(b.id);
           engine.interruptCycle();
           try {
             return send(
               200,
-              await authorizedWork(() => {
+              await authorizedWork(async () => {
+                const plan = b.deleteFiles ? s.syncedCopyPlan(b.id) : null;
                 if (config.role === "replica") s.forgetVolume(b.id);
                 else
                   s.db
@@ -1620,7 +1656,8 @@ export async function start(home, options = {}) {
                     .run(b.id);
                 engine.folderStates.delete(b.id);
                 void engine.reportMachine(true);
-                return { retained: true };
+                await releaseReplicaObjects(s);
+                return plan ? await deleteSyncedCopy(plan) : { retained: true };
               }),
             );
           } finally {
@@ -1887,7 +1924,7 @@ export async function start(home, options = {}) {
               s.db.exec("BEGIN IMMEDIATE");
               try {
                 s.db.exec(
-                  "DELETE FROM files; DELETE FROM pending; DELETE FROM proposals; DELETE FROM sync_state; DELETE FROM sync_dirty;",
+                  "DELETE FROM files; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM sync_state; DELETE FROM sync_dirty;",
                 );
                 s.db.prepare("INSERT INTO transitions VALUES(?)").run(id);
                 s.db.exec("COMMIT");
@@ -1922,7 +1959,11 @@ export async function start(home, options = {}) {
       }
       fail("Endpoint not found", 404);
     } catch (e) {
-      if (!res.headersSent) send(e.status || 500, { error: e.message });
+      if (!res.headersSent)
+        send(e.status || 500, {
+          error: e.message,
+          ...(e.status && typeof e.code === "string" ? { code: e.code } : {}),
+        });
       else res.destroy();
     }
   });
@@ -1975,6 +2016,7 @@ export async function start(home, options = {}) {
     timer,
     lastActivity = Date.now(),
     failures = 0,
+    offline = false,
     rerun = false,
     requestedFull = false,
     retryAt = 0;
@@ -2065,10 +2107,12 @@ export async function start(home, options = {}) {
       flushEvents();
       await engine.exclusive(() => engine.cycle({ incremental: !full }));
       failures = engine.error ? Math.min(failures + 1, 5) : 0;
+      offline = !!engine.hubUnavailable;
       if (engine.activity !== activity) lastActivity = Date.now();
     } catch (error) {
       engine.error = error.message;
       failures = Math.min(failures + 1, 5);
+      offline = !!(error.hubUnavailable || engine.hubUnavailable);
     } finally {
       running = false;
       if (!stopping && options.timer !== false) {
@@ -2077,9 +2121,14 @@ export async function start(home, options = {}) {
           config.role === "hub" || Date.now() - lastActivity >= IDLE_AFTER_MS
             ? IDLE_POLL_MS
             : ACTIVE_POLL_MS;
-        retryAt = failures
-          ? Date.now() + Math.min(300000, ACTIVE_POLL_MS * 2 ** failures)
-          : 0;
+        const delay = Math.min(
+          offline ? 60000 : 300000,
+          ACTIVE_POLL_MS * 2 ** failures,
+        );
+        const backoff = offline
+          ? Math.round(delay * (0.8 + Math.random() * 0.2))
+          : delay;
+        retryAt = failures ? Date.now() + backoff : 0;
         const pending =
           !engine.paused &&
           s.db
@@ -2087,13 +2136,7 @@ export async function start(home, options = {}) {
               "SELECT 1 FROM sync_dirty d JOIN volumes v ON v.id=d.volume WHERE v.selected=1 LIMIT 1",
             )
             .get();
-        schedule(
-          failures
-            ? Math.min(300000, ACTIVE_POLL_MS * 2 ** failures)
-            : rerun || pending
-              ? 1000
-              : normal,
-        );
+        schedule(failures ? backoff : rerun || pending ? 1000 : normal);
         rerun = false;
       }
     }
@@ -2150,7 +2193,12 @@ export async function start(home, options = {}) {
             },
           );
           const next = (await response.json()).cursor;
-          if (next !== cursor) {
+          if (engine.hubUnavailable || (failures && offline)) {
+            failures = 0;
+            retryAt = 0;
+            cursor = next;
+            void tick();
+          } else if (next !== cursor) {
             cursor = next;
             void tick();
           }
@@ -2161,7 +2209,7 @@ export async function start(home, options = {}) {
               remoteEvents.signal.removeEventListener("abort", done);
               resolve();
             };
-            const timer = setTimeout(done, 15000);
+            const timer = setTimeout(done, options.eventRetryMs ?? 15000);
             remoteEvents.signal.addEventListener("abort", done, { once: true });
             if (remoteEvents.signal.aborted) done();
           });

@@ -16,8 +16,8 @@ export function galleryMedia(store, volume, name, hash) {
     store.visibleRules(volume)(name, false)
   )
     fail("Video is no longer available", 404);
-  const file = store.blob(hash);
-  if (!fs.existsSync(file) || fs.statSync(file).size !== row.size)
+  const file = store.localContent(volume, name, hash);
+  if (!file || fs.statSync(file).size !== row.size)
     fail("Sync this video before playing it", 409);
   return {
     file,

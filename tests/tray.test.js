@@ -227,3 +227,63 @@ test("tray closes after Sync now or Pause succeeds and stays open to show a fail
     w.close();
   }
 });
+
+test("tray offers Start service and Quit while the daemon is unavailable", async () => {
+  const dom = new JSDOM('<div id="tray-content"></div>', {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.matchMedia = () => ({ matches: false });
+  w.ResizeObserver = class {
+    observe() {}
+  };
+  w.lucide = { createIcons() {} };
+  const calls = [];
+  let running = false;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        calls.push(command === "api" ? args.route : command);
+        if (command === "main_window_open") return false;
+        if (command === "start_daemon") {
+          running = true;
+          return;
+        }
+        if (!running) throw "The daemon is unavailable. Use Start service.";
+        return { role: "replica", phase: "idle", volumes: [] };
+      },
+    },
+  };
+  const settle = async () => {
+    for (let i = 0; i < 20; i++)
+      await new Promise((resolve) => setImmediate(resolve));
+  };
+  try {
+    const source = fs.readFileSync(
+      new URL("../apps/desktop/src/tray.js", import.meta.url),
+      "utf8",
+    );
+    await w.eval(`(async () => {${source}\n})()`);
+    assert.equal(
+      w.document.querySelector(".tray-heading strong").textContent,
+      "Daemon unavailable",
+    );
+    assert.deepEqual(
+      [...w.document.querySelectorAll(".tray-menu button")].map(
+        (button) => button.dataset.action,
+      ),
+      ["start", "open", "quit"],
+    );
+    w.document.querySelector('[data-action="start"]').click();
+    await settle();
+    assert.ok(calls.includes("start_daemon"));
+    assert.equal(
+      w.document.querySelector(".tray-heading strong").textContent,
+      "Up to date",
+    );
+  } finally {
+    w.close();
+  }
+});

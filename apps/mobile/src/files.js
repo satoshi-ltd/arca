@@ -73,6 +73,16 @@ export const files = {
   async remove(uri) {
     if (new File(uri).exists) new File(uri).delete();
   },
+  // Picker copies live in the app cache; never delete a provider or library URI.
+  async discardPicked(uri) {
+    if (
+      typeof uri === "string" &&
+      uri.startsWith(Paths.cache.uri) &&
+      !uri.startsWith(new Directory(Paths.cache, "arca-incoming").uri) &&
+      new File(uri).exists
+    )
+      new File(uri).delete();
+  },
   async copy(from, to) {
     if (new File(to).exists) new File(to).delete();
     await new File(from).copy(new File(to));

@@ -35,6 +35,13 @@ const script =
     .replace(/\r?\n/g, "\r\n")
     .replace(/^import[\s\S]*?notice-contract\.js";\r?\n/, "")
     .replace(/import \{ fileIcon \} from "\.\/file-icons\.js";\r?\n/, "");
+function nodeInit({ signal, ...options } = {}) {
+  if (!signal) return options;
+  const controller = new AbortController();
+  if (signal.aborted) controller.abort();
+  else signal.addEventListener("abort", () => controller.abort(), { once: true });
+  return { ...options, signal: controller.signal };
+}
 async function until(check) {
   for (let i = 0; i < 200; i++) {
     if (check()) return;
@@ -307,13 +314,14 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
       w.document.querySelector("#submit-dialog").getAttribute("aria-busy"),
       "true",
     );
-    assert.equal(w.document.querySelector("#cancel-dialog").disabled, true);
+    assert.equal(w.document.querySelector("#cancel-dialog").disabled, false);
     const escapeEvent = new w.Event("cancel", { cancelable: true });
     w.document.querySelector("#dialog").dispatchEvent(escapeEvent);
+    assert.equal(escapeEvent.defaultPrevented, true);
     assert.equal(
-      escapeEvent.defaultPrevented,
-      true,
-      "Escape must not imply cancellation of an accepted operation",
+      w.document.querySelector("#dialog").open,
+      false,
+      "Escape closes the dialog without cancelling the accepted operation",
     );
     releaseRestore();
     await until(() =>
@@ -673,7 +681,7 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
       throw new TypeError("Failed to fetch");
     }
     const response = await fetch(new URL(route, base), {
-      ...options,
+      ...nodeInit(options),
       headers: {
         ...options.headers,
         origin: base,
@@ -1442,6 +1450,159 @@ test("unlink confirms and completes while a native background status read is pen
   );
 });
 
+test("a replica shows full-backup progress, waits quietly for the hub and never counts unknown folders as empty", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-backup-progress-ui-"));
+  const nodes = [];
+  const node = async (name, role) => {
+    const home = path.join(root, name);
+    init(home, { name, role, port: 0 });
+    const daemon = await start(home, { timer: false });
+    nodes.push(daemon);
+    daemon.api = async (route, body) => {
+      const r = await fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+      return data;
+    };
+    return daemon;
+  };
+  const hub = await node("Hub", "hub"),
+    mac = await node("Mac", "replica");
+  await hub.api("/v1/volumes", { name: "photos" });
+  const invite = await hub.api("/v1/devices", { name: "Mac", role: "replica" });
+  await mac.api("/v1/connect", { url: `http://127.0.0.1:${hub.port}`, token: invite.token });
+  let backup = { enabled: true, path: "/data/backup", error: null, waiting: false, progress: { revisions: 1203 } };
+  const status = mac.engine.status.bind(mac.engine);
+  mac.engine.status = (...args) => ({ ...status(...args), backup });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost/#/settings" });
+  const w = dom.window;
+  let poll;
+  w.setInterval = (callback, ms) => {
+    if (ms === 5000) poll = callback;
+    return 0;
+  };
+  const requests = new Set();
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        if (command === "bootstrap") return Promise.resolve({ setup: false, status: mac.engine.status() });
+        const request = mac.api(args.route, args.method === "POST" ? args.body : undefined);
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    for (const daemon of nodes.reverse()) await daemon.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  const q = (selector) => w.document.querySelector(selector);
+  await until(() => q("#backup-completion"));
+  assert.equal(q("#backup-summary").textContent.trim(), "Backing up…");
+  assert.match(q("#backup-completion").textContent, /Copying history · 1,203 revisions/);
+  assert.match(q("#backup-completion").textContent, /Running/);
+  backup = { ...backup, progress: null, waiting: true };
+  await poll();
+  await until(() => /waiting for hub/.test(q("#backup-summary").textContent));
+  assert.doesNotMatch(q("#backup-completion").textContent, /Needs attention/);
+  assert.match(q("#backup-completion").textContent, /Offline/);
+  w.location.hash = "#/folders";
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => /photos/.test(q("#content").textContent) && /Not counted yet|files/.test(q("#content").textContent));
+  assert.doesNotMatch(q("#content").textContent, /0 files · 0 B/);
+});
+
+test("unlink can also delete the replica files the hub already has", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-unlink-delete-ui-"));
+  const nodes = [];
+  async function node(name, role) {
+    const home = path.join(root, name);
+    init(home, { name, role, port: 0 });
+    const daemon = await start(home, { timer: false });
+    nodes.push(daemon);
+    daemon.api = async (route, body) => {
+      const r = await fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+      return data;
+    };
+    return daemon;
+  }
+  const hub = await node("Hub", "hub"),
+    mac = await node("Mac", "replica");
+  const folder = await hub.api("/v1/volumes", { name: "Photos" });
+  fs.writeFileSync(path.join(folder.path, "synced.jpg"), "on the hub");
+  await hub.engine.cycle();
+  const invite = await hub.api("/v1/devices", { name: "Mac", role: "replica" });
+  await mac.api("/v1/connect", { url: `http://127.0.0.1:${hub.port}`, token: invite.token });
+  const local = await mac.api("/v1/select", { id: folder.id });
+  await mac.engine.cycle();
+  fs.writeFileSync(path.join(local.path, "draft.jpg"), "only here");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: `http://tauri.localhost/#/folders/${folder.id}` });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  const bodies = [];
+  const requests = new Set();
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        if (command === "bootstrap") return Promise.resolve({ setup: false, status: mac.engine.status() });
+        if (args.route === "/v1/unselect") bodies.push(args.body);
+        const request = mac.api(args.route, args.method === "POST" ? args.body : undefined);
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    for (const daemon of nodes.reverse()) await daemon.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  const q = (selector) => w.document.querySelector(selector);
+  await until(() => q('[data-action="unselect"]'));
+  q('[data-action="unselect"]').click();
+  await until(() => q("#dialog").open);
+  const option = q('#dialog [name="deleteFiles"]');
+  assert.equal(option.checked, false, "deleting local files is never the default");
+  assert.match(q('#dialog label[for="unlink-delete"]').textContent, /^Delete the files on this (Mac|machine)$/);
+  assert.ok(q("#dialog").classList.contains("confirmation-dialog"), "an option keeps the compact confirmation");
+  assert.equal(q("#cancel-dialog").autofocus, true, "a destructive confirmation opens on Cancel");
+  assert.match(q("#dialog").textContent, /The hub keeps the shared folder, its files and history/);
+  option.checked = true;
+  option.dispatchEvent(new w.Event("change"));
+  assert.equal(q("#submit-dialog").textContent, "Unlink and delete");
+  q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+  await until(() => !q("#dialog").open && bodies.length);
+  assert.deepEqual(JSON.parse(JSON.stringify(bodies)), [{ id: folder.id, deleteFiles: true }]);
+  await until(() => /1 file .* deleted from this Mac|1 file .* deleted from this machine/.test(w.document.body.textContent));
+  assert.equal(fs.existsSync(path.join(local.path, "synced.jpg")), false);
+  assert.equal(fs.readFileSync(path.join(local.path, "draft.jpg"), "utf8"), "only here");
+  assert.match(w.document.body.textContent, /file not on the hub stay on disk|files not on the hub stay on disk/);
+  assert.equal(fs.readFileSync(path.join(folder.path, "synced.jpg"), "utf8"), "on the hub");
+});
+
 for (const surface of ["web", "desktop"]) {
   for (const role of ["hub", "replica"]) {
     test(`${surface} ${role} keeps machine authority separate from interface access`, async (t) => {
@@ -1469,7 +1630,7 @@ for (const surface of ["web", "desktop"]) {
       w.setInterval = () => 0;
       const request = (route, options = {}) => {
         const pending = fetch(`http://127.0.0.1:${daemon.port}${route}`, {
-          ...options,
+          ...nodeInit(options),
           headers: {
             Authorization: `Bearer ${daemon.engine.config.adminToken}`,
             "Content-Type": "application/json",
@@ -1513,6 +1674,12 @@ for (const surface of ["web", "desktop"]) {
         Boolean(w.document.querySelector('[data-action="logout-all"]')),
         surface === "web",
       );
+      if (surface === "web") {
+        w.document.querySelector('[data-action="logout-all"]').click();
+        await until(() => w.document.querySelector("#dialog").open);
+        assert.ok(w.document.querySelector("#submit-dialog").classList.contains("danger"), "signing every browser out is destructive");
+        w.document.querySelector("#cancel-dialog").click();
+      }
       assert.equal(
         Boolean(w.document.querySelector("#allow-lan-http")),
         role === "hub",
@@ -1536,6 +1703,10 @@ for (const surface of ["web", "desktop"]) {
           1,
         );
         assert.ok(w.document.querySelector("#image-regenerate-job").hidden);
+        assert.equal(
+          w.document.querySelector("#image-settings").textContent.includes("Optimize space"),
+          false,
+        );
         w.document.querySelector('[data-action="images-regenerate"]').click();
         await until(
           () =>
@@ -1754,7 +1925,7 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
         }),
       );
     return fetch(`http://127.0.0.1:${daemon.port}${route}`, {
-      ...options,
+      ...nodeInit(options),
       headers: {
         Authorization: `Bearer ${daemon.engine.config.adminToken}`,
         "Content-Type": "application/json",
@@ -1849,7 +2020,7 @@ test("Machines refreshes backup acknowledgements without navigation", async (t) 
   };
   w.fetch = (route, options = {}) =>
     fetch(`http://127.0.0.1:${daemon.port}${route}`, {
-      ...options,
+      ...nodeInit(options),
       headers: {
         Authorization: `Bearer ${daemon.engine.config.adminToken}`,
         "Content-Type": "application/json",
@@ -3162,7 +3333,7 @@ for (const role of ["hub", "replica"])
       w.fetch = async (route, options = {}) => {
         if (route === "/v1/setup") mutations++;
         const response = await fetch(new URL(route, base), {
-          ...options,
+          ...nodeInit(options),
           headers: {
             ...options.headers,
             Origin: base,
@@ -3247,7 +3418,7 @@ test("configured server hides unavailable machine approval and displays the chos
   const base = "http://127.0.0.1:" + daemon.port;
   const w = new JSDOM(html, { runScripts: "outside-only", url: base }).window;
   w.setInterval = () => 0;
-  w.fetch = (route, options) => fetch(new URL(route, base), options);
+  w.fetch = (route, options) => fetch(new URL(route, base), nodeInit(options));
   t.after(async () => {
     w.close();
     await daemon.close();
@@ -4001,4 +4172,646 @@ test("the sidebar offers a signed update only when one exists and installs it on
     await drainRequests(requests);
     w.close();
   }
+});
+test("web admin reads time out into the connection notice while a stalled submission stays closable and releases the queue", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-web-timeout-"));
+  init(home, { port: 0, name: "Casa" });
+  const daemon = await start(home, { timer: false });
+  const v = await daemon.engine.publish("Original", undefined, false);
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: `${base}/#/folders/${v.id}`,
+  });
+  const w = dom.window;
+  const pending = new Set();
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  let poll;
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) poll = fn;
+    return 0;
+  };
+  const timeout = w.setTimeout.bind(w),
+    clear = w.clearTimeout.bind(w),
+    deadlines = new Map();
+  let deadline = 0;
+  w.setTimeout = (fn, ms, ...args) => {
+    if (ms < 15000) return timeout(fn, ms, ...args);
+    deadlines.set(`deadline-${++deadline}`, { fn, ms });
+    return `deadline-${deadline}`;
+  };
+  w.clearTimeout = (id) => (deadlines.delete(id) ? undefined : clear(id));
+  const expire = (ms) => {
+    const due = [...deadlines].filter(([, entry]) => entry.ms === ms);
+    assert.ok(due.length, `a ${ms} ms deadline is pending`);
+    for (const [id, entry] of due) {
+      deadlines.delete(id);
+      entry.fn();
+    }
+  };
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  const stalled = new Set(),
+    sent = [];
+  w.fetch = (route, options = {}) => {
+    sent.push(`${options.method} ${route.split("?")[0]}`);
+    if (stalled.has(route.split("?")[0]))
+      return new Promise((_, reject) =>
+        options.signal.addEventListener(
+          "abort",
+          () => reject(new w.DOMException("Aborted", "AbortError")),
+          { once: true },
+        ),
+      );
+    const work = fetch(new URL(route, base), {
+      ...nodeInit(options),
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+      },
+    });
+    pending.add(work);
+    void work.finally(() => pending.delete(work));
+    return work;
+  };
+  const q = (selector) => w.document.querySelector(selector);
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => q(".detail-title h1")?.textContent === "Original" && idle());
+  await until(() => !deadlines.size);
+  q('[data-action="rename-share"]').click();
+  await until(() => q('#dialog [name="name"]') && idle());
+  q('#dialog [name="name"]').value = "Renamed";
+  stalled.add("/v1/rename-share");
+  q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+  await until(() => sent.includes("POST /v1/rename-share"));
+  assert.equal(q("#submit-dialog").getAttribute("aria-busy"), "true");
+  assert.equal(q("#cancel-dialog").disabled, false);
+
+  stalled.add("/v1/status");
+  const polled = poll();
+  await until(() => sent.filter((r) => r === "GET /v1/status").length > 1);
+  expire(20000);
+  await polled;
+  assert.match(q("#notice").textContent, /Cannot reach this machine/);
+  assert.equal(q("#dialog").open, true, "the notice does not wait for the dialog");
+
+  q("#cancel-dialog").click();
+  assert.equal(q("#dialog").open, false);
+  assert.equal(q("#submit-dialog").hasAttribute("aria-busy"), false);
+  stalled.delete("/v1/status");
+  q('#sync-controls [data-action="pause"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(sent.includes("POST /v1/pause"), false, "mutations stay ordered");
+  expire(30000);
+  await until(() => daemon.engine.paused && idle());
+  assert.match(q("#notice").textContent, /Connection interrupted/);
+  assert.equal(daemon.engine.store.volume(v.id).name, "Original");
+  await until(() => !/Cannot reach this machine/.test(q("#notice").textContent));
+});
+
+test("Tauri replaces the stale view with Start service when the daemon stops and restores it once the daemon answers", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-daemon-stop-"));
+  init(home, { port: 0, name: "Casa" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Documents");
+  const pending = new Set();
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const intervals = [];
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) intervals.push(fn);
+    return 0;
+  };
+  let down = false;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (command === "check_update")
+          return { available: false, version: null, notes: null };
+        if (command !== "api") throw new Error(command);
+        if (down) throw "The daemon is unavailable. Use Start service.";
+        const work = fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          method: args.method,
+          headers: {
+            Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+            "Content-Type": "application/json",
+          },
+          ...(args.method === "POST" ? { body: JSON.stringify(args.body) } : {}),
+        }).then(async (r) => {
+          const value = await r.json();
+          if (!r.ok) throw value.error;
+          return value;
+        });
+        pending.add(work);
+        try {
+          return await work;
+        } finally {
+          pending.delete(work);
+        }
+      },
+    },
+  };
+  const q = (selector) => w.document.querySelector(selector);
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => q(".folder-card") && idle());
+  const [poll] = intervals;
+  down = true;
+  await poll();
+  assert.match(q("#content").textContent, /Daemon stopped/);
+  assert.ok(q('#content [data-action="start"]'));
+  assert.equal(q("#connection").textContent, "Service stopped");
+  assert.equal(q("#sync-controls").hidden, true);
+  assert.doesNotMatch(q("#notice").textContent, /Could not complete action/);
+  w.document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "r", metaKey: true, bubbles: true }),
+  );
+  await until(idle);
+  assert.match(q("#content").textContent, /Daemon stopped/);
+  assert.doesNotMatch(q("#notice").textContent, /daemon is unavailable/);
+  const probe = intervals.at(-1);
+  assert.notEqual(probe, poll);
+  await probe();
+  assert.match(q("#content").textContent, /Daemon stopped/);
+  down = false;
+  await probe();
+  await until(() => q(".folder-card") && idle());
+  assert.notEqual(q("#connection").textContent, "Service stopped");
+  assert.equal(q("#sync-controls").hidden, false);
+  assert.doesNotMatch(q("#notice").textContent, /daemon is unavailable/);
+});
+
+test("file rename and delete send the newest known revision when saved history is stale", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-file-rev-"));
+  init(home, { port: 0, name: "Casa" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Documents");
+  fs.writeFileSync(path.join(v.path, "note.txt"), "one");
+  await daemon.engine.cycle();
+  fs.writeFileSync(path.join(v.path, "note.txt"), "two");
+  await daemon.engine.cycle();
+  const current = daemon.engine.store.current(v.id, "note.txt");
+  assert.ok(current.rev > 1);
+  const pending = new Set();
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  const w = dom.window;
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.setInterval = () => 0;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  const posted = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (command === "check_update")
+          return { available: false, version: null, notes: null };
+        if (command !== "api") throw new Error(command);
+        if (args.route.startsWith("/v1/history?"))
+          return {
+            offline: true,
+            next: null,
+            versions: [{ ...current, rev: 1, size: 3, created: Date.now() - 60000 }],
+          };
+        if (args.method === "POST") posted.push([args.route, args.body]);
+        const work = fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          method: args.method,
+          headers: {
+            Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+            "Content-Type": "application/json",
+          },
+          ...(args.method === "POST" ? { body: JSON.stringify(args.body) } : {}),
+        }).then(async (r) => {
+          const value = await r.json();
+          if (!r.ok) throw value.error;
+          return value;
+        });
+        pending.add(work);
+        try {
+          return await work;
+        } finally {
+          pending.delete(work);
+        }
+      },
+    },
+  };
+  const q = (selector) => w.document.querySelector(selector);
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => q('[data-action="folder-detail"]') && idle());
+  q('[data-action="folder-detail"]').click();
+  const row = (name) =>
+    [...w.document.querySelectorAll(".browser-file-row")].find(
+      (el) => el.querySelector("strong").textContent === name,
+    );
+  await until(() => row("note.txt") && idle());
+  row("note.txt").click();
+  await until(() => q('.file-actions-menu [data-action="rename-file"]') && idle());
+  q('.file-actions-menu [data-action="rename-file"]').click();
+  await until(() => q('#dialog [name="name"]'));
+  q('#dialog [name="name"]').value = "renamed.txt";
+  q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+  await until(() => !q("#dialog").open && idle());
+  assert.deepEqual(JSON.parse(JSON.stringify(posted[0])), [
+    "/v1/rename-file",
+    { volume: v.id, path: "note.txt", rev: current.rev, name: "renamed.txt" },
+  ]);
+  assert.ok(fs.existsSync(path.join(v.path, "renamed.txt")));
+  assert.match(q("#notice").textContent, /File renamed/);
+  const renamed = daemon.engine.store.current(v.id, "renamed.txt");
+  await until(() => row("renamed.txt") && idle());
+  row("renamed.txt").click();
+  await until(() => q('.file-actions-menu [data-action="delete-file"]') && idle());
+  q('.file-actions-menu [data-action="delete-file"]').click();
+  await until(() => q("#dialog").open);
+  q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+  await until(() => !q("#dialog").open && idle());
+  assert.deepEqual(JSON.parse(JSON.stringify(posted[1])), [
+    "/v1/delete-file",
+    { volume: v.id, path: "renamed.txt", rev: renamed.rev },
+  ]);
+  assert.equal(fs.existsSync(path.join(v.path, "renamed.txt")), false);
+});
+
+test("web admin reports gateway failures as an unreachable machine and keeps the daemon's own 503 readable", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-web-gateway-"));
+  init(home, { port: 0, name: "Casa" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Documents");
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: base });
+  const w = dom.window;
+  const pending = new Set();
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  let poll;
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) poll = fn;
+    return 0;
+  };
+  const answers = new Map();
+  w.fetch = async (route, options = {}) => {
+    const answer = answers.get(route);
+    if (answer) return new Response(answer.body, { status: answer.status });
+    const work = fetch(new URL(route, base), {
+      ...nodeInit(options),
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+      },
+    });
+    pending.add(work);
+    void work.finally(() => pending.delete(work));
+    return work;
+  };
+  const q = (selector) => w.document.querySelector(selector);
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => q(".folder-card") && idle());
+  answers.set("/v1/status", { status: 502, body: "<html>Bad gateway</html>" });
+  await poll();
+  assert.match(q("#notice").textContent, /Cannot reach this machine/);
+  answers.set("/v1/status", {
+    status: 503,
+    body: JSON.stringify({ error: "Tailscale access unavailable" }),
+  });
+  await poll();
+  assert.match(q("#notice").textContent, /Cannot reach this machine/);
+  assert.doesNotMatch(q("#notice").textContent, /Permission required/);
+  answers.delete("/v1/status");
+  answers.set("/v1/pause", {
+    status: 503,
+    body: JSON.stringify({
+      error: "Hub unavailable. Try again when it is reachable.",
+    }),
+  });
+  q('#sync-controls [data-action="pause"]').click();
+  await until(() => /Hub unavailable\. Try again/.test(q("#notice").textContent));
+  assert.doesNotMatch(q("#notice").textContent, /Permission required/);
+});
+
+test("the photo timeline scales months by count, keeps year labels apart and scrubs to a month", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-timeline-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  const sharp = (await import("sharp")).default;
+  fs.writeFileSync(
+    path.join(v.path, "photo.jpg"),
+    await sharp({ create: { width: 40, height: 40, channels: 3, background: "red" } })
+      .jpeg()
+      .toBuffer(),
+  );
+  await daemon.engine.cycle();
+  daemon.engine.store.db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
+  const timeline = [
+    { month: "2026-09", count: 400 },
+    { month: "2026-08", count: 380 },
+    { month: "2025-12", count: 300 },
+    { month: "2024-05", count: 250 },
+    { month: "2017-03", count: 4 },
+    { month: "2016-02", count: 3 },
+    { month: "2015-01", count: 2 },
+    { month: "2012-06", count: 1 },
+  ];
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const galleryRequests = [];
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap")
+            return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          if (args.route.startsWith("/v1/gallery?")) galleryRequests.push(args.route);
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method || "GET",
+            headers: {
+              Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+              "Content-Type": "application/json",
+            },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          if (args.route.startsWith("/v1/gallery?")) return { ...data, timeline };
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  if (!w.document.querySelector(".photo-timeline"))
+    w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-timeline button").length === 8);
+  const rail = w.document.querySelector(".photo-timeline");
+  Object.defineProperty(rail, "clientHeight", { configurable: true, value: 600 });
+  rail.getBoundingClientRect = () => ({ top: 0, bottom: 600, left: 0, right: 76, width: 76, height: 600 });
+  w.dispatchEvent(new w.Event("resize"));
+  const buttons = [...rail.querySelectorAll("button")];
+  const size = (button) => parseFloat(button.style.getPropertyValue("--segment-height"));
+  const top = (button) => parseFloat(button.style.getPropertyValue("--segment-top"));
+  assert.ok(size(buttons[0]) > 10 * size(buttons[7]), "busy months take more space");
+  assert.ok(size(buttons[0]) < 20 * size(buttons[7]), "square-root weights avoid long empty stretches");
+  assert.ok(size(buttons[7]) >= 3, "a sparse month stays reachable");
+  assert.ok(Math.abs(top(buttons[7]) + size(buttons[7]) - 600) < 0.01, "the rail spans the whole height without scrolling");
+  const labels = buttons
+    .filter((button) => button.dataset.year)
+    .map((button) => [button.dataset.year, !button.classList.contains("photo-year-hidden")]);
+  assert.deepEqual(labels.at(0), ["2026", true]);
+  assert.deepEqual(labels.at(-1), ["2012", true], "the oldest year is always labelled");
+  const visible = buttons.filter((button) => button.dataset.year && !button.classList.contains("photo-year-hidden")).map(top);
+  for (let i = 1; i < visible.length; i++)
+    assert.ok(visible[i] - visible[i - 1] >= 20, "visible year labels never overlap");
+  assert.ok(labels.some(([, visible]) => !visible), "crowded years do not overlap");
+  const hover = rail.querySelector(".photo-timeline-hover");
+  const pointer = (type, clientY) => {
+    const event = new w.MouseEvent(type, { bubbles: true, clientY, button: 0 });
+    rail.dispatchEvent(event);
+  };
+  pointer("pointermove", top(buttons[3]) + 16 + 2);
+  assert.equal(hover.hidden, false);
+  assert.equal(hover.textContent, buttons[3].dataset.label);
+  assert.ok(buttons[3].classList.contains("photo-date-hovered"));
+  assert.equal(buttons[3].title, "", "the chip replaces the native tooltip");
+  assert.match(buttons[3].getAttribute("aria-label"), /May 2024, 250 photos/);
+  const before = galleryRequests.length;
+  pointer("pointerdown", top(buttons[3]) + 16 + 2);
+  pointer("pointerup", top(buttons[3]) + 16 + 2);
+  await until(() => galleryRequests.length > before);
+  assert.match(galleryRequests.at(-1), /month=2024-05/);
+  assert.equal(hover.hidden, true);
+  assert.equal(buttons[3].hasAttribute("aria-current"), true, "the viewed month's dot is lit");
+  assert.equal(rail.querySelectorAll("[aria-current]").length, 1);
+});
+
+test("the photo timeline appears and seeks while the gallery is still indexing", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-timeline-indexing-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  const sharp = (await import("sharp")).default;
+  fs.writeFileSync(
+    path.join(v.path, "photo.jpg"),
+    await sharp({ create: { width: 40, height: 40, channels: 3, background: "red" } }).jpeg().toBuffer(),
+  );
+  await daemon.engine.cycle();
+  daemon.engine.store.db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
+  const timeline = [
+    { month: "2026-09", count: 40 },
+    { month: "2020-12", count: 12 },
+    { month: "2012-06", count: 1 },
+  ];
+  let indexing = true;
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const galleryRequests = [];
+  const requests = new Set();
+  t.after(async () => {
+    indexing = false;
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          if (args.route.startsWith("/v1/gallery?")) galleryRequests.push(args.route);
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          if (args.route.startsWith("/v1/gallery?")) return { ...data, indexing, timeline };
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  if (!w.document.querySelector(".photo-timeline"))
+    w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-timeline button").length === 3);
+  assert.equal(w.document.querySelector(".photo-more").getAttribute("aria-label"), "Preparing gallery");
+  const before = galleryRequests.length;
+  await until(() => galleryRequests.length > before + 1);
+  w.document.querySelector('.photo-timeline button[data-month="2020-12"]').click();
+  await until(() => galleryRequests.some((route) => route.includes("month=2020-12")));
+  indexing = false;
+  await until(() => !w.document.querySelector(".photo-more").hasAttribute("aria-busy"));
+  assert.match(galleryRequests.at(-1), /month=2020-12/, "the seeked month survives the end of indexing");
+  assert.equal(w.document.querySelectorAll(".photo-timeline button").length, 3);
+  assert.equal(
+    w.document.querySelector(".photo-timeline [aria-current]")?.dataset.month,
+    "2020-12",
+  );
+});
+
+test("after seeking a month the gallery loads newer photos above when scrolling up", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-timeline-up-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  const sharp = (await import("sharp")).default;
+  const dates = { "new.jpg": "2026-03-10T12:00:00", "middle.jpg": "2025-07-10T12:00:00", "old.jpg": "2024-05-10T12:00:00" };
+  for (const [name, color] of [["new.jpg", "red"], ["middle.jpg", "green"], ["old.jpg", "blue"]])
+    fs.writeFileSync(
+      path.join(v.path, name),
+      await sharp({ create: { width: 40, height: 40, channels: 3, background: color } }).jpeg().toBuffer(),
+    );
+  await daemon.engine.cycle();
+  const db = daemon.engine.store.db;
+  db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
+  for (const [name, captured] of Object.entries(dates))
+    db.prepare("INSERT OR REPLACE INTO gallery_metadata(hash,captured,date_checked) VALUES(?,?,1)")
+      .run(daemon.engine.store.current(v.id, name).hash, captured);
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const observers = [];
+  w.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback;
+      observers.push(this);
+    }
+    observe(element) {
+      this.element = element;
+    }
+    disconnect() {}
+  };
+  const galleryRequests = [];
+  const requests = new Set();
+  let failNewer = true;
+  let retryNewer;
+  const setTimeoutReal = w.setTimeout.bind(w);
+  w.setTimeout = (callback, ms, ...rest) =>
+    ms === 5000 ? ((retryNewer = callback), 0) : setTimeoutReal(callback, ms, ...rest);
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          if (args.route.startsWith("/v1/gallery?")) galleryRequests.push(args.route);
+          if (args.route.includes("before=") && failNewer) {
+            failNewer = false;
+            throw new Error("Hub unavailable. Try again when it is reachable.");
+          }
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  if (!w.document.querySelector(".photo-timeline"))
+    w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-timeline button").length === 3);
+  const paths = () =>
+    [...w.document.querySelectorAll(".photo-thumb .photo-open")].map((tile) => tile.getAttribute("aria-label"));
+  await until(() => paths().length === 3);
+  w.document.querySelector('.photo-timeline button[data-month="2024-05"]').click();
+  await until(() => retryNewer);
+  assert.deepEqual(paths(), ["Open old.jpg"], "a failed newer page leaves the seeked month in place");
+  retryNewer();
+  await until(() => paths().length === 3);
+  const seek = galleryRequests.findIndex((route) => route.includes("month=2024-05"));
+  assert.ok(seek >= 0);
+  assert.ok(galleryRequests.slice(seek + 1).some((route) => route.includes("before=")), "newer photos load above the seeked month");
+  assert.deepEqual(paths(), ["Open new.jpg", "Open middle.jpg", "Open old.jpg"]);
+  const newer = observers.find((observer) => observer.element?.classList.contains("photo-newer"));
+  assert.ok(newer, "the top of the gallery is observed");
+  const count = galleryRequests.length;
+  newer.callback([{ isIntersecting: true }]);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const day = w.document.querySelector(".photo-day");
+  day.getBoundingClientRect = () => ({ top: 0, bottom: 500, left: 0, right: 500, width: 500, height: 500 });
+  const chip = w.document.querySelector(".photo-timeline-hover");
+  w.document.querySelector(".photo-days").closest(".page").dispatchEvent(new w.Event("scroll"));
+  assert.equal(chip.hidden, false, "scrolling shows the date chip");
+  assert.equal(chip.textContent, "Mar 2026");
+  await until(() => chip.hidden);
+  assert.equal(galleryRequests.length, count, "nothing newer remains to load");
 });

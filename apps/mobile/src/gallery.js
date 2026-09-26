@@ -3,7 +3,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import { validPath, validRow } from "./validation.js";
-import { errorNotice } from "../../desktop/src/notice-contract.js";
+import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 
 const digest = (value) => bytesToHex(sha256(new TextEncoder().encode(value)));
 export function galleryConfig(folder) {
@@ -69,7 +69,8 @@ export class Gallery {
       r.busy = true;
       r.stopped = false;
       r.check();
-      await r.client.refresh();
+      if ((await r.store.gallery(r.scope, volume))?.mode !== "source")
+        await r.client.refresh();
       const remote = r.client
         .state()
         .catalog?.volumes.find((v) => v.id === volume);
@@ -195,7 +196,7 @@ export class Gallery {
           if (r.syncAbort?.signal.aborted) r.check();
           if (
             ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
-            errorNotice(error.message).offline
+            isHubUnreachable(error)
           )
             throw error;
           item.state = "failed";
@@ -399,10 +400,7 @@ export class Gallery {
           after = page.next;
         } while (after);
       } finally {
-        if (session)
-          await r.client
-            .api("/v1/snapshot-release", { session })
-            .catch(() => {});
+        if (session) r.releaseSnapshot(session);
       }
     }
     return false;
@@ -441,7 +439,11 @@ export class Gallery {
       r.check();
       const exported = item.picked
         ? [item.picked]
-        : await this.media.export(item.id, stage);
+        : await this.media.export(item.id, stage).catch((error) => {
+            throw Object.assign(new Error(error.message, { cause: error }), {
+              code: "SOURCE_UNAVAILABLE",
+            });
+          });
       if (!exported.length)
         throw new Error("No original photo or video resources are available.");
       const resources = [];
@@ -665,7 +667,7 @@ export class Gallery {
           if (r.syncAbort?.signal.aborted) r.check();
           if (
             ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
-            errorNotice(error.message).offline
+            isHubUnreachable(error)
           )
             throw error;
           item.state = "failed";
@@ -687,16 +689,21 @@ export class Gallery {
       if (!source.after && !source.summary.pending)
         source.completed = new Date().toISOString();
       await r.store.setGallery(r.scope, folder.id, source);
-      if (source.issue) throw new Error(source.issue);
+      if (source.issue)
+        throw Object.assign(new Error(source.issue), {
+          code: "GALLERY_ITEMS_FAILED",
+        });
       await r.store.db.runAsync(
         "UPDATE folders SET issue=NULL WHERE scope=? AND id=?",
         r.scope,
         folder.id,
       );
     } catch (error) {
-      source.issue = ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code)
-        ? source.issue
-        : error.message;
+      source.issue =
+        ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
+        isHubUnreachable(error)
+          ? source.issue
+          : error.message;
       source.summary = await r.store.gallerySummary(r.scope, folder.id);
       await r.store.setGallery(r.scope, folder.id, source);
       throw error;

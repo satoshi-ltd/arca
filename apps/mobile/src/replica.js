@@ -3,13 +3,19 @@ import { abortRequest } from "./request-control.js";
 import { renamedPath } from "../../../packages/core/file-rename.js";
 import { validPath, validRow } from "./validation.js";
 import { Gallery, galleryConfig } from "./gallery.js";
-import { conditionNotices, errorNotice } from "../../desktop/src/notice-contract.js";
+import {
+  conditionNotices,
+  isHubUnreachable,
+} from "../../desktop/src/notice-contract.js";
 import { entryKey, directoryItem } from "../../../packages/core/entries.js";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 export const CHUNK = 1024 * 1024;
 export const HEADROOM = 256 * 1024 * 1024;
 export { validPath, validRow } from "./validation.js";
+const blockTimeout = (length) => 15000 + Math.ceil(length / 32768) * 1000;
+const transientSnapshot = (error) =>
+  ["SNAPSHOT_BUSY", "SNAPSHOT_EXPIRED"].includes(error?.code);
 
 export class Replica {
   constructor({
@@ -53,6 +59,7 @@ export class Replica {
     this.active = null;
     this.forceNext = false;
     this.hashCache = new Map();
+    this.verified = new Set();
     this.lastInventory = new Map();
     this.lastFullScan = 0;
   }
@@ -98,6 +105,7 @@ export class Replica {
     this.paused = false;
     this.error = this.progress = null;
     this.hashCache.clear();
+    this.verified.clear();
     this.lastFullScan = 0;
   }
   async destroy(confirmed = false) {
@@ -138,6 +146,15 @@ export class Replica {
         this.syncAbort,
         Object.assign(new Error("Sync paused"), { code: "SYNC_INTERRUPTED" }),
       );
+  }
+  async settle() {
+    this.stop();
+    if (this.active) await this.active;
+  }
+  releaseSnapshot(session) {
+    void this.interactiveClient
+      .api("/v1/snapshot-release", { session }, { timeout: 3000 })
+      .catch(() => {});
   }
   checkTransferTurn() {
     this.check();
@@ -209,6 +226,7 @@ export class Replica {
     }
   }
   async cleanTransferObjects(scope, removedHashes) {
+    this.verified.clear();
     const retained = new Set(await this.store.referencedHashes(scope));
     for (const location of ["object", "partial"]) {
       const root = this.files.parent(
@@ -233,6 +251,7 @@ export class Replica {
     const object = this.files.object(this.scope, hash);
     if (await this.files.exists(object)) {
       if ((await this.files.hash(object)) === hash) return object;
+      this.verified.delete(object);
       await this.files.remove(object);
     }
     const tmp = this.files.partial(this.scope, hash);
@@ -249,6 +268,7 @@ export class Replica {
       this.checkTransferTurn();
       const end = Math.min(offset + CHUNK, size) - 1;
       const response = await this.client.raw(`/v1/blobs/${hash}`, {
+        timeout: blockTimeout(end - offset + 1),
         headers: { Range: `bytes=${offset}-${end}` },
         ...(this.client.fileTransfers
           ? {
@@ -292,14 +312,17 @@ export class Replica {
   async snapshotLocal(volume, path, file, base) {
     const hash = await this.files.hash(file),
       size = (await this.files.stat(file)).size;
+    this.check();
     const object = this.files.object(this.scope, hash);
     await this.space(size);
     if (!(await this.files.exists(object))) {
       await this.files.mkdir(this.files.parent(object));
       await this.files.copy(file, object);
+      this.check();
     }
     if ((await this.files.hash(object)) !== hash)
       throw new Error("File changed while reading. Retry synchronization.");
+    this.verified.add(object);
     await this.store.queue(this.scope, { volume, path, base, hash, size });
   }
   async syncIgnore(folder) {
@@ -389,6 +412,12 @@ export class Replica {
     ))
       heads.set(row.path.toLowerCase(), row);
     const queued = new Set();
+    const waiting = new Map(
+      (await this.store.pending(this.scope, folder.id)).map((op) => [
+        op.path,
+        op,
+      ]),
+    );
     const policyPath = this.files.work(this.scope, folder.id, ".arcaignore");
     const policy = ignore().add(
       (await this.files.exists(policyPath))
@@ -440,6 +469,13 @@ export class Replica {
         previous.hash !== hash
       ) {
         queued.add(entry.path);
+        const op = waiting.get(entry.path);
+        if (
+          op?.hash === hash &&
+          op.base === (previous?.rev || 0) &&
+          (await this.files.exists(this.files.object(this.scope, hash)))
+        )
+          continue;
         await this.snapshotLocal(
           folder.id,
           entry.path,
@@ -471,11 +507,11 @@ export class Replica {
   }
   async upload(op, source = null, verifiedOriginal = false) {
     const object = source || this.files.object(this.scope, op.hash);
-    if (
-      (!verifiedOriginal || !source) &&
-      (await this.files.hash(object)) !== op.hash
-    )
-      throw new Error("Queued upload failed verification");
+    if (!(verifiedOriginal && source) && !this.verified.has(object)) {
+      if ((await this.files.hash(object)) !== op.hash)
+        throw new Error("Queued upload failed verification");
+      if (!source) this.verified.add(object);
+    }
     let { offset, complete } = await this.client.api(`/v1/uploads/${op.hash}`);
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > op.size)
       throw new Error("Invalid upload offset");
@@ -492,6 +528,7 @@ export class Replica {
         `/v1/uploads/${op.hash}?offset=${offset}&size=${op.size}`,
         {
           method: "PUT",
+          timeout: blockTimeout(Math.min(CHUNK, op.size - offset)),
           ...(this.client.fileTransfers
             ? {
                 transfer: {
@@ -536,7 +573,15 @@ export class Replica {
         await this.store.dequeue(this.scope, folder.id, op.path);
         continue;
       }
-      if (op.hash) await this.upload(op);
+      if (op.hash)
+        await this.upload(op).catch((error) => {
+          if (
+            !isHubUnreachable(error) &&
+            !["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code)
+          )
+            this.verified.delete(this.files.object(this.scope, op.hash));
+          throw error;
+        });
       const result = await this.client.api("/v1/propose", op);
       // The acknowledged source hash is the baseline for safe materialization.
       if (result.row)
@@ -672,29 +717,33 @@ export class Replica {
       through = (
         await this.client.api(`/v1/changes?volume=${folder.id}&after=0`)
       ).through;
-      let session = null,
-        after = "";
-      try {
-        do {
-          this.check();
-          const q = new URLSearchParams({
-            volume: folder.id,
-            limit: "250",
-            ...(session ? { session, after } : {}),
-          });
-          const page = await this.client.api(`/v1/snapshot?${q}`);
-          session = page.session;
-          for (const row of page.files) {
+      for (let restarted = false; ; restarted = true) {
+        let session = null,
+          after = "";
+        try {
+          do {
             this.check();
-            await apply(row);
-          }
-          after = page.next;
-        } while (after);
-      } finally {
-        if (session)
-          await this.client
-            .api("/v1/snapshot-release", { session })
-            .catch(() => {});
+            const q = new URLSearchParams({
+              volume: folder.id,
+              limit: "250",
+              ...(session ? { session, after } : {}),
+            });
+            const page = await this.client.api(`/v1/snapshot?${q}`);
+            session = page.session;
+            for (const row of page.files) {
+              this.check();
+              await apply(row);
+            }
+            after = page.next;
+          } while (after);
+          break;
+        } catch (error) {
+          if (restarted || error?.status !== 409 || !transientSnapshot(error))
+            throw error;
+          session = null;
+        } finally {
+          if (session) this.releaseSnapshot(session);
+        }
       }
     } else {
       let after = folder.cursor;
@@ -736,7 +785,7 @@ export class Replica {
     await this.store.set("name", name);
     this.changed();
     try {
-      if (!this.client.state().connection) return false;
+      if (!this.client.state().connection || this.hubUnavailable) return false;
       await this.report(this.interactiveClient);
       this.nameReportError = null;
       return true;
@@ -850,9 +899,10 @@ export class Replica {
           "Update the hub to synchronize directories and path changes safely.",
         );
       const errors = [];
-      const folders = (await this.store.folders(this.scope)).filter(
-        (f) => f.selected,
-      );
+      let deferred = false;
+      const folders = (await this.store.folders(this.scope))
+        .filter((f) => f.selected)
+        .sort((a, b) => Number(!!b.initialized) - Number(!!a.initialized));
       if (this.force) {
         this.fullScanRequested = true;
         for (const folder of folders) this.fullScanPending.add(folder.id);
@@ -907,7 +957,11 @@ export class Replica {
             continue;
           }
           if (this.syncAbort?.signal.aborted) this.check();
-          if (errorNotice(e.message).offline) throw e;
+          if (isHubUnreachable(e)) throw e;
+          if (transientSnapshot(e)) {
+            deferred = true;
+            continue;
+          }
           if (e.code !== "SYNC_INTERRUPTED")
             await this.store.issue(this.scope, folder.id, e.message);
           if (e.code === "SYNC_INTERRUPTED") throw e;
@@ -928,14 +982,14 @@ export class Replica {
         await this.store.set(`fullScan:${this.scope}`, this.lastFullScan);
         this.fullScanRequested = false;
       }
-      if (this.moreFolderWork) return;
+      if (this.moreFolderWork || deferred) return;
       await warmViews(this, folders);
       await this.store.set(`lastSync:${this.scope}`, new Date().toISOString());
       await this.report();
     } catch (e) {
-      if (e.code === "SYNC_INTERRUPTED") return;
+      if (e.code === "SYNC_INTERRUPTED" || e.code === "CLIENT_BUSY") return;
       this.connectionChecked = true;
-      this.hubUnavailable = !!errorNotice(e.message).offline;
+      this.hubUnavailable = isHubUnreachable(e);
       this.error = e.message;
     } finally {
       this.syncingVolume = null;
@@ -962,10 +1016,7 @@ export class Replica {
     this.picking = true;
     this.changed();
     try {
-      if (this.active) {
-        this.stop();
-        await this.active;
-      }
+      if (this.active) this.stop();
       return await work();
     } finally {
       this.picking = false;
@@ -1020,12 +1071,14 @@ export class Replica {
       const row = await this.store.current(this.scope, volume, name);
       const file = this.files.work(this.scope, volume, name);
       const info = await this.files.stat(file);
-      if (!info || info.directory || !row || row.deleted || row.directory)
+      if (!info || info.directory || row?.directory)
         throw new Error("Only synced files can be renamed here.");
-      if (rev != null && row.rev !== Number(rev))
-        throw new Error("File changed. Reload before renaming.");
-      if ((await this.files.hash(file)) !== row.hash)
-        throw new Error("Local file changed. Sync before renaming.");
+      if (row && !row.deleted) {
+        if (rev != null && row.rev !== Number(rev))
+          throw new Error("File changed. Reload before renaming.");
+        if ((await this.localHash(file)) !== row.hash)
+          throw new Error("Local file changed. Sync before renaming.");
+      }
       const policyFile = this.files.work(this.scope, volume, ".arcaignore");
       const policy = ignore().add(
         (await this.files.exists(policyFile))

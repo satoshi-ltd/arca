@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fail } from "./storage.js";
+import { fail, fileSignature } from "./storage.js";
 
 export function moveFolder(engine, id, location) {
   const s = engine.store,
@@ -171,10 +171,37 @@ function collectUnusedObjects(store) {
       fs.statSync(path.join(store.objects, name)).mtimeMs < cutoff
     ) {
       fs.unlinkSync(path.join(store.objects, name));
+      store.db.prepare("DELETE FROM scan_cache WHERE hash=?").run(name);
       objectsRemoved++;
     }
-  if (objectsRemoved) store.db.prepare("DELETE FROM scan_cache").run();
   return objectsRemoved;
+}
+// Runs inside the serialized cycle or an unlink, when no capture or transfer is writing objects.
+export async function releaseReplicaObjects(store) {
+  if (store.config.role !== "replica") return 0;
+  const accepted = new Set(
+    store.db
+      .prepare("SELECT hash FROM files WHERE deleted=0 AND hash IS NOT NULL")
+      .all()
+      .map((r) => r.hash),
+  );
+  const keep = new Set();
+  for (const r of store.db.prepare("SELECT row FROM pending").all()) {
+    const hash = JSON.parse(r.row).hash;
+    if (hash) keep.add(hash);
+  }
+  const forget = store.db.prepare("DELETE FROM scan_cache WHERE path=?");
+  for (const r of store.db.prepare("SELECT path,signature,hash FROM scan_cache").all())
+    if (accepted.has(r.hash)) continue;
+    else if (fileSignature(r.path) === r.signature) keep.add(r.hash);
+    else forget.run(r.path);
+  let removed = 0;
+  for (const name of await fs.promises.readdir(store.objects))
+    if (/^[a-f0-9]{64}$/.test(name) && !keep.has(name)) {
+      await fs.promises.rm(path.join(store.objects, name), { force: true }).catch(() => {});
+      removed++;
+    }
+  return removed;
 }
 
 // This runs between sync cycles, never during an active transfer. Incomplete

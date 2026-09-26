@@ -116,43 +116,10 @@ test("thumbnail failures use hub cache; offline errors do not change originals",
       ...options,
       nativeSource: undefined,
       hubPreview: async () => {
-        throw new Error("Offline");
+        throw new TypeError("Network request failed");
       },
     }),
-    /Offline/,
+    /Network request failed/,
   );
   assert.deepEqual(item, before);
-});
-
-test("optimized hub HEIC resolves the source phone's accepted JPEG receipt", async () => {
-  const { mergeTimeline } =
-    await import("../apps/mobile/src/gallery-timeline.js");
-  const [item] = mergeTimeline({
-    index: [
-      {
-        path: "photo.heic",
-        hash: "converted",
-        sourcePath: "photo.jpg",
-        sourceHash: "original",
-        date: "2020-01-02",
-      },
-    ],
-  });
-  const resolve = nativeGallerySources({
-    scope: "hub",
-    volume: "album",
-    store: {
-      galleryNativeAsset: async (...args) => {
-        assert.deepEqual(args, ["hub", "album", "photo.jpg", "original"]);
-        return { id: "native", modificationTime: 1 };
-      },
-    },
-    media: {
-      preview: async () => ({
-        uri: "content:original-jpeg",
-        modificationTime: 1,
-      }),
-    },
-  });
-  assert.equal(await resolve(item), "content:original-jpeg");
 });

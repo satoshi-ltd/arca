@@ -2,9 +2,6 @@ const compact = (item) => ({
   path: item.path,
   hash: item.hash,
   ...(item.rev != null ? { rev: item.rev } : {}),
-  ...(item.sourcePath && item.sourceHash
-    ? { sourcePath: item.sourcePath, sourceHash: item.sourceHash }
-    : {}),
   size: item.size,
   date: item.date,
   kind: item.kind,

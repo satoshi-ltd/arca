@@ -18,9 +18,12 @@ export async function requestWithRecovery(request, url, method, headers, body) {
         await new Promise((resolve) => setTimeout(resolve, 250));
         continue;
       }
-      throw new Error(
-        "The connection to the hub was interrupted. Check the connection and try again.",
-        { cause: error },
+      throw Object.assign(
+        new Error(
+          "The connection to the hub was interrupted. Check the connection and try again.",
+          { cause: error },
+        ),
+        { code: "CONNECTION_LOST" },
       );
     }
   }

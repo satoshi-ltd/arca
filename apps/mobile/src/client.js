@@ -30,11 +30,15 @@ export function hubAddress(input, privateNetwork = false) {
 }
 
 export class HubError extends Error {
-  constructor(message, status) {
+  constructor(message, status, code) {
     super(message);
     this.status = status;
+    if (code) this.code = code;
+    if ([502, 503, 504].includes(status)) this.hubUnavailable = true;
   }
 }
+const timedOut = () =>
+  Object.assign(new Error("Hub request timed out"), { code: "HUB_TIMEOUT" });
 
 export function createClient({
   secrets,
@@ -50,24 +54,25 @@ export function createClient({
   async function rawRequest(url, route, token, options = {}) {
     if (!route.startsWith("/v1/") && route !== "/pair")
       throw new Error("Invalid hub route");
-    const deadline = Date.now() + timeout;
+    const limit = options.timeout || timeout;
+    const deadline = Date.now() + limit;
     const controller = new AbortController();
     const cancel = () =>
       abortRequest(controller, cancellationReason(options.signal));
     if (options.signal?.aborted) cancel();
     else options.signal?.addEventListener("abort", cancel, { once: true });
     const timer = setTimeout(
-      () => abortRequest(controller, new Error("Hub request timed out")),
-      timeout,
+      () => abortRequest(controller, timedOut()),
+      limit,
     );
     let response;
     try {
+      if (url.startsWith("http:")) {
+        if (!resolvePrivateURL)
+          throw new Error("Private network verification is unavailable");
+        url = await abortable(() => resolvePrivateURL(url), controller.signal);
+      }
       const perform = async () => {
-        if (url.startsWith("http:")) {
-          if (!resolvePrivateURL)
-            throw new Error("Private network verification is unavailable");
-          url = await resolvePrivateURL(url);
-        }
         if (controller.signal.aborted)
           throw cancellationReason(controller.signal);
         return fetcher(url + route, {
@@ -98,13 +103,18 @@ export function createClient({
       options.signal?.removeEventListener("abort", cancel);
     }
     const consume = async (method) => {
+      if (
+        response.buffered &&
+        !controller.signal.aborted &&
+        !options.signal?.aborted
+      )
+        return response[method]();
       const remaining = deadline - Date.now();
-      if (remaining <= 0)
-        abortRequest(controller, new Error("Hub request timed out"));
+      if (remaining <= 0) abortRequest(controller, timedOut());
       if (options.signal?.aborted) cancel();
       else options.signal?.addEventListener("abort", cancel, { once: true });
       const bodyTimer = setTimeout(
-        () => abortRequest(controller, new Error("Hub request timed out")),
+        () => abortRequest(controller, timedOut()),
         Math.max(0, remaining),
       );
       try {
@@ -123,7 +133,7 @@ export function createClient({
           throw cancellationReason(controller.signal) || error;
       }
       if (
-        [401, 403].includes(response.status) &&
+        response.status === 401 &&
         token &&
         connection?.token === token &&
         !connection.leaving
@@ -132,8 +142,12 @@ export function createClient({
         connection = null;
       }
       throw new HubError(
-        data?.error || "The hub could not complete the request.",
+        data?.error ||
+          ([502, 503, 504].includes(response.status)
+            ? `Hub unavailable (HTTP ${response.status}).`
+            : "The hub could not complete the request."),
         response.status,
+        typeof data?.code === "string" ? data.code : undefined,
       );
     }
     return {
@@ -188,7 +202,11 @@ export function createClient({
     return data;
   }
   async function serial(work) {
-    if (busy) throw new Error("Wait for the current operation to finish.");
+    if (busy)
+      throw Object.assign(
+        new Error("Wait for the current operation to finish."),
+        { code: "CLIENT_BUSY" },
+      );
     busy = true;
     try {
       return await work();
@@ -240,7 +258,7 @@ export function createClient({
       await cache.write(saved);
       catalog = saved;
     } catch (error) {
-      if ([401, 403].includes(error.status)) {
+      if (error.status === 401) {
         await secrets.clear();
         connection = null;
       }
@@ -248,6 +266,7 @@ export function createClient({
     }
     return state();
   }
+  let refreshing = null;
   return {
     state,
     fileTransfers,
@@ -270,13 +289,41 @@ export function createClient({
       catalog = await cache.read();
       return state();
     },
-    refresh: (options) => serial(() => refresh(options)),
+    refresh: function shared(options = {}) {
+      if (!refreshing) {
+        refreshing = serial(() => refresh(options)).finally(() => {
+          refreshing = null;
+        });
+        refreshing.signal = options.signal;
+      }
+      const joined = refreshing;
+      if (options.signal) return abortable(() => joined, options.signal);
+      // A refresh stopped by the sync that started it is retried for callers that never cancelled.
+      return joined.catch((error) => {
+        if (joined.signal?.aborted) return shared();
+        throw error;
+      });
+    },
     pair: (address, code, name) =>
       serial(async () => {
         if (connection)
           throw new Error("Disconnect the current hub before pairing again.");
         let url = hubAddress(address, !!resolvePrivateURL);
-        if (url.startsWith("http:")) url = await resolvePrivateURL(url);
+        if (url.startsWith("http:")) {
+          const controller = new AbortController();
+          const timer = setTimeout(
+            () => abortRequest(controller, timedOut()),
+            timeout,
+          );
+          try {
+            url = await abortable(
+              () => resolvePrivateURL(url),
+              controller.signal,
+            );
+          } finally {
+            clearTimeout(timer);
+          }
+        }
         const normalized = code.replace(/[\s-]/g, "");
         if (!/^\d{6}$/.test(normalized))
           throw new Error("Enter the six-digit pairing code.");

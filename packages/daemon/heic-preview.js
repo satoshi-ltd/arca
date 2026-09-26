@@ -1,6 +1,18 @@
+import fs from "node:fs";
 import { Worker } from "node:worker_threads";
 
 export const isHeic = (name) => /\.hei[cf]$/i.test(name);
+// Exports often keep a .HEIC name on JPEG bytes; only an ISO-BMFF ftyp box is HEIF.
+export function isHeifContent(file) {
+  const fd = fs.openSync(file, "r");
+  try {
+    const head = Buffer.alloc(12);
+    fs.readSync(fd, head, 0, 12, 0);
+    return head.toString("latin1", 4, 8) === "ftyp";
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 export function heicPreview(file, large = false, dimensions = false) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(

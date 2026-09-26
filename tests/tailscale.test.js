@@ -2,6 +2,7 @@ import test from "node:test";
 import { verifiedTailnetURL } from "../packages/daemon/network.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -311,4 +312,47 @@ test("automatic HTTP verification accepts known tailnet IPs, pins DNS and reject
     }),
     /Cannot resolve/,
   );
+});
+test("a stale Tailscale status answers as temporarily unavailable, never as a refused credential", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-tailnet-gate-"));
+  init(home, { port: 0 });
+  let snapshot = { state: "unavailable", peers: [] };
+  const daemon = await start(home, {
+    timer: false,
+    network: { detector: { read: async () => snapshot } },
+  });
+  daemon.engine.config.network = { mode: "tailscale" };
+  let remote = "100.70.0.2";
+  const peer = http.createServer((req, res) => {
+    Object.defineProperty(req.socket, "remoteAddress", {
+      value: remote,
+      configurable: true,
+    });
+    daemon.network.apiHandler(req, res);
+  });
+  await new Promise((resolve) => peer.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    peer.closeAllConnections();
+    await new Promise((resolve) => peer.close(resolve));
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const call = async () => {
+    const response = await fetch(
+      `http://127.0.0.1:${peer.address().port}/v1/catalog`,
+      { headers: { Authorization: "Bearer unknown" } },
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  assert.deepEqual(await call(), {
+    status: 503,
+    body: { error: "Tailscale access unavailable" },
+  });
+  snapshot = {
+    ...normalizeStatus(raw, "cli"),
+    self: { ...normalizeStatus(raw, "cli").self, addresses: ["127.0.0.1"] },
+  };
+  assert.equal((await call()).status, 401);
+  remote = "100.70.0.9";
+  assert.equal((await call()).status, 403);
 });

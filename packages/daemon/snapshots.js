@@ -8,6 +8,32 @@ export function snapshotRows(db, volume) {
     )
     .all(volume);
 }
+// A device reads one folder's snapshot at a time, so its new first page supersedes abandoned leases.
+export function snapshotCapacity(db, owner, volume, replace = false) {
+  db.prepare(
+    "DELETE FROM snapshot_files WHERE session IN (SELECT id FROM snapshot_sessions WHERE expires<?)",
+  ).run(Date.now());
+  db.prepare("DELETE FROM snapshot_sessions WHERE expires<?").run(Date.now());
+  if (replace) {
+    db.prepare(
+      "DELETE FROM snapshot_files WHERE session IN (SELECT id FROM snapshot_sessions WHERE owner=? AND volume=?)",
+    ).run(owner, volume);
+    db.prepare("DELETE FROM snapshot_sessions WHERE owner=? AND volume=?").run(
+      owner,
+      volume,
+    );
+  }
+  if (
+    db
+      .prepare("SELECT COUNT(*) AS n FROM snapshot_sessions WHERE owner=?")
+      .get(owner).n >= 8
+  )
+    fail(
+      "Too many active snapshots; retry after snapshots expire",
+      429,
+      "SNAPSHOT_BUSY",
+    );
+}
 export async function snapshotPage(
   store,
   owner,
@@ -18,22 +44,14 @@ export async function snapshotPage(
     limit = 500,
     readRows = () => snapshotRows(store.db, volume),
     signal,
+    replace = false,
   },
 ) {
   const db = store.db;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000)
     fail("Page limit must be between 1 and 1000");
   if (!session) {
-    db.prepare(
-      "DELETE FROM snapshot_files WHERE session IN (SELECT id FROM snapshot_sessions WHERE expires<?)",
-    ).run(Date.now());
-    db.prepare("DELETE FROM snapshot_sessions WHERE expires<?").run(Date.now());
-    if (
-      db
-        .prepare("SELECT COUNT(*) AS n FROM snapshot_sessions WHERE owner=?")
-        .get(owner).n >= 8
-    )
-      fail("Too many active snapshots; retry after snapshots expire", 429);
+    snapshotCapacity(db, owner, volume, replace);
     session = crypto.randomUUID();
     // Reserve capacity before yielding, including concurrent initial requests.
     db.prepare(
@@ -56,7 +74,11 @@ export async function snapshotPage(
             .prepare("SELECT 1 FROM snapshot_sessions WHERE id=? AND expires>?")
             .get(session, Date.now())
         )
-          fail("Snapshot expired. Restart synchronization.", 409);
+          fail(
+            "Snapshot expired. Restart synchronization.",
+            409,
+            "SNAPSHOT_EXPIRED",
+          );
         // Each short transaction finishes before yielding. Other handlers must
         // never accidentally join a snapshot's transaction on this connection.
         db.exec("BEGIN IMMEDIATE");
@@ -92,7 +114,8 @@ export async function snapshotPage(
       "SELECT * FROM snapshot_sessions WHERE id=? AND owner=? AND volume=? AND expires>?",
     )
     .get(session, owner, volume, Date.now());
-  if (!active) fail("Snapshot expired. Restart synchronization.", 409);
+  if (!active)
+    fail("Snapshot expired. Restart synchronization.", 409, "SNAPSHOT_EXPIRED");
   const rows = db
     .prepare(
       "SELECT path,row FROM snapshot_files WHERE session=? AND path>? ORDER BY path LIMIT ?",

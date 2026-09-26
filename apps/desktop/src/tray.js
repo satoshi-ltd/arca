@@ -76,7 +76,8 @@ async function refresh() {
     window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
   } catch {
     document.querySelector("#tray-content").innerHTML =
-      '<div class="tray-heading"><strong>Daemon unavailable</strong></div><div class="tray-menu"><button data-action="open">Open Arca</button></div>';
+      `<div class="tray-heading"><strong>Daemon unavailable</strong></div><div class="tray-menu"><button data-action="start">${icon("power")}Start service</button><button data-action="open">${icon("app-window-mac")}Open Arca<kbd>⌘O</kbd></button><button data-action="quit">${icon("power")}Quit Arca<kbd>⌘Q</kbd></button></div><p id="tray-error" role="alert"></p>`;
+    window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
   }
 }
 document.addEventListener("click", async (e) => {
@@ -89,6 +90,7 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.action === "open")
       await invoke("show_main", { folder: null });
     if (el.dataset.action === "quit") await invoke("quit_app");
+    if (el.dataset.action === "start") await invoke("start_daemon");
     if (el.dataset.action === "sync")
       await api("/v1/sync", { background: true });
     if (el.dataset.action === "pause")

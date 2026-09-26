@@ -5,7 +5,7 @@ import os from "node:os";
 import net from "node:net";
 import http from "node:http";
 import path from "node:path";
-import { init, digest, Store } from "../packages/daemon/storage.js";
+import { init, digest, Store, onContainerMount } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 
 async function setup(t, options = { timer: false }) {
@@ -64,6 +64,15 @@ const write = (n, v, name, content) => {
 };
 const read = (n, v, name) =>
   fs.readFileSync(path.join(n.engine.store.volume(v.id).path, name), "utf8");
+const backedUp = (n, v, name) => {
+  const store = n.engine.openBackup().store;
+  const row = store.db
+    .prepare("SELECT row FROM backup_history ORDER BY rev DESC")
+    .all()
+    .map((r) => JSON.parse(r.row))
+    .find((r) => r.volume === v.id && r.path === name);
+  return row && !row.deleted ? fs.readFileSync(store.blob(row.hash), "utf8") : null;
+};
 
 test("upload verification yields to HTTP reads while preserving content verification", async (t) => {
   const { hub } = await setup(t);
@@ -205,6 +214,199 @@ test("selection is complete and unselection retains disk", async (t) => {
   await a.api("/v1/select", { id: volume.id, path: oldPath + "-relinked" });
   await a.sync();
   assert.equal(read(a, volume, "a"), "latest");
+});
+
+test("unlink with deleteFiles removes only files matching the hub and keeps everything else", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const a = await connect("a");
+  write(hub, volume, ".arcaignore", "*.private\n");
+  write(hub, volume, "changed.txt", "hub version");
+  write(hub, volume, "dir/nested/synced.txt", "synced");
+  write(hub, volume, "uncached.txt", "verified by hashing");
+  write(hub, volume, "album/photo.jpg", "synced photo");
+  await hub.sync();
+  await a.sync();
+  const store = a.engine.store;
+  const v = store.volume(volume.id);
+  const root = v.path;
+  store.db.prepare("DELETE FROM scan_cache WHERE path=?").run(store.filePath(v, "uncached.txt"));
+  fs.writeFileSync(path.join(root, "changed.txt"), "edited locally, not yet synced");
+  fs.writeFileSync(path.join(root, "new.txt"), "never synced");
+  fs.writeFileSync(path.join(root, "notes.private"), "excluded");
+  fs.writeFileSync(path.join(root, "album", ".DS_Store"), "finder");
+  fs.mkdirSync(path.join(root, "local-empty"));
+  await assert.rejects(a.api("/v1/unselect", { id: volume.id, deleteFiles: "yes" }), /Choose whether/);
+  await assert.rejects(hub.api("/v1/unselect", { id: volume.id, deleteFiles: true }), /Only a replica/);
+  const result = await a.api("/v1/unselect", { id: volume.id, deleteFiles: true });
+  assert.equal(result.deleted, 4);
+  assert.equal(result.kept, 3);
+  assert.equal(fs.existsSync(path.join(root, "album")), false, "a synced folder left with only Finder metadata goes");
+  assert.equal(fs.existsSync(path.join(root, "local-empty")), true, "an empty folder never synced stays");
+  assert.equal(a.engine.store.volumes().some((row) => row.id === volume.id), false);
+  const left = [];
+  (function walk(directory, prefix) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true }))
+      if (entry.isDirectory()) walk(path.join(directory, entry.name), prefix + entry.name + "/");
+      else left.push(prefix + entry.name);
+  })(root, "");
+  assert.deepEqual(left.sort(), ["changed.txt", "new.txt", "notes.private"]);
+  assert.equal(fs.readFileSync(path.join(root, "changed.txt"), "utf8"), "edited locally, not yet synced");
+  assert.equal(read(hub, volume, "dir/nested/synced.txt"), "synced");
+  assert.equal(read(hub, volume, "changed.txt"), "hub version");
+});
+
+test("unlink and delete keeps files and folders that are excluded now", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "private.txt", "keep me");
+  write(hub, volume, "drafts/idea.txt", "keep this too");
+  write(hub, volume, "shared.txt", "synced");
+  await hub.sync();
+  const mac = await connect("unlink-excluded");
+  await mac.sync();
+  const local = mac.engine.store.volume(volume.id).path;
+  write(mac, volume, ".arcaignore", "private.txt\ndrafts/\n");
+  await mac.sync();
+  assert.equal(mac.engine.store.excluded(volume.id, "private.txt"), true);
+  await mac.api("/v1/unselect", { id: volume.id, deleteFiles: true });
+  assert.equal(fs.readFileSync(path.join(local, "private.txt"), "utf8"), "keep me");
+  assert.equal(fs.readFileSync(path.join(local, "drafts", "idea.txt"), "utf8"), "keep this too");
+  assert.equal(fs.existsSync(path.join(local, "shared.txt")), false);
+});
+
+test("a failure while deleting an unlinked copy never reaches the hub", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const a = await connect("a");
+  write(hub, volume, "a.txt", "first");
+  write(hub, volume, "sub/b.txt", "second");
+  await hub.sync();
+  await a.sync();
+  const local = a.engine.store.volume(volume.id).path;
+  const elsewhere = path.join(root, "elsewhere");
+  fs.renameSync(path.join(local, "sub"), elsewhere);
+  try {
+    fs.symlinkSync(elsewhere, path.join(local, "sub"), "dir");
+  } catch {
+    t.skip("symlinks need extra privileges on this platform");
+    return;
+  }
+  await a.api("/v1/unselect", { id: volume.id, deleteFiles: true });
+  assert.equal(fs.existsSync(path.join(local, "a.txt")), false);
+  assert.equal(fs.readFileSync(path.join(elsewhere, "b.txt"), "utf8"), "second", "content behind a symlink is never deleted");
+  await a.sync();
+  await hub.sync();
+  for (const name of ["a.txt", "sub/b.txt"])
+    assert.equal(hub.engine.store.current(volume.id, name).deleted, 0, `${name} stays on the hub`);
+});
+
+test("a replica keeps an interrupted upload's capture and downloads identical files once", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const a = await connect("a");
+  await a.sync();
+  const store = a.engine.store;
+  const big = Buffer.alloc(2 * 1024 * 1024, 7);
+  write(a, volume, "big.bin", big);
+  const upload = a.engine.upload.bind(a.engine);
+  a.engine.upload = async () => {
+    throw Object.assign(new Error("Synchronization stopped"), { syncInterrupted: true });
+  };
+  await a.sync();
+  assert.ok(fs.existsSync(store.blob(digest(big))), "the captured change survives the interruption");
+  a.engine.upload = upload;
+  await a.sync();
+  assert.equal(fs.existsSync(store.blob(digest(big))), false, "released once the hub accepts it");
+  for (const name of ["one.bin", "two.bin", "three.bin"]) write(hub, volume, name, "same content");
+  await hub.sync();
+  const downloads = [];
+  const download = a.engine.download.bind(a.engine);
+  a.engine.download = (hash, size) => {
+    if (!fs.existsSync(store.blob(hash))) downloads.push(hash);
+    return download(hash, size);
+  };
+  await a.sync();
+  assert.equal(read(a, volume, "three.bin"), "same content");
+  assert.equal(downloads.length, 1, "identical files share one download");
+});
+
+test("trusted content is re-hashed periodically and the hub repairs a corrupt object", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const a = await connect("a");
+  write(hub, volume, "note.txt", "aaaa");
+  await hub.sync();
+  await a.sync();
+  const store = a.engine.store;
+  const file = store.filePath(store.volume(volume.id), "note.txt");
+  fs.writeFileSync(file, "bbbb");
+  const signature = (await import("../packages/daemon/storage.js")).fileSignature(file);
+  store.db.prepare("UPDATE scan_cache SET signature=?, verified=? WHERE path=?").run(signature, Date.now() - 30 * 86400000, file);
+  await a.sync();
+  assert.equal(read(hub, volume, "note.txt"), "bbbb", "a same-size rewrite hidden by the signature is found");
+  const hubStore = hub.engine.store;
+  const hash = hubStore.current(volume.id, "note.txt").hash;
+  fs.writeFileSync(hubStore.blob(hash), "xxxx");
+  hubStore.db.prepare("UPDATE scan_cache SET verified=?").run(Date.now() - 30 * 86400000);
+  await hub.sync();
+  assert.equal(fs.readFileSync(hubStore.blob(hash), "utf8"), "bbbb", "the hub rewrites a corrupt object from its folder");
+});
+
+test("a replica keeps no second copy of synced files and never transfers unchanged ones again", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "photo.jpg", "hub photo bytes");
+  write(hub, volume, "dir/doc.txt", "document");
+  await hub.sync();
+  const a = await connect("a");
+  await a.sync();
+  const store = a.engine.store;
+  const objects = () => fs.readdirSync(store.objects).filter((name) => /^[a-f0-9]{64}$/.test(name));
+  assert.deepEqual(objects(), [], "a synced replica holds nothing in its object store");
+  assert.equal(read(a, volume, "photo.jpg"), "hub photo bytes");
+  const downloads = [];
+  const download = a.engine.download.bind(a.engine);
+  a.engine.download = (hash, size) => {
+    downloads.push(hash);
+    return download(hash, size);
+  };
+  const cached = () => store.db.prepare("SELECT path,verified FROM scan_cache ORDER BY path").all().map((row) => ({ ...row }));
+  const before = cached();
+  await a.sync();
+  assert.deepEqual(downloads, [], "a full reconciliation downloads nothing already on disk");
+  assert.deepEqual(cached(), before, "unchanged files are neither copied nor hashed again");
+  write(a, volume, "photo.jpg", "edited on the replica");
+  await a.sync();
+  assert.equal(fs.readFileSync(path.join(hub.engine.store.volume(volume.id).path, "photo.jpg"), "utf8"), "edited on the replica");
+  assert.deepEqual(objects(), [], "the upload snapshot is released once the hub accepts it");
+  write(hub, volume, "dir/doc.txt", "changed on the hub");
+  await hub.sync();
+  await a.sync();
+  assert.equal(read(a, volume, "dir/doc.txt"), "changed on the hub");
+  assert.deepEqual(objects(), [], "a downloaded object is released once it is written to the folder");
+  const orphan = digest("left behind");
+  fs.writeFileSync(store.blob(orphan), "left behind");
+  await a.sync();
+  assert.equal(fs.existsSync(store.blob(orphan)), false, "orphaned objects are collected every cycle");
+  await a.api("/v1/unselect", { id: volume.id });
+  assert.deepEqual(objects(), [], "unlinking releases everything the folder held");
+});
+
+test("hub content collection only forgets the scan signatures of removed objects", async (t) => {
+  const { hub, volume } = await setup(t);
+  write(hub, volume, "kept.txt", "kept");
+  write(hub, volume, "old.txt", "first");
+  await hub.sync();
+  write(hub, volume, "old.txt", "second");
+  await hub.sync();
+  const store = hub.engine.store;
+  const first = digest("first");
+  const old = new Date(Date.now() - 48 * 3600000);
+  fs.utimesSync(store.blob(first), old, old);
+  const keptPath = store.filePath(store.volume(volume.id), "kept.txt");
+  assert.ok(store.db.prepare("SELECT 1 FROM scan_cache WHERE path=?").get(keptPath));
+  const { applyRetention } = await import("../packages/daemon/maintenance.js");
+  assert.equal(applyRetention(store, { versions: 1 }).objectsRemoved, 1);
+  assert.equal(fs.existsSync(store.blob(first)), false);
+  assert.ok(
+    store.db.prepare("SELECT 1 FROM scan_cache WHERE path=?").get(keptPath),
+    "unchanged hub files are not re-copied after history cleanup",
+  );
 });
 
 test("authentication, role permissions, revocation and unsafe paths", async (t) => {
@@ -422,13 +624,8 @@ test("replica can independently back up all folders and history while continuing
   assert.equal(mac.engine.store.volumes().length, 1);
   assert.equal(mac.engine.status().backup.folders, 2);
   assert.equal(mac.engine.status().backup.error, null);
-  assert.equal(
-    fs.readFileSync(
-      path.join(backupPath, "files", "Not selected", "secret"),
-      "utf8",
-    ),
-    "backup only",
-  );
+  assert.equal(backedUp(mac, other, "secret"), "backup only");
+  assert.equal(fs.existsSync(path.join(backupPath, "files")), false, "the backup keeps no browsable duplicate");
   await assert.rejects(
     mac.api("/v1/select", {
       id: other.id,
@@ -477,6 +674,182 @@ test("replica can independently back up all folders and history while continuing
   assert.equal(mac.engine.status().backup.error, null);
 });
 
+test("backup starts in an empty mounted folder and restarts there after its data disappears", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const mac = await connect("mounted-backup");
+  write(hub, volume, "note", "kept");
+  await hub.sync();
+  await mac.sync();
+  const occupied = path.join(root, "occupied");
+  fs.mkdirSync(occupied);
+  fs.writeFileSync(path.join(occupied, "unrelated"), "x");
+  await assert.rejects(
+    mac.api("/v1/backup", { enabled: true, path: occupied }),
+    /Choose a new dedicated backup directory/,
+  );
+  const mount = path.join(root, "backup-mount");
+  fs.mkdirSync(mount);
+  await mac.api("/v1/backup", { enabled: true, path: mount });
+  await mac.sync();
+  assert.equal(mac.engine.status().backup.error, null);
+  assert.equal(backedUp(mac, volume, "note"), "kept");
+  mac.engine.closeBackup();
+  for (const entry of fs.readdirSync(mount))
+    fs.rmSync(path.join(mount, entry), { recursive: true, force: true });
+  await mac.sync();
+  assert.match(mac.engine.status().backup.error, /Backup data is missing from .*Disable and enable backup/);
+  await mac.api("/v1/backup", { enabled: false });
+  const device = mac.engine.config.backup.device;
+  assert.ok(device, "the backup remembers the disk it lives on");
+  mac.engine.config.backup.device = "0";
+  await assert.rejects(mac.api("/v1/backup", { enabled: true }), /not mounted/, "an empty mount point on another disk is never reused");
+  mac.engine.config.backup.device = device;
+  await mac.api("/v1/backup", { enabled: true });
+  await mac.sync();
+  assert.equal(mac.engine.status().backup.error, null);
+  assert.equal(backedUp(mac, volume, "note"), "kept");
+  await mac.api("/v1/backup", { enabled: false });
+  fs.rmSync(mount, { recursive: true, force: true });
+  await assert.rejects(mac.api("/v1/backup", { enabled: true }), /unavailable/);
+  assert.equal(fs.existsSync(mount), false, "a missing backup disk is never recreated on the system disk");
+});
+
+test("a backup in Docker must live on a mounted folder", () => {
+  const mountinfo = [
+    "636 541 0:52 / / rw,relatime - overlay overlay rw",
+    "645 636 259:4 /umbrel/app-data/arca/data/state /data/state rw,relatime - ext4 /dev/nvme0n1p4 rw",
+    "646 636 259:4 /umbrel/app-data/arca/data/files /data/files rw,relatime - ext4 /dev/nvme0n1p4 rw",
+    "647 636 259:4 /mnt/disk /data/my\\040backup rw,relatime - ext4 /dev/sda1 rw",
+  ].join("\n");
+  assert.equal(onContainerMount("/data/backup", mountinfo), false);
+  assert.equal(onContainerMount("/data", mountinfo), false);
+  assert.equal(onContainerMount("/data/files/backup", mountinfo), true);
+  assert.equal(onContainerMount("/data/my backup", mountinfo), true);
+  assert.equal(onContainerMount("/data/statefile", mountinfo), false);
+});
+
+test("a full backup mirrors the hub's retention, keeps deleted shares and holds no duplicate copy", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const mac = await connect("mirror");
+  const other = await hub.api("/v1/volumes", { name: "Archive" });
+  write(hub, volume, "note", "v1");
+  write(hub, other, "old", "archived");
+  await hub.sync();
+  await mac.sync();
+  await mac.api("/v1/backup", { enabled: true, path: path.join(root, "mirror-backup") });
+  await mac.sync();
+  const store = mac.engine.openBackup().store;
+  assert.ok(fs.existsSync(store.blob(digest("v1"))));
+  write(hub, volume, "note", "v2");
+  await hub.sync();
+  await mac.sync();
+  const set = async (mode) => {
+    const preview = await hub.api("/v1/folder-retention", { id: volume.id, mode });
+    await hub.api("/v1/folder-retention", { id: volume.id, mode, apply: true, confirmation: preview.confirmation });
+  };
+  await set("off");
+  const listings = [];
+  const backup = mac.engine.openBackup();
+  const request = backup.json.bind(backup);
+  backup.json = (route, ...args) => {
+    if (route.includes("retained=1")) listings.push(route);
+    return request(route, ...args);
+  };
+  await mac.sync();
+  assert.equal(listings.length, 0, "pruning waits between passes");
+  backup.prunedAt = 0;
+  backup.json = async (route, ...args) => {
+    if (route.includes("retained=1")) listings.push(route);
+    const result = await request(route, ...args);
+    return route === "/v1/catalog" ? { ...result, retainedRevisions: undefined } : result;
+  };
+  await mac.sync();
+  assert.equal(listings.length, 0, "a hub that cannot list retained revisions is never asked");
+  backup.json = (route, ...args) => {
+    if (route.includes("retained=1")) listings.push(route);
+    return request(route, ...args);
+  };
+  await mac.sync();
+  assert.ok(listings.length > 0);
+  assert.equal(backedUp(mac, volume, "note"), "v2");
+  assert.equal(fs.existsSync(store.blob(digest("v1"))), false, "a version the hub pruned leaves the backup too");
+  assert.ok(fs.existsSync(store.blob(digest("v2"))));
+  await hub.api("/v1/delete-share", { id: other.id, confirmedName: "Archive" });
+  const reused = await hub.api("/v1/volumes", { name: "Archive" });
+  write(hub, reused, "new", "reused name");
+  await hub.sync();
+  await mac.sync();
+  assert.equal(backedUp(mac, other, "old"), "archived", "a deleted share stays in existing backups");
+  assert.equal(fs.existsSync(path.join(root, "mirror-backup", "files")), false);
+  const { recoverBackup } = await import("../packages/daemon/recovery.js");
+  await mac.api("/v1/backup", { enabled: false });
+  const recovered = path.join(root, "recovered");
+  recoverBackup(path.join(root, "mirror-backup", "state"), recovered);
+  const hubStore = new Store(recovered);
+  try {
+    assert.equal(fs.readFileSync(path.join(hubStore.volume(volume.id).path, "note"), "utf8"), "v2");
+    assert.equal(fs.readFileSync(path.join(hubStore.volume(reused.id).path, "new"), "utf8"), "reused name");
+    assert.equal(fs.readFileSync(path.join(hubStore.volume(other.id).path, "old"), "utf8"), "archived", "a reused name does not block recovery");
+  } finally {
+    hubStore.close();
+  }
+});
+
+test("a backup left with selected folders by an older layout never publishes edits", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "hub data");
+  await hub.sync();
+  const mac = await connect("upgrade");
+  const destination = path.join(root, "old-backup");
+  await mac.api("/v1/backup", { enabled: true, path: destination });
+  await mac.sync();
+  const s = mac.engine.openBackup().store;
+  s.db.prepare("DELETE FROM volumes WHERE id=?").run(volume.id);
+  const v = s.addVolume(volume.name, path.join(destination, "files", volume.name), volume.id, false);
+  for (const row of hub.engine.store.rows(volume.id)) {
+    if (row.hash) fs.copyFileSync(hub.engine.store.blob(row.hash), s.blob(row.hash));
+    s.queue(row, null);
+    s.materialize(row, null);
+  }
+  fs.writeFileSync(path.join(v.path, "note.txt"), "backup-only edit");
+  fs.unlinkSync(path.join(v.path, ".arcaignore"));
+  await mac.sync();
+  assert.equal(read(hub, volume, "note.txt"), "hub data");
+  assert.equal(hub.engine.store.current(volume.id, ".arcaignore").deleted, 0);
+});
+
+test("backup reports its progress and waits without an error while the hub is unreachable", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const mac = await connect("backup-progress");
+  write(hub, volume, "note", "kept");
+  await hub.sync();
+  await mac.sync();
+  await mac.api("/v1/backup", { enabled: true, path: path.join(root, "full-backup") });
+  await mac.sync();
+  const backup = mac.engine.openBackup();
+  let seen;
+  backup.cycle = async function () {
+    this.progress = { stage: "history", filesDone: 2 };
+    seen = mac.engine.status().backup.progress;
+    this.progress = null;
+  };
+  await mac.sync();
+  assert.deepEqual(seen, { revisions: 2 });
+  assert.equal(mac.engine.status().backup.progress, null);
+  backup.cycle = async () => {
+    throw Object.assign(new Error("fetch failed"), { hubUnavailable: true });
+  };
+  await mac.sync();
+  assert.equal(mac.engine.status().backup.error, null);
+  assert.equal(mac.engine.status().backup.waiting, true);
+  backup.cycle = async () => {
+    throw new Error("Backup disk unavailable");
+  };
+  await mac.sync();
+  assert.equal(mac.engine.status().backup.error, "Backup disk unavailable");
+  assert.equal(mac.engine.status().backup.waiting, false);
+});
+
 test("one-time pairing connects a replica and rejects reuse", async (t) => {
   const { hub, node } = await setup(t),
     mac = await node("paired", "replica");
@@ -514,6 +887,9 @@ test("replica promotion preserves files and reconnects another replica with dive
   const result = await mac.api("/v1/promote", { confirmed: true });
   assert.equal(result.promoted, true);
   assert.equal(read(mac, volume, "note"), "original");
+  const promoted = mac.engine.store;
+  for (const row of promoted.rows(volume.id).filter((r) => r.hash && !r.deleted))
+    assert.ok(fs.existsSync(promoted.blob(row.hash)), `${row.path} content is in the new hub's object store`);
   assert.notEqual(mac.engine.config.id, hub.engine.config.id);
   write(mac, volume, "note", "new hub edit");
   await mac.sync();
@@ -674,6 +1050,8 @@ test("machine renames reach hub records while paused and reports survive scan er
   const mac = await connect("Old name");
   mac.engine.paused = true;
   await mac.api("/v1/settings", { name: "macbook-pro" });
+  for (let i = 0; i < 100 && hub.engine.status().devices[0].name !== "macbook-pro"; i++)
+    await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(hub.engine.status().devices[0].name, "macbook-pro");
   mac.engine.paused = false;
   fs.symlinkSync(
@@ -2494,94 +2872,6 @@ test("status totals reuse unchanged rows and invalidate on policy and database c
   write(hub, volume, "added.txt", "another");
   await hub.sync();
   assert.equal(store.visibleTotals(volume.id).files, 2);
-});
-
-test("repeated gallery optimization reaches passive replicas, restores JPEG history and releases expired originals", async (t) => {
-  const sharp = (await import("sharp")).default;
-  const { ImageMaintenance } =
-    await import("../packages/daemon/image-maintenance.js");
-  const { applyFolderRetention } =
-    await import("../packages/daemon/maintenance.js");
-  const { hub, volume, connect } = await setup(t);
-  const replica = await connect("photo-copy");
-  await hub.api("/v1/gallery/link", { volume: volume.id, enabled: true });
-  const heic = fs.readFileSync(
-    new URL("./fixtures/gallery.heic", import.meta.url),
-  );
-  const manager = new ImageMaintenance(hub.engine, async (_, destination) => {
-    fs.writeFileSync(destination, heic);
-    return heic.length;
-  });
-  t.after(() => manager.close());
-  const originals = [];
-  for (const [name, color] of [
-    ["first", "orange"],
-    ["second", "blue"],
-  ]) {
-    const jpeg = await sharp({
-      create: { width: 1000, height: 500, channels: 3, background: color },
-    })
-      .jpeg()
-      .toBuffer();
-    write(hub, volume, name + ".jpg", jpeg);
-    await hub.sync();
-    await replica.sync();
-    const original = hub.engine.store.current(volume.id, name + ".jpg");
-    originals.push({ ...original, jpeg });
-    manager.start("analyze");
-    await manager.task;
-    assert.equal(
-      manager.job.total,
-      1,
-      "only newly added JPEG remains a candidate",
-    );
-    manager.start("optimize", manager.job.confirmation);
-    await manager.task;
-    assert.equal(manager.job.changed, 1);
-    await replica.sync();
-    const copy = replica.engine.store.volume(volume.id).path;
-    assert.equal(fs.existsSync(path.join(copy, name + ".jpg")), false);
-    assert.deepEqual(fs.readFileSync(path.join(copy, name + ".heic")), heic);
-    assert.deepEqual(
-      fs.readFileSync(hub.engine.store.blob(original.hash)),
-      jpeg,
-    );
-  }
-  await hub.api("/v1/restore", {
-    volume: volume.id,
-    path: "first.jpg",
-    rev: originals[0].rev,
-  });
-  await replica.sync();
-  assert.deepEqual(
-    fs.readFileSync(
-      path.join(replica.engine.store.volume(volume.id).path, "first.jpg"),
-    ),
-    originals[0].jpeg,
-  );
-  const store = hub.engine.store;
-  const ago = new Date(Date.now() - 2 * 86400000);
-  store.db
-    .prepare("UPDATE revisions SET created=? WHERE volume=? AND path=?")
-    .run(ago.toISOString(), volume.id, "second.jpg");
-  fs.utimesSync(store.blob(originals[1].hash), ago, ago);
-  store.config.folderRetention = { [volume.id]: "1d" };
-  applyFolderRetention(store);
-  assert.equal(
-    fs.existsSync(store.blob(originals[1].hash)),
-    false,
-    "expired JPEG storage is reclaimed",
-  );
-  assert.equal(
-    fs.existsSync(store.blob(originals[0].hash)),
-    true,
-    "restored original stays live",
-  );
-  assert.equal(
-    fs.existsSync(store.blob(digest(heic))),
-    true,
-    "current HEIC stays live",
-  );
 });
 
 test("folder totals survive unrelated writes and invalidate only changed folders and policies", async (t) => {

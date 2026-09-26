@@ -29,3 +29,5 @@ export class TransferSession {
     if (this.active) void this.update(progress).catch(() => {});
   }
 }
+export const shouldStopSync = (state, leased) =>
+  state === "background" && !leased;

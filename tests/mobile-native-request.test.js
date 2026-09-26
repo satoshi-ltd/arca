@@ -120,3 +120,28 @@ test("stale Android network failures retry reads but never replay writes in Java
   );
   assert.equal(calls, 1);
 });
+test("an interrupted write is a coded connection loss that keeps its cause", async () => {
+  const { isHubUnreachable } =
+    await import("../apps/desktop/src/notice-contract.js");
+  let calls = 0;
+  const cause = interrupted();
+  await assert.rejects(
+    requestWithRecovery(
+      async () => {
+        calls++;
+        throw cause;
+      },
+      "test",
+      "PUT",
+      {},
+      "data",
+    ),
+    (error) => {
+      assert.equal(error.code, "CONNECTION_LOST");
+      assert.equal(error.cause, cause);
+      assert.equal(isHubUnreachable(error), true);
+      return true;
+    },
+  );
+  assert.equal(calls, 1);
+});

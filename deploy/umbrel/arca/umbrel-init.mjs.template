@@ -13,6 +13,12 @@ if (!fs.existsSync(path.join(home, "config.json")) &&
     fs.existsSync(marker) && fs.lstatSync(marker).isFile() &&
     fs.statSync(marker).size === 0 && fs.readdirSync(root).length === 1)
   fs.unlinkSync(marker);
+const backup = process.env.ARCA_BACKUP;
+const backupMarker = backup && path.join(backup, ".gitkeep");
+if (backupMarker && fs.existsSync(backupMarker) &&
+    fs.lstatSync(backupMarker).isFile() && fs.statSync(backupMarker).size === 0 &&
+    fs.readdirSync(backup).length === 1)
+  fs.unlinkSync(backupMarker);
 initializeServer(home, {
   port: 17831,
   name: "Arca on Umbrel",

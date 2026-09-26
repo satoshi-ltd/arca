@@ -613,8 +613,8 @@ export function styles(
     statDivider: { borderLeftWidth: 1, borderLeftColor: c.divider },
     statValue: {
       fontFamily: "InstrumentSans_600SemiBold",
-      fontSize: 20,
-      lineHeight: 26,
+      fontSize: g.touchRowFont,
+      lineHeight: g.touchRowLine,
       color: c.ink,
     },
     statsGrid: { flexDirection: "row", flexWrap: "wrap" },

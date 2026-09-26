@@ -3,6 +3,7 @@ import { requestWithRecovery } from "./native-request.js";
 import {
   verifyPrivateURL,
   clearNetworkVerification,
+  isLanHost,
 } from "./network-policy.js";
 import { fromByteArray, toByteArray } from "base64-js";
 import { requireNativeModule } from "expo-modules-core";
@@ -26,7 +27,10 @@ export async function nativeFetch(url, options = {}) {
       if (typeof native.beginRequest !== "function")
         throw new Error("Update Arca to use the new synchronization engine.");
       const id = `${Date.now()}-${++requestSerial}`;
-      native.beginRequest(id, url.startsWith("http:"));
+      native.beginRequest(
+        id,
+        url.startsWith("http:") && isLanHost(new URL(url).hostname),
+      );
       const cancel = () => native.cancelRequest(id);
       options.signal?.addEventListener("abort", cancel, { once: true });
       try {
@@ -55,6 +59,7 @@ export async function nativeFetch(url, options = {}) {
   return {
     ok: result.status >= 200 && result.status < 300,
     status: result.status,
+    buffered: true,
     bytesWritten: result.bytesWritten,
     headers: { get: (key) => fields.get(key.toLowerCase()) || null },
     json: async () => JSON.parse(new TextDecoder().decode(data)),
