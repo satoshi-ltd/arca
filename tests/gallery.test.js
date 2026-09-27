@@ -89,55 +89,116 @@ test("every photo keeps a thumbnail while large previews fill only their own bud
   const newer = await f.photo("newer.jpg", "2026-01-01T00:00:00.000Z", "green");
   const gallery = f.daemon.engine.gallery;
   await gallery.background;
-  const derivative = (hash, kind) => f.s.db.prepare("SELECT 1 FROM gallery_derivatives WHERE key=?").get(`${hash}-${kind}.jpg`);
+  const derivative = (hash, kind) =>
+    f.s.db
+      .prepare("SELECT 1 FROM gallery_derivatives WHERE key=?")
+      .get(`${hash}-${kind}.jpg`);
   for (const { hash } of [older, newer]) {
     assert.ok(derivative(hash, "thumb"), "every photo is thumbnailed");
     assert.ok(derivative(hash, "large"));
   }
   const forget = (hash, kind) => {
-    f.s.db.prepare("DELETE FROM gallery_derivatives WHERE key=?").run(`${hash}-${kind}.jpg`);
-    fs.rmSync(path.join(f.home, "previews", `${hash}-${kind}.jpg`), { force: true });
+    f.s.db
+      .prepare("DELETE FROM gallery_derivatives WHERE key=?")
+      .run(`${hash}-${kind}.jpg`);
+    fs.rmSync(path.join(f.home, "previews", `${hash}-${kind}.jpg`), {
+      force: true,
+    });
   };
   forget(older.hash, "thumb");
   forget(newer.hash, "large");
-  f.s.db.prepare("UPDATE gallery_prepared SET large=0 WHERE hash=?").run(newer.hash);
-  f.s.db.prepare("INSERT INTO gallery_derivatives VALUES('filler-large.jpg',?,0)").run(512 * 1024 ** 2);
-  f.s.db.prepare("INSERT INTO gallery_derivatives VALUES('filler-thumb.jpg',1,0)").run();
+  f.s.db
+    .prepare("UPDATE gallery_prepared SET large=0 WHERE hash=?")
+    .run(newer.hash);
+  f.s.db
+    .prepare("INSERT INTO gallery_derivatives VALUES('filler-large.jpg',?,0)")
+    .run(512 * 1024 ** 2);
+  f.s.db
+    .prepare("INSERT INTO gallery_derivatives VALUES('filler-thumb.jpg',1,0)")
+    .run();
   gallery.cache.clear();
   gallery.cacheBytes = 0;
   gallery.prepare(f.v.id);
   await gallery.background;
-  assert.ok(derivative(older.hash, "thumb"), "a thumbnail evicted by the former shared budget is rebuilt");
-  assert.equal(derivative(newer.hash, "large"), undefined, "background previews stop at their budget");
+  assert.ok(
+    derivative(older.hash, "thumb"),
+    "a thumbnail evicted by the former shared budget is rebuilt",
+  );
+  assert.equal(
+    derivative(newer.hash, "large"),
+    undefined,
+    "background previews stop at their budget",
+  );
   await f.api(f.preview("newer.jpg", newer.hash) + "&size=large");
-  assert.ok(derivative(newer.hash, "large"), "opening a photo still renders its large preview");
-  assert.equal(f.s.db.prepare("SELECT 1 FROM gallery_derivatives WHERE key='filler-large.jpg'").get(), undefined, "a new large preview evicts only large previews");
-  assert.ok(f.s.db.prepare("SELECT 1 FROM gallery_derivatives WHERE key='filler-thumb.jpg'").get(), "large previews never evict thumbnails");
-  f.s.db.prepare("UPDATE gallery_prepared SET large=0 WHERE hash=?").run(older.hash);
-  f.s.db.prepare("DELETE FROM gallery_derivatives WHERE key LIKE '%-large.jpg'").run();
+  assert.ok(
+    derivative(newer.hash, "large"),
+    "opening a photo still renders its large preview",
+  );
+  assert.equal(
+    f.s.db
+      .prepare("SELECT 1 FROM gallery_derivatives WHERE key='filler-large.jpg'")
+      .get(),
+    undefined,
+    "a new large preview evicts only large previews",
+  );
+  assert.ok(
+    f.s.db
+      .prepare("SELECT 1 FROM gallery_derivatives WHERE key='filler-thumb.jpg'")
+      .get(),
+    "large previews never evict thumbnails",
+  );
+  f.s.db
+    .prepare("UPDATE gallery_prepared SET large=0 WHERE hash=?")
+    .run(older.hash);
+  f.s.db
+    .prepare("DELETE FROM gallery_derivatives WHERE key LIKE '%-large.jpg'")
+    .run();
   const derive = gallery.derivative.bind(gallery);
   gallery.derivative = async () => {
-    throw Object.assign(new Error("Previews are busy. Try again."), { status: 429 });
+    throw Object.assign(new Error("Previews are busy. Try again."), {
+      status: 429,
+    });
   };
   await gallery.prepareLarge(f.v.id);
-  assert.equal(f.s.db.prepare("SELECT large FROM gallery_prepared WHERE hash=?").get(older.hash).large, 0, "a busy renderer is retried later, not marked failed");
+  assert.equal(
+    f.s.db
+      .prepare("SELECT large FROM gallery_prepared WHERE hash=?")
+      .get(older.hash).large,
+    0,
+    "a busy renderer is retried later, not marked failed",
+  );
   gallery.derivative = derive;
   forget(older.hash, "thumb");
-  f.s.db.prepare("UPDATE gallery_derivatives SET size=? WHERE key='filler-thumb.jpg'").run(1024 ** 3);
+  f.s.db
+    .prepare(
+      "UPDATE gallery_derivatives SET size=? WHERE key='filler-thumb.jpg'",
+    )
+    .run(1024 ** 3);
   await gallery.prepareThumbnails(f.v.id);
-  assert.equal(derivative(older.hash, "thumb"), undefined, "a full thumbnail budget never churns in the background");
+  assert.equal(
+    derivative(older.hash, "thumb"),
+    undefined,
+    "a full thumbnail budget never churns in the background",
+  );
 });
 
 test("photos without any date still page through the whole gallery", async (t) => {
   const f = await fixture(t);
   await f.api("/v1/gallery/link", { volume: f.v.id });
-  for (let i = 0; i < 62; i++) await f.photo(`undated-${String(i).padStart(2, "0")}.jpg`, null, `rgb(${i},${i},${i})`);
+  for (let i = 0; i < 62; i++)
+    await f.photo(
+      `undated-${String(i).padStart(2, "0")}.jpg`,
+      null,
+      `rgb(${i},${i},${i})`,
+    );
   await f.daemon.engine.gallery.background;
   f.s.db.prepare("DELETE FROM revisions").run();
   const first = await f.api(f.route);
   assert.equal(first.items.length, 60);
   assert.ok(first.next, "an undated page still has a cursor");
-  const second = await f.api(f.route + "&after=" + encodeURIComponent(first.next));
+  const second = await f.api(
+    f.route + "&after=" + encodeURIComponent(first.next),
+  );
   assert.equal(second.items.length, 2);
 });
 
@@ -979,7 +1040,10 @@ test("hub image inventory is scoped and preview regeneration preserves original 
   assert.equal(status.job.changed, 1);
   assert.deepEqual(fs.readFileSync(f.s.blob(hash)), buffer);
   for (const action of ["analyze", "optimize"])
-    await assert.rejects(f.api("/v1/images", { action }), /Unknown image operation/);
+    await assert.rejects(
+      f.api("/v1/images", { action }),
+      /Unknown image operation/,
+    );
   const device = await f.api("/v1/devices", {
     name: "Reader",
     role: "replica",
@@ -1022,16 +1086,25 @@ test("photos without capture metadata use the earliest source file date before t
   const item = data.items.find((row) => row.path === "immich/aa/bb/uuid.jpg");
   assert.equal(item.date, "2021-12-11T12:35:20.000Z");
   assert.equal(item.dateSource, "file date");
-  assert.deepEqual(data.timeline.map((row) => row.month), ["2021-12"]);
+  assert.deepEqual(
+    data.timeline.map((row) => row.month),
+    ["2021-12"],
+  );
   await f.photo("Screenshot 2022-03-04 image.jpg", null, "orange");
   assert.equal(
-    (await f.api(f.route)).items.find((row) => row.path.startsWith("Screenshot"))
-      .dateSource,
+    (await f.api(f.route)).items.find((row) =>
+      row.path.startsWith("Screenshot"),
+    ).dateSource,
     "filename",
   );
   const { galleryDate } = await import("../packages/core/gallery-date.js");
   assert.equal(
-    galleryDate("download.jpg", null, "2026-01-01T00:00:00.000Z", "2026-02-01T00:00:00.000Z").source,
+    galleryDate(
+      "download.jpg",
+      null,
+      "2026-01-01T00:00:00.000Z",
+      "2026-02-01T00:00:00.000Z",
+    ).source,
     "date added",
     "a copy written after the photo was added is not its original date",
   );
@@ -1054,21 +1127,252 @@ test("gallery pages load newer photos above a jumped-to month and report when mo
   const months = ["2026-03", "2025-07", "2024-05", "2023-01"];
   for (const [index, month] of months.entries())
     for (let i = 0; i < 2; i++)
-      await f.photo(`${month}-${i}.jpg`, `${month}-1${i}T12:00:00.000Z`, ["red", "green", "blue", "gray"][index]);
+      await f.photo(
+        `${month}-${i}.jpg`,
+        `${month}-1${i}T12:00:00.000Z`,
+        ["red", "green", "blue", "gray"][index],
+      );
   const top = await f.api(f.route);
   assert.equal(top.previous, null, "nothing is newer than the first page");
   const jump = await f.api(f.route + "&month=2024-05");
   assert.equal(jump.items[0].path, "2024-05-1.jpg");
   assert.equal(jump.previous, jump.items[0].cursor);
-  const newer = await f.api(f.route + "&before=" + encodeURIComponent(jump.previous));
+  const newer = await f.api(
+    f.route + "&before=" + encodeURIComponent(jump.previous),
+  );
   assert.deepEqual(
     newer.items.map((row) => row.path),
     ["2026-03-1.jpg", "2026-03-0.jpg", "2025-07-1.jpg", "2025-07-0.jpg"],
   );
   assert.equal(newer.previous, null);
-  const from = await f.api(f.route + "&from=" + encodeURIComponent(newer.items[2].cursor));
-  assert.equal(from.items[0].path, "2025-07-1.jpg", "from includes its own cursor");
+  const from = await f.api(
+    f.route + "&from=" + encodeURIComponent(newer.items[2].cursor),
+  );
+  assert.equal(
+    from.items[0].path,
+    "2025-07-1.jpg",
+    "from includes its own cursor",
+  );
   assert.equal(from.previous, from.items[0].cursor);
-  const next = await f.api(f.route + "&month=2024-05&after=" + encodeURIComponent(jump.items[0].cursor));
-  assert.equal(next.previous, null, "continuation pages keep the first page's answer");
+  const next = await f.api(
+    f.route +
+      "&month=2024-05&after=" +
+      encodeURIComponent(jump.items[0].cursor),
+  );
+  assert.equal(
+    next.previous,
+    null,
+    "continuation pages keep the first page's answer",
+  );
+});
+
+test("explicit gallery deletion is durable, grouped and rejects stale or reused requests", async (t) => {
+  const f = await fixture(t),
+    { s, v, api, daemon } = f;
+  await api("/v1/gallery/link", { volume: v.id });
+  await f.photo("live.jpg");
+  await f.photo("live.mov", undefined, "blue");
+  const resources = ["live.jpg", "live.mov"].map((name, i) => ({
+    ...s.current(v.id, name),
+    key: String(i),
+  }));
+  await api("/v1/gallery/register", {
+    volume: v.id,
+    asset: "native_asset_000001",
+    resources,
+  });
+  const body = {
+    id: "delete_request_000001",
+    volume: v.id,
+    path: "live.jpg",
+    rev: resources[0].rev,
+  };
+  await assert.rejects(
+    api("/v1/gallery/delete", { ...body, rev: body.rev + 1 }),
+    { status: 409 },
+  );
+  const result = await api("/v1/gallery/delete", body);
+  assert.deepEqual(result.paths, ["live.jpg", "live.mov"]);
+  assert.ok(result.rows.every((row) => row.deleted));
+  assert.equal(fs.existsSync(path.join(v.path, "live.jpg")), false);
+  assert.equal(fs.existsSync(path.join(v.path, "live.mov")), false);
+  const events = await api("/v1/gallery/removals", { volume: v.id });
+  assert.equal(events.events.length, 1);
+  assert.equal(events.events[0].eligible, true);
+  assert.equal(events.events[0].resources.length, 2);
+  s.db.exec("DELETE FROM proposals");
+  await f
+    .photo("live.jpg", undefined, "green")
+    .catch((e) => assert.match(e.message, /deleted/));
+  // A user restore can recreate content; replay of the prior delete leaves it alone.
+  await api("/v1/restore", {
+    volume: v.id,
+    path: "live.jpg",
+    rev: resources[0].rev,
+  });
+  assert.deepEqual(await api("/v1/gallery/delete", body), result);
+  assert.ok(fs.existsSync(path.join(v.path, "live.jpg")));
+  assert.equal(
+    (await api("/v1/gallery/removals", { volume: v.id })).events[0].eligible,
+    false,
+  );
+  await assert.rejects(
+    api("/v1/gallery/delete", { ...body, path: "live.mov" }),
+    { status: 409 },
+  );
+  assert.equal(
+    (
+      await api("/v1/gallery/register", {
+        volume: v.id,
+        asset: "native_asset_000001",
+        resources,
+      })
+    ).removed,
+    true,
+  );
+});
+
+test("gallery deletion journal recovers interrupted materialization and pins recovery history", async (t) => {
+  const f = await fixture(t),
+    { s, v, api } = f;
+  const { retentionPlan, applyRetention } =
+    await import("../packages/daemon/maintenance.js");
+  await api("/v1/gallery/link", { volume: v.id });
+  await f.photo("pair.jpg");
+  await f.photo("pair.mov", undefined, "blue");
+  const resources = ["pair.jpg", "pair.mov"].map((name, i) => ({
+    ...s.current(v.id, name),
+    key: String(i),
+  }));
+  await api("/v1/gallery/register", {
+    volume: v.id,
+    asset: "native_asset_000002",
+    resources,
+  });
+  const materialize = s.materialize.bind(s);
+  let calls = 0;
+  s.materialize = (...args) => {
+    if (++calls === 2) throw new Error("simulated power loss");
+    return materialize(...args);
+  };
+  const body = {
+    id: "delete_request_000002",
+    volume: v.id,
+    path: "pair.jpg",
+    rev: resources[0].rev,
+  };
+  await assert.rejects(api("/v1/gallery/delete", body), /power loss/);
+  s.materialize = materialize;
+  const result = await api("/v1/gallery/delete", body);
+  assert.equal(result.rows.length, 2);
+  assert.equal(s.db.prepare("SELECT count(*) AS n FROM pending").get().n, 0);
+  let plan = retentionPlan(s, { volume: v.id, versions: 1 });
+  assert.ok(resources.every((row) => !plan.remove.includes(row.rev)));
+  applyRetention(s, { volume: v.id, versions: 1 });
+  assert.ok(
+    resources.every((row) =>
+      s.history(v.id, row.path).some((r) => r.rev === row.rev),
+    ),
+  );
+  const recoveryFile = s.blob(resources[0].hash);
+  const recoveryBytes = fs.readFileSync(recoveryFile);
+  fs.chmodSync(recoveryFile, 0o600);
+  fs.writeFileSync(recoveryFile, "corrupt recovery bytes");
+  const event = (await api("/v1/gallery/removals", { volume: v.id })).events[0];
+  await assert.rejects(
+    api("/v1/gallery/removal-check", { volume: v.id, seq: event.seq }),
+    { status: 409 },
+  );
+  fs.writeFileSync(recoveryFile, recoveryBytes);
+  s.config.folderRetention = { [v.id]: "off" };
+  assert.equal(
+    (await api("/v1/gallery/removals", { volume: v.id })).events[0].eligible,
+    false,
+  );
+  s.db.prepare("UPDATE gallery_deletions SET expires=?").run(Date.now() - 1);
+  plan = retentionPlan(s, { volume: v.id, versions: 1 });
+  assert.ok(resources.every((row) => plan.remove.includes(row.rev)));
+});
+
+test("ordinary file deletion and incomplete or edited manifests never authorize original removal", async (t) => {
+  const f = await fixture(t),
+    { s, v, api } = f;
+  await api("/v1/gallery/link", { volume: v.id });
+  await f.photo("plain.jpg");
+  const row = s.current(v.id, "plain.jpg");
+  await api("/v1/delete-file", { volume: v.id, path: row.path, rev: row.rev });
+  assert.equal(
+    (await api("/v1/gallery/removals", { volume: v.id })).events.length,
+    0,
+  );
+  await f.photo("incomplete.jpg");
+  const first = s.current(v.id, "incomplete.jpg");
+  await api("/v1/gallery/register", {
+    volume: v.id,
+    asset: "native_asset_000003",
+    resources: [
+      { ...first, key: "photo" },
+      { path: "missing.mov", hash: first.hash, size: first.size, key: "video" },
+    ],
+  });
+  await assert.rejects(
+    api("/v1/gallery/delete", {
+      id: "delete_request_000003",
+      volume: v.id,
+      path: first.path,
+      rev: first.rev,
+    }),
+    { status: 409 },
+  );
+  assert.equal(s.current(v.id, first.path).deleted, 0);
+  assert.equal(
+    (await api("/v1/gallery/removals", { volume: v.id })).events.length,
+    0,
+  );
+});
+
+test("gallery event cursors never rewind when a different share is deleted", async (t) => {
+  const f = await fixture(t),
+    { s, v, api, daemon } = f;
+  await api("/v1/gallery/link", { volume: v.id });
+  await f.photo("one.jpg");
+  const one = s.current(v.id, "one.jpg");
+  await api("/v1/gallery/delete", {
+    id: "first_delete_request",
+    volume: v.id,
+    path: one.path,
+    rev: one.rev,
+  });
+  const other = s.addVolume("Other");
+  await api("/v1/gallery/link", { volume: other.id });
+  await api("/v1/propose", {
+    volume: other.id,
+    path: "other.jpg",
+    hash: one.hash,
+    size: one.size,
+  });
+  await api("/v1/gallery/delete", {
+    id: "other_delete_request",
+    volume: other.id,
+    path: "other.jpg",
+    rev: s.current(other.id, "other.jpg").rev,
+  });
+  const head = (await api("/v1/gallery/removals", { volume: v.id })).head;
+  s.forgetVolume(other.id);
+  await f.photo("two.jpg", undefined, "blue");
+  const two = s.current(v.id, "two.jpg");
+  await api("/v1/gallery/register", {
+    volume: v.id,
+    asset: "another_native_asset",
+    resources: [{ ...two, key: "photo" }],
+  });
+  await api("/v1/gallery/delete", {
+    id: "later_delete_request",
+    volume: v.id,
+    path: two.path,
+    rev: two.rev,
+  });
+  const page = await api("/v1/gallery/removals", { volume: v.id, after: head });
+  assert.equal(page.events.length, 1);
+  assert.ok(page.events[0].seq > head);
 });

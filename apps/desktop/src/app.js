@@ -83,7 +83,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.6.1";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -319,20 +319,27 @@ const invoke =
     throw new Error("This action requires the desktop application");
   });
 let activeRequests = 0;
-let brandShowTimer = null, brandHideTimer = null, brandShownAt = 0;
+let brandShowTimer = null,
+  brandHideTimer = null,
+  brandShownAt = 0;
 function updateBrandActivity() {
   const mark = $(".sidebar .brand-mark");
   if (!mark) return;
-  const active = activeRequests > 0 || busy ||
+  const active =
+    activeRequests > 0 ||
+    busy ||
     document.body.classList.contains("view-loading") ||
-    (!daemonStopped && !status?.hubUnavailable && ["syncing", "scanning"].includes(status?.phase));
+    (!daemonStopped &&
+      !status?.hubUnavailable &&
+      ["syncing", "scanning"].includes(status?.phase));
   const paint = (visible) => {
     if (!mark.isConnected) return;
     mark.classList.toggle("is-busy", visible);
     mark.setAttribute("aria-label", visible ? "Arca: updating" : "Arca");
     mark.setAttribute("aria-busy", String(visible));
     const indicator = mark.querySelector(".brand-busy");
-    if (visible && indicator && !indicator.firstChild) indicator.innerHTML = busyIcon();
+    if (visible && indicator && !indicator.firstChild)
+      indicator.innerHTML = busyIcon();
   };
   if (active) {
     clearTimeout(brandHideTimer);
@@ -347,17 +354,22 @@ function updateBrandActivity() {
     clearTimeout(brandShowTimer);
     brandShowTimer = null;
     if (mark.classList.contains("is-busy")) {
-      if (!brandHideTimer) brandHideTimer = setTimeout(() => {
-        brandHideTimer = null;
-        paint(false);
-      }, Math.max(0, 500 - (Date.now() - brandShownAt)));
+      if (!brandHideTimer)
+        brandHideTimer = setTimeout(
+          () => {
+            brandHideTimer = null;
+            paint(false);
+          },
+          Math.max(0, 500 - (Date.now() - brandShownAt)),
+        );
     } else paint(false);
   }
 }
 const api = (route, body) => {
   const cacheKey = folderPageKey(route),
     cacheEpoch = folderCacheEpoch;
-  const showActivity = body !== undefined || !["/v1/status", "/v1/web-approvals"].includes(route);
+  const showActivity =
+    body !== undefined || !["/v1/status", "/v1/web-approvals"].includes(route);
   if (showActivity) activeRequests++;
   updateBrandActivity();
   return invoke("api", {
@@ -368,6 +380,8 @@ const api = (route, body) => {
     .then((value) => {
       if (body !== undefined) clearGalleryPages();
       if (route === "/v1/delete-file" && body) rememberGalleryDeletion(body);
+      if (route === "/v1/gallery/delete")
+        for (const row of value.rows || []) rememberGalleryDeletion(row);
       if (
         cacheEpoch === folderCacheEpoch &&
         body === undefined &&
@@ -762,30 +776,62 @@ function updateShell() {
   const [label, color, symbol] = (daemonStopped
     ? ["Service stopped", "er", "power"]
     : status.hubUnavailable && status.phase !== "paused"
-    ? ["Offline", "wa", "wifi-off"]
-    : status.phase === "idle" && conflicts
-    ? ["Conflicts to review", "wa", "triangle-alert"]
-    : status.phase === "idle" && !status.lastSync
-      ? ["Checking sync", "id", "clock"]
-      : states[status.phase]) || ["Checking sync", "id", "clock"];
+      ? ["Offline", "wa", "wifi-off"]
+      : status.phase === "idle" && conflicts
+        ? ["Conflicts to review", "wa", "triangle-alert"]
+        : status.phase === "idle" && !status.lastSync
+          ? ["Checking sync", "id", "clock"]
+          : states[status.phase]) || ["Checking sync", "id", "clock"];
   $("#connection").innerHTML =
     (symbol === "busy" ? busyIcon() : icon(symbol)) + escape(label);
   $("#connection").className = color;
   $("#last-sync").textContent =
     status.role !== "hub" && !status.hub
       ? "Local files are kept on this machine"
-      : status.lastSync ? `Last sync ${relative(status.lastSync)}` : "Not synced yet";
+      : status.lastSync
+        ? `Last sync ${relative(status.lastSync)}`
+        : "Not synced yet";
   $("#last-sync").hidden = label === "Up to date";
   const backup = $("#backup-summary");
-  const hubBackups = (status.devices || []).filter(device => !device.revoked && device.backup_enabled);
-  const reported = hubBackups.filter(device => device.backup_updated).length;
-  const backupLabel = status.role === "hub"
-    ? reported ? `${reported} ${reported === 1 ? "backup" : "backups"} reported` : hubBackups.length ? "Backup pending" : "No backup reported"
-    : status.backup?.enabled ? status.backup.progress ? "Backing up…" : status.backup.waiting ? "Full backup waiting for hub" : status.backup.error ? "Full backup needs attention" : status.backup.lastSync ? "Full backup enabled" : "Full backup pending" : "Full backup off";
+  const hubBackups = (status.devices || []).filter(
+    (device) => !device.revoked && device.backup_enabled,
+  );
+  const reported = hubBackups.filter((device) => device.backup_updated).length;
+  const backupLabel =
+    status.role === "hub"
+      ? reported
+        ? `${reported} ${reported === 1 ? "backup" : "backups"} reported`
+        : hubBackups.length
+          ? "Backup pending"
+          : "No backup reported"
+      : status.backup?.enabled
+        ? status.backup.progress
+          ? "Backing up…"
+          : status.backup.waiting
+            ? "Full backup waiting for hub"
+            : status.backup.error
+              ? "Full backup needs attention"
+              : status.backup.lastSync
+                ? "Full backup enabled"
+                : "Full backup pending"
+        : "Full backup off";
   backup.hidden = status.role !== "hub" && !status.hub;
-  backup.dataset.action = status.role === "hub" ? "machines" : "backup-settings";
-  backup.innerHTML = icon(status.role === "hub" ? reported ? "shield-check" : "shield" : status.backup?.enabled ? "shield-check" : "shield") + `<span>${backupLabel}</span>`;
-  backup.title = status.role === "hub" ? "View backup reports from your machines" : "Manage this machine’s additional full copy of the hub and its history";
+  backup.dataset.action =
+    status.role === "hub" ? "machines" : "backup-settings";
+  backup.innerHTML =
+    icon(
+      status.role === "hub"
+        ? reported
+          ? "shield-check"
+          : "shield"
+        : status.backup?.enabled
+          ? "shield-check"
+          : "shield",
+    ) + `<span>${backupLabel}</span>`;
+  backup.title =
+    status.role === "hub"
+      ? "View backup reports from your machines"
+      : "Manage this machine’s additional full copy of the hub and its history";
   $("#conflict-count").textContent = conflicts;
   $("#conflict-count").hidden = !conflicts;
   document.querySelectorAll("nav [data-view]").forEach((el) => {
@@ -1015,17 +1061,20 @@ async function changeFolderRetention(mode, control) {
 
 function updateSyncControls() {
   const root = $("#sync-controls");
-  const linked = !daemonStopped && (status.role === "hub" || Boolean(status.hub));
+  const linked =
+    !daemonStopped && (status.role === "hub" || Boolean(status.hub));
   const paused = status.phase === "paused";
-  const syncing = !status.hubUnavailable && ["syncing", "scanning"].includes(status.phase);
+  const syncing =
+    !status.hubUnavailable && ["syncing", "scanning"].includes(status.phase);
   const signature = `${linked}:${paused}:${syncing}`;
   if (root.dataset.state === signature) return;
   root.dataset.state = signature;
   root.hidden = !linked;
   const pauseLabel = paused ? "Resume sync" : "Pause sync";
-  root.innerHTML = !linked ? "" :
-    iconAction(pauseLabel, "pause", paused ? "play" : "pause") +
-    (syncing ? "" : iconAction("Sync now", "sync", "refresh-cw", paused));
+  root.innerHTML = !linked
+    ? ""
+    : iconAction(pauseLabel, "pause", paused ? "play" : "pause") +
+      (syncing ? "" : iconAction("Sync now", "sync", "refresh-cw", paused));
 }
 function progressLabel(p) {
   const sending = p.stage === "upload" || p.direction === "upload";
@@ -1946,7 +1995,10 @@ function mountGallery(volume) {
       rail.clientHeight -
       (parseFloat(style.paddingTop) || 0) -
       (parseFloat(style.paddingBottom) || 0);
-    if (state.timelineHeight === height && state.timeline?.length === buttons.length)
+    if (
+      state.timelineHeight === height &&
+      state.timeline?.length === buttons.length
+    )
       return;
     state.timelineHeight = height;
     const segments = timelineSegments(
@@ -1975,16 +2027,17 @@ function mountGallery(volume) {
     const shown = [];
     years.forEach((year, index) => {
       const oldest = index === years.length - 1;
-      while (oldest && shown.length > 1 && year.top - shown.at(-1).top < labelGap)
+      while (
+        oldest &&
+        shown.length > 1 &&
+        year.top - shown.at(-1).top < labelGap
+      )
         shown.pop();
       if (oldest || !shown.length || year.top - shown.at(-1).top >= labelGap)
         shown.push(year);
     });
     for (const year of years)
-      year.button.classList.toggle(
-        "photo-year-hidden",
-        !shown.includes(year),
-      );
+      year.button.classList.toggle("photo-year-hidden", !shown.includes(year));
     state.timeline = segments;
   }
   function timelineAt(clientY) {
@@ -1997,14 +2050,19 @@ function mountGallery(volume) {
     const segment =
       segments.find((item) => y < item.top + item.size) || segments.at(-1);
     const last = segments.at(-1);
-    return segment && {
-      segment,
-      y: Math.max(0, Math.min(y, last.top + last.size)),
-    };
+    return (
+      segment && {
+        segment,
+        y: Math.max(0, Math.min(y, last.top + last.size)),
+      }
+    );
   }
   function markHovered(month) {
     for (const button of root.querySelectorAll(".photo-timeline button"))
-      button.classList.toggle("photo-date-hovered", button.dataset.month === month);
+      button.classList.toggle(
+        "photo-date-hovered",
+        button.dataset.month === month,
+      );
   }
   function showScrub(position) {
     const hover = root.querySelector(".photo-timeline-hover");
@@ -2400,25 +2458,42 @@ function deleteGalleryPhotos(items) {
   if (!items.length || !galleryCanDelete()) return;
   const state = galleryView;
   const inViewer = $("#dialog").classList.contains("photo-viewer");
-  const remaining = [...items];
+  const remaining = items.map((item) => ({
+    ...item,
+    deletionId: Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join(""),
+  }));
   let completed = 0;
   modal(
     modalHeader(
       `Delete ${items.length === 1 ? "this photo" : `${items.length} photos`}?`,
-      "Deletes from synced folders. Originals in a phone’s system gallery are kept. Recovery depends on this folder’s revision retention.",
+      "Deletes from the shared gallery for everyone, including Live Photo resources. A source phone may separately offer its owner a review of original removal. Recovery depends on this folder’s revision retention.",
       "trash-2",
     ),
     async () => {
       try {
-        for (const item of [...remaining]) {
-          await api("/v1/delete-file", {
+        while (remaining.length) {
+          const item = remaining[0];
+          const deleted = await api("/v1/gallery/delete", {
+            id: item.deletionId,
             volume: state.volume,
             path: item.path,
             rev: item.rev,
           });
-          state.removePhoto(item);
+          for (const path of deleted.paths) {
+            const photo = state.items.find((p) => p.path === path);
+            const removed = deleted.rows.find((row) => row.path === path);
+            if (photo && removed && photo.rev <= removed.rev)
+              state.removePhoto(photo);
+          }
           completed++;
           remaining.shift();
+          for (let index = remaining.length - 1; index >= 0; index--)
+            if (deleted.paths.includes(remaining[index].path)) {
+              remaining.splice(index, 1);
+              completed++;
+            }
         }
       } catch (error) {
         state.updateSelection();
@@ -2426,7 +2501,9 @@ function deleteGalleryPhotos(items) {
           `${completed} of ${items.length} deleted. ${error.message}`,
         );
       }
-      notice(`${completed} ${completed === 1 ? "photo" : "photos"} deleted.`);
+      notice(
+        `${completed} ${completed === 1 ? "photo" : "photos"} deleted.`,
+      );
       if (inViewer)
         return async () => {
           const next = state.items.findIndex(
@@ -3030,11 +3107,16 @@ async function renderHistory(
       ? [...historyVersions, ...data.versions]
       : data.versions;
     if (data.localOnly) {
-      list.innerHTML = section("File revisions", '<p class="hint">History is unavailable while the hub is offline. Your local file is still available.</p>');
+      list.innerHTML = section(
+        "File revisions",
+        '<p class="hint">History is unavailable while the hub is offline. Your local file is still available.</p>',
+      );
       return;
     }
     list.innerHTML =
-      (data.offline ? '<p class="hint">Offline · showing saved history</p>' : "") +
+      (data.offline
+        ? '<p class="hint">Offline · showing saved history</p>'
+        : "") +
       section(
         "File revisions",
         historyVersions.length
@@ -3058,7 +3140,10 @@ async function renderHistory(
   if (!target) list = $("#history-list");
   if (!list) return;
   if (data.offline && !data.versions.length) {
-    list.innerHTML = empty("History unavailable offline", "Your local files remain available. Connect to the hub to load their history.");
+    list.innerHTML = empty(
+      "History unavailable offline",
+      "Your local files remain available. Connect to the hub to load their history.",
+    );
     return;
   }
   historyRows = append ? [...historyRows, ...data.versions] : data.versions;
@@ -3073,17 +3158,24 @@ async function renderHistory(
     if (!groups.has(day)) groups.set(day, []);
     groups.get(day).push(r);
   }
-  list.innerHTML = (data.offline ? '<p class="hint">Showing saved history · recent entries only. Connect to the hub for updated retention and older revisions.</p>' : "") + (historyRows.length
-    ? [...groups]
-        .map(([day, rows]) =>
-          section(
-            day,
-            `<div class="history-group">${rows.map((v) => revisionRow(v)).join("")}</div>`,
-          ),
-        )
-        .join("") +
-      `${historyNext ? `<div class="pagination">${button("Load more", "history-page", historyNext)}</div>` : ""}`
-    : empty("Every change has a history", "Changes to your files appear here."));
+  list.innerHTML =
+    (data.offline
+      ? '<p class="hint">Showing saved history · recent entries only. Connect to the hub for updated retention and older revisions.</p>'
+      : "") +
+    (historyRows.length
+      ? [...groups]
+          .map(([day, rows]) =>
+            section(
+              day,
+              `<div class="history-group">${rows.map((v) => revisionRow(v)).join("")}</div>`,
+            ),
+          )
+          .join("") +
+        `${historyNext ? `<div class="pagination">${button("Load more", "history-page", historyNext)}</div>` : ""}`
+      : empty(
+          "Every change has a history",
+          "Changes to your files appear here.",
+        ));
   icons();
 }
 const machineRow = (
@@ -3140,7 +3232,9 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
   const platform = (p) =>
     p ? escape(platformLabel(p.os || p.arca.platform)) : "";
   const row = machineRow;
-  const summary = roster?.offline ? '<p class="hint">Offline · showing saved machine information</p>' : "";
+  const summary = roster?.offline
+    ? '<p class="hint">Offline · showing saved machine information</p>'
+    : "";
   let machineRows = "";
   let html =
     status.role === "replica" ? section("Hub connection", hubConnection()) : "";
@@ -3676,15 +3770,32 @@ async function imageLibrary() {
       const running = job?.state === "running";
       const control = root.querySelector("#image-regenerate-control");
       const markup = running
-        ? button("Stop process", "images-cancel", "", "secondary small-button", "square")
-        : button("Regenerate previews", "images-regenerate", "", "secondary small-button", "refresh-cw");
+        ? button(
+            "Stop process",
+            "images-cancel",
+            "",
+            "secondary small-button",
+            "square",
+          )
+        : button(
+            "Regenerate previews",
+            "images-regenerate",
+            "",
+            "secondary small-button",
+            "refresh-cw",
+          );
       if (control.dataset.markup !== markup) {
         control.innerHTML = markup;
         control.dataset.markup = markup;
       }
       if (job) {
         const label = "Refreshing previews";
-        const state = { complete: "Completed", cancelled: "Stopped", failed: "Could not finish. Try again." }[job.state] || label;
+        const state =
+          {
+            complete: "Completed",
+            cancelled: "Stopped",
+            failed: "Could not finish. Try again.",
+          }[job.state] || label;
         const summary = `${state} · ${job.done} / ${job.total} processed`;
         target.innerHTML = `<p class="hint" title="${escape(summary)}">${escape(summary)}</p>
           <progress aria-label="${escape(label)}" value="${Number(job.done) || 0}" max="${Math.max(1, Number(job.total) || 0)}"></progress>`;
@@ -4873,7 +4984,7 @@ async function handle(name, id, control) {
             `Stops syncing it on ${machineLabel()}. The hub keeps the shared folder, its files and history.`,
             "unlink",
           ) +
-          `<div class="confirmation-option">${toggleControl("unlink-delete", deleteLabel, false, 'name="deleteFiles"')}<label for="unlink-delete">${deleteLabel}</label></div>`,
+            `<div class="confirmation-option">${toggleControl("unlink-delete", deleteLabel, false, 'name="deleteFiles"')}<label for="unlink-delete">${deleteLabel}</label></div>`,
       async (f) => {
         const deleteFiles = f.get("deleteFiles") === "on";
         const result = await api(
@@ -5231,12 +5342,10 @@ function dispatchControl(control) {
   return navigationActions.has(name) ? navigate(work) : action(work, control);
 }
 document.addEventListener("click", (e) => {
-  document
-    .querySelectorAll(".file-actions-menu[open]")
-    .forEach((menu) => {
-      if (!menu.contains(e.target) || e.target.closest("[data-action]"))
-        menu.open = false;
-    });
+  document.querySelectorAll(".file-actions-menu[open]").forEach((menu) => {
+    if (!menu.contains(e.target) || e.target.closest("[data-action]"))
+      menu.open = false;
+  });
   const dropdownRoot = e.target.closest(".dropdown");
   document.querySelectorAll(".dropdown").forEach((root) => {
     if (root !== dropdownRoot) closeDropdown(root);
@@ -6138,9 +6247,7 @@ document.addEventListener("keydown", (event) => {
 
 // File actions use a native disclosure, with keyboard dismissal and focus return.
 document.addEventListener("keydown", (event) => {
-  const menu = event.target.closest(
-    ".file-actions-menu[open]",
-  );
+  const menu = event.target.closest(".file-actions-menu[open]");
   if (menu && event.key === "Escape") {
     event.preventDefault();
     menu.open = false;
@@ -6148,13 +6255,10 @@ document.addEventListener("keydown", (event) => {
   }
 });
 document.addEventListener("focusin", (event) => {
-  document
-    .querySelectorAll(".file-actions-menu[open]")
-    .forEach((menu) => {
-      if (!menu.contains(event.target)) menu.open = false;
-    });
+  document.querySelectorAll(".file-actions-menu[open]").forEach((menu) => {
+    if (!menu.contains(event.target)) menu.open = false;
+  });
 });
-
 
 // Shared icon action: its tooltip is also its accessible name.
 function iconAction(label, action, symbol, disabled = false) {
@@ -6165,7 +6269,9 @@ function installTooltips() {
   const close = () => {
     clearTimeout(timer);
     if (trigger && tip) {
-      const ids = (trigger.getAttribute("aria-describedby") || "").split(" ").filter(id => id && id !== tip.id);
+      const ids = (trigger.getAttribute("aria-describedby") || "")
+        .split(" ")
+        .filter((id) => id && id !== tip.id);
       if (ids.length) trigger.setAttribute("aria-describedby", ids.join(" "));
       else trigger.removeAttribute("aria-describedby");
     }
@@ -6185,25 +6291,47 @@ function installTooltips() {
       tip.setAttribute("role", "tooltip");
       tip.textContent = target.dataset.tooltip;
       (target.closest("dialog[open]") || document.body).append(tip);
-      target.setAttribute("aria-describedby", [target.getAttribute("aria-describedby"), tip.id].filter(Boolean).join(" "));
+      target.setAttribute(
+        "aria-describedby",
+        [target.getAttribute("aria-describedby"), tip.id]
+          .filter(Boolean)
+          .join(" "),
+      );
       const rect = target.getBoundingClientRect();
       const bounds = tip.getBoundingClientRect();
-      const left = Math.max(8, Math.min(rect.right - bounds.width, window.innerWidth - bounds.width - 8));
-      const top = rect.top >= bounds.height + 14 ? rect.top - bounds.height - 6 : rect.bottom + 6;
+      const left = Math.max(
+        8,
+        Math.min(
+          rect.right - bounds.width,
+          window.innerWidth - bounds.width - 8,
+        ),
+      );
+      const top =
+        rect.top >= bounds.height + 14
+          ? rect.top - bounds.height - 6
+          : rect.bottom + 6;
       tip.style.left = `${left}px`;
       tip.style.top = `${Math.max(8, Math.min(top, window.innerHeight - bounds.height - 8))}px`;
     }, 200);
   };
-  document.addEventListener("pointerover", event => open(event.target.closest("[data-tooltip]")));
-  document.addEventListener("pointerout", event => {
+  document.addEventListener("pointerover", (event) =>
+    open(event.target.closest("[data-tooltip]")),
+  );
+  document.addEventListener("pointerout", (event) => {
     if (trigger && !trigger.contains(event.relatedTarget)) close();
   });
-  document.addEventListener("focusin", event => open(event.target.closest("[data-tooltip]")));
+  document.addEventListener("focusin", (event) =>
+    open(event.target.closest("[data-tooltip]")),
+  );
   document.addEventListener("focusout", close);
   document.addEventListener("pointerdown", close);
-  document.addEventListener("keydown", event => { if (event.key === "Escape") close(); });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") close();
+  });
   document.addEventListener("scroll", close, true);
   window.addEventListener("resize", close);
-  new MutationObserver(() => { if (trigger && !trigger.isConnected) close(); }).observe(document.body, { childList: true, subtree: true });
+  new MutationObserver(() => {
+    if (trigger && !trigger.isConnected) close();
+  }).observe(document.body, { childList: true, subtree: true });
 }
 installTooltips();

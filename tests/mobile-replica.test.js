@@ -1108,11 +1108,11 @@ async function galleryFixture(
   return { ...f, assets, data, media, exports, enable, uploaded };
 }
 
-test("gallery source uploads originals without working copies, ignores phone/remote deletions, disables and returns to a normal replica", async (t) => {
+test("linked album uploads originals and keeps the complete shared folder locally", async (t) => {
   const f = await galleryFixture(t),
     { replica: r, volume, store, files } = f;
   await f.enable();
-  assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), false);
+  assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), true);
   await sync(f);
   const roster = await f.client.api("/v1/machines");
   const source = roster.machines.find((m) => !m.isHub);
@@ -1124,11 +1124,11 @@ test("gallery source uploads originals without working copies, ignores phone/rem
     }),
     /albumFolderIds/,
   );
-  assert.deepEqual(source.folderIds, []);
+  assert.deepEqual(source.folderIds, [volume.id]);
   assert.equal(
     source.selectedFolders,
-    0,
-    "album sources are not full local copies",
+    1,
+    "linked albums also hold complete local copies",
   );
   const item = await f.uploaded();
   assert.equal(
@@ -1146,16 +1146,11 @@ test("gallery source uploads originals without working copies, ignores phone/rem
     f.data.get("photo-1"),
   );
   assert.equal(fs.existsSync(files.galleryStage(r.scope, volume.id)), false);
-  assert.equal((await store.rows(r.scope, volume.id)).length, 0);
+  assert.deepEqual(
+    fs.readFileSync(files.work(r.scope, volume.id, item.path)),
+    f.data.get("photo-1"),
+  );
   assert.equal((await store.gallerySummary(r.scope, volume.id)).accepted, 1);
-  await assert.rejects(
-    r.importFile(volume.id, "test.jpg", "unused"),
-    /Gallery sources/,
-  );
-  await assert.rejects(
-    r.select(f.client.state().catalog.volumes[0]),
-    /Gallery source settings/,
-  );
   f.data.delete("photo-1");
   await sync(f);
   assert.ok(fs.existsSync(path.join(volume.path, item.path)));
@@ -1180,13 +1175,11 @@ test("gallery source uploads originals without working copies, ignores phone/rem
   );
   await f.daemon.engine.cycle();
   await sync(f);
-  assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), false);
-  await r.gallery.useLocalCopy(volume.id, true);
-  await sync(f);
+  assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), true);
   const localReport = (await f.client.api("/v1/machines")).machines.find(
     (m) => !m.isHub,
   );
-  assert.deepEqual(localReport.albumFolderIds, []);
+  assert.deepEqual(localReport.albumFolderIds, [volume.id]);
   assert.deepEqual(localReport.folderIds, [volume.id]);
   assert.equal(
     fs.readFileSync(files.work(r.scope, volume.id, "from-desktop.txt"), "utf8"),
@@ -1197,42 +1190,94 @@ test("gallery source uploads originals without working copies, ignores phone/rem
   assert.equal(
     f.exports.length,
     2,
-    "ledger survives a round trip through local-copy mode",
+    "reconfiguring uploads preserves accepted assets",
   );
 });
 
-test("gallery conversion preserves untracked/excluded content and uploads local edits before removing a verified copy", async (t) => {
+test("linking an album preserves excluded files and synchronizes existing local edits", async (t) => {
   const f = await galleryFixture(t),
     { replica: r, volume, files } = f;
   fs.writeFileSync(files.work(r.scope, volume.id, "note.txt"), "unsynced edit");
   fs.writeFileSync(files.work(r.scope, volume.id, ".DS_Store"), "excluded");
-  await assert.rejects(f.enable(), /Keep or export.*DS_Store/);
-  assert.ok(fs.existsSync(files.work(r.scope, volume.id, ".DS_Store")));
-  assert.equal(await f.store.gallery(r.scope, volume.id), null);
-  fs.rmSync(files.work(r.scope, volume.id, ".DS_Store"));
   await f.enable();
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(files.work(r.scope, volume.id, ".DS_Store"), "utf8"),
+    "excluded",
+  );
   assert.equal(
     fs.readFileSync(path.join(volume.path, "note.txt"), "utf8"),
     "unsynced edit",
   );
-  assert.equal(fs.existsSync(files.folder(r.scope, volume.id)), false);
+  assert.equal(
+    fs.readFileSync(files.work(r.scope, volume.id, "note.txt"), "utf8"),
+    "unsynced edit",
+  );
 });
 
-test("gallery conversion journal recovers removal failure without publishing deletions", async (t) => {
+test("an existing upload-only phone downloads all pages and continues with uploads disabled", async (t) => {
   const f = await galleryFixture(t),
     { replica: r, volume, files, store } = f;
-  fs.writeFileSync(files.work(r.scope, volume.id, "keep.txt"), "keep");
-  const remove = files.removeFolder;
-  files.removeFolder = async () => {
-    throw new Error("disk busy");
-  };
-  await assert.rejects(f.enable(), /disk busy/);
-  assert.equal((await store.gallery(r.scope, volume.id)).mode, "converting");
-  files.removeFolder = remove;
-  await r.load();
+  await f.enable();
+  // Reproduce the persisted state of a phone configured by the previous build.
+  await files.removeFolder(r.scope, volume.id);
+  await store.resetCursor(r.scope, volume.id);
+  await store.db.runAsync(
+    "DELETE FROM files WHERE scope=? AND volume=?",
+    r.scope,
+    volume.id,
+  );
+  for (let n = 0; n < 510; n++)
+    fs.writeFileSync(
+      path.join(volume.path, `other-machine-${n}.jpg`),
+      `photo ${n}`,
+    );
+  await f.daemon.engine.cycle();
+  await sync(f);
+  for (let n = 0; n < 510; n++)
+    assert.equal(
+      fs.readFileSync(
+        files.work(r.scope, volume.id, `other-machine-${n}.jpg`),
+        "utf8",
+      ),
+      `photo ${n}`,
+    );
+  await r.gallery.setEnabled(volume.id, false);
+  fs.writeFileSync(path.join(volume.path, "second-phone.jpg"), "second phone");
+  await f.daemon.engine.cycle();
   await sync(f);
   assert.equal(
-    fs.readFileSync(path.join(volume.path, "keep.txt"), "utf8"),
+    fs.readFileSync(files.work(r.scope, volume.id, "second-phone.jpg"), "utf8"),
+    "second phone",
+  );
+  assert.equal(
+    fs.readFileSync(
+      files.work(r.scope, volume.id, "other-machine-509.jpg"),
+      "utf8",
+    ),
+    "photo 509",
+  );
+});
+
+test("interrupted old album conversion restores missing files without publishing deletions", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, store, files, volume } = f;
+  fs.writeFileSync(path.join(volume.path, "keep.jpg"), "keep");
+  await f.daemon.engine.cycle();
+  await sync(f);
+  await f.enable();
+  await store.setGallery(r.scope, volume.id, {
+    ...(await store.gallery(r.scope, volume.id)),
+    mode: "converting",
+  });
+  await files.removeFolder(r.scope, volume.id);
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(path.join(volume.path, "keep.jpg"), "utf8"),
+    "keep",
+  );
+  assert.equal(
+    fs.readFileSync(files.work(r.scope, volume.id, "keep.jpg"), "utf8"),
     "keep",
   );
   assert.equal((await store.gallery(r.scope, volume.id)).mode, "source");
@@ -1503,7 +1548,7 @@ test("manual gallery picks share receipts with automatic album uploads", async (
   );
   assert.equal(
     await f.files.exists(f.files.folder(r.scope, f.volume.id)),
-    false,
+    true,
   );
 });
 
@@ -1524,7 +1569,7 @@ test("picker-only photos upload without asking for library access", async (t) =>
   );
   assert.equal(
     await f.files.exists(f.files.folder(r.scope, f.volume.id)),
-    false,
+    true,
   );
 });
 
@@ -2284,7 +2329,10 @@ test("the import picker opens without waiting for a settling cycle and the copy 
   const source = path.join(f.root, "picked.txt");
   fs.writeFileSync(source, "picked");
   await f.replica.withImportPicker(async () => {
-    assert.ok(f.replica.active, "the picker opens while the cycle is still settling");
+    assert.ok(
+      f.replica.active,
+      "the picker opens while the cycle is still settling",
+    );
     assert.equal(await f.replica.sync(), undefined);
     const importing = f.replica.importFile(f.volume.id, "picked.txt", source);
     release();
@@ -2437,7 +2485,10 @@ test("a file added and renamed offline reaches the hub only under its new name",
     f.daemon.engine.store.current(f.volume.id, "right-name.txt").hash,
     crypto.createHash("sha256").update("content").digest("hex"),
   );
-  assert.equal(f.daemon.engine.store.current(f.volume.id, "wrong-name.txt"), undefined);
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, "wrong-name.txt"),
+    undefined,
+  );
 });
 
 test("a retried upload does not hash the pending file again", async (t) => {
@@ -2529,7 +2580,10 @@ test("a Tailscale route failure is an outage with saved views, and a lost chunk 
   );
   await f.replica.sync();
   assert.equal(f.replica.hubUnavailable, true);
-  assert.equal((await f.store.folder(f.replica.scope, f.volume.id)).issue, null);
+  assert.equal(
+    (await f.store.folder(f.replica.scope, f.volume.id)).issue,
+    null,
+  );
   assert.equal((await f.store.pending(f.replica.scope, f.volume.id)).length, 1);
   f.stall(null);
   await sync(f);
@@ -2592,7 +2646,10 @@ test("a queued object the hub rejects is verified again before the next attempt"
   const base = `http://127.0.0.1:${f.daemon.port}`;
   f.stall((url, options) => {
     if (options.method === "PUT")
-      return Response.json({ error: "Upload verification failed" }, { status: 409 });
+      return Response.json(
+        { error: "Upload verification failed" },
+        { status: 409 },
+      );
     return fetch(url.replace("https://fixture.invalid", base), options);
   });
   await f.replica.sync();
@@ -2602,4 +2659,252 @@ test("a queued object the hub rejects is verified again before the next attempt"
   f.stall(null);
   await sync(f);
   assert.ok(f.daemon.engine.store.current(f.volume.id, "doc.bin"));
+});
+
+test("shared gallery deletion survives offline pause, suppresses rescans and preserves phone originals by default", async (t) => {
+  const f = await galleryFixture(t),
+    r = f.replica;
+  await f.enable();
+  await sync(f);
+  const uploaded = await f.uploaded();
+  await r.pause(true);
+  f.offline();
+  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
+  assert.equal((await r.galleryDeletions.pending(f.volume.id)).length, 1);
+  await r.load();
+  assert.equal((await r.galleryDeletions.pending(f.volume.id)).length, 1);
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
+    0,
+  );
+  f.online();
+  await r.pause(false);
+  await sync(f);
+  assert.equal((await r.galleryDeletions.pending(f.volume.id)).length, 0);
+  assert.equal(
+    (await f.store.galleryAsset(r.scope, f.volume.id, "photo-1")).state,
+    "removed",
+  );
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
+    1,
+  );
+  assert.ok(f.data.has("photo-1"));
+  assert.equal((await r.galleryDeletions.originals(f.volume.id)).length, 0);
+  // Lose the local upload ledger: the hub still suppresses the same native asset.
+  await f.store.db.runAsync(
+    "DELETE FROM gallery_assets WHERE scope=? AND volume=?",
+    r.scope,
+    f.volume.id,
+  );
+  await r.sync(true);
+  assert.equal(r.error, null);
+  assert.equal(
+    (await f.store.galleryAsset(r.scope, f.volume.id, "photo-1")).state,
+    "removed",
+  );
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
+    1,
+  );
+});
+
+test("original review verifies content, handles cancellation, and only then invokes native removal", async (t) => {
+  const f = await galleryFixture(t, [
+      {
+        id: "photo-1",
+        filename: "photo.jpg",
+        creationTime: 1750000000000,
+        modificationTime: 1750000001000,
+      },
+    ]),
+    r = f.replica;
+  await f.enable();
+  await sync(f);
+  const uploaded = await f.uploaded();
+  let removed = 0,
+    allow = false;
+  f.media.canRemove = () => true;
+  f.media.foreground = () => true;
+  f.media.preview = async () => ({
+    uri: "file:///test.jpg",
+    modificationTime: 1750000001000,
+  });
+  f.media.exportForRemoval = f.media.export;
+  f.media.remove = async (ids) => {
+    removed++;
+    return allow ? ids : [];
+  };
+  await r.galleryDeletions.setOriginals(f.volume.id, true);
+  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
+  await sync(f);
+  let tasks = await r.galleryDeletions.originals(f.volume.id);
+  assert.equal(tasks.length, 1);
+  f.media.foreground = () => false;
+  await assert.rejects(
+    r.galleryDeletions.removeOriginals(f.volume.id, [tasks[0].seq]),
+    /Open the updated/,
+  );
+  assert.equal(removed, 0);
+  f.media.foreground = () => true;
+  const original = f.data.get("photo-1");
+  f.data.set("photo-1", Buffer.from("edited after upload"));
+  await assert.rejects(
+    r.galleryDeletions.removeOriginals(f.volume.id, [tasks[0].seq]),
+    /changed/,
+  );
+  assert.equal(removed, 0);
+  assert.equal(r.importing, false);
+  f.data.set("photo-1", original);
+  await r.galleryDeletions.removeOriginals(f.volume.id, [tasks[0].seq]);
+  assert.equal(removed, 1);
+  assert.equal((await r.galleryDeletions.originals(f.volume.id)).length, 1);
+  allow = true;
+  await r.galleryDeletions.removeOriginals(f.volume.id, [tasks[0].seq]);
+  assert.equal(removed, 2);
+  assert.equal((await r.galleryDeletions.originals(f.volume.id)).length, 0);
+  assert.equal(
+    fs.existsSync(f.files.galleryStage(r.scope, f.volume.id)),
+    false,
+  );
+});
+
+test("restoring an explicitly deleted source photo permits a new generation but cancels original removal", async (t) => {
+  const f = await galleryFixture(t),
+    r = f.replica;
+  await f.enable();
+  await sync(f);
+  const uploaded = await f.uploaded();
+  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
+  await sync(f);
+  const [event] = await r.galleryDeletions.reviews(f.volume.id);
+  assert.ok(event);
+  await r.galleryDeletions.restore(f.volume.id, event);
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
+    0,
+  );
+  assert.equal(
+    (await f.store.galleryAsset(r.scope, f.volume.id, "photo-1")).state,
+    "accepted",
+  );
+  const events = await f.client.api("/v1/gallery/removals", {
+    volume: f.volume.id,
+  });
+  assert.equal(events.events[0].eligible, false);
+  await assert.rejects(
+    f.client.api("/v1/gallery/removal-check", {
+      volume: f.volume.id,
+      seq: event.seq,
+    }),
+    /restored/,
+  );
+});
+
+test("another replica can delete a source photo without hub administration and without any download", async (t) => {
+  const f = await galleryFixture(t),
+    r = f.replica;
+  await f.enable();
+  await sync(f);
+  const uploaded = await f.uploaded();
+  const token = "another-replica-token";
+  f.daemon.engine.store.db
+    .prepare(
+      "INSERT INTO devices(id,name,token_hash,role) VALUES(?,?,?,'replica')",
+    )
+    .run(
+      "other-device",
+      "Other device",
+      crypto.createHash("sha256").update(token).digest("hex"),
+    );
+  const request = async (route) =>
+    fetch(`http://127.0.0.1:${f.daemon.port}${route}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "other_device_delete_0001",
+        volume: f.volume.id,
+        path: uploaded.path,
+        rev: uploaded.rev,
+      }),
+    });
+  assert.equal((await request("/v1/delete-file")).status, 403);
+  assert.equal((await request("/v1/gallery/delete")).status, 200);
+  await sync(f);
+  assert.equal(
+    (await f.store.galleryAsset(r.scope, f.volume.id, "photo-1")).state,
+    "removed",
+  );
+  assert.ok(f.data.has("photo-1"));
+  assert.equal((await r.galleryDeletions.reviews(f.volume.id)).length, 1);
+});
+
+test("pending deletion can be canceled before submission and stale selections keep later content", async (t) => {
+  const f = await galleryFixture(t),
+    r = f.replica;
+  await f.enable();
+  await sync(f);
+  const uploaded = await f.uploaded();
+  await r.pause(true);
+  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
+  const [pending] = await r.galleryDeletions.pending(f.volume.id);
+  await r.galleryDeletions.cancel(f.volume.id, pending.id);
+  await r.pause(false);
+  await sync(f);
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
+    0,
+  );
+  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
+  fs.writeFileSync(
+    path.join(f.volume.path, uploaded.path),
+    "a newer desktop edit",
+  );
+  await f.daemon.engine.cycle();
+  await sync(f);
+  const [stale] = await r.galleryDeletions.pending(f.volume.id);
+  assert.match(stale.issue, /changed/);
+  assert.equal(
+    fs.readFileSync(path.join(f.volume.path, uploaded.path), "utf8"),
+    "a newer desktop edit",
+  );
+  await r.unselect(f.volume.id);
+  assert.equal((await r.galleryDeletions.pending(f.volume.id)).length, 0);
+  assert.equal((await r.galleryDeletions.reviews(f.volume.id)).length, 0);
+});
+
+test("unverifiable historical gallery registration keeps originals without blocking new uploads", async (t) => {
+  const f = await galleryFixture(t),
+    r = f.replica;
+  await f.enable();
+  await sync(f);
+  const item = await f.store.galleryAsset(r.scope, f.volume.id, "photo-1");
+  item.registered = false;
+  await f.store.putGalleryAsset(r.scope, f.volume.id, item);
+  f.daemon.engine.store.db.exec(
+    "DELETE FROM gallery_members; DELETE FROM gallery_assets;",
+  );
+  fs.rmSync(path.join(f.volume.path, item.resources[0].path));
+  await f.daemon.engine.cycle();
+  f.assets.push({
+    id: "photo-new",
+    filename: "new.jpg",
+    creationTime: 1750000002000,
+  });
+  f.data.set("photo-new", Buffer.from("new original"));
+  await r.sync(true);
+  assert.equal(r.error, null);
+  assert.equal(
+    (await f.store.galleryAsset(r.scope, f.volume.id, "photo-new")).state,
+    "accepted",
+  );
+  assert.ok(
+    (await f.store.galleryAsset(r.scope, f.volume.id, "photo-1"))
+      .registrationIssue,
+  );
+  assert.ok(f.data.has("photo-1"));
+  assert.equal((await r.galleryDeletions.originals(f.volume.id)).length, 0);
 });

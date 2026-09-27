@@ -1,7 +1,23 @@
+import { AppState, Platform } from "react-native";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { native } from "./private-network";
 
 export const mediaLibrary = {
+  foreground: () => AppState.currentState === "active",
+  canRemove: () =>
+    typeof native.exportGalleryAssetForRemoval === "function" &&
+    (Platform.OS === "ios" ||
+      (Platform.OS === "android" &&
+        Platform.Version >= 30 &&
+        typeof native.trashGalleryAssets === "function")),
+  exportForRemoval: (id, destination) =>
+    native.exportGalleryAssetForRemoval(id, destination),
+  async remove(ids) {
+    if (AppState.currentState !== "active")
+      throw new Error("Keep Arca open while reviewing originals.");
+    if (Platform.OS === "android") return native.trashGalleryAssets(ids);
+    return (await MediaLibrary.deleteAssetsAsync(ids)) ? ids : [];
+  },
   permission(videos, request = false) {
     return MediaLibrary[
       request ? "requestPermissionsAsync" : "getPermissionsAsync"

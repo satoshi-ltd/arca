@@ -18,7 +18,7 @@ import { PhotoViewer } from "./PhotoViewer";
 
 const PAGE = 60;
 
-function Tile({ item, uri, size, onPress }) {
+function Tile({ item, uri, size, onPress, onLongPress, selected }) {
   const { s, c } = useDesign();
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [uri]);
@@ -32,6 +32,8 @@ function Tile({ item, uri, size, onPress }) {
       }
       style={[s.photoTile, { width: size, height: size }]}
       onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityState={{ selected: !!selected }}
     >
       {uri && !failed ? (
         <Image
@@ -49,7 +51,12 @@ function Tile({ item, uri, size, onPress }) {
           />
         </View>
       )}
-      {(item.kind === "video" || !!item.upload) && (
+      {selected && (
+        <View style={s.photoBadge}>
+          <Icon name="check" size={14} color="#fff" />
+        </View>
+      )}
+      {!selected && (item.kind === "video" || !!item.upload) && (
         <View style={s.photoBadge}>
           <Icon
             size={14}
@@ -79,6 +86,8 @@ export function FolderGallery({
   loading,
   uploads,
   notice,
+  reviewDeletions,
+  deletionCount,
   refreshKey,
   demand,
   onSummary,
@@ -90,6 +99,13 @@ export function FolderGallery({
   columns = 4,
 }) {
   const { s, c } = useDesign();
+  const [selection, setSelection] = useState([]);
+  const toggle = (item) =>
+    setSelection((items) =>
+      items.some((p) => p.path === item.path)
+        ? items.filter((p) => p.path !== item.path)
+        : [...items, item].slice(0, 100),
+    );
   const hub = useMemo(
     () => hubGallery({ api, store, scope, volume }),
     [api, store, scope, volume],
@@ -121,6 +137,7 @@ export function FolderGallery({
   const [retry, setRetry] = useState(0);
   const [pending, setPending] = useState([]);
   const [thumbnails, setThumbnails] = useState({});
+  const thumbnailProgress = useRef(null);
   const [limit, setLimit] = useState(PAGE);
   const [viewer, setViewer] = useState(null);
   const [hidden, setHidden] = useState(() => new Map());
@@ -225,6 +242,7 @@ export function FolderGallery({
       const values = {};
       for (const item of baseItems.slice(0, limit)) {
         if (!active) return;
+        if (item.uri) continue;
         const uri = await nativeSource(item);
         if (uri) values[`${item.path}:${item.hash}`] = uri;
       }
@@ -238,7 +256,7 @@ export function FolderGallery({
     const uri =
       nativeUris.resolver === nativeSource &&
       nativeUris.values[`${item.path}:${item.hash}`];
-    return uri ? { ...item, uri, nativeSource: true } : item;
+    return uri && !item.uri ? { ...item, uri, nativeSource: true } : item;
   };
   const items = useMemo(
     () => baseItems.map(withNative),
@@ -283,8 +301,12 @@ export function FolderGallery({
     let active = true;
     const key = `gallery-thumbnails:${scope}:${volume}`;
     (async () => {
-      const cached = await store.get(key, {}).catch(() => ({}));
+      const cached =
+        thumbnailProgress.current?.key === key
+          ? thumbnailProgress.current.value
+          : await store.get(key, {}).catch(() => ({}));
       if (!active) return;
+      thumbnailProgress.current = { key, value: cached };
       setThumbnails(cached);
       if (loading) return;
       const next = await prepareThumbnails(
@@ -292,7 +314,11 @@ export function FolderGallery({
         cached,
         io,
         () => active,
-        (value) => active && setThumbnails(value),
+        (value) => {
+          if (!active) return;
+          thumbnailProgress.current = { key, value };
+          setThumbnails(value);
+        },
         items,
       );
       if (active && next) await store.set(key, next).catch(() => {});
@@ -333,7 +359,25 @@ export function FolderGallery({
       style={s.timeline}
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
     >
+      {!!selection.length && (
+        <View style={s.row}>
+          <Button
+            label={`Delete ${selection.length} selected…`}
+            danger
+            onPress={async () => {
+              if (await remove(selection)) setSelection([]);
+            }}
+          />
+          <Button label="Cancel selection" onPress={() => setSelection([])} />
+        </View>
+      )}
       {!!notice && <Text style={s.caption}>{notice}</Text>}
+      {!!reviewDeletions && (
+        <Button
+          label={`Review deletions (${deletionCount})`}
+          onPress={reviewDeletions}
+        />
+      )}
       {!!pendingItems.length && (
         <View style={s.pendingUploads}>
           <View style={s.timelineStatus}>
@@ -392,13 +436,21 @@ export function FolderGallery({
                   item={item}
                   size={tile}
                   uri={thumb(item)}
+                  selected={selection.some((photo) => photo.path === item.path)}
+                  onLongPress={
+                    remove && Number.isSafeInteger(item.rev)
+                      ? () => toggle(item)
+                      : undefined
+                  }
                   onPress={() =>
-                    setViewer({
-                      items: photos,
-                      index: photos.findIndex(
-                        (photo) => photo.path === item.path,
-                      ),
-                    })
+                    selection.length
+                      ? toggle(item)
+                      : setViewer({
+                          items: photos,
+                          index: photos.findIndex(
+                            (photo) => photo.path === item.path,
+                          ),
+                        })
                   }
                 />
               ))}
@@ -453,9 +505,10 @@ export function FolderGallery({
         open={leave(open)}
         history={leave(history)}
         share={leave(share)}
-        deletable={!uploads && !!remove}
+        deletable={!!remove}
         remove={async (item) => {
-          if (!(await remove(item))) return;
+          const result = await remove(item);
+          if (!result || result === "pending") return;
           setHidden((value) =>
             new Map(value).set(item.path, Number(item.rev) || 0),
           );

@@ -98,7 +98,8 @@ export function onContainerMount(location, mountinfo) {
     )
     .some(
       (point) =>
-        point !== "/" && (location === point || location.startsWith(point + "/")),
+        point !== "/" &&
+        (location === point || location.startsWith(point + "/")),
     );
 }
 export function requirePersistentBackup(location) {
@@ -114,7 +115,9 @@ export function requirePersistentBackup(location) {
 function countFiles(directory) {
   let count = 0;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true }))
-    count += entry.isDirectory() ? countFiles(path.join(directory, entry.name)) : 1;
+    count += entry.isDirectory()
+      ? countFiles(path.join(directory, entry.name))
+      : 1;
   return count;
 }
 // Runs after the folder is unlinked, so a partial failure only leaves files on disk.
@@ -143,9 +146,12 @@ export async function deleteSyncedCopy({ root, files, directories }) {
   for (const directory of [...directories].sort((a, b) => b.length - a.length))
     try {
       const entries = fs.readdirSync(directory, { withFileTypes: true });
-      if (!entries.every((entry) => entry.isFile() && builtinExcluded(entry.name)))
+      if (
+        !entries.every((entry) => entry.isFile() && builtinExcluded(entry.name))
+      )
         continue;
-      for (const entry of entries) fs.unlinkSync(path.join(directory, entry.name));
+      for (const entry of entries)
+        fs.unlinkSync(path.join(directory, entry.name));
       fs.rmdirSync(directory);
     } catch {
       /* A directory that changed meanwhile stays. */
@@ -232,6 +238,10 @@ export class Store {
       .exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS gallery_derivatives(key TEXT PRIMARY KEY,size INTEGER NOT NULL,used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS gallery_folders(volume TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS gallery_assets(volume TEXT,source TEXT,asset TEXT,resources TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(volume,source,asset));
+      CREATE TABLE IF NOT EXISTS gallery_members(volume TEXT,path TEXT,source TEXT,asset TEXT,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS gallery_deletions(seq INTEGER PRIMARY KEY AUTOINCREMENT,author TEXT,id TEXT,volume TEXT,request TEXT,result TEXT,source TEXT,asset TEXT,resources TEXT,created INTEGER,expires INTEGER,UNIQUE(author,id));
+      CREATE INDEX IF NOT EXISTS gallery_deletions_source ON gallery_deletions(volume,source);
       CREATE TABLE IF NOT EXISTS accepted_proposals(id TEXT PRIMARY KEY,volume TEXT NOT NULL,device TEXT NOT NULL,base INTEGER NOT NULL,revision INTEGER);
       CREATE INDEX IF NOT EXISTS accepted_proposals_revision ON accepted_proposals(revision);
       CREATE INDEX IF NOT EXISTS accepted_proposals_volume ON accepted_proposals(volume);
@@ -286,8 +296,14 @@ export class Store {
         .some((column) => column.name === "modified")
     )
       this.db.exec("ALTER TABLE gallery_metadata ADD COLUMN modified TEXT");
-    if (!this.db.prepare("PRAGMA table_info(snapshot_sessions)").all().some((column) => column.name === "total")) {
-      this.db.exec(`ALTER TABLE snapshot_sessions ADD COLUMN total INTEGER NOT NULL DEFAULT 0;
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(snapshot_sessions)")
+        .all()
+        .some((column) => column.name === "total")
+    ) {
+      this.db
+        .exec(`ALTER TABLE snapshot_sessions ADD COLUMN total INTEGER NOT NULL DEFAULT 0;
         UPDATE snapshot_sessions SET total=(SELECT COUNT(*) FROM snapshot_files WHERE session=snapshot_sessions.id);`);
     }
     this.db.exec(
@@ -337,7 +353,9 @@ export class Store {
     const files = [],
       directories = new Set([v.path]);
     for (const row of this.db
-      .prepare("SELECT path,hash,size,directory FROM files WHERE volume=? AND deleted=0")
+      .prepare(
+        "SELECT path,hash,size,directory FROM files WHERE volume=? AND deleted=0",
+      )
       .all(id)) {
       if (excluded(row.path, !!row.directory)) continue;
       let file;
@@ -376,6 +394,9 @@ export class Store {
         )
         .run(id);
       for (const table of [
+        "gallery_assets",
+        "gallery_members",
+        "gallery_deletions",
         "accepted_proposals",
         "history_views",
         "snapshot_sessions",
@@ -550,7 +571,9 @@ export class Store {
   }
   withFileDates(rows) {
     const hashes = [
-      ...new Set(rows.filter((row) => row.hash && !row.deleted).map((row) => row.hash)),
+      ...new Set(
+        rows.filter((row) => row.hash && !row.deleted).map((row) => row.hash),
+      ),
     ];
     if (!hashes.length) return rows;
     const dates = new Map(
@@ -562,7 +585,9 @@ export class Store {
         .map((row) => [row.hash, row.modified]),
     );
     return dates.size
-      ? rows.map((row) => (dates.has(row.hash) ? { ...row, modified: dates.get(row.hash) } : row))
+      ? rows.map((row) =>
+          dates.has(row.hash) ? { ...row, modified: dates.get(row.hash) } : row,
+        )
       : rows;
   }
   syncRow(row) {
@@ -712,16 +737,21 @@ export class Store {
     const cached = this.totalsCache.get(volume);
     if (cached?.generation === generation && cached.excluded === excluded)
       return { ...cached.totals };
-    const totals = this.db.prepare("SELECT path,size FROM files WHERE volume=? AND deleted=0 AND directory=0").all(volume).reduce(
-      (totals, row) => {
-        if (!excluded(row.path, false)) {
-          totals.files++;
-          totals.bytes += row.size;
-        }
-        return totals;
-      },
-      { files: 0, bytes: 0 },
-    );
+    const totals = this.db
+      .prepare(
+        "SELECT path,size FROM files WHERE volume=? AND deleted=0 AND directory=0",
+      )
+      .all(volume)
+      .reduce(
+        (totals, row) => {
+          if (!excluded(row.path, false)) {
+            totals.files++;
+            totals.bytes += row.size;
+          }
+          return totals;
+        },
+        { files: 0, bytes: 0 },
+      );
     this.totalsCache.set(volume, { generation, excluded, totals });
     return { ...totals };
   }
@@ -732,10 +762,17 @@ export class Store {
       try {
         excluded = this.visibleRules(volume.id);
       } catch (error) {
-        result.set(volume.id, { files: null, bytes: null, policyError: error.message });
+        result.set(volume.id, {
+          files: null,
+          bytes: null,
+          policyError: error.message,
+        });
         continue;
       }
-      const generation = this.db.prepare("SELECT generation FROM file_generations WHERE volume=?").get(volume.id)?.generation || 0;
+      const generation =
+        this.db
+          .prepare("SELECT generation FROM file_generations WHERE volume=?")
+          .get(volume.id)?.generation || 0;
       this.totalsCache ||= new Map();
       const cached = this.totalsCache.get(volume.id);
       if (cached?.generation === generation && cached.excluded === excluded) {
@@ -744,12 +781,20 @@ export class Store {
       }
       // Capture only countable fields, then yield during policy evaluation.
       // The response represents this read; later mutations invalidate its cache.
-      const rows = this.db.prepare("SELECT path,size FROM files WHERE volume=? AND deleted=0 AND directory=0").all(volume.id);
+      const rows = this.db
+        .prepare(
+          "SELECT path,size FROM files WHERE volume=? AND deleted=0 AND directory=0",
+        )
+        .all(volume.id);
       const totals = { files: 0, bytes: 0 };
       for (let i = 0; i < rows.length; i++) {
-        if (i % 500 === 0) await new Promise((resolve) => setImmediate(resolve));
+        if (i % 500 === 0)
+          await new Promise((resolve) => setImmediate(resolve));
         const row = rows[i];
-        if (!excluded(row.path, false)) { totals.files++; totals.bytes += row.size; }
+        if (!excluded(row.path, false)) {
+          totals.files++;
+          totals.bytes += row.size;
+        }
       }
       this.totalsCache.set(volume.id, { generation, excluded, totals });
       result.set(volume.id, { ...totals });
@@ -767,7 +812,9 @@ export class Store {
     const unicodeNames = new Map();
     // Include indexed names outside a partial scan to detect portable collisions.
     if (scopes !== null)
-      for (const row of this.db.prepare("SELECT path FROM files WHERE volume=? AND deleted=0").all(v.id)) {
+      for (const row of this.db
+        .prepare("SELECT path FROM files WHERE volume=? AND deleted=0")
+        .all(v.id)) {
         const parts = row.path.split("/");
         for (let i = 1; i <= parts.length; i++) {
           const name = parts.slice(0, i).join("/");
@@ -823,8 +870,7 @@ export class Store {
             known && !known.deleted ? known.hash : null,
           ),
         );
-      }
-      else fail(`Unsupported file: ${name}`, 409);
+      } else fail(`Unsupported file: ${name}`, 409);
     };
     const walk = (relative) => {
       for (const entry of fs.readdirSync(
@@ -1074,7 +1120,9 @@ export class Store {
     const cached = this.db
       .prepare("SELECT signature,hash FROM scan_cache WHERE path=?")
       .get(file);
-    return cached?.signature === signature && cached.hash === hash ? file : null;
+    return cached?.signature === signature && cached.hash === hash
+      ? file
+      : null;
   }
   recover(volume) {
     const rows = this.db

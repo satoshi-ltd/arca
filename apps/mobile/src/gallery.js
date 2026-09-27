@@ -31,7 +31,8 @@ export function galleryPath(prefix, asset, resource) {
   );
 }
 
-// Gallery sources never enter Replica.scan/pull and never produce deletions.
+// Album uploads supplement the ordinary shared-folder working copy.
+// Removing an asset from Photos never proposes a shared deletion.
 export class Gallery {
   constructor(replica, media) {
     this.r = replica;
@@ -53,10 +54,7 @@ export class Gallery {
   }
   async configure(volume, options, confirmed = false) {
     const r = this.r;
-    if (!confirmed)
-      throw new Error(
-        "Confirm replacing the Arca local copy with a gallery source first.",
-      );
+    if (!confirmed) throw new Error("Confirm enabling album uploads first.");
     await r.requireActiveReplica();
     if (r.importing || r.removing || r.picking || r.renaming)
       throw new Error("Wait for the current operation to finish.");
@@ -82,11 +80,6 @@ export class Gallery {
       const folder = await r.store.folder(r.scope, volume);
       if (!folder?.selected)
         throw new Error("Select and synchronize this folder first.");
-      const pendingConversion = await r.store.gallery(r.scope, volume);
-      if (pendingConversion?.mode === "converting") {
-        await this.finishConversion(folder, pendingConversion);
-        return;
-      }
       const permission = await this.permission(!!options.videos);
       if (
         options.albumId &&
@@ -109,6 +102,10 @@ export class Gallery {
         ...old,
         mode: "source",
         enabled: old?.mode === "source" ? old.enabled : true,
+        originalRemoval:
+          old?.mode === "source" && old.albumId === (options.albumId || null)
+            ? old.originalRemoval
+            : null,
         albumId: options.albumId || null,
         albumName: options.albumName || "All accessible photos",
         videos: !!options.videos,
@@ -120,30 +117,9 @@ export class Gallery {
         issue: null,
         limited: permission.accessPrivileges === "limited",
       };
-      if (!galleryConfig(folder)) {
-        if (!folder.completed || folder.issue)
-          throw new Error(
-            "Finish a successful folder sync before enabling Photo uploads.",
-          );
-        if (!(await r.files.exists(r.files.folder(r.scope, volume))))
-          throw new Error(
-            "The local folder is unavailable. Restore it before enabling Photo uploads.",
-          );
-        r.force = true;
-        await r.syncIgnore(folder);
-        await r.scan(folder);
-        await r.push(folder);
-        await r.pull(folder);
-        await this.verifyLocal(folder);
-        r.check();
-        // Durable mode switch precedes removal: a crash cannot turn missing files into deletions.
-        source.mode = "converting";
-      }
       if (r.client.state().catalog?.gallery && !remote.gallery)
         await r.client.api("/v1/gallery/link", { volume });
       await r.store.setGallery(r.scope, volume, source);
-      if (source.mode === "converting")
-        await this.finishConversion(folder, source);
       await r.store.retryGallery(r.scope, volume);
     } finally {
       r.importing = r.busy = false;
@@ -224,45 +200,6 @@ export class Gallery {
     }
   }
 
-  async verifyLocal(folder) {
-    const r = this.r;
-    if (
-      (await r.store.pending(r.scope, folder.id)).length ||
-      (await r.store.applying(r.scope, folder.id)).length
-    )
-      throw new Error(
-        "Local changes are still pending. Sync before converting this folder.",
-      );
-    const root = r.files.folder(r.scope, folder.id);
-    if (!(await r.files.exists(root))) return;
-    // Inspect excluded files too: they must never disappear as incidental cleanup.
-    for await (const entry of r.files.walk(root, "", true)) {
-      r.check();
-      const row = await r.store.current(r.scope, folder.id, entry.path);
-      if (
-        !row ||
-        row.deleted ||
-        !!row.directory !== !!entry.directory ||
-        (!entry.directory && (await r.files.hash(entry.uri)) !== row.hash)
-      )
-        throw new Error(
-          `Keep or export this local item before converting: ${entry.path}`,
-        );
-    }
-  }
-  async finishConversion(folder, source) {
-    const r = this.r;
-    await this.verifyLocal(folder);
-    const hashes = new Set(
-      (await r.store.rows(r.scope, folder.id)).map((row) => row.hash),
-    );
-    r.check();
-    await r.files.removeFolder(r.scope, folder.id);
-    await r.store.clearWorkingIndex(r.scope, folder.id);
-    await r.cleanTransferObjects(r.scope, hashes);
-    await r.store.setGallery(r.scope, folder.id, { ...source, mode: "source" });
-    r.hashCache.clear();
-  }
   async setEnabled(volume, enabled) {
     const r = this.r;
     await r.requireActiveReplica();
@@ -289,46 +226,6 @@ export class Gallery {
     }
   }
 
-  async useLocalCopy(volume, confirmed = false) {
-    const r = this.r;
-    if (!confirmed)
-      throw new Error("Confirm downloading a complete local copy first.");
-    await r.requireActiveReplica();
-    if (r.importing || r.removing || r.picking || r.renaming)
-      throw new Error("Wait for the current operation to finish.");
-    r.importing = true;
-    try {
-      if (r.active) {
-        r.stop();
-        await r.active;
-      }
-      r.busy = true;
-      await r.client.refresh();
-      const remote = r.client
-        .state()
-        .catalog?.volumes.find((v) => v.id === volume);
-      const source = await r.store.gallery(r.scope, volume);
-      if (
-        !remote ||
-        !r.client.state().connection?.linked ||
-        source?.mode !== "source"
-      )
-        throw new Error(
-          "Connect to the hub and finish configuring this source first.",
-        );
-      await r.space(remote.bytes * 2);
-      await r.files.mkdir(r.files.folder(r.scope, volume));
-      await r.store.resetCursor(r.scope, volume);
-      await r.store.setGallery(r.scope, volume, {
-        ...source,
-        mode: "local",
-        enabled: false,
-      });
-    } finally {
-      r.importing = r.busy = false;
-      r.changed();
-    }
-  }
   async policy(volume) {
     const r = this.r;
     const { versions } = await r.client.api(
@@ -405,6 +302,32 @@ export class Gallery {
     }
     return false;
   }
+  async register(folder, item) {
+    const r = this.r;
+    if (!r.client.state().catalog?.galleryDeletion) return false;
+    if (
+      item.picked ||
+      item.id.startsWith("picked-") ||
+      item.resources?.some((r) => r.path.includes(".conflict-"))
+    ) {
+      item.registered = true;
+      await r.store.putGalleryAsset(r.scope, folder.id, item);
+      return false;
+    }
+    item.group ||= digest(r.scope + ":" + item.id);
+    const result = await r.client.api("/v1/gallery/register", {
+      volume: folder.id,
+      asset: item.group,
+      resources: item.resources,
+    });
+    item.registered = !result.removed;
+    if (result.removed) {
+      item.state = "removed";
+      item.issue = null;
+    }
+    await r.store.putGalleryAsset(r.scope, folder.id, item);
+    return result.removed;
+  }
   async send(folder, item, policy) {
     const r = this.r;
     const save = () => r.store.putGalleryAsset(r.scope, folder.id, item);
@@ -422,6 +345,7 @@ export class Gallery {
       item.resources?.length &&
       item.resources.every((resource) => resource.accepted)
     ) {
+      if (await this.register(folder, item)) return;
       item.state = "accepted";
       if (item.previousResources) item.acceptedAt = Date.now();
       delete item.previousResources;
@@ -523,6 +447,7 @@ export class Gallery {
       item.resources = resources;
       item.state = "uploading";
       await save();
+      if (await this.register(folder, item)) return;
       for (const resource of resources) {
         r.check();
         if (resource.accepted) continue;
@@ -563,7 +488,7 @@ export class Gallery {
       item.retryAt = 0;
       await save();
     } finally {
-      // Only one asset is staged; never retain a second photo-library copy.
+      // Temporary exports are separate from the synchronized working copy.
       await r.files.clearGalleryStage(r.scope, folder.id);
     }
   }
@@ -571,10 +496,6 @@ export class Gallery {
     const r = this.r;
     let source = await r.store.gallery(r.scope, folder.id);
     source.prefix = source.prefix.replace(/^Phone-/, "Machine-");
-    if (source.mode === "converting") {
-      await this.finishConversion(folder, source);
-      source = await r.store.gallery(r.scope, folder.id);
-    }
     await r.files.clearGalleryStage(r.scope, folder.id);
     const catalog = r.client.state().catalog;
     if (
@@ -582,6 +503,27 @@ export class Gallery {
       !catalog.volumes.find((v) => v.id === folder.id)?.gallery
     )
       await r.client.api("/v1/gallery/link", { volume: folder.id });
+    if (catalog?.galleryDeletion) {
+      const registration = await r.store.unregisteredGalleryAssets(
+        r.scope,
+        folder.id,
+      );
+      for (const item of registration) {
+        r.check();
+        try {
+          await this.register(folder, item);
+        } catch (error) {
+          if (![400, 409].includes(error.status)) throw error;
+          // Historical uploads may no longer have a verifiable current head.
+          // Keep their originals and continue uploading other assets.
+          item.registered = true;
+          item.registrationIssue = error.message;
+          await r.store.putGalleryAsset(r.scope, folder.id, item);
+        }
+      }
+      r.moreGalleryWork ||= registration.length === 24;
+      await r.galleryDeletions.receive(folder.id);
+    }
     if (!source.enabled) return;
     try {
       const permission = await this.permission(source.videos);

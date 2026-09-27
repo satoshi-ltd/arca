@@ -117,7 +117,8 @@ export class Gallery {
         let rendered = false;
         try {
           if (this.s.localContent(volume, row.path, row.hash))
-            rendered = !(await this.derivative(volume, row.path, row.hash)).unavailable;
+            rendered = !(await this.derivative(volume, row.path, row.hash))
+              .unavailable;
         } catch (error) {
           if (error.status === 429) return;
         }
@@ -153,7 +154,9 @@ export class Gallery {
         let rendered = false;
         try {
           if (this.s.localContent(volume, row.path, row.hash))
-            rendered = !(await this.derivative(volume, row.path, row.hash, true)).unavailable;
+            rendered = !(
+              await this.derivative(volume, row.path, row.hash, true)
+            ).unavailable;
         } catch (error) {
           if (error.status === 429) return;
         }
@@ -272,6 +275,9 @@ export class Gallery {
         (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash) AS added
       FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
       WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_gallery_visible(f.path)=1
+      AND NOT EXISTS (SELECT 1 FROM gallery_members gm JOIN gallery_assets ga USING(volume,source,asset)
+        WHERE gm.volume=f.volume AND gm.path=f.path AND ga.deleted=0 AND f.path<>json_extract(ga.resources,'$[0].path')
+        AND EXISTS (SELECT 1 FROM files primary_file WHERE primary_file.volume=f.volume AND primary_file.path=json_extract(ga.resources,'$[0].path') AND primary_file.deleted=0 AND arca_gallery_visible(primary_file.path)=1))
     ), dated AS (SELECT *,arca_gallery_date(path,captured,added,modified) AS date FROM media)`;
     const cursor = "coalesce(date, '') || '|' || path";
     const select = (bound, order) =>
@@ -488,8 +494,8 @@ export class Gallery {
     if (this.pending.has(key)) return this.pending.get(key);
     const source = s.localContent(volume, name, hash);
     if (!source) fail("Sync this photo before previewing it", 409);
-    const job = this.render(name, source, large, key, diskKey, disk).finally(() =>
-      this.pending.delete(key),
+    const job = this.render(name, source, large, key, diskKey, disk).finally(
+      () => this.pending.delete(key),
     );
     this.pending.set(key, job);
     return job;

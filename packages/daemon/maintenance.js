@@ -1,3 +1,4 @@
+import { galleryRecoveryPins } from "./gallery-actions.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fail, fileSignature } from "./storage.js";
@@ -66,18 +67,27 @@ export function retentionPlan(
   )
     fail("Retention values must be non-negative integers");
   const revisions = volume
-    ? store.db.prepare("SELECT rev,volume,path,created FROM revisions WHERE volume=? ORDER BY rev DESC").all(volume)
-    : store.db.prepare("SELECT rev,volume,path,created FROM revisions ORDER BY rev DESC").all();
+    ? store.db
+        .prepare(
+          "SELECT rev,volume,path,created FROM revisions WHERE volume=? ORDER BY rev DESC",
+        )
+        .all(volume)
+    : store.db
+        .prepare(
+          "SELECT rev,volume,path,created FROM revisions ORDER BY rev DESC",
+        )
+        .all();
   const pinned = new Set(
     (volume
       ? store.db.prepare("SELECT rev FROM files WHERE volume=?").all(volume)
-      : store.db.prepare("SELECT rev FROM files").all())
-      .map((r) => r.rev),
+      : store.db.prepare("SELECT rev FROM files").all()
+    ).map((r) => r.rev),
   );
   for (const p of store.db.prepare("SELECT row FROM pending").all()) {
     const row = JSON.parse(p.row);
     if (!volume || row.volume === volume) pinned.add(row.rev);
   }
+  for (const row of galleryRecoveryPins(store)) pinned.add(row.rev);
   const floor = store.db
     .prepare(
       "SELECT MIN(a.revision) AS n FROM backup_ack a JOIN devices d ON d.id=a.device WHERE a.enabled=1 AND d.revoked=0",
@@ -86,9 +96,14 @@ export function retentionPlan(
   const counts = new Map(),
     newerDates = new Map(),
     remove = [];
-  const folders = (volume ? [store.volume(volume)] : store.volumes()).map((v) => ({
-    id: v.id, name: v.name, remove: 0, retained: 0,
-  }));
+  const folders = (volume ? [store.volume(volume)] : store.volumes()).map(
+    (v) => ({
+      id: v.id,
+      name: v.name,
+      remove: 0,
+      retained: 0,
+    }),
+  );
   const byFolder = new Map(folders.map((folder) => [folder.id, folder]));
   let protectedCount = 0;
   const cutoff = Date.now() - days * 86400000;
@@ -98,16 +113,16 @@ export function retentionPlan(
     counts.set(key, count);
     const ageFrom = volume ? newerDates.get(key) : r.created;
     newerDates.set(key, r.created);
-    const protectedRevision = pinned.has(r.rev) || (floor !== null && r.rev > floor);
+    const protectedRevision =
+      pinned.has(r.rev) || (floor !== null && r.rev > floor);
     if (protectedRevision) protectedCount++;
-    const removable = (
+    const removable =
       (!volume || r.volume === volume) &&
       (floor === null || r.rev <= floor) &&
       !pinned.has(r.rev) &&
       (days || versions) &&
       (!days || Date.parse(ageFrom) < cutoff) &&
-      (!versions || count > versions)
-    );
+      (!versions || count > versions);
     if (removable) remove.push(r.rev);
     const folder = byFolder.get(r.volume);
     if (folder) folder[removable ? "remove" : "retained"]++;
@@ -122,7 +137,12 @@ export function retentionPlan(
     hasBackup: floor !== null,
   };
 }
-export function applyRetention(store, options, collect = true, plan = retentionPlan(store, options)) {
+export function applyRetention(
+  store,
+  options,
+  collect = true,
+  plan = retentionPlan(store, options),
+) {
   store.db.exec("BEGIN IMMEDIATE");
   try {
     const remove = store.db.prepare("DELETE FROM revisions WHERE rev=?");
@@ -162,6 +182,7 @@ function collectUnusedObjects(store) {
       const row = JSON.parse(r.row);
       if (row.hash) hashes.add(row.hash);
     }
+  for (const row of galleryRecoveryPins(store)) hashes.add(row.hash);
   const cutoff = Date.now() - 24 * 3600000;
   let objectsRemoved = 0;
   for (const name of fs.readdirSync(store.objects))
@@ -191,14 +212,18 @@ export async function releaseReplicaObjects(store) {
     if (hash) keep.add(hash);
   }
   const forget = store.db.prepare("DELETE FROM scan_cache WHERE path=?");
-  for (const r of store.db.prepare("SELECT path,signature,hash FROM scan_cache").all())
+  for (const r of store.db
+    .prepare("SELECT path,signature,hash FROM scan_cache")
+    .all())
     if (accepted.has(r.hash)) continue;
     else if (fileSignature(r.path) === r.signature) keep.add(r.hash);
     else forget.run(r.path);
   let removed = 0;
   for (const name of await fs.promises.readdir(store.objects))
     if (/^[a-f0-9]{64}$/.test(name) && !keep.has(name)) {
-      await fs.promises.rm(path.join(store.objects, name), { force: true }).catch(() => {});
+      await fs.promises
+        .rm(path.join(store.objects, name), { force: true })
+        .catch(() => {});
       removed++;
     }
   return removed;

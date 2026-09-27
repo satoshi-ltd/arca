@@ -1,3 +1,4 @@
+import { GalleryDeletionReview } from "./GalleryDeletionReview";
 import { StickyDetailSide } from "./StickyDetailSide";
 import * as Application from "expo-application";
 import { textSizes, textScale } from "./text-size.js";
@@ -183,6 +184,7 @@ export default function App() {
     [historyVolume, setHistoryVolume] = useState(""),
     [historyFilter, setHistoryFilter] = useState("revisions");
   const historyRequest = useRef(0);
+  const [deletionCount, setDeletionCount] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false);
   const [filesLoading, setFilesLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
@@ -786,20 +788,22 @@ export default function App() {
   function deleteMedia(item) {
     return new Promise((resolve) =>
       confirm(
-        "Delete this photo?",
-        "Deletes from synced folders. Originals in a phone’s system gallery are kept. Recovery depends on this folder’s revision retention." +
+        Array.isArray(item)
+          ? `Delete ${item.length} photos?`
+          : "Delete this photo?",
+        "Deletes this photo and its Live Photo resources from the shared gallery for everyone. This phone’s original is a separate action in Review deletions. Recovery depends on this folder’s revision retention." +
           (!connected || status.paused
             ? " Deletion will sync when connected and resumed."
             : ""),
         () =>
           run(
             async () => {
-              await engine.current.removeFile(folder.id, item.path);
-              resolve(true);
+              await engine.current.galleryDeletions.enqueue(folder.id, item);
+              resolve("pending");
               await listFiles();
               if (connected && !status.paused) startSync();
             },
-            { success: "Photo deleted" },
+            { success: "Deletion queued. Sync will confirm it." },
           ).then(() => resolve(false)),
         "Delete photo",
         () => resolve(false),
@@ -907,7 +911,7 @@ export default function App() {
     }
     confirm(
       "Enable photo uploads?",
-      "Replaces this phone’s Arca copy with gallery uploads. Only verified local files are removed. Photos and hub files are kept.",
+      "Uploads this album and keeps a complete local Arca copy of the shared folder, including photos from other devices. Uses storage on this phone. Originals stay in Photos.",
       save,
       "Enable uploads",
     );
@@ -917,7 +921,7 @@ export default function App() {
     const gallery = galleryConfig(locals.find((f) => f.id === target.id));
     const sourceOnly = gallery?.mode === "source";
     const message = sourceOnly
-      ? "Stops photo uploads and removes the link to this album. Photos on this phone, uploaded files and hub history are kept. Linking again may upload photos again."
+      ? "Stops photo uploads and removes this folder’s Arca copy and album link. Originals in Photos, hub files and history are kept. Unsynced local changes will be lost; export the folder first to keep them."
       : "Removes this folder’s Arca copy from this phone. Hub files and history are kept. Unsynced local changes will be lost; use Export folder first to keep them.";
     confirm(
       "Stop syncing?",
@@ -992,6 +996,24 @@ export default function App() {
     }),
     [entries],
   );
+  useEffect(() => {
+    let active = true;
+    if (!folder || !engine.current) {
+      setDeletionCount(0);
+      return;
+    }
+    Promise.all([
+      engine.current.galleryDeletions.pending(folder.id),
+      engine.current.galleryDeletions.originals(folder.id),
+    ])
+      .then(([requests, originals]) => {
+        if (active) setDeletionCount(requests.length + originals.length);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [folder?.id, status.last, status.busy, busy]);
   const timelineNotice = source
     ? ["Needs attention", "Disabled"].find(
         (state) =>
@@ -999,7 +1021,10 @@ export default function App() {
           uploadStatus(source, {
             connected,
             paused: status.paused,
-            busy: !status.offline && status.busy && status.syncingVolume === folder?.id,
+            busy:
+              !status.offline &&
+              status.busy &&
+              status.syncingVolume === folder?.id,
           }),
       ) || ""
     : currentFolder?.issue || status.error
@@ -1031,11 +1056,17 @@ export default function App() {
             : null
         }
         notice={timelineNotice}
+        reviewDeletions={
+          deletionCount
+            ? () => setSheet({ kind: "gallery-deletions", volume: folder })
+            : null
+        }
+        deletionCount={deletionCount}
         folderName={folder.name}
         open={(item) => openMedia(item).catch((e) => setError(e.message))}
         history={(item) => openFileDetail(item)}
         share={(item) => shareMedia(item).catch((e) => setError(e.message))}
-        remove={!source && currentFolder?.selected ? deleteMedia : null}
+        remove={currentFolder?.selected ? deleteMedia : null}
       />
     ) : null;
   async function resolveConflict(entry, volume = folder?.id) {
@@ -1418,7 +1449,7 @@ export default function App() {
                               }
                               subtitle={
                                 photoFolder
-                                  ? `${photoCount ?? "—"} photos · ${source ? `${source.summary?.bytes == null ? "—" : bytes(source.summary.bytes)} uploaded` : `${bytes(entrySummary.bytes)} local`}${status.paused ? " · Paused" : ""}`
+                                  ? `${photoCount ?? "—"} photos · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`
                                   : `${entrySummary.files} files · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`
                               }
                             >
@@ -1503,7 +1534,10 @@ export default function App() {
                               label="Folder actions"
                               icon="more"
                               onPress={() =>
-                                setSheet({ kind: "folder-actions", volume: folder })
+                                setSheet({
+                                  kind: "folder-actions",
+                                  volume: folder,
+                                })
                               }
                             />
                           </View>
@@ -1535,7 +1569,7 @@ export default function App() {
                   name={catalog?.name}
                   machine={machines?.find((m) => m.isHub)}
                   catalog={catalog}
-                  locals={locals.filter((f) => !galleryConfig(f))}
+                  locals={locals}
                   onSaved={update}
                 />
                 <KeyboardScrollView
@@ -1572,11 +1606,12 @@ export default function App() {
                               ? "Offline"
                               : currentFolder?.issue || status.error
                                 ? "Needs attention"
-                                : status.busy && status.syncingVolume === currentFolder?.id
-                                ? "Syncing"
-                                : currentFolder?.completed
-                                  ? "Up to date"
-                                  : "Not yet synced",
+                                : status.busy &&
+                                    status.syncingVolume === currentFolder?.id
+                                  ? "Syncing"
+                                  : currentFolder?.completed
+                                    ? "Up to date"
+                                    : "Not yet synced",
                         ],
                         [
                           "Files",
@@ -1903,43 +1938,26 @@ export default function App() {
                                     icon={
                                       galleryConfig(f) ? "gallery" : "folders"
                                     }
-                                    description={
-                                      galleryConfig(f)
-                                        ? `${galleryConfig(f).summary?.accepted || 0} photos · ${galleryConfig(f).summary?.bytes == null ? "—" : bytes(galleryConfig(f).summary.bytes)} uploaded`
-                                        : `${f.files} files · ${bytes(f.bytes)} local`
-                                    }
+                                    description={`${f.files} files · ${bytes(f.bytes)} local`}
                                     status={
-                                      galleryConfig(f)
-                                        ? f.issue || galleryConfig(f).issue
+                                      status.paused
+                                        ? "Paused"
+                                        : f.issue || galleryConfig(f)?.issue
                                           ? "Needs attention"
-                                          : !galleryConfig(f).enabled
-                                            ? "Disabled"
-                                            : status.paused
-                                              ? "Paused"
-                                              : status.offline
-                                                ? "Offline"
-                                                : status.busy &&
-                                                  status.syncingVolume === f.id
-                                                ? "Syncing"
-                                                : galleryConfig(f).summary
-                                                      ?.pending ||
-                                                    !galleryConfig(f)
-                                                      .scannedAt ||
-                                                    galleryConfig(f).after
-                                                  ? "Incomplete"
-                                                  : "Up to date"
-                                        : status.paused
-                                          ? "Paused"
-                                          : f.issue
-                                            ? "Needs attention"
-                                            : status.offline
-                                              ? "Offline"
-                                              : status.busy &&
+                                          : status.offline
+                                            ? "Offline"
+                                            : status.busy &&
                                                 status.syncingVolume === f.id
                                               ? "Syncing"
-                                              : f.completed
-                                                ? "Up to date"
-                                                : "Incomplete"
+                                              : !f.completed ||
+                                                  (galleryConfig(f)?.enabled &&
+                                                    (galleryConfig(f).summary
+                                                      ?.pending ||
+                                                      !galleryConfig(f)
+                                                        .scannedAt ||
+                                                      galleryConfig(f).after))
+                                                ? "Incomplete"
+                                                : "Up to date"
                                     }
                                     onPress={() =>
                                       openFolder(f).catch((e) =>
@@ -2111,8 +2129,14 @@ export default function App() {
                       {connection ? (
                         <Section>
                           <Text style={s.eyebrow}>HUB CONNECTION</Text>
-                          {status.offline && !!machines?.length && <Text style={s.caption}>Showing saved machine information.</Text>}
-                          {!machines && !status.offline && <Scaffold label="Loading machines" />}
+                          {status.offline && !!machines?.length && (
+                            <Text style={s.caption}>
+                              Showing saved machine information.
+                            </Text>
+                          )}
+                          {!machines && !status.offline && (
+                            <Scaffold label="Loading machines" />
+                          )}
                           <HubConnection
                             connection={connection}
                             name={catalog?.name}
@@ -2215,20 +2239,23 @@ export default function App() {
                                 state={
                                   status.paused
                                     ? "Paused"
-                                    : status.offline ? "Offline" : status.error ||
-                                        locals.some(
-                                          (f) => f.selected && f.issue,
-                                        )
-                                      ? "Needs attention"
-                                      : status.busy
-                                        ? "Syncing"
-                                        : locals.some(
-                                              (f) => f.selected && !f.completed,
-                                            )
-                                          ? "Incomplete"
-                                          : status.last
-                                            ? "Up to date"
-                                            : "Not yet synced"
+                                    : status.offline
+                                      ? "Offline"
+                                      : status.error ||
+                                          locals.some(
+                                            (f) => f.selected && f.issue,
+                                          )
+                                        ? "Needs attention"
+                                        : status.busy
+                                          ? "Syncing"
+                                          : locals.some(
+                                                (f) =>
+                                                  f.selected && !f.completed,
+                                              )
+                                            ? "Incomplete"
+                                            : status.last
+                                              ? "Up to date"
+                                              : "Not yet synced"
                                 }
                               />
                               {machines?.length ? (
@@ -2249,7 +2276,8 @@ export default function App() {
                                   ))
                               ) : (
                                 <Text style={s.caption}>
-                                  No saved machine information. Sync online to save it.
+                                  No saved machine information. Sync online to
+                                  save it.
                                 </Text>
                               )}
                             </View>
@@ -2263,7 +2291,11 @@ export default function App() {
                       {!connected && (
                         <Text style={s.text}>Connect to view hub history.</Text>
                       )}
-                      {history.offline && <Text style={s.caption}>Showing saved history · recent entries only.</Text>}
+                      {history.offline && (
+                        <Text style={s.caption}>
+                          Showing saved history · recent entries only.
+                        </Text>
+                      )}
                       {historyLoading && !history.versions.length && (
                         <Scaffold kind="history" label="Loading history" />
                       )}
@@ -2284,13 +2316,16 @@ export default function App() {
                         !history.versions.length && (
                           <Card
                             title={
-                              history.offline ? "No saved history" : historyFilter !== "revisions" || historyVolume
-                                ? "No matching revisions"
-                                : "No history yet"
+                              history.offline
+                                ? "No saved history"
+                                : historyFilter !== "revisions" || historyVolume
+                                  ? "No matching revisions"
+                                  : "No history yet"
                             }
                           >
                             <Text style={s.text}>
-                              Try another filter or sync online to save recent history.
+                              Try another filter or sync online to save recent
+                              history.
                             </Text>
                           </Card>
                         )}
@@ -2733,21 +2768,23 @@ export default function App() {
                 />
               }
               title={
-                shownSheet.kind === "rename-file"
-                  ? "Rename file"
-                  : shownSheet.kind === "gallery"
-                    ? "Photo uploads"
-                    : shownSheet.kind === "history-filter"
-                      ? "Shared folder"
-                      : shownSheet.kind === "folder-actions"
-                        ? shownSheet.volume.name
-                        : shownSheet.kind === "select"
+                shownSheet.kind === "gallery-deletions"
+                  ? "Review deletions"
+                  : shownSheet.kind === "rename-file"
+                    ? "Rename file"
+                    : shownSheet.kind === "gallery"
+                      ? "Photo uploads"
+                      : shownSheet.kind === "history-filter"
+                        ? "Shared folder"
+                        : shownSheet.kind === "folder-actions"
                           ? shownSheet.volume.name
-                          : shownSheet.kind === "history"
-                            ? shownSheet.path
-                            : shownSheet.kind === "conflict"
-                              ? "Resolve conflict"
-                              : shownSheet.entry.path
+                          : shownSheet.kind === "select"
+                            ? shownSheet.volume.name
+                            : shownSheet.kind === "history"
+                              ? shownSheet.path
+                              : shownSheet.kind === "conflict"
+                                ? "Resolve conflict"
+                                : shownSheet.entry.path
               }
               busy={busy}
               busyLabel={actionLabel}
@@ -2803,6 +2840,13 @@ export default function App() {
                   />
                 </View>
               )}
+              {shownSheet.kind === "gallery-deletions" && (
+                <GalleryDeletionReview
+                  actions={engine.current.galleryDeletions}
+                  volume={shownSheet.volume.id}
+                  confirm={confirm}
+                />
+              )}
               {shownSheet.kind === "gallery" && (
                 <GallerySetup
                   gallery={engine.current.gallery}
@@ -2832,109 +2876,154 @@ export default function App() {
                   ))}
                 </View>
               )}
-              {shownSheet.kind === "folder-actions" && folder?.id === shownSheet.volume.id && (
-                <>
-                  <View style={s.actionGroup}>
-                    {!!folder.selected && !source && (
+              {shownSheet.kind === "folder-actions" &&
+                folder?.id === shownSheet.volume.id && (
+                  <>
+                    <View style={s.actionGroup}>
+                      {!!folder.selected && (
+                        <ActionRow
+                          label="Add files…"
+                          icon="upload"
+                          disabled={actionLocked}
+                          onPress={() => {
+                            setSheet(null);
+                            run(() => imported("files"));
+                          }}
+                        />
+                      )}
+                      {!!folder.selected && (
+                        <ActionRow
+                          label="Add photos…"
+                          icon="image"
+                          disabled={actionLocked}
+                          onPress={() => {
+                            setSheet(null);
+                            run(() => imported("photos"));
+                          }}
+                        />
+                      )}
+                      {!!folder.selected && (
+                        <ActionRow
+                          label="Export folder…"
+                          icon="export"
+                          disabled={actionLocked}
+                          onPress={() => {
+                            setSheet(null);
+                            run(() =>
+                              engine.current.withImportPicker(async () => {
+                                await engine.current.settle();
+                                return engine.current.files.exportDirectory(
+                                  engine.current.files.folder(
+                                    engine.current.scope,
+                                    folder.id,
+                                  ),
+                                  "arca-folder",
+                                );
+                              }),
+                            );
+                          }}
+                        />
+                      )}
                       <ActionRow
-                        label="Add files…"
-                        icon="upload"
-                        disabled={actionLocked}
-                        onPress={() => {
-                          setSheet(null);
-                          run(() => imported("files"));
-                        }}
-                      />
-                    )}
-                    {!!folder.selected && !source && (
-                      <ActionRow
-                        label="Add photos…"
-                        icon="image"
-                        disabled={actionLocked}
-                        onPress={() => {
-                          setSheet(null);
-                          run(() => imported("photos"));
-                        }}
-                      />
-                    )}
-                    {(!source || source.mode === "converting") && (
-                      <ActionRow
-                        label="Export folder…"
-                        icon="export"
+                        label={source ? "Change album…" : "Link album…"}
+                        icon="gallery"
                         disabled={
                           actionLocked ||
-                          (!!source && source.mode !== "converting")
+                          !connected ||
+                          (!source &&
+                            (status.offline ||
+                              !currentFolder?.completed ||
+                              !!currentFolder?.issue))
                         }
+                        onPress={() => setSheet({ kind: "gallery" })}
+                      />
+                      {source && (
+                        <ActionRow
+                          label={
+                            source.enabled
+                              ? "Disable uploads"
+                              : "Enable uploads"
+                          }
+                          icon="upload"
+                          disabled={busy || source.mode === "converting"}
+                          onPress={() =>
+                            run(() =>
+                              engine.current.gallery.setEnabled(
+                                folder.id,
+                                !source.enabled,
+                              ),
+                            )
+                          }
+                        />
+                      )}
+                      {photoFolder && (
+                        <ActionRow
+                          label="Review deletions…"
+                          icon="trash"
+                          disabled={busy}
+                          onPress={() =>
+                            setSheet({
+                              kind: "gallery-deletions",
+                              volume: folder,
+                            })
+                          }
+                        />
+                      )}
+                      {source && (
+                        <ActionRow
+                          label={
+                            source.originalRemoval
+                              ? "Disable original removal"
+                              : "Enable original removal…"
+                          }
+                          icon="gallery"
+                          disabled={actionLocked || !connected}
+                          onPress={() =>
+                            source.originalRemoval
+                              ? run(() =>
+                                  engine.current.galleryDeletions.setOriginals(
+                                    folder.id,
+                                    false,
+                                  ),
+                                )
+                              : confirm(
+                                  "Review original removal on this phone?",
+                                  "Only future deletions from Arca will be offered for review. Nothing is removed from Photos automatically. Deleting in Photos still keeps the Arca copy. Requires the updated mobile app.",
+                                  () =>
+                                    run(() =>
+                                      engine.current.galleryDeletions.setOriginals(
+                                        folder.id,
+                                        true,
+                                      ),
+                                    ),
+                                  "Enable review",
+                                )
+                          }
+                        />
+                      )}
+                      <ActionRow
+                        label="View history"
+                        icon="history"
+                        disabled={busy || !connected}
                         onPress={() => {
+                          setHistoryVolume(folder.id);
+                          setHistoryFilter("revisions");
                           setSheet(null);
-                          run(() =>
-                            engine.current.withImportPicker(async () => {
-                              await engine.current.settle();
-                              return engine.current.files.exportDirectory(
-                                engine.current.files.folder(
-                                  engine.current.scope,
-                                  folder.id,
-                                ),
-                                "arca-folder",
-                              );
-                            }),
-                          );
+                          setView("History");
                         }}
                       />
-                    )}
-                    <ActionRow
-                      label={source ? "Change album…" : "Link album…"}
-                      icon="gallery"
-                      disabled={
-                        actionLocked ||
-                        !connected ||
-                        (!source &&
-                          (status.offline ||
-                            !currentFolder?.completed ||
-                            !!currentFolder?.issue))
-                      }
-                      onPress={() => setSheet({ kind: "gallery" })}
-                    />
-                    {source && (
+                    </View>
+                    <View style={s.destructiveActionGroup}>
                       <ActionRow
-                        label={
-                          source.enabled ? "Disable uploads" : "Enable uploads"
-                        }
-                        icon="upload"
-                        disabled={busy || source.mode === "converting"}
-                        onPress={() =>
-                          run(() =>
-                            engine.current.gallery.setEnabled(
-                              folder.id,
-                              !source.enabled,
-                            ),
-                          )
-                        }
+                        label="Stop syncing…"
+                        icon="unlink"
+                        danger
+                        disabled={busy || !engine.current}
+                        onPress={unlink}
                       />
-                    )}
-                    <ActionRow
-                      label="View history"
-                      icon="history"
-                      disabled={busy || !connected}
-                      onPress={() => {
-                        setHistoryVolume(folder.id);
-                        setHistoryFilter("revisions");
-                        setSheet(null);
-                        setView("History");
-                      }}
-                    />
-                  </View>
-                  <View style={s.destructiveActionGroup}>
-                    <ActionRow
-                      label="Stop syncing…"
-                      icon="unlink"
-                      danger
-                      disabled={busy || !engine.current}
-                      onPress={unlink}
-                    />
-                  </View>
-                </>
-              )}
+                    </View>
+                  </>
+                )}
               {shownSheet.kind === "select" && (
                 <>
                   <Card title="Keep a local copy">

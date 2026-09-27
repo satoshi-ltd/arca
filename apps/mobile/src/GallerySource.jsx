@@ -187,7 +187,9 @@ export function GallerySetup({ gallery, source, locked, enable }) {
   return (
     <>
       <Text style={s.text}>
-        Upload new photos automatically. Originals stay on your phone.
+        Upload new photos automatically and keep the shared folder available
+        offline in Arca, including photos from other devices. Originals stay in
+        Photos.
       </Text>
       <ErrorNotice error={error} retry={() => load()} />
       {!!error && (
@@ -252,7 +254,8 @@ export function GallerySetup({ gallery, source, locked, enable }) {
           <GalleryDetails>
             <Text style={s.caption}>
               Existing and new photos are included. Deleting from Photos keeps
-              uploaded files. Hub changes never change your gallery.
+              uploaded files. Originals stay in Photos unless you enable
+              original-removal review and confirm each removal.
             </Text>
             <Text style={s.caption}>
               Photo edits are uploaded as new versions. Album organization is

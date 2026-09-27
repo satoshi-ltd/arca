@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — 2026-09-27
+
+- Linked mobile albums now keep a complete synchronized local copy, including files contributed by other devices. Linking preserves existing files; previously upload-only phones download the shared folder, and disabling uploads keeps downloads active. Gallery images prefer local files and thumbnail progress survives refresh. Verified with all 161 mobile tests, Android/iOS JavaScript exports and version agreement; device installation remains separate.
+- Shared gallery deletion: participants can request deletion from source phones and ordinary copies, including photos not yet downloaded. Explicit requests have durable IDs; verified Live Photo resources are deleted as a group. Mobile pending requests survive restart and can be reviewed and canceled before submission. Desktop/web keeps selection → Delete → confirmation, sends requests directly to the hub and reports failures without queuing or automatic retries.
+- Gallery sources keep durable hub suppression for explicitly deleted assets, preventing automatic re-upload. Ordinary Photos deletions remain upload-only and never delete the Arca copy.
+- Optional original-removal review is off by default per phone and album, applies only to future events, and requires foreground confirmation and a complete unchanged-resource check. Recovery content is pinned for seven days; restore, expiry and History Off block original removal. Android uses trash; iOS uses PhotoKit with local-only verification exports. Native build number 26 requires rebuilding/installing the app.
+- Align iOS configuration with the installed SDK’s 16.4 minimum and describe the optional confirmed removal in photo-access permission text. Album changes clear original-removal opt-in.
+- Final commit validation: clean staged-source export on macOS with Node 24.14.0 and root-only dependencies; exact macOS CI command passes 368 tests with two platform skips, and all 161 mobile source tests pass separately (529 passed total). Android/iOS JavaScript exports pass. Earlier native build checks do not replace physical-device qualification. No hosted CI, hub deployment or app installation is implied.
+
 ## 0.6.0 — 2026-09-26
 
 - Show a connection loss as Offline on phones, desktop and web instead of a folder failure: Tailscale turned off, an interrupted transfer, iOS network errors and gateway answers now count as outages, while picker, provider and photo-export failures are reported as local problems rather than a hub outage.

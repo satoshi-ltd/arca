@@ -399,7 +399,8 @@ export function PhotoViewer({
   const visible = index != null && index >= 0 && index < items.length;
   const item = visible ? items[index] : null;
   const canShare = !!item?.uri && !item?.upload && !!share;
-  const canDelete = deletable && !!item?.uri && !item?.upload && !!remove;
+  const canDelete =
+    deletable && Number.isSafeInteger(item?.rev) && !item?.upload && !!remove;
   useEffect(() => {
     if (visible) {
       setZoomed(false);
@@ -564,7 +565,7 @@ export function PhotoViewer({
               accessibilityState={{ disabled: !canDelete }}
               accessibilityHint={
                 !canDelete
-                  ? "Available for downloaded photos in a synced folder. System gallery originals are managed in Photos."
+                  ? "Available after the hub confirms the photo. Original removal is reviewed separately on the source phone."
                   : undefined
               }
               disabled={!canDelete}

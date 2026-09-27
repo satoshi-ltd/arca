@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class ArcaNetworkModule : Module() {
+  private lateinit var galleryTrash: expo.modules.kotlin.activityresult.AppContextActivityResultLauncher<GalleryTrashInput, Boolean>
   private class RequestState {
     @Volatile var cancelled = false
     @Volatile var connection: HttpURLConnection? = null
@@ -25,6 +26,38 @@ class ArcaNetworkModule : Module() {
   private val requests = java.util.concurrent.ConcurrentHashMap<String, RequestState>()
   override fun definition() = ModuleDefinition {
     Name("ArcaNetwork")
+    RegisterActivityContracts {
+      galleryTrash = registerForActivityResult(GalleryTrashContract())
+    }
+    AsyncFunction("exportGalleryAssetForRemoval") Coroutine { id: String, destination: String ->
+      withContext(Dispatchers.IO) {
+        exportGalleryAsset(appContext.reactContext ?: error("App is unavailable"), id, destination)
+      }
+    }
+    AsyncFunction("trashGalleryAssets") Coroutine { ids: List<String> ->
+      check(android.os.Build.VERSION.SDK_INT >= 30) { "Android 11 or later is required for photo trash." }
+      check(ids.isNotEmpty() && ids.size <= 20) { "Review up to 20 originals at a time." }
+      val activity = appContext.currentActivity ?: error("Open Arca to review originals.")
+      check(!activity.isFinishing && !activity.isDestroyed && activity.hasWindowFocus()) { "Keep Arca in the foreground." }
+      val context = appContext.reactContext ?: error("App is unavailable")
+      val uris = ids.map { id ->
+        val number = id.toLongOrNull() ?: error("Invalid photo identity")
+        val file = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Files.getContentUri("external"), number)
+        val type = context.contentResolver.query(file, arrayOf(android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE), null, null, null)?.use { cursor ->
+          check(cursor.moveToFirst()) { "Original is unavailable." }; cursor.getInt(0)
+        } ?: error("Original is unavailable.")
+        val collection = when (type) {
+          android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE -> android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+          android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO -> android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+          else -> error("Only photos and videos can be moved to trash.")
+        }
+        android.content.ContentUris.withAppendedId(collection, number)
+      }
+      if (!galleryTrash.launch(GalleryTrashInput(uris))) emptyList<String>()
+      else ids.filterIndexed { index, _ ->
+        context.contentResolver.query(uris[index], arrayOf(android.provider.MediaStore.MediaColumns.IS_TRASHED), android.os.Bundle().apply { putInt(android.provider.MediaStore.QUERY_ARG_MATCH_TRASHED, android.provider.MediaStore.MATCH_INCLUDE) }, null)?.use { cursor -> cursor.moveToFirst() && cursor.getInt(0) == 1 } == true
+      }
+    }
     AsyncFunction("openFile") Coroutine { uri: String ->
       withContext(Dispatchers.Main) {
         val context = appContext.reactContext ?: error("App is unavailable")

@@ -12,7 +12,6 @@ export async function prepareThumbnails(
   const next = Object.fromEntries(
     Object.entries(previous).filter(([path]) => paths.has(path)),
   );
-  let dirty = 0;
   for (const entry of entries) {
     if (!active()) return null;
     if (entry.directory || !mediaKind(entry.path)) continue;
@@ -33,7 +32,7 @@ export async function prepareThumbnails(
     if (uri) next[entry.path] = { signature, uri };
     else delete next[entry.path];
     if (uri !== old?.uri || signature !== old?.signature) {
-      if (++dirty % 8 === 0) changed({ ...next });
+      changed({ ...next });
     }
   }
   if (JSON.stringify(next) !== JSON.stringify(previous)) changed(next);

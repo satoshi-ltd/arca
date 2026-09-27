@@ -1,3 +1,10 @@
+import {
+  registerGalleryAsset,
+  deleteGalleryAsset,
+  galleryRemovalEvents,
+  restoreGalleryAsset,
+  checkGalleryRemoval,
+} from "./gallery-actions.js";
 import { cachedActivity } from "./history-cache.js";
 import { ChangeFeed } from "./change-feed.js";
 import { ImageMaintenance } from "./image-maintenance.js";
@@ -112,10 +119,15 @@ export async function start(home, options = {}) {
   const playbackTickets = new Map();
   const snapshotReads = new Map();
   const readSnapshot = (volume) => {
-    const generation = s.db.prepare("SELECT generation FROM file_generations WHERE volume=?").get(volume)?.generation || 0;
+    const generation =
+      s.db
+        .prepare("SELECT generation FROM file_generations WHERE volume=?")
+        .get(volume)?.generation || 0;
     const key = `${volume}:${generation}`;
     if (!snapshotReads.has(key)) {
-      const read = engine.scanner.snapshot(volume).finally(() => snapshotReads.delete(key));
+      const read = engine.scanner
+        .snapshot(volume)
+        .finally(() => snapshotReads.delete(key));
       snapshotReads.set(key, read);
     }
     // Overlapping readers can share one immutable capture. Each request still
@@ -434,6 +446,8 @@ export async function start(home, options = {}) {
           req.method === "POST" &&
           [
             "/v1/delete-file",
+            "/v1/gallery/delete",
+            "/v1/gallery/restore",
             "/v1/rename-file",
             "/v1/restore",
             "/v1/conflict-choice",
@@ -751,6 +765,7 @@ export async function start(home, options = {}) {
         return send(200, {
           protocol: 1,
           gallery: true,
+          galleryDeletion: true,
           changes: true,
           retainedRevisions: true,
           changeEvents: true,
@@ -776,7 +791,8 @@ export async function start(home, options = {}) {
       }
       if (req.method === "GET" && route === "/v1/remote") {
         requireAdmin();
-        const totals = config.role === "hub" ? await s.allVisibleTotals() : null;
+        const totals =
+          config.role === "hub" ? await s.allVisibleTotals() : null;
         return send(
           200,
           config.role === "hub"
@@ -908,7 +924,9 @@ export async function start(home, options = {}) {
           if (!Number.isSafeInteger(after) || after < 0)
             fail("Invalid archive cursor", 409);
           const rows = s.db
-            .prepare("SELECT rev FROM revisions WHERE rev>? ORDER BY rev LIMIT ?")
+            .prepare(
+              "SELECT rev FROM revisions WHERE rev>? ORDER BY rev LIMIT ?",
+            )
             .all(after, 10001);
           return send(200, {
             revs: rows.slice(0, 10000).map((row) => row.rev),
@@ -968,7 +986,9 @@ export async function start(home, options = {}) {
             200,
             await scopedActivity(
               (query) =>
-                remoteView(`/v1/activity?${query}`, () => cachedActivity(s, config.hub?.id, query)),
+                remoteView(`/v1/activity?${query}`, () =>
+                  cachedActivity(s, config.hub?.id, query),
+                ),
               selectedIds,
               url.searchParams,
             ),
@@ -1090,7 +1110,8 @@ export async function start(home, options = {}) {
         const file = s.blob(hash);
         const tmp = path.join(s.uploads, `${device.id}-${hash}.part`);
         if (req.method === "GET") {
-          const complete = fs.existsSync(file) && (await hashFileAsync(file)) === hash;
+          const complete =
+            fs.existsSync(file) && (await hashFileAsync(file)) === hash;
           checkCredential();
           return send(200, {
             complete,
@@ -1256,6 +1277,38 @@ export async function start(home, options = {}) {
               new Date().toISOString(),
             );
           return send(200, { ok: true });
+        }
+        if (
+          [
+            "/v1/gallery/register",
+            "/v1/gallery/delete",
+            "/v1/gallery/removals",
+            "/v1/gallery/restore",
+            "/v1/gallery/removal-check",
+          ].includes(route)
+        ) {
+          if (config.role !== "hub") {
+            requireAdmin();
+            if (!s.volume(b.volume).selected)
+              fail("Select this folder first", 403);
+            return send(200, await engine.hubAction(route, b));
+          }
+          requireHub();
+          return send(
+            200,
+            await authorizedWork(() => {
+              const source = device?.id || config.id;
+              if (route.endsWith("/removal-check"))
+                return checkGalleryRemoval(s, b, source);
+              if (route.endsWith("/restore"))
+                return restoreGalleryAsset(engine, b, source);
+              if (route.endsWith("/register"))
+                return registerGalleryAsset(s, b, source);
+              if (route.endsWith("/removals"))
+                return galleryRemovalEvents(s, b.volume, source, b.after || 0);
+              return deleteGalleryAsset(engine, b, source);
+            }),
+          );
         }
         if (route === "/v1/gallery/link") {
           if (config.role !== "hub") {
@@ -1641,7 +1694,10 @@ export async function start(home, options = {}) {
           if (b.deleteFiles !== undefined && typeof b.deleteFiles !== "boolean")
             fail("Choose whether to delete local files");
           if (b.deleteFiles && config.role !== "replica")
-            fail("Only a replica can delete its local copy when unlinking", 409);
+            fail(
+              "Only a replica can delete its local copy when unlinking",
+              409,
+            );
           engine.stopVolumes.add(b.id);
           engine.interruptCycle();
           try {
@@ -1924,7 +1980,7 @@ export async function start(home, options = {}) {
               s.db.exec("BEGIN IMMEDIATE");
               try {
                 s.db.exec(
-                  "DELETE FROM files; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM sync_state; DELETE FROM sync_dirty;",
+                  "DELETE FROM files; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM sync_state; DELETE FROM sync_dirty;",
                 );
                 s.db.prepare("INSERT INTO transitions VALUES(?)").run(id);
                 s.db.exec("COMMIT");

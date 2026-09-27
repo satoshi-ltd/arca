@@ -372,7 +372,7 @@ test("closing folder actions retain their title after local removal without rend
   const title = app.slice(app.indexOf("{shownSheet && (")).match(/title=\{([\s\S]*?)\}\s+busy=/)[1];
   const actions = app.match(/\{(shownSheet.kind === "folder-actions"[^{]*?) && \(/)[1];
   const volume = { id: "removed-share", name: "photos-demo", selected: 1 };
-  assert.match(app, /setSheet\(\{ kind: "folder-actions", volume: folder \}\)/);
+  assert.match(app, /setSheet\(\{\s*kind: "folder-actions",\s*volume: folder,?\s*\}\)/);
   const shownSheet = { kind: "folder-actions", volume };
   assert.equal(vm.runInNewContext(title, { shownSheet, folder: null }), "photos-demo");
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: volume }), true);
@@ -394,7 +394,7 @@ test("local Open and Share stay available while hub-bound actions hold the actio
   );
   assert.doesNotMatch(share, /actionLocked|\brun\(/);
   const exporting = app.slice(app.indexOf('label="Export folder…"'), app.indexOf("/>", app.indexOf('label="Export folder…"')));
-  assert.match(exporting, /actionLocked \|\|/);
+  assert.match(exporting, /disabled=\{actionLocked\}/);
   assert.doesNotMatch(exporting, /status\.busy|\blocked\b/);
   assert.match(exporting, /await engine\.current\.settle\(\);/);
   const restoreSelected = app.slice(app.indexOf('label="Restore selected"'), app.indexOf("/>", app.indexOf('label="Restore selected"')));

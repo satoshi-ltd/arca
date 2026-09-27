@@ -2,12 +2,12 @@
   "expo": {
     "name": "arca",
     "slug": "arca",
-    "version": "0.6.0",
+    "version": "0.6.1",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.satoshilimited.arca",
-      "buildNumber": "25",
+      "buildNumber": "26",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.satoshilimited.arca",
-      "versionCode": 25,
+      "versionCode": 26,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
@@ -47,7 +47,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Choose photos to upload to your Arca hub.",
+          "photosPermission": "Allow Arca to upload selected albums and remove originals only when you explicitly confirm.",
           "cameraPermission": false,
           "microphonePermission": false
         }
@@ -57,6 +57,9 @@
         {
           "android": {
             "usesCleartextTraffic": true
+          },
+          "ios": {
+            "deploymentTarget": "16.4"
           }
         }
       ],
@@ -99,7 +102,7 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow Arca to copy selected albums to your hub without changing your photos.",
+          "photosPermission": "Allow Arca to upload selected albums and remove originals only when you explicitly confirm.",
           "savePhotosPermission": false,
           "granularPermissions": [
             "photo",

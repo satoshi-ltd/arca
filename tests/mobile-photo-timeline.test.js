@@ -704,3 +704,30 @@ test("mobile gallery retains the hub revision when a deleted local copy disappea
   assert.equal(before.rev, stale.rev);
   assert.ok(restored.rev > before.rev);
 });
+
+test("thumbnail progress is visible before eight images finish, even if refresh interrupts", async () => {
+  const entries = Array.from({ length: 12 }, (_, n) => ({
+    path: `${n}.jpg`,
+    signature: `${n}`,
+  }));
+  let active = true,
+    renders = 0,
+    visible = {};
+  const result = await prepareThumbnails(
+    entries,
+    {},
+    {
+      exists: async () => false,
+      render: async (item) => {
+        if (++renders === 6) active = false;
+        return `cache://${item.path}`;
+      },
+    },
+    () => active,
+    (value) => {
+      visible = value;
+    },
+  );
+  assert.equal(result, null);
+  assert.equal(Object.keys(visible).length, 5);
+});

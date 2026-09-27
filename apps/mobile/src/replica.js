@@ -1,3 +1,4 @@
+import { GalleryDeletions } from "./gallery-deletions.js";
 import { remoteView, warmViews } from "./remote-views.js";
 import { abortRequest } from "./request-control.js";
 import { renamedPath } from "../../../packages/core/file-rename.js";
@@ -49,6 +50,7 @@ export class Replica {
       }
     };
     this.gallery = new Gallery(this, media);
+    this.galleryDeletions = new GalleryDeletions(this);
     this.busy = false;
     this.stopped = false;
     this.progress = null;
@@ -63,7 +65,9 @@ export class Replica {
     this.lastInventory = new Map();
     this.lastFullScan = 0;
   }
-  remoteView(route) { return remoteView(this, route); }
+  remoteView(route) {
+    return remoteView(this, route);
+  }
   async load() {
     await this.store.init();
     if (await this.store.get("destroyPending", false)) {
@@ -178,8 +182,6 @@ export class Replica {
       throw new Error(
         "Remove the remaining local copy before selecting this folder again.",
       );
-    if (galleryConfig(await this.store.folder(this.scope, volume.id)))
-      throw new Error("Use Gallery source settings to download a local copy.");
     await this.space(volume.bytes * 2);
     await this.files.mkdir(this.files.folder(this.scope, volume.id));
     await this.store.select(this.scope, volume);
@@ -799,7 +801,7 @@ export class Replica {
     const selected = (await this.store.folders(this.scope)).filter(
       (f) => f.selected,
     );
-    const folders = selected.filter((f) => !galleryConfig(f));
+    const folders = selected;
     const albumFolderIds = selected
       .filter((f) => galleryConfig(f))
       .map((f) => f.id);
@@ -926,10 +928,25 @@ export class Replica {
           this.turnTransferred = false;
           const remote = catalog.volumes.find((v) => v.id === folder.id);
           if (remote.policyError) throw new Error(remote.policyError);
-          if (galleryConfig(folder)) {
-            await this.gallery.cycle(folder);
-            this.fullScanPending?.delete(folder.id);
-            continue;
+          await this.galleryDeletions.flush(folder.id);
+          const album = galleryConfig(folder);
+          if (album && (!folder.initialized || album.mode === "converting"))
+            await this.files.mkdir(this.files.folder(this.scope, folder.id));
+          if (album?.mode === "converting") {
+            // Recover an interrupted removal from the previous build before scanning:
+            // missing working files must not be proposed as shared deletions.
+            for (const row of await this.store.rows(this.scope, folder.id))
+              if (
+                !row.deleted &&
+                !(await this.files.exists(
+                  this.files.work(this.scope, folder.id, row.path),
+                ))
+              )
+                await this.apply(row, true);
+            await this.store.setGallery(this.scope, folder.id, {
+              ...album,
+              mode: "source",
+            });
           }
           this.policy = null;
           for (const row of (
@@ -951,6 +968,12 @@ export class Replica {
           this.turnDeadline = Date.now() + 10000;
           await this.push(folder);
           await this.pull(folder);
+          if (galleryConfig(folder)) {
+            this.turnDeadline = Date.now() + 10000;
+            await this.gallery.cycle(folder);
+            // Materialize this phone’s new uploads as well as other participants’ files.
+            await this.pull(await this.store.folder(this.scope, folder.id));
+          }
         } catch (e) {
           if (e.code === "SYNC_YIELD") {
             this.moreFolderWork = true;
@@ -1035,10 +1058,6 @@ export class Replica {
     }
     const folder = await this.store.folder(this.scope, volume);
     if (!folder?.selected) throw new Error("Select this folder first");
-    if (galleryConfig(folder))
-      throw new Error(
-        "Gallery sources upload from Photos and do not keep local files.",
-      );
     const target = this.files.work(this.scope, volume, name);
     await this.space((await this.files.stat(source)).size * 2);
     if (await this.files.exists(target)) {
@@ -1066,8 +1085,6 @@ export class Replica {
       const destination = validPath(renamedPath(name, newName));
       const folder = await this.store.folder(this.scope, volume);
       if (!folder?.selected) throw new Error("Select this folder first");
-      if (galleryConfig(folder))
-        throw new Error("Gallery originals can only be managed in Photos.");
       const row = await this.store.current(this.scope, volume, name);
       const file = this.files.work(this.scope, volume, name);
       const info = await this.files.stat(file);
@@ -1136,8 +1153,6 @@ export class Replica {
       }
       await this.requireActiveReplica();
       const folder = await this.store.folder(this.scope, volume);
-      if (galleryConfig(folder))
-        throw new Error("Gallery originals can only be managed in Photos.");
       if (!folder?.selected) throw new Error("Select this folder first");
       const row = await this.store.current(this.scope, volume, name);
       const file = this.files.work(this.scope, volume, name);

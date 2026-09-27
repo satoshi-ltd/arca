@@ -5,7 +5,7 @@ import {
   nativeGallerySources,
 } from "../apps/mobile/src/gallery-display.js";
 
-test("source phone displays its accepted native original; replicas prefer local HEIC previews", async () => {
+test("linked phones and replicas prefer synchronized local files over native or hub previews", async () => {
   const photo = {
     path: "Camera/photo.heic",
     hash: "current",
@@ -28,11 +28,11 @@ test("source phone displays its accepted native original; replicas prefer local 
       ...options,
       nativeSource: async () => "content:native",
     }),
-    "content:native",
+    "file:local.jpg",
   );
-  assert.deepEqual(calls, []);
-  assert.equal(await galleryDisplay(photo, options), "file:local.jpg");
   assert.deepEqual(calls, ["local"]);
+  assert.equal(await galleryDisplay(photo, options), "file:local.jpg");
+  assert.deepEqual(calls, ["local", "local"]);
   assert.equal(
     await galleryDisplay(photo, {
       ...options,
@@ -122,4 +122,26 @@ test("thumbnail failures use hub cache; offline errors do not change originals",
     /Network request failed/,
   );
   assert.deepEqual(item, before);
+});
+
+test("a downloaded image opens offline without consulting the native library or hub", async () => {
+  const unavailable = async () => {
+    throw new Error("offline");
+  };
+  assert.equal(
+    await galleryDisplay(
+      {
+        path: "other-phone.jpg",
+        hash: "hash",
+        uri: "file:///arca/other-phone.jpg",
+      },
+      {
+        large: true,
+        nativeSource: unavailable,
+        localPreview: unavailable,
+        hubPreview: unavailable,
+      },
+    ),
+    "file:///arca/other-phone.jpg",
+  );
 });

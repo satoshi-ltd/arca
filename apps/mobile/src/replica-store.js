@@ -112,10 +112,17 @@ export class ReplicaStore {
   async forgetFolder(scope, id) {
     await this.db.execAsync("BEGIN IMMEDIATE");
     try {
-      const views = await this.db.getAllAsync("SELECT route FROM view_cache WHERE scope=?", scope);
+      const views = await this.db.getAllAsync(
+        "SELECT route FROM view_cache WHERE scope=?",
+        scope,
+      );
       for (const view of views)
         if (new URLSearchParams(view.route.split("?")[1]).get("volume") === id)
-          await this.db.runAsync("DELETE FROM view_cache WHERE scope=? AND route=?", scope, view.route);
+          await this.db.runAsync(
+            "DELETE FROM view_cache WHERE scope=? AND route=?",
+            scope,
+            view.route,
+          );
       for (const table of [
         "files",
         "pending",
@@ -133,6 +140,11 @@ export class ReplicaStore {
         `gallery-list:${scope}:${id}`,
         `gallery-thumbnails:${scope}:${id}`,
       );
+      for (const kind of ["requests", "originals", "cursor"])
+        await this.db.runAsync(
+          "DELETE FROM settings WHERE key=?",
+          `gallery-deletions:${scope}:${id}:${kind}`,
+        );
       await this.db.runAsync(
         "DELETE FROM folders WHERE scope=? AND id=?",
         scope,
@@ -160,26 +172,6 @@ export class ReplicaStore {
       JSON.stringify(config),
     );
   }
-  async clearWorkingIndex(scope, volume) {
-    await this.db.execAsync("BEGIN IMMEDIATE");
-    try {
-      for (const table of ["files", "pending", "applying"])
-        await this.db.runAsync(
-          `DELETE FROM ${table} WHERE scope=? AND volume=?`,
-          scope,
-          volume,
-        );
-      await this.db.runAsync(
-        "UPDATE folders SET cursor=0,initialized=0,completed=NULL,issue=NULL WHERE scope=? AND id=?",
-        scope,
-        volume,
-      );
-      await this.db.execAsync("COMMIT");
-    } catch (error) {
-      await this.db.execAsync("ROLLBACK");
-      throw error;
-    }
-  }
   async galleryAsset(scope, volume, asset) {
     const row = await this.db.getFirstAsync(
       "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND asset=?",
@@ -202,10 +194,28 @@ export class ReplicaStore {
       JSON.stringify(item),
     );
   }
+  async galleryAssetByGroup(scope, volume, group) {
+    const row = await this.db.getFirstAsync(
+      "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND json_extract(row,'$.group')=?",
+      scope,
+      volume,
+      group,
+    );
+    return row ? JSON.parse(row.row) : null;
+  }
+  async unregisteredGalleryAssets(scope, volume) {
+    return (
+      await this.db.getAllAsync(
+        "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state='accepted' AND coalesce(json_extract(row,'$.registered'),0)=0 LIMIT 24",
+        scope,
+        volume,
+      )
+    ).map((r) => JSON.parse(r.row));
+  }
   async galleryWork(scope, volume, now, limit = 3) {
     return (
       await this.db.getAllAsync(
-        "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state!='accepted' AND retryAt<=? ORDER BY retryAt,asset LIMIT ?",
+        "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed') AND retryAt<=? ORDER BY retryAt,asset LIMIT ?",
         scope,
         volume,
         now,
@@ -246,7 +256,7 @@ export class ReplicaStore {
   }
   async galleryPreview(scope, volume, accepted, limit = 12, offset = 0) {
     const rows = await this.db.getAllAsync(
-      `SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND ${accepted ? "state='accepted'" : "state!='accepted'"}
+      `SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND ${accepted ? "state='accepted'" : "state NOT IN ('accepted','removed')"}
        ORDER BY ${accepted ? "COALESCE(json_extract(row, '$.acceptedAt'), json_extract(row, '$.creationTime'),0) DESC, asset" : "CASE state WHEN 'failed' THEN 0 WHEN 'uploading' THEN 1 ELSE 2 END, asset"} LIMIT ? OFFSET ?`,
       scope,
       volume,
@@ -260,13 +270,13 @@ export class ReplicaStore {
       `SELECT COUNT(*) AS discovered,
       COALESCE(SUM(state='accepted'),0) AS accepted,
       COALESCE(SUM(state='failed'),0) AS failed,
-      COALESCE(SUM(state!='accepted'),0) AS pending,
+      COALESCE(SUM(state NOT IN ('accepted','removed')),0) AS pending,
       (SELECT COALESCE(SUM(size),0) FROM (
         SELECT DISTINCT json_extract(resource.value, '$.path') AS path,
           json_extract(resource.value, '$.hash') AS hash,
           json_extract(resource.value, '$.size') AS size
         FROM gallery_assets AS asset, json_each(asset.row, '$.resources') AS resource
-        WHERE asset.scope=? AND asset.volume=? AND json_extract(resource.value, '$.accepted')=1
+        WHERE asset.scope=? AND asset.volume=? AND asset.state!='removed' AND json_extract(resource.value, '$.accepted')=1
       )) AS bytes
       FROM gallery_assets WHERE scope=? AND volume=?`,
       scope,
@@ -277,7 +287,7 @@ export class ReplicaStore {
   }
   async retryGallery(scope, volume) {
     await this.db.runAsync(
-      "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state!='accepted'",
+      "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed')",
       scope,
       volume,
     );

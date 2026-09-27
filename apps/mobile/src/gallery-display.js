@@ -34,6 +34,15 @@ export async function galleryDisplay(
   item,
   { large = false, fallback = false, nativeSource, localPreview, hubPreview },
 ) {
+  // A synchronized file is the first choice, including on album-linked phones.
+  if (item.uri && !item.nativeSource && !item.upload && !fallback) {
+    if (large && !/\.hei[cf]$/i.test(item.path)) return item.uri;
+    try {
+      return await localPreview(item, large);
+    } catch {
+      /* Try the native original or hub derivative when decoding is unsupported. */
+    }
+  }
   const native =
     !fallback && (item.upload ? item.uri : await nativeSource?.(item));
   if (native) {

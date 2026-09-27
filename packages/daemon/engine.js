@@ -1,3 +1,4 @@
+import { assertGalleryUpload } from "./gallery-actions.js";
 import { warmHistory } from "./history-cache.js";
 import { renamedPath } from "../core/file-rename.js";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -198,11 +199,14 @@ export class Engine {
           sync: totals.policyError
             ? { state: "error", error: totals.policyError, lastCompleted: null }
             : (this.paused || this.hubUnavailable) && v.selected
-              ? { state: this.paused ? "paused" : "pending", lastCompleted: v.last_sync }
+              ? {
+                  state: this.paused ? "paused" : "pending",
+                  lastCompleted: v.last_sync,
+                }
               : this.folderStates.get(v.id) || {
-                state: v.selected ? "pending" : "unselected",
-                lastCompleted: v.last_sync,
-              },
+                  state: v.selected ? "pending" : "unselected",
+                  lastCompleted: v.last_sync,
+                },
           ...totals,
           conflictRevision:
             this.config.role === "hub"
@@ -388,10 +392,7 @@ export class Engine {
         } catch (error) {
           if (error.name !== "TimeoutError" || length <= MIN_UPLOAD_CHUNK)
             throw error;
-          this.uploadChunk = Math.max(
-            MIN_UPLOAD_CHUNK,
-            Math.floor(length / 2),
-          );
+          this.uploadChunk = Math.max(MIN_UPLOAD_CHUNK, Math.floor(length / 2));
           ({ offset, complete } = await this.json(`/v1/uploads/${hash}`));
           progress(offset);
           continue;
@@ -505,6 +506,8 @@ export class Engine {
       fail("Invalid revision or size");
     const v = s.volume(volume);
     const name = validPath(requestedPath);
+    if (hash)
+      assertGalleryUpload(s, volume, name, device?.id || this.config.id);
     if (name === IGNORE_FILE && size > MAX_IGNORE_BYTES)
       fail(".arcaignore exceeds 64 KiB", 409);
     if (
@@ -568,7 +571,8 @@ export class Engine {
           row: s.commit(volume, name, item, device.id, true),
           conflict: false,
         };
-      } else if (old?.directory && !item) result = { row: old, conflict: false };
+      } else if (old?.directory && !item)
+        result = { row: old, conflict: false };
       else
         fail(
           "Path type changed on the hub; reconcile the local path before retrying",
@@ -593,6 +597,24 @@ export class Engine {
           existing?.hash === hash
             ? existing
             : s.commit(volume, conflictName, { hash, size }, device.id, true);
+        // A conflict is no longer a verified complete native asset group.
+        const member = s.db
+          .prepare(
+            "SELECT source,asset FROM gallery_members WHERE volume=? AND path=? AND source=?",
+          )
+          .get(volume, name, device.id);
+        if (member) {
+          s.db
+            .prepare(
+              "DELETE FROM gallery_members WHERE volume=? AND source=? AND asset=?",
+            )
+            .run(volume, member.source, member.asset);
+          s.db
+            .prepare(
+              "DELETE FROM gallery_assets WHERE volume=? AND source=? AND asset=?",
+            )
+            .run(volume, member.source, member.asset);
+        }
         result = { row: old || null, conflict: true, conflictPath: row.path };
       }
     } else {
@@ -618,16 +640,14 @@ export class Engine {
           .prepare("UPDATE accepted_proposals SET revision=? WHERE id=?")
           .run(result.row.rev, op);
     }
-    s.db
-      .prepare("INSERT OR REPLACE INTO proposals VALUES(?,?)")
-      .run(
-        op,
-        JSON.stringify({
-          volume,
-          revision: revision(),
-          result,
-        }),
-      );
+    s.db.prepare("INSERT OR REPLACE INTO proposals VALUES(?,?)").run(
+      op,
+      JSON.stringify({
+        volume,
+        revision: revision(),
+        result,
+      }),
+    );
     s.db.exec(
       "DELETE FROM proposals WHERE rowid NOT IN (SELECT rowid FROM proposals ORDER BY rowid DESC LIMIT 10000)",
     );
@@ -752,7 +772,12 @@ export class Engine {
         // A backup engine never scans or proposes, whatever an older layout left selected.
         for (const v of s
           .volumes()
-          .filter((v) => this.config.role !== "backup" && v.selected && activeIds.has(v.id))) {
+          .filter(
+            (v) =>
+              this.config.role !== "backup" &&
+              v.selected &&
+              activeIds.has(v.id),
+          )) {
           try {
             this.folderStates.set(v.id, {
               state: "syncing",
@@ -788,9 +813,7 @@ export class Engine {
               )
               .filter(([name, item]) => {
                 const old = known.get(name);
-                return (
-                  !old || old.deleted || entryKey(old) !== entryKey(item)
-                );
+                return !old || old.deleted || entryKey(old) !== entryKey(item);
               });
             Object.assign(this.progress, {
               stage: "upload",
@@ -939,7 +962,8 @@ export class Engine {
                   const paths = page.files
                     .filter(
                       (r) =>
-                        !s.excluded(v.id, r.path) && !covers(plan.paths, r.path),
+                        !s.excluded(v.id, r.path) &&
+                        !covers(plan.paths, r.path),
                     )
                     .map((r) => r.path);
                   const incomingDisk = paths.length
@@ -1089,7 +1113,10 @@ export class Engine {
             for (const row of page.revisions) {
               this.progress = {
                 stage: "history",
-                filesDone: (this.progress?.stage === "history" ? this.progress.filesDone : 0) + 1,
+                filesDone:
+                  (this.progress?.stage === "history"
+                    ? this.progress.filesDone
+                    : 0) + 1,
               };
               if (row.hash) await this.download(row.hash, row.size);
               s.db
@@ -1103,7 +1130,9 @@ export class Engine {
               enabled: true,
               revision: through,
             });
-          await this.pruneBackup(new Set((page.volumes || []).map((v) => v.id)));
+          await this.pruneBackup(
+            new Set((page.volumes || []).map((v) => v.id)),
+          );
         }
       }
       if (this.config.role === "replica" && this.config.backup?.enabled) {
@@ -1178,7 +1207,10 @@ export class Engine {
     } finally {
       for (const [id, state] of this.folderStates) {
         if (["syncing", "scanning"].includes(state.state))
-          this.folderStates.set(id, { state: "pending", lastCompleted: state.lastCompleted });
+          this.folderStates.set(id, {
+            state: "pending",
+            lastCompleted: state.lastCompleted,
+          });
       }
       try {
         await releaseReplicaObjects(this.store);
@@ -1199,7 +1231,10 @@ export class Engine {
   }
   // Mirrors the hub's retention: drop what the hub pruned, but keep deleted shares and never empty a folder.
   async pruneBackup(listed) {
-    if (!this.hubListsRetained || Date.now() - (this.prunedAt || 0) < 6 * 3600000)
+    if (
+      !this.hubListsRetained ||
+      Date.now() - (this.prunedAt || 0) < 6 * 3600000
+    )
       return;
     this.prunedAt = Date.now();
     const s = this.store;
@@ -1219,7 +1254,8 @@ export class Engine {
       rows.filter((r) => retained.has(r.rev)).map((r) => r.volume),
     );
     const remove = rows.filter(
-      (r) => listed.has(r.volume) && covered.has(r.volume) && !retained.has(r.rev),
+      (r) =>
+        listed.has(r.volume) && covered.has(r.volume) && !retained.has(r.rev),
     );
     if (remove.length) {
       s.db.exec("BEGIN IMMEDIATE");
@@ -1239,7 +1275,9 @@ export class Engine {
     }
     for (const name of await fs.promises.readdir(s.objects))
       if (/^[a-f0-9]{64}$/.test(name) && !keep.has(name))
-        await fs.promises.rm(path.join(s.objects, name), { force: true }).catch(() => {});
+        await fs.promises
+          .rm(path.join(s.objects, name), { force: true })
+          .catch(() => {});
   }
   backupProgress() {
     const progress = this.backupRunning && this.backupEngine?.progress;
@@ -1370,7 +1408,7 @@ export class Engine {
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec(
-        "DELETE FROM files; DELETE FROM revisions; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
+        "DELETE FROM files; DELETE FROM revisions; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
       );
       const add = db.prepare(
         "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,0,?,?,?)",
@@ -1503,7 +1541,11 @@ export class Engine {
   // An unmounted Linux disk leaves an empty mount point on the system disk; never start a backup there.
   requireBackupDisk(location) {
     const device = this.config.backup?.device;
-    if (device && fs.existsSync(location) && String(fs.statSync(location).dev) !== device)
+    if (
+      device &&
+      fs.existsSync(location) &&
+      String(fs.statSync(location).dev) !== device
+    )
       fail(
         `The backup disk for ${location} is not mounted. Mount it and retry.`,
         409,
@@ -1520,7 +1562,9 @@ export class Engine {
         409,
       );
     if (!this.config.backup.device) {
-      this.config.backup.device = String(fs.statSync(this.config.backup.path).dev);
+      this.config.backup.device = String(
+        fs.statSync(this.config.backup.path).dev,
+      );
       this.store.saveConfig();
     }
     const lock = path.join(home, "daemon.lock");
@@ -2013,11 +2057,7 @@ export class Engine {
   }
   async restore(volume, name, rev) {
     if (this.config.role !== "hub")
-      return this.hubAction(
-        "/v1/restore",
-        { volume, path: name, rev },
-        25000,
-      );
+      return this.hubAction("/v1/restore", { volume, path: name, rev }, 25000);
     await this.scanHub(volume, { paths: [name, IGNORE_FILE] });
     const version = this.store
       .history(volume, name)
