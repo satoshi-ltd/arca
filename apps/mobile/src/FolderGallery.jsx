@@ -28,6 +28,8 @@ import { GalleryYear } from "./GalleryYear";
 import {
   compactColumns,
   pinchLevel,
+  pinchCell,
+  pinchGroup,
   levelColumns,
   galleryTileSize,
   galleryYears,
@@ -514,47 +516,38 @@ export function FolderGallery({
           if (pinch.current !== gesture) return;
           const localY = pageY - top;
           const state = layout.current;
-          const group = state.groups.find((group) => {
-            const box = monthPositions.current.get(group.month);
-            return box && box.top + box.height > localY;
-          });
+          const group = pinchGroup(
+            state.groups,
+            monthPositions.current,
+            localY,
+          );
           if (!group) return;
+          const box = monthPositions.current.get(group.month);
           if (state.density === "years") {
             gesture.anchor = {
               month: group.month,
               index: 0,
               viewportY:
-                rootTop.current +
-                monthPositions.current.get(group.month).top -
-                lastScrollY.current,
+                rootTop.current + (box?.top || 0) - lastScrollY.current,
             };
             return;
           }
+          if (!box) return;
           const gridTop =
-            monthPositions.current.get(group.month).top +
-            (gridPositions.current.get(group.month) || 0);
-          const row = Math.max(
-            0,
-            Math.floor((localY - gridTop) / (state.tile + state.gap)),
+            box.top + (gridPositions.current.get(group.month) || 0);
+          const step = state.tile + state.gap;
+          const cell = pinchCell(
+            group.items.length,
+            state.density,
+            step,
+            pageX - x,
+            localY - gridTop,
           );
           gesture.anchor = {
             month: group.month,
-            index: Math.min(
-              group.items.length - 1,
-              row * state.density +
-                Math.max(
-                  0,
-                  Math.min(
-                    state.density - 1,
-                    Math.floor((pageX - x) / (state.tile + state.gap)),
-                  ),
-                ),
-            ),
+            index: cell.index,
             viewportY:
-              rootTop.current +
-              gridTop +
-              row * (state.tile + state.gap) -
-              lastScrollY.current,
+              rootTop.current + gridTop + cell.row * step - lastScrollY.current,
           };
         });
       },

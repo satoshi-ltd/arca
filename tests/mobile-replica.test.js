@@ -1439,6 +1439,58 @@ test("gallery excludes ignored paths, retries them after policy removal and hand
   assert.ok(fs.existsSync(path.join(volume.path, (await f.uploaded()).path)));
 });
 
+test("album uploads get their turn before the download and a yield there still lets the download run", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r } = f;
+  await f.enable();
+  const order = [];
+  const cycle = r.gallery.cycle.bind(r.gallery);
+  let yielded = false;
+  r.gallery.cycle = async (folder) => {
+    order.push("uploads");
+    if (!yielded) {
+      yielded = true;
+      throw Object.assign(new Error("Continuing next turn"), { code: "SYNC_YIELD" });
+    }
+    return cycle(folder);
+  };
+  const pull = r.pull.bind(r);
+  r.pull = async (folder) => {
+    order.push("download");
+    return pull(folder);
+  };
+  await r.sync();
+  assert.deepEqual(order.slice(0, 2), ["uploads", "download"]);
+  assert.equal(r.error, null);
+});
+
+test("a failing album upload pass still downloads the shared folder and reports the upload failure", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r } = f;
+  await f.enable();
+  fs.writeFileSync(path.join(f.volume.path, "from-hub.txt"), "hub");
+  await f.daemon.engine.cycle();
+  r.gallery.cycle = async () => {
+    throw new Error("Photo library changed unexpectedly");
+  };
+  const pull = r.pull.bind(r);
+  let pulls = 0,
+    issueWhileDownloading;
+  r.pull = async (folder) => {
+    if (++pulls === 1)
+      throw Object.assign(new Error("Continuing next turn"), { code: "SYNC_YIELD" });
+    issueWhileDownloading = (await f.store.folder(r.scope, f.volume.id)).issue;
+    return pull(folder);
+  };
+  await r.sync();
+  assert.match(issueWhileDownloading, /Photo library changed unexpectedly/);
+  assert.equal(
+    fs.readFileSync(f.files.work(r.scope, f.volume.id, "from-hub.txt"), "utf8"),
+    "hub",
+  );
+  assert.match(r.error, /Photo library changed unexpectedly/);
+});
+
 test("gallery pagination remains bounded, counts only accepted items and survives restart", async (t) => {
   const assets = Array.from({ length: 1103 }, (_, i) => ({
     id: `asset-${i}`,
@@ -2469,29 +2521,32 @@ test("a device rename while the hub is known offline is saved without a request"
   assert.equal(report.name, "Travel phone");
 });
 
-test("stopping an initial snapshot releases its hub lease even though sync was aborted", async (t) => {
+test("stopping an initial snapshot keeps its hub lease for the next sync and releases it once complete", async (t) => {
   const f = await fixture(t);
   for (let i = 0; i < 3; i++)
     fs.writeFileSync(path.join(f.volume.path, `file-${i}.txt`), `file ${i}`);
   await f.daemon.engine.cycle();
   const sessions = () =>
     f.daemon.engine.store.db
-      .prepare("SELECT COUNT(*) AS n FROM snapshot_sessions")
-      .get().n;
+      .prepare("SELECT id FROM snapshot_sessions")
+      .all()
+      .map((row) => row.id);
   await f.replica.select(f.volume);
   const replace = f.files.replace;
   f.files.replace = async (...args) => {
     f.files.replace = replace;
-    assert.equal(sessions(), 1);
+    assert.equal(sessions().length, 1);
     f.replica.stop();
     return replace(...args);
   };
   await f.replica.sync();
-  for (let i = 0; i < 200 && sessions(); i++)
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal(sessions(), 0);
+  const saved = await f.store.snapshotCursor(f.replica.scope, f.volume.id);
+  assert.deepEqual(sessions(), [saved.session]);
   await sync(f);
   assert.ok((await f.store.folder(f.replica.scope, f.volume.id)).initialized);
+  for (let i = 0; i < 200 && sessions().length; i++)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(sessions(), []);
 });
 
 test("a busy snapshot capacity is a retryable wait, not a stored folder failure", async (t) => {
@@ -2968,6 +3023,184 @@ test("a remote deletion keeps a local edit that the size and mtime cache cannot 
     fs.readFileSync(path.join(path.dirname(target), conflict), "utf8"),
     "HUB V1",
   );
+});
+
+test("an initial snapshot resumes its lease and position after a yielded turn", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  for (const name of ["a.txt", "b.txt"])
+    fs.writeFileSync(path.join(f.volume.path, name), `hub ${name}`);
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  for (const name of ["c.txt", "d.txt", "e.txt"])
+    fs.writeFileSync(path.join(f.volume.path, name), `hub ${name}`);
+  await f.daemon.engine.cycle();
+  await f.store.resetCursor(r.scope, f.volume.id);
+  const calls = [];
+  const api = r.client.api.bind(r.client);
+  r.client.api = (route, ...rest) => {
+    calls.push(route);
+    return api(route, ...rest);
+  };
+  const check = r.checkTransferTurn.bind(r);
+  let transfers = 0;
+  r.checkTransferTurn = () => {
+    if (++transfers === 2)
+      throw Object.assign(new Error("Continuing next turn"), { code: "SYNC_YIELD" });
+    return check();
+  };
+  await assert.rejects(
+    r.pull(await f.store.folder(r.scope, f.volume.id)),
+    (error) => error.code === "SYNC_YIELD",
+  );
+  const saved = await f.store.snapshotCursor(r.scope, f.volume.id);
+  assert.ok(saved?.session);
+  const resumedAt = calls.length;
+  await r.pull(await f.store.folder(r.scope, f.volume.id));
+  const snapshots = calls.slice(resumedAt).filter((route) => route.startsWith("/v1/snapshot?"));
+  assert.match(snapshots[0], new RegExp(`session=${saved.session}`));
+  assert.equal(calls.filter((route) => /\/v1\/changes\?.*after=0/.test(route)).length, 1);
+  for (const name of ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"])
+    assert.equal(fs.readFileSync(f.files.work(r.scope, f.volume.id, name), "utf8"), `hub ${name}`);
+  assert.equal(await f.store.snapshotCursor(r.scope, f.volume.id), null);
+  await f.store.saveSnapshotCursor(r.scope, f.volume.id, saved);
+  await f.store.resetCursor(r.scope, f.volume.id);
+  assert.equal(await f.store.snapshotCursor(r.scope, f.volume.id), null);
+});
+
+test("a resumed snapshot never rolls back an edit this phone pushed between turns", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  fs.writeFileSync(path.join(f.volume.path, "a.txt"), "hub a");
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  for (const name of ["c.txt", "d.txt"])
+    fs.writeFileSync(path.join(f.volume.path, name), `hub ${name}`);
+  await f.daemon.engine.cycle();
+  await f.store.resetCursor(r.scope, f.volume.id);
+  const check = r.checkTransferTurn.bind(r);
+  let transfers = 0;
+  r.checkTransferTurn = () => {
+    if (++transfers === 2)
+      throw Object.assign(new Error("Continuing next turn"), { code: "SYNC_YIELD" });
+    return check();
+  };
+  await assert.rejects(
+    r.pull(await f.store.folder(r.scope, f.volume.id)),
+    (error) => error.code === "SYNC_YIELD",
+  );
+  const target = f.files.work(r.scope, f.volume.id, "a.txt");
+  fs.writeFileSync(target, "phone edit");
+  const folder = await f.store.folder(r.scope, f.volume.id);
+  await r.scan(folder);
+  await r.push(folder);
+  await r.pull(await f.store.folder(r.scope, f.volume.id));
+  assert.equal(fs.readFileSync(target, "utf8"), "phone edit");
+  assert.equal(fs.readFileSync(f.files.work(r.scope, f.volume.id, "d.txt"), "utf8"), "hub d.txt");
+  await r.pull(await f.store.folder(r.scope, f.volume.id));
+  assert.equal(fs.readFileSync(target, "utf8"), "phone edit");
+});
+
+test("an interrupted initial snapshot keeps its lease while a failed one drops its saved position", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  await r.select(f.volume);
+  await sync(f);
+  for (const name of ["c.txt", "d.txt"])
+    fs.writeFileSync(path.join(f.volume.path, name), `hub ${name}`);
+  await f.daemon.engine.cycle();
+  await f.store.resetCursor(r.scope, f.volume.id);
+  const released = [];
+  const api = r.interactiveClient.api.bind(r.interactiveClient);
+  r.interactiveClient.api = (route, body, ...rest) => {
+    if (route === "/v1/snapshot-release") released.push(body.session);
+    return api(route, body, ...rest);
+  };
+  const check = r.checkTransferTurn.bind(r);
+  let failure = null;
+  r.checkTransferTurn = () => {
+    const error = failure;
+    failure = null;
+    if (error) throw error;
+    return check();
+  };
+  failure = Object.assign(new Error("Cannot reach the hub"), { code: "HUB_UNREACHABLE" });
+  await assert.rejects(
+    r.pull(await f.store.folder(r.scope, f.volume.id)),
+    (error) => error.code === "HUB_UNREACHABLE",
+  );
+  const saved = await f.store.snapshotCursor(r.scope, f.volume.id);
+  assert.ok(saved?.session);
+  assert.deepEqual(released, []);
+  failure = new Error("Disk failure");
+  await assert.rejects(r.pull(await f.store.folder(r.scope, f.volume.id)), /Disk failure/);
+  assert.equal(await f.store.snapshotCursor(r.scope, f.volume.id), null);
+  assert.deepEqual(released, [saved.session]);
+});
+
+test("a snapshot whose listing finished drops its saved position before deferred rows apply", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  fs.mkdirSync(path.join(f.volume.path, "a-dir"));
+  fs.writeFileSync(path.join(f.volume.path, "a-dir", "x.txt"), "x");
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  fs.rmSync(path.join(f.volume.path, "a-dir"), { recursive: true });
+  fs.writeFileSync(path.join(f.volume.path, "b.txt"), "hub b.txt");
+  await f.daemon.engine.cycle();
+  await f.store.resetCursor(r.scope, f.volume.id);
+  await f.store.saveSnapshotCursor(r.scope, f.volume.id, { session: "stale", after: "", through: 0 });
+  const apply = r.apply.bind(r);
+  let yielded = false;
+  r.apply = async (row, ...rest) => {
+    if (row.path === "a-dir" && !yielded) {
+      yielded = true;
+      throw Object.assign(new Error("Continuing next turn"), { code: "SYNC_YIELD" });
+    }
+    return apply(row, ...rest);
+  };
+  await assert.rejects(
+    r.pull(await f.store.folder(r.scope, f.volume.id)),
+    (error) => error.code === "SYNC_YIELD",
+  );
+  assert.equal(await f.store.snapshotCursor(r.scope, f.volume.id), null);
+  await r.pull(await f.store.folder(r.scope, f.volume.id));
+  assert.equal(fs.existsSync(f.files.work(r.scope, f.volume.id, "a-dir")), false);
+});
+
+test("resuming a snapshot twice keeps one copy of each deferred directory deletion", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  fs.mkdirSync(path.join(f.volume.path, "a-dir"));
+  fs.writeFileSync(path.join(f.volume.path, "a-dir", "x.txt"), "x");
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  fs.rmSync(path.join(f.volume.path, "a-dir"), { recursive: true });
+  for (const name of ["b.txt", "c.txt"])
+    fs.writeFileSync(path.join(f.volume.path, name), `hub ${name}`);
+  await f.daemon.engine.cycle();
+  await f.store.resetCursor(r.scope, f.volume.id);
+  const check = r.checkTransferTurn.bind(r);
+  let transfers = 0;
+  r.checkTransferTurn = () => {
+    if ([2, 3].includes(++transfers))
+      throw Object.assign(new Error("Continuing next turn"), { code: "SYNC_YIELD" });
+    return check();
+  };
+  for (let turn = 0; turn < 2; turn++)
+    await assert.rejects(
+      r.pull(await f.store.folder(r.scope, f.volume.id)),
+      (error) => error.code === "SYNC_YIELD",
+    );
+  const saved = await f.store.snapshotCursor(r.scope, f.volume.id);
+  assert.deepEqual(saved.directoryDeletes.map((row) => row.path), ["a-dir"]);
+  await r.pull(await f.store.folder(r.scope, f.volume.id));
+  assert.equal(fs.existsSync(f.files.work(r.scope, f.volume.id, "a-dir")), false);
+  assert.equal(fs.readFileSync(f.files.work(r.scope, f.volume.id, "c.txt"), "utf8"), "hub c.txt");
 });
 
 test("restarting an initial snapshot reuses verified local files and still preserves new edits", async (t) => {

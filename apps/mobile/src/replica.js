@@ -608,6 +608,8 @@ export class Replica {
     )
       return;
     const current = await this.store.current(this.scope, row.volume, row.path);
+    // Resumed snapshots predate rows pushed since; the change feed after `through` delivers them.
+    if (!recovering && current && row.rev < current.rev) return;
     const target = this.files.work(this.scope, row.volume, row.path);
     if (row.deleted && row.replacementPath) {
       await this.store.applied(this.scope, row);
@@ -724,8 +726,8 @@ export class Replica {
   }
   async pull(folder) {
     let through;
-    const directoryDeletes = [];
-    const deferredFiles = [];
+    let directoryDeletes = [];
+    let deferredFiles = [];
     // Tombstones stay in the alias index; apply() has always matched case aliases against them.
     let aliases = null;
     const remember = (row) => {
@@ -745,9 +747,14 @@ export class Replica {
       await this.apply(row, false, aliases.get(row.path.toLowerCase()) || []);
       remember(row);
     };
+    const defer = (list, row) => {
+      const index = list.findIndex((entry) => entry.path === row.path);
+      if (index < 0) list.push(row);
+      else list[index] = row;
+    };
     const apply = async (row) => {
       validRow(row, folder.id);
-      if (row.directory && row.deleted) directoryDeletes.push(row);
+      if (row.directory && row.deleted) defer(directoryDeletes, row);
       else if (
         !row.deleted &&
         !row.directory &&
@@ -757,16 +764,27 @@ export class Replica {
           )
         )?.directory
       )
-        deferredFiles.push(row);
+        defer(deferredFiles, row);
       else await materialize(row);
     };
     if (!folder.initialized) {
-      through = (
-        await this.client.api(`/v1/changes?volume=${folder.id}&after=0`)
-      ).through;
+      const saved = await this.store.snapshotCursor(this.scope, folder.id);
       for (let restarted = false; ; restarted = true) {
-        let session = null,
-          after = "";
+        const resume = !restarted && saved?.session ? saved : null;
+        let session = resume?.session || null,
+          after = resume?.after || "",
+          paused = false;
+        if (resume) {
+          through = resume.through;
+          directoryDeletes = resume.directoryDeletes || [];
+          deferredFiles = resume.deferredFiles || [];
+        } else {
+          through = (
+            await this.client.api(`/v1/changes?volume=${folder.id}&after=0`)
+          ).through;
+          directoryDeletes = [];
+          deferredFiles = [];
+        }
         try {
           do {
             this.check();
@@ -783,13 +801,31 @@ export class Replica {
             }
             after = page.next;
           } while (after);
+          await this.store.saveSnapshotCursor(this.scope, folder.id, null);
           break;
         } catch (error) {
-          if (restarted || error?.status !== 409 || !transientSnapshot(error))
+          if (
+            session &&
+            (["SYNC_YIELD", "SYNC_INTERRUPTED"].includes(error?.code) ||
+              isHubUnreachable(error))
+          ) {
+            await this.store.saveSnapshotCursor(this.scope, folder.id, {
+              session,
+              after,
+              through,
+              directoryDeletes,
+              deferredFiles,
+            });
+            paused = true;
             throw error;
+          }
+          if (restarted || error?.status !== 409 || !transientSnapshot(error)) {
+            await this.store.saveSnapshotCursor(this.scope, folder.id, null);
+            throw error;
+          }
           session = null;
         } finally {
-          if (session) this.releaseSnapshot(session);
+          if (session && !paused) this.releaseSnapshot(session);
         }
       }
     } else {
@@ -978,6 +1014,7 @@ export class Replica {
         }
         this.syncingVolume = folder.id;
         this.changed();
+        let galleryError = null;
         try {
           this.turnDeadline = Date.now() + 10000;
           this.turnTransferred = false;
@@ -1021,16 +1058,31 @@ export class Replica {
           }
           this.turnDeadline = Date.now() + 10000;
           await this.push(folder);
-          await this.pull(folder);
+          // Album uploads run before the download so a large first download cannot starve them.
           if (galleryConfig(folder)) {
             this.turnDeadline = Date.now() + 10000;
-            await this.gallery.cycle(folder);
-            // Materialize this phone’s new uploads as well as other participants’ files.
-            await this.pull(await this.store.folder(this.scope, folder.id));
+            this.turnTransferred = false;
+            try {
+              await this.gallery.cycle(folder);
+            } catch (error) {
+              if (error.code === "SYNC_YIELD") this.moreFolderWork = true;
+              else if (
+                error.code === "SYNC_INTERRUPTED" ||
+                isHubUnreachable(error)
+              )
+                throw error;
+              else galleryError = error;
+            }
           }
+          this.turnDeadline = Date.now() + 10000;
+          this.turnTransferred = false;
+          await this.pull(await this.store.folder(this.scope, folder.id));
+          if (galleryError) throw galleryError;
         } catch (e) {
           if (e.code === "SYNC_YIELD") {
             this.moreFolderWork = true;
+            if (galleryError)
+              await this.store.issue(this.scope, folder.id, galleryError.message);
             continue;
           }
           if (this.syncAbort?.signal.aborted) this.check();

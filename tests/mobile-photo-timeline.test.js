@@ -803,6 +803,28 @@ test("pinching moves between base, compact and years levels, sized by the curren
   }
 });
 
+test("a pinch below the last year still anchors to a year so Years can zoom back", async () => {
+  const { pinchGroup } = await import("../apps/mobile/src/gallery-scale.js");
+  const years = [{ month: "2026-09" }, { month: "2025-12" }];
+  const positions = new Map([
+    ["2026-09", { top: 0, height: 300 }],
+    ["2025-12", { top: 300, height: 300 }],
+  ]);
+  assert.equal(pinchGroup(years, positions, 120).month, "2026-09");
+  assert.equal(pinchGroup(years, positions, 450).month, "2025-12");
+  assert.equal(pinchGroup(years, positions, 1400).month, "2025-12");
+  assert.equal(pinchGroup(years, new Map(), 50).month, "2026-09");
+  assert.equal(pinchGroup([], new Map(), 50), null);
+});
+
+test("a grid pinch below a month's last row anchors to a tile that exists", async () => {
+  const { pinchCell } = await import("../apps/mobile/src/gallery-scale.js");
+  assert.deepEqual(pinchCell(10, 4, 100, 150, 120), { row: 1, index: 5 });
+  assert.deepEqual(pinchCell(10, 4, 100, 350, 5000), { row: 2, index: 9 });
+  assert.deepEqual(pinchCell(10, 4, 100, 50, 5000), { row: 2, index: 8 });
+  assert.deepEqual(pinchCell(10, 4, 100, -20, -40), { row: 0, index: 0 });
+});
+
 test("pending uploads separate waiting photos from failed ones", async () => {
   const { pendingUploadLabel } = await import("../apps/mobile/src/gallery-timeline.js");
   assert.equal(pendingUploadLabel([{ upload: "failed" }], { pending: 1, failed: 1 }), "1 needs attention");

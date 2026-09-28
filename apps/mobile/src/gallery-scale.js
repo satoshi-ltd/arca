@@ -10,6 +10,26 @@ export const levelColumns = (level, base) =>
     : level === "compact"
       ? compactColumns(base)
       : base;
+export function pinchCell(count, columns, step, x, y) {
+  const row = Math.max(
+    0,
+    Math.min(Math.ceil(count / columns) - 1, Math.floor(y / step)),
+  );
+  const column = Math.max(0, Math.min(columns - 1, Math.floor(x / step)));
+  return { row, index: Math.min(count - 1, row * columns + column) };
+}
+export function pinchGroup(groups, positions, y) {
+  const placed = groups.filter((group) => positions.get(group.month));
+  return (
+    placed.find((group) => {
+      const box = positions.get(group.month);
+      return box.top + box.height > y;
+    }) ||
+    placed.at(-1) ||
+    groups[0] ||
+    null
+  );
+}
 export function galleryYears(dates) {
   const years = new Map();
   for (const date of dates) {

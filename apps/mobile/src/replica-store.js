@@ -136,9 +136,10 @@ export class ReplicaStore {
           id,
         );
       await this.db.runAsync(
-        "DELETE FROM settings WHERE key IN (?,?)",
+        "DELETE FROM settings WHERE key IN (?,?,?)",
         `gallery-list:${scope}:${id}`,
         `gallery-thumbnails:${scope}:${id}`,
+        `snapshot:${scope}:${id}`,
       );
       for (const kind of ["requests", "originals", "cursor"])
         await this.db.runAsync(
@@ -326,6 +327,7 @@ export class ReplicaStore {
       scope,
       id,
     );
+    await this.saveSnapshotCursor(scope, id, null);
   }
   async complete(scope, id, cursor) {
     await this.db.runAsync(
@@ -335,6 +337,18 @@ export class ReplicaStore {
       scope,
       id,
     );
+    await this.saveSnapshotCursor(scope, id, null);
+  }
+  snapshotCursor(scope, id) {
+    return this.get(`snapshot:${scope}:${id}`);
+  }
+  async saveSnapshotCursor(scope, id, cursor) {
+    if (cursor) await this.set(`snapshot:${scope}:${id}`, cursor);
+    else
+      await this.db.runAsync(
+        "DELETE FROM settings WHERE key=?",
+        `snapshot:${scope}:${id}`,
+      );
   }
   async forgetExcluded(scope, volume, excluded) {
     const paths = (await this.rows(scope, volume))

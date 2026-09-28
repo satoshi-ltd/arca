@@ -431,3 +431,29 @@ test("a device's new first page supersedes its abandoned lease for that folder o
     { status: 409, code: "SNAPSHOT_EXPIRED" },
   );
 });
+
+test("reading a snapshot page renews its lease for long resumable downloads", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-snapshot-lease-"));
+  init(home, { role: "hub" });
+  const store = new Store(home);
+  t.after(() => {
+    store.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const volume = store.addVolume("Documents").id;
+  for (const name of ["a", "b", "c"])
+    store.setFile({ volume, path: name, deleted: 0, rev: 1, hash: null, size: 0 });
+  const first = await snapshotPage(store, "replica", volume, { limit: 1 });
+  store.db
+    .prepare("UPDATE snapshot_sessions SET expires=? WHERE id=?")
+    .run(Date.now() + 1000, first.session);
+  await snapshotPage(store, "replica", volume, {
+    session: first.session,
+    after: first.next,
+    limit: 1,
+  });
+  const { expires } = store.db
+    .prepare("SELECT expires FROM snapshot_sessions WHERE id=?")
+    .get(first.session);
+  assert.ok(expires > Date.now() + 500000);
+});

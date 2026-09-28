@@ -116,6 +116,10 @@ export async function snapshotPage(
     .get(session, owner, volume, Date.now());
   if (!active)
     fail("Snapshot expired. Restart synchronization.", 409, "SNAPSHOT_EXPIRED");
+  db.prepare("UPDATE snapshot_sessions SET expires=? WHERE id=?").run(
+    Date.now() + 600000,
+    session,
+  );
   const rows = db
     .prepare(
       "SELECT path,row FROM snapshot_files WHERE session=? AND path>? ORDER BY path LIMIT ?",

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.6 — 2026-09-28
+
+- Linked phone albums upload before the shared folder download in every cycle, with their own transfer turn. A large first download (the Fold's 26.6 GB `photos` copy) no longer blocks album uploads or keeps a stale album warning. A yielded or failing upload pass (for example, revoked Photos access) still lets the download run; the upload failure is reported after it.
+- The first download of a folder resumes where it stopped instead of relisting and rechecking every downloaded file: the phone keeps its snapshot lease, page position, cursor and deferred rows across yielded turns, pauses, file operations, background expiry and lost connections. An expired lease restarts the snapshot; any other failure releases the lease and drops the saved position. Rows the phone pushed between turns are never rolled back by the older snapshot, and deferred rows are kept once. Unlinking a folder, a policy change or completion clears the saved position.
+- The hub renews a snapshot lease whenever a page is read, so long downloads keep the same snapshot (desktop replicas benefit too). Takes effect when the hub runs 0.6.6; until then a lease still expires 10 minutes after it was created and the phone restarts that snapshot.
+- Pinching out in the yearly gallery view works again when the fingers are below the last year card, and a grid pinch below a month's last row anchors to an existing tile.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 380 tests with two platform skips and all 195 mobile source tests pass. Two adversarial reviews: the first review's findings (snapshot rollback, upload failures skipping the download, lost resume position, duplicate deferred rows) and the second's low-severity leftovers (a finished listing's stale position, album failures hidden while the download yields) are fixed with regression tests. No native build or deployment performed.
+
 ## 0.6.5 — 2026-09-28
 
 - Fix an intermittent mobile startup/reload crash when a saved hub connection becomes available before the replica runtime: Machines, automatic History and the Recent tab now wait for runtime readiness and load when it becomes ready.
