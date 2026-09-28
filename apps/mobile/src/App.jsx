@@ -156,6 +156,7 @@ export default function App() {
     action = useRef(false),
     mounted = useRef(true),
     fileRequest = useRef(0);
+  const [replica, setReplica] = useState(null);
   const [state, setState] = useState(client.state()),
     [view, setView] = useState("Folders"),
     [locals, setLocals] = useState([]),
@@ -410,6 +411,8 @@ export default function App() {
     run(
       async () => {
         engine.current = await runtime();
+        if (!mounted.current) return;
+        setReplica(engine.current);
         setName(
           await engine.current.store.get(
             "name",
@@ -608,12 +611,13 @@ export default function App() {
     let cancelled = false;
     if (
       !["Machines", "Settings", "Folders", "File detail"].includes(screen) ||
-      !connected
+      !connected ||
+      !replica
     ) {
       setMachines(null);
       return;
     }
-    engine.current
+    replica
       .remoteView("/v1/machines")
       .then((data) => {
         if (!cancelled) setMachines(data.machines);
@@ -624,13 +628,14 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [screen, connected, status.last]);
+  }, [screen, connected, status.last, replica]);
   useEffect(() => {
-    if (screen === "History" && connected)
+    if (screen === "History" && connected && replica)
       getHistory().catch((e) => setError(e.message));
   }, [
     screen,
     connected,
+    replica,
     status.offline,
     historyVolume,
     historyFilter,
@@ -1006,22 +1011,15 @@ export default function App() {
     }),
     [entries],
   );
-  const syncIssue = currentFolder?.issue || status.error;
-  const timelineNotice = [
-    syncIssue ? `Folder synchronization: ${syncIssue}` : "",
-    sourceConfig?.enabled && sourceConfig.issue
-      ? `Photo uploads: ${sourceConfig.issue}`
-      : "",
+  const timelineNotice =
     sourceConfig && !sourceConfig.enabled
       ? "Photo uploads are disabled for this album."
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+      : "";
   const timeline =
     folder && engine.current ? (
       <FolderGallery
         key={folder.id}
+        columns={wide ? 6 : 4}
         api={galleryAPI}
         connected={connected}
         store={engine.current.store}
@@ -1029,7 +1027,6 @@ export default function App() {
         volume={folder.id}
         entries={entries}
         loading={filesLoading}
-        columns={wide ? 6 : 4}
         refreshKey={status.last}
         demand={timelineDemand}
         onDates={setGalleryDates}
@@ -1168,6 +1165,7 @@ export default function App() {
     setSheet(null);
   };
   const showError = error || status.error;
+  const noticeFolder = useRef(null);
   useEffect(() => {
     const conditions = conditionNotices({
       error: status.error,
@@ -1175,6 +1173,10 @@ export default function App() {
       catalog: state.catalog,
       volumes: locals,
     });
+    if (folder?.id && noticeFolder.current !== folder.id)
+      for (const kind of ["folder", "photo-uploads"])
+        notices.clear(`status:${kind}:${folder.id}`);
+    noticeFolder.current = folder?.id || null;
     notices.reconcile(conditions);
     if (error)
       notices.push(
@@ -1188,7 +1190,7 @@ export default function App() {
         ),
       );
     else notices.clear("action");
-  }, [error, status.error, locals, state.catalog, notices]);
+  }, [error, status.error, locals, state.catalog, notices, folder?.id]);
   const noticeAction = (item) => {
     if (item.action === "review" || item.action === "show") {
       setView("History");
@@ -1582,6 +1584,14 @@ export default function App() {
                       if (near) setTimelineDemand((n) => n + 1);
                     }
                   }}
+                  onContentSizeChange={(_, height) => {
+                    if (
+                      nearEnd.current &&
+                      galleryScrollY.current + galleryViewport.height >
+                        height - 1200
+                    )
+                      setTimelineDemand((n) => n + 1);
+                  }}
                   style={s.scroll}
                   contentContainerStyle={[
                     s.content,
@@ -1732,12 +1742,10 @@ export default function App() {
                               ) : fileView === "recent" ? (
                                 <FolderRecent
                                   volume={folder.id}
-                                  scope={engine.current?.scope}
+                                  scope={replica?.scope}
                                   onLoading={setRecentLoading}
-                                  connected={connected}
-                                  load={(route) =>
-                                    engine.current.remoteView(route)
-                                  }
+                                  connected={connected && !!replica}
+                                  load={(route) => replica.remoteView(route)}
                                   updated={status.last}
                                   date={date}
                                   open={(row) =>

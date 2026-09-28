@@ -1329,7 +1329,8 @@ test("gallery retries lost acceptance after remote deletion without reacquiring 
     return result;
   };
   await r.sync();
-  assert.match(r.error, /reply lost/);
+  assert.equal(r.error, null);
+  assert.match((await f.store.gallery(r.scope, volume.id)).issue, /reply lost/);
   const resource = await f.uploaded();
   assert.ok(fs.existsSync(path.join(volume.path, resource.path)));
   fs.rmSync(path.join(volume.path, resource.path));
@@ -1397,7 +1398,8 @@ test("gallery excludes ignored paths, retries them after policy removal and hand
   fs.writeFileSync(path.join(volume.path, ".arcaignore"), "*.HEIC\n");
   await f.daemon.engine.cycle();
   await r.sync();
-  assert.match(r.error, /Excluded by/);
+  assert.equal(r.error, null);
+  assert.match((await f.store.gallery(r.scope, volume.id)).issue, /Excluded by/);
   assert.equal((await f.store.gallerySummary(r.scope, volume.id)).accepted, 0);
   fs.rmSync(path.join(volume.path, ".arcaignore"));
   await f.daemon.engine.cycle();
@@ -1412,6 +1414,15 @@ test("gallery excludes ignored paths, retries them after policy removal and hand
     /album is unavailable/,
   );
   assert.equal((await f.store.folder(r.scope, volume.id)).issue, null);
+  const source = await f.store.gallery(r.scope, volume.id);
+  await f.store.issue(r.scope, volume.id, source.issue);
+  await r.load();
+  await r.sync();
+  assert.equal(r.error, null);
+  assert.equal((await f.store.folder(r.scope, volume.id)).issue, null);
+  const after = await f.store.gallery(r.scope, volume.id);
+  assert.equal(after.issue, source.issue);
+  assert.equal(after.albumId, source.albumId);
   fs.writeFileSync(
     path.join(volume.path, "from-another-device.jpg"),
     "shared photo",
@@ -1500,7 +1511,8 @@ test("gallery recovers a lost conflict receipt after the hub deletes that confli
     return api(route, body);
   };
   await r.sync();
-  assert.match(r.error, /reply lost/);
+  assert.equal(r.error, null);
+  assert.match((await f.store.gallery(r.scope, volume.id)).issue, /reply lost/);
   fs.rmSync(path.join(volume.path, conflictPath));
   await f.daemon.engine.cycle();
   f.data.clear();
@@ -1521,7 +1533,8 @@ test("gallery handles limited access, low storage, changed originals and destroy
   await f.enable();
   files.free = async () => 0;
   await r.sync();
-  assert.match(r.error, /storage/);
+  assert.equal(r.error, null);
+  assert.match((await f.store.gallery(r.scope, volume.id)).issue, /storage/);
   assert.equal(f.exports.length, 0);
   files.free = async () => 1e12;
   const raw = f.client.raw;
@@ -1530,11 +1543,13 @@ test("gallery handles limited access, low storage, changed originals and destroy
     return raw(route, options);
   };
   await r.sync(true);
-  assert.match(r.error, /network lost/);
+  assert.equal(r.error, null);
+  assert.match((await f.store.gallery(r.scope, volume.id)).issue, /network lost/);
   f.client.raw = raw;
   f.data.set("photo-1", Buffer.from("new original"));
   await r.sync(true);
-  assert.match(r.error, /Original changed/);
+  assert.equal(r.error, null);
+  assert.match((await f.store.gallery(r.scope, volume.id)).issue, /Original changed/);
   assert.equal((await store.gallery(r.scope, volume.id)).limited, true);
   assert.equal(fs.existsSync(files.galleryStage(r.scope, volume.id)), false);
   await r.destroy(true);
@@ -2893,6 +2908,68 @@ test("unverifiable historical gallery registration keeps originals without block
   assert.ok(f.data.has("photo-1"));
 });
 
+test("an incoming change keeps a local edit that the size and mtime cache cannot see", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  fs.writeFileSync(path.join(f.volume.path, "note.txt"), "hub v1");
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  r.force = false;
+  const stat = f.files.stat;
+  f.files.stat = async (file) => {
+    const value = await stat(file);
+    return value && { ...value, mtime: 1 };
+  };
+  const target = f.files.work(r.scope, f.volume.id, "note.txt");
+  await r.localHash(target);
+  fs.writeFileSync(target, "HUB V1");
+  fs.writeFileSync(path.join(f.volume.path, "note.txt"), "hub v2 is longer");
+  await f.daemon.engine.cycle();
+  await r
+    .pull(await f.store.folder(r.scope, f.volume.id))
+    .catch((error) => assert.match(error.message, /Local changes are waiting/));
+  const conflict = fs
+    .readdirSync(path.dirname(target))
+    .find((name) => name.startsWith("note.txt.conflict-mobile-"));
+  assert.ok(conflict, "the hidden local edit is kept as a conflict copy");
+  assert.equal(
+    fs.readFileSync(path.join(path.dirname(target), conflict), "utf8"),
+    "HUB V1",
+  );
+});
+
+test("a remote deletion keeps a local edit that the size and mtime cache cannot see", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  fs.writeFileSync(path.join(f.volume.path, "note.txt"), "hub v1");
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  r.force = false;
+  const stat = f.files.stat;
+  f.files.stat = async (file) => {
+    const value = await stat(file);
+    return value && { ...value, mtime: 1 };
+  };
+  const target = f.files.work(r.scope, f.volume.id, "note.txt");
+  await r.localHash(target);
+  fs.writeFileSync(target, "HUB V1");
+  fs.rmSync(path.join(f.volume.path, "note.txt"));
+  await f.daemon.engine.cycle();
+  await r
+    .pull(await f.store.folder(r.scope, f.volume.id))
+    .catch((error) => assert.match(error.message, /Local changes are waiting/));
+  const conflict = fs
+    .readdirSync(path.dirname(target))
+    .find((name) => name.startsWith("note.txt.conflict-mobile-"));
+  assert.ok(conflict, "the hidden local edit survives the remote deletion");
+  assert.equal(
+    fs.readFileSync(path.join(path.dirname(target), conflict), "utf8"),
+    "HUB V1",
+  );
+});
+
 test("restarting an initial snapshot reuses verified local files and still preserves new edits", async (t) => {
   const f = await fixture(t),
     r = f.replica;
@@ -3071,4 +3148,66 @@ test('ordinary uploads keep the transfer service when the screen turns off', asy
   assert.equal(service.starts, 1);
   assert.equal(service.stops, 1);
   assert.deepEqual(fs.readFileSync(path.join(f.volume.path, 'document.bin')), content);
+});
+
+test("photo export storage failures remain local to uploads across cold starts and do not block shared downloads", async (t) => {
+  const f = await galleryFixture(t), { replica: r, store, volume } = f;
+  await f.enable();
+  f.assets.push({ id: "photo-2", filename: "second.jpg", creationTime: 1750000000000 });
+  let attempts = 0;
+  f.media.export = async () => {
+    attempts++;
+    throw new Error("Call to function 'ArcaNetwork.exportGalleryAsset' has been rejected: Not enough storage for temporary photo transfer");
+  };
+  await r.sync();
+  assert.equal(attempts, 1);
+  assert.equal(r.moreGalleryWork, false);
+  assert.equal(r.error, null);
+  const issue = (await store.gallery(r.scope, volume.id)).issue;
+  assert.match(issue, /Not enough storage/);
+  await store.issue(r.scope, volume.id, issue);
+  await r.load();
+  fs.writeFileSync(path.join(volume.path, "another-device.txt"), "shared data");
+  await f.daemon.engine.cycle();
+  await sync(f);
+  assert.equal(r.error, null);
+  assert.equal((await store.folder(r.scope, volume.id)).issue, null);
+  const latestIssue = (await store.gallery(r.scope, volume.id)).issue;
+  assert.match(latestIssue, /Not enough storage/);
+  const stale = await store.gallery(r.scope, volume.id);
+  await store.setGallery(r.scope, volume.id, {
+    ...stale,
+    issue: "The selected album is unavailable. Choose an accessible album in Photo uploads.",
+  });
+  await r.load();
+  await r.sync();
+  const current = (await store.gallery(r.scope, volume.id)).issue;
+  assert.match(current, /Not enough storage/);
+  assert.doesNotMatch(current, /album is unavailable/);
+  assert.equal(fs.readFileSync(f.files.work(r.scope, volume.id, "another-device.txt"), "utf8"), "shared data");
+});
+
+test("mobile pulls a large folder without reloading its full index for each file", async (t) => {
+  const f = await fixture(t);
+  for (let i = 0; i < 96; i++)
+    fs.writeFileSync(path.join(f.volume.path, `photo-${i}.jpg`), `photo ${i}`);
+  await f.daemon.engine.cycle();
+  await f.client.refresh();
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const rows = f.store.rows.bind(f.store);
+  let reads = 0, repeatedWrites = 0;
+  const journal = f.store.journal.bind(f.store);
+  f.store.journal = async (...args) => {
+    if (!args[1].directory && !args[1].deleted) repeatedWrites++;
+    return journal(...args);
+  };
+  f.store.rows = async (...args) => { reads++; return rows(...args); };
+  await f.store.resetCursor(f.replica.scope, f.volume.id);
+  await f.replica.pull(await f.store.folder(f.replica.scope, f.volume.id));
+  assert.equal(reads, 1, "read the local alias index once per pull, not once per file");
+  assert.equal(repeatedWrites, 0, "unchanged verified rows need no new write journal");
+  for (let i = 0; i < 96; i++)
+    assert.equal(fs.readFileSync(f.files.work(f.replica.scope, f.volume.id, `photo-${i}.jpg`), "utf8"), `photo ${i}`);
+  assert.equal((await f.store.folder(f.replica.scope, f.volume.id)).initialized, 1);
 });

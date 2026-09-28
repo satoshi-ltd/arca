@@ -4,18 +4,34 @@ import {
   AppState,
   Image,
   Pressable,
+  PanResponder,
   ScrollView,
   Text,
   View,
 } from "react-native";
 import { Button, Icon, Scaffold, useDesign } from "./components";
-import { groupByMonth, mergeTimeline, photoCount } from "./gallery-timeline";
+import {
+  groupByMonth,
+  mergeTimeline,
+  photoCount,
+  visibleGalleryMonth,
+  pendingUploadLabel,
+} from "./gallery-timeline";
 import { hubGallery } from "./hub-gallery";
 import { hubPreviewFiles } from "./hub-previews";
 import { prepareThumbnails } from "./thumbnail-cache";
 import { thumbnailFiles } from "./gallery-thumbnails";
 import { ScrollPosition } from "./KeyboardPane";
 import { PhotoViewer } from "./PhotoViewer";
+
+import { GalleryYear } from "./GalleryYear";
+import {
+  compactColumns,
+  pinchLevel,
+  levelColumns,
+  galleryTileSize,
+  galleryYears,
+} from "./gallery-scale";
 
 const PAGE = 60;
 
@@ -31,7 +47,14 @@ function Tile({ item, uri, size, onPress, onLongPress, selected }) {
           ? `${item.name || "Photo"} · ${item.upload === "failed" ? "Needs attention" : "Uploading"}`
           : `Open ${item.path}`
       }
-      style={[s.photoTile, { width: size, height: size }]}
+      style={[
+        s.photoTile,
+        {
+          width: size,
+          height: size,
+          ...(size < 40 ? { borderRadius: 2 } : {}),
+        },
+      ]}
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityState={{ selected: !!selected }}
@@ -49,6 +72,7 @@ function Tile({ item, uri, size, onPress, onLongPress, selected }) {
           <Icon
             name={item.kind === "video" ? "file-video" : "image"}
             color={c.mute}
+            size={Math.min(24, size / 2)}
           />
         </View>
       )}
@@ -57,7 +81,7 @@ function Tile({ item, uri, size, onPress, onLongPress, selected }) {
           <Icon name="check" size={14} color="#fff" />
         </View>
       )}
-      {!selected && (item.kind === "video" || !!item.upload) && (
+      {!selected && size >= 40 && (item.kind === "video" || !!item.upload) && (
         <View style={s.photoBadge}>
           <Icon
             size={14}
@@ -108,6 +132,15 @@ export function FolderGallery({
   const rootRef = useRef(null);
   const monthPositions = useRef(new Map());
   const rootTop = useRef(0);
+  const rootLayout = useRef(null);
+  const lastScrollY = useRef(0);
+  const [level, setLevel] = useState("base");
+  const density = levelColumns(level, columns);
+  const gridPositions = useRef(new Map());
+  const pinch = useRef(null),
+    anchor = useRef(null),
+    layout = useRef(null);
+  const suppressPressUntil = useRef(0);
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selection, setSelection] = useState([]);
   const toggle = (item) =>
@@ -255,27 +288,45 @@ export function FolderGallery({
     const months = new Map(
       (index?.timeline || []).map((row) => [row.month, row]),
     );
+    const localMonths = new Map();
     for (const item of mergeTimeline({ entries })) {
       const month = (item.date || "").slice(0, 7);
-      if (/^\d{4}-\d{2}$/.test(month) && !months.has(month))
-        months.set(month, { month, count: 1 });
+      if (/^\d{4}-\d{2}$/.test(month))
+        localMonths.set(month, (localMonths.get(month) || 0) + 1);
+    }
+    for (const [month, count] of localMonths) {
+      if (!months.has(month)) months.set(month, { month, count });
     }
     return [...months.values()].sort((a, b) => b.month.localeCompare(a.month));
   }, [index?.timeline, entries]);
+  const years = useMemo(() => galleryYears(dates), [dates]);
   useEffect(() => {
-    onDates?.(dates);
-  }, [dates, onDates]);
+    onDates?.(density === "years" ? years : dates);
+  }, [dates, years, density, onDates]);
   useEffect(() => {
     if (!seekRef) return;
     let active = true;
-    seekRef.current = async (month) => {
+    seekRef.current = async (month, openPhotos = false) => {
+      if (layout.current?.density === "years" && !openPhotos) {
+        const box = monthPositions.current.get(month);
+        if (box) positionRef.current?.scrollTo(rootTop.current + box.top);
+        return;
+      }
+      anchor.current = null;
       setSelectedMonth(month);
-      setLimit(PAGE);
+      const grid = layout.current;
+      const rows = Math.ceil(
+        (positionRef.current?.viewport.height || 800) / (grid.tile + grid.gap),
+      );
+      setLimit(
+        Math.max(
+          PAGE,
+          (openPhotos ? compactColumns(grid.columns) : grid.density) *
+            (rows + 3),
+        ),
+      );
       monthPositions.current.clear();
-      positionRef.current?.measure(rootRef.current, ({ top }) => {
-        rootTop.current = top;
-        positionRef.current.scrollTo(top);
-      });
+      positionRef.current?.scrollTo(rootTop.current);
       if (connected) {
         try {
           const next = await hub.seek(month);
@@ -295,12 +346,15 @@ export function FolderGallery({
   }, [hub, connected, seekRef]);
   useEffect(() => {
     if (!scrollRef) return;
-    scrollRef.current = (y) => {
-      const month = [...monthPositions.current]
-        .sort((a, b) => a[1] - b[1])
-        .filter(([, top]) => top <= y - rootTop.current + 80)
-        .at(-1)?.[0];
-      railRef?.current?.show(month || selectedMonth || dates[0]?.month);
+    scrollRef.current = (y, reveal = true) => {
+      lastScrollY.current = y;
+      const month =
+        visibleGalleryMonth(monthPositions.current, y, rootTop.current) ||
+        selectedMonth ||
+        dates[0]?.month;
+      const rail = railRef?.current;
+      if (reveal) rail?.show(month);
+      else rail?.update(month);
     };
     return () => {
       scrollRef.current = null;
@@ -358,9 +412,14 @@ export function FolderGallery({
     }
   };
   useEffect(() => {
-    if (!loading && !pageError && limit >= (index?.items.length || 0))
+    if (
+      density !== "years" &&
+      !loading &&
+      !pageError &&
+      limit >= (index?.items.length || 0)
+    )
       void more();
-  }, [limit, index?.next, connected, loading]);
+  }, [limit, index?.next, connected, loading, density]);
   const io = useMemo(
     () => ({
       exists: thumbnailFiles.exists,
@@ -371,6 +430,7 @@ export function FolderGallery({
   );
   useEffect(() => {
     let active = true;
+    if (density === "years") return;
     const key = `gallery-thumbnails:${scope}:${volume}`;
     (async () => {
       const cached =
@@ -398,9 +458,11 @@ export function FolderGallery({
     return () => {
       active = false;
     };
-  }, [shown, loading, store, scope, volume, io]);
-  const gap = 4;
-  const tile = width ? Math.floor((width - gap * (columns - 1)) / columns) : 0;
+  }, [shown, loading, store, scope, volume, io, density]);
+  const { gap, size: tile } = galleryTileSize(
+    width,
+    density === "years" ? compactColumns(columns) : density,
+  );
   const pendingItems = useMemo(
     () => items.filter((item) => item.upload),
     [items],
@@ -409,6 +471,140 @@ export function FolderGallery({
     () => groupByMonth(shown.filter((item) => !item.upload)),
     [shown],
   );
+  layout.current = {
+    groups:
+      density === "years"
+        ? years.map((year) => ({ ...year, items: [] }))
+        : groups,
+    years,
+    density,
+    level,
+    columns,
+    tile,
+    gap,
+    width,
+  };
+  const pinchResponder = useMemo(() => {
+    const distance = (touches) =>
+      Math.hypot(
+        touches[0].pageX - touches[1].pageX,
+        touches[0].pageY - touches[1].pageY,
+      );
+    const finish = () => {
+      pinch.current = null;
+      suppressPressUntil.current = Date.now() + 300;
+      positionRef.current?.setGestureActive(false);
+    };
+    return PanResponder.create({
+      onStartShouldSetPanResponderCapture: (event) =>
+        event.nativeEvent.touches.length === 2,
+      onMoveShouldSetPanResponderCapture: (event) =>
+        event.nativeEvent.touches.length === 2,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (event) => {
+        const touches = event.nativeEvent.touches;
+        if (touches.length !== 2) return;
+        const gesture = { distance: distance(touches) };
+        pinch.current = gesture;
+        suppressPressUntil.current = Infinity;
+        positionRef.current?.setGestureActive(true);
+        const pageY = (touches[0].pageY + touches[1].pageY) / 2;
+        const pageX = (touches[0].pageX + touches[1].pageX) / 2;
+        rootRef.current?.measureInWindow((x, top) => {
+          if (pinch.current !== gesture) return;
+          const localY = pageY - top;
+          const state = layout.current;
+          const group = state.groups.find((group) => {
+            const box = monthPositions.current.get(group.month);
+            return box && box.top + box.height > localY;
+          });
+          if (!group) return;
+          if (state.density === "years") {
+            gesture.anchor = {
+              month: group.month,
+              index: 0,
+              viewportY:
+                rootTop.current +
+                monthPositions.current.get(group.month).top -
+                lastScrollY.current,
+            };
+            return;
+          }
+          const gridTop =
+            monthPositions.current.get(group.month).top +
+            (gridPositions.current.get(group.month) || 0);
+          const row = Math.max(
+            0,
+            Math.floor((localY - gridTop) / (state.tile + state.gap)),
+          );
+          gesture.anchor = {
+            month: group.month,
+            index: Math.min(
+              group.items.length - 1,
+              row * state.density +
+                Math.max(
+                  0,
+                  Math.min(
+                    state.density - 1,
+                    Math.floor((pageX - x) / (state.tile + state.gap)),
+                  ),
+                ),
+            ),
+            viewportY:
+              rootTop.current +
+              gridTop +
+              row * (state.tile + state.gap) -
+              lastScrollY.current,
+          };
+        });
+      },
+      onPanResponderMove: (event) => {
+        const touches = event.nativeEvent.touches,
+          gesture = pinch.current;
+        if (
+          !gesture ||
+          gesture.changed ||
+          touches.length !== 2 ||
+          !gesture.anchor
+        )
+          return;
+        const state = layout.current;
+        const nextLevel = pinchLevel(
+          state.level,
+          distance(touches) / Math.max(1, gesture.distance),
+        );
+        if (nextLevel === state.level) return;
+        gesture.changed = true;
+        if (state.level === "years") {
+          setLevel("compact");
+          void seekRef?.current?.(gesture.anchor.month, true);
+          return;
+        }
+        const next = levelColumns(nextLevel, state.columns);
+        const year = state.years.find(
+          (item) => item.year === gesture.anchor.month.slice(0, 4),
+        );
+        anchor.current =
+          next !== "years"
+            ? gesture.anchor
+            : year
+              ? { ...gesture.anchor, month: year.month, index: 0 }
+              : null;
+        monthPositions.current.clear();
+        setLevel(nextLevel);
+        if (next === "years") return;
+        const size = galleryTileSize(state.width, next);
+        const rows = Math.ceil(
+          (positionRef.current?.viewport.height || 800) /
+            (size.size + size.gap),
+        );
+        setLimit((value) => Math.max(value, next * (rows + 3)));
+      },
+      onPanResponderRelease: finish,
+      onPanResponderTerminate: finish,
+    });
+  }, []);
+  useEffect(() => () => positionRef.current?.setGestureActive(false), []);
   const photos = useMemo(
     () =>
       items.map((item) =>
@@ -453,11 +649,18 @@ export function FolderGallery({
   return (
     <View
       ref={rootRef}
-      style={[s.timeline, dates.length > 1 && s.timelineWithRail]}
+      {...pinchResponder.panHandlers}
+      style={s.timeline}
       onLayout={(event) => {
-        setWidth(event.nativeEvent.layout.width);
+        const { y, width } = event.nativeEvent.layout;
+        setWidth(width);
+        // Zoom height changes can clamp scrolling before its offset event; never remeasure the unchanged root.
+        if (rootLayout.current?.y === y && rootLayout.current?.width === width)
+          return;
+        rootLayout.current = { y, width };
         position?.measure(rootRef.current, ({ top }) => {
           rootTop.current = top;
+          scrollRef?.current?.(lastScrollY.current, false);
         });
       }}
     >
@@ -480,8 +683,7 @@ export function FolderGallery({
           <View style={s.timelineStatus}>
             <Text style={[s.timelineMonth, s.flex]}>Pending uploads</Text>
             <Text style={s.caption}>
-              {Math.max(pendingItems.length, uploads?.summary?.pending || 0)}{" "}
-              remaining
+              {pendingUploadLabel(pendingItems, uploads?.summary)}
             </Text>
           </View>
           <ScrollView
@@ -522,20 +724,72 @@ export function FolderGallery({
           )}
         </View>
       )}
-      {!!tile &&
+      {density === "years" &&
+        years.map((year) => (
+          <GalleryYear
+            key={year.year}
+            year={year}
+            api={api}
+            connected={connected}
+            store={store}
+            scope={scope}
+            volume={volume}
+            entries={entries}
+            io={io}
+            width={width}
+            onPress={() => {
+              if (Date.now() <= suppressPressUntil.current) return;
+              setLevel("compact");
+              void seekRef?.current?.(year.month, true);
+            }}
+            onLayout={(event) => {
+              const { y, height } = event.nativeEvent.layout;
+              monthPositions.current.set(year.month, { top: y, height });
+              if (anchor.current?.month === year.month) {
+                positionRef.current?.scrollTo(
+                  Math.max(0, rootTop.current + y - anchor.current.viewportY),
+                );
+                anchor.current = null;
+              }
+              scrollRef?.current?.(lastScrollY.current, false);
+            }}
+          />
+        ))}
+      {density !== "years" &&
+        !!tile &&
         groups.map((group) => (
           <View
             key={group.month}
             style={s.timelineGroup}
-            onLayout={(event) =>
-              monthPositions.current.set(
-                group.month,
-                event.nativeEvent.layout.y,
-              )
-            }
+            onLayout={(event) => {
+              const { y, height } = event.nativeEvent.layout;
+              monthPositions.current.set(group.month, { top: y, height });
+              const target = anchor.current;
+              if (target?.month === group.month) {
+                const row = Math.floor(target.index / density);
+                const top =
+                  rootTop.current +
+                  y +
+                  (gridPositions.current.get(group.month) || 0) +
+                  row * (tile + gap);
+                positionRef.current?.scrollTo(
+                  Math.max(0, top - target.viewportY),
+                );
+                anchor.current = null;
+              }
+              scrollRef?.current?.(lastScrollY.current, false);
+            }}
           >
             <Text style={s.timelineMonth}>{group.label}</Text>
-            <View style={[s.photoGrid, { gap }]}>
+            <View
+              style={[s.photoGrid, { gap }]}
+              onLayout={(event) =>
+                gridPositions.current.set(
+                  group.month,
+                  event.nativeEvent.layout.y,
+                )
+              }
+            >
               {group.items.map((item) => (
                 <Tile
                   key={item.path}
@@ -545,25 +799,31 @@ export function FolderGallery({
                   selected={selection.some((photo) => photo.path === item.path)}
                   onLongPress={
                     remove && Number.isSafeInteger(item.rev)
-                      ? () => toggle(item)
+                      ? () => {
+                          if (Date.now() > suppressPressUntil.current)
+                            toggle(item);
+                        }
                       : undefined
                   }
                   onPress={() =>
-                    selection.length
-                      ? toggle(item)
-                      : setViewer({
-                          items: photos,
-                          index: photos.findIndex(
-                            (photo) => photo.path === item.path,
-                          ),
-                        })
+                    Date.now() <= suppressPressUntil.current
+                      ? undefined
+                      : selection.length
+                        ? toggle(item)
+                        : setViewer({
+                            items: photos,
+                            index: photos.findIndex(
+                              (photo) => photo.path === item.path,
+                            ),
+                          })
                   }
                 />
               ))}
             </View>
           </View>
         ))}
-      {!items.length &&
+      {density !== "years" &&
+        !items.length &&
         (loading || (!index && connected && !error) ? (
           <Scaffold label="Loading photos" />
         ) : (
@@ -578,22 +838,23 @@ export function FolderGallery({
           </View>
         ))}
       {!!pageError && <Text style={s.caption}>{pageError}</Text>}
-      {(items.length > limit || (connected && index?.next)) && (
-        <Button
-          label={
-            paging
-              ? "Loading photos…"
-              : pageError
-                ? "Retry loading photos"
-                : "Show more"
-          }
-          disabled={paging}
-          onPress={() => {
-            setLimit((value) => value + PAGE);
-            void more();
-          }}
-        />
-      )}
+      {density !== "years" &&
+        (items.length > limit || (connected && index?.next)) && (
+          <Button
+            label={
+              paging
+                ? "Loading photos…"
+                : pageError
+                  ? "Retry loading photos"
+                  : "Show more"
+            }
+            disabled={paging}
+            onPress={() => {
+              setLimit((value) => value + PAGE);
+              void more();
+            }}
+          />
+        )}
       <PhotoViewer
         items={viewer ? viewer.items.map(withNative) : photos}
         index={viewer?.index ?? null}

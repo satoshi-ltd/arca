@@ -599,7 +599,7 @@ export class Replica {
       await this.store.dequeue(this.scope, folder.id, op.path);
     }
   }
-  async apply(row, recovering = false) {
+  async apply(row, recovering = false, aliases = null) {
     if (builtinExcluded(row.path)) return;
     if (
       !recovering &&
@@ -614,7 +614,9 @@ export class Replica {
       return;
     }
     if (!row.deleted) {
-      const alias = (await this.store.rows(this.scope, row.volume)).find(
+      const alias = (
+        aliases || (await this.store.rows(this.scope, row.volume))
+      ).find(
         (r) =>
           r.path !== row.path &&
           r.path.toLowerCase() === row.path.toLowerCase(),
@@ -679,7 +681,23 @@ export class Replica {
       throw new Error(
         "File conflicts with a local directory; reconcile it first.",
       );
-    const actual = exists ? await this.localHash(target) : null;
+    let actual = exists ? await this.localHash(target) : null;
+    // Recovery must rewrite its journal even when revision and bytes already match.
+    if (
+      !recovering &&
+      !row.deleted &&
+      current?.rev === row.rev &&
+      current.hash === row.hash &&
+      actual === row.hash
+    )
+      return;
+    // A size/mtime cache hit cannot prove a file is unedited before it is replaced or removed.
+    if (
+      exists &&
+      actual !== row.hash &&
+      actual === (current?.localHash ?? current?.hash)
+    )
+      actual = await this.files.hash(target);
     if (
       actual &&
       actual !== row.hash &&
@@ -708,6 +726,25 @@ export class Replica {
     let through;
     const directoryDeletes = [];
     const deferredFiles = [];
+    // Tombstones stay in the alias index; apply() has always matched case aliases against them.
+    let aliases = null;
+    const remember = (row) => {
+      const key = row.path.toLowerCase();
+      const paths = aliases.get(key) || [];
+      if (!paths.some((entry) => entry.path === row.path))
+        paths.push({ path: row.path });
+      paths.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      aliases.set(key, paths);
+    };
+    const materialize = async (row) => {
+      if (!aliases) {
+        aliases = new Map();
+        for (const known of await this.store.rows(this.scope, folder.id))
+          remember(known);
+      }
+      await this.apply(row, false, aliases.get(row.path.toLowerCase()) || []);
+      remember(row);
+    };
     const apply = async (row) => {
       validRow(row, folder.id);
       if (row.directory && row.deleted) directoryDeletes.push(row);
@@ -721,7 +758,7 @@ export class Replica {
         )?.directory
       )
         deferredFiles.push(row);
-      else await this.apply(row);
+      else await materialize(row);
     };
     if (!folder.initialized) {
       through = (
@@ -776,8 +813,8 @@ export class Replica {
     for (const row of directoryDeletes.sort((a, b) =>
       b.path.localeCompare(a.path),
     ))
-      await this.apply(row);
-    for (const row of deferredFiles) await this.apply(row);
+      await materialize(row);
+    for (const row of deferredFiles) await materialize(row);
     if (!Number.isSafeInteger(through) || through < 0)
       throw new Error("Invalid synchronization cursor");
     if ((await this.store.pending(this.scope, folder.id)).length)

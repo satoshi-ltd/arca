@@ -83,6 +83,7 @@ export function KeyboardScrollView({
   enterStyle,
   ...props
 }) {
+  const [gestureActive, setGestureActive] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [contentSize, setContentSize] = useState({ width: 0, height: 0 });
@@ -118,6 +119,7 @@ export function KeyboardScrollView({
   const position = useMemo(
     () => ({
       scrollY,
+      setGestureActive,
       scrollTo: (y) => scroll.current?.scrollTo({ y, animated: false }),
       viewport,
       contentSize,
@@ -135,6 +137,7 @@ export function KeyboardScrollView({
     <Animated.ScrollView
       {...props}
       ref={scroll}
+      scrollEnabled={props.scrollEnabled !== false && !gestureActive}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       scrollEventThrottle={16}

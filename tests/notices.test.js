@@ -272,3 +272,16 @@ test("an unavailable mobile album warns about photo uploads without stopping fol
   assert.match(notices[0].title, /Photo uploads/);
   assert.equal(notices[0].offline, false);
 });
+
+test("a persisted photo-export storage failure produces one readable notice", () => {
+  const issue = "photo.png: Call to function 'ArcaNetwork.exportGalleryAsset' has been rejected. → Caused by: java.lang.IllegalStateException: Not enough storage for temporary photo transfer";
+  const folder = { id: "photos", name: "photos", selected: true, issue,
+    gallery: { enabled: true, issue } };
+  const notices = conditionNotices({ volumes: [folder] });
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].id, "photo-uploads:photos");
+  assert.match(notices[0].body, /Free storage/);
+  assert.doesNotMatch(notices[0].body, /java|ArcaNetwork/);
+  assert.equal(notices[0].details, issue);
+  assert.equal(conditionNotices({ volumes: [{ ...folder, issue: "Read-only folder" }] }).length, 2);
+});

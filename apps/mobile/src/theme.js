@@ -73,6 +73,8 @@ export function styles(
     dateRailCurrent: { backgroundColor: c.accent },
     dateRailHovered: { backgroundColor: c.ink },
     dateRailBubble: {
+      minWidth: 88,
+      textAlign: "center",
       position: "absolute",
       right: 20,
       zIndex: 2,
@@ -86,8 +88,9 @@ export function styles(
       lineHeight: 18,
       fontFamily: "InstrumentSans_600SemiBold",
     },
+    yearMosaic: { flexDirection: "row", flexWrap: "wrap", gap: 2 },
+    yearTile: { overflow: "hidden", borderRadius: 2 },
     timeline: { gap: 20 },
-    timelineWithRail: { marginRight: 48 },
     timelineStatus: {
       flexDirection: "row",
       alignItems: "center",

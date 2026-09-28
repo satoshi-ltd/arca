@@ -594,6 +594,8 @@ export class Gallery {
         if (!source.after) break;
       }
       let failure = null;
+      let storageBlocked = false;
+      const previousMoreWork = r.moreGalleryWork;
       r.moreGalleryWork ||= !!source.after;
       for (const item of await r.store.galleryWork(
         r.scope,
@@ -615,17 +617,33 @@ export class Gallery {
           item.retryAt = Date.now() + 60000;
           await r.store.putGalleryAsset(r.scope, folder.id, item);
           failure = `${item.name || "Photo"}: ${error.message}`;
+          if (
+            /not enough storage|no space left on device|\bENOSPC\b/i.test(
+              error.message,
+            )
+          ) {
+            storageBlocked = true;
+            break;
+          }
         }
       }
       source.summary = await r.store.gallerySummary(r.scope, folder.id);
-      r.moreGalleryWork ||= !!(
-        await r.store.galleryWork(r.scope, folder.id, Date.now(), 1)
-      ).length;
+      if (storageBlocked) r.moreGalleryWork = previousMoreWork;
+      else
+        r.moreGalleryWork ||= !!(
+          await r.store.galleryWork(r.scope, folder.id, Date.now(), 1)
+        ).length;
+      const latest =
+        !failure && source.summary.failed
+          ? await r.store.galleryFailure(r.scope, folder.id)
+          : null;
       source.issue =
         failure ||
-        (source.summary.failed
-          ? "Some gallery items need attention. Retry to review the next error."
-          : null);
+        (latest?.issue
+          ? `${latest.name || "Photo"}: ${latest.issue}`
+          : source.summary.failed
+            ? "Some gallery items need attention. Retry to review the next error."
+            : null);
       if (!source.after && !source.summary.pending)
         source.completed = new Date().toISOString();
       await r.store.setGallery(r.scope, folder.id, source);
@@ -647,7 +665,8 @@ export class Gallery {
       source.summary = await r.store.gallerySummary(r.scope, folder.id);
       await r.store.setGallery(r.scope, folder.id, source);
       // Album availability affects uploads from Photos, not the shared working copy.
-      if (error.code === "SOURCE_UNAVAILABLE") return;
+      if (["SOURCE_UNAVAILABLE", "GALLERY_ITEMS_FAILED"].includes(error.code))
+        return;
       throw error;
     } finally {
       r.changed();

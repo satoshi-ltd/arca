@@ -766,3 +766,73 @@ test("date navigation jumps directly to an old month and refresh stays at that m
   assert.equal(calls[1].get("month"), "2014-05");
   await assert.rejects(gallery.seek("2014-99"), /Invalid gallery month/);
 });
+
+test("visible month follows the first group intersecting the desktop reading guide", async () => {
+  const { visibleGalleryMonth } =
+    await import("../apps/mobile/src/gallery-timeline.js");
+  const groups = new Map([
+    ["2026-08", { top: 620, height: 400 }],
+    ["2026-09", { top: 0, height: 600 }],
+  ]);
+  assert.equal(visibleGalleryMonth(groups, 0, 200), "2026-09");
+  assert.equal(visibleGalleryMonth(groups, 719, 200), "2026-09");
+  assert.equal(visibleGalleryMonth(groups, 720, 200), "2026-08");
+  assert.equal(visibleGalleryMonth(groups, 900, 200), "2026-08");
+});
+
+test("pinching moves between base, compact and years levels, sized by the current layout", async () => {
+  const { pinchLevel, levelColumns, galleryTileSize } =
+    await import("../apps/mobile/src/gallery-scale.js");
+  assert.equal(pinchLevel("base", 0.7), "compact");
+  assert.equal(pinchLevel("compact", 0.5), "years");
+  assert.equal(pinchLevel("years", 0.5), "years");
+  assert.equal(pinchLevel("years", 1.4), "compact");
+  assert.equal(pinchLevel("compact", 1.4), "base");
+  assert.equal(pinchLevel("base", 2), "base");
+  assert.equal(pinchLevel("base", 1.1), "base");
+  assert.equal(levelColumns("base", 4), 4);
+  assert.equal(levelColumns("compact", 4), 10);
+  assert.equal(levelColumns("base", 6), 6);
+  assert.equal(levelColumns("compact", 6), 12);
+  assert.equal(levelColumns("years", 6), "years");
+  assert.equal(galleryTileSize(0, 4).size, 0);
+  for (const [width, columns] of [[320, 10], [400, 10], [800, 12]]) {
+    const { size, gap } = galleryTileSize(width, columns);
+    assert.ok(size > 0 && size < width / columns);
+    assert.ok(size * columns + gap * (columns - 1) <= width);
+  }
+});
+
+test("pending uploads separate waiting photos from failed ones", async () => {
+  const { pendingUploadLabel } = await import("../apps/mobile/src/gallery-timeline.js");
+  assert.equal(pendingUploadLabel([{ upload: "failed" }], { pending: 1, failed: 1 }), "1 needs attention");
+  assert.equal(pendingUploadLabel([{ upload: "pending" }], { pending: 3, failed: 0 }), "3 remaining");
+  assert.equal(
+    pendingUploadLabel([{ upload: "pending" }, { upload: "failed" }], { pending: 5, failed: 2 }),
+    "3 remaining · 2 need attention",
+  );
+});
+
+test("the rail labels undated and uploading groups instead of an invalid date", async () => {
+  const { railMonthLabel } = await import("../apps/mobile/src/gallery-timeline.js");
+  assert.equal(railMonthLabel("undated"), "Undated");
+  assert.equal(railMonthLabel("uploading"), "Uploading");
+  assert.match(railMonthLabel("2026-09"), /2026/);
+  assert.doesNotMatch(railMonthLabel("2026-09"), /Invalid/);
+});
+
+test("year mosaics aggregate the full timeline and open the newest populated month", async () => {
+  const { galleryYears } = await import("../apps/mobile/src/gallery-scale.js");
+  assert.deepEqual(
+    galleryYears([
+      { month: "2024-02", count: 7 },
+      { month: "2026-09", count: 200 },
+      { month: "2024-11", count: 3 },
+    ]),
+    [
+      { year: "2026", month: "2026-09", count: 200, annual: true },
+      { year: "2024", month: "2024-11", count: 10, annual: true },
+    ],
+  );
+  assert.deepEqual(galleryYears([]), []);
+});

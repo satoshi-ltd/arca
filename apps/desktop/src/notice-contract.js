@@ -92,6 +92,9 @@ export function errorNotice(
   const forbidden =
     !revoked &&
     /\b403\b|forbidden|administrator credential required/i.test(details);
+  const storage = /not enough storage|no space left on device|\bENOSPC\b/i.test(
+    details,
+  );
   const technical = /Error:|E_[A-Z_]+|\bGET |\bPOST |\bat /m.test(details);
   return {
     id,
@@ -106,16 +109,19 @@ export function errorNotice(
         : forbidden
           ? "Permission required"
           : "Could not complete action",
-    body: offline
-      ? `Your edits are saved locally and sync when ${hubName} is back.`
-      : revoked
-        ? "Your local files are kept. Pair again with a fresh code from the hub."
-        : forbidden
-          ? "This action requires permission on the hub. Ask its administrator to review your access."
-          : technical
-            ? "The operation stopped. Review the details and try again."
-            : details,
+    body: storage
+      ? "Not enough storage space. Free storage, then retry synchronization."
+      : offline
+        ? `Your edits are saved locally and sync when ${hubName} is back.`
+        : revoked
+          ? "Your local files are kept. Pair again with a fresh code from the hub."
+          : forbidden
+            ? "This action requires permission on the hub. Ask its administrator to review your access."
+            : technical
+              ? "The operation stopped. Review the details and try again."
+              : details,
     details:
+      storage ||
       offline ||
       revoked ||
       forbidden ||
@@ -185,8 +191,9 @@ export function conditionNotices(status = {}) {
           volume: folder.id,
         },
       );
-    if (folder.sync?.error || folder.issue)
-      addError(folder.sync?.error || folder.issue, {
+    const folderError = folder.sync?.error || folder.issue;
+    if (folderError && !(album?.enabled && album.issue === folderError))
+      addError(folderError, {
         id: `folder:${folder.id}`,
         title: `Synchronization of ${folder.name} stopped`,
         volume: folder.id,

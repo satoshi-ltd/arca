@@ -254,6 +254,14 @@ export class ReplicaStore {
     );
     return row ? JSON.parse(row.receipt) : null;
   }
+  async galleryFailure(scope, volume) {
+    const row = await this.db.getFirstAsync(
+      "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state='failed' ORDER BY retryAt DESC LIMIT 1",
+      scope,
+      volume,
+    );
+    return row ? JSON.parse(row.row) : null;
+  }
   async galleryPreview(scope, volume, accepted, limit = 12, offset = 0) {
     const rows = await this.db.getAllAsync(
       `SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND ${accepted ? "state='accepted'" : "state NOT IN ('accepted','removed')"}

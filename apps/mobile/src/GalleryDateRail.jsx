@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Text } from "react-native";
 import { useDesign } from "./components";
 import { timelineSegments } from "../../desktop/src/gallery-timeline-layout.js";
-import { monthLabel } from "./gallery-timeline";
+import { monthLabel, railMonthLabel } from "./gallery-timeline";
 
 // One gesture chooses a month; fetching happens only when the finger is released.
 export function GalleryDateRail({ dates, controller, onSeek, viewport }) {
@@ -16,6 +16,7 @@ export function GalleryDateRail({ dates, controller, onSeek, viewport }) {
   );
   const [visible, setVisible] = useState(false);
   const [month, setMonth] = useState("");
+  const [currentMonth, setCurrentMonth] = useState("");
   const [dragging, setDragging] = useState(false);
   const timer = useRef(null),
     rail = useRef(null),
@@ -28,9 +29,13 @@ export function GalleryDateRail({ dates, controller, onSeek, viewport }) {
   };
   useEffect(() => {
     controller.current = {
+      update(value) {
+        setCurrentMonth(value || dates[0]?.month);
+      },
       show(value) {
         if (dates.length < 2) return;
         setVisible(true);
+        setCurrentMonth(value || dates[0]?.month);
         if (!held.current) {
           setMonth(value || dates[0]?.month);
           hideLater();
@@ -81,20 +86,29 @@ export function GalleryDateRail({ dates, controller, onSeek, viewport }) {
     if (oldest || !shown.length || year.top - shown.at(-1).top >= 20)
       shown.push(year);
   });
+  const labelMonth = dragging ? month : currentMonth;
+  const labelTop = dragging
+    ? position
+    : segments[
+        Math.max(
+          0,
+          dates.findIndex((date) => date.month === currentMonth),
+        )
+      ]?.top || 0;
   return (
     <View
       style={[s.dateRailOverlay, { top: viewport.y, height: viewport.height }]}
       pointerEvents="box-none"
     >
-      {dragging && (
+      {!!labelMonth && (
         <Text
           pointerEvents="none"
-          style={[s.dateRailBubble, { top: 16 + position }]}
+          numberOfLines={1}
+          style={[s.dateRailBubble, { top: 16 + labelTop }]}
         >
-          {new Date(month + "-01T12:00:00").toLocaleDateString("en", {
-            month: "short",
-            year: "numeric",
-          })}
+          {dates[0]?.annual
+            ? labelMonth.slice(0, 4)
+            : railMonthLabel(labelMonth)}
         </Text>
       )}
       <View
@@ -103,15 +117,25 @@ export function GalleryDateRail({ dates, controller, onSeek, viewport }) {
         onLayout={(event) => setHeight(event.nativeEvent.layout.height)}
         accessibilityRole="adjustable"
         accessibilityLabel="Photo date"
-        accessibilityValue={{ text: monthLabel(month) }}
+        accessibilityValue={{
+          text: dates[0]?.annual
+            ? labelMonth.slice(0, 4)
+            : monthLabel(labelMonth),
+        }}
         accessibilityActions={[
-          { name: "increment", label: "Older month" },
-          { name: "decrement", label: "Newer month" },
+          {
+            name: "increment",
+            label: dates[0]?.annual ? "Older year" : "Older month",
+          },
+          {
+            name: "decrement",
+            label: dates[0]?.annual ? "Newer year" : "Newer month",
+          },
         ]}
         onAccessibilityAction={(event) => {
           const index = Math.max(
             0,
-            dates.findIndex((date) => date.month === month),
+            dates.findIndex((date) => date.month === labelMonth),
           );
           const next =
             dates[
@@ -158,12 +182,14 @@ export function GalleryDateRail({ dates, controller, onSeek, viewport }) {
             {shown.some((year) => year.index === index) && (
               <Text style={s.dateRailYear}>{date.month.slice(0, 4)}</Text>
             )}
-            {(date.tick || month === date.month) && (
+            {(date.tick ||
+              currentMonth === date.month ||
+              (dragging && month === date.month)) && (
               <View
                 style={[
                   s.dateRailTick,
-                  month === date.month &&
-                    (dragging ? s.dateRailHovered : s.dateRailCurrent),
+                  dragging && month === date.month && s.dateRailHovered,
+                  currentMonth === date.month && s.dateRailCurrent,
                 ]}
               />
             )}

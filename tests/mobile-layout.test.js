@@ -447,3 +447,62 @@ test("offline onboarding selects from the saved catalog and Folders never shows 
   assert.match(download, /!client\.state\(\)\.catalog \|\|\s+!isHubUnreachable\(error\)/);
   assert.match(app, /connected && !catalog && !status\.offline && \(\s+<Scaffold dashed label="Loading shared folders" \/>/);
 });
+
+test("folder problems use notices that reappear when the folder opens, not inline captions", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const caption = app.slice(app.indexOf("const timelineNotice"), app.indexOf("const timeline ="));
+  assert.doesNotMatch(caption, /Folder synchronization:|Photo uploads:/);
+  assert.match(caption, /Photo uploads are disabled for this album\./);
+  assert.match(app, /for \(const kind of \["folder", "photo-uploads"\]\)\s+notices\.clear\(`status:\$\{kind\}:\$\{folder\.id\}`\);/);
+  assert.match(app, /\}, \[error, status\.error, locals, state\.catalog, notices, folder\?\.id\]\);/);
+});
+
+test("the gallery density follows the current layout and keeps paging while near the end", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  assert.match(app, /<FolderGallery[^>]*columns=\{wide \? 6 : 4\}/);
+  assert.match(gallery, /const density = levelColumns\(level, columns\);/);
+  assert.doesNotMatch(gallery, /useState\(columns\)/);
+  const resize = app.slice(app.indexOf("onContentSizeChange={(_, height) => {"));
+  assert.match(resize.slice(0, 400), /nearEnd\.current &&[\s\S]*setTimelineDemand/);
+});
+
+test("recent revisions wait for the replica runtime before loading", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const start = app.indexOf("<FolderRecent");
+  const recent = app.slice(start, app.indexOf("/>", start));
+  assert.match(recent, /connected=\{connected && !!replica\}/);
+  assert.match(recent, /load=\{\(route\) => replica\.remoteView\(route\)\}/);
+  assert.doesNotMatch(recent, /engine\.current/);
+  const component = fs.readFileSync(new URL("../apps/mobile/src/FolderRecent.jsx", import.meta.url), "utf8");
+  assert.match(component, /if \(connected\)\s+load\(/);
+});
+
+test("mobile machine view waits for runtime and ignores responses after effect cleanup", async () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const start = app.indexOf("  useEffect(() => {\n    let cancelled = false;");
+  const effect = app.slice(start).match(/useEffect\(\(\) => \{([\s\S]*?)\n  \}, \[([^\]]+)\]\);/);
+  assert.ok(effect, "machine view effect is present");
+  assert.match(effect[2], /\breplica\b/, "runtime readiness retriggers the effect even with an unchanged cached connection");
+  assert.match(app, /engine\.current = await runtime\(\);\s*if \(!mounted\.current\) return;\s*setReplica\(engine\.current\);/);
+  let shown = "old", requests = 0, finish;
+  const context = {
+    screen: "Folders", connected: true, replica: null, engine: { current: null },
+    setMachines: (value) => { shown = value; },
+  };
+  const run = () => vm.runInNewContext(`(() => {${effect[1]}\n})()`, context);
+  assert.doesNotThrow(run, "cached linked state can precede the async runtime");
+  assert.equal(shown, null);
+  context.replica = { remoteView: () => { requests++; return new Promise((resolve) => { finish = resolve; }); } };
+  const cleanup = run();
+  assert.equal(requests, 1);
+  finish({ machines: ["Fold"] });
+  await new Promise(setImmediate);
+  assert.deepEqual(shown, ["Fold"]);
+  cleanup();
+  const cancelled = run();
+  cancelled();
+  finish({ machines: ["stale"] });
+  await new Promise(setImmediate);
+  assert.deepEqual(shown, ["Fold"]);
+});

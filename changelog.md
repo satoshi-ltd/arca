@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.5 — 2026-09-28
+
+- Fix an intermittent mobile startup/reload crash when a saved hub connection becomes available before the replica runtime: Machines, automatic History and the Recent tab now wait for runtime readiness and load when it becomes ready.
+- Mobile downloads re-read a local file before replacing or removing it whenever the size/mtime cache reports it unchanged, so a same-size edit hidden from that cache is kept as a conflict copy instead of being overwritten (a risk introduced by 0.6.4's cached-hash reuse).
+- Reduce mobile download reconciliation overhead: build the case-insensitive path index once per pull instead of loading the whole folder for every file, and avoid rewriting already accepted rows after verifying unchanged bytes and revision. Preserve conflict checks and crash-journal recovery.
+- Bump all project manifests to 0.6.5 and Android/iOS build numbers to 28. Source changes only; no native build or deployment performed.
+- Keep photo-item failures in Photo uploads without duplicating them as folder failures; stop export batches when storage is exhausted and separate readable storage guidance from native diagnostics. A pass without a new failure shows the most recent failed photo's own reason instead of an older warning from another cause. Inside a folder, folder and photo-upload problems reappear as the explanatory notice (with Retry) instead of inline caption text, and Pending uploads separates waiting photos from those that need attention.
+- Mobile gallery: float the transparent timeline over full-width photos, track the visible month, and keep its accent label on one line. Pinch through four columns (six on the Fold, the default), ten columns (twelve on the Fold, compact), and an annual mosaic overview. Reverse the gesture to return; tap a year to open its photos in the compact grid. The density follows folding or unfolding the Fold, dense grids keep loading while scrolling, and undated photos are labelled instead of showing an invalid date. Annual cards show total counts and bounded thumbnail samples; the timeline tracks the visible year.
+- Recover a stale folder error caused by an unavailable local photo album without changing the album selection or hiding unrelated synchronization failures; show the album warning once.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 379 tests with two platform skips and all 186 mobile source tests pass. Two adversarial reviews found no data-loss or crash defect in the final state. No native build or deployment performed.
+
 ## 0.6.4 — 2026-09-28
 
 - Clean commit validation on macOS with Node 24.14.0 and root-only dependencies: exact macOS CI command 378 passed/two skipped; mobile source suite 173 passed. Hosted CI and physical-device qualification remain pending.

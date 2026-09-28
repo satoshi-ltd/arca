@@ -70,6 +70,29 @@ export function monthLabel(month) {
     year: "numeric",
   });
 }
+export function pendingUploadLabel(items, summary = {}) {
+  const failed = Math.max(
+    items.filter((item) => item.upload === "failed").length,
+    summary.failed || 0,
+  );
+  const waiting = Math.max(
+    items.filter((item) => item.upload !== "failed").length,
+    (summary.pending || 0) - (summary.failed || 0),
+  );
+  return [
+    waiting ? `${waiting} remaining` : "",
+    failed ? `${failed} ${failed === 1 ? "needs" : "need"} attention` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+export const railMonthLabel = (month) =>
+  /^\d{4}-\d{2}$/.test(month)
+    ? new Date(month + "-01T12:00:00").toLocaleDateString("en", {
+        month: "short",
+        year: "numeric",
+      })
+    : monthLabel(month);
 export function groupByMonth(items) {
   const groups = [];
   for (const item of items) {
@@ -112,4 +135,14 @@ export function uploadStatus(source, { connected, paused, busy }) {
             : summary.pending || !source.scannedAt || source.after
               ? "Incomplete"
               : "Up to date";
+}
+
+// Match desktop: the first month whose bottom crosses the viewport's 80 px guide.
+export function visibleGalleryMonth(groups, scrollY, rootTop = 0) {
+  return (
+    [...groups]
+      .sort((a, b) => a[1].top - b[1].top)
+      .find(([, box]) => box.top + box.height > scrollY - rootTop + 80)?.[0] ||
+    ""
+  );
 }
