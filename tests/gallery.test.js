@@ -1278,13 +1278,22 @@ test("gallery deletion journal recovers interrupted materialization and pins rec
   const recoveryFile = s.blob(resources[0].hash);
   const recoveryBytes = fs.readFileSync(recoveryFile);
   fs.chmodSync(recoveryFile, 0o600);
-  fs.writeFileSync(recoveryFile, "corrupt recovery bytes");
+  // Windows refuses to truncate a file another process has mapped; rewrite bytes in place.
+  const overwrite = (bytes) => {
+    const fd = fs.openSync(recoveryFile, "r+");
+    try {
+      fs.writeSync(fd, bytes, 0, bytes.length, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+  };
+  overwrite(Buffer.from("corrupt recovery bytes"));
   const event = (await api("/v1/gallery/removals", { volume: v.id })).events[0];
   await assert.rejects(
     api("/v1/gallery/removal-check", { volume: v.id, seq: event.seq }),
     { status: 409 },
   );
-  fs.writeFileSync(recoveryFile, recoveryBytes);
+  overwrite(recoveryBytes);
   s.config.folderRetention = { [v.id]: "off" };
   assert.equal(
     (await api("/v1/gallery/removals", { volume: v.id })).events[0].eligible,

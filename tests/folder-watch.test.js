@@ -24,6 +24,10 @@ test("the tree watcher skips excluded directories and follows new, re-included a
     fs.rmSync(root, { recursive: true, force: true });
   });
   assert.deepEqual(w.watched().sort(), ["", "cache", "src", "src/lib"]);
+  await until(() => {
+    fs.writeFileSync(path.join(root, "src/ready.txt"), String(Date.now()));
+    return seen.includes("src/ready.txt");
+  });
   fs.mkdirSync(path.join(root, "src/new"));
   await until(() => w.watched().includes("src/new"));
   await until(() => {

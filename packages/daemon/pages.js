@@ -48,16 +48,12 @@ export function browsePage(store, volume, query) {
   )
     fail("Invalid browse request");
   const base = prefix ? prefix.replace(/\/$/, "") + "/" : "";
-  const excluded = store.visibleRules?.(volume) || (() => false);
-  store.db.function("arca_browse_included", (path, directory) =>
-    excluded(path, !!directory) ? 0 : 1,
-  );
   const rows = store.db
     .prepare(
       `
     WITH source AS (
       SELECT *, substr(path, ?) AS relative FROM files
-      WHERE volume=? AND deleted=0 ${base ? "AND path>=? AND path<?" : ""} AND arca_browse_included(path,directory)=1
+      WHERE volume=? AND deleted=0 ${base ? "AND path>=? AND path<?" : ""}
     ), entries AS (
       SELECT CASE WHEN ?='' AND instr(relative,'/')>0
         THEN substr(relative,1,instr(relative,'/')-1) ELSE relative END AS name,

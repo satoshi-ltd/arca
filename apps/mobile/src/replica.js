@@ -9,7 +9,10 @@ import {
   isHubUnreachable,
 } from "../../desktop/src/notice-contract.js";
 import { entryKey, directoryItem } from "../../../packages/core/entries.js";
-import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
+import {
+  builtinExcluded,
+  FIXED_POLICY,
+} from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 export const CHUNK = 1024 * 1024;
 export const HEADROOM = 256 * 1024 * 1024;
@@ -366,21 +369,26 @@ export class Replica {
         );
       await this.apply(validRow(remote, folder.id));
     }
-    const policy = (await this.files.exists(file))
-      ? await this.files.hash(file)
-      : "";
+    const exists = await this.files.exists(file);
+    const text = exists ? await this.files.text(file) : "";
+    this.policy = ignore({ ignorecase: true }).add(text);
+    const policy = `${FIXED_POLICY}\n${exists ? await this.files.hash(file) : ""}`;
     const key = `policy:${this.scope}:${folder.id}`;
     if ((await this.store.get(key)) !== policy) {
       // Persist reconciliation before accepting the policy, including across crashes.
+      await this.store.forgetExcluded(
+        this.scope,
+        folder.id,
+        (name, directory) =>
+          builtinExcluded(name) ||
+          (name !== ".arcaignore" &&
+            this.policy.ignores(name + (directory ? "/" : ""))),
+      );
       await this.store.resetCursor(this.scope, folder.id);
       folder.initialized = 0;
       folder.cursor = 0;
       await this.store.set(key, policy);
     }
-    const text = (await this.files.exists(file))
-      ? await this.files.text(file)
-      : "";
-    this.policy = ignore({ ignorecase: true }).add(text);
   }
   async localHash(uri) {
     const stat = await this.files.stat(uri),

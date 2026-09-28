@@ -249,8 +249,8 @@ test("retention preserves captured content until asynchronous snapshot pins are 
   assert.equal(applyRetention(store, { versions: 1 }).objectsRemoved, 1);
 });
 
-test("cold folder totals yield and invalidate captured counts after concurrent edits", async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-totals-yield-"));
+test("folder totals count the index and forgetting excluded rows updates them", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-totals-"));
   init(home, { role: "hub" });
   const store = new Store(home);
   t.after(() => {
@@ -260,11 +260,10 @@ test("cold folder totals yield and invalidate captured counts after concurrent e
   const volume = store.addVolume("Documents");
   const plan = store.db
     .prepare(
-      "EXPLAIN QUERY PLAN SELECT path,size FROM files WHERE volume=? AND deleted=0 AND directory=0",
+      "EXPLAIN QUERY PLAN SELECT count(*), coalesce(sum(size),0) FROM files WHERE volume=? AND deleted=0 AND directory=0",
     )
     .all(volume.id);
   assert.ok(plan.some((row) => row.detail.includes("files_visible_totals")));
-  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "hidden*\n");
   const put = (name, deleted = 0) =>
     store.setFile({
       volume: volume.id,
@@ -279,23 +278,15 @@ test("cold folder totals yield and invalidate captured counts after concurrent e
   put("hidden-file");
   put(".obsidian/cache");
   store.db.exec("COMMIT");
-  let yielded = false;
-  const first = store.allVisibleTotals();
-  setImmediate(() => {
-    yielded = true;
-    put("visible-0", 1);
-  });
-  assert.deepEqual((await first).get(volume.id), { files: 1500, bytes: 1500 });
-  assert.equal(yielded, true);
   assert.deepEqual((await store.allVisibleTotals()).get(volume.id), {
-    files: 1499,
-    bytes: 1499,
+    files: 1502,
+    bytes: 1502,
   });
-  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "");
-  assert.deepEqual((await store.allVisibleTotals()).get(volume.id), {
-    files: 1500,
-    bytes: 1500,
-  });
+  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "hidden*\n");
+  assert.equal(store.forgetExcluded(volume.id), 2);
+  assert.deepEqual(store.visibleTotals(volume.id), { files: 1500, bytes: 1500 });
+  put("visible-0", 1);
+  assert.deepEqual(store.visibleTotals(volume.id), { files: 1499, bytes: 1499 });
 });
 
 test("retention changes preserve sync tombstones and snapshot counts across restart", async (t) => {

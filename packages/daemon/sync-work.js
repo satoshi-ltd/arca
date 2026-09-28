@@ -101,4 +101,11 @@ export class SyncWork {
       )
       .run(volume, cursor);
   }
+  policy(volume, policy) {
+    this.store.db
+      .prepare(
+        "INSERT INTO sync_state(volume,policy) VALUES(?,?) ON CONFLICT(volume) DO UPDATE SET policy=excluded.policy",
+      )
+      .run(volume, policy);
+  }
 }

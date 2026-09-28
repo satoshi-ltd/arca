@@ -952,6 +952,36 @@ test("mobile receives removed ignore policy before scanning newly included conte
   );
 });
 
+test("mobile forgets newly excluded rows and keeps their local copies", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  fs.mkdirSync(path.join(f.volume.path, "drafts"));
+  fs.writeFileSync(path.join(f.volume.path, "drafts", "a.txt"), "draft");
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  assert.ok(await f.store.current(r.scope, f.volume.id, "drafts/a.txt"));
+  fs.writeFileSync(path.join(f.volume.path, ".arcaignore"), "drafts/\n");
+  await f.daemon.engine.cycle();
+  await sync(f);
+  assert.equal(
+    await f.store.current(r.scope, f.volume.id, "drafts/a.txt"),
+    null,
+  );
+  assert.equal(
+    fs.readFileSync(f.files.work(r.scope, f.volume.id, "drafts/a.txt"), "utf8"),
+    "draft",
+  );
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, "drafts/a.txt"),
+    undefined,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(f.volume.path, "drafts", "a.txt"), "utf8"),
+    "draft",
+  );
+});
+
 test("destroy mobile replica removes all private copies and hub registration, preserves hub content and resets pairing", async (t) => {
   const f = await fixture(t);
   const { replica, volume, files, client, store, daemon } = f;

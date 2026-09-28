@@ -72,6 +72,12 @@ const patterns = [
 ];
 const disposable = new Set(systemMetadata);
 
+export const FIXED_POLICY = [
+  ...names,
+  ...patterns.map(String),
+  ".m2/repository",
+].join("\n");
+
 const excludedName = (part) =>
   names.has(part) || patterns.some((pattern) => pattern.test(part));
 

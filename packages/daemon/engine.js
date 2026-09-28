@@ -8,6 +8,7 @@ import {
   finishInstallationReset,
 } from "./installation-reset.js";
 import { entryKey, directoryItem } from "../core/entries.js";
+import { FIXED_POLICY } from "../core/builtin-exclusions.js";
 import { mediaKind } from "../core/gallery-date.js";
 import {
   IGNORE_FILE,
@@ -721,9 +722,19 @@ export class Engine {
           } catch {
             /* The folder pass below reports recovery failures. */
           }
-      if (this.config.role === "hub")
+      if (this.config.role === "hub") {
+        for (const v of s.volumes())
+          try {
+            const policy = this.policyKey(v);
+            if (this.work.state(v.id).policy !== policy) {
+              s.forgetExcluded(v.id);
+              this.work.policy(v.id, policy);
+            }
+          } catch {
+            /* The folder scan reports an unreadable or invalid policy. */
+          }
         await this.scanHub(undefined, { incremental });
-      else if (this.config.hub) {
+      } else if (this.config.hub) {
         const catalog = await this.json("/v1/catalog");
         this.hubListsRetained = catalog.retainedRevisions === true;
         this.hubUnavailable = false;
@@ -792,8 +803,9 @@ export class Engine {
                 409,
               );
             await this.syncIgnore(v);
-            const policy = digest(readIgnore(v.path));
+            const policy = this.policyKey(v);
             if (this.work.state(v.id).policy !== policy) {
+              s.forgetExcluded(v.id);
               this.work.mark(v.id);
               this.work.cursor(v.id, 0);
             }
@@ -1071,11 +1083,7 @@ export class Engine {
             }
             if (useChanges) this.work.cursor(v.id, through);
             this.work.complete(v, plan);
-            s.db
-              .prepare(
-                "INSERT INTO sync_state(volume,policy) VALUES(?,?) ON CONFLICT(volume) DO UPDATE SET policy=excluded.policy",
-              )
-              .run(v.id, digest(readIgnore(v.path)));
+            this.work.policy(v.id, policy);
             s.db
               .prepare("UPDATE volumes SET last_sync=? WHERE id=?")
               .run(new Date().toISOString(), v.id);
@@ -1409,7 +1417,7 @@ export class Engine {
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec(
-        "DELETE FROM files; DELETE FROM revisions; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
+        "DELETE FROM files; DELETE FROM revisions; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
       );
       const add = db.prepare(
         "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,0,?,?,?)",
@@ -1748,6 +1756,16 @@ export class Engine {
     const volume = this.store.addVolume(name, location);
     ensureIgnore(volume.path);
     return volume;
+  }
+  policyKey(v) {
+    const s = this.store;
+    let text = "";
+    if (v.selected) text = readIgnore(v.path);
+    else {
+      const row = s.current(v.id, IGNORE_FILE);
+      if (row && !row.deleted) text = fs.readFileSync(s.blob(row.hash), "utf8");
+    }
+    return digest(`${FIXED_POLICY}\n${text}`);
   }
   async syncIgnore(v) {
     const s = this.store;

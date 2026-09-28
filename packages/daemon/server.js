@@ -1979,7 +1979,7 @@ export async function start(home, options = {}) {
               s.db.exec("BEGIN IMMEDIATE");
               try {
                 s.db.exec(
-                  "DELETE FROM files; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM sync_state; DELETE FROM sync_dirty;",
+                  "DELETE FROM files; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM sync_state; DELETE FROM sync_dirty;",
                 );
                 s.db.prepare("INSERT INTO transitions VALUES(?)").run(id);
                 s.db.exec("COMMIT");

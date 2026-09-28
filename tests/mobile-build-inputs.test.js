@@ -6,10 +6,14 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
+// Git hooks export GIT_DIR; inheriting it would reinitialize the real repository.
+const env = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+);
 test("EAS archive includes every shared source imported by the mobile app and excludes built APKs", (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "arca-eas-inputs-"));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
-  assert.equal(spawnSync("git", ["init", "-q", fixture]).status, 0);
+  assert.equal(spawnSync("git", ["init", "-q", fixture], { env }).status, 0);
   fs.copyFileSync(
     path.join(root, ".easignore"),
     path.join(fixture, ".gitignore"),
@@ -39,6 +43,7 @@ test("EAS archive includes every shared source imported by the mobile app and ex
   const ignored = (file) =>
     spawnSync("git", ["check-ignore", "--no-index", file], {
       cwd: fixture,
+      env,
       encoding: "utf8",
     });
   for (const file of shared)

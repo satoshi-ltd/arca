@@ -277,6 +277,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS backup_ack(device TEXT PRIMARY KEY,revision INTEGER NOT NULL DEFAULT 0,enabled INTEGER NOT NULL DEFAULT 1,updated TEXT);
       CREATE TABLE IF NOT EXISTS sync_dirty(seq INTEGER PRIMARY KEY AUTOINCREMENT,volume TEXT NOT NULL,path TEXT NOT NULL,UNIQUE(volume,path));
       CREATE TABLE IF NOT EXISTS sync_state(volume TEXT PRIMARY KEY,cursor INTEGER NOT NULL DEFAULT 0,full_at INTEGER NOT NULL DEFAULT 0,policy TEXT);
+      CREATE TABLE IF NOT EXISTS forgotten(volume TEXT,path TEXT,at INTEGER NOT NULL,PRIMARY KEY(volume,path));
       CREATE INDEX IF NOT EXISTS files_volume_rev ON files(volume,rev);
       CREATE INDEX IF NOT EXISTS files_visible_totals ON files(volume,path,size) WHERE deleted=0 AND directory=0;
       CREATE INDEX IF NOT EXISTS files_conflict_rev ON files(volume,rev) WHERE instr(path,'.conflict-')>0;
@@ -404,6 +405,7 @@ export class Store {
         "history_views",
         "snapshot_sessions",
         "sync_dirty",
+        "forgotten",
         "sync_state",
         "pending",
         "files",
@@ -719,86 +721,56 @@ export class Store {
     return match;
   }
   visibleTotals(volume) {
-    let excluded;
     try {
-      excluded = this.visibleRules(volume);
+      this.visibleRules(volume);
     } catch (error) {
       return { files: null, bytes: null, policyError: error.message };
     }
-    const generation =
-      this.db
-        .prepare("SELECT generation FROM file_generations WHERE volume=?")
-        .get(volume)?.generation || 0;
-    this.totalsCache ||= new Map();
-    const cached = this.totalsCache.get(volume);
-    if (cached?.generation === generation && cached.excluded === excluded)
-      return { ...cached.totals };
-    const totals = this.db
+    const { files, bytes } = this.db
       .prepare(
-        "SELECT path,size FROM files WHERE volume=? AND deleted=0 AND directory=0",
+        "SELECT count(*) AS files, coalesce(sum(size),0) AS bytes FROM files WHERE volume=? AND deleted=0 AND directory=0",
       )
-      .all(volume)
-      .reduce(
-        (totals, row) => {
-          if (!excluded(row.path, false)) {
-            totals.files++;
-            totals.bytes += row.size;
-          }
-          return totals;
-        },
-        { files: 0, bytes: 0 },
-      );
-    this.totalsCache.set(volume, { generation, excluded, totals });
-    return { ...totals };
+      .get(volume);
+    return { files, bytes };
   }
   async allVisibleTotals() {
-    const result = new Map();
-    for (const volume of this.volumes()) {
-      let excluded;
-      try {
-        excluded = this.visibleRules(volume.id);
-      } catch (error) {
-        result.set(volume.id, {
-          files: null,
-          bytes: null,
-          policyError: error.message,
-        });
-        continue;
+    return new Map(
+      this.volumes().map((volume) => [
+        volume.id,
+        this.visibleTotals(volume.id),
+      ]),
+    );
+  }
+  forgetExcluded(volume) {
+    const excluded = this.visibleRules(volume);
+    const paths = this.db
+      .prepare("SELECT path,directory FROM files WHERE volume=?")
+      .all(volume)
+      .filter((row) => excluded(row.path, !!row.directory))
+      .map((row) => row.path);
+    if (!paths.length) return 0;
+    const forget = this.db.prepare(
+      "DELETE FROM files WHERE volume=? AND path=?",
+    );
+    const remember = this.db.prepare(
+      "INSERT INTO forgotten SELECT volume,path,? FROM revisions WHERE volume=? AND path=? LIMIT 1 ON CONFLICT(volume,path) DO UPDATE SET at=excluded.at",
+    );
+    const at = Date.now();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const name of paths) {
+        forget.run(volume, name);
+        remember.run(at, volume, name);
       }
-      const generation =
-        this.db
-          .prepare("SELECT generation FROM file_generations WHERE volume=?")
-          .get(volume.id)?.generation || 0;
-      this.totalsCache ||= new Map();
-      const cached = this.totalsCache.get(volume.id);
-      if (cached?.generation === generation && cached.excluded === excluded) {
-        result.set(volume.id, { ...cached.totals });
-        continue;
-      }
-      // Capture only countable fields, then yield during policy evaluation.
-      // The response represents this read; later mutations invalidate its cache.
-      const rows = this.db
-        .prepare(
-          "SELECT path,size FROM files WHERE volume=? AND deleted=0 AND directory=0",
-        )
-        .all(volume.id);
-      const totals = { files: 0, bytes: 0 };
-      for (let i = 0; i < rows.length; i++) {
-        if (i % 500 === 0)
-          await new Promise((resolve) => setImmediate(resolve));
-        const row = rows[i];
-        if (!excluded(row.path, false)) {
-          totals.files++;
-          totals.bytes += row.size;
-        }
-      }
-      this.totalsCache.set(volume.id, { generation, excluded, totals });
-      result.set(volume.id, { ...totals });
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
     }
-    return result;
+    return paths.length;
   }
   excluded(volume, name, directory = this.current(volume, name)?.directory) {
-    return this.ignoreRules(this.volume(volume))(name, !!directory);
+    return this.visibleRules(volume)(name, !!directory);
   }
   scan(v, scopes = null, checkpoint = () => {}) {
     this.assertVolume(v);

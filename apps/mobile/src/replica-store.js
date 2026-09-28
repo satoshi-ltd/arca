@@ -328,6 +328,27 @@ export class ReplicaStore {
       id,
     );
   }
+  async forgetExcluded(scope, volume, excluded) {
+    const paths = (await this.rows(scope, volume))
+      .filter((row) => excluded(row.path, !!row.directory))
+      .map((row) => row.path);
+    if (!paths.length) return 0;
+    await this.db.execAsync("BEGIN IMMEDIATE");
+    try {
+      for (const path of paths)
+        await this.db.runAsync(
+          "DELETE FROM files WHERE scope=? AND volume=? AND path=?",
+          scope,
+          volume,
+          path,
+        );
+      await this.db.execAsync("COMMIT");
+    } catch (error) {
+      await this.db.execAsync("ROLLBACK");
+      throw error;
+    }
+    return paths.length;
+  }
   async rows(scope, volume) {
     return (
       await this.db.getAllAsync(

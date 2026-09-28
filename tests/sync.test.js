@@ -7,7 +7,9 @@ import http from "node:http";
 import path from "node:path";
 import { init, digest, Store, onContainerMount } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
-import { DEFAULT_IGNORE } from "../packages/daemon/exclusions.js";
+import { DEFAULT_IGNORE, readIgnore } from "../packages/daemon/exclusions.js";
+import { applyFolderRetention } from "../packages/daemon/maintenance.js";
+import { FIXED_POLICY } from "../packages/core/builtin-exclusions.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-test-"));
@@ -1099,7 +1101,7 @@ test("machine renames reach hub records while paused and reports survive scan er
   assert.equal(report.phase, "error");
 });
 
-test("fixed exclusions skip caches before symlinks and preserve indexed history and disk copies", async (t) => {
+test("fixed exclusions skip caches before symlinks, forget indexed rows and keep disk copies", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const replica = await connect("exclusions");
   write(hub, volume, "keep.txt", "shared");
@@ -1143,8 +1145,9 @@ test("fixed exclusions skip caches before symlinks and preserve indexed history 
   assert.equal(hub.engine.error, null);
   assert.equal(read(replica, volume, "keep.txt"), "shared");
   assert.equal(read(replica, volume, ".cache/legacy.txt"), "replica cache");
-  assert.deepEqual(store.current(volume.id, ".cache/legacy.txt"), old);
+  assert.equal(store.current(volume.id, ".cache/legacy.txt"), undefined);
   assert.equal(store.history(volume.id, ".cache/legacy.txt").length, 1);
+  assert.equal(read(hub, volume, ".cache/legacy.txt"), "old cache");
   assert.equal(store.current(volume.id, "node_modules/local.txt"), undefined);
   assert.equal(
     replica.engine.store.current(volume.id, ".cache/legacy.txt"),
@@ -1153,7 +1156,6 @@ test("fixed exclusions skip caches before symlinks and preserve indexed history 
   store.queue({ ...old, deleted: 1 }, old.hash);
   store.recover();
   assert.equal(read(hub, volume, ".cache/legacy.txt"), "old cache");
-  assert.deepEqual(store.current(volume.id, ".cache/legacy.txt"), old);
 });
 
 test("folder progress advances across empty files and snapshot totals are reported", async (t) => {
@@ -1232,17 +1234,139 @@ test("arcaignore rules arrive before scanning and ignored tracked files never be
   assert.equal(read(replica, volume, "keep.txt"), "kept");
   write(replica, volume, "report.txt", "local report");
   await replica.sync();
-  const prior = hub.engine.store.current(volume.id, "report.txt");
   write(hub, volume, ".arcaignore", "private/\n*.tmp\nreport.txt\n");
   await hub.sync();
   await replica.sync();
+  assert.equal(replica.engine.store.current(volume.id, "report.txt"), undefined);
   fs.unlinkSync(
     path.join(replica.engine.store.volume(volume.id).path, "report.txt"),
   );
   await replica.sync();
   assert.equal(replica.engine.error, null);
-  assert.deepEqual(hub.engine.store.current(volume.id, "report.txt"), prior);
+  assert.equal(hub.engine.store.current(volume.id, "report.txt"), undefined);
+  assert.ok(hub.engine.store.history(volume.id, "report.txt").length > 0);
   assert.equal(read(hub, volume, "report.txt"), "local report");
+});
+
+test("a fixed-list upgrade forgets rows indexed by an older version", async (t) => {
+  const { hub, volume } = await setup(t);
+  write(hub, volume, "keep.txt", "kept");
+  await hub.sync();
+  const store = hub.engine.store;
+  const legacy = "app/node_modules/pkg/index.js";
+  write(hub, volume, legacy, "dependency");
+  store.commit(volume.id, legacy, store.capture(path.join(volume.path, legacy)), store.config.id);
+  const v = store.volume(volume.id);
+  assert.equal(
+    hub.engine.policyKey(v),
+    digest(`${FIXED_POLICY}\n${readIgnore(v.path)}`),
+  );
+  hub.engine.work.policy(volume.id, "older fixed list");
+  await hub.sync();
+  assert.equal(store.current(volume.id, legacy), undefined);
+  assert.equal(store.history(volume.id, legacy).length, 1);
+  assert.equal(read(hub, volume, legacy), "dependency");
+  assert.equal(read(hub, volume, "keep.txt"), "kept");
+});
+
+test("re-including a forgotten path adopts identical replica copies without conflicts", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("re-include");
+  write(hub, volume, "notes/a.txt", "same");
+  await hub.sync();
+  await replica.sync();
+  write(hub, volume, ".arcaignore", "notes/\n");
+  await hub.sync();
+  await replica.sync();
+  assert.equal(replica.engine.store.current(volume.id, "notes/a.txt"), undefined);
+  assert.equal(read(replica, volume, "notes/a.txt"), "same");
+  write(hub, volume, ".arcaignore", "");
+  await hub.sync();
+  await replica.sync();
+  await hub.sync();
+  assert.equal(replica.engine.error, null);
+  assert.equal(
+    replica.engine.store.current(volume.id, "notes/a.txt").hash,
+    hub.engine.store.current(volume.id, "notes/a.txt").hash,
+  );
+  assert.equal(
+    hub.engine.store.rows(volume.id).some((r) => r.path.includes(".conflict-")),
+    false,
+  );
+});
+
+test("forgotten history follows folder retention from the moment a path is excluded", async (t) => {
+  const { hub, volume } = await setup(t);
+  const store = hub.engine.store;
+  for (const name of ["off/a.txt", "week/a.txt", "forever/a.txt"])
+    write(hub, volume, name, "old");
+  await hub.sync();
+  for (const name of ["off/a.txt", "week/a.txt", "forever/a.txt"])
+    write(hub, volume, name, "new");
+  await hub.sync();
+  write(hub, volume, ".arcaignore", "off/\nweek/\nforever/\n");
+  await hub.sync();
+  const history = (name) => store.history(volume.id, name).length;
+  assert.equal(history("off/a.txt"), 2);
+  const retain = (mode) => {
+    store.config.folderRetention = { [volume.id]: mode };
+    applyFolderRetention(store);
+  };
+  retain("forever");
+  assert.equal(history("forever/a.txt"), 2);
+  retain("1w");
+  assert.equal(history("week/a.txt"), 2);
+  store.db
+    .prepare("UPDATE revisions SET created=? WHERE volume=? AND path=?")
+    .run(new Date(Date.now() - 9 * 86400000).toISOString(), volume.id, "week/a.txt");
+  store.db
+    .prepare("UPDATE forgotten SET at=? WHERE volume=? AND path=?")
+    .run(Date.now() - 8 * 86400000, volume.id, "week/a.txt");
+  retain("1w");
+  assert.equal(history("week/a.txt"), 0);
+  assert.equal(history("off/a.txt"), 2);
+  retain("off");
+  assert.equal(history("off/a.txt"), 0);
+  assert.equal(
+    store.db.prepare("SELECT count(*) AS n FROM forgotten WHERE path IN ('off/a.txt','week/a.txt')").get().n,
+    0,
+  );
+  assert.equal(read(hub, volume, "off/a.txt"), "new");
+});
+
+test("a replica stores the policy key it applied, not one read after the cycle", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("applied-policy");
+  await hub.sync();
+  const policyKey = replica.engine.policyKey.bind(replica.engine);
+  let applied, calls = 0;
+  replica.engine.policyKey = (v) => {
+    calls++;
+    return calls === 1 ? (applied = policyKey(v)) : "changed during the cycle";
+  };
+  await replica.sync();
+  assert.equal(replica.engine.work.state(volume.id).policy, applied);
+});
+
+test("re-including a path with different replica content keeps both versions", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("re-include-edit");
+  write(hub, volume, "notes/a.txt", "original");
+  await hub.sync();
+  await replica.sync();
+  write(hub, volume, ".arcaignore", "notes/\n");
+  await hub.sync();
+  await replica.sync();
+  write(replica, volume, "notes/a.txt", "replica edit");
+  write(hub, volume, ".arcaignore", "");
+  await hub.sync();
+  await replica.sync();
+  await hub.sync();
+  await replica.sync();
+  assert.equal(replica.engine.error, null);
+  const rows = hub.engine.store.rows(volume.id).filter((r) => r.path.startsWith("notes/a.txt"));
+  const contents = rows.map((r) => read(hub, volume, r.path)).sort();
+  assert.deepEqual(contents, ["original", "replica edit"]);
 });
 
 test("empty arcaignore removes default cache exclusions and rule edits synchronize", async (t) => {
@@ -2337,7 +2461,7 @@ test("file deletion rejects stale content, preserves history and propagates from
   assert.equal(hub.engine.store.current(volume.id, "delete.txt").deleted, 1);
 });
 
-test("ignore changes hide retained files from browse and totals without deleting history or disk", async (t) => {
+test("ignore changes forget excluded files from browse and totals, keep history for retention and disk copies", async (t) => {
   const { hub, volume } = await setup(t);
   write(hub, volume, "smith/repos/core/a.txt", "retained");
   write(hub, volume, "notes/keep.txt", "visible");
@@ -2360,10 +2484,7 @@ test("ignore changes hide retained files from browse and totals without deleting
   const search = await hub.api(`/v1/browse?volume=${volume.id}&search=a.txt`);
   assert.equal(search.entries.length, 0);
   assert.equal(read(hub, volume, "smith/repos/core/a.txt"), "retained");
-  assert.equal(
-    hub.engine.store.current(volume.id, original.path).rev,
-    original.rev,
-  );
+  assert.equal(hub.engine.store.current(volume.id, original.path), undefined);
   assert.equal(hub.engine.store.history(volume.id, original.path).length, 1);
   write(hub, volume, ".arcaignore", "");
   await hub.sync();
@@ -2372,6 +2493,7 @@ test("ignore changes hide retained files from browse and totals without deleting
       .files,
     3,
   );
+  assert.equal(hub.engine.store.current(volume.id, original.path).hash, original.hash);
 });
 
 test("replica history is restricted to selected folders, including paused selections", async (t) => {
@@ -2880,65 +3002,22 @@ test("hub rename journals both paths and recovers after interrupted materializat
   );
 });
 
-test("status totals reuse unchanged rows and invalidate on policy and database changes", async (t) => {
+test("status totals come from the index and drop excluded files once the policy applies", async (t) => {
   const { hub, volume } = await setup(t);
+  const store = hub.engine.store;
   write(hub, volume, "cached.txt", "visible");
   await hub.sync();
-  const store = hub.engine.store;
-  const prepare = store.db.prepare.bind(store.db);
-  let scans = 0;
-  t.mock.method(store.db, "prepare", (sql) => {
-    if (sql.startsWith("SELECT path,size FROM files")) scans++;
-    return prepare(sql);
-  });
   const before = store.visibleTotals(volume.id);
-  const initial = scans;
   before.files = -1;
-  assert.ok(store.visibleTotals(volume.id).files > 0);
-  assert.equal(
-    scans,
-    initial,
-    "unchanged status does not enumerate files again",
-  );
+  assert.equal(store.visibleTotals(volume.id).files, 2);
   write(hub, volume, ".arcaignore", "cached.txt\n");
+  await hub.sync();
   assert.equal(store.visibleTotals(volume.id).files, 1);
-  assert.ok(scans > initial, "an unscanned policy edit invalidates totals");
+  assert.equal(store.current(volume.id, "cached.txt"), undefined);
+  assert.equal(read(hub, volume, "cached.txt"), "visible");
   write(hub, volume, "added.txt", "another");
   await hub.sync();
   assert.equal(store.visibleTotals(volume.id).files, 2);
-});
-
-test("folder totals survive unrelated writes and invalidate only changed folders and policies", async (t) => {
-  const { hub, volume } = await setup(t);
-  const s = hub.engine.store;
-  write(hub, volume, "one.txt", "hello");
-  await hub.sync();
-  const initial = s.visibleTotals(volume.id);
-  const prepare = s.db.prepare.bind(s.db);
-  let reads = 0;
-  t.mock.method(s.db, "prepare", (sql) => {
-    if (sql.startsWith("SELECT path,size FROM files")) reads++;
-    return prepare(sql);
-  });
-  s.db
-    .prepare(
-      "INSERT OR REPLACE INTO gallery_metadata(hash,captured) VALUES(?,?)",
-    )
-    .run("test", null);
-  assert.deepEqual(s.visibleTotals(volume.id), initial);
-  assert.equal(
-    reads,
-    0,
-    "metadata and connection activity must not reload folder rows",
-  );
-  s.db
-    .prepare("UPDATE files SET size=size+1 WHERE volume=? AND path=?")
-    .run(volume.id, "one.txt");
-  assert.equal(s.visibleTotals(volume.id).bytes, initial.bytes + 1);
-  assert.equal(reads, 1);
-  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "one.txt\n");
-  assert.equal(s.visibleTotals(volume.id).files, initial.files - 1);
-  assert.equal(reads, 2, "policy edits invalidate cached totals");
 });
 
 test("offline replica keeps local browsing, file actions and saved remote views available", async (t) => {

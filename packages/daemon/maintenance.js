@@ -96,6 +96,16 @@ export function retentionPlan(
   const counts = new Map(),
     newerDates = new Map(),
     remove = [];
+  // A forgotten path ages out like a deletion made when it was forgotten.
+  for (const row of store.db
+    .prepare(
+      "SELECT volume,path,at FROM forgotten f WHERE NOT EXISTS (SELECT 1 FROM files WHERE volume=f.volume AND path=f.path)",
+    )
+    .all()) {
+    const key = JSON.stringify([row.volume, row.path]);
+    counts.set(key, 1);
+    newerDates.set(key, new Date(row.at).toISOString());
+  }
   const folders = (volume ? [store.volume(volume)] : store.volumes()).map(
     (v) => ({
       id: v.id,
@@ -147,6 +157,9 @@ export function applyRetention(
   try {
     const remove = store.db.prepare("DELETE FROM revisions WHERE rev=?");
     for (const rev of plan.remove) remove.run(rev);
+    store.db.exec(
+      "DELETE FROM forgotten WHERE NOT EXISTS (SELECT 1 FROM revisions r WHERE r.volume=forgotten.volume AND r.path=forgotten.path) OR EXISTS (SELECT 1 FROM files f WHERE f.volume=forgotten.volume AND f.path=forgotten.path)",
+    );
     store.db.exec("COMMIT");
   } catch (e) {
     store.db.exec("ROLLBACK");

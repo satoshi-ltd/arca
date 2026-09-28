@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 — 2026-09-28
+
+- Excluded paths are outside Arca: when a folder's `.arcaignore` or the fixed exclusion list changes, the hub, desktop replicas and phones forget the excluded index rows. Their hub history then ages out under the folder's history setting as if they had been deleted at that moment (Off: at the next retention pass; Forever: kept), respecting backups and pins, and unused objects are collected afterwards. Files on disk are never touched and no deletion is propagated. Re-including a path imports it again; identical replica copies are adopted without conflicts and different content keeps both versions.
+- Browsing and folder totals read the index directly instead of evaluating exclusion rules for every row, and no longer keep a totals cache.
+- Fix the remaining v0.6.2 Windows CI failure: the gallery recovery test corrupts and restores the stored object in place, because Windows refuses to truncate a file another process has mapped.
+- The EAS input test no longer inherits a Git hook's `GIT_DIR`; run from a linked worktree's pre-push hook, its `git init` had reinitialized the real repository as bare.
+- Make the Linux watcher test wait until its directory watcher is live.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 376 tests with two platform skips and all 162 mobile source tests pass.
+
 ## 0.6.2 — 2026-09-27
 
 - Always exclude OS metadata, temporary and lock files, trash, NAS thumbnails, other sync tools' state and regenerable caches (including `.git`, `node_modules`, `.venv`, `.cache` and `.m2/repository`) on the hub, desktop and phones, with or without `.arcaignore`; `!` rules cannot re-include them. Names that may be content (`cache/`, `build/`, `logs/`, `*.lock`, `.env`) still sync, as do `.gitignore` and `.github/`.
