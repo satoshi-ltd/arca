@@ -1,4 +1,3 @@
-import { galleryRecoveryPins } from "./gallery-actions.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fail, fileSignature } from "./storage.js";
@@ -87,7 +86,6 @@ export function retentionPlan(
     const row = JSON.parse(p.row);
     if (!volume || row.volume === volume) pinned.add(row.rev);
   }
-  for (const row of galleryRecoveryPins(store)) pinned.add(row.rev);
   const floor = store.db
     .prepare(
       "SELECT MIN(a.revision) AS n FROM backup_ack a JOIN devices d ON d.id=a.device WHERE a.enabled=1 AND d.revoked=0",
@@ -195,7 +193,6 @@ function collectUnusedObjects(store) {
       const row = JSON.parse(r.row);
       if (row.hash) hashes.add(row.hash);
     }
-  for (const row of galleryRecoveryPins(store)) hashes.add(row.hash);
   const cutoff = Date.now() - 24 * 3600000;
   let objectsRemoved = 0;
   for (const name of fs.readdirSync(store.objects))

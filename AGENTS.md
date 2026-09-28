@@ -28,7 +28,7 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 
 ## Non-negotiable product decisions
 
-- Hub alone creates shares; IDs identify them. Every machine chooses independent local destinations. Ordinary replica selections edit bidirectionally with complete local files, no placeholders. Mobile linked albums add photo-library uploads to a complete bidirectional Arca working copy: every selected participant downloads the shared folder, including media from other machines. Keep these copies in app-owned storage, never import hub files into Photos or propagate deletions made in Photos. Explicit shared-gallery deletion is allowed for participants. Removing a phone original is a separate per-phone opt-in, off by default, with foreground review, verified unchanged resources and retained recovery content; never infer permission from a missing file or routine synchronization. Linking an album must preserve the existing Arca working copy.
+- Hub alone creates shares; IDs identify them. Every machine chooses independent local destinations. Ordinary replica selections edit bidirectionally with complete local files, no placeholders. Mobile linked albums add photo-library uploads to a complete bidirectional Arca working copy: every selected participant downloads the shared folder, including media from other machines. Keep these copies in app-owned storage, never import hub files into Photos or propagate deletions made in Photos. Explicit shared-gallery deletion is allowed for participants. Arca never removes originals from the system Photos library; shared deletions affect synchronized Arca copies only. Linking an album must preserve the existing Arca working copy.
 - Pause, replica unlink, hub local-copy unselection and hub Delete share are different operations. Preserve the documented file/history consequences.
 - Optional full backup is additional to desktop/server replica working sync. Mobile (phone and Fold) is replica-only: no hub or full backup. Do not retain pre-production backward-compatibility branches, legacy modes or unused code. Preserve current error recovery and platform support. Quit leaves the daemon running.
 - Discovery never links machines. Web access and pairing use separate six-digit, single-use, ten-minute codes with persistent failure budgets; credentials remain long/revocable.
@@ -39,6 +39,7 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 ## Live environment boundaries
 
 - Metro is user-managed: do not start or restart it. Ask the user to restart Metro when configuration changes require it.
+- Native builds and installers are user-managed: do not run a build or install an app unless the maintainer explicitly requests it. Source fixes and reviews do not authorize builds.
 
 - Workspace: `/Users/javi/git/arca`. Development normally uses the real `~/.arca`; tests should use isolated state.
 - Casa: SSH `casa`, Docker container `arca`, installation/state under `/home/atlas/arca-pilot`. Operational details and restart/deployment boundaries live in the spec.

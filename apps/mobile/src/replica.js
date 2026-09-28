@@ -679,7 +679,7 @@ export class Replica {
       throw new Error(
         "File conflicts with a local directory; reconcile it first.",
       );
-    const actual = exists ? await this.files.hash(target) : null;
+    const actual = exists ? await this.localHash(target) : null;
     if (
       actual &&
       actual !== row.hash &&
@@ -889,6 +889,16 @@ export class Replica {
     if (!this.hubUnavailable) this.error = null;
     this.changed();
     try {
+      // Acquire while the app is visible, before metadata or file transfers.
+      // The same service spans all continuation turns until sync() exits.
+      if (
+        !this.paused &&
+        this.client.state().connection?.linked &&
+        (await this.store.folders(this.scope)).some((folder) => folder.selected)
+      ) {
+        await this.transfer.begin();
+        this.check();
+      }
       await this.client.refresh();
       this.connectionEpoch++;
       this.hubUnavailable = false;
@@ -936,7 +946,6 @@ export class Replica {
           this.turnTransferred = false;
           const remote = catalog.volumes.find((v) => v.id === folder.id);
           if (remote.policyError) throw new Error(remote.policyError);
-          await this.galleryDeletions.flush(folder.id);
           const album = galleryConfig(folder);
           if (album && (!folder.initialized || album.mode === "converting"))
             await this.files.mkdir(this.files.folder(this.scope, folder.id));

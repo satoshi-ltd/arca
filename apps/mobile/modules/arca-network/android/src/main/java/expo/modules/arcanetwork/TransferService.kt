@@ -5,7 +5,7 @@ import android.content.Intent
 import android.os.*
 import android.content.pm.ServiceInfo
 
-/** Keeps an existing user-visible upload session alive; never restarts after termination. */
+/** Keeps an existing user-visible sync session alive; never restarts after termination. */
 class TransferService : com.facebook.react.HeadlessJsTaskService() {
   companion object {
     const val CHANNEL = "arca-transfers"
@@ -21,11 +21,11 @@ class TransferService : com.facebook.react.HeadlessJsTaskService() {
     super.onCreate()
     instance = this
     val manager = getSystemService(NotificationManager::class.java)
-    if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL, "Photo uploads", NotificationManager.IMPORTANCE_LOW))
-    val notification = notification("Preparing photos", 0, 0)
+    if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL, "Synchronization", NotificationManager.IMPORTANCE_LOW))
+    val notification = notification("Synchronizing folders", 0, 0)
     if (Build.VERSION.SDK_INT >= 29) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     else startForeground(ID, notification)
-    lock = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "arca:uploads")
+    lock = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "arca:sync")
     lock?.acquire(6 * 60 * 60 * 1000L)
   }
   private fun notification(text: String, done: Long, total: Long): Notification {
@@ -35,7 +35,7 @@ class TransferService : com.facebook.react.HeadlessJsTaskService() {
     }
     return (if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL) else Notification.Builder(this))
       .setSmallIcon(android.R.drawable.stat_sys_upload)
-      .setContentTitle("Arca · Photo uploads").setContentText(text)
+      .setContentTitle("Arca · Synchronization").setContentText(text)
       .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
       .setProgress(100, if (total > 0) ((done.toDouble() / total) * 100).toInt().coerceIn(0, 100) else 0, total <= 0)
       .addAction(Notification.Action.Builder(null, "Pause", pause).build()).build()

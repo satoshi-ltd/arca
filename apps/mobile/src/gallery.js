@@ -102,10 +102,6 @@ export class Gallery {
         ...old,
         mode: "source",
         enabled: old?.mode === "source" ? old.enabled : true,
-        originalRemoval:
-          old?.mode === "source" && old.albumId === (options.albumId || null)
-            ? old.originalRemoval
-            : null,
         albumId: options.albumId || null,
         albumName: options.albumName || "All accessible photos",
         videos: !!options.videos,
@@ -354,7 +350,6 @@ export class Gallery {
       await save();
       return;
     }
-    await r.transfer.begin();
     r.check();
     await r.space(0);
     const stage = r.files.galleryStage(r.scope, folder.id);
@@ -532,8 +527,11 @@ export class Gallery {
         source.albumId &&
         !(await this.media.albums()).some((a) => a.id === source.albumId)
       )
-        throw new Error(
-          "The selected album is unavailable. Choose an accessible album in Photo uploads.",
+        throw Object.assign(
+          new Error(
+            "The selected album is unavailable. Choose an accessible album in Photo uploads.",
+          ),
+          { code: "SOURCE_UNAVAILABLE" },
         );
       const policy = await this.policy(folder.id);
       if (r.force) await r.store.retryGallery(r.scope, folder.id);
@@ -648,6 +646,8 @@ export class Gallery {
           : error.message;
       source.summary = await r.store.gallerySummary(r.scope, folder.id);
       await r.store.setGallery(r.scope, folder.id, source);
+      // Album availability affects uploads from Photos, not the shared working copy.
+      if (error.code === "SOURCE_UNAVAILABLE") return;
       throw error;
     } finally {
       r.changed();

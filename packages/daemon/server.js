@@ -2,8 +2,6 @@ import {
   registerGalleryAsset,
   deleteGalleryAsset,
   galleryRemovalEvents,
-  restoreGalleryAsset,
-  checkGalleryRemoval,
 } from "./gallery-actions.js";
 import { cachedActivity } from "./history-cache.js";
 import { ChangeFeed } from "./change-feed.js";
@@ -448,7 +446,6 @@ export async function start(home, options = {}) {
           [
             "/v1/delete-file",
             "/v1/gallery/delete",
-            "/v1/gallery/restore",
             "/v1/rename-file",
             "/v1/restore",
             "/v1/conflict-choice",
@@ -727,7 +724,10 @@ export async function start(home, options = {}) {
           if (!s.volume(volume).selected) fail("Select this folder first", 403);
           const name = url.searchParams.get("path");
           const hash = url.searchParams.get("hash");
-          const row = route.endsWith("/preview") && s.current(volume, name);
+          const row =
+            route.endsWith("/preview") &&
+            !url.searchParams.has("rev") &&
+            s.current(volume, name);
           const localPreview =
             row &&
             !row.deleted &&
@@ -755,6 +755,7 @@ export async function start(home, options = {}) {
                   url.searchParams.get("path"),
                   url.searchParams.get("hash"),
                   url.searchParams.get("size") === "large",
+                  url.searchParams.get("rev"),
                 )
               : await engine.gallery.page(volume, url.searchParams),
         );
@@ -1284,8 +1285,6 @@ export async function start(home, options = {}) {
             "/v1/gallery/register",
             "/v1/gallery/delete",
             "/v1/gallery/removals",
-            "/v1/gallery/restore",
-            "/v1/gallery/removal-check",
           ].includes(route)
         ) {
           if (config.role !== "hub") {
@@ -1299,10 +1298,6 @@ export async function start(home, options = {}) {
             200,
             await authorizedWork(() => {
               const source = device?.id || config.id;
-              if (route.endsWith("/removal-check"))
-                return checkGalleryRemoval(s, b, source);
-              if (route.endsWith("/restore"))
-                return restoreGalleryAsset(engine, b, source);
               if (route.endsWith("/register"))
                 return registerGalleryAsset(s, b, source);
               if (route.endsWith("/removals"))

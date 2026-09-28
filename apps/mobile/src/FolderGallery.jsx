@@ -1,5 +1,5 @@
 import { nativeGallerySources, galleryDisplay } from "./gallery-display";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
   Image,
@@ -14,6 +14,7 @@ import { hubGallery } from "./hub-gallery";
 import { hubPreviewFiles } from "./hub-previews";
 import { prepareThumbnails } from "./thumbnail-cache";
 import { thumbnailFiles } from "./gallery-thumbnails";
+import { ScrollPosition } from "./KeyboardPane";
 import { PhotoViewer } from "./PhotoViewer";
 
 const PAGE = 60;
@@ -86,19 +87,28 @@ export function FolderGallery({
   loading,
   uploads,
   notice,
-  reviewDeletions,
-  deletionCount,
   refreshKey,
   demand,
+  onDates,
+  seekRef,
+  scrollRef,
+  railRef,
   onSummary,
   folderName,
-  open,
+  resolveVideo,
   history,
   share,
   remove,
   columns = 4,
 }) {
   const { s, c } = useDesign();
+  const position = useContext(ScrollPosition);
+  const positionRef = useRef(position);
+  positionRef.current = position;
+  const rootRef = useRef(null);
+  const monthPositions = useRef(new Map());
+  const rootTop = useRef(0);
+  const [selectedMonth, setSelectedMonth] = useState("");
   const [selection, setSelection] = useState([]);
   const toggle = (item) =>
     setSelection((items) =>
@@ -228,12 +238,74 @@ export function FolderGallery({
   ]);
   const baseItems = useMemo(
     () =>
-      mergeTimeline({ index: index?.items, entries, uploads: pending }).filter(
-        (item) =>
-          !hidden.has(item.path) || Number(item.rev) > hidden.get(item.path),
-      ),
-    [index, entries, pending, hidden],
+      mergeTimeline({ index: index?.items, entries, uploads: pending })
+        .filter(
+          (item) =>
+            !selectedMonth ||
+            item.upload ||
+            (item.date || "").slice(0, 7) <= selectedMonth,
+        )
+        .filter(
+          (item) =>
+            !hidden.has(item.path) || Number(item.rev) > hidden.get(item.path),
+        ),
+    [index, entries, pending, hidden, selectedMonth],
   );
+  const dates = useMemo(() => {
+    const months = new Map(
+      (index?.timeline || []).map((row) => [row.month, row]),
+    );
+    for (const item of mergeTimeline({ entries })) {
+      const month = (item.date || "").slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(month) && !months.has(month))
+        months.set(month, { month, count: 1 });
+    }
+    return [...months.values()].sort((a, b) => b.month.localeCompare(a.month));
+  }, [index?.timeline, entries]);
+  useEffect(() => {
+    onDates?.(dates);
+  }, [dates, onDates]);
+  useEffect(() => {
+    if (!seekRef) return;
+    let active = true;
+    seekRef.current = async (month) => {
+      setSelectedMonth(month);
+      setLimit(PAGE);
+      monthPositions.current.clear();
+      positionRef.current?.measure(rootRef.current, ({ top }) => {
+        rootTop.current = top;
+        positionRef.current.scrollTo(top);
+      });
+      if (connected) {
+        try {
+          const next = await hub.seek(month);
+          if (active) {
+            setIndex(next);
+            setPageError("");
+          }
+        } catch (error) {
+          if (active) setPageError(error.message);
+        }
+      }
+    };
+    return () => {
+      active = false;
+      seekRef.current = null;
+    };
+  }, [hub, connected, seekRef]);
+  useEffect(() => {
+    if (!scrollRef) return;
+    scrollRef.current = (y) => {
+      const month = [...monthPositions.current]
+        .sort((a, b) => a[1] - b[1])
+        .filter(([, top]) => top <= y - rootTop.current + 80)
+        .at(-1)?.[0];
+      railRef?.current?.show(month || selectedMonth || dates[0]?.month);
+    };
+    return () => {
+      scrollRef.current = null;
+    };
+  }, [scrollRef, railRef, dates, selectedMonth]);
   const [nativeUris, setNativeUris] = useState({ resolver: null, values: {} });
   useEffect(() => {
     let active = true;
@@ -354,10 +426,40 @@ export function FolderGallery({
     setViewer(null);
     action(item);
   };
+  async function deleteItems(item) {
+    const result = await remove(item);
+    if (!result) return;
+    setSelection((items) =>
+      items.filter((photo) => !result.some((row) => row.path === photo.path)),
+    );
+    setHidden(
+      (value) =>
+        new Map([...value, ...result.map((row) => [row.path, row.rev])]),
+    );
+    for (const row of result) void hub.forget(row.path).catch(() => {});
+    setViewer((value) => {
+      if (!value) return null;
+      const remaining = value.items.filter(
+        (photo) => !result.some((row) => row.path === photo.path),
+      );
+      return remaining.length
+        ? {
+            items: remaining,
+            index: Math.min(value.index, remaining.length - 1),
+          }
+        : null;
+    });
+  }
   return (
     <View
-      style={s.timeline}
-      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      ref={rootRef}
+      style={[s.timeline, dates.length > 1 && s.timelineWithRail]}
+      onLayout={(event) => {
+        setWidth(event.nativeEvent.layout.width);
+        position?.measure(rootRef.current, ({ top }) => {
+          rootTop.current = top;
+        });
+      }}
     >
       {!!selection.length && (
         <View style={s.row}>
@@ -365,19 +467,14 @@ export function FolderGallery({
             label={`Delete ${selection.length} selected…`}
             danger
             onPress={async () => {
-              if (await remove(selection)) setSelection([]);
+              await deleteItems(selection);
             }}
           />
           <Button label="Cancel selection" onPress={() => setSelection([])} />
         </View>
       )}
       {!!notice && <Text style={s.caption}>{notice}</Text>}
-      {!!reviewDeletions && (
-        <Button
-          label={`Review deletions (${deletionCount})`}
-          onPress={reviewDeletions}
-        />
-      )}
+
       {!!pendingItems.length && (
         <View style={s.pendingUploads}>
           <View style={s.timelineStatus}>
@@ -427,7 +524,16 @@ export function FolderGallery({
       )}
       {!!tile &&
         groups.map((group) => (
-          <View key={group.month} style={s.timelineGroup}>
+          <View
+            key={group.month}
+            style={s.timelineGroup}
+            onLayout={(event) =>
+              monthPositions.current.set(
+                group.month,
+                event.nativeEvent.layout.y,
+              )
+            }
+          >
             <Text style={s.timelineMonth}>{group.label}</Text>
             <View style={[s.photoGrid, { gap }]}>
               {group.items.map((item) => (
@@ -502,30 +608,11 @@ export function FolderGallery({
           )
         }
         folderName={folderName}
-        open={leave(open)}
+        resolveVideo={resolveVideo}
         history={leave(history)}
         share={leave(share)}
         deletable={!!remove}
-        remove={async (item) => {
-          const result = await remove(item);
-          if (!result || result === "pending") return;
-          setHidden((value) =>
-            new Map(value).set(item.path, Number(item.rev) || 0),
-          );
-          void hub.forget(item.path).catch(() => {});
-          setViewer((value) => {
-            if (!value) return null;
-            const remaining = value.items.filter(
-              (photo) => photo.path !== item.path,
-            );
-            return remaining.length
-              ? {
-                  items: remaining,
-                  index: Math.min(value.index, remaining.length - 1),
-                }
-              : null;
-          });
-        }}
+        remove={deleteItems}
       />
     </View>
   );

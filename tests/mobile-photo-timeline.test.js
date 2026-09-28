@@ -263,6 +263,11 @@ test("hub index pages through the gallery, caches a bounded copy and works from 
     next: "c1",
     total: 3,
     indexing: true,
+    month: "",
+    timeline: [
+      { month: "2026-09", count: 2 },
+      { month: "2026-08", count: 1 },
+    ],
   });
   const more = await gallery.more(first);
   assert.equal(calls[1], "/v1/gallery?volume=v&after=c1");
@@ -730,4 +735,34 @@ test("thumbnail progress is visible before eight images finish, even if refresh 
   );
   assert.equal(result, null);
   assert.equal(Object.keys(visible).length, 5);
+});
+
+test("date navigation jumps directly to an old month and refresh stays at that month", async () => {
+  const calls = [];
+  const gallery = hubGallery({
+    scope: "s",
+    volume: "v",
+    store: { get: async (_, fallback) => fallback, set: async () => {} },
+    api: async (route) => {
+      const query = new URL("http://hub" + route).searchParams;
+      calls.push(query);
+      return {
+        items: [
+          { path: "old.jpg", hash: "old", date: "2014-05-01", kind: "image" },
+        ],
+        next: null,
+        timeline: [
+          { month: "2026-09", count: 3500 },
+          { month: "2014-05", count: 1 },
+        ],
+      };
+    },
+  });
+  const page = await gallery.seek("2014-05");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].get("month"), "2014-05");
+  assert.equal(page.items[0].path, "old.jpg");
+  await gallery.first();
+  assert.equal(calls[1].get("month"), "2014-05");
+  await assert.rejects(gallery.seek("2014-99"), /Invalid gallery month/);
 });

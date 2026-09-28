@@ -254,8 +254,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
           <GalleryDetails>
             <Text style={s.caption}>
               Existing and new photos are included. Deleting from Photos keeps
-              uploaded files. Originals stay in Photos unless you enable
-              original-removal review and confirm each removal.
+              uploaded files. Originals stay in Photos.
             </Text>
             <Text style={s.caption}>
               Photo edits are uploaded as new versions. Album organization is

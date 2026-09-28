@@ -47,9 +47,6 @@ public class ArcaNetworkModule: Module {
         }
       }
     }
-    AsyncFunction("exportGalleryAssetForRemoval") { (id: String, destination: String) async throws -> [[String: String]] in
-      try await GalleryExport.export(id: id, destination: destination, localOnly: true)
-    }
     AsyncFunction("exportGalleryAsset") { (id: String, destination: String) async throws -> [[String: String]] in
       return try await GalleryExport.export(id: id, destination: destination)
     }

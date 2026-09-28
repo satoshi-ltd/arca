@@ -17,6 +17,12 @@ test("single port web, discovery, one-time login, CSRF rejection and logout", as
   });
   const url = `http://127.0.0.1:${d.port}`;
   assert.equal((await fetch(url)).status, 200);
+  const timelineLayout = await fetch(url + "/gallery-timeline-layout.js");
+  assert.equal(timelineLayout.status, 200);
+  assert.match(timelineLayout.headers.get("content-type"), /javascript/);
+  assert.equal(await timelineLayout.text(), fs.readFileSync(
+    new URL("../apps/desktop/src/gallery-timeline-layout.js", import.meta.url), "utf8",
+  ));
   const fileIcons = await fetch(url + "/file-icons.js");
   assert.equal(fileIcons.status, 200);
   assert.match(fileIcons.headers.get("content-type"), /javascript/);

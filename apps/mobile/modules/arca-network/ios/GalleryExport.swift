@@ -9,7 +9,7 @@ private struct GalleryExportError: LocalizedError {
 // Export current full-size resources, including rendered edits and Live Photo video.
 // Never request PhotoKit mutations or render/recompress the image.
 enum GalleryExport {
-  static func export(id: String, destination: String, localOnly: Bool = false) async throws -> [[String: String]] {
+  static func export(id: String, destination: String) async throws -> [[String: String]] {
     let manager = FileManager.default
     guard let root = URL(string: destination), root.isFileURL,
       let documents = manager.urls(for: .documentDirectory, in: .userDomainMask).first,
@@ -44,14 +44,14 @@ enum GalleryExport {
       counts[role(resource.type).rawValue] = index + 1
       let key = "\(role(resource.type).rawValue)-\(index)"
       let target = root.appendingPathComponent(key)
-      do { try await write(resource: resource, to: target, localOnly: localOnly) }
+      do { try await write(resource: resource, to: target) }
       catch { try? manager.removeItem(at: root); throw error }
       result.append(["key": key, "name": resource.originalFilename, "uri": target.absoluteString])
     }
     return result
   }
 
-  private static func write(resource: PHAssetResource, to target: URL, localOnly: Bool) async throws {
+  private static func write(resource: PHAssetResource, to target: URL) async throws {
     guard FileManager.default.createFile(atPath: target.path, contents: nil) else {
       throw GalleryExportError(message: "Could not create temporary photo file")
     }
@@ -60,7 +60,7 @@ enum GalleryExport {
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       let state = ResourceWrite(handle: handle, target: target, continuation: continuation)
       let options = PHAssetResourceRequestOptions()
-      options.isNetworkAccessAllowed = !localOnly
+      options.isNetworkAccessAllowed = true
       let manager = PHAssetResourceManager.default()
       let request = manager.requestData(for: resource, options: options, dataReceivedHandler: { data in
         state.append(data)

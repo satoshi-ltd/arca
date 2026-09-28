@@ -1198,8 +1198,7 @@ test("explicit gallery deletion is durable, grouped and rejects stale or reused 
   assert.equal(fs.existsSync(path.join(v.path, "live.mov")), false);
   const events = await api("/v1/gallery/removals", { volume: v.id });
   assert.equal(events.events.length, 1);
-  assert.equal(events.events[0].eligible, true);
-  assert.equal(events.events[0].resources.length, 2);
+  assert.equal(events.events[0].suppressed, true);
   s.db.exec("DELETE FROM proposals");
   await f
     .photo("live.jpg", undefined, "green")
@@ -1213,8 +1212,8 @@ test("explicit gallery deletion is durable, grouped and rejects stale or reused 
   assert.deepEqual(await api("/v1/gallery/delete", body), result);
   assert.ok(fs.existsSync(path.join(v.path, "live.jpg")));
   assert.equal(
-    (await api("/v1/gallery/removals", { volume: v.id })).events[0].eligible,
-    false,
+    (await api("/v1/gallery/removals", { volume: v.id })).events[0].suppressed,
+    true,
   );
   await assert.rejects(
     api("/v1/gallery/delete", { ...body, path: "live.mov" }),
@@ -1232,7 +1231,7 @@ test("explicit gallery deletion is durable, grouped and rejects stale or reused 
   );
 });
 
-test("gallery deletion journal recovers interrupted materialization and pins recovery history", async (t) => {
+test("gallery deletion journal recovers interrupted materialization and respects ordinary retention", async (t) => {
   const f = await fixture(t),
     { s, v, api } = f;
   const { retentionPlan, applyRetention } =
@@ -1266,45 +1265,32 @@ test("gallery deletion journal recovers interrupted materialization and pins rec
   const result = await api("/v1/gallery/delete", body);
   assert.equal(result.rows.length, 2);
   assert.equal(s.db.prepare("SELECT count(*) AS n FROM pending").get().n, 0);
-  let plan = retentionPlan(s, { volume: v.id, versions: 1 });
-  assert.ok(resources.every((row) => !plan.remove.includes(row.rev)));
+  const plan = retentionPlan(s, { volume: v.id, versions: 1 });
+  assert.ok(resources.every((row) => plan.remove.includes(row.rev)));
   applyRetention(s, { volume: v.id, versions: 1 });
   assert.ok(
-    resources.every((row) =>
-      s.history(v.id, row.path).some((r) => r.rev === row.rev),
+    resources.every(
+      (row) => !s.history(v.id, row.path).some((r) => r.rev === row.rev),
     ),
   );
-  await f.daemon.engine.gallery.background;
-  const recoveryFile = s.blob(resources[0].hash);
-  const recoveryBytes = fs.readFileSync(recoveryFile);
-  fs.chmodSync(recoveryFile, 0o600);
-  // Windows refuses to truncate a file another process has mapped; rewrite bytes in place.
-  const overwrite = (bytes) => {
-    const fd = fs.openSync(recoveryFile, "r+");
-    try {
-      fs.writeSync(fd, bytes, 0, bytes.length, 0);
-    } finally {
-      fs.closeSync(fd);
-    }
-  };
-  overwrite(Buffer.from("corrupt recovery bytes"));
-  const event = (await api("/v1/gallery/removals", { volume: v.id })).events[0];
-  await assert.rejects(
-    api("/v1/gallery/removal-check", { volume: v.id, seq: event.seq }),
-    { status: 409 },
-  );
-  overwrite(recoveryBytes);
-  s.config.folderRetention = { [v.id]: "off" };
+  // Suppression receipts survive ordinary history retention.
   assert.equal(
-    (await api("/v1/gallery/removals", { volume: v.id })).events[0].eligible,
-    false,
+    (await api("/v1/gallery/removals", { volume: v.id })).events[0].suppressed,
+    true,
   );
-  s.db.prepare("UPDATE gallery_deletions SET expires=?").run(Date.now() - 1);
-  plan = retentionPlan(s, { volume: v.id, versions: 1 });
-  assert.ok(resources.every((row) => plan.remove.includes(row.rev)));
+  for (const route of ["restore", "removal-check"]) {
+    await assert.rejects(
+      api(`/v1/gallery/${route}`, {
+        volume: v.id,
+        asset: "native_asset_000002",
+        seq: 1,
+      }),
+      { status: 404 },
+    );
+  }
 });
 
-test("ordinary file deletion and incomplete or edited manifests never authorize original removal", async (t) => {
+test("ordinary file deletion does not suppress uploads and incomplete or edited groups cannot be deleted", async (t) => {
   const f = await fixture(t),
     { s, v, api } = f;
   await api("/v1/gallery/link", { volume: v.id });
@@ -1385,4 +1371,45 @@ test("gallery event cursors never rewind when a different share is deleted", asy
   const page = await api("/v1/gallery/removals", { volume: v.id, after: head });
   assert.equal(page.events.length, 1);
   assert.ok(page.events[0].seq > head);
+});
+
+test("list thumbnails identify the exact retained revision and never substitute the current image", async (t) => {
+  const f = await fixture(t);
+  const first = await f.photo(
+    "versions.jpg",
+    "2020-01-01T00:00:00.000Z",
+    "red",
+  );
+  const original = f.s.current(f.v.id, "versions.jpg");
+  const second = await f.photo("blue.jpg", "2020-01-01T00:00:00.000Z", "blue");
+  await f.api("/v1/propose", {
+    volume: f.v.id,
+    path: "versions.jpg",
+    base: original.rev,
+    hash: second.hash,
+    size: second.buffer.length,
+  });
+  const old = await f.api(
+    f.preview("versions.jpg", first.hash) + `&rev=${original.rev}`,
+  );
+  assert.ok(old.data.startsWith("data:image/jpeg;base64,"));
+  const current = await f.api(f.preview("versions.jpg", second.hash));
+  assert.notEqual(old.data, current.data);
+  await assert.rejects(
+    f.api(f.preview("versions.jpg", second.hash) + `&rev=${original.rev}`),
+    { status: 404 },
+  );
+  await assert.rejects(
+    f.api(f.preview("blue.jpg", first.hash) + `&rev=${original.rev}`),
+    { status: 404 },
+  );
+  await assert.rejects(
+    f.api(f.preview("versions.jpg", first.hash) + "&rev=invalid"),
+    { status: 400 },
+  );
+  const browsing = await f.api(`/v1/browse?volume=${f.v.id}`);
+  assert.equal(
+    browsing.entries.find((row) => row.path === "versions.jpg").hash,
+    second.hash,
+  );
 });

@@ -262,3 +262,13 @@ test("connection outages are recognised by code or transport text, never by loca
       String(value?.message || value),
     );
 });
+
+test("an unavailable mobile album warns about photo uploads without stopping folder synchronization", () => {
+  const notices = conditionNotices({
+    volumes: [{id: "photos", name: "photos", selected: true, gallery: JSON.stringify({mode: "source", enabled: true, issue: "The selected album is unavailable."})}],
+  });
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].id, "photo-uploads:photos");
+  assert.match(notices[0].title, /Photo uploads/);
+  assert.equal(notices[0].offline, false);
+});

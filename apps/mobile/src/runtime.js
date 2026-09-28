@@ -35,7 +35,11 @@ const transfer = new TransferSession({
   },
   update: (progress) =>
     native.transferProgress(
-      progress?.direction === "upload" ? "Uploading photo" : "Preparing photos",
+      progress?.direction === "upload"
+        ? "Uploading files"
+        : progress?.direction === "download"
+          ? "Downloading files"
+          : "Synchronizing folders",
       progress?.bytesDone || 0,
       progress?.bytesTotal || 0,
     ),
@@ -52,6 +56,8 @@ if (Platform.OS === "android")
       changed();
     };
     void transfer.end().catch(report);
+    if (reason === "timeout")
+      report(new Error("Android stopped background synchronization after its time limit. Open Arca to continue."));
     if (reason === "paused") void currentReplica?.pause(true).catch(report);
   });
 export const BACKGROUND_TASK = "arca-sync";

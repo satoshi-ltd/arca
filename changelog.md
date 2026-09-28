@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.6.4 — 2026-09-28
+
+- Clean commit validation on macOS with Node 24.14.0 and root-only dependencies: exact macOS CI command 378 passed/two skipped; mobile source suite 173 passed. Hosted CI and physical-device qualification remain pending.
+
+- Keep foreground-started Android folder synchronization active when the screen turns off: acquire the existing transfer service for ordinary downloads/uploads as well as album uploads, retain it across continuation turns and release on completion/pause/failure. Scheduled background runs do not start it. Notifications describe file synchronization and report the Android service time limit. Source-only; no new native build or device validation for this fix. Local `npm test`: 551 passed, two platform skips.
+
+- Include the shared timeline module in EAS build inputs; regenerated the signed Android 0.6.4/build 27 APK with the gallery corrections. Device visual acceptance remains pending.
+
+- Align mobile date navigation with desktop: shared month spacing, muted years, compact accent drag label and no rail background. Mobile uses thin horizontal month ticks and the full measured gallery viewport, with a side gutter that keeps navigation off the photos.
+
+- Mobile gallery shows the actual synchronization or album-upload error below the header instead of the generic “Needs attention” text; disabled uploads are identified explicitly.
+
+- Fix an intermittent watcher test failure blocking update preflight: after changing exclusion rules, wait for the replacement parent watcher to receive an event before testing directory removal. Verified with 100 consecutive watcher runs and the complete `npm test` update preflight (546 passed, two platform skips).
+
+- Mobile snapshot retries reuse verified hashes of unchanged local files instead of rereading their full contents; changed files and forced verification still check the bytes and preserve conflicts.
+
+- An unavailable linked phone album now warns about photo uploads without failing shared-folder synchronization; incoming files continue downloading when the hub is reachable.
+
+- Remove the remaining mobile deletion-review screen, menu actions, opt-in, pending queue and native original-removal code, plus the hub’s special restore/check endpoints and recovery pins. Confirmed shared deletions go directly to the hub; failures are reported without queuing. Live Photo grouping and source re-upload suppression remain, and Photos originals stay untouched.
+
+- Desktop gallery uses an accent “View folder” header action and restores the gallery position when returning.
+- Files, Recent and History load small media previews without blocking rows. Historical previews identify the retained revision exactly; unavailable previews keep their icons.
+- Mobile galleries show a draggable date rail during scrolling and hide it after two idle seconds. Selecting a month jumps directly to its page; single-month galleries omit the rail.
+- Fix mobile gallery Play opening file details: use an embedded player with native controls, resolve the current local video at playback time, and stop playback on navigation or backgrounding. Requires the rebuilt mobile client with `expo-video`.
+- Mobile native build number 27; source changes do not update installed apps or the hub.
+- Local post-review validation: 546 tests pass with two platform skips (complete sequential suite), Android/iOS JavaScript exports, version agreement and whitespace checks pass. Physical-device feedback and clean release qualification remain separate.
+
 ## 0.6.3 — 2026-09-28
 
 - Excluded paths are outside Arca: when a folder's `.arcaignore` or the fixed exclusion list changes, the hub, desktop replicas and phones forget the excluded index rows. Their hub history then ages out under the folder's history setting as if they had been deleted at that moment (Off: at the next retention pass; Forever: kept), respecting backups and pins, and unused objects are collected afterwards. Files on disk are never touched and no deletion is propagated. Re-including a path imports it again; identical replica copies are adopted without conflicts and different content keeps both versions.

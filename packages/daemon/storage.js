@@ -243,7 +243,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS gallery_folders(volume TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS gallery_assets(volume TEXT,source TEXT,asset TEXT,resources TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(volume,source,asset));
       CREATE TABLE IF NOT EXISTS gallery_members(volume TEXT,path TEXT,source TEXT,asset TEXT,PRIMARY KEY(volume,path));
-      CREATE TABLE IF NOT EXISTS gallery_deletions(seq INTEGER PRIMARY KEY AUTOINCREMENT,author TEXT,id TEXT,volume TEXT,request TEXT,result TEXT,source TEXT,asset TEXT,resources TEXT,created INTEGER,expires INTEGER,UNIQUE(author,id));
+      CREATE TABLE IF NOT EXISTS gallery_deletions(seq INTEGER PRIMARY KEY AUTOINCREMENT,author TEXT,id TEXT,volume TEXT,request TEXT,result TEXT,source TEXT,asset TEXT,created INTEGER,UNIQUE(author,id));
       CREATE INDEX IF NOT EXISTS gallery_deletions_source ON gallery_deletions(volume,source);
       CREATE TABLE IF NOT EXISTS accepted_proposals(id TEXT PRIMARY KEY,volume TEXT NOT NULL,device TEXT NOT NULL,base INTEGER NOT NULL,revision INTEGER);
       CREATE INDEX IF NOT EXISTS accepted_proposals_revision ON accepted_proposals(revision);

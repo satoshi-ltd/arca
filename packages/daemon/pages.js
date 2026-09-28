@@ -58,10 +58,10 @@ export function browsePage(store, volume, query) {
       SELECT CASE WHEN ?='' AND instr(relative,'/')>0
         THEN substr(relative,1,instr(relative,'/')-1) ELSE relative END AS name,
         CASE WHEN directory=1 OR (?='' AND instr(relative,'/')>0) THEN 1 ELSE 0 END AS directory,
-        CASE WHEN directory=1 THEN 0 ELSE 1 END AS file_count, size, rev
+        CASE WHEN directory=1 THEN 0 ELSE 1 END AS file_count, size, rev, hash
       FROM source WHERE relative<>'' AND (?='' OR instr(lower(relative),lower(?))>0)
     )
-    SELECT name, directory, sum(file_count) AS files, sum(size) AS size, max(rev) AS rev
+    SELECT name, directory, sum(file_count) AS files, sum(size) AS size, max(rev) AS rev, max(hash) AS hash
     FROM entries GROUP BY name, directory
     HAVING (CASE WHEN directory=1 THEN '0:' ELSE '1:' END || name)>?
     ORDER BY directory DESC, name LIMIT ?
@@ -81,7 +81,11 @@ export function browsePage(store, volume, query) {
   return {
     entries: rows
       .slice(0, limit)
-      .map((row) => ({ ...row, path: base + row.name })),
+      .map(({ hash, ...row }) => ({
+        ...row,
+        ...(row.directory ? {} : { hash }),
+        path: base + row.name,
+      })),
     next:
       rows.length > limit
         ? `${rows[limit - 1].directory ? "0:" : "1:"}${rows[limit - 1].name}`

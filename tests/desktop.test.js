@@ -17,6 +17,11 @@ const fileIconScript = fs
   )
   .replace(/export /g, "");
 const script =
+  fs.readFileSync(
+    new URL("../apps/desktop/src/gallery-timeline-layout.js", import.meta.url),
+    "utf8",
+  ).replace(/export /g, "") +
+  "\n" +
   fileIconScript +
   "\n" +
   fs
@@ -2291,7 +2296,7 @@ test("numeric Lucide names render deletion and restore icons", () => {
     );
     dom.window.eval(
       script.slice(
-        script.indexOf("function icons()"),
+        script.indexOf("function rowPreview("),
         script.indexOf("function pill("),
       ) + "\nicons();",
     );
@@ -2966,7 +2971,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   assert.match(
     w.document.querySelector('.heading-actions [data-action="gallery-mode"]')
       .textContent,
-    /Exit gallery/,
+    /View folder/,
   );
 
   assert.notEqual(
@@ -3159,10 +3164,13 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   assert.equal(w.document.querySelector(".photo-previous").disabled, true);
   assert.equal(w.document.querySelector('[aria-label="Open photo.jpg"]'), null);
   w.document.querySelector("#cancel-dialog").click();
+  w.document.querySelector(".page").scrollTop = 123;
   w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => !w.document.querySelector("#photo-gallery"));
   w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => w.document.querySelectorAll(".photo-select").length === 2);
+  await until(() => w.document.querySelector(".page").scrollTop === 123);
+  assert.ok(w.document.querySelector('[data-action="gallery-mode"]').classList.contains("primary"));
   assert.equal(
     w.document.querySelector('[aria-label="Open photo.jpg"]'),
     null,
@@ -3216,7 +3224,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     w.document
       .querySelector('#photo-selection [data-action="gallery-mode"]')
       .textContent.trim(),
-    "Exit gallery",
+    "View folder",
   );
   w.document
     .querySelector('#photo-selection [data-action="gallery-mode"]')
@@ -3640,7 +3648,7 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
   );
   assert.match(
     w.document.querySelector('[data-action="gallery-mode"]').textContent,
-    /Exit gallery/,
+    /View folder/,
   );
   assert.ok(w.document.querySelector(".photo-video-badge"));
   await until(() => w.document.body.getAttribute("aria-busy") === "false");

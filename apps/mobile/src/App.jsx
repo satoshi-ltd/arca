@@ -1,4 +1,4 @@
-import { GalleryDeletionReview } from "./GalleryDeletionReview";
+import { galleryVideoURI } from "./video-playback";
 import { StickyDetailSide } from "./StickyDetailSide";
 import * as Application from "expo-application";
 import { textSizes, textScale } from "./text-size.js";
@@ -8,7 +8,6 @@ import { native } from "./private-network.js";
 import { canContinueInBackground } from "./runtime";
 import { BrandActivity, Busy, Scaffold } from "./components";
 import { GallerySetup } from "./GallerySource";
-import { uploadStatus } from "./gallery-timeline";
 import { galleryConfig } from "./gallery.js";
 import { Section } from "./components";
 import { ConfirmDialog } from "./components";
@@ -92,6 +91,7 @@ import config from "../app.json";
 import { HubConnection } from "./HubConnection";
 import { FileHistory } from "./FileHistory";
 import { IncomingShare } from "./IncomingShare";
+import { GalleryDateRail } from "./GalleryDateRail";
 import { FolderGallery } from "./FolderGallery";
 import { FolderRecent } from "./FolderRecent";
 import { sidebarLayout, fileMenuPosition } from "./layout";
@@ -184,7 +184,6 @@ export default function App() {
     [historyVolume, setHistoryVolume] = useState(""),
     [historyFilter, setHistoryFilter] = useState("revisions");
   const historyRequest = useRef(0);
-  const [deletionCount, setDeletionCount] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false);
   const [filesLoading, setFilesLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
@@ -323,6 +322,12 @@ export default function App() {
     current?.resolve(ok);
   };
   const [timelineDemand, setTimelineDemand] = useState(0);
+  const [galleryDates, setGalleryDates] = useState([]);
+  const [galleryViewport, setGalleryViewport] = useState({ y: 0, height: 0 });
+  const gallerySeek = useRef(null);
+  const galleryScroll = useRef(null);
+  const galleryScrollY = useRef(0);
+  const galleryRail = useRef(null);
   const nearEnd = useRef(false);
   const [noticeItems, setNoticeItems] = useState([]);
   useEffect(() => {
@@ -778,12 +783,13 @@ export default function App() {
       setDetailLoading(false);
     }
   }
-  async function openMedia(item) {
-    if (item.uri && typeof native.openFile === "function") {
-      await native.openFile(item.uri);
-      return;
-    }
-    await openFileDetail(item);
+  async function resolveVideo(item) {
+    const r = engine.current;
+    return galleryVideoURI(item, {
+      files: r.files,
+      scope: r.scope,
+      volume: folder.id,
+    });
   }
   function deleteMedia(item) {
     return new Promise((resolve) =>
@@ -791,19 +797,23 @@ export default function App() {
         Array.isArray(item)
           ? `Delete ${item.length} photos?`
           : "Delete this photo?",
-        "Deletes this photo and its Live Photo resources from the shared gallery for everyone. This phone’s original is a separate action in Review deletions. Recovery depends on this folder’s revision retention." +
-          (!connected || status.paused
-            ? " Deletion will sync when connected and resumed."
-            : ""),
+        "Deletes the selected photos and their Live Photo resources from the shared gallery for everyone. Originals stay in Photos. Recovery depends on this folder’s revision retention.",
         () =>
           run(
             async () => {
-              await engine.current.galleryDeletions.enqueue(folder.id, item);
-              resolve("pending");
-              await listFiles();
-              if (connected && !status.paused) startSync();
+              try {
+                resolve(
+                  await engine.current.galleryDeletions.delete(folder.id, item),
+                );
+              } catch (error) {
+                if (error.deletedRows?.length) resolve(error.deletedRows);
+                throw error;
+              } finally {
+                await listFiles();
+                if (connected && !status.paused) startSync();
+              }
             },
-            { success: "Deletion queued. Sync will confirm it." },
+            { success: "Photos deleted" },
           ).then(() => resolve(false)),
         "Delete photo",
         () => resolve(false),
@@ -996,40 +1006,18 @@ export default function App() {
     }),
     [entries],
   );
-  useEffect(() => {
-    let active = true;
-    if (!folder || !engine.current) {
-      setDeletionCount(0);
-      return;
-    }
-    Promise.all([
-      engine.current.galleryDeletions.pending(folder.id),
-      engine.current.galleryDeletions.originals(folder.id),
-    ])
-      .then(([requests, originals]) => {
-        if (active) setDeletionCount(requests.length + originals.length);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [folder?.id, status.last, status.busy, busy]);
-  const timelineNotice = source
-    ? ["Needs attention", "Disabled"].find(
-        (state) =>
-          state ===
-          uploadStatus(source, {
-            connected,
-            paused: status.paused,
-            busy:
-              !status.offline &&
-              status.busy &&
-              status.syncingVolume === folder?.id,
-          }),
-      ) || ""
-    : currentFolder?.issue || status.error
-      ? "Needs attention"
-      : "";
+  const syncIssue = currentFolder?.issue || status.error;
+  const timelineNotice = [
+    syncIssue ? `Folder synchronization: ${syncIssue}` : "",
+    sourceConfig?.enabled && sourceConfig.issue
+      ? `Photo uploads: ${sourceConfig.issue}`
+      : "",
+    sourceConfig && !sourceConfig.enabled
+      ? "Photo uploads are disabled for this album."
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   const timeline =
     folder && engine.current ? (
       <FolderGallery
@@ -1044,6 +1032,10 @@ export default function App() {
         columns={wide ? 6 : 4}
         refreshKey={status.last}
         demand={timelineDemand}
+        onDates={setGalleryDates}
+        seekRef={gallerySeek}
+        scrollRef={galleryScroll}
+        railRef={galleryRail}
         onSummary={({ count }) => setPhotoCount(count)}
         uploads={
           source
@@ -1056,14 +1048,8 @@ export default function App() {
             : null
         }
         notice={timelineNotice}
-        reviewDeletions={
-          deletionCount
-            ? () => setSheet({ kind: "gallery-deletions", volume: folder })
-            : null
-        }
-        deletionCount={deletionCount}
         folderName={folder.name}
-        open={(item) => openMedia(item).catch((e) => setError(e.message))}
+        resolveVideo={resolveVideo}
         history={(item) => openFileDetail(item)}
         share={(item) => shareMedia(item).catch((e) => setError(e.message))}
         remove={currentFolder?.selected ? deleteMedia : null}
@@ -1573,10 +1559,21 @@ export default function App() {
                   onSaved={update}
                 />
                 <KeyboardScrollView
+                  onLayout={(event) => {
+                    const { y, height } = event.nativeEvent.layout;
+                    setGalleryViewport((old) =>
+                      old.y === y && old.height === height
+                        ? old
+                        : { y, height },
+                    );
+                  }}
                   key={`${screen}:${folder?.id || ""}`}
                   onScroll={(event) => {
                     const { contentOffset, layoutMeasurement, contentSize } =
                       event.nativeEvent;
+                    if (contentOffset.y !== galleryScrollY.current)
+                      galleryScroll.current?.(contentOffset.y);
+                    galleryScrollY.current = contentOffset.y;
                     const near =
                       contentOffset.y + layoutMeasurement.height >
                       contentSize.height - 1200;
@@ -2703,6 +2700,15 @@ export default function App() {
                     </>
                   )}
                 </KeyboardScrollView>
+                {folder && screen === "Folders" && photoFolder && (
+                  <GalleryDateRail
+                    key={folder.id}
+                    dates={galleryDates}
+                    viewport={galleryViewport}
+                    controller={galleryRail}
+                    onSeek={(month) => gallerySeek.current?.(month)}
+                  />
+                )}
                 {!onboarding && !wide && !keyboardVisible && (
                   <Navigation
                     view={view}
@@ -2768,23 +2774,21 @@ export default function App() {
                 />
               }
               title={
-                shownSheet.kind === "gallery-deletions"
-                  ? "Review deletions"
-                  : shownSheet.kind === "rename-file"
-                    ? "Rename file"
-                    : shownSheet.kind === "gallery"
-                      ? "Photo uploads"
-                      : shownSheet.kind === "history-filter"
-                        ? "Shared folder"
-                        : shownSheet.kind === "folder-actions"
+                shownSheet.kind === "rename-file"
+                  ? "Rename file"
+                  : shownSheet.kind === "gallery"
+                    ? "Photo uploads"
+                    : shownSheet.kind === "history-filter"
+                      ? "Shared folder"
+                      : shownSheet.kind === "folder-actions"
+                        ? shownSheet.volume.name
+                        : shownSheet.kind === "select"
                           ? shownSheet.volume.name
-                          : shownSheet.kind === "select"
-                            ? shownSheet.volume.name
-                            : shownSheet.kind === "history"
-                              ? shownSheet.path
-                              : shownSheet.kind === "conflict"
-                                ? "Resolve conflict"
-                                : shownSheet.entry.path
+                          : shownSheet.kind === "history"
+                            ? shownSheet.path
+                            : shownSheet.kind === "conflict"
+                              ? "Resolve conflict"
+                              : shownSheet.entry.path
               }
               busy={busy}
               busyLabel={actionLabel}
@@ -2839,13 +2843,6 @@ export default function App() {
                     }
                   />
                 </View>
-              )}
-              {shownSheet.kind === "gallery-deletions" && (
-                <GalleryDeletionReview
-                  actions={engine.current.galleryDeletions}
-                  volume={shownSheet.volume.id}
-                  confirm={confirm}
-                />
               )}
               {shownSheet.kind === "gallery" && (
                 <GallerySetup
@@ -2953,51 +2950,6 @@ export default function App() {
                                 !source.enabled,
                               ),
                             )
-                          }
-                        />
-                      )}
-                      {photoFolder && (
-                        <ActionRow
-                          label="Review deletions…"
-                          icon="trash"
-                          disabled={busy}
-                          onPress={() =>
-                            setSheet({
-                              kind: "gallery-deletions",
-                              volume: folder,
-                            })
-                          }
-                        />
-                      )}
-                      {source && (
-                        <ActionRow
-                          label={
-                            source.originalRemoval
-                              ? "Disable original removal"
-                              : "Enable original removal…"
-                          }
-                          icon="gallery"
-                          disabled={actionLocked || !connected}
-                          onPress={() =>
-                            source.originalRemoval
-                              ? run(() =>
-                                  engine.current.galleryDeletions.setOriginals(
-                                    folder.id,
-                                    false,
-                                  ),
-                                )
-                              : confirm(
-                                  "Review original removal on this phone?",
-                                  "Only future deletions from Arca will be offered for review. Nothing is removed from Photos automatically. Deleting in Photos still keeps the Arca copy. Requires the updated mobile app.",
-                                  () =>
-                                    run(() =>
-                                      engine.current.galleryDeletions.setOriginals(
-                                        folder.id,
-                                        true,
-                                      ),
-                                    ),
-                                  "Enable review",
-                                )
                           }
                         />
                       )}

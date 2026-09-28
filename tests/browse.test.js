@@ -6,7 +6,7 @@ test("browse groups directories, scopes search and paginates without including d
   const db = new DatabaseSync(":memory:");
   try {
     db.exec(
-      "CREATE TABLE files(volume TEXT, path TEXT, size INTEGER, rev INTEGER, deleted INTEGER, directory INTEGER DEFAULT 0)",
+      "CREATE TABLE files(volume TEXT, path TEXT, size INTEGER, rev INTEGER, deleted INTEGER, directory INTEGER DEFAULT 0, hash TEXT)",
     );
     const put = db.prepare(
       "INSERT INTO files(volume,path,size,rev,deleted) VALUES(?,?,?,?,?)",
@@ -24,6 +24,7 @@ test("browse groups directories, scopes search and paginates without including d
     ])
       put.run("v", path, size, 1, deleted);
     put.run("other", "leak.txt", 100, 1, 0);
+    db.exec("UPDATE files SET hash='content-hash' WHERE path='root.txt'");
     const browse = (values = {}) =>
       browsePage({ db }, "v", new URLSearchParams(values));
     const first = browse({ limit: "1" });
@@ -31,6 +32,8 @@ test("browse groups directories, scopes search and paginates without including d
     assert.equal(first.entries[0].files, 2);
     assert.equal(first.entries[0].size, 30);
     assert.ok(first.next);
+    assert.equal(first.entries[0].hash, undefined);
+    assert.equal(browse({ search: "root.txt" }).entries[0].hash, "content-hash");
     assert.equal(
       browse({ limit: "1", after: first.next }).entries[0].name,
       "notes b",

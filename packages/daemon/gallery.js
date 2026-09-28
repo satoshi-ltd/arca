@@ -444,18 +444,44 @@ export class Gallery {
     return result;
   }
 
-  async preview(volume, name, hash, large = false) {
-    const result = await this.derivative(volume, name, hash, large);
+  async preview(volume, name, hash, large = false, revision = null) {
+    const result = await this.derivative(
+      volume,
+      name,
+      hash,
+      large,
+      false,
+      revision,
+    );
     return result.bytes
       ? { data: `data:image/jpeg;base64,${result.bytes.toString("base64")}` }
       : result;
   }
-  async derivative(volume, name, hash, large = false, regenerate = false) {
+  async derivative(
+    volume,
+    name,
+    hash,
+    large = false,
+    regenerate = false,
+    revision = null,
+  ) {
     const s = this.s;
     const folder = s.volume(volume);
     if (s.config.role !== "hub" && !folder.selected)
       fail("Select this folder first", 403);
-    const row = s.current(volume, name);
+    if (
+      revision !== null &&
+      (!Number.isSafeInteger(Number(revision)) || Number(revision) < 1)
+    )
+      fail("Invalid revision", 400);
+    const row =
+      revision === null
+        ? s.current(volume, name)
+        : s.db
+            .prepare(
+              "SELECT * FROM revisions WHERE volume=? AND path=? AND rev=?",
+            )
+            .get(volume, name, Number(revision));
     if (
       !row ||
       row.deleted ||

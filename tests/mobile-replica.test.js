@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { Replica, CHUNK } from "../apps/mobile/src/replica.js";
 import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
+import { TransferSession, shouldStopSync } from "../apps/mobile/src/transfer-session.js";
 import { createClient } from "../apps/mobile/src/client.js";
 import { init } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
@@ -1404,7 +1405,26 @@ test("gallery excludes ignored paths, retries them after policy removal and hand
   assert.equal(r.error, null);
   f.media.albums = async () => [];
   await r.sync();
-  assert.match(r.error, /album is unavailable/);
+  assert.equal(r.error, null);
+  assert.equal(r.hubUnavailable, false);
+  assert.match(
+    (await f.store.gallery(r.scope, volume.id)).issue,
+    /album is unavailable/,
+  );
+  assert.equal((await f.store.folder(r.scope, volume.id)).issue, null);
+  fs.writeFileSync(
+    path.join(volume.path, "from-another-device.jpg"),
+    "shared photo",
+  );
+  await f.daemon.engine.cycle();
+  await sync(f);
+  assert.equal(
+    fs.readFileSync(
+      f.files.work(r.scope, volume.id, "from-another-device.jpg"),
+      "utf8",
+    ),
+    "shared photo",
+  );
   assert.ok(fs.existsSync(path.join(volume.path, (await f.uploaded()).path)));
 });
 
@@ -2691,7 +2711,7 @@ test("a queued object the hub rejects is verified again before the next attempt"
   assert.ok(f.daemon.engine.store.current(f.volume.id, "doc.bin"));
 });
 
-test("shared gallery deletion survives offline pause, suppresses rescans and preserves phone originals by default", async (t) => {
+test("shared gallery deletion fails offline without queuing, suppresses rescans and preserves phone originals", async (t) => {
   const f = await galleryFixture(t),
     r = f.replica;
   await f.enable();
@@ -2699,10 +2719,17 @@ test("shared gallery deletion survives offline pause, suppresses rescans and pre
   const uploaded = await f.uploaded();
   await r.pause(true);
   f.offline();
-  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
-  assert.equal((await r.galleryDeletions.pending(f.volume.id)).length, 1);
+  await assert.rejects(r.galleryDeletions.delete(f.volume.id, uploaded));
+  // A saved request from an older build is inert: no hidden background deletion.
+  await r.store.set(`gallery-deletions:${r.scope}:${f.volume.id}:requests`, [
+    {
+      id: "old_request_000001",
+      volume: f.volume.id,
+      path: uploaded.path,
+      rev: uploaded.rev,
+    },
+  ]);
   await r.load();
-  assert.equal((await r.galleryDeletions.pending(f.volume.id)).length, 1);
   assert.equal(
     f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
     0,
@@ -2710,7 +2737,13 @@ test("shared gallery deletion survives offline pause, suppresses rescans and pre
   f.online();
   await r.pause(false);
   await sync(f);
-  assert.equal((await r.galleryDeletions.pending(f.volume.id)).length, 0);
+  assert.equal(
+    f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
+    0,
+  );
+  const removed = await r.galleryDeletions.delete(f.volume.id, uploaded);
+  assert.ok(removed.some((row) => row.path === uploaded.path));
+  await sync(f);
   assert.equal(
     (await f.store.galleryAsset(r.scope, f.volume.id, "photo-1")).state,
     "removed",
@@ -2720,7 +2753,6 @@ test("shared gallery deletion survives offline pause, suppresses rescans and pre
     1,
   );
   assert.ok(f.data.has("photo-1"));
-  assert.equal((await r.galleryDeletions.originals(f.volume.id)).length, 0);
   // Lose the local upload ledger: the hub still suppresses the same native asset.
   await f.store.db.runAsync(
     "DELETE FROM gallery_assets WHERE scope=? AND volume=?",
@@ -2736,98 +2768,6 @@ test("shared gallery deletion survives offline pause, suppresses rescans and pre
   assert.equal(
     f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
     1,
-  );
-});
-
-test("original review verifies content, handles cancellation, and only then invokes native removal", async (t) => {
-  const f = await galleryFixture(t, [
-      {
-        id: "photo-1",
-        filename: "photo.jpg",
-        creationTime: 1750000000000,
-        modificationTime: 1750000001000,
-      },
-    ]),
-    r = f.replica;
-  await f.enable();
-  await sync(f);
-  const uploaded = await f.uploaded();
-  let removed = 0,
-    allow = false;
-  f.media.canRemove = () => true;
-  f.media.foreground = () => true;
-  f.media.preview = async () => ({
-    uri: "file:///test.jpg",
-    modificationTime: 1750000001000,
-  });
-  f.media.exportForRemoval = f.media.export;
-  f.media.remove = async (ids) => {
-    removed++;
-    return allow ? ids : [];
-  };
-  await r.galleryDeletions.setOriginals(f.volume.id, true);
-  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
-  await sync(f);
-  let tasks = await r.galleryDeletions.originals(f.volume.id);
-  assert.equal(tasks.length, 1);
-  f.media.foreground = () => false;
-  await assert.rejects(
-    r.galleryDeletions.removeOriginals(f.volume.id, [tasks[0].seq]),
-    /Open the updated/,
-  );
-  assert.equal(removed, 0);
-  f.media.foreground = () => true;
-  const original = f.data.get("photo-1");
-  f.data.set("photo-1", Buffer.from("edited after upload"));
-  await assert.rejects(
-    r.galleryDeletions.removeOriginals(f.volume.id, [tasks[0].seq]),
-    /changed/,
-  );
-  assert.equal(removed, 0);
-  assert.equal(r.importing, false);
-  f.data.set("photo-1", original);
-  await r.galleryDeletions.removeOriginals(f.volume.id, [tasks[0].seq]);
-  assert.equal(removed, 1);
-  assert.equal((await r.galleryDeletions.originals(f.volume.id)).length, 1);
-  allow = true;
-  await r.galleryDeletions.removeOriginals(f.volume.id, [tasks[0].seq]);
-  assert.equal(removed, 2);
-  assert.equal((await r.galleryDeletions.originals(f.volume.id)).length, 0);
-  assert.equal(
-    fs.existsSync(f.files.galleryStage(r.scope, f.volume.id)),
-    false,
-  );
-});
-
-test("restoring an explicitly deleted source photo permits a new generation but cancels original removal", async (t) => {
-  const f = await galleryFixture(t),
-    r = f.replica;
-  await f.enable();
-  await sync(f);
-  const uploaded = await f.uploaded();
-  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
-  await sync(f);
-  const [event] = await r.galleryDeletions.reviews(f.volume.id);
-  assert.ok(event);
-  await r.galleryDeletions.restore(f.volume.id, event);
-  assert.equal(
-    f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
-    0,
-  );
-  assert.equal(
-    (await f.store.galleryAsset(r.scope, f.volume.id, "photo-1")).state,
-    "accepted",
-  );
-  const events = await f.client.api("/v1/gallery/removals", {
-    volume: f.volume.id,
-  });
-  assert.equal(events.events[0].eligible, false);
-  await assert.rejects(
-    f.client.api("/v1/gallery/removal-check", {
-      volume: f.volume.id,
-      seq: event.seq,
-    }),
-    /restored/,
   );
 });
 
@@ -2869,41 +2809,56 @@ test("another replica can delete a source photo without hub administration and w
     "removed",
   );
   assert.ok(f.data.has("photo-1"));
-  assert.equal((await r.galleryDeletions.reviews(f.volume.id)).length, 1);
 });
 
-test("pending deletion can be canceled before submission and stale selections keep later content", async (t) => {
+test("direct gallery deletion rejects stale selections and never deletes later content", async (t) => {
   const f = await galleryFixture(t),
     r = f.replica;
   await f.enable();
   await sync(f);
   const uploaded = await f.uploaded();
-  await r.pause(true);
-  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
-  const [pending] = await r.galleryDeletions.pending(f.volume.id);
-  await r.galleryDeletions.cancel(f.volume.id, pending.id);
-  await r.pause(false);
-  await sync(f);
-  assert.equal(
-    f.daemon.engine.store.current(f.volume.id, uploaded.path).deleted,
-    0,
-  );
-  await r.galleryDeletions.enqueue(f.volume.id, uploaded);
   fs.writeFileSync(
     path.join(f.volume.path, uploaded.path),
     "a newer desktop edit",
   );
   await f.daemon.engine.cycle();
+  await assert.rejects(
+    r.galleryDeletions.delete(f.volume.id, uploaded),
+    /changed/,
+  );
+  assert.equal(r.importing, false);
   await sync(f);
-  const [stale] = await r.galleryDeletions.pending(f.volume.id);
-  assert.match(stale.issue, /changed/);
   assert.equal(
     fs.readFileSync(path.join(f.volume.path, uploaded.path), "utf8"),
     "a newer desktop edit",
   );
-  await r.unselect(f.volume.id);
-  assert.equal((await r.galleryDeletions.pending(f.volume.id)).length, 0);
-  assert.equal((await r.galleryDeletions.reviews(f.volume.id)).length, 0);
+  assert.ok(f.data.has("photo-1"));
+});
+
+test("direct gallery deletion reports partial successes and does not retry failed items during sync", async (t) => {
+  const f = await galleryFixture(t),
+    r = f.replica;
+  await f.enable();
+  await sync(f);
+  const uploaded = await f.uploaded();
+  await assert.rejects(
+    r.galleryDeletions.delete(f.volume.id, [
+      uploaded,
+      { path: "missing.jpg", rev: uploaded.rev },
+    ]),
+    (error) => {
+      assert.equal(error.status, 409);
+      assert.deepEqual(
+        error.deletedRows.map((row) => row.path),
+        [uploaded.path],
+      );
+      return true;
+    },
+  );
+  assert.equal(r.importing, false);
+  await sync(f);
+  assert.equal(r.error, null);
+  assert.ok(f.data.has("photo-1"));
 });
 
 test("unverifiable historical gallery registration keeps originals without blocking new uploads", async (t) => {
@@ -2936,5 +2891,184 @@ test("unverifiable historical gallery registration keeps originals without block
       .registrationIssue,
   );
   assert.ok(f.data.has("photo-1"));
-  assert.equal((await r.galleryDeletions.originals(f.volume.id)).length, 0);
+});
+
+test("restarting an initial snapshot reuses verified local files and still preserves new edits", async (t) => {
+  const f = await fixture(t),
+    r = f.replica;
+  fs.writeFileSync(
+    path.join(f.volume.path, "large.bin"),
+    Buffer.alloc(2 * 1024 * 1024, 7),
+  );
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  await sync(f);
+  r.force = false;
+  const stat = f.files.stat;
+  f.files.stat = async (file) => {
+    const value = await stat(file);
+    return value && { ...value, mtime: fs.statSync(file).mtimeMs };
+  };
+  const target = f.files.work(r.scope, f.volume.id, "large.bin");
+  await r.localHash(target);
+  const originalHash = f.files.hash;
+  let rereads = 0;
+  f.files.hash = async (file) => {
+    if (file === target) rereads++;
+    return originalHash(file);
+  };
+  await f.store.resetCursor(r.scope, f.volume.id);
+  await r.pull(await f.store.folder(r.scope, f.volume.id));
+  assert.equal(
+    rereads,
+    0,
+    "replayed snapshot must reuse unchanged local verification",
+  );
+  fs.writeFileSync(target, "new unsynchronized edit");
+  await f.store.resetCursor(r.scope, f.volume.id);
+  await assert.rejects(
+    r.pull(await f.store.folder(r.scope, f.volume.id)),
+    /Local changes are waiting/,
+  );
+  assert.ok(rereads > 0, "changed local content must be checked");
+  const files = fs.readdirSync(path.dirname(target));
+  const conflict = files.find((name) =>
+    name.startsWith("large.bin.conflict-mobile-"),
+  );
+  assert.ok(conflict);
+  assert.equal(
+    fs.readFileSync(path.join(path.dirname(target), conflict), "utf8"),
+    "new unsynchronized edit",
+  );
+});
+
+function syncService(replica, options = {}) {
+  const state = { visible: true, starts: 0, stops: 0 };
+  replica.transfer = new TransferSession({
+    visible: () => state.visible,
+    start: async () => { state.starts++; await options.start?.(); },
+    stop: async () => { state.stops++; },
+    update: async () => {},
+  });
+  state.background = () => {
+    state.visible = false;
+    if (shouldStopSync('background', replica.transfer.active || !!replica.transfer.starting)) replica.stop();
+  };
+  return state;
+}
+
+test('ordinary initial downloads retain the Android service across screen-off and continuation turns', async (t) => {
+  const f = await fixture(t), r = f.replica;
+  const content = crypto.randomBytes(CHUNK * 2 + 11);
+  fs.writeFileSync(path.join(f.volume.path, 'remote.bin'), content);
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  const service = syncService(r);
+  let writes = 0, yielded = false;
+  const write = f.files.write;
+  f.files.write = async (...args) => {
+    assert.equal(r.transfer.active, true);
+    if (++writes === 1) service.background();
+    return write(...args);
+  };
+  const check = r.checkTransferTurn.bind(r);
+  r.checkTransferTurn = () => {
+    if (writes && !yielded) {
+      yielded = true;
+      throw Object.assign(new Error('Next turn'), { code: 'SYNC_YIELD' });
+    }
+    check();
+  };
+  await sync(f);
+  assert.equal(yielded, true);
+  assert.equal(service.visible, false);
+  assert.equal(service.starts, 1);
+  assert.equal(service.stops, 1);
+  assert.equal(r.transfer.active, false);
+  assert.deepEqual(fs.readFileSync(f.files.work(r.scope, f.volume.id, 'remote.bin')), content);
+  assert.ok((await f.store.folder(r.scope, f.volume.id)).completed);
+});
+
+test('pausing a screen-off download releases its service and later resumes the verified copy', async (t) => {
+  const f = await fixture(t), r = f.replica;
+  const content = crypto.randomBytes(CHUNK + 11);
+  fs.writeFileSync(path.join(f.volume.path, 'remote.bin'), content);
+  await f.daemon.engine.cycle();
+  await r.select(f.volume);
+  const service = syncService(r);
+  const write = f.files.write;
+  let interrupted = false;
+  f.files.write = async (...args) => {
+    await write(...args);
+    if (!interrupted) {
+      interrupted = true;
+      service.background();
+      await r.pause(true);
+    }
+  };
+  await r.sync();
+  assert.equal(r.paused, true);
+  assert.equal(service.stops, 1);
+  assert.equal(r.transfer.active, false);
+  service.visible = true;
+  await r.pause(false);
+  await sync(f);
+  assert.equal(service.starts, 2);
+  assert.equal(service.stops, 2);
+  assert.deepEqual(fs.readFileSync(f.files.work(r.scope, f.volume.id, 'remote.bin')), content);
+});
+
+test('service refusal is reported before transfers and a foreground retry can recover', async (t) => {
+  const f = await fixture(t), r = f.replica;
+  await r.select(f.volume);
+  let refuse = true;
+  const service = syncService(r, { start: async () => { if (refuse) throw new Error('Background service unavailable'); } });
+  await r.sync();
+  assert.match(r.error, /Background service unavailable/);
+  assert.equal(r.transfer.active, false);
+  assert.equal(service.stops, 0);
+  refuse = false;
+  await sync(f);
+  assert.equal(service.starts, 2);
+  assert.equal(service.stops, 1);
+  f.offline();
+  await r.sync();
+  assert.ok(r.error);
+  assert.equal(service.stops, 2);
+  assert.equal(r.transfer.active, false);
+});
+
+test('paused and OS-background synchronization do not start a foreground service', async (t) => {
+  const f = await fixture(t), r = f.replica;
+  await r.select(f.volume);
+  const service = syncService(r);
+  await r.pause(true);
+  await r.sync();
+  assert.equal(service.starts, 0);
+  await r.pause(false);
+  service.visible = false;
+  await sync(f);
+  assert.equal(service.starts, 0);
+  assert.equal(service.stops, 0);
+});
+
+test('ordinary uploads keep the transfer service when the screen turns off', async (t) => {
+  const f = await fixture(t), r = f.replica;
+  await r.select(f.volume);
+  const content = crypto.randomBytes(CHUNK + 3);
+  const target = f.files.work(r.scope, f.volume.id, 'document.bin');
+  fs.writeFileSync(target, content);
+  const service = syncService(r);
+  const read = f.files.read;
+  let reads = 0;
+  f.files.read = async (...args) => {
+    assert.equal(r.transfer.active, true);
+    if (++reads === 1) service.background();
+    return read(...args);
+  };
+  await sync(f);
+  assert.ok(reads > 0);
+  assert.equal(service.starts, 1);
+  assert.equal(service.stops, 1);
+  assert.deepEqual(fs.readFileSync(path.join(f.volume.path, 'document.bin')), content);
 });

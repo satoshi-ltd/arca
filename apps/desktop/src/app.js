@@ -1,3 +1,4 @@
+import { timelineSegments } from "./gallery-timeline-layout.js";
 import {
   createNoticeStore,
   errorNotice,
@@ -83,7 +84,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.3";
+const APP_VERSION = "0.6.4";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -167,7 +168,80 @@ const busyIcon = () =>
   '<span class="busy-grid" aria-hidden="true">' +
   "<i></i>".repeat(9) +
   "</span>";
+function rowPreview(row, fallback, historical = false) {
+  if (
+    row.directory ||
+    row.deleted ||
+    !row.hash ||
+    !/\.(jpe?g|png|webp|gif|avif|hei[cf]|mp4|mov|m4v|webm)$/i.test(
+      row.path || "",
+    )
+  )
+    return icon(fallback);
+  const query = new URLSearchParams({
+    volume: row.volume,
+    path: row.path,
+    hash: row.hash,
+    ...(historical ? { rev: String(row.rev) } : {}),
+  });
+  return `<span class="row-preview" data-row-preview="${escape(query.toString())}">${icon(fallback)}${historical ? `<span class="row-preview-status">${icon(fallback)}</span>` : ""}</span>`;
+}
+let rowPreviewObserver;
+const observedRowPreviews = new Set();
+let rowPreviewWorkers = 0;
+const rowPreviewQueue = [];
+function mountRowPreviews() {
+  for (const el of observedRowPreviews)
+    if (!el.isConnected) {
+      rowPreviewObserver?.unobserve(el);
+      observedRowPreviews.delete(el);
+    }
+  const drain = () => {
+    while (rowPreviewWorkers < 3 && rowPreviewQueue.length) {
+      const el = rowPreviewQueue.shift();
+      if (!el.isConnected) continue;
+      rowPreviewWorkers++;
+      cachedPhoto("/v1/gallery/preview?" + el.dataset.rowPreview)
+        .then((value) => {
+          if (!el.isConnected || !value.data) return;
+          const img = new Image();
+          img.alt = "";
+          img.onload = () => {
+            if (el.isConnected) el.prepend(img);
+          };
+          img.src = value.data;
+        })
+        .catch(() => {})
+        .finally(() => {
+          rowPreviewWorkers--;
+          drain();
+        });
+    }
+  };
+  if (!rowPreviewObserver && typeof IntersectionObserver !== "undefined")
+    rowPreviewObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries)
+          if (entry.isIntersecting) {
+            rowPreviewObserver.unobserve(entry.target);
+            rowPreviewQueue.push(entry.target);
+          }
+        drain();
+      },
+      { rootMargin: "100px" },
+    );
+  for (const el of document.querySelectorAll(
+    "[data-row-preview]:not([data-observed])",
+  )) {
+    el.dataset.observed = "true";
+    if (rowPreviewObserver) {
+      observedRowPreviews.add(el);
+      rowPreviewObserver.observe(el);
+    }
+  }
+}
 function icons() {
+  mountRowPreviews();
   document.querySelectorAll("[data-icon]").forEach((el) => {
     const name = el.dataset.icon.replace(/(^|-)([a-z0-9])/g, (_, a, b) =>
       b.toUpperCase(),
@@ -1206,6 +1280,22 @@ function motionDuration(token) {
 }
 async function render({ refreshStatus = false } = {}) {
   if (daemonStopped) return renderDaemonStopped();
+  if (
+    folderTab === "gallery" &&
+    galleryView?.root?.isConnected &&
+    galleryView.items.length
+  ) {
+    galleryReturn = {
+      volume: galleryView.volume,
+      items: galleryView.items,
+      next: galleryView.next,
+      previous: galleryView.previous,
+      range: galleryView.range,
+      dates: galleryView.dates,
+      month: galleryView.month,
+      scroll: galleryView.root.closest(".page")?.scrollTop || 0,
+    };
+  }
   galleryView?.observer?.disconnect();
   galleryView?.moreObserver?.disconnect();
   galleryView?.newerObserver?.disconnect();
@@ -1438,7 +1528,7 @@ function revisionRow(v, compact = false) {
       status.volumes.find((x) => x.id === v.volume)?.selected)
       ? "review-conflict"
       : "activity-file";
-  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button" aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${icon(deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal")}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
+  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button" aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal", true)}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
 }
 function fileHistoryHeader() {
   const volume = status.volumes.find((v) => v.id === historyVolume);
@@ -1666,6 +1756,7 @@ async function cachedPhoto(route) {
   photoRequests.set(key, pending);
   return pending;
 }
+let galleryReturn = null;
 let galleryView = null,
   folderViewId = null,
   folderReturn = { tab: "files", scroll: 0 };
@@ -2078,6 +2169,7 @@ function mountGallery(volume) {
     markHovered(null);
   }
   function updateTimeline(data) {
+    if (data.timeline) state.dates = data.timeline;
     const rail = root.querySelector(".photo-timeline");
     if (data.timeline && !rail.children.length) {
       let year = "";
@@ -2431,21 +2523,19 @@ function mountGallery(volume) {
   };
   page.addEventListener("scroll", state.onScroll, { passive: true });
   sizeTimeline();
-  state.load();
-}
-// Square-root weights keep busy months larger without leaving long empty stretches below their dot.
-function timelineSegments(counts, height, floor) {
-  const weights = counts.map((count) => Math.sqrt(Math.max(0, count)));
-  const total = weights.reduce((sum, weight) => sum + weight, 0) || 1;
-  const minimum = Math.min(floor, height / Math.max(1, counts.length));
-  const spare = Math.max(0, height - minimum * counts.length);
-  let top = 0;
-  return weights.map((weight) => {
-    const size = minimum + (spare * weight) / total;
-    const segment = { top, size };
-    top += size;
-    return segment;
-  });
+  if (galleryReturn?.volume === volume) {
+    const saved = galleryReturn;
+    Object.assign(state, {
+      next: saved.next,
+      previous: saved.previous,
+      range: saved.range,
+      month: saved.month,
+    });
+    updateTimeline({ timeline: saved.dates });
+    addItems(saved.items.filter((item) => !item.deleted));
+    root.querySelector(".photo-more").hidden = !state.next;
+    page.scrollTop = saved.scroll;
+  } else state.load();
 }
 function galleryCanDelete() {
   return (
@@ -2468,7 +2558,7 @@ function deleteGalleryPhotos(items) {
   modal(
     modalHeader(
       `Delete ${items.length === 1 ? "this photo" : `${items.length} photos`}?`,
-      "Deletes from the shared gallery for everyone, including Live Photo resources. A source phone may separately offer its owner a review of original removal. Recovery depends on this folder’s revision retention.",
+      "Deletes from the shared gallery for everyone, including Live Photo resources. Originals stay in Photos. Recovery depends on this folder’s revision retention.",
       "trash-2",
     ),
     async () => {
@@ -2501,9 +2591,7 @@ function deleteGalleryPhotos(items) {
           `${completed} of ${items.length} deleted. ${error.message}`,
         );
       }
-      notice(
-        `${completed} ${completed === 1 ? "photo" : "photos"} deleted.`,
-      );
+      notice(`${completed} ${completed === 1 ? "photo" : "photos"} deleted.`);
       if (inViewer)
         return async () => {
           const next = state.items.findIndex(
@@ -2923,11 +3011,11 @@ function galleryModeButton(volume) {
         )
       : "";
   return button(
-    folderTab === "gallery" ? "Exit gallery" : "Gallery",
+    folderTab === "gallery" ? "View folder" : "Gallery",
     "gallery-mode",
     volume.id,
     "primary gallery-mode-toggle",
-    folderTab === "gallery" ? "layout-list" : "images",
+    folderTab === "gallery" ? "folder" : "images",
   );
 }
 async function folderBrowser(v, recent, pending = false) {
@@ -2982,7 +3070,7 @@ async function folderBrowser(v, recent, pending = false) {
       search +
       `<div class="history-group folder-explorer">${trail}` +
       (data.entries.length
-        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}" aria-label="${escape(`Open ${row.name}`)}">${icon(fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
+        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}" aria-label="${escape(`Open ${row.name}`)}">${rowPreview({ ...row, volume: v.id }, fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
         : empty(
             folderSearch ? "No matching files" : "This folder is empty",
             "",
@@ -3120,7 +3208,7 @@ async function renderHistory(
       section(
         "File revisions",
         historyVersions.length
-          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${icon(v.deleted ? "trash-2" : "git-commit-horizontal")}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
+          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
           : empty(
               "No retained revisions",
               "This file has no history available on the hub.",
@@ -4491,13 +4579,25 @@ async function handle(name, id, control) {
     const volume = status.volumes.find((v) => v.id === detailId);
     if (!volume?.gallery) return;
     const exiting = folderTab === "gallery";
-    if (exiting) folderTab = folderReturn.tab;
-    else {
+    if (exiting) {
+      galleryReturn = galleryView && {
+        volume: detailId,
+        items: galleryView.items,
+        next: galleryView.next,
+        previous: galleryView.previous,
+        range: galleryView.range,
+        dates: galleryView.dates,
+        month: galleryView.month,
+        scroll: $(".page")?.scrollTop || 0,
+      };
+      folderTab = folderReturn.tab;
+    } else {
       folderReturn = { tab: folderTab, scroll: $(".page")?.scrollTop || 0 };
       folderTab = "gallery";
     }
     await render();
-    if (exiting && $(".page")) $(".page").scrollTop = folderReturn.scroll;
+    if (exiting && folderTab !== "gallery" && $(".page"))
+      $(".page").scrollTop = folderReturn.scroll;
     return;
   }
   if (

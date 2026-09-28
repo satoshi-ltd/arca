@@ -11,6 +11,7 @@
 /apps/desktop/src/*
 !/apps/desktop/src/notice-contract.js
 !/apps/desktop/src/file-icons.js
+!/apps/desktop/src/gallery-timeline-layout.js
 !/packages
 /packages/*
 !/packages/vendor

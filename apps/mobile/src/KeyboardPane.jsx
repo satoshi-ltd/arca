@@ -118,6 +118,7 @@ export function KeyboardScrollView({
   const position = useMemo(
     () => ({
       scrollY,
+      scrollTo: (y) => scroll.current?.scrollTo({ y, animated: false }),
       viewport,
       contentSize,
       measure: (node, callback) => {

@@ -38,6 +38,12 @@ test("the tree watcher skips excluded directories and follows new, re-included a
   w.refresh();
   assert.deepEqual(w.watched().sort(), ["", "repos", "repos/big", "repos/big/deep", "src", "src/lib", "src/new"]);
   if (process.platform !== "win32") {
+    // refresh() replaces every watcher; wait for the new parent watcher to
+    // receive events before performing the one-shot directory deletion.
+    await until(() => {
+      fs.writeFileSync(path.join(root, "src/after-refresh.txt"), String(Date.now()));
+      return seen.includes("src/after-refresh.txt");
+    });
     fs.rmSync(path.join(root, "src/new"), { recursive: true });
     await until(() => !w.watched().includes("src/new"));
   }

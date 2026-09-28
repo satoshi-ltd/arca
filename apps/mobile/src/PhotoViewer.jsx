@@ -1,3 +1,4 @@
+import { GalleryVideo } from "./GalleryVideo";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -183,7 +184,15 @@ function ZoomableImage({ uri, width, height, onZoomed, onError }) {
   );
 }
 
-function Page({ item, width, height, resolveLarge, open, onZoomed }) {
+function Page({
+  item,
+  width,
+  height,
+  resolveLarge,
+  resolveVideo,
+  active,
+  onZoomed,
+}) {
   const { s } = useDesign();
   const compatiblePreview = !item.nativeSource && /\.hei[cf]$/i.test(item.path);
   const [uri, setUri] = useState(compatiblePreview ? null : item.uri);
@@ -218,23 +227,12 @@ function Page({ item, width, height, resolveLarge, open, onZoomed }) {
   const frame = [s.viewerPage, { width, height }];
   if (item.kind === "video")
     return (
-      <View style={frame} accessibilityLabel="Video">
-        {!!item.poster && (
-          <Image
-            source={{ uri: item.poster }}
-            resizeMode="contain"
-            style={[s.viewerPoster, { width, height }]}
-          />
-        )}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Play video"
-          style={s.viewerPlay}
-          onPress={() => open(item)}
-        >
-          <Icon name="play" color="#fff" size={32} />
-        </Pressable>
-      </View>
+      <GalleryVideo
+        item={item}
+        active={active}
+        resolveVideo={resolveVideo}
+        frame={frame}
+      />
     );
   if (failed || (!uri && !item.hash && !compatiblePreview))
     return (
@@ -383,7 +381,7 @@ export function PhotoViewer({
   resolveLarge,
   info,
   folderName,
-  open,
+  resolveVideo,
   history,
   share,
   remove,
@@ -481,6 +479,7 @@ export function PhotoViewer({
           <FlatList
             ref={list}
             data={items}
+            extraData={`${index}:${infoOpen}`}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
@@ -508,7 +507,8 @@ export function PhotoViewer({
                 width={width}
                 height={height}
                 resolveLarge={resolveLarge}
-                open={open}
+                resolveVideo={resolveVideo}
+                active={visible && position === index && !infoOpen}
                 onZoomed={(value) => {
                   if (position === index) setZoomed(value);
                 }}
@@ -565,7 +565,7 @@ export function PhotoViewer({
               accessibilityState={{ disabled: !canDelete }}
               accessibilityHint={
                 !canDelete
-                  ? "Available after the hub confirms the photo. Original removal is reviewed separately on the source phone."
+                  ? "Available after the hub confirms the photo. Originals stay in Photos."
                   : undefined
               }
               disabled={!canDelete}

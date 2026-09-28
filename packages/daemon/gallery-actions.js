@@ -1,7 +1,6 @@
-import { fail, validPath, hashFileAsync } from "./storage.js";
+import { fail, validPath } from "./storage.js";
 import { mediaKind } from "./gallery.js";
 
-export const ORIGINAL_REVIEW_MS = 7 * 86400000;
 const identity = (value) =>
   typeof value === "string" && /^[a-zA-Z0-9_-]{16,128}$/.test(value);
 function folder(store, volume) {
@@ -111,7 +110,7 @@ export function assertGalleryUpload(store, volume, path, source) {
     .get(volume, path, source);
   if (asset?.deleted)
     fail(
-      "This gallery item was deleted. Restore it in Arca before uploading it again.",
+      "This gallery item was deleted. Automatic upload is suppressed.",
       409,
     );
 }
@@ -164,13 +163,6 @@ export async function deleteGalleryAsset(engine, body, author) {
       );
     return { ...row, key: resource.key };
   });
-  // Verify recoverable bytes before recording an event eligible for original removal.
-  const recoverable =
-    !!group && s.config.folderRetention?.[body.volume] !== "off";
-  if (recoverable)
-    for (const row of before)
-      if ((await hashFileAsync(s.blob(row.hash))) !== row.hash)
-        fail("The recovery copy could not be verified.", 409);
   const now = Date.now(),
     rows = [];
   s.db.exec("BEGIN IMMEDIATE");
@@ -208,7 +200,7 @@ export async function deleteGalleryAsset(engine, body, author) {
         .run(body.volume, group.source, group.asset);
     s.db
       .prepare(
-        "INSERT INTO gallery_deletions(author,id,volume,request,result,source,asset,resources,created,expires) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO gallery_deletions(author,id,volume,request,result,source,asset,created) VALUES(?,?,?,?,?,?,?,?)",
       )
       .run(
         author,
@@ -218,9 +210,7 @@ export async function deleteGalleryAsset(engine, body, author) {
         JSON.stringify(result),
         group?.source || null,
         group?.asset || null,
-        JSON.stringify(before),
         now,
-        recoverable ? now + ORIGINAL_REVIEW_MS : 0,
       );
     s.db.exec("COMMIT");
   } catch (e) {
@@ -244,14 +234,6 @@ export function galleryRemovalEvents(store, volume, source, after = 0) {
     )
     .all(volume, source, after)
     .map((event) => {
-      const rows = JSON.parse(event.result).rows;
-      const eligible =
-        event.expires > Date.now() &&
-        store.config.folderRetention?.[volume] !== "off" &&
-        rows.every((row) => {
-          const current = store.current(volume, row.path);
-          return current?.deleted && current.rev === row.rev;
-        });
       return {
         suppressed: !!store.db
           .prepare(
@@ -262,9 +244,6 @@ export function galleryRemovalEvents(store, volume, source, after = 0) {
         id: event.id,
         asset: event.asset,
         created: event.created,
-        expires: event.expires,
-        eligible,
-        resources: JSON.parse(event.resources),
       };
     });
   return {
@@ -274,101 +253,4 @@ export function galleryRemovalEvents(store, volume, source, after = 0) {
     events,
     next: events.length === 100 ? events.at(-1).seq : null,
   };
-}
-export function galleryRecoveryPins(store) {
-  return store.db
-    .prepare("SELECT resources FROM gallery_deletions WHERE expires>?")
-    .all(Date.now())
-    .flatMap((r) => JSON.parse(r.resources));
-}
-
-export async function restoreGalleryAsset(engine, body, source) {
-  const s = engine.store,
-    v = folder(s, body.volume);
-  if (!identity(body.asset)) fail("Invalid gallery asset");
-  const asset = s.db
-    .prepare(
-      "SELECT * FROM gallery_assets WHERE volume=? AND source=? AND asset=?",
-    )
-    .get(body.volume, source, body.asset);
-  if (!asset) fail("Gallery asset is unavailable", 404);
-  const resources = JSON.parse(asset.resources);
-  await engine.scanHub(body.volume, {
-    paths: [...resources.map((r) => r.path), ".arcaignore"],
-  });
-  const rows = [];
-  for (const resource of resources) {
-    const current = s.current(body.volume, resource.path);
-    if (
-      s.excluded(body.volume, resource.path) ||
-      (current && !current.deleted && current.hash !== resource.hash)
-    )
-      fail("A resource changed. Restore its history individually.", 409);
-    if ((await hashFileAsync(s.blob(resource.hash))) !== resource.hash)
-      fail("The complete photo is no longer recoverable.", 409);
-  }
-  s.db.exec("BEGIN IMMEDIATE");
-  try {
-    for (const resource of resources) {
-      const added = s.db
-        .prepare(
-          "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,0,?,?,0)",
-        )
-        .run(
-          body.volume,
-          resource.path,
-          resource.hash,
-          resource.size,
-          source,
-          new Date().toISOString(),
-        );
-      const row = {
-        volume: body.volume,
-        ...resource,
-        rev: Number(added.lastInsertRowid),
-        deleted: 0,
-        directory: 0,
-      };
-      rows.push(row);
-      if (v.selected) s.queue(row, s.current(body.volume, row.path)?.hash);
-      else s.setFile(row);
-    }
-    s.db
-      .prepare(
-        "UPDATE gallery_assets SET deleted=0 WHERE volume=? AND source=? AND asset=?",
-      )
-      .run(body.volume, source, body.asset);
-    s.db.exec("COMMIT");
-  } catch (error) {
-    s.db.exec("ROLLBACK");
-    throw error;
-  }
-  s.recover(body.volume);
-  return { rows };
-}
-
-export async function checkGalleryRemoval(store, body, source) {
-  if (!Number.isSafeInteger(body.seq) || body.seq < 1)
-    fail("Invalid removal event");
-  const event = galleryRemovalEvents(
-    store,
-    body.volume,
-    source,
-    body.seq - 1,
-  ).events.find((e) => e.seq === body.seq);
-  if (!event?.eligible)
-    fail(
-      "This removal expired or the photo was restored. Keep the original.",
-      409,
-    );
-  for (const resource of event.resources)
-    if ((await hashFileAsync(store.blob(resource.hash))) !== resource.hash)
-      fail("Recovery content could not be verified. Keep the original.", 409);
-  // Leave recovery time for an OS prompt begun near the review deadline.
-  store.db
-    .prepare(
-      "UPDATE gallery_deletions SET expires=max(expires,?) WHERE rowid=? AND source=?",
-    )
-    .run(Date.now() + 3600000, body.seq, source);
-  return { eligible: true };
 }

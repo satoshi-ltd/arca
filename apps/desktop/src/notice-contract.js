@@ -172,6 +172,19 @@ export function conditionNotices(status = {}) {
         actionLabel: "Review",
         volume: folder.id,
       });
+    const album =
+      typeof folder.gallery === "string"
+        ? JSON.parse(folder.gallery)
+        : folder.gallery;
+    if (album?.enabled && album.issue)
+      addError(
+        { message: album.issue, code: "SOURCE_UNAVAILABLE" },
+        {
+          id: `photo-uploads:${folder.id}`,
+          title: `Photo uploads from ${folder.name} need attention`,
+          volume: folder.id,
+        },
+      );
     if (folder.sync?.error || folder.issue)
       addError(folder.sync?.error || folder.issue, {
         id: `folder:${folder.id}`,

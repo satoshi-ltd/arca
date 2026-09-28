@@ -2,12 +2,12 @@
   "expo": {
     "name": "arca",
     "slug": "arca",
-    "version": "0.6.3",
+    "version": "0.6.4",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.satoshilimited.arca",
-      "buildNumber": "26",
+      "buildNumber": "27",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.satoshilimited.arca",
-      "versionCode": 26,
+      "versionCode": 27,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
@@ -47,7 +47,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Arca to upload selected albums and remove originals only when you explicitly confirm.",
+          "photosPermission": "Allow Arca to read selected albums for photo uploads.",
           "cameraPermission": false,
           "microphonePermission": false
         }
@@ -102,7 +102,7 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow Arca to upload selected albums and remove originals only when you explicitly confirm.",
+          "photosPermission": "Allow Arca to read selected albums for photo uploads.",
           "savePhotosPermission": false,
           "granularPermissions": [
             "photo",
@@ -110,7 +110,8 @@
           ],
           "isAccessMediaLocationEnabled": true
         }
-      ]
+      ],
+      "expo-video"
     ],
     "icon": "./assets/icon.png",
     "scheme": "arca",
