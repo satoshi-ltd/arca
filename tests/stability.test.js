@@ -76,7 +76,7 @@ test("retention preserves current revisions and versions not yet acknowledged by
   assert.equal(retentionPlan(s, { versions: 1 }).remove.length, 2);
   assert.equal(applyRetention(s, { versions: 1 }).removed, 2);
   assert.equal(s.history(v.id, "a").length, 1);
-  assert.equal(s.current(v.id, "a").rev, 4);
+  assert.equal(s.current(v.id, "a").rev, 3);
 });
 test("ENOSPC during materialization keeps journal and preserves the original", (t) => {
   const { s, v } = fixture(t);
@@ -155,10 +155,10 @@ test("snapshot pages remain stable through hub edits and cannot be read by anoth
     fs.writeFileSync(path.join(v.path, name), name);
   s.scanHub();
   const { snapshotPage } = await import("../packages/daemon/snapshots.js");
-  const first = await snapshotPage(s, "device", v.id, { limit: 2 });
+  const first = await snapshotPage(s, "device", v.id, { limit: 1 });
   assert.deepEqual(
     first.files.map((f) => f.path),
-    [".arcaignore", "a"],
+    ["a"],
   );
   fs.writeFileSync(path.join(v.path, "b"), "changed");
   s.scanHub();
@@ -187,10 +187,10 @@ test("administrative pages do not skip repeated timestamp revisions", async (t) 
     fs.writeFileSync(path.join(v.path, name), name);
     s.scanHub();
   }
-  const first = listPage(s, v.id, new URLSearchParams({ limit: "2" }));
+  const first = listPage(s, v.id, new URLSearchParams({ limit: "1" }));
   assert.deepEqual(
     first.files.map((f) => f.path),
-    [".arcaignore", "a"],
+    ["a"],
   );
   assert.deepEqual(
     listPage(

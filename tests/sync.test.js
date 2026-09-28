@@ -7,6 +7,7 @@ import http from "node:http";
 import path from "node:path";
 import { init, digest, Store, onContainerMount } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
+import { DEFAULT_IGNORE } from "../packages/daemon/exclusions.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-test-"));
@@ -40,10 +41,7 @@ async function setup(t, options = { timer: false }) {
     return n;
   }
   const hub = await node("hub", "hub");
-  const volume = await hub.api("/v1/volumes", {
-    name: "Documents",
-    createIgnore: true,
-  });
+  const volume = await hub.api("/v1/volumes", { name: "Documents" });
   const connect = async (name, role = "replica") => {
     const replica = await node(name, role);
     const invite = await hub.api("/v1/devices", { name, role });
@@ -271,6 +269,35 @@ test("unlink and delete keeps files and folders that are excluded now", async (t
   assert.equal(fs.readFileSync(path.join(local, "private.txt"), "utf8"), "keep me");
   assert.equal(fs.readFileSync(path.join(local, "drafts", "idea.txt"), "utf8"), "keep this too");
   assert.equal(fs.existsSync(path.join(local, "shared.txt")), false);
+});
+
+test("Git data never syncs and unlink with deleteFiles keeps a worktree's Git pointer", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "worktree/readme.md", "synced");
+  write(hub, volume, "project/.git/config", "[core]");
+  await hub.sync();
+  assert.ok(!hub.engine.store.current(volume.id, "project/.git/config"));
+  const mac = await connect("git-pointer");
+  await mac.sync();
+  const local = mac.engine.store.volume(volume.id).path;
+  assert.equal(fs.existsSync(path.join(local, "project", ".git")), false);
+  fs.writeFileSync(path.join(local, "worktree", ".git"), "gitdir: ../main/.git/worktrees/worktree");
+  fs.writeFileSync(path.join(local, "worktree", ".DS_Store"), "finder");
+  await mac.sync();
+  assert.ok(!hub.engine.store.current(volume.id, "worktree/.git"));
+  const locked = path.join(local, ".Spotlight-V100");
+  fs.mkdirSync(locked);
+  if (process.platform !== "win32") fs.chmodSync(locked, 0o000);
+  try {
+    await mac.api("/v1/unselect", { id: volume.id, deleteFiles: true });
+  } finally {
+    fs.chmodSync(locked, 0o700);
+  }
+  assert.equal(fs.existsSync(path.join(local, "worktree", "readme.md")), false);
+  assert.equal(
+    fs.readFileSync(path.join(local, "worktree", ".git"), "utf8"),
+    "gitdir: ../main/.git/worktrees/worktree",
+  );
 });
 
 test("a failure while deleting an unlinked copy never reaches the hub", async (t) => {
@@ -805,7 +832,7 @@ test("a backup left with selected folders by an older layout never publishes edi
   await mac.sync();
   const s = mac.engine.openBackup().store;
   s.db.prepare("DELETE FROM volumes WHERE id=?").run(volume.id);
-  const v = s.addVolume(volume.name, path.join(destination, "files", volume.name), volume.id, false);
+  const v = s.addVolume(volume.name, path.join(destination, "files", volume.name), volume.id);
   for (const row of hub.engine.store.rows(volume.id)) {
     if (row.hash) fs.copyFileSync(hub.engine.store.blob(row.hash), s.blob(row.hash));
     s.queue(row, null);
@@ -1053,6 +1080,8 @@ test("machine renames reach hub records while paused and reports survive scan er
   for (let i = 0; i < 100 && hub.engine.status().devices[0].name !== "macbook-pro"; i++)
     await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(hub.engine.status().devices[0].name, "macbook-pro");
+  for (let i = 0; i < 100 && !mac.engine.lastReport; i++)
+    await new Promise((resolve) => setTimeout(resolve, 20));
   mac.engine.paused = false;
   fs.symlinkSync(
     "missing",
@@ -1070,17 +1099,17 @@ test("machine renames reach hub records while paused and reports survive scan er
   assert.equal(report.phase, "error");
 });
 
-test("default exclusions skip caches before symlinks and preserve indexed history and disk copies", async (t) => {
+test("fixed exclusions skip caches before symlinks and preserve indexed history and disk copies", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const replica = await connect("exclusions");
   write(hub, volume, "keep.txt", "shared");
-  write(hub, volume, "cache/legacy.txt", "old cache");
+  write(hub, volume, ".cache/legacy.txt", "old cache");
   const store = hub.engine.store;
   const cached = store.capture(
-    path.join(store.volume(volume.id).path, "cache/legacy.txt"),
+    path.join(store.volume(volume.id).path, ".cache/legacy.txt"),
   );
-  store.commit(volume.id, "cache/legacy.txt", cached, store.config.id);
-  const old = store.current(volume.id, "cache/legacy.txt");
+  store.commit(volume.id, ".cache/legacy.txt", cached, store.config.id);
+  const old = store.current(volume.id, ".cache/legacy.txt");
   for (const name of [
     ".DS_Store",
     ".localized",
@@ -1093,27 +1122,38 @@ test("default exclusions skip caches before symlinks and preserve indexed histor
     ".venv/file",
   ])
     write(hub, volume, name, "local only");
-  fs.symlinkSync(
-    "/does-not-exist",
-    path.join(store.volume(volume.id).path, "cache/model-link"),
-  );
-  write(replica, volume, "cache/legacy.txt", "replica cache");
+  const hubRoot = store.volume(volume.id).path;
+  fs.symlinkSync("/does-not-exist", path.join(hubRoot, ".cache/model-link"));
+  fs.mkdirSync(path.join(hubRoot, ".venv/bin"));
+  fs.symlinkSync("/does-not-exist", path.join(hubRoot, ".venv/bin/python"));
+  const spotlight = path.join(hubRoot, ".Spotlight-V100");
+  fs.mkdirSync(spotlight);
+  if (process.platform !== "win32") {
+    fs.writeFileSync(path.join(hubRoot, "Icon\r"), "");
+    fs.chmodSync(spotlight, 0o000);
+  }
+  write(replica, volume, ".cache/legacy.txt", "replica cache");
   write(replica, volume, "node_modules/local.txt", "replica dependencies");
-  await hub.sync();
-  await replica.sync();
+  try {
+    await hub.sync();
+    await replica.sync();
+  } finally {
+    fs.chmodSync(spotlight, 0o700);
+  }
+  assert.equal(hub.engine.error, null);
   assert.equal(read(replica, volume, "keep.txt"), "shared");
-  assert.equal(read(replica, volume, "cache/legacy.txt"), "replica cache");
-  assert.deepEqual(store.current(volume.id, "cache/legacy.txt"), old);
-  assert.equal(store.history(volume.id, "cache/legacy.txt").length, 1);
+  assert.equal(read(replica, volume, ".cache/legacy.txt"), "replica cache");
+  assert.deepEqual(store.current(volume.id, ".cache/legacy.txt"), old);
+  assert.equal(store.history(volume.id, ".cache/legacy.txt").length, 1);
   assert.equal(store.current(volume.id, "node_modules/local.txt"), undefined);
   assert.equal(
-    replica.engine.store.current(volume.id, "cache/legacy.txt"),
+    replica.engine.store.current(volume.id, ".cache/legacy.txt"),
     undefined,
   );
   store.queue({ ...old, deleted: 1 }, old.hash);
   store.recover();
-  assert.equal(read(hub, volume, "cache/legacy.txt"), "old cache");
-  assert.deepEqual(store.current(volume.id, "cache/legacy.txt"), old);
+  assert.equal(read(hub, volume, ".cache/legacy.txt"), "old cache");
+  assert.deepEqual(store.current(volume.id, ".cache/legacy.txt"), old);
 });
 
 test("folder progress advances across empty files and snapshot totals are reported", async (t) => {
@@ -1333,35 +1373,29 @@ test("hub deletion removes only its catalog, preserves files and lets replicas d
   assert.equal(replica.engine.store.volume(replacement.id).path, localPath);
 });
 
-test("hub ignore template is opt-in for new directories only and stays absent through scans", async (t) => {
+test("new hub folders get a rule-free .arcaignore that scans and replicas never recreate", async (t) => {
   const { hub, connect } = await setup(t);
   const plain = await hub.api("/v1/volumes", { name: "Plain" });
+  const seeded = path.join(plain.path, ".arcaignore");
+  assert.equal(fs.readFileSync(seeded, "utf8"), DEFAULT_IGNORE);
+  fs.unlinkSync(seeded);
   await hub.sync();
   await hub.sync();
-  assert.equal(fs.existsSync(path.join(plain.path, ".arcaignore")), false);
+  assert.equal(fs.existsSync(seeded), false);
   const replica = await connect("no-template");
   await replica.api("/v1/select", { id: plain.id });
   await replica.sync();
   await hub.sync();
-  assert.equal(fs.existsSync(path.join(plain.path, ".arcaignore")), false);
-  const seeded = await hub.api("/v1/volumes", {
-    name: "Seeded",
-    createIgnore: true,
-  });
-  assert.ok(fs.existsSync(path.join(seeded.path, ".arcaignore")));
+  assert.equal(fs.existsSync(seeded), false);
+  assert.equal(
+    fs.existsSync(path.join(replica.engine.store.volume(plain.id).path, ".arcaignore")),
+    false,
+  );
   const existing = path.join(hub.engine.config.root, "existing");
   fs.mkdirSync(existing);
-  await assert.rejects(
-    hub.api("/v1/volumes", {
-      name: "Existing",
-      path: existing,
-      createIgnore: true,
-    }),
-    /new folder/,
-  );
+  fs.writeFileSync(path.join(existing, ".arcaignore"), "custom/\n");
   await hub.api("/v1/volumes", { name: "Existing", path: existing });
-  await hub.sync();
-  assert.equal(fs.existsSync(path.join(existing, ".arcaignore")), false);
+  assert.equal(fs.readFileSync(path.join(existing, ".arcaignore"), "utf8"), "custom/\n");
 });
 
 test("hub serves status while a large scan is committing files", async (t) => {

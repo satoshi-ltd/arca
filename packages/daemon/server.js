@@ -14,6 +14,7 @@ import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
 import { inspectSetupRoot } from "./setup.js";
 import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
 import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
+import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
 import { acceptReport, machines } from "./machines.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
@@ -1654,9 +1655,7 @@ export async function start(home, options = {}) {
         if (route === "/v1/volumes") {
           return send(
             201,
-            await authorizedWork(() =>
-              engine.publish(b.name, b.path, b.createIgnore ?? false),
-            ),
+            await authorizedWork(() => engine.publish(b.name, b.path)),
           );
         }
         if (route === "/v1/select") {
@@ -2101,20 +2100,22 @@ export async function start(home, options = {}) {
           watcherRetry.set(folder, Date.now() + IDLE_POLL_MS);
           engine.work.mark(volume.id);
           let ignored = s.ignoreRules(volume);
-          const w = fs.watch(
+          const w = watchFolder(
             folder,
-            { recursive: true },
-            (_event, filename) => {
+            (name, directory) => ignored(name, directory),
+            (name) => {
               if (stopping) return;
-              const name = filename
-                ? String(filename).split(path.sep).join("/")
-                : "";
               if (name.split("/").some((p) => p.startsWith(".arca-"))) return;
               if (!name || name === ".arcaignore") {
                 try {
                   ignored = s.ignoreRules(volume);
                 } catch {
                   ignored = () => false;
+                }
+                try {
+                  w.refresh?.();
+                } catch {
+                  w.emit("error");
                 }
               } else if (ignored(name)) return;
               let names = events.get(volume.id);

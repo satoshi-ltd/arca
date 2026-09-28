@@ -835,7 +835,7 @@ test("shared binary with a non-portable name imports after renaming and syncs by
 test("mobile continues healthy folders after another folder fails verification", async (t) => {
   const f = await fixture(t),
     s = f.daemon.engine.store;
-  const beta = s.addVolume("Zeta", null, undefined, false);
+  const beta = s.addVolume("Zeta");
   await f.replica.select(f.volume);
   await f.replica.select(beta);
   await sync(f);

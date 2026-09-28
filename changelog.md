@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.2 — 2026-09-27
+
+- Always exclude OS metadata, temporary and lock files, trash, NAS thumbnails, other sync tools' state and regenerable caches (including `.git`, `node_modules`, `.venv`, `.cache` and `.m2/repository`) on the hub, desktop and phones, with or without `.arcaignore`; `!` rules cannot re-include them. Names that may be content (`cache/`, `build/`, `logs/`, `*.lock`, `.env`) still sync, as do `.gitignore` and `.github/`.
+- macOS custom folder icons (`Icon\r`), unreadable volume folders and `.venv` environments no longer stop a hub or desktop folder scan; unlinking with local deletion also tolerates unreadable folders.
+- New hub folders are always created with a rule-free `.arcaignore` of two comment lines; the create-folder checkbox is gone and the hub always shows the `.arcaignore…` button.
+- Deleting an unlinked copy never removes a folder that still holds temporaries, caches or `.git`.
+- On Linux (Docker hubs, Umbrel, Linux desktops), watch only non-excluded directories instead of Node's recursive watcher, which spent inotify watches on every excluded directory until the system limit ran out and folders fell back to hours-late scans (Casa: 46,394 watched directories down to 975). macOS and Windows keep their native recursive watcher. The host-only `fs.inotify.max_user_watches` setting, which a container cannot change, is documented for very large Linux trees.
+- Faster folder browsing in large folders with many excluded files: subfolders read only their own rows through the index and exclusion results are remembered per directory (Casa: 1–2 s per click down to 20–200 ms).
+- Deploy desktop and mobile replicas before or together with the hub: a 0.6.2 hub rejects proposals for fixed-excluded paths, which would stop those folders on older replicas.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 372 tests with two platform skips and all 161 mobile source tests pass. Windows fixes still need hosted CI.
+- Fix the two Windows CI failures from 0.6.1: the gallery recovery test now waits for background preview preparation before rewriting a stored object, and the machine-rename test waits for the rename report before resetting its throttle.
+
 ## 0.6.1 — 2026-09-27
 
 - Linked mobile albums now keep a complete synchronized local copy, including files contributed by other devices. Linking preserves existing files; previously upload-only phones download the shared folder, and disabling uploads keeps downloads active. Gallery images prefer local files and thumbnail progress survives refresh. Verified with all 161 mobile tests, Android/iOS JavaScript exports and version agreement; device installation remains separate.

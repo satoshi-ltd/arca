@@ -47,11 +47,25 @@ export function compileIgnore(text) {
     throw new Error(".arcaignore exceeds 64 KiB");
   const rules = ignore({ ignorecase: true }).add(text);
   const hasRules = text.trim().length > 0;
-  return (name, directory = false) => {
+  const match = (name, directory) => {
     if (builtinExcluded(name)) return true;
     // Internal bookkeeping and unsupported file types remain safety invariants.
     if (name.split("/").some((part) => part.startsWith(".arca-"))) return true;
     if (name === IGNORE_FILE) return false;
     return hasRules && rules.ignores(name + (directory && !name.endsWith("/") ? "/" : ""));
   };
+  const cache = new Map();
+  // Gitignore cannot re-include below an excluded directory, so an excluded parent decides its whole subtree.
+  const excluded = (name, directory) => {
+    const key = directory ? name + "/" : name;
+    let value = cache.get(key);
+    if (value === undefined) {
+      const slash = name.lastIndexOf("/");
+      value = (slash > 0 && excluded(name.slice(0, slash), true)) || match(name, directory);
+      if (cache.size >= 200000) cache.clear();
+      cache.set(key, value);
+    }
+    return value;
+  };
+  return (name, directory = false) => excluded(name, !!directory);
 }

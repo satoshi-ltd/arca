@@ -13,6 +13,7 @@ import {
   IGNORE_FILE,
   DEFAULT_IGNORE,
   MAX_IGNORE_BYTES,
+  ensureIgnore,
   readIgnore,
 } from "./exclusions.js";
 import { machineReport } from "./machines.js";
@@ -1738,19 +1739,15 @@ export class Engine {
     this.work.mark(id);
     return { saved: true };
   }
-  async publish(name, location, createIgnore = false) {
+  async publish(name, location) {
     if (this.config.role !== "hub")
       fail(
         "Only the hub can create shared folders. Choose a shared folder and its local destination on this device.",
         403,
       );
-    if (typeof createIgnore !== "boolean") fail("Invalid ignore option");
-    const resolved = this.store.resolveLocation(
-      location || path.join(this.config.root, name),
-    );
-    if (createIgnore && fs.existsSync(resolved))
-      fail("Default .arcaignore can only be created in a new folder", 400);
-    return this.store.addVolume(name, resolved, undefined, createIgnore);
+    const volume = this.store.addVolume(name, location);
+    ensureIgnore(volume.path);
+    return volume;
   }
   async syncIgnore(v) {
     const s = this.store;
@@ -1940,7 +1937,7 @@ export class Engine {
     let local;
     s.db.exec("BEGIN IMMEDIATE");
     try {
-      local = s.addVolume(v.name, existing?.path || location, v.id, false);
+      local = s.addVolume(v.name, existing?.path || location, v.id);
       if (this.config.role === "hub")
         for (const row of s.rows(id).filter((row) => !row.deleted))
           s.queue(row, null);

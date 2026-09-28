@@ -1274,6 +1274,7 @@ test("gallery deletion journal recovers interrupted materialization and pins rec
       s.history(v.id, row.path).some((r) => r.rev === row.rev),
     ),
   );
+  await f.daemon.engine.gallery.background;
   const recoveryFile = s.blob(resources[0].hash);
   const recoveryBytes = fs.readFileSync(recoveryFile);
   fs.chmodSync(recoveryFile, 0o600);

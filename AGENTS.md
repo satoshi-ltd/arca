@@ -33,7 +33,7 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 - Optional full backup is additional to desktop/server replica working sync. Mobile (phone and Fold) is replica-only: no hub or full backup. Do not retain pre-production backward-compatibility branches, legacy modes or unused code. Preserve current error recovery and platform support. Quit leaves the daemon running.
 - Discovery never links machines. Web access and pairing use separate six-digit, single-use, ten-minute codes with persistent failure budgets; credentials remain long/revocable.
 - Web is primary server administration; Tauri manages its local daemon. CLI is auxiliary, without interactive terminal menus. Do not imply remote hub admin authority from a replica credential.
-- New hub folders optionally create `.arcaignore` via an unchecked checkbox; existing directories and replica selection do not seed it. No hidden configurable cache list.
+- New hub folders are always created with a rule-free `.arcaignore`; replicas never seed it and a missing one is fine (the hub's `.arcaignore…` button creates it). A fixed list of OS metadata, temporaries, caches, `.git` and `.obsidian` always applies and cannot be re-included; names that may be content (`cache/`, `build/`, `logs/`, `*.lock`, `.env`) never join it.
 - The user's `~/.alpi` policy follows `.gitignore` except `.env` and secrets are intentionally included. Never log secret contents. Read the actual policy before editing; older exclusion notes are superseded.
 
 ## Live environment boundaries

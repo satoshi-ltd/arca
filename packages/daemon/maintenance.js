@@ -18,7 +18,7 @@ export function moveFolder(engine, id, location) {
   if (fs.existsSync(destination))
     fail("Destination must be a new directory", 409);
   // Validate without creating files, then verify a private staging copy.
-  s.addVolume(v.name, destination, id, false, true);
+  s.addVolume(v.name, destination, id, true);
   const sourceScan = s.scan(v);
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   const staging = fs.mkdtempSync(

@@ -15,6 +15,10 @@ test("browse groups directories, scopes search and paginates without including d
       ["notes/a.md", 10, 0],
       ["notes/deep/b.md", 20, 0],
       ["notes/removed.md", 30, 1],
+      ["notes.md", 1, 0],
+      ["notes b/y.md", 1, 0],
+      ["notes0/x.md", 1, 0],
+      ["notesZ/z.md", 1, 0],
       ["root.txt", 5, 0],
       ["📁/hello.txt", 4, 0],
     ])
@@ -29,7 +33,7 @@ test("browse groups directories, scopes search and paginates without including d
     assert.ok(first.next);
     assert.equal(
       browse({ limit: "1", after: first.next }).entries[0].name,
-      "📁",
+      "notes b",
     );
     assert.deepEqual(
       browse({ prefix: "notes" }).entries.map((r) => r.name),

@@ -40,10 +40,7 @@ async function setup(t, options = { timer: false }) {
     return n;
   }
   const hub = await node("hub", "hub");
-  const volume = await hub.api("/v1/volumes", {
-    name: "Documents",
-    createIgnore: false,
-  });
+  const volume = await hub.api("/v1/volumes", { name: "Documents" });
   const connect = async (name, role = "replica") => {
     const replica = await node(name, role);
     const invite = await hub.api("/v1/devices", { name, role });
@@ -101,14 +98,15 @@ test("SYNC-02 backup recovery ignore", (t) => {
   const v = s.addVolume("Docs");
   const names = [
     "app/index.js",
-    "app/.git/HEAD",
-    "app/.git/config",
-    "app/node_modules/a",
-    "app/node_modules/b",
-    "app/.cache/x",
-    "notes/.venv/pyvenv.cfg",
+    "app/cache/data",
+    "app/build/out.js",
+    "app/dist/bundle.js",
+    "app/logs/run.log",
+    "notes/target/report.txt",
+    "vendor/lib.php",
   ];
-  for (const [i, name] of names.entries()) {
+  const fixed = ["app/node_modules/a", "notes/.venv/pyvenv.cfg"];
+  for (const [i, name] of [...names, ...fixed].entries()) {
     const p = path.join(v.path, name);
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, "data " + name);
@@ -134,7 +132,9 @@ test("SYNC-02 backup recovery ignore", (t) => {
       fs.existsSync(path.join(dest.volume(v.id).path, n)),
     );
     assert.equal(present.length, 7);
-    assert.equal(result.revisions, 7);
+    assert.equal(result.revisions, 9);
+    for (const name of fixed)
+      assert.equal(fs.existsSync(path.join(dest.volume(v.id).path, name)), false, name);
   } finally {
     dest.close();
   }
@@ -340,7 +340,7 @@ test("failed watcher registration uses bounded fallback instead of repeated full
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-audit-watch-"));
   init(root, { port: 0 });
   const s = new Store(root);
-  const v = s.addVolume("Docs", null, undefined, false);
+  const v = s.addVolume("Docs");
   s.close();
   const original = fs.watch;
   let attempts = 0;
@@ -804,7 +804,7 @@ test("a restarted daemon resumes its durable replica destruction before allowing
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   init(root, { role: "replica", port: 0 });
   const first = new Engine(root);
-  const folder = first.store.addVolume("Saved", undefined, undefined, false);
+  const folder = first.store.addVolume("Saved");
   fs.writeFileSync(path.join(folder.path, "unsynced.txt"), "remove");
   const remove = fs.rmSync;
   fs.rmSync = (location, ...args) => {

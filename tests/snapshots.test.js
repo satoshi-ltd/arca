@@ -306,8 +306,8 @@ test("retention changes preserve sync tombstones and snapshot counts across rest
     store.close();
     fs.rmSync(home, { recursive: true, force: true });
   });
-  const folder = store.addVolume("Short history", undefined, undefined, false);
-  const other = store.addVolume("Forever", undefined, undefined, false);
+  const folder = store.addVolume("Short history");
+  const other = store.addVolume("Forever");
   for (const text of ["old", "new"]) {
     for (const v of [folder, other])
       fs.writeFileSync(path.join(v.path, "file"), text);

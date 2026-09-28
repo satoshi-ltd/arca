@@ -31,7 +31,7 @@ export function recoverBackup(sourceHome, targetHome) {
         ? `${v.name} (${v.id.slice(0, 8)})`
         : v.name;
       names.add(name.toLowerCase());
-      target.addVolume(name, null, v.id, false);
+      target.addVolume(name, null, v.id);
     }
     for (const row of history) {
       if (row.hash && !fs.existsSync(target.blob(row.hash)))

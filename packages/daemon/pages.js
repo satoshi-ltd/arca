@@ -57,7 +57,7 @@ export function browsePage(store, volume, query) {
       `
     WITH source AS (
       SELECT *, substr(path, ?) AS relative FROM files
-      WHERE volume=? AND deleted=0 AND arca_browse_included(path,directory)=1 AND substr(path, 1, ?)=?
+      WHERE volume=? AND deleted=0 ${base ? "AND path>=? AND path<?" : ""} AND arca_browse_included(path,directory)=1
     ), entries AS (
       SELECT CASE WHEN ?='' AND instr(relative,'/')>0
         THEN substr(relative,1,instr(relative,'/')-1) ELSE relative END AS name,
@@ -74,8 +74,7 @@ export function browsePage(store, volume, query) {
     .all(
       Array.from(base).length + 1,
       volume,
-      Array.from(base).length,
-      base,
+      ...(base ? [base, base.slice(0, -1) + "0"] : []),
       search,
       search,
       search,

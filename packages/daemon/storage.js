@@ -1,11 +1,6 @@
 import { entryKey, directoryItem } from "../core/entries.js";
-import { builtinExcluded } from "../core/builtin-exclusions.js";
-import {
-  ensureIgnore,
-  readIgnore,
-  compileIgnore,
-  IGNORE_FILE,
-} from "./exclusions.js";
+import { disposableMetadata } from "../core/builtin-exclusions.js";
+import { readIgnore, compileIgnore, IGNORE_FILE } from "./exclusions.js";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -113,8 +108,14 @@ export function requirePersistentBackup(location) {
     );
 }
 function countFiles(directory) {
-  let count = 0;
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true }))
+  let count = 0,
+    entries;
+  try {
+    entries = fs.readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const entry of entries)
     count += entry.isDirectory()
       ? countFiles(path.join(directory, entry.name))
       : 1;
@@ -147,7 +148,9 @@ export async function deleteSyncedCopy({ root, files, directories }) {
     try {
       const entries = fs.readdirSync(directory, { withFileTypes: true });
       if (
-        !entries.every((entry) => entry.isFile() && builtinExcluded(entry.name))
+        !entries.every(
+          (entry) => entry.isFile() && disposableMetadata(entry.name),
+        )
       )
         continue;
       for (const entry of entries)
@@ -444,13 +447,7 @@ export class Store {
     }
     return path.join(fs.realpathSync(ancestor), ...missing);
   }
-  addVolume(
-    name,
-    location,
-    id = crypto.randomUUID(),
-    createIgnore = true,
-    checkOnly = false,
-  ) {
+  addVolume(name, location, id = crypto.randomUUID(), checkOnly = false) {
     validPath(name);
     if (name.includes("/")) fail("Folder name must be a single segment");
     if (
@@ -505,7 +502,6 @@ export class Store {
     const marker = path.join(location, ".arca-volume");
     if (fs.existsSync(marker) && fs.readFileSync(marker, "utf8") !== id)
       fail("Directory belongs to another volume");
-    if (createIgnore) ensureIgnore(location);
     atomic(marker, id);
     this.db
       .prepare(

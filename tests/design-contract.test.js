@@ -50,6 +50,7 @@ test("design APIs: bounded filtered history, permissions, session revocation and
   );
 
   fs.writeFileSync(path.join(v.path, "note.txt"), "one");
+  fs.writeFileSync(path.join(v.path, "other.txt"), "kept");
   await d.engine.cycle();
   fs.writeFileSync(path.join(v.path, "note.txt"), "two");
   await d.engine.cycle();

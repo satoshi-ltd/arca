@@ -1044,7 +1044,7 @@ test("share web routes survive reload and history navigation; hub edits use real
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-share-ui-"));
   init(home, { port: 0, name: "Casa" });
   const daemon = await start(home, { timer: false });
-  const v = await daemon.engine.publish("Original", undefined, false);
+  const v = await daemon.engine.publish("Original");
   const base = `http://127.0.0.1:${daemon.port}`;
   const request = (route, body) =>
     fetch(base + route, {
@@ -1311,6 +1311,11 @@ test("share web routes survive reload and history navigation; hub edits use real
     () =>
       rq("#folder-copies") &&
       !rq("#folder-copies").textContent.includes("Checking"),
+  );
+  await request("/v1/unselect", { id: v.id });
+  const catalog = await open(`#/folders/${v.id}`);
+  await until(() =>
+    catalog.document.querySelector('[data-action="edit-ignore"]'),
   );
 });
 
@@ -1596,8 +1601,9 @@ test("unlink can also delete the replica files the hub already has", async (t) =
   q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
   await until(() => !q("#dialog").open && bodies.length);
   assert.deepEqual(JSON.parse(JSON.stringify(bodies)), [{ id: folder.id, deleteFiles: true }]);
-  await until(() => /1 file .* deleted from this Mac|1 file .* deleted from this machine/.test(w.document.body.textContent));
+  await until(() => /2 files .* deleted from this Mac|2 files .* deleted from this machine/.test(w.document.body.textContent));
   assert.equal(fs.existsSync(path.join(local.path, "synced.jpg")), false);
+  assert.equal(fs.existsSync(path.join(local.path, ".arcaignore")), false);
   assert.equal(fs.readFileSync(path.join(local.path, "draft.jpg"), "utf8"), "only here");
   assert.match(w.document.body.textContent, /file not on the hub stay on disk|files not on the hub stay on disk/);
   assert.equal(fs.readFileSync(path.join(folder.path, "synced.jpg"), "utf8"), "on the hub");
@@ -1787,7 +1793,7 @@ test("desktop connection confirms disconnect, retains files and offers a fresh p
     url: `http://127.0.0.1:${hub.port}`,
     token: invite.token,
   });
-  const v = await hub.engine.publish("Documents", undefined, false);
+  const v = await hub.engine.publish("Documents");
   await replica.engine.select(v.id);
   const destination = replica.engine.store.volume(v.id).path;
   fs.writeFileSync(path.join(destination, "local.txt"), "keep me");
@@ -2321,7 +2327,7 @@ test("desktop destroy confirmation cancels safely and returns to first-run onboa
     url: `http://127.0.0.1:${hub.port}`,
     token: invite.token,
   });
-  const v = await hub.engine.publish("Documents", undefined, false);
+  const v = await hub.engine.publish("Documents");
   await replica.engine.select(v.id);
   const destination = replica.engine.store.volume(v.id).path;
   fs.writeFileSync(path.join(destination, "local.txt"), "keep me");
@@ -3452,7 +3458,7 @@ test("hub danger zone cancels safely and returns to onboarding after local destr
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  const v = await hub.engine.publish("Documents", undefined, false);
+  const v = await hub.engine.publish("Documents");
   const destination = v.path;
   fs.writeFileSync(path.join(destination, "local.txt"), "hub data");
   const dom = new JSDOM(html, {
@@ -4177,7 +4183,7 @@ test("web admin reads time out into the connection notice while a stalled submis
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-web-timeout-"));
   init(home, { port: 0, name: "Casa" });
   const daemon = await start(home, { timer: false });
-  const v = await daemon.engine.publish("Original", undefined, false);
+  const v = await daemon.engine.publish("Original");
   const base = `http://127.0.0.1:${daemon.port}`;
   const dom = new JSDOM(html, {
     runScripts: "outside-only",
