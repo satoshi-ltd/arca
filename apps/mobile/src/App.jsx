@@ -95,7 +95,7 @@ import { GalleryDateRail } from "./GalleryDateRail";
 import { FolderGallery } from "./FolderGallery";
 import { FolderRecent } from "./FolderRecent";
 import { sidebarLayout, fileMenuPosition } from "./layout";
-import { bytes } from "./format";
+import { bytes, folderSize } from "./format";
 import { browseEntries } from "./browse";
 // Keep the native launch surface until fonts and local startup are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -1960,7 +1960,7 @@ export default function App() {
                                       key={v.id}
                                       name={v.name}
                                       available
-                                      description={`${v.files} files · ${bytes(v.bytes)}`}
+                                      description={folderSize(v)}
                                       disabled={!connected || actionLocked}
                                       onPress={() => choose(v)}
                                     />
@@ -2770,7 +2770,7 @@ export default function App() {
                         ? {
                             title: shownSheet.volume.name,
                             icon: "folder",
-                            subtitle: `${bytes(shownSheet.volume.bytes)} on hub`,
+                            subtitle: `${folderSize(shownSheet.volume)} on hub`,
                           }
                         : {
                             title: "Resolve conflict",
@@ -2970,7 +2970,7 @@ export default function App() {
                       Download this folder and keep it in sync.
                     </Text>
                     <Text style={s.caption}>
-                      {bytes(shownSheet.volume.bytes)} on hub ·{" "}
+                      {folderSize(shownSheet.volume)} on hub ·{" "}
                       {bytes(status.free)} free here
                     </Text>
                   </Card>

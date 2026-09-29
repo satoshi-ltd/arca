@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.8 — 2026-09-29
+
+- Desktop and web replicas show each unselected shared folder's file count and size instead of “Not counted yet”. Replicas now keep the hub catalog's totals. The selection dialog shows the folder's size on the hub and the space it needs next to the free space.
+- Mobile unselected folder rows, the Select sheet and the pairing folder list show the hub's file count and size through one shared helper, with singular wording and “Not counted yet” when the hub has no count.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 383 tests with two platform skips and all 207 mobile source tests pass. An adversarial review found no blocking defect; its one suggestion (the pairing list wording) is applied. No native build or deployment performed.
+
 ## 0.6.7 — 2026-09-29
 
 - Mobile gallery scrolls infinitely in both directions with no “Show more” button: it lays out the whole timeline from the hub's per-month counts, mounts only rows near the viewport and fetches the months you scroll to. Photos not yet fetched show as neutral squares. Returning to the present after a jump is plain scrolling.

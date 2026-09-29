@@ -84,7 +84,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.7";
+const APP_VERSION = "0.6.8";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -4087,7 +4087,8 @@ function checkFolderPath(name, id = "") {
       const result = await api("/v1/path-check", { path: input.value, id });
       if (serial !== sequence || !row.isConnected) return;
       row.classList.remove("path-check-error");
-      const capacity = `${bytes(result.freeBytes)} free`;
+      const needed = selection && catalog.find((v) => v.id === id)?.bytes;
+      const capacity = `${Number.isFinite(needed) ? `Needs ${bytes(needed)} · ` : ""}${bytes(result.freeBytes)} free`;
       row.innerHTML = selection
         ? `<span>${result.exists ? "Counting local files…" : "New folder"} · ${capacity}</span>`
         : icon("circle-check") +

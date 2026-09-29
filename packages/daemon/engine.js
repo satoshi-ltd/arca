@@ -764,6 +764,8 @@ export class Engine {
           conflicts: Number.isSafeInteger(v.conflicts)
             ? v.conflicts
             : undefined,
+          files: Number.isSafeInteger(v.files) ? v.files : undefined,
+          bytes: Number.isSafeInteger(v.bytes) ? v.bytes : undefined,
         }));
         this.store.saveConfig();
         if (this.config.role === "backup")

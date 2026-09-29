@@ -411,6 +411,7 @@ test("sheets share the desktop dialog header anatomy and menus stay compact", ()
       photoFolder: true,
       folderSubtitle: "3598 photos · 13 GB local",
       bytes: () => "1 B",
+      folderSize: () => "1 file · 1 B",
     });
     assert.ok(shown.title && shown.icon, kind);
   }

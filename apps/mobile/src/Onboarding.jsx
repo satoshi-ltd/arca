@@ -12,7 +12,7 @@ import {
   FolderRow,
   Icon,
 } from "./components";
-import { bytes } from "./format";
+import { bytes, folderSize } from "./format";
 export function Onboarding({
   step,
   name,
@@ -160,10 +160,7 @@ export function Onboarding({
           <FolderRow
             key={folder.id}
             name={folder.name}
-            description={
-              folder.policyError ||
-              `${folder.files ?? "—"} files · ${Number.isFinite(folder.bytes) ? bytes(folder.bytes) : "Size unavailable"}`
-            }
+            description={folder.policyError || folderSize(folder)}
             selectable
             selected={selected.includes(folder.id)}
             disabled={

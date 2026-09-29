@@ -2658,6 +2658,25 @@ test("activity separates revisions, pending conflicts and deletions before pagin
   );
 });
 
+test("replicas keep the hub's file count and size for folders they have not selected", async (t) => {
+  const { hub, connect } = await setup(t);
+  const other = await hub.api("/v1/volumes", { name: "Photos" });
+  write(hub, other, "a.jpg", "aaaa");
+  write(hub, other, path.join("b", "c.jpg"), "cc");
+  await hub.sync();
+  const replica = await connect("sizer");
+  await replica.sync();
+  const listed = (await replica.api("/v1/remote")).volumes.find(
+    (v) => v.id === other.id,
+  );
+  const published = (await hub.api("/v1/catalog")).volumes.find(
+    (v) => v.id === other.id,
+  );
+  assert.ok(published.files >= 2);
+  assert.equal(listed.files, published.files);
+  assert.equal(listed.bytes, published.bytes);
+});
+
 test("folder history policy is hub-owned, reaches replicas and survives saved catalog reads", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const replica = await connect("history-reader");

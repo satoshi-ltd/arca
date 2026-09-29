@@ -840,6 +840,33 @@ test("native path validation displays string errors instead of a blank disabled 
   dom.window.close();
 });
 
+test("selecting a folder shows the space it needs next to the free space", async () => {
+  const dom = new JSDOM(
+    '<div id="dialog"><div class="folder-selection"><div class="selection-path"><input name="path" value="/tmp/new"></div></div><button id="submit-dialog"></button></div>',
+    { runScripts: "outside-only" },
+  );
+  const w = dom.window;
+  const apiCode = script.slice(
+    script.indexOf("const api ="),
+    script.indexOf("let dismissedStatusError"),
+  );
+  const checkCode = script.slice(
+    script.indexOf("function checkFolderPath("),
+    script.indexOf("function codeFields("),
+  );
+  w.eval(
+    `let activeRequests = 0, folderCacheEpoch = 0; const folderPageKey = route => route; const updateBrandActivity = () => {}; const icon = () => ""; const icons = () => {}; const escape = s => s; const bytes = n => n + " B"; const clearGalleryPages = () => {}; const rememberGalleryDeletion = () => {}; const folderPages = new Map(); const catalog = [{ id: "v1", files: 3, bytes: 1600 }]; const $ = s => document.querySelector(s); const invoke = async () => ({ path: "/tmp/new", exists: false, freeBytes: 5000 }); ${apiCode}\n${checkCode}\ncheckFolderPath('path', 'v1');`,
+  );
+  await until(() =>
+    w.document.querySelector("#folder-path-status")?.textContent.includes("free"),
+  );
+  assert.equal(
+    w.document.querySelector("#folder-path-status").textContent,
+    "New folder · Needs 1600 B · 5000 B free",
+  );
+  dom.window.close();
+});
+
 test("folder errors use one floating notification through refresh, dismissal and recovery", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-notice-test-"));
   init(home, { port: 0, name: "Test hub" });

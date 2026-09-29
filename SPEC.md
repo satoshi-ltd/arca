@@ -1,6 +1,6 @@
 # Arca — specification and roadmap
 
-Updated 2026-09-29. **v0.6.7 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+Updated 2026-09-29. **v0.6.8 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AGENTS.md) for contributor instructions. This document owns implementation status, remaining work, technical contracts, operations and the shared design system. Original visual references are not competing specifications.
 
@@ -17,6 +17,8 @@ Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AG
 - [Design system and interactions](#design-system-and-interactions)
 
 ## Resume work here
+
+September 29 v0.6.8 folder sizes (source, no build): replicas cache the hub catalog's `files`/`bytes` totals with the other catalog fields. Desktop and web unselected rows, the desktop selection dialog (“N files · size · on the hub”, plus “Needs size · free” next to the destination check) and mobile unselected rows, the Select sheet and the pairing folder list (`folderSize` in `format.js`) show the hub's count and size. A missing hub count reads “Not counted yet”. Maintainer validation is still pending for the proposed replica unlink/relink changes after the `photos-yuri` incident (unlink deleting the synced local copy by default; relinking with the hub as the source of truth; progress counting files only).
 
 September 29 v0.6.7 mobile gallery scrolling (source, no build): the maintainer rejected the mobile “Show more” button, the lagging scroll and the crowded month-tick rail. The mobile gallery now virtualizes rows over the full timeline, loads months near the viewport in both directions (returning to the present is plain scrolling), and replaces the rail with a fast-scroll thumb that shows sparse year chips and a month bubble only while dragging (see [Design system](#design-system-and-interactions)). Hub refresh reads one page instead of every loaded page. Every page replaces what the phone held for the cursor range it covers, so edits, deletions and renames within that range are not kept stale. The hub timeline now carries each month's newest revision next to its count. A month whose count or revision changed keeps showing its rows while visible parts are verified again, instead of blanking. This detection needs the hub (Casa) redeployed; older hubs fall back to counts. Rows that change size above the viewport no longer move the photos being viewed. Offline, the phone's own working copy forms the gallery. Desktop's bottom sentinel is now a passive loading indicator. It loads the next page again whenever it stays in view after a load, which previously left a visible “Load more” button, and it retries failures automatically. Metro reload is enough; no native dependency changed. Verified locally with a clean Node 24.14.0 export: 381 CI tests pass with two platform skips and 206 mobile source tests pass. Physical-device scroll and gesture acceptance remains pending.
 
