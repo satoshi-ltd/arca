@@ -605,4 +605,8 @@ test("opening a video in the viewer starts local playback without a second tap",
   assert.match(video, /\{active && video && !error \? \(\s*<Busy/);
   assert.doesNotMatch(video, /active && attempt|setAttempt\(0\)/);
   assert.match(video, /\}, \[active, attempt, item\.path, item\.hash\]\);/);
+  const viewer = fs.readFileSync(new URL("../apps/mobile/src/PhotoViewer.jsx", import.meta.url), "utf8");
+  assert.match(viewer, /active=\{visible && position === index\}\s*held=\{infoOpen\}/, "Info holds playback instead of unmounting it");
+  assert.match(video, /holdVideoPlayback\(player, held, hold\.current\);/);
+  assert.match(video, /setLoadError,\s*\(\) => heldRef\.current,/);
 });

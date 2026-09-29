@@ -13,6 +13,7 @@ import {
   renderVideoPoster,
   videoPosterSource,
 } from "./video-playback";
+import { isFlatCacheFile } from "./thumbnail-cache";
 const video = requireOptionalNativeModule("ExpoVideo")
   ? require("expo-video")
   : null;
@@ -22,10 +23,17 @@ const posterAttempt = rememberFailures();
 AppState.addEventListener("change", (state) => {
   if (state === "active") posterAttempt.clear();
 });
-// Cache files are regenerable; originals live in a different directory.
-export function pruneCache(directory, limit, keep) {
-  const files = directory
-    .list()
+// Derivatives are regenerable and flat; originals live elsewhere, so nested directories are disposable.
+function pruneCache(directory, limit, keep) {
+  const entries = directory.list();
+  for (const entry of entries)
+    if (entry instanceof Directory)
+      try {
+        entry.delete();
+      } catch {
+        /* A concurrent pass already removed it. */
+      }
+  const files = entries
     .filter((file) => file instanceof File)
     .sort((a, b) => (a.modificationTime || 0) - (b.modificationTime || 0));
   let size = files.reduce((sum, file) => sum + file.size, 0);
@@ -65,7 +73,7 @@ function cachedDerivative(entry, variant, produce) {
 }
 export const thumbnailFiles = {
   async exists(uri) {
-    return !!uri && new File(uri).exists;
+    return isFlatCacheFile(uri, root.uri) && new File(uri).exists;
   },
   render(entry, large = false) {
     return cachedDerivative(entry, large ? "large" : "thumb", async () => {

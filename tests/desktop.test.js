@@ -4850,6 +4850,7 @@ test("the gallery retries a failed first page and loads pages whose sentinel sta
   const sharp = (await import("sharp")).default;
   const image = await sharp({ create: { width: 8, height: 8, channels: 3, background: "red" } }).jpeg().toBuffer();
   for (let n = 0; n < 65; n++) fs.writeFileSync(path.join(v.path, `IMG_${String(n).padStart(3, "0")}.jpg`), image);
+  fs.writeFileSync(path.join(v.path, "CLIP_000.mov"), "video");
   await daemon.engine.cycle();
   const db = daemon.engine.store.db;
   db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
@@ -4910,9 +4911,14 @@ test("the gallery retries a failed first page and loads pages whose sentinel sta
   await until(() => /Retrying/.test(w.document.querySelector(".photo-more")?.textContent));
   failing = false;
   for (const callback of delayed.splice(0)) callback();
-  await until(() => w.document.querySelectorAll(".photo-thumb").length === 65);
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 66);
   assert.ok(galleryRequests.some((route) => route.includes("after=")), "the second page loaded by itself");
-  assert.match(w.document.querySelector(".detail-head .heading p").textContent, /^65 photos · /);
+  const summary = w.document.querySelector(".detail-head .heading p");
+  assert.match(summary.textContent, /^65 photos · 1 video · /);
+  summary.textContent = summary.textContent.replace(/^65 photos · 1 video/, "66 photos");
+  Object.defineProperty(w.document, "hidden", { configurable: true, value: false });
+  w.document.dispatchEvent(new w.Event("arca-changes"));
+  await until(() => /^65 photos · 1 video · /.test(summary.textContent));
   const sentinel = w.document.querySelector(".photo-more");
   assert.equal(sentinel.tagName, "DIV");
   assert.equal(sentinel.hidden, true);

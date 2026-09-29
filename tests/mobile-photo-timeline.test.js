@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -1029,4 +1030,17 @@ test("year mosaics aggregate the full timeline and open the newest populated mon
     ],
   );
   assert.deepEqual(galleryYears([]), []);
+});
+
+test("the phone's derivative cache is flat, so older nested caches are never reused", async () => {
+  const { isFlatCacheFile } = await import("../apps/mobile/src/thumbnail-cache.js");
+  const root = "file:///data/cache/arca-gallery/";
+  assert.equal(isFlatCacheFile(`${root}abc.jpg`, root), true);
+  assert.equal(isFlatCacheFile(`${root}abc.jpg`, root.slice(0, -1)), true);
+  assert.equal(isFlatCacheFile(`${root}hub/abc-thumb.jpg`, root), false);
+  assert.equal(isFlatCacheFile("file:///data/files/arca/hub/folders/photos/a.jpg", root), false);
+  assert.equal(isFlatCacheFile(null, root), false);
+  const source = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
+  assert.match(source, /return isFlatCacheFile\(uri, root\.uri\) && new File\(uri\)\.exists;/);
+  assert.match(source, /for \(const entry of entries\)\s*if \(entry instanceof Directory\)\s*try \{\s*entry\.delete\(\);/);
 });

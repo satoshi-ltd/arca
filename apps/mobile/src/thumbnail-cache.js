@@ -38,3 +38,10 @@ export async function prepareThumbnails(
   if (JSON.stringify(next) !== JSON.stringify(previous)) changed(next);
   return next;
 }
+
+export function isFlatCacheFile(uri, directory) {
+  const prefix = directory.endsWith("/") ? directory : `${directory}/`;
+  return (
+    !!uri && uri.startsWith(prefix) && !uri.slice(prefix.length).includes("/")
+  );
+}

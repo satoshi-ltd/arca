@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.11 — 2026-09-29
+
+- Opening Info on a playing video pauses it and closing Info resumes it, instead of restarting it from the beginning. A video paused by hand, before or while Info is open, stays paused.
+- Phones no longer reuse previews cached from the hub by earlier versions: the gallery's derivative cache only accepts its own flat files, and the old nested hub cache is deleted at the next thumbnail render, so every thumbnail comes from the phone's own files.
+- The desktop and web gallery header counts videos apart from photos (“3,560 photos · 38 videos · 26.0 GB local”). The gallery timeline now reports each month's video count, and every refresh corrects a count read from an older cached page. The desktop header needs the new desktop build and the web header needs the hub (Casa) redeployed.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 390 tests with two platform skips and all 216 mobile source tests pass. An adversarial review's findings (a header left stale by pages cached before this version, a race deleting the old nested cache, Info resuming a video paused while it was open, the missing desktop-build note) are fixed with tests. No native build or deployment performed.
+
 ## 0.6.10 — 2026-09-29
 
 - Mobile video tiles, year mosaics and the viewer show a poster made from the first frame of the phone's own file, like photos, instead of a play placeholder. It is generated locally with the video player already in the app and kept in the regenerable gallery cache. A video whose frame cannot be read keeps the placeholder.

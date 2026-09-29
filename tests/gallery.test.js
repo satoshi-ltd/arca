@@ -261,6 +261,11 @@ test("old photos use EXIF capture date and unsupported media keep a usable listi
     "2018-07-09T10:11:12",
   );
   assert.equal(data.items.find((row) => row.path === "clip.mov").kind, "video");
+  assert.deepEqual(
+    data.timeline.reduce((sum, row) => [sum[0] + row.count, sum[1] + row.videos], [0, 0]),
+    [3, 1],
+    "the timeline tells videos apart from photos",
+  );
   const clipHash = data.items.find((row) => row.path === "clip.mov").hash;
   assert.equal(
     f.s.db

@@ -12,7 +12,13 @@ export async function galleryVideoURI(item, { files, scope, volume }) {
   );
 }
 
-export function startVideoPlayback(player, uri, appState, onError) {
+export function startVideoPlayback(
+  player,
+  uri,
+  appState,
+  onError,
+  held = () => false,
+) {
   let mounted = true;
   let foreground = appState.currentState === "active";
   player.staysActiveInBackground = false;
@@ -23,7 +29,7 @@ export function startVideoPlayback(player, uri, appState, onError) {
   player
     .replaceAsync({ uri })
     .then(() => {
-      if (mounted && foreground) player.play();
+      if (mounted && foreground && !held()) player.play();
     })
     .catch((error) => {
       if (mounted) onError(error);
@@ -33,6 +39,17 @@ export function startVideoPlayback(player, uri, appState, onError) {
     subscription.remove();
     player.pause();
   };
+}
+
+export function holdVideoPlayback(player, held, state) {
+  if (held) {
+    state.at = player.currentTime;
+    state.resume = player.playing || state.at === 0;
+    player.pause();
+  } else if (state.resume) {
+    state.resume = false;
+    if (!player.playing && player.currentTime === state.at) player.play();
+  }
 }
 
 export function videoPosterSource(item) {

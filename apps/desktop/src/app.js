@@ -84,7 +84,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.10";
+const APP_VERSION = "0.6.11";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2173,17 +2173,27 @@ function mountGallery(volume) {
     if (hover) hover.hidden = true;
     markHovered(null);
   }
+  function updateSummary(data) {
+    const summary = $(".detail-head .heading p");
+    if (!data.timeline || !summary || data.indexing) return;
+    const total = data.timeline.reduce((sum, row) => sum + row.count, 0);
+    const videos = data.timeline.reduce(
+      (sum, row) => sum + (row.videos || 0),
+      0,
+    );
+    summary.textContent = summary.textContent.replace(
+      /^[\d,]+ (?:files?|photos?)(?: · [\d,]+ videos?)?(?= · )/,
+      [
+        countLabel(total - videos, "photo"),
+        videos && countLabel(videos, "video"),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    );
+  }
   function updateTimeline(data) {
     if (data.timeline) state.dates = data.timeline;
-    const summary = $(".detail-head .heading p");
-    if (data.timeline && summary && !data.indexing)
-      summary.textContent = summary.textContent.replace(
-        /^[\d,]+ files?\b/,
-        countLabel(
-          data.timeline.reduce((sum, row) => sum + row.count, 0),
-          "photo",
-        ),
-      );
+    updateSummary(data);
     const rail = root.querySelector(".photo-timeline");
     if (data.timeline && !rail.children.length) {
       let year = "";
@@ -2421,6 +2431,7 @@ function mountGallery(volume) {
         if (!after) break;
       }
       state.previous = previous;
+      updateSummary(data);
       if (JSON.stringify(items) === JSON.stringify(state.items)) return;
       root.querySelector(".photo-timeline").replaceChildren();
       updateTimeline(data);

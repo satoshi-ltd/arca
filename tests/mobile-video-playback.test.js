@@ -132,6 +132,56 @@ test("playback errors reach the viewer; late failures after closing are ignored"
   assert.deepEqual(closed.errors, []);
 });
 
+test("Info holds the video: it pauses, resumes on close and a load finishing meanwhile waits", async () => {
+  const { holdVideoPlayback } = await import("../apps/mobile/src/video-playback.js");
+  const calls = [];
+  const player = {
+    playing: true,
+    currentTime: 12,
+    play: () => calls.push("play") && (player.playing = true),
+    pause: () => calls.push("pause") && (player.playing = false),
+  };
+  const state = { resume: false };
+  holdVideoPlayback(player, false, state);
+  assert.deepEqual(calls, [], "an unheld video is left alone");
+  holdVideoPlayback(player, true, state);
+  holdVideoPlayback(player, false, state);
+  assert.deepEqual(calls, ["pause", "play"]);
+  calls.length = 0;
+  Object.assign(player, { playing: false, currentTime: 30 });
+  holdVideoPlayback(player, true, state);
+  holdVideoPlayback(player, false, state);
+  assert.deepEqual(calls, ["pause"], "a video the user paused stays paused");
+  calls.length = 0;
+  Object.assign(player, { playing: false, currentTime: 0 });
+  holdVideoPlayback(player, true, state);
+  holdVideoPlayback(player, false, state);
+  assert.deepEqual(calls, ["pause", "play"], "a video that had not started yet starts on close");
+  calls.length = 0;
+  Object.assign(player, { playing: true, currentTime: 40 });
+  holdVideoPlayback(player, true, state);
+  Object.assign(player, { playing: false, currentTime: 52 });
+  holdVideoPlayback(player, false, state);
+  assert.deepEqual(calls, ["pause"], "a pause made while Info was open is respected");
+
+  let ready;
+  const loading = [];
+  startVideoPlayback(
+    {
+      replaceAsync: () => new Promise((resolve) => (ready = resolve)),
+      play: () => loading.push("play"),
+      pause: () => loading.push("pause"),
+    },
+    "file:///clip.mp4",
+    { currentState: "active", addEventListener: () => ({ remove() {} }) },
+    () => {},
+    () => true,
+  );
+  ready();
+  await new Promise(setImmediate);
+  assert.deepEqual(loading, [], "a load finishing behind Info does not start playback");
+});
+
 test("video posters come only from files on this phone", async () => {
   const { videoPosterSource } = await import("../apps/mobile/src/video-playback.js");
   assert.equal(videoPosterSource({ uri: "file:///work/clip.mp4" }), "file:///work/clip.mp4");

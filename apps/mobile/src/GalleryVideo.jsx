@@ -1,8 +1,8 @@
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AppState, Image, Pressable, Text, View } from "react-native";
 import { requireOptionalNativeModule, useEvent } from "expo";
 import { Busy, Icon, useDesign } from "./components";
-import { startVideoPlayback } from "./video-playback";
+import { holdVideoPlayback, startVideoPlayback } from "./video-playback";
 
 // An installed dev client can receive JS before its new native module is built.
 const video = requireOptionalNativeModule("ExpoVideo")
@@ -10,18 +10,31 @@ const video = requireOptionalNativeModule("ExpoVideo")
   : null;
 const { useVideoPlayer, VideoView } = video || {};
 
-function Playback({ uri }) {
+function Playback({ uri, held }) {
   const { s } = useDesign();
   const player = useVideoPlayer(null);
   const [loadError, setLoadError] = useState(null);
+  const heldRef = useRef(held);
+  heldRef.current = held;
+  const hold = useRef({ resume: false });
   const { status, error } = useEvent(player, "statusChange", {
     status: player.status,
   });
   // Pause before useVideoPlayer releases the native instance in passive cleanup.
   useLayoutEffect(
-    () => startVideoPlayback(player, uri, AppState, setLoadError),
+    () =>
+      startVideoPlayback(
+        player,
+        uri,
+        AppState,
+        setLoadError,
+        () => heldRef.current,
+      ),
     [player, uri],
   );
+  useEffect(() => {
+    holdVideoPlayback(player, held, hold.current);
+  }, [player, held]);
   if (loadError || status === "error")
     return (
       <Text style={s.viewerCaption}>
@@ -48,7 +61,7 @@ function Playback({ uri }) {
   );
 }
 
-export function GalleryVideo({ item, active, resolveVideo, frame }) {
+export function GalleryVideo({ item, active, held, resolveVideo, frame }) {
   const { s } = useDesign();
   const [attempt, setAttempt] = useState(0);
   const [uri, setURI] = useState(null);
@@ -72,7 +85,7 @@ export function GalleryVideo({ item, active, resolveVideo, frame }) {
   return (
     <View style={frame} accessibilityLabel="Video">
       {active && uri ? (
-        <Playback key={uri} uri={uri} />
+        <Playback key={uri} uri={uri} held={held} />
       ) : (
         <>
           {!!item.poster && (

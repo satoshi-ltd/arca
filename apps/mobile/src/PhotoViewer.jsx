@@ -191,6 +191,7 @@ function Page({
   resolveLarge,
   resolveVideo,
   active,
+  held,
   onZoomed,
 }) {
   const { s } = useDesign();
@@ -230,6 +231,7 @@ function Page({
       <GalleryVideo
         item={item}
         active={active}
+        held={held}
         resolveVideo={resolveVideo}
         frame={frame}
       />
@@ -508,7 +510,8 @@ export function PhotoViewer({
                 height={height}
                 resolveLarge={resolveLarge}
                 resolveVideo={resolveVideo}
-                active={visible && position === index && !infoOpen}
+                active={visible && position === index}
+                held={infoOpen}
                 onZoomed={(value) => {
                   if (position === index) setZoomed(value);
                 }}
