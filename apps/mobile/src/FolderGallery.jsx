@@ -448,7 +448,8 @@ export function FolderGallery({
   const io = useMemo(
     () => ({
       exists: thumbnailFiles.exists,
-      render: async (item) => (item.kind === "video" ? null : display(item)),
+      render: (item) =>
+        item.kind === "video" ? thumbnailFiles.poster(item) : display(item),
     }),
     [nativeSource],
   );
@@ -466,7 +467,10 @@ export function FolderGallery({
       setThumbnails(cached);
       if (loading) return;
       const next = await prepareThumbnails(
-        visibleItems.filter((item) => !item.upload).map(withNative),
+        visibleItems
+          .filter((item) => !item.upload)
+          .map(withNative)
+          .sort((a, b) => (a.kind === "video") - (b.kind === "video")),
         cached,
         io,
         () => active,

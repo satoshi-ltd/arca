@@ -544,7 +544,7 @@ test("folder rows show the gallery icon the hub assigns and selection states the
 test("the mobile gallery never fetches pixels from the hub and falls back to local files after repeated hub failures", () => {
   const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(gallery, /hub-previews|hubPreview|previews\./);
-  assert.match(gallery, /render: async \(item\) => \(item\.kind === "video" \? null : display\(item\)\)/);
+  assert.match(gallery, /render: \(item\) =>\s*item\.kind === "video" \? thumbnailFiles\.poster\(item\) : display\(item\),/);
   assert.match(gallery, /const online = linked && failures < 2;/);
   assert.match(gallery, /setGallery\(fresh\);\s*setFailures\(0\);/);
   assert.match(gallery, /setFailures\(\(count\) => count \+ 1\);\s*setError\(e\.message\);/);
@@ -589,4 +589,20 @@ test("mobile machine view waits for runtime and ignores responses after effect c
   finish({ machines: ["stale"] });
   await new Promise(setImmediate);
   assert.deepEqual(shown, ["Fold"]);
+});
+
+test("video posters are prepared after photos and never retried for an unchanged file", () => {
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  const thumbnails = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
+  assert.match(gallery, /\.map\(withNative\)\s*\.sort\(\(a, b\) => \(a\.kind === "video"\) - \(b\.kind === "video"\)\)/);
+  assert.match(thumbnails, /return posterAttempt\(`\$\{uri\}:\$\{item\.size\}:\$\{item\.mtime\}`,/);
+  assert.match(thumbnails, /if \(state === "active"\) posterAttempt\.clear\(\);/);
+});
+
+test("opening a video in the viewer starts local playback without a second tap", () => {
+  const video = fs.readFileSync(new URL("../apps/mobile/src/GalleryVideo.jsx", import.meta.url), "utf8");
+  assert.match(video, /if \(active && video\)\s*resolveVideo\(item\)/);
+  assert.match(video, /\{active && video && !error \? \(\s*<Busy/);
+  assert.doesNotMatch(video, /active && attempt|setAttempt\(0\)/);
+  assert.match(video, /\}, \[active, attempt, item\.path, item\.hash\]\);/);
 });

@@ -34,3 +34,70 @@ export function startVideoPlayback(player, uri, appState, onError) {
     player.pause();
   };
 }
+
+export function videoPosterSource(item) {
+  const uri = item.nativeSource ? null : item.uri;
+  return uri?.startsWith("file://") || uri?.startsWith("content://")
+    ? uri
+    : null;
+}
+
+async function firstFrame(player, attempts, delay) {
+  for (let attempt = 1; ; attempt++) {
+    const [frame] = await player.generateThumbnailsAsync([0], { maxWidth: 360 });
+    if (frame || attempt >= attempts) return frame;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+}
+
+function retrieverPath(uri) {
+  try {
+    return decodeURIComponent(uri);
+  } catch {
+    return uri;
+  }
+}
+
+export async function renderVideoPoster(
+  uri,
+  { createPlayer, manipulate, platform, format, attempts = 25, delay = 200 },
+) {
+  const android = platform === "android";
+  // expo-video's Android retriever strips file:// without decoding, so it needs the raw path.
+  const player = createPlayer({
+    uri: android && uri.startsWith("file://") ? retrieverPath(uri) : uri,
+  });
+  try {
+    // iOS attaches the item asynchronously and returns no frames until then.
+    const frame = await firstFrame(player, android ? 1 : attempts, delay);
+    if (!frame) throw new Error("Video thumbnail unavailable");
+    const context = manipulate(frame);
+    try {
+      const image = await context.renderAsync();
+      const result = await image.saveAsync({ compress: 0.75, format });
+      image.release();
+      return result.uri;
+    } finally {
+      context.release();
+      frame.release();
+    }
+  } finally {
+    player.release();
+  }
+}
+
+export function rememberFailures(limit = 512) {
+  const failed = new Set();
+  const attempt = async (key, work) => {
+    if (failed.has(key)) throw new Error("Video thumbnail unavailable");
+    try {
+      return await work();
+    } catch (error) {
+      failed.add(key);
+      if (failed.size > limit) failed.delete(failed.values().next().value);
+      throw error;
+    }
+  };
+  attempt.clear = () => failed.clear();
+  return attempt;
+}

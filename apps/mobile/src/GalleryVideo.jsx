@@ -57,8 +57,7 @@ export function GalleryVideo({ item, active, resolveVideo, frame }) {
     let current = true;
     setURI(null);
     setError("");
-    if (!active) setAttempt(0);
-    if (active && attempt)
+    if (active && video)
       resolveVideo(item)
         .then((value) => {
           if (current) setURI(value);
@@ -83,7 +82,7 @@ export function GalleryVideo({ item, active, resolveVideo, frame }) {
               style={s.viewerVideoPoster}
             />
           )}
-          {active && !!attempt && !error ? (
+          {active && video && !error ? (
             <Busy color="#fff" />
           ) : (
             <>

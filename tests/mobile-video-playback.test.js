@@ -131,3 +131,93 @@ test("playback errors reach the viewer; late failures after closing are ignored"
   await closed.fail();
   assert.deepEqual(closed.errors, []);
 });
+
+test("video posters come only from files on this phone", async () => {
+  const { videoPosterSource } = await import("../apps/mobile/src/video-playback.js");
+  assert.equal(videoPosterSource({ uri: "file:///work/clip.mp4" }), "file:///work/clip.mp4");
+  assert.equal(videoPosterSource({ uri: "content://media/7" }), "content://media/7");
+  assert.equal(videoPosterSource({ uri: "content://media/7", nativeSource: true }), null);
+  for (const uri of [null, "https://hub/v1/gallery/preview?path=clip.mp4", "ph://7"])
+    assert.equal(videoPosterSource({ uri }), null);
+});
+
+test("a video poster is the first local frame and always releases the native player", async () => {
+  const { renderVideoPoster } = await import("../apps/mobile/src/video-playback.js");
+  const released = [];
+  const ref = (name, extra = {}) => ({ ...extra, release: () => released.push(name) });
+  const sources = [];
+  let calls = 0;
+  const tools = (answers, platform = "android") => ({
+    platform,
+    format: "jpeg",
+    attempts: 3,
+    delay: 1,
+    createPlayer: (source) => {
+      sources.push(source.uri);
+      calls = 0;
+      return ref("player", {
+        generateThumbnailsAsync: async (times, options) => {
+          assert.deepEqual(times, [0]);
+          assert.deepEqual(options, { maxWidth: 360 });
+          return answers[Math.min(calls++, answers.length - 1)];
+        },
+      });
+    },
+    manipulate: (frame) =>
+      ref("context", {
+        renderAsync: async () =>
+          ref("image", {
+            saveAsync: async (options) => {
+              assert.deepEqual(options, { compress: 0.75, format: "jpeg" });
+              return { uri: `file:///cache/${frame.name}.jpg` };
+            },
+          }),
+      }),
+  });
+  assert.equal(
+    await renderVideoPoster("file:///work/My%20Clips/clip%231.mp4", tools([[ref("frame", { name: "first" })]])),
+    "file:///cache/first.jpg",
+  );
+  assert.deepEqual(sources, ["file:///work/My Clips/clip#1.mp4"]);
+  assert.deepEqual(released.sort(), ["context", "frame", "image", "player"]);
+  released.length = 0;
+  await assert.rejects(renderVideoPoster("file:///work/clip.mp4", tools([[], [ref("frame", { name: "late" })]])), /thumbnail unavailable/);
+  assert.equal(calls, 1, "Android reads the frame once");
+  assert.deepEqual(released, ["player"]);
+  sources.length = 0;
+  await renderVideoPoster("file:///work/100%.mp4", tools([[ref("frame", { name: "raw" })]]));
+  assert.deepEqual(sources, ["file:///work/100%.mp4"], "an undecodable path is passed through unchanged");
+
+  sources.length = 0;
+  assert.equal(
+    await renderVideoPoster("file:///work/My%20Clips/clip.mp4", tools([[], [], [ref("frame", { name: "ios" })]], "ios")),
+    "file:///cache/ios.jpg",
+  );
+  assert.equal(calls, 3, "iOS retries until the player item is attached");
+  assert.deepEqual(sources, ["file:///work/My%20Clips/clip.mp4"]);
+  released.length = 0;
+  await assert.rejects(renderVideoPoster("file:///work/slow.mov", tools([[]], "ios")), /thumbnail unavailable/);
+  assert.equal(calls, 3);
+  assert.deepEqual(released, ["player"]);
+});
+
+test("a video whose poster failed is not rendered again until the file changes", async () => {
+  const { rememberFailures } = await import("../apps/mobile/src/video-playback.js");
+  const attempt = rememberFailures(2);
+  let runs = 0;
+  const fail = async () => {
+    runs++;
+    throw new Error("Unsupported codec");
+  };
+  await assert.rejects(attempt("clip:1:10", fail), /Unsupported codec/);
+  await assert.rejects(attempt("clip:1:10", fail), /thumbnail unavailable/);
+  assert.equal(runs, 1);
+  assert.equal(await attempt("clip:2:20", async () => "file:///poster.jpg"), "file:///poster.jpg");
+  await assert.rejects(attempt("b", fail));
+  await assert.rejects(attempt("c", fail));
+  await assert.rejects(attempt("clip:1:10", fail), /Unsupported codec/, "the oldest failure is forgotten beyond the limit");
+  assert.equal(runs, 4);
+  attempt.clear();
+  await assert.rejects(attempt("b", fail), /Unsupported codec/, "returning to the app forgets failures");
+  assert.equal(runs, 5);
+});

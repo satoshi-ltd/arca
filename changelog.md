@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.10 — 2026-09-29
+
+- Mobile video tiles, year mosaics and the viewer show a poster made from the first frame of the phone's own file, like photos, instead of a play placeholder. It is generated locally with the video player already in the app and kept in the regenerable gallery cache. A video whose frame cannot be read keeps the placeholder.
+- Opening a video in the mobile viewer starts playing it right away, as on desktop. Play remains only to retry after an error.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 390 tests with two platform skips and all 214 mobile source tests pass. Two adversarial reviews: posters that would never appear on iOS (the player attaches its item asynchronously, so the frame request now retries), repeated attempts for undecodable videos (now remembered until the file changes or the app returns to the foreground), photos waiting behind videos and malformed paths are fixed with tests. No native build or device verification performed.
+
 ## 0.6.9 — 2026-09-29
 
 - Replicas show only their own files. The mobile gallery, viewer and video tiles read the phone's synchronized file or its own Photos original and never fetch hub previews. Offline, every downloaded photo appears, and a photo not downloaded yet stays a placeholder: the viewer says so instead of staying busy. The gallery keeps its cached hub order while linked. It falls back to the phone's own files once offline is detected or after two failed hub refreshes in a row.
