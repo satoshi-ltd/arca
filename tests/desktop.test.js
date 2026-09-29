@@ -951,6 +951,22 @@ test("floating notification keeps its layout outside the access screen", () => {
   dom.window.close();
 });
 
+test("history revision numbers keep one line in a column wide enough for six digits", () => {
+  const css = fs.readFileSync(
+    new URL("../apps/desktop/src/style.css", import.meta.url),
+    "utf8",
+  );
+  const dom = new JSDOM(
+    `<style>${css}</style><div class="history-row"><span class="mono revision">rev 165764</span></div>`,
+  );
+  const row = dom.window.document.querySelector(".history-row");
+  const style = dom.window.getComputedStyle(row.firstChild);
+  assert.match(dom.window.getComputedStyle(row).gridTemplateColumns, / 110px 88px 56px auto$/);
+  assert.equal(style.whiteSpace, "nowrap");
+  assert.notEqual(style.textOverflow, "ellipsis");
+  dom.window.close();
+});
+
 test("local folders render while the hub catalog is still pending", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-offline-ui-"));
   init(home, { port: 0, name: "Local Mac" });
@@ -1465,6 +1481,9 @@ test("unlink confirms and completes while a native background status read is pen
       q("#dialog").open &&
       w.document.body.getAttribute("aria-busy") === "false",
   );
+  const keep = q('#dialog [name="deleteFiles"]');
+  keep.checked = false;
+  keep.dispatchEvent(new w.Event("change"));
   q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
   await until(
     () =>
@@ -1557,6 +1576,73 @@ test("a replica shows full-backup progress, waits quietly for the hub and never 
   assert.doesNotMatch(q("#content").textContent, /0 files · 0 B/);
 });
 
+test("folder progress shows files and bytes for the current phase", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-progress-label-ui-"));
+  const nodes = [];
+  const node = async (name, role) => {
+    const home = path.join(root, name);
+    init(home, { name, role, port: 0 });
+    const daemon = await start(home, { timer: false });
+    nodes.push(daemon);
+    daemon.api = async (route, body) => {
+      const r = await fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+      return data;
+    };
+    return daemon;
+  };
+  const hub = await node("Hub", "hub"),
+    mac = await node("Mac", "replica");
+  const volume = await hub.api("/v1/volumes", { name: "photos" });
+  const invite = await hub.api("/v1/devices", { name: "Mac", role: "replica" });
+  await mac.api("/v1/connect", { url: `http://127.0.0.1:${hub.port}`, token: invite.token });
+  await mac.api("/v1/select", { id: volume.id });
+  const GB = 1024 ** 3;
+  let progress = { volume: volume.id, stage: "upload", direction: "upload", path: "IMG_0042.jpg", filesDone: 402, filesTotal: 1269, sizeDone: 4 * GB, sizeTotal: 14 * GB, bytesDone: 1024, bytesTotal: 2048 };
+  const status = mac.engine.status.bind(mac.engine);
+  mac.engine.status = (...args) => ({ ...status(...args), phase: "syncing", progress });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost/#/folders" });
+  const w = dom.window;
+  let poll;
+  w.setInterval = (callback, ms) => {
+    if (ms === 5000) poll = callback;
+    return 0;
+  };
+  const requests = new Set();
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        if (command === "bootstrap") return Promise.resolve({ setup: false, status: mac.engine.status() });
+        const request = mac.api(args.route, args.method === "POST" ? args.body : undefined);
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    for (const daemon of nodes.reverse()) await daemon.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  const q = (selector) => w.document.querySelector(selector);
+  await until(() => q(".folder-card progress"));
+  assert.equal(q(".folder-card .meta").textContent, "402 / 1,269 files sent · 4.0 GB / 14.0 GB · IMG_0042.jpg");
+  assert.equal(q(".folder-card progress").getAttribute("aria-label"), "Files sent");
+  progress = { volume: volume.id, stage: "receive", direction: "download", path: "IMG_0100.jpg", filesDone: 3, filesTotal: null, sizeDone: 0, sizeTotal: 0, bytesDone: 1024, bytesTotal: 2048 };
+  await poll();
+  await until(() => /checked/.test(q(".folder-card .meta").textContent));
+  assert.equal(q(".folder-card .meta").textContent, "3 files checked · IMG_0100.jpg · 1.0 KB / 2.0 KB");
+  assert.equal(q(".folder-card progress").getAttribute("aria-label"), "Files checked");
+});
+
 test("unlink can also delete the replica files the hub already has", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-unlink-delete-ui-"));
   const nodes = [];
@@ -1622,7 +1708,11 @@ test("unlink can also delete the replica files the hub already has", async (t) =
   q('[data-action="unselect"]').click();
   await until(() => q("#dialog").open);
   const option = q('#dialog [name="deleteFiles"]');
-  assert.equal(option.checked, false, "deleting local files is never the default");
+  assert.equal(option.checked, true, "unlinking deletes the verified synced copy by default");
+  assert.equal(q("#submit-dialog").textContent, "Unlink and delete");
+  option.checked = false;
+  option.dispatchEvent(new w.Event("change"));
+  assert.equal(q("#submit-dialog").textContent, "Unlink folder");
   assert.match(q('#dialog label[for="unlink-delete"]').textContent, /^Delete the files on this (Mac|machine)$/);
   assert.ok(q("#dialog").classList.contains("confirmation-dialog"), "an option keeps the compact confirmation");
   assert.equal(q("#cancel-dialog").autofocus, true, "a destructive confirmation opens on Cancel");
@@ -4822,6 +4912,7 @@ test("the gallery retries a failed first page and loads pages whose sentinel sta
   for (const callback of delayed.splice(0)) callback();
   await until(() => w.document.querySelectorAll(".photo-thumb").length === 65);
   assert.ok(galleryRequests.some((route) => route.includes("after=")), "the second page loaded by itself");
+  assert.match(w.document.querySelector(".detail-head .heading p").textContent, /^65 photos · /);
   const sentinel = w.document.querySelector(".photo-more");
   assert.equal(sentinel.tagName, "DIV");
   assert.equal(sentinel.hidden, true);

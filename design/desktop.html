@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arca Desktop</title>
+    <link rel="icon" href="../apps/desktop/src/assets/arca-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../apps/desktop/src/tokens.css" />
+    <link rel="stylesheet" href="../apps/desktop/src/style.css" />
+    <link rel="stylesheet" href="kit.css" />
+    <script src="../apps/desktop/src/vendor/lucide.js"></script>
+    <script src="kit.js" defer></script>
+  </head>
+  <body class="kit">
+    <header class="kit-header">
+      <div class="brand-lockup"><img src="../apps/desktop/src/assets/arca-icon.svg" alt="" />arca</div>
+      <nav aria-label="Design kit">
+        <a href="index.html">System</a>
+        <a href="desktop.html" aria-current="page">Desktop</a>
+        <a href="mobile.html">Mobile</a>
+      </nav>
+      <span class="kit-version">v0.6.9 · replica macbook-pro · hub casa</span>
+      <div class="segmented" role="group" aria-label="Theme">
+        <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
+        <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
+      </div>
+    </header>
+    <main class="kit-main">
+      <section class="kit-intro">
+        <h1>Desktop and web</h1>
+        <p>The production screens of a replica Mac connected to hub casa, built from the app's own markup and stylesheets. The same components serve the hub's web administration; authority follows the managed machine.</p>
+      </section>
+
+      <section class="kit-section">
+        <h2>Folders <span>01</span></h2>
+        <div class="kit-window">
+          <div class="shell">
+            <aside class="sidebar">
+              <a class="brand" href="#"><div class="brand-mark"><img class="brand-logo" src="../apps/desktop/src/assets/arca-icon.svg" alt="Arca" /></div><span><b>arca</b></span></a>
+              <div class="managing"><span data-icon="monitor"></span><strong>macbook-pro</strong><span class="machine-role">Replica</span></div>
+              <nav aria-label="Main navigation">
+                <button class="nav-item active"><span data-icon="folder"></span>Folders</button>
+                <button class="nav-item"><span data-icon="monitor-smartphone"></span>Machines</button>
+                <button class="nav-item"><span data-icon="history"></span>History<span class="count">1</span></button>
+                <button class="nav-item"><span data-icon="settings"></span>Settings</button>
+              </nav>
+              <div class="sidebar-bottom">
+                <div class="status-card"><div class="sync-status-heading"><strong id="connection"><span data-icon="circle-check"></span>Up to date</strong></div><span id="last-sync">Completed 2 min ago</span><div id="sync-controls"><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button><button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button></div></div>
+              </div>
+            </aside>
+            <main>
+              <section id="content">
+                <div class="heading"><div><h1>Folders</h1></div><div class="heading-actions"><button type="button" class="primary"><span data-icon="folder-plus"></span>Choose folders</button></div></div>
+                <div class="page">
+                  <section><div class="section-label">Selected on this machine</div>
+                    <div class="folder-list">
+                      <article class="folder-card" role="button" tabindex="0"><div class="tile"><span data-icon="images"></span></div><div class="row-main"><strong>photos</strong><p class="meta">3,598 files · 26.0 GB · /Users/javi/Pictures</p></div><span data-icon="chevron-right" class="chevron"></span></article>
+                      <article class="folder-card" role="button" tabindex="0"><div class="tile" role="status" aria-label="Syncing"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div><div class="row-main"><strong>alpi-workspace</strong><p class="meta">184 / 233 files checked · 3.1 MB / 3.9 MB · notes/plan.md</p><progress aria-label="Files checked" value="184" max="233"></progress></div><span data-icon="chevron-right" class="chevron"></span></article>
+                      <article class="folder-card" role="button" tabindex="0"><div class="tile"><span data-icon="folder"></span></div><div class="row-main"><strong>documents</strong><p class="meta">20 files · 14.2 MB · /Users/javi/arca/documents</p></div><span class="pill wa"><span data-icon="git-branch"></span>Conflict</span><span data-icon="chevron-right" class="chevron"></span></article>
+                    </div>
+                  </section>
+                  <section><div class="section-label">On hub · not selected</div>
+                    <div class="folder-list">
+                      <article class="folder-card unselected"><div class="tile"><span data-icon="images"></span></div><div class="row-main"><strong>photos-demo</strong><p class="meta">11 files · 33.5 MB</p></div><button type="button" class="secondary small-button"><span data-icon="download"></span>Select</button></article>
+                      <article class="folder-card unselected"><div class="tile"><span data-icon="images"></span></div><div class="row-main"><strong>photos-yuri</strong><p class="meta">138 files · 1.6 GB</p></div><button type="button" class="secondary small-button"><span data-icon="download"></span>Select</button></article>
+                    </div>
+                  </section>
+                </div>
+              </section>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section class="kit-section">
+        <h2>Select a folder <span>02</span></h2>
+        <div class="kit-dialog-stage">
+          <dialog open aria-labelledby="select-title">
+            <div class="modal-title"><div class="tile"><span data-icon="refresh-cw"></span></div><div><h2 id="select-title">Sync “photos-yuri” on macbook-pro</h2><p>Files sync both ways between this folder and the hub. Existing local files are uploaded too.</p></div></div>
+            <div class="folder-selection">
+              <div class="selection-summary"><div class="tile"><span data-icon="folder"></span></div><div class="row-main"><strong>photos-yuri</strong><p>138 files · 1.6 GB · on the hub</p></div><span class="mono">id addc</span></div>
+              <label for="select-path">Local destination</label>
+              <div class="field-with-icon selection-path"><span data-icon="folder"></span><input id="select-path" class="mono" value="/Users/javi/arca/photos-yuri" /></div>
+              <div class="path-check selection-check" role="status"><span>New folder · Needs 1.6 GB · 589.0 GB free</span></div>
+              <div class="callout"><span data-icon="info"></span><p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between machines.</p></div>
+            </div>
+            <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
+          </dialog>
+        </div>
+      </section>
+
+      <section class="kit-section">
+        <h2>Folder detail <span>03</span></h2>
+        <div class="kit-window">
+          <div class="shell">
+            <aside class="sidebar">
+              <a class="brand" href="#"><div class="brand-mark"><img class="brand-logo" src="../apps/desktop/src/assets/arca-icon.svg" alt="Arca" /></div><span><b>arca</b></span></a>
+              <div class="managing"><span data-icon="monitor"></span><strong>macbook-pro</strong><span class="machine-role">Replica</span></div>
+              <nav aria-label="Main navigation">
+                <button class="nav-item active"><span data-icon="folder"></span>Folders</button>
+                <button class="nav-item"><span data-icon="monitor-smartphone"></span>Machines</button>
+                <button class="nav-item"><span data-icon="history"></span>History</button>
+                <button class="nav-item"><span data-icon="settings"></span>Settings</button>
+              </nav>
+            </aside>
+            <main>
+              <section id="content">
+                <div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="folder"></span></div><div><h1>documents</h1><p>20 files · 14.2 MB local</p></div></div><div class="heading-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open in Finder</button></div></div></div>
+                <div class="page detail-page">
+                  <div class="stats folder-stats">
+                    <div class="stat"><span>Status</span><strong class="stat-status wa"><span data-icon="git-branch"></span>Conflict</strong><p>Completed just now</p></div>
+                    <div class="stat"><span>Files</span><strong>20</strong><p>14.2 MB indexed</p></div>
+                    <div class="stat"><span>Latest known revision</span><strong class="mono">rev 165764</strong><p>Accepted by the hub</p></div>
+                    <div class="stat folder-history-status"><span>Revision history</span><strong>On · 30 days</strong><p>Older revisions kept</p></div>
+                  </div>
+                  <div class="detail-grid">
+                    <div class="detail-revisions">
+                      <div class="segmented" role="group" aria-label="Folder view"><button type="button" class="active">Files</button><button type="button">Recent</button></div>
+                      <div class="history-group folder-explorer">
+                        <div class="browser-file-row" role="button" tabindex="0"><span data-icon="folder"></span><div><strong>notes</strong><p>6 files · 48 KB</p></div><span data-icon="chevron-right"></span></div>
+                        <div class="browser-file-row" role="button" tabindex="0"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>12 KB</p></div><span data-icon="chevron-right"></span></div>
+                        <div class="browser-file-row" role="button" tabindex="0"><span data-icon="file-text"></span><div><strong>brief.md.conflict-phone-fold-9f3a</strong><p>11 KB</p></div><span data-icon="chevron-right"></span></div>
+                        <div class="browser-file-row" role="button" tabindex="0"><span data-icon="file-spreadsheet"></span><div><strong>budget.xlsx</strong><p>2.1 MB</p></div><span data-icon="chevron-right"></span></div>
+                      </div>
+                    </div>
+                    <div class="detail-side">
+                      <section><div class="section-label">Local destination</div><div class="panel"><p class="path">/Users/javi/arca/documents</p><button type="button" class="secondary small-button"><span data-icon="folder-input"></span>Change location…</button></div></section>
+                      <section><div class="section-label">Copies</div><div class="copies-card"><div class="copy-row"><span data-icon="server"></span><strong>casa</strong><span class="tag hub">Hub</span></div><div class="copy-row"><span data-icon="monitor"></span><strong>macbook-pro</strong><span class="tag self">This machine</span></div><div class="copy-row"><span data-icon="smartphone"></span><strong>phone-fold</strong><span class="tag">Replica</span></div></div></section>
+                      <div class="panel"><h3>Stop syncing on macbook-pro</h3><p>Stops syncing this folder here. The hub keeps the shared folder, its files and history.</p><button type="button" class="secondary danger"><span data-icon="unlink"></span>Unlink…</button></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section class="kit-section">
+        <h2>Gallery <span>04</span></h2>
+        <div class="kit-window">
+          <div class="shell">
+            <aside class="sidebar">
+              <a class="brand" href="#"><div class="brand-mark"><img class="brand-logo" src="../apps/desktop/src/assets/arca-icon.svg" alt="Arca" /></div><span><b>arca</b></span></a>
+              <nav aria-label="Main navigation">
+                <button class="nav-item active"><span data-icon="folder"></span>Folders</button>
+                <button class="nav-item"><span data-icon="monitor-smartphone"></span>Machines</button>
+                <button class="nav-item"><span data-icon="history"></span>History</button>
+                <button class="nav-item"><span data-icon="settings"></span>Settings</button>
+              </nav>
+            </aside>
+            <main>
+              <section id="content">
+                <div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="images"></span></div><div><h1>photos</h1><p>3,598 photos · 26.0 GB local</p></div></div><div class="heading-actions"><button type="button" class="primary"><span data-icon="folder"></span>View folder</button></div></div></div>
+                <div class="page detail-page gallery-page">
+                  <div id="photo-gallery">
+                    <div class="photo-newer" aria-hidden="true"></div>
+                    <div class="photo-days">
+                      <div class="photo-day"><h2>September 2026</h2><div class="photo-grid">
+                        <div class="photo-thumb"><button type="button" class="photo-open" aria-label="Open IMG_4412.jpg"><span data-icon="image"></span></button></div>
+                        <div class="photo-thumb"><button type="button" class="photo-open" aria-label="Open VID_4413.mp4"><span data-icon="play"></span></button><span class="photo-video-badge" aria-label="Video"><span data-icon="video"></span></span></div>
+                        <div class="photo-thumb"><button type="button" class="photo-open" aria-label="Open IMG_4414.jpg"><span data-icon="image"></span></button></div>
+                        <div class="photo-thumb"><button type="button" class="photo-open" aria-label="Open IMG_4415.jpg"><span data-icon="image"></span></button></div>
+                      </div></div>
+                      <div class="photo-day"><h2>August 2026</h2><div class="photo-grid">
+                        <div class="photo-thumb"><button type="button" class="photo-open" aria-label="Open IMG_3901.jpg"><span data-icon="image"></span></button></div>
+                        <div class="photo-thumb"><button type="button" class="photo-open" aria-label="Open IMG_3902.jpg"><span data-icon="image"></span></button></div>
+                        <div class="photo-thumb"><button type="button" class="photo-open" aria-label="Open IMG_3903.jpg"><span data-icon="image"></span></button></div>
+                      </div></div>
+                    </div>
+                    <nav class="photo-timeline" aria-label="Photo dates"><button type="button" data-month="2026-09" style="--segment-top: 0px; --segment-height: 40px" aria-current="date"><span class="photo-year">2026</span><span class="photo-date-dot"></span></button><button type="button" data-month="2026-08" style="--segment-top: 40px; --segment-height: 30px"><span class="photo-year"></span><span class="photo-date-dot"></span></button><button type="button" data-month="2026-06" style="--segment-top: 70px; --segment-height: 30px"><span class="photo-year"></span><span class="photo-date-dot"></span></button><button type="button" data-month="2025-12" style="--segment-top: 120px; --segment-height: 50px"><span class="photo-year">2025</span><span class="photo-date-dot"></span></button><button type="button" data-month="2025-07" style="--segment-top: 170px; --segment-height: 40px"><span class="photo-year"></span><span class="photo-date-dot"></span></button><button type="button" data-month="2024-03" style="--segment-top: 250px; --segment-height: 60px"><span class="photo-year">2024</span><span class="photo-date-dot"></span></button><button type="button" data-month="2019-08" style="--segment-top: 360px; --segment-height: 50px"><span class="photo-year">2019</span><span class="photo-date-dot"></span></button><button type="button" data-month="2014-05" style="--segment-top: 470px; --segment-height: 40px"><span class="photo-year">2014</span><span class="photo-date-dot"></span></button></nav>
+                    <div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+                  </div>
+                </div>
+              </section>
+            </main>
+          </div>
+        </div>
+        <p class="kit-note">Tiles keep their aspect ratios in complete rows; placeholders share the media placeholder token. A replica renders only its own files: a photo not downloaded yet stays a placeholder and never loads from the hub. The end of the loaded range is a passive loader that continues by itself while it stays in view; failures retry after five seconds.</p>
+      </section>
+
+      <section class="kit-section">
+        <h2>History <span>05</span></h2>
+        <div class="kit-window">
+          <div class="shell">
+            <aside class="sidebar">
+              <a class="brand" href="#"><div class="brand-mark"><img class="brand-logo" src="../apps/desktop/src/assets/arca-icon.svg" alt="Arca" /></div><span><b>arca</b></span></a>
+              <nav aria-label="Main navigation">
+                <button class="nav-item"><span data-icon="folder"></span>Folders</button>
+                <button class="nav-item"><span data-icon="monitor-smartphone"></span>Machines</button>
+                <button class="nav-item active"><span data-icon="history"></span>History<span class="count">1</span></button>
+                <button class="nav-item"><span data-icon="settings"></span>Settings</button>
+              </nav>
+            </aside>
+            <main>
+              <section id="content">
+                <div class="heading"><div><h1>History</h1></div><div class="heading-actions"><div class="dropdown"><button type="button" class="dropdown-trigger" aria-label="Shared folder: All"><span>All</span><span data-icon="chevron-down"></span></button></div><div class="segmented" role="group" aria-label="Type"><button type="button"><span data-icon="git-branch"></span>Conflicts<span class="filter-count">1</span></button><button type="button"><span data-icon="trash-2"></span>Deleted</button></div></div></div>
+                <div class="page">
+                  <section><div class="section-label">Today</div>
+                    <div class="history-group">
+                      <div class="history-row" role="button" tabindex="0"><span data-icon="git-commit-horizontal"></span><div><strong>2026/09/IMG_4412.jpg</strong><p>4.2 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165764</span><span class="row-time">2 min ago</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div>
+                      <div class="history-row conflict" role="button" tabindex="0"><span data-icon="git-branch"></span><div><strong>brief.md.conflict-phone-fold-9f3a</strong><p>Conflict copy retained</p></div><span class="history-folder">documents</span><span class="mono revision">rev 165702</span><span class="row-time">14:27</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div>
+                    </div>
+                  </section>
+                  <section><div class="section-label">Sep 27</div>
+                    <div class="history-group">
+                      <div class="history-row deleted" role="button" tabindex="0"><span data-icon="trash-2"></span><div><strong>drafts/old-plan.md</strong><p>Deleted · recoverable</p></div><span class="history-folder">documents</span><span class="mono revision">rev 165234</span><span class="row-time">Sep 27</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div>
+                    </div>
+                  </section>
+                </div>
+              </section>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section class="kit-section">
+        <h2>Machines <span>06</span></h2>
+        <div class="kit-window">
+          <div class="shell">
+            <aside class="sidebar">
+              <a class="brand" href="#"><div class="brand-mark"><img class="brand-logo" src="../apps/desktop/src/assets/arca-icon.svg" alt="Arca" /></div><span><b>arca</b></span></a>
+              <nav aria-label="Main navigation">
+                <button class="nav-item"><span data-icon="folder"></span>Folders</button>
+                <button class="nav-item active"><span data-icon="monitor-smartphone"></span>Machines</button>
+                <button class="nav-item"><span data-icon="history"></span>History</button>
+                <button class="nav-item"><span data-icon="settings"></span>Settings</button>
+              </nav>
+            </aside>
+            <main>
+              <section id="content">
+                <div class="heading"><div><h1>Machines</h1></div></div>
+                <div class="page">
+                  <section><div class="section-label">Hub connection</div>
+                    <article class="device-row"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong><span class="tag hub">Hub</span></div><p class="connection-line">Linux · Docker · Arca 0.6.8 · 100.99.29.84:17831</p></div><div class="row-end"><span class="pill ok"><span data-icon="circle-check"></span>Connected</span></div><button type="button" class="secondary small-button danger">Disconnect</button></article>
+                  </section>
+                  <section><div class="section-label">Machines</div>
+                    <article class="device-row"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>macbook-pro</strong><span class="tag">Replica</span><span class="tag self">This machine</span></div><p class="connection-line">macOS · native · Arca 0.6.8</p></div><div class="row-end"><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span></div></article>
+                    <article class="device-row"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong><span class="tag">Replica</span></div><p class="connection-line">Android · Arca 0.6.8 · 192.168.1.144</p></div><div class="row-end"><span class="pill sy busy-status"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing</span></div></article>
+                    <article class="device-row"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>Yuri</strong><span class="tag">Album source</span></div><p class="connection-line">Android · last contact Sep 27</p></div><div class="row-end"><span class="pill id"><span data-icon="circle-dashed"></span>Offline</span></div></article>
+                  </section>
+                </div>
+              </section>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section class="kit-section">
+        <h2>Settings <span>07</span></h2>
+        <div class="kit-window">
+          <div class="shell">
+            <aside class="sidebar">
+              <a class="brand" href="#"><div class="brand-mark"><img class="brand-logo" src="../apps/desktop/src/assets/arca-icon.svg" alt="Arca" /></div><span><b>arca</b></span></a>
+              <nav aria-label="Main navigation">
+                <button class="nav-item"><span data-icon="folder"></span>Folders</button>
+                <button class="nav-item"><span data-icon="monitor-smartphone"></span>Machines</button>
+                <button class="nav-item"><span data-icon="history"></span>History</button>
+                <button class="nav-item active"><span data-icon="settings"></span>Settings</button>
+              </nav>
+            </aside>
+            <main>
+              <section id="content">
+                <div class="heading"><div><h1>Settings</h1></div></div>
+                <div class="page">
+                  <section><div class="section-label">This machine</div>
+                    <div class="panel">
+                      <div class="setting-row"><div class="row-main"><strong>Machine name</strong><p>Shown to your hub and other machines.</p></div><input value="macbook-pro" aria-label="Machine name" /></div>
+                      <div class="setting-row"><div class="row-main"><strong>Launch at login</strong><p>Opens Arca in the menu bar when you sign in.</p></div><label class="toggle"><input type="checkbox" checked aria-label="Launch at login" /><span></span></label></div>
+                      <div class="setting-row"><div class="row-main"><strong>Appearance</strong><p>Follows the system unless you choose.</p></div><div class="segmented" role="group" aria-label="Appearance"><button type="button">Light</button><button type="button">Dark</button><button type="button" class="active">System</button></div></div>
+                    </div>
+                  </section>
+                  <section><div class="section-label">Hub backup</div>
+                    <div class="panel"><div class="setting-row"><div class="row-main"><strong>Full backup of the hub</strong><p>Keeps every shared folder and retained revision in a separate location, in addition to working copies.</p></div><button type="button" class="secondary small-button"><span data-icon="shield-check"></span>Enable backup…</button></div></div>
+                  </section>
+                </div>
+              </section>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section class="kit-section">
+        <h2>Confirmations and codes <span>08</span></h2>
+        <div class="kit-grid wide">
+          <div class="kit-dialog-stage">
+            <dialog open aria-labelledby="unlink-title">
+              <div class="modal-title"><div class="tile"><span data-icon="unlink"></span></div><div><h2 id="unlink-title">Unlink “photos-yuri”?</h2><p>Stops syncing it on macbook-pro. The hub keeps the shared folder, its files and history.</p></div></div>
+              <div class="confirmation-option"><label class="toggle"><input type="checkbox" id="unlink-delete" checked aria-label="Delete the files on macbook-pro" /><span></span></label><label for="unlink-delete">Delete the files on macbook-pro</label></div>
+              <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary danger">Unlink and delete</button></div>
+            </dialog>
+          </div>
+          <div class="kit-dialog-stage">
+            <dialog open aria-labelledby="pair-title">
+              <div class="modal-title"><div class="tile"><span data-icon="key-round"></span></div><div><h2 id="pair-title">Pair a machine</h2><p>On the new machine, open Machines → Connect to hub. Enter the address and pairing code below.</p></div></div>
+              <div class="panel"><div class="setting-row"><div class="row-main"><strong>Hub address</strong><p class="mono">http://casa:17831</p></div><button type="button" class="secondary small-button"><span data-icon="copy"></span>Copy address</button></div></div>
+              <div class="code-inputs" role="group" aria-label="Pairing code"><input value="1" aria-label="Digit 1" /><input value="2" aria-label="Digit 2" /><input value="1" aria-label="Digit 3" /><span class="separator">—</span><input value="5" aria-label="Digit 4" /><input value="2" aria-label="Digit 5" /><input value="5" aria-label="Digit 6" /></div>
+              <p class="hint">Valid until 11:22 · single use</p>
+              <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary">Done</button></div>
+            </dialog>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

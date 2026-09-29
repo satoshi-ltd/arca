@@ -802,6 +802,7 @@ main {
 }
 .history-row .mono {
   color: var(--mute);
+  white-space: nowrap;
 }
 .history-row .text-button {
   font-size: var(--text-body);
@@ -2628,7 +2629,7 @@ progress::-webkit-progress-value {
 }
 
 .history-row:not(.compact):not(.file-version-row) {
-  grid-template-columns: var(--list-media-width, 20px) minmax(0, 1fr) 110px 64px 56px auto;
+  grid-template-columns: var(--list-media-width, 20px) minmax(0, 1fr) 110px 88px 56px auto;
 }
 .heading-actions a.secondary {
   text-decoration: none;

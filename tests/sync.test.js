@@ -1178,6 +1178,71 @@ test("folder progress advances across empty files and snapshot totals are report
   assert.equal(snapshot.total, 4);
 });
 
+test("folder progress counts files and bytes, never directories", async (t) => {
+  const { volume, connect } = await setup(t);
+  const sender = await connect("sender");
+  write(sender, volume, "nested/deep/a.txt", "hello");
+  write(sender, volume, "b.txt", "abc");
+  const sent = [];
+  const upload = sender.engine.upload.bind(sender.engine);
+  sender.engine.upload = async (hash, progress) => {
+    sent.push({ ...sender.engine.progress });
+    return upload(hash, progress);
+  };
+  await sender.sync();
+  assert.equal(sent.length, 2);
+  assert.ok(sent.every((p) => p.filesTotal === 2 && p.sizeTotal === 8));
+  const receiver = await connect("receiver");
+  const received = [];
+  const download = receiver.engine.download.bind(receiver.engine);
+  receiver.engine.download = async (hash, size) => {
+    received.push({ ...receiver.engine.progress });
+    return download(hash, size);
+  };
+  await receiver.sync();
+  const policy = fs.statSync(path.join(receiver.engine.store.volume(volume.id).path, ".arcaignore")).size;
+  const files = received.filter((p) => p.stage === "receive");
+  assert.deepEqual(files.map((p) => p.path), ["b.txt", "nested/deep/a.txt"]);
+  assert.ok(files.every((p) => p.filesTotal === 3 && p.sizeTotal === policy + 8));
+  assert.deepEqual(files.map((p) => [p.filesDone, p.sizeDone]), [[1, policy], [2, policy + 3]]);
+});
+
+test("a full receipt's totals match the hub after the same cycle's uploads and never fall below the count", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("totals");
+  for (const name of ["a.txt", "b.txt", "c.txt"]) write(replica, volume, name, name);
+  write(hub, volume, "a.txt", "a.txt");
+  write(hub, volume, "hub.txt", "hub");
+  await hub.sync();
+  const seen = [];
+  const count = replica.engine.countProgress.bind(replica.engine);
+  replica.engine.countProgress = (size) => {
+    if (replica.engine.progress.stage === "receive") seen.push({ ...replica.engine.progress });
+    count(size);
+  };
+  const complete = replica.engine.work.complete.bind(replica.engine.work);
+  let finished;
+  replica.engine.work.complete = (...args) => {
+    finished = { ...replica.engine.progress };
+    return complete(...args);
+  };
+  await replica.sync();
+  const policy = fs.statSync(path.join(replica.engine.store.volume(volume.id).path, ".arcaignore")).size;
+  assert.ok(seen.length > 0);
+  assert.ok(seen.every((p) => p.filesTotal === 5 && p.sizeTotal === policy + 18));
+  assert.equal(finished.filesDone, 5);
+  assert.equal(finished.filesTotal, 5);
+  assert.equal(finished.sizeDone, policy + 18);
+  assert.equal(finished.sizeTotal, policy + 18);
+  replica.engine.progress = { filesDone: 2, filesTotal: 2, sizeDone: 10, sizeTotal: 10 };
+  count(5);
+  assert.deepEqual(replica.engine.progress, { filesDone: 3, filesTotal: 3, sizeDone: 15, sizeTotal: 15 });
+  replica.engine.progress = { filesDone: 0, filesTotal: null, sizeDone: 0, sizeTotal: 0 };
+  count(5);
+  assert.deepEqual(replica.engine.progress, { filesDone: 1, filesTotal: null, sizeDone: 5, sizeTotal: 0 });
+  replica.engine.progress = null;
+});
+
 test("unlink interrupts an active upload before publishing and retains local files", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const replica = await connect("unlink-active");

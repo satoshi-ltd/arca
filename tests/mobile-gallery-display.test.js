@@ -5,7 +5,7 @@ import {
   nativeGallerySources,
 } from "../apps/mobile/src/gallery-display.js";
 
-test("linked phones and replicas prefer synchronized local files over native or hub previews", async () => {
+test("replicas show only files on this phone, falling back to a local derivative, never the hub", async () => {
   const photo = {
     path: "Camera/photo.heic",
     hash: "current",
@@ -14,13 +14,9 @@ test("linked phones and replicas prefer synchronized local files over native or 
   const calls = [];
   const options = {
     large: true,
-    localPreview: async () => {
-      calls.push("local");
+    localPreview: async (item, large) => {
+      calls.push(`${item.uri}:${large ? "large" : "thumb"}`);
       return "file:local.jpg";
-    },
-    hubPreview: async () => {
-      calls.push("hub");
-      return "file:cached-hub.jpg";
     },
   };
   assert.equal(
@@ -30,16 +26,13 @@ test("linked phones and replicas prefer synchronized local files over native or 
     }),
     "file:local.jpg",
   );
-  assert.deepEqual(calls, ["local"]);
-  assert.equal(await galleryDisplay(photo, options), "file:local.jpg");
-  assert.deepEqual(calls, ["local", "local"]);
+  assert.deepEqual(calls, ["file:replica.heic:large"]);
+  const jpeg = { path: "Camera/photo.jpg", hash: "h", uri: "file:photo.jpg" };
+  assert.equal(await galleryDisplay(jpeg, options), "file:photo.jpg");
   assert.equal(
-    await galleryDisplay(photo, {
-      ...options,
-      nativeSource: async () => "content:native",
-      fallback: true,
-    }),
-    "file:cached-hub.jpg",
+    await galleryDisplay(jpeg, { ...options, fallback: true }),
+    "file:local.jpg",
+    "a file the viewer cannot show is decoded locally",
   );
   assert.equal(
     await galleryDisplay(
@@ -47,6 +40,10 @@ test("linked phones and replicas prefer synchronized local files over native or 
       options,
     ),
     "content:pending",
+  );
+  await assert.rejects(
+    galleryDisplay({ path: "hub-only.jpg", hash: "h" }, options),
+    /not on this phone yet/,
   );
 });
 
@@ -100,26 +97,23 @@ test("native resolution uses scoped receipts, deduplicates reads and rejects cha
   assert.equal(await foreign(item), null);
 });
 
-test("thumbnail failures use hub cache; offline errors do not change originals", async () => {
-  const item = { path: "a.heic", hash: "h" };
+test("a failing local decode falls back to this phone's library asset, then reports the local error", async () => {
+  const item = { path: "a.heic", hash: "h", uri: "file:a.heic" };
   const before = { ...item };
+  const decoded = [];
   const options = {
     nativeSource: async () => "content:original",
-    localPreview: async () => {
-      throw new Error("No native decoder");
+    localPreview: async (entry) => {
+      decoded.push(entry.uri);
+      if (entry.uri === "file:a.heic") throw new Error("No native decoder");
+      return "file:from-library.jpg";
     },
-    hubPreview: async () => "file:cached.jpg",
   };
-  assert.equal(await galleryDisplay(item, options), "file:cached.jpg");
+  assert.equal(await galleryDisplay(item, options), "file:from-library.jpg");
+  assert.deepEqual(decoded, ["file:a.heic", "content:original"]);
   await assert.rejects(
-    galleryDisplay(item, {
-      ...options,
-      nativeSource: undefined,
-      hubPreview: async () => {
-        throw new TypeError("Network request failed");
-      },
-    }),
-    /Network request failed/,
+    galleryDisplay(item, { ...options, nativeSource: undefined }),
+    /No native decoder/,
   );
   assert.deepEqual(item, before);
 });

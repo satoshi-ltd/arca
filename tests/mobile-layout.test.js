@@ -507,7 +507,7 @@ test("the gallery windows rows over the whole timeline and only ever loads by sc
   assert.doesNotMatch(rail, /dateRailTick/);
   assert.doesNotMatch(rail, /scrollY\.interpolate/, "the thumb follows the finger, not the native scroll value");
   assert.match(app, /<FolderGallery[^>]*offline=\{!!status\.offline\}/, "paired is not online: the gallery needs the offline state");
-  assert.match(gallery, /const online = connected && !offline;/);
+  assert.match(gallery, /const linked = connected && !offline;/);
   assert.match(gallery, /const source = gallery && \(online \|\| !local\.total\) \? gallery : local;/);
   assert.match(gallery, /!current\.online \|\|/);
   assert.match(gallery, /\[\s*onRail,\s*railShape,/, "the rail model republishes on shape changes, not on every loaded page");
@@ -529,6 +529,26 @@ test("every gallery surface shares one placeholder: the token fill and a soft im
     assert.match(theme, new RegExp(`${name}: \\{[^}]*backgroundColor: c\\.placeholder`), name);
   assert.match(css, /\.photo-thumb \{[^}]*background: var\(--placeholder\);/);
   assert.match(css, /\.photo-open \{[^}]*background: var\(--placeholder\);\s*color: var\(--line\);/);
+});
+
+test("folder rows show the gallery icon the hub assigns and selection states the space it needs", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const selected = app.slice(app.indexOf("{locals.map((f) => ("), app.indexOf("description={`${f.files} files"));
+  assert.match(selected, /galleryConfig\(f\) \|\|\s*f\.gallery \|\|\s*catalog\?\.volumes\?\.find\(/);
+  assert.match(app, /available\s+icon=\{v\.gallery \? "gallery" : "folders"\}/);
+  assert.match(app, /`Needs \$\{bytes\(shownSheet\.volume\.bytes\)\} · `/);
+  assert.match(app, /shownSheet\.kind === "select"\s*\?\s*\{\s*title: shownSheet\.volume\.name,\s*icon: shownSheet\.volume\.gallery \? "gallery" : "folder",/);
+  assert.doesNotMatch(app, /free here/);
+});
+
+test("the mobile gallery never fetches pixels from the hub and falls back to local files after repeated hub failures", () => {
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  assert.doesNotMatch(gallery, /hub-previews|hubPreview|previews\./);
+  assert.match(gallery, /render: async \(item\) => \(item\.kind === "video" \? null : display\(item\)\)/);
+  assert.match(gallery, /const online = linked && failures < 2;/);
+  assert.match(gallery, /setGallery\(fresh\);\s*setFailures\(0\);/);
+  assert.match(gallery, /setFailures\(\(count\) => count \+ 1\);\s*setError\(e\.message\);/);
+  assert.equal(fs.existsSync(new URL("../apps/mobile/src/hub-previews.js", import.meta.url)), false);
 });
 
 test("recent revisions wait for the replica runtime before loading", () => {

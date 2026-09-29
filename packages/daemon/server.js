@@ -597,24 +597,6 @@ export async function start(home, options = {}) {
           fail("Select this folder first", 403);
         const row = s.current(volume, name);
         if (
-          route.endsWith("preview-url") &&
-          config.role !== "hub" &&
-          config.hub &&
-          (!row || row.hash !== hash || !s.localContent(volume, name, hash))
-        )
-          return send(
-            200,
-            await engine.json(
-              "/v1/gallery/preview?" +
-                new URLSearchParams({
-                  volume,
-                  path: name,
-                  hash,
-                  size: "large",
-                }),
-            ),
-          );
-        if (
           !row ||
           row.deleted ||
           row.directory ||
@@ -722,22 +704,22 @@ export async function start(home, options = {}) {
         if (config.role !== "hub") {
           requireAdmin();
           if (!s.volume(volume).selected) fail("Select this folder first", 403);
-          const name = url.searchParams.get("path");
-          const hash = url.searchParams.get("hash");
-          const row =
+          // Replicas show only their own files; the hub supplies previews of retained revisions alone.
+          if (
+            config.hub &&
             route.endsWith("/preview") &&
-            !url.searchParams.has("rev") &&
-            s.current(volume, name);
-          const localPreview =
-            row &&
-            !row.deleted &&
-            !row.directory &&
-            row.hash === hash &&
-            Boolean(s.localContent(volume, name, hash));
-          // Selected replicas own complete files and a local gallery index.
-          // Only a missing derivative may need the hub; listing/info stay local.
-          if (config.hub && route.endsWith("/preview") && !localPreview)
-            return send(200, await engine.json(route + url.search));
+            url.searchParams.has("rev")
+          ) {
+            const current = s.current(volume, url.searchParams.get("path"));
+            if (
+              !current ||
+              current.deleted ||
+              String(current.rev) !== url.searchParams.get("rev") ||
+              current.hash !== url.searchParams.get("hash")
+            )
+              return send(200, await engine.json(route + url.search));
+            url.searchParams.delete("rev");
+          }
         }
         if (req.method !== "GET") fail("Method not allowed", 405);
         engine.gallery ||= new Gallery(s);

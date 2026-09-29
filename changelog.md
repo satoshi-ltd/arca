@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.9 — 2026-09-29
+
+- Replicas show only their own files. The mobile gallery, viewer and video tiles read the phone's synchronized file or its own Photos original and never fetch hub previews. Offline, every downloaded photo appears, and a photo not downloaded yet stays a placeholder: the viewer says so instead of staying busy. The gallery keeps its cached hub order while linked. It falls back to the phone's own files once offline is detected or after two failed hub refreshes in a row.
+- Desktop and web replicas no longer ask the hub for the preview of a current photo they do not hold. They answer “Sync this photo before previewing it”. Recent and file-history rows render the current revision from the local copy, and only other retained revisions come from the hub.
+- Unlinking a folder on a desktop or web replica deletes its verified synced copy by default, so a stale copy cannot come back as local content on a later relink. Turn the option off to keep the files.
+- Folder progress counts files and their size (“402 / 1,269 files sent · 4.3 GB / 14.0 GB”), never directories or deletions. A full download takes its totals from the hub's folder size, including what the same cycle uploaded.
+- The desktop gallery header counts photos, and History revision numbers stay on one line. Mobile shows the gallery icon for shared photo folders that are not selected, both in the list and in the Select sheet, whose caption reads “Needs 1.6 GB · 41.2 GB free”.
+- The `design/` kit mirrors these changes. SPEC moves the media placeholder and fast-scroll thumb contracts into the design section and lists relinking with the hub as the source of truth as a proposal (P1-RELINK).
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 390 tests with two platform skips and all 209 mobile source tests pass. Two adversarial reviews: the first review's findings (a revision column rule that never applied, the mobile gallery switching source on open, stale receive totals, current-revision previews still proxied to the hub, missing tests, stale docs) and the second's (totals doubled by files the hub already had, the kit version) are fixed with regression tests. Stale hub previews already cached on phones are left for the system to clear. No native build or deployment performed.
+
 ## 0.6.8 — 2026-09-29
 
 - Desktop and web replicas show each unselected shared folder's file count and size instead of “Not counted yet”. Replicas now keep the hub catalog's totals. The selection dialog shows the folder's size on the hub and the space it needs next to the free space.

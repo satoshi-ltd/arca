@@ -655,6 +655,14 @@ export class Engine {
     );
     return result;
   }
+  countProgress(size) {
+    const p = this.progress;
+    p.filesDone++;
+    p.sizeDone += size || 0;
+    if (Number.isFinite(p.filesTotal))
+      p.filesTotal = Math.max(p.filesTotal, p.filesDone);
+    if (p.sizeTotal) p.sizeTotal = Math.max(p.sizeTotal, p.sizeDone);
+  }
   // An interrupted cycle must not propose again what the hub already accepted.
   recordAccepted(result, volume, name, key) {
     const row = result?.row;
@@ -830,10 +838,17 @@ export class Engine {
                 const old = known.get(name);
                 return !old || old.deleted || entryKey(old) !== entryKey(item);
               });
+            const changedFiles = changed.filter(([, item]) => !item.directory);
+            let proposed = false;
             Object.assign(this.progress, {
               stage: "upload",
               filesDone: 0,
-              filesTotal: changed.length,
+              filesTotal: changedFiles.length,
+              sizeDone: 0,
+              sizeTotal: changedFiles.reduce(
+                (sum, [, item]) => sum + (item.size || 0),
+                0,
+              ),
             });
             for (const row of [...known.values()].sort((a, b) =>
               b.path.localeCompare(a.path),
@@ -844,7 +859,7 @@ export class Engine {
                 !s.excluded(v.id, row.path, row.directory) &&
                 !disk.has(row.path) &&
                 !diskNames.has(row.path.toLowerCase())
-              )
+              ) {
                 this.recordAccepted(
                   await this.json("/v1/propose", {
                     volume: v.id,
@@ -856,6 +871,8 @@ export class Engine {
                   row.path,
                   null,
                 );
+                proposed = true;
+              }
             for (let cursor = 0; cursor < changed.length;) {
               this.checkSyncInterrupted();
               // Keep policy, directories and empty files ordered. Only stage file bytes concurrently.
@@ -930,19 +947,34 @@ export class Engine {
                   name,
                   entryKey(item),
                 );
-                this.progress.filesDone++;
+                proposed = true;
               }
+              for (const [, item] of batch)
+                if (!item.directory) this.countProgress(item.size);
             }
             Object.assign(this.progress, {
               stage: "receive",
               filesDone: 0,
               filesTotal: null,
+              sizeDone: 0,
+              sizeTotal: 0,
               path: null,
               bytesDone: 0,
               bytesTotal: 0,
             });
             this.checkSyncInterrupted();
             const useChanges = incremental;
+            const listed =
+              !useChanges &&
+              (proposed
+                ? (await this.json("/v1/catalog")).volumes
+                : this.config.catalog
+              )?.find((row) => row.id === v.id);
+            if (Number.isSafeInteger(listed?.files))
+              Object.assign(this.progress, {
+                filesTotal: listed.files,
+                sizeTotal: listed.bytes || 0,
+              });
             let cursor = plan.full ? 0 : this.work.state(v.id).cursor;
             let through;
             const directoryDeletes = [];
@@ -997,7 +1029,6 @@ export class Engine {
                     if (local) disk.set(name, local);
                   }
                 }
-                this.progress.filesTotal = page.total ?? null;
                 after = page.next;
                 for (const row of page.files) {
                   this.checkSyncInterrupted();
@@ -1013,10 +1044,7 @@ export class Engine {
                       { syncInterrupted: true },
                     );
                   }
-                  if (s.excluded(v.id, row.path, row.directory)) {
-                    this.progress.filesDone++;
-                    continue;
-                  }
+                  if (s.excluded(v.id, row.path, row.directory)) continue;
                   this.progress.path = row.path;
                   Object.assign(this.progress, {
                     direction: "download",
@@ -1062,7 +1090,8 @@ export class Engine {
                     s.materialize(row, local?.hash);
                     if (row.hash && !row.deleted) written.add(row.hash);
                   }
-                  this.progress.filesDone++;
+                  if (!row.directory && !row.deleted)
+                    this.countProgress(row.size);
                 }
                 // Identical files in one page share a single download.
                 for (const hash of written)
@@ -1079,6 +1108,7 @@ export class Engine {
               for (const row of deferredFiles) {
                 s.queue(row);
                 s.materialize(row);
+                this.countProgress(row.size);
               }
             } finally {
               if (session) await this.releaseSnapshot(session);

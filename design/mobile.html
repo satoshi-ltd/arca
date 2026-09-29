@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arca Mobile</title>
+    <link rel="icon" href="../apps/desktop/src/assets/arca-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../apps/desktop/src/tokens.css" />
+    <link rel="stylesheet" href="../apps/desktop/src/style.css" />
+    <link rel="stylesheet" href="mobile-tokens.css" />
+    <link rel="stylesheet" href="mobile.css" />
+    <link rel="stylesheet" href="kit.css" />
+    <script src="../apps/desktop/src/vendor/lucide.js"></script>
+    <script src="kit.js" defer></script>
+  </head>
+  <body class="kit">
+    <header class="kit-header">
+      <div class="brand-lockup"><img src="../apps/desktop/src/assets/arca-icon.svg" alt="" />arca</div>
+      <nav aria-label="Design kit">
+        <a href="index.html">System</a>
+        <a href="desktop.html">Desktop</a>
+        <a href="mobile.html" aria-current="page">Mobile</a>
+      </nav>
+      <span class="kit-version">v0.6.9 · phone and Fold</span>
+      <div class="segmented" role="group" aria-label="Theme">
+        <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
+        <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
+      </div>
+    </header>
+    <main class="kit-main">
+      <section class="kit-intro">
+        <h1>Phone and Fold</h1>
+        <p>The React Native app, mirrored from its theme and tokens. Phones use bottom tabs and bottom sheets; the unfolded Fold uses the sidebar, the desktop title scale and centered dialogs. Both keep 48 dp controls and the touch type scale.</p>
+      </section>
+
+      <section class="kit-section">
+        <h2>Folders and selection <span>01</span></h2>
+        <div class="kit-devices">
+          <div>
+            <div class="m-device"><div class="m-screen">
+              <div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div>
+              <div class="m-header"><div class="m-title-row"><img src="../apps/desktop/src/assets/arca-icon.svg" width="32" height="32" alt="" /><span class="m-title">Folders</span></div></div>
+              <div class="m-body">
+                <div class="m-section"><span class="m-eyebrow">On this phone</span>
+                  <div class="m-list">
+                    <div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos</span><span class="m-caption">3,598 photos · 13.4 GB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                    <div class="m-row"><div class="m-tile"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div><div class="m-stack"><span class="m-row-title">documents</span><span class="m-caption">20 files · 14.2 MB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                    <div class="m-row"><div class="m-tile"><span data-icon="folder"></span></div><div class="m-stack"><span class="m-row-title">alpi-workspace</span><span class="m-caption">233 files · 3.9 MB local</span></div><div class="m-row-action"><span class="m-chip m-warning"><span data-icon="git-branch" data-size="13"></span></span><span data-icon="chevron-right" data-size="20"></span></div></div>
+                  </div>
+                </div>
+                <div class="m-section"><span class="m-eyebrow">On hub · not selected</span>
+                  <div class="m-list">
+                    <div class="m-row m-available"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos-demo</span><span class="m-caption">11 files · 33.5 MB</span></div><span class="m-button"><span data-icon="download"></span>Select</span></div>
+                    <div class="m-row m-available"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos-yuri</span><span class="m-caption">138 files · 1.6 GB</span></div><span class="m-button"><span data-icon="download"></span>Select</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="m-tabs"><span class="m-tab m-selected"><span data-icon="folder" data-size="20"></span>Folders</span><span class="m-tab"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span><span class="m-tab"><span data-icon="history" data-size="20"></span>History</span><span class="m-tab"><span data-icon="settings" data-size="20"></span>Settings</span></div>
+            </div></div>
+            <p class="kit-caption">Folders · hub counts on unselected folders</p>
+          </div>
+          <div>
+            <div class="m-device"><div class="m-screen">
+              <div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div>
+              <div class="m-header"><div class="m-title-row"><img src="../apps/desktop/src/assets/arca-icon.svg" width="32" height="32" alt="" /><span class="m-title">Folders</span></div></div>
+              <div class="m-body"><div class="m-section"><span class="m-eyebrow">On hub · not selected</span><div class="m-list"><div class="m-row m-available"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos-yuri</span><span class="m-caption">138 files · 1.6 GB</span></div><span class="m-button"><span data-icon="download"></span>Select</span></div></div></div></div>
+              <div class="m-backdrop">
+                <div class="m-sheet">
+                  <div class="m-handle"></div>
+                  <div class="m-sheet-header"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-heading">photos-yuri</span><span class="m-caption">138 files · 1.6 GB on hub</span></div><span class="m-button m-icon" aria-label="Close"><span data-icon="x" data-size="20"></span></span></div>
+                  <div class="m-sheet-content">
+                    <div class="m-card"><span class="m-heading">Keep a local copy</span><span class="m-text">Download this folder and keep it in sync.</span><span class="m-caption">Needs 1.6 GB · 41.2 GB free</span></div>
+                    <span class="m-button m-primary">Select</span>
+                  </div>
+                </div>
+              </div>
+            </div></div>
+            <p class="kit-caption">Select sheet · form variant with Close</p>
+          </div>
+          <div>
+            <div class="m-device"><div class="m-screen">
+              <div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div>
+              <div class="m-header"><div class="m-title-row"><img src="../apps/desktop/src/assets/arca-icon.svg" width="32" height="32" alt="" /><span class="m-title">Pair with your hub</span></div><span class="m-caption">Connect with a single-use code from your hub.</span></div>
+              <div class="m-body">
+                <div class="m-section"><span class="m-caption">Name this phone</span><span class="m-button" style="justify-content: flex-start">emulator-android</span></div>
+                <div class="m-section"><span class="m-caption">Hub address</span><span class="m-button" style="justify-content: flex-start">http://192.168.1.190:17831</span></div>
+                <div class="m-section"><span class="m-caption">Pairing code</span><div class="code-inputs"><input value="1" aria-label="Digit 1" /><input value="2" aria-label="Digit 2" /><input value="1" aria-label="Digit 3" /><span class="separator">—</span><input value="5" aria-label="Digit 4" /><input value="2" aria-label="Digit 5" /><input value="5" aria-label="Digit 6" /></div><span class="m-caption">Single use · valid ten minutes</span></div>
+                <span class="m-button m-primary">Pair this phone</span>
+              </div>
+            </div></div>
+            <p class="kit-caption">Pairing · LAN HTTP or Tailscale</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="kit-section">
+        <h2>Photo folders <span>02</span></h2>
+        <div class="kit-devices">
+          <div>
+            <div class="m-device"><div class="m-screen">
+              <div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div>
+              <div class="m-header"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Folders</span><div class="m-title-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-detail-title">photos</span><span class="m-caption">3,598 photos · 13.4 GB local</span></div><span class="m-button m-icon" aria-label="Folder actions"><span data-icon="ellipsis" data-size="20"></span></span></div></div>
+              <div class="m-body" style="position: relative">
+                <div><div class="m-month">September 2026</div>
+                  <div class="m-grid">
+                    <div class="m-photo m-shot"></div><div class="m-photo m-shot m-warm"></div><div class="m-photo m-shot m-cool"><span class="m-photo-badge"><span data-icon="play" data-size="14"></span></span></div><div class="m-photo m-shot"></div>
+                    <div class="m-photo m-shot m-cool"></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div><div class="m-photo"><span class="m-placeholder"><span data-icon="play" data-size="20"></span></span></div>
+                  </div>
+                </div>
+                <div><div class="m-month">August 2026</div>
+                  <div class="m-grid">
+                    <div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div>
+                    <div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div>
+                  </div>
+                </div>
+                <div class="m-scrub">
+                  <div class="m-scrub-track"></div>
+                  <span class="m-scrub-year" style="top: 24px">2026</span>
+                  <span class="m-scrub-year" style="top: 150px">2024</span>
+                  <span class="m-scrub-year" style="top: 300px">2019</span>
+                  <span class="m-scrub-year" style="top: 470px">2014</span>
+                  <span class="m-scrub-bubble" style="top: 96px">Aug 2026</span>
+                  <div class="m-scrub-thumb" style="top: 88px"><span class="m-flipped"><span data-icon="chevron-down" data-size="16"></span></span><span data-icon="chevron-down" data-size="16"></span></div>
+                </div>
+              </div>
+              <div class="m-tabs"><span class="m-tab m-selected"><span data-icon="folder" data-size="20"></span>Folders</span><span class="m-tab"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span><span class="m-tab"><span data-icon="history" data-size="20"></span>History</span><span class="m-tab"><span data-icon="settings" data-size="20"></span>Settings</span></div>
+            </div></div>
+            <p class="kit-caption">Timeline · scrubbing, months still loading</p>
+          </div>
+          <div>
+            <div class="m-device"><div class="m-screen">
+              <div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div>
+              <div class="m-header"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Folders</span><div class="m-title-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-detail-title">photos</span><span class="m-caption">3,598 photos · 13.4 GB local</span></div></div></div>
+              <div class="m-body"><div class="m-grid"><div class="m-photo m-shot"></div><div class="m-photo m-shot m-warm"></div><div class="m-photo m-shot m-cool"></div><div class="m-photo m-shot"></div></div></div>
+              <div class="m-backdrop">
+                <div class="m-sheet">
+                  <div class="m-handle"></div>
+                  <div class="m-sheet-header"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-heading">photos</span><span class="m-caption">3,598 photos · 13.4 GB local</span></div><span class="m-button m-icon" aria-label="Close"><span data-icon="x" data-size="20"></span></span></div>
+                  <div class="m-sheet-menu">
+                    <div class="m-action"><span data-icon="upload" data-size="20"></span><span>Add files…</span></div>
+                    <div class="m-action"><span data-icon="image" data-size="20"></span><span>Add photos…</span></div>
+                    <div class="m-action"><span data-icon="share" data-size="20"></span><span>Export folder…</span></div>
+                    <div class="m-action m-disabled"><span data-icon="images" data-size="20"></span><span>Link album…</span></div>
+                    <div class="m-action"><span data-icon="history" data-size="20"></span><span>View history</span></div>
+                    <div class="m-destructive"><div class="m-action m-danger"><span data-icon="unlink" data-size="20"></span><span>Stop syncing…</span></div></div>
+                  </div>
+                </div>
+              </div>
+            </div></div>
+            <p class="kit-caption">Folder actions · compact menu sheet</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="kit-section">
+        <h2>Fold <span>03</span></h2>
+        <div class="kit-devices">
+          <div>
+            <div class="m-device m-fold"><div class="m-screen">
+              <aside class="m-sidebar">
+                <div class="m-title-row" style="min-height: 48px"><img src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="" /><strong>arca</strong></div>
+                <span class="m-nav-item m-selected"><span data-icon="folder" data-size="20"></span>Folders</span>
+                <span class="m-nav-item"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span>
+                <span class="m-nav-item"><span data-icon="history" data-size="20"></span>History</span>
+                <span class="m-nav-item"><span data-icon="settings" data-size="20"></span>Settings</span>
+              </aside>
+              <div class="m-column">
+                <div class="m-header" style="padding-top: var(--m-workspace-inset)"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Folders</span><div class="m-title-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-title">photos-demo</span><span class="m-caption">10 photos · 33.5 MB local</span></div></div></div>
+                <div class="m-body"><div class="m-month">September 2026</div><div class="m-grid" style="--columns: 6"><div class="m-photo m-shot"></div><div class="m-photo m-shot m-warm"></div><div class="m-photo m-shot m-cool"></div><div class="m-photo m-shot"></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div><div class="m-photo"><span class="m-placeholder"><span data-icon="image" data-size="20"></span></span></div></div></div>
+              </div>
+                <div class="m-backdrop">
+                <div class="m-sheet">
+                  <div class="m-sheet-header"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-heading">photos-demo</span><span class="m-caption">10 photos · 33.5 MB local</span></div><span class="m-button m-icon" aria-label="Close"><span data-icon="x" data-size="20"></span></span></div>
+                  <div class="m-sheet-menu">
+                    <div class="m-action"><span data-icon="upload" data-size="20"></span><span>Add files…</span></div>
+                    <div class="m-action"><span data-icon="image" data-size="20"></span><span>Add photos…</span></div>
+                    <div class="m-action"><span data-icon="history" data-size="20"></span><span>View history</span></div>
+                    <div class="m-destructive"><div class="m-action m-danger"><span data-icon="unlink" data-size="20"></span><span>Stop syncing…</span></div></div>
+                  </div>
+                </div>
+              </div>
+            </div></div>
+            <p class="kit-caption">Fold · sheets become centered dialogs, Close kept</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

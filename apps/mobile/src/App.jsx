@@ -1910,7 +1910,13 @@ export default function App() {
                                     key={f.id}
                                     name={f.name}
                                     icon={
-                                      galleryConfig(f) ? "gallery" : "folders"
+                                      galleryConfig(f) ||
+                                      f.gallery ||
+                                      catalog?.volumes?.find(
+                                        (v) => v.id === f.id,
+                                      )?.gallery
+                                        ? "gallery"
+                                        : "folders"
                                     }
                                     description={`${f.files} files · ${bytes(f.bytes)} local`}
                                     status={
@@ -1960,6 +1966,7 @@ export default function App() {
                                       key={v.id}
                                       name={v.name}
                                       available
+                                      icon={v.gallery ? "gallery" : "folders"}
                                       description={folderSize(v)}
                                       disabled={!connected || actionLocked}
                                       onPress={() => choose(v)}
@@ -2769,7 +2776,7 @@ export default function App() {
                       : shownSheet.kind === "select"
                         ? {
                             title: shownSheet.volume.name,
-                            icon: "folder",
+                            icon: shownSheet.volume.gallery ? "gallery" : "folder",
                             subtitle: `${folderSize(shownSheet.volume)} on hub`,
                           }
                         : {
@@ -2970,8 +2977,10 @@ export default function App() {
                       Download this folder and keep it in sync.
                     </Text>
                     <Text style={s.caption}>
-                      {folderSize(shownSheet.volume)} on hub ·{" "}
-                      {bytes(status.free)} free here
+                      {Number.isFinite(shownSheet.volume.bytes)
+                        ? `Needs ${bytes(shownSheet.volume.bytes)} · `
+                        : ""}
+                      {bytes(status.free)} free
                     </Text>
                   </Card>
                   <Button

@@ -241,7 +241,7 @@ function Page({
         <Text style={s.viewerCaption}>
           {item.uri
             ? "This photo could not be displayed."
-            : "Preview unavailable. Connect to the hub to view it."}
+            : "This photo is not on this phone yet. It appears once synchronization downloads it."}
         </Text>
       </View>
     );

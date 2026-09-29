@@ -30,43 +30,30 @@ export function nativeGallerySources({ store, media, scope, volume }) {
   };
 }
 
+// A replica shows only what this phone holds: its synchronized file or its own library asset.
 export async function galleryDisplay(
   item,
-  { large = false, fallback = false, nativeSource, localPreview, hubPreview },
+  { large = false, fallback = false, nativeSource, localPreview },
 ) {
-  // A synchronized file is the first choice, including on album-linked phones.
-  if (item.uri && !item.nativeSource && !item.upload && !fallback) {
-    if (large && !/\.hei[cf]$/i.test(item.path)) return item.uri;
+  const local = item.uri && !item.nativeSource && !item.upload;
+  let failure = null;
+  if (local) {
+    if (large && !fallback && !/\.hei[cf]$/i.test(item.path)) return item.uri;
     try {
       return await localPreview(item, large);
-    } catch {
-      /* Try the native original or hub derivative when decoding is unsupported. */
+    } catch (error) {
+      failure = error;
     }
   }
-  const native =
-    !fallback && (item.upload ? item.uri : await nativeSource?.(item));
+  const native = item.upload ? item.uri : await nativeSource?.(item);
   if (native) {
-    if (large) return native;
-    try {
-      return await localPreview({ ...item, uri: native }, false);
-    } catch {
-      /* Try the already cached/hub derivative below. */
-    }
+    if (large && !fallback) return native;
+    return localPreview({ ...item, uri: native }, large);
   }
-  // Decode local HEIC when supported; use the hub derivative as a fallback.
-  if (item.uri && !fallback) {
-    if (large && !/\.hei[cf]$/i.test(item.path)) return item.uri;
-    try {
-      return await localPreview(item, large);
-    } catch {
-      /* The hub can still supply a compatible derivative. */
-    }
-  }
-  if (item.hash) return hubPreview(item, large);
-  // Pending local uploads have no hub resource yet. Decode a disposable copy
-  // locally when native display failed, never replace the Photos original.
-  if (item.uri) return localPreview(item, large);
-  throw new Error(
-    "Photo unavailable locally. Connect to the hub to load its preview.",
+  throw (
+    failure ||
+    new Error(
+      "This photo is not on this phone yet. It appears once synchronization downloads it.",
+    )
   );
 }

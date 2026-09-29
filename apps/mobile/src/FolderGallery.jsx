@@ -31,7 +31,6 @@ import {
   timelineItem,
 } from "./gallery-timeline";
 import { hubGallery, localGallery } from "./hub-gallery";
-import { hubPreviewFiles } from "./hub-previews";
 import { prepareThumbnails } from "./thumbnail-cache";
 import { thumbnailFiles } from "./gallery-thumbnails";
 import { ScrollPosition } from "./KeyboardPane";
@@ -126,7 +125,7 @@ const Tile = memo(function Tile({
   );
 });
 
-// One timeline for every role: hub rows order it, local copies and hub previews fill it.
+// Hub rows only order the timeline; its pixels always come from files on this phone.
 export function FolderGallery({
   api,
   connected,
@@ -151,7 +150,9 @@ export function FolderGallery({
   columns = 4,
 }) {
   const { s, c } = useDesign();
-  const online = connected && !offline;
+  const linked = connected && !offline;
+  const [failures, setFailures] = useState(0);
+  const online = linked && failures < 2;
   const position = useContext(ScrollPosition);
   const positionRef = useRef(position);
   positionRef.current = position;
@@ -181,7 +182,6 @@ export function FolderGallery({
     () => hubGallery({ api, store, scope, volume }),
     [api, store, scope, volume],
   );
-  const previews = useMemo(() => hubPreviewFiles(api, volume), [api, volume]);
   const nativeSource = useMemo(
     () =>
       uploads
@@ -200,8 +200,6 @@ export function FolderGallery({
       fallback,
       nativeSource,
       localPreview: thumbnailFiles.render,
-      hubPreview: (photo, full) =>
-        full ? previews.large(photo) : previews.thumbnail(photo),
     });
   const [gallery, setGallery] = useState(null);
   const [error, setError] = useState("");
@@ -229,7 +227,7 @@ export function FolderGallery({
       if (
         !active ||
         reading ||
-        !online ||
+        !linked ||
         AppState.currentState === "background"
       )
         return;
@@ -239,10 +237,14 @@ export function FolderGallery({
         const fresh = await hub.refresh();
         if (active) {
           setGallery(fresh);
+          setFailures(0);
           setError("");
         }
       } catch (e) {
-        if (active) setError(e.message);
+        if (active) {
+          setFailures((count) => count + 1);
+          setError(e.message);
+        }
       } finally {
         reading = false;
         if (active) timer = setTimeout(refresh, 5000);
@@ -262,7 +264,7 @@ export function FolderGallery({
       clearTimeout(timer);
       subscription.remove();
     };
-  }, [hub, online, refreshKey, retry]);
+  }, [hub, linked, refreshKey, retry]);
   useEffect(() => {
     if (!uploads) {
       setPending([]);
@@ -305,7 +307,6 @@ export function FolderGallery({
     [entries],
   );
   const local = useMemo(() => localGallery(entries), [entries]);
-  // Offline, the phone's complete working copy beats a partial hub cache.
   const source = gallery && (online || !local.total) ? gallery : local;
   const monthCache = useRef(new Map());
   const months = useMemo(() => {
@@ -447,10 +448,9 @@ export function FolderGallery({
   const io = useMemo(
     () => ({
       exists: thumbnailFiles.exists,
-      render: (item) =>
-        item.kind === "video" ? previews.thumbnail(item) : display(item),
+      render: async (item) => (item.kind === "video" ? null : display(item)),
     }),
-    [previews, nativeSource],
+    [nativeSource],
   );
   useEffect(() => {
     let active = true;
@@ -906,7 +906,7 @@ export function FolderGallery({
       {!!error && !sections.length && (
         <View style={s.stack}>
           <Text style={s.caption}>{error}</Text>
-          {online && (
+          {linked && (
             <Button
               label="Retry"
               onPress={() => {
@@ -1017,7 +1017,7 @@ export function FolderGallery({
       )}
       {density !== "years" &&
         !sections.length &&
-        (loading || (!gallery && online && !error) ? (
+        (loading || (!gallery && linked && !error) ? (
           <Scaffold label="Loading photos" />
         ) : (
           <View style={s.center}>

@@ -276,7 +276,7 @@ test("old photos use EXIF capture date and unsupported media keep a usable listi
   });
 });
 
-test("replicas render selected local previews without hub requests and fall back for missing content", async (t) => {
+test("replicas render selected local previews and never ask the hub for photos they do not hold", async (t) => {
   const f = await fixture(t);
   await f.api("/v1/gallery/link", { volume: f.v.id });
   const { hash } = await f.photo("photo.jpg", "2026-01-01T00:00:00.000Z");
@@ -363,6 +363,15 @@ test("replicas render selected local previews without hub requests and fall back
     assert.equal(image.headers.get("content-type"), "image/jpeg");
     assert.ok((await image.arrayBuffer()).byteLength > 0);
     assert.equal(previewRequests, 0);
+    const { rev } = replica.engine.store.current(f.v.id, "photo.jpg");
+    assert.match(
+      (await call(`${f.preview("photo.jpg", hash)}&rev=${rev}`)).data,
+      /^data:image\/jpeg;base64,/,
+    );
+    assert.equal(previewRequests, 0, "the current revision renders from the local copy");
+    await assert.rejects(call(`${f.preview("photo.jpg", hash)}&rev=${rev + 1}`));
+    assert.equal(previewRequests, 1, "only other retained revisions come from the hub");
+    previewRequests = 0;
     const localFolder = replica.engine.store.volume(f.v.id);
     fs.writeFileSync(path.join(localFolder.path, ".arcaignore"), "photo.jpg\n");
     await assert.rejects(call(f.preview("photo.jpg", hash)), { status: 404 });
@@ -382,11 +391,21 @@ test("replicas render selected local previews without hub requests and fall back
     assert.match(
       (await call(f.preview("photo.jpg", hash))).data,
       /^data:image\/jpeg;base64,/,
+      "a preview already rendered here stays available",
     );
+    replica.engine.gallery.cache.clear();
+    for (const name of fs.readdirSync(path.join(home, "previews")))
+      fs.rmSync(path.join(home, "previews", name), { force: true });
+    replica.engine.store.db.prepare("DELETE FROM gallery_derivatives").run();
+    await assert.rejects(call(f.preview("photo.jpg", hash)), { status: 409 });
+    const viewer = await call(
+      f.preview("photo.jpg", hash).replace("/preview?", "/preview-url?"),
+    );
+    assert.equal((await fetch(viewer.url)).status, 409);
     assert.equal(
       previewRequests,
-      1,
-      "missing local content falls back to the hub",
+      0,
+      "a replica never asks the hub for a photo it does not hold",
     );
     fs.writeFileSync(local, original);
     assert.equal(
