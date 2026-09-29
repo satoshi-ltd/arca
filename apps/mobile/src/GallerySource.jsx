@@ -6,6 +6,8 @@ import {
   Card,
   FolderRow,
   Icon,
+  MediaPlaceholder,
+  PLACEHOLDER_GLYPH_MIN,
   Section,
   Toggle,
   useDesign,
@@ -34,7 +36,7 @@ function GalleryDetails({ children }) {
 }
 
 function PhotoTile({ item }) {
-  const { s, c } = useDesign();
+  const { s } = useDesign();
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [item.uri]);
   return (
@@ -52,12 +54,11 @@ function PhotoTile({ item }) {
           onError={() => setFailed(true)}
         />
       ) : (
-        <View style={s.galleryPlaceholder}>
-          <Icon name={item.video ? "file" : "image"} size={28} color={c.mute} />
-          <Text numberOfLines={1} style={s.caption}>
-            {item.name || "Preview unavailable"}
-          </Text>
-        </View>
+        <MediaPlaceholder
+          size={PLACEHOLDER_GLYPH_MIN}
+          video={item.video}
+          label={item.name || "Preview unavailable"}
+        />
       )}
     </View>
   );

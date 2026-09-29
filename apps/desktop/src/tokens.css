@@ -118,6 +118,7 @@
   --surface: #ffffff; /* cards, rows, inputs */
   --side: #eef1ec; /* sidebar */
   --hover: #ecf0ec; /* hover fill, segmented track */
+  --placeholder: #e4eae5; /* media not loaded yet, mirrored by mobile */
   --track: #ecf0ec; /* progress track */
   --desk: #e3e8e2; /* only behind the window in the prototype */
   /* lines */
@@ -178,6 +179,7 @@
   --surface: #161e19;
   --side: #131a16;
   --hover: #1c2620;
+  --placeholder: #1f2a24;
   --track: #26332c;
   --desk: #080b09;
   --line: #2e3b34;

@@ -3022,7 +3022,7 @@ section:has(> .replica-danger) > .section-label {
   flex: none;
   width: var(--photo-width, 180px);
   height: var(--photo-height, 120px);
-  background: var(--line);
+  background: var(--placeholder);
   border-radius: var(--r-control);
   overflow: hidden;
 }
@@ -3035,7 +3035,12 @@ section:has(> .replica-danger) > .section-label {
   border-radius: inherit;
   display: grid;
   place-items: center;
-  background: var(--surface);
+  background: var(--placeholder);
+  color: var(--line);
+}
+.photo-open svg.lucide {
+  width: 20px;
+  height: 20px;
 }
 .photo-thumb img {
   width: 100%;
@@ -3140,8 +3145,10 @@ section:has(> .replica-danger) > .section-label {
   }
 }
 .photo-more {
-  display: block;
-  margin: var(--space-6) auto;
+  display: flex;
+  justify-content: center;
+  margin: var(--space-6) 0;
+  color: var(--mute);
 }
 .photo-more[hidden] {
   display: none;
@@ -3899,11 +3906,6 @@ dialog.photo-viewer {
 }
 .photo-viewer-image {
   position: relative;
-}
-.photo-more[aria-busy="true"] {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
 }
 
 .photo-viewer-image video {

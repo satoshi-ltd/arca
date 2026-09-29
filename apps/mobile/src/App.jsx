@@ -322,14 +322,11 @@ export default function App() {
     setConfirmation(null);
     current?.resolve(ok);
   };
-  const [timelineDemand, setTimelineDemand] = useState(0);
-  const [galleryDates, setGalleryDates] = useState([]);
+  const [galleryRailModel, setGalleryRailModel] = useState(null);
   const [galleryViewport, setGalleryViewport] = useState({ y: 0, height: 0 });
-  const gallerySeek = useRef(null);
   const galleryScroll = useRef(null);
   const galleryScrollY = useRef(0);
   const galleryRail = useRef(null);
-  const nearEnd = useRef(false);
   const [noticeItems, setNoticeItems] = useState([]);
   useEffect(() => {
     const off = notices.subscribe(() => setNoticeItems(notices.snapshot()));
@@ -656,8 +653,6 @@ export default function App() {
     );
     setFolder(f);
     setPhotoCount(null);
-    setTimelineDemand(0);
-    nearEnd.current = false;
     setSearchOpen(false);
     setFileView(
       (f.gallery || catalog?.volumes?.find((v) => v.id === f.id)?.gallery) &&
@@ -1011,6 +1006,7 @@ export default function App() {
     }),
     [entries],
   );
+  const folderSubtitle = `${photoFolder ? `${photoCount ?? "—"} photos` : `${entrySummary.files} files`} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`;
   const timelineNotice =
     sourceConfig && !sourceConfig.enabled
       ? "Photo uploads are disabled for this album."
@@ -1022,15 +1018,14 @@ export default function App() {
         columns={wide ? 6 : 4}
         api={galleryAPI}
         connected={connected}
+        offline={!!status.offline}
         store={engine.current.store}
         scope={engine.current.scope}
         volume={folder.id}
         entries={entries}
         loading={filesLoading}
         refreshKey={status.last}
-        demand={timelineDemand}
-        onDates={setGalleryDates}
-        seekRef={gallerySeek}
+        onRail={setGalleryRailModel}
         scrollRef={galleryScroll}
         railRef={galleryRail}
         onSummary={({ count }) => setPhotoCount(count)}
@@ -1435,11 +1430,7 @@ export default function App() {
                                     : "folder"
                                   : undefined
                               }
-                              subtitle={
-                                photoFolder
-                                  ? `${photoCount ?? "—"} photos · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`
-                                  : `${entrySummary.files} files · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`
-                              }
+                              subtitle={folderSubtitle}
                             >
                               {folder.name}
                             </ScreenTitle>
@@ -1546,12 +1537,6 @@ export default function App() {
                     {screen === "History" && !wide && historyControls}
                   </View>
                 )}
-                {connected && status.offline && (
-                  <View style={s.offlineStatus} accessibilityRole="text">
-                    <Icon name="wifi-off" />
-                    <Text style={s.caption}>Offline</Text>
-                  </View>
-                )}
                 <IncomingShare
                   connection={connection}
                   name={catalog?.name}
@@ -1571,26 +1556,10 @@ export default function App() {
                   }}
                   key={`${screen}:${folder?.id || ""}`}
                   onScroll={(event) => {
-                    const { contentOffset, layoutMeasurement, contentSize } =
-                      event.nativeEvent;
+                    const { contentOffset } = event.nativeEvent;
                     if (contentOffset.y !== galleryScrollY.current)
                       galleryScroll.current?.(contentOffset.y);
                     galleryScrollY.current = contentOffset.y;
-                    const near =
-                      contentOffset.y + layoutMeasurement.height >
-                      contentSize.height - 1200;
-                    if (near !== nearEnd.current) {
-                      nearEnd.current = near;
-                      if (near) setTimelineDemand((n) => n + 1);
-                    }
-                  }}
-                  onContentSizeChange={(_, height) => {
-                    if (
-                      nearEnd.current &&
-                      galleryScrollY.current + galleryViewport.height >
-                        height - 1200
-                    )
-                      setTimelineDemand((n) => n + 1);
                   }}
                   style={s.scroll}
                   contentContainerStyle={[
@@ -2711,10 +2680,9 @@ export default function App() {
                 {folder && screen === "Folders" && photoFolder && (
                   <GalleryDateRail
                     key={folder.id}
-                    dates={galleryDates}
+                    model={galleryRailModel}
                     viewport={galleryViewport}
                     controller={galleryRail}
-                    onSeek={(month) => gallerySeek.current?.(month)}
                   />
                 )}
                 {!onboarding && !wide && !keyboardVisible && (
@@ -2781,23 +2749,34 @@ export default function App() {
                   disabled={actionLocked}
                 />
               }
-              title={
-                shownSheet.kind === "rename-file"
-                  ? "Rename file"
-                  : shownSheet.kind === "gallery"
-                    ? "Photo uploads"
-                    : shownSheet.kind === "history-filter"
-                      ? "Shared folder"
-                      : shownSheet.kind === "folder-actions"
-                        ? shownSheet.volume.name
-                        : shownSheet.kind === "select"
-                          ? shownSheet.volume.name
-                          : shownSheet.kind === "history"
-                            ? shownSheet.path
-                            : shownSheet.kind === "conflict"
-                              ? "Resolve conflict"
-                              : shownSheet.entry.path
-              }
+              {...(shownSheet.kind === "rename-file"
+                ? {
+                    title: "Rename file",
+                    icon: "edit",
+                    subtitle: shownSheet.path.split("/").at(-1),
+                  }
+                : shownSheet.kind === "gallery"
+                  ? { title: "Photo uploads", icon: "gallery", subtitle: folder?.name }
+                  : shownSheet.kind === "history-filter"
+                    ? { title: "Shared folder", icon: "folders" }
+                    : shownSheet.kind === "folder-actions"
+                      ? {
+                          title: shownSheet.volume.name,
+                          icon: photoFolder ? "gallery" : "folder",
+                          subtitle: folderSubtitle,
+                          menu: true,
+                        }
+                      : shownSheet.kind === "select"
+                        ? {
+                            title: shownSheet.volume.name,
+                            icon: "folder",
+                            subtitle: `${bytes(shownSheet.volume.bytes)} on hub`,
+                          }
+                        : {
+                            title: "Resolve conflict",
+                            icon: "conflict",
+                            subtitle: shownSheet.original.path.split("/").at(-1),
+                          })}
               busy={busy}
               busyLabel={actionLabel}
               onClose={() =>

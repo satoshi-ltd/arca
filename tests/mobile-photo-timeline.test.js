@@ -2,11 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   dateLabel,
-  groupByMonth,
   isGalleryVideo,
   mediaDate,
   mergeTimeline,
-  photoCount,
+  monthLabel,
   uploadStatus,
 } from "../apps/mobile/src/gallery-timeline.js";
 import {
@@ -15,7 +14,16 @@ import {
   toggleZoom,
   zoomAround,
 } from "../apps/mobile/src/viewer-gestures.js";
-import { hubGallery } from "../apps/mobile/src/hub-gallery.js";
+import { hubGallery, localGallery } from "../apps/mobile/src/hub-gallery.js";
+import {
+  galleryLayout,
+  galleryWindow,
+  itemOffset,
+  keptOffset,
+  neededMonth,
+  scrubYears,
+  sectionAt,
+} from "../apps/mobile/src/gallery-layout.js";
 import { prepareThumbnails } from "../apps/mobile/src/thumbnail-cache.js";
 import { galleryDate, mediaKind } from "../packages/core/gallery-date.js";
 
@@ -91,30 +99,15 @@ test("timeline orders newest first from hub dates, fills local copies and leads 
   assert.equal(items[4].uri, null);
   assert.equal(items[4].signature, "h2");
   assert.equal(items[5].date, "2025-01-02");
-  assert.equal(photoCount(items), 4);
   assert.equal(isGalleryVideo(items[4]), true);
   assert.deepEqual(mergeTimeline({}), []);
   assert.equal(mediaDate("Machine-ab12/2024/03/x.jpg"), "2024-03");
   assert.equal(mediaDate("x.jpg"), null);
 });
 
-test("timeline groups by month with readable labels", () => {
-  const groups = groupByMonth([
-    { path: "upload:1", upload: "uploading" },
-    { path: "a.jpg", date: "2026-09-20T10:00:00" },
-    { path: "b.jpg", date: "2026-09-01" },
-    { path: "c.jpg", date: "2026-08" },
-    { path: "d.jpg", date: null },
-  ]);
-  assert.deepEqual(
-    groups.map((group) => [group.month, group.label, group.items.length]),
-    [
-      ["uploading", "Uploading", 1],
-      ["2026-09", "September 2026", 2],
-      ["2026-08", "August 2026", 1],
-      ["undated", "Undated", 1],
-    ],
-  );
+test("month and date labels stay readable for undated photos", () => {
+  assert.equal(monthLabel("2026-09"), "September 2026");
+  assert.equal(monthLabel("undated"), "Undated");
   assert.equal(dateLabel("2026-08"), "August 2026");
   assert.match(dateLabel("2026-09-15"), /Sep 15, 2026/);
   assert.match(dateLabel("2026-09-15T10:12:00"), /Sep 15, 2026/);
@@ -197,94 +190,391 @@ test("viewer zoom keeps the focal point fixed and clamps offsets to the page", (
   });
 });
 
-test("hub index pages through the gallery, caches a bounded copy and works from cache offline", async () => {
+function fakeHub(rows, size = 3) {
   const calls = [];
-  const pages = {
-    "": {
-      items: [
-        {
-          path: "a.jpg",
-          hash: "h1",
-          size: 1,
-          date: "2026-09-02",
-          kind: "image",
-          rev: 9,
-          cursor: "x",
-        },
-      ],
-      next: "c1",
-      timeline: [
-        { month: "2026-09", count: 2 },
-        { month: "2026-08", count: 1 },
-      ],
-      indexing: true,
-    },
-    c1: {
-      items: [
-        {
-          path: "b.jpg",
-          hash: "h2",
-          size: 2,
-          date: "2026-09-01",
-          kind: "image",
-        },
-      ],
-      next: null,
-      timeline: [],
-    },
+  let inflight = 0;
+  const cursor = (row) => `${row.date || ""}|${row.path}`;
+  const api = async (route) => {
+    const query = new URL("http://hub" + route).searchParams;
+    calls.push(Object.fromEntries(query));
+    inflight++;
+    api.overlap = Math.max(api.overlap || 0, inflight);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    inflight--;
+    if (api.fail) throw new TypeError("Network request failed");
+    const after =
+      query.get("after") || (query.get("month") ? `${query.get("month")}~` : "");
+    const list = [...rows]
+      .sort((a, b) => (cursor(a) < cursor(b) ? 1 : -1))
+      .filter((row) => !after || cursor(row) < after);
+    const page = list.slice(0, size);
+    const months = new Map();
+    for (const row of rows)
+      if (row.date) {
+        const month = months.get(row.date.slice(0, 7)) || { count: 0, rev: 0 };
+        months.set(row.date.slice(0, 7), { count: month.count + 1, rev: Math.max(month.rev, row.rev || 0) });
+      }
+    return {
+      items: page.map((row) => ({ kind: "image", size: 1, ...row })),
+      next: list.length > size ? cursor(page[page.length - 1]) : null,
+      timeline: [...months]
+        .map(([month, value]) => ({ month, ...value }))
+        .sort((a, b) => b.month.localeCompare(a.month)),
+    };
   };
+  return { api, calls };
+}
+function memoryStore() {
   const saved = {};
-  const store = {
+  return {
+    saved,
     get: async (key, fallback) => saved[key] ?? fallback,
     set: async (key, value) => {
       saved[key] = value;
     },
   };
-  const api = async (route) => {
-    calls.push(route);
-    const after = new URL("http://h" + route).searchParams.get("after") || "";
-    return pages[after];
-  };
+}
+const paths = (entry) => entry.items.map((item) => item.path);
+
+test("the first page fills the newest months and a month continues from its own cursor", async () => {
+  const rows = [
+    { path: "u.jpg", hash: "u", date: null },
+    { path: "a.jpg", hash: "a", date: "2026-09-03", rev: 9 },
+    { path: "b.jpg", hash: "b", date: "2026-09-02" },
+    { path: "c.jpg", hash: "c", date: "2026-09-01" },
+    { path: "d.jpg", hash: "d", date: "2026-08-15" },
+  ];
+  const { api, calls } = fakeHub(rows);
+  const store = memoryStore();
   const gallery = hubGallery({ api, store, scope: "s", volume: "v" });
   assert.equal(await gallery.cached(), null);
-  const first = await gallery.first();
-  assert.equal(calls[0], "/v1/gallery?volume=v");
-  assert.deepEqual(first, {
-    items: [
-      {
-        path: "a.jpg",
-        hash: "h1",
-        size: 1,
-        date: "2026-09-02",
-        kind: "image",
-        rev: 9,
-      },
+  const first = await gallery.refresh();
+  assert.deepEqual(calls[0], { volume: "v" });
+  assert.equal(first.total, 4);
+  assert.deepEqual(paths(first.months.undated), ["u.jpg"]);
+  assert.equal(first.months.undated.complete, true);
+  assert.deepEqual(paths(first.months["2026-09"]), ["a.jpg", "b.jpg"]);
+  assert.equal(first.months["2026-09"].complete, false);
+  assert.equal(first.months["2026-09"].items[0].rev, 9);
+  assert.equal(first.months["2026-08"], undefined);
+  const more = await gallery.load("2026-09");
+  assert.deepEqual(calls[1], { volume: "v", after: "2026-09-02|b.jpg" });
+  assert.deepEqual(paths(more.months["2026-09"]), ["a.jpg", "b.jpg", "c.jpg"]);
+  assert.equal(more.months["2026-09"].complete, true);
+  assert.deepEqual(paths(more.months["2026-08"]), ["d.jpg"]);
+  assert.equal(more.months["2026-08"].complete, true);
+  assert.equal(await gallery.load("2026-09"), more);
+  assert.equal(calls.length, 2);
+  const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
+  assert.deepEqual(paths((await reopened.cached()).months["2026-08"]), ["d.jpg"]);
+});
+
+test("an old month loads from its own top without claiming the newer months", async () => {
+  const rows = [
+    ...Array.from({ length: 5 }, (_, n) => ({ path: `new-${n}.jpg`, date: "2026-09-10" })),
+    { path: "old.jpg", date: "2014-05-01" },
+  ];
+  const { api, calls } = fakeHub(rows);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  const state = await gallery.load("2014-05");
+  assert.deepEqual(calls, [{ volume: "v", month: "2014-05" }]);
+  assert.deepEqual(paths(state.months["2014-05"]), ["old.jpg"]);
+  assert.equal(state.months["2014-05"].complete, true);
+  assert.equal(state.months["2026-09"], undefined);
+  assert.equal(state.months.undated, undefined);
+  await assert.rejects(gallery.load("2014-99"), /Invalid gallery month/);
+});
+
+test("a month whose count changes reloads while unchanged months keep their rows", async () => {
+  const rows = [
+    { path: "a.jpg", date: "2026-09-03" },
+    { path: "b.jpg", date: "2026-08-03" },
+    { path: "c.jpg", date: "2026-08-02" },
+  ];
+  const { api } = fakeHub(rows, 2);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  const before = await gallery.refresh();
+  assert.equal(await gallery.refresh(), before);
+  rows.push({ path: "d.jpg", date: "2026-08-01" });
+  const after = await gallery.refresh();
+  assert.equal(after.months["2026-09"], before.months["2026-09"]);
+  assert.deepEqual(paths(after.months["2026-08"]), ["b.jpg"]);
+  assert.equal(after.months["2026-08"].complete, false);
+  const reloaded = await gallery.load("2026-08");
+  assert.deepEqual(paths(reloaded.months["2026-08"]), ["b.jpg", "c.jpg", "d.jpg"]);
+  assert.equal(reloaded.months["2026-08"].complete, true);
+});
+
+test("a continuation into a month that changed restarts it from its new top", async () => {
+  const rows = Array.from({ length: 5 }, (_, n) => ({
+    path: `${n}.jpg`,
+    date: `2026-09-0${5 - n}`,
+  }));
+  const { api, calls } = fakeHub(rows);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  await gallery.refresh();
+  rows.push({ path: "newest.jpg", date: "2026-09-09" });
+  const discarded = await gallery.load("2026-09");
+  assert.deepEqual(paths(discarded.months["2026-09"]), ["0.jpg", "1.jpg", "2.jpg"], "stale rows stay visible");
+  assert.equal(discarded.months["2026-09"].fresh, 0);
+  const restarted = await gallery.load("2026-09");
+  assert.deepEqual(calls.at(-1), { volume: "v", month: "2026-09" });
+  assert.deepEqual(paths(restarted.months["2026-09"]), ["newest.jpg", "0.jpg", "1.jpg", "2.jpg"]);
+  assert.equal(restarted.months["2026-09"].fresh, 3, "the unverified tail stays visible after the fresh prefix");
+});
+
+test("a page replaces edited, deleted and renamed rows across the range it covers", async () => {
+  const rows = [
+    { path: "a.jpg", hash: "h1", rev: 1, date: "2026-09-03" },
+    { path: "b.jpg", hash: "h2", rev: 2, date: "2026-09-02" },
+    { path: "u.jpg", hash: "u1", rev: 3, date: null },
+  ];
+  const { api } = fakeHub(rows, 10);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  await gallery.refresh();
+  rows[0] = { path: "a.jpg", hash: "h9", rev: 9, date: "2026-09-03" };
+  rows[1] = { path: "c.jpg", hash: "h3", rev: 10, date: "2026-09-01" };
+  rows.pop();
+  const state = await gallery.refresh();
+  assert.deepEqual(
+    state.months["2026-09"].items.map((item) => [item.path, item.hash, item.rev]),
+    [
+      ["a.jpg", "h9", 9],
+      ["c.jpg", "h3", 10],
     ],
-    next: "c1",
-    total: 3,
-    indexing: true,
-    month: "",
-    timeline: [
-      { month: "2026-09", count: 2 },
-      { month: "2026-08", count: 1 },
+  );
+  assert.deepEqual(state.months.undated.items, []);
+});
+
+test("a changed month deeper than the first page stays visible until its fresh rows arrive", async () => {
+  const rows = [
+    { path: "new.jpg", rev: 1, date: "2026-09-03" },
+    { path: "old-a.jpg", hash: "h1", rev: 2, date: "2019-05-03" },
+    { path: "old-b.jpg", rev: 3, date: "2019-05-02" },
+  ];
+  const { api } = fakeHub(rows, 1);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  await gallery.refresh();
+  await gallery.load("2019-05");
+  const before = await gallery.load("2019-05");
+  assert.equal(before.months["2019-05"].complete, true);
+  rows[1] = { path: "old-a.jpg", hash: "h7", rev: 7, date: "2019-05-03" };
+  const stale = await gallery.refresh();
+  assert.deepEqual(paths(stale.months["2019-05"]), ["old-a.jpg", "old-b.jpg"]);
+  assert.equal(stale.months["2019-05"].fresh, 0);
+  assert.equal(stale.months["2019-05"].complete, false);
+  const fresh = await gallery.load("2019-05");
+  assert.deepEqual(
+    fresh.months["2019-05"].items.map((item) => [item.path, item.hash]),
+    [
+      ["old-a.jpg", "h7"],
+      ["old-b.jpg", undefined],
     ],
-  });
-  const more = await gallery.more(first);
-  assert.equal(calls[1], "/v1/gallery?volume=v&after=c1");
-  assert.equal(more.items.length, 2);
-  assert.equal(more.next, null);
-  assert.equal(await gallery.more(more), more);
-  assert.deepEqual(await gallery.cached(), more);
-  const failing = hubGallery({
-    api: async () => {
-      throw new TypeError("Network request failed");
-    },
-    store,
-    scope: "s",
-    volume: "v",
-  });
-  await assert.rejects(failing.first(), /Network request failed/);
-  assert.equal((await failing.cached()).items.length, 2);
+  );
+  assert.equal(fresh.months["2019-05"].fresh, 1);
+});
+
+test("an unchanged refresh keeps a fully loaded newest month and the same state", async () => {
+  const rows = Array.from({ length: 130 }, (_, n) => ({
+    path: `${String(n).padStart(3, "0")}.jpg`,
+    rev: n + 1,
+    date: "2026-09-01",
+  }));
+  const { api, calls } = fakeHub(rows, 60);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  await gallery.refresh();
+  await gallery.load("2026-09");
+  const loaded = await gallery.load("2026-09");
+  assert.equal(loaded.months["2026-09"].fresh, 130);
+  assert.equal(loaded.months["2026-09"].complete, true);
+  const requests = calls.length;
+  assert.equal(await gallery.refresh(), loaded);
+  assert.equal(calls.length, requests + 1, "a refresh reads one page");
+});
+
+test("the offline cache keeps a bounded prefix that resumes from its last kept row", async () => {
+  const rows = Array.from({ length: 700 }, (_, n) => ({
+    path: `${String(n).padStart(3, "0")}.jpg`,
+    date: "2026-09-01",
+  }));
+  const { api, calls } = fakeHub(rows, 1000);
+  const store = memoryStore();
+  const gallery = hubGallery({ api, store, scope: "s", volume: "v" });
+  assert.equal((await gallery.refresh()).months["2026-09"].items.length, 700);
+  const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
+  const cached = (await reopened.cached()).months["2026-09"];
+  assert.equal(cached.items.length, 600);
+  assert.equal(cached.complete, false);
+  const complete = await reopened.load("2026-09");
+  assert.deepEqual(calls.at(-1), { volume: "v", after: `2026-09-01|${cached.items[599].path}` });
+  assert.equal(new Set(paths(complete.months["2026-09"])).size, 700);
+  assert.equal(complete.months["2026-09"].complete, true);
+});
+
+test("revisions survive the offline cache and forgetting a photo shrinks its month", async () => {
+  const rows = [{ path: "phone/a.heic", hash: "cached", rev: 42, date: "2026-09-01" }];
+  const { api } = fakeHub(rows);
+  const store = memoryStore();
+  const gallery = hubGallery({ api, store, scope: "s", volume: "v" });
+  await gallery.refresh();
+  const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
+  assert.equal((await reopened.cached()).months["2026-09"].items[0].rev, 42);
+  const forgotten = await gallery.forget("phone/a.heic");
+  assert.deepEqual(forgotten.months["2026-09"].items, []);
+  assert.deepEqual(forgotten.timeline, []);
+  assert.equal(forgotten.total, 0);
+  const afterDeletion = hubGallery({ api, store, scope: "s", volume: "v" });
+  assert.deepEqual((await afterDeletion.cached()).timeline, []);
+});
+
+test("loads and refreshes never overlap and a failing hub keeps the cached gallery", async () => {
+  const rows = Array.from({ length: 7 }, (_, n) => ({ path: `${n}.jpg`, date: "2026-09-01" }));
+  const { api } = fakeHub(rows);
+  const store = memoryStore();
+  const gallery = hubGallery({ api, store, scope: "s", volume: "v" });
+  await Promise.all([gallery.refresh(), gallery.load("2026-09"), gallery.refresh()]);
+  assert.equal(api.overlap, 1);
+  api.fail = true;
+  const offline = hubGallery({ api, store, scope: "s", volume: "v" });
+  await assert.rejects(offline.refresh(), /Network request failed/);
+  assert.ok((await offline.cached()).months["2026-09"].items.length >= 3);
+});
+
+test("without a hub index the phone's own files form a complete local gallery", () => {
+  const day = (value) => Date.parse(`${value}T12:00:00Z`);
+  const state = localGallery([
+    { path: "a.jpg", uri: "file:a", size: 1, mtime: day("2026-09-10") },
+    { path: "b.jpg", uri: "file:b", size: 1, mtime: day("2026-08-10") },
+    { path: "notes.txt", size: 1, mtime: day("2026-08-10") },
+    { path: "album", directory: true },
+  ]);
+  assert.equal(state.local, true);
+  assert.deepEqual(state.timeline, [
+    { month: "2026-09", count: 1 },
+    { month: "2026-08", count: 1 },
+  ]);
+  assert.equal(state.months["2026-09"].complete, true);
+  assert.equal(state.months["2026-09"].items[0].uri, "file:a");
+  assert.equal(state.total, 2);
+});
+
+test("the gallery layout places every month by its count and windows only nearby rows", () => {
+  const layout = galleryLayout(
+    [
+      { month: "2026-09", count: 10 },
+      { month: "2026-08", count: 4 },
+    ],
+    400,
+    4,
+  );
+  assert.equal(layout.step, 101);
+  const [september, august] = layout.sections;
+  assert.equal(september.rows, 3);
+  assert.equal(september.gridTop, 30);
+  assert.equal(september.height, 30 + 3 * 101 - 4);
+  assert.equal(august.top, september.height + 20);
+  assert.equal(layout.height, august.top + august.height);
+  assert.equal(sectionAt(layout, -50), 0);
+  assert.equal(sectionAt(layout, august.top - 1), 0);
+  assert.equal(sectionAt(layout, august.top), 1);
+  assert.deepEqual(
+    galleryWindow(layout, 140, 200).map(({ section, header, first, last }) => [
+      section.month,
+      header,
+      first,
+      last,
+    ]),
+    [["2026-09", false, 1, 1]],
+  );
+  assert.deepEqual(
+    galleryWindow(layout, 0, layout.height).map(({ section, first, last }) => [section.month, first, last]),
+    [
+      ["2026-09", 0, 2],
+      ["2026-08", 0, 0],
+    ],
+  );
+  assert.equal(itemOffset(layout, "2026-08", 5), august.gridTop + 101);
+  assert.equal(itemOffset(layout, "1999-01", 0), null);
+  assert.deepEqual(galleryLayout([], 400, 4).height, 0);
+});
+
+test("new rows above the viewport keep the photos on screen in place", () => {
+  const before = galleryLayout(
+    [
+      { month: "2026-09", count: 4 },
+      { month: "2019-05", count: 8 },
+    ],
+    400,
+    4,
+  );
+  const after = galleryLayout(
+    [
+      { month: "2026-09", count: 12 },
+      { month: "2019-05", count: 8 },
+    ],
+    400,
+    4,
+  );
+  const view = before.sections[1].top + 50;
+  assert.equal(keptOffset(before, after, view), after.sections[1].top + 50);
+  assert.equal(keptOffset(before, after, view) - view, 2 * 101);
+  assert.equal(keptOffset(before, after, 0), null, "at the top new photos appear above");
+  assert.equal(keptOffset(before, galleryLayout([{ month: "2026-09", count: 12 }], 400, 4), view), null);
+  assert.equal(keptOffset(before, galleryLayout([{ month: "2019-05", count: 8 }], 400, 10), view), null);
+});
+
+test("visible months load first and complete or sufficiently loaded months are skipped", () => {
+  const layout = galleryLayout(
+    [
+      { month: "2026-09", count: 8 },
+      { month: "2026-08", count: 8 },
+    ],
+    400,
+    4,
+  );
+  const august = layout.sections[1];
+  const eight = Array.from({ length: 8 }, () => ({}));
+  const loaded = (fresh) => ({ items: eight, fresh, complete: false });
+  assert.equal(
+    neededMonth(layout, { "2026-09": loaded(0) }, 0, layout.height, august.top, august.top + 50),
+    "2026-08",
+  );
+  assert.equal(neededMonth(layout, { "2026-09": loaded(8) }, 0, layout.height, 0, 50), "2026-08");
+  assert.equal(
+    neededMonth(
+      layout,
+      { "2026-09": loaded(8), "2026-08": { items: [], fresh: 0, complete: true } },
+      0,
+      layout.height,
+      0,
+      50,
+    ),
+    null,
+  );
+  assert.equal(neededMonth(layout, { "2026-09": loaded(4) }, 0, 60, 0, 60), null);
+  assert.equal(
+    neededMonth(layout, { "2026-09": loaded(0) }, 0, 60, 0, 60),
+    "2026-09",
+    "stale rows on screen are verified again",
+  );
+});
+
+test("the scrubber shows sparse years and keeps the older one when two collide", () => {
+  const sections = [
+    { key: "2026-09", year: "2026", offset: 100 },
+    { key: "2026-01", year: "2026", offset: 300 },
+    { key: "2025-06", year: "2025", offset: 310 },
+    { key: "2024-02", year: "2024", offset: 320 },
+    { key: "undated", year: "", offset: 900 },
+    { key: "2014-05", year: "2014", offset: 1100 },
+  ];
+  const years = scrubYears(sections, 100, 1100, 500);
+  assert.deepEqual(
+    years.map((year) => year.year),
+    ["2026", "2024", "2014"],
+  );
+  assert.equal(years[0].top, 24);
+  assert.equal(years[2].top, 524);
 });
 
 test("thumbnail preparation renders only the shown slice and keeps cached items still in the timeline", async () => {
@@ -618,88 +908,6 @@ test("local EXIF reader decodes the hub's tag set in both byte orders and agrees
   );
 });
 
-test("hub refresh retains loaded pages and serializes pagination against refresh", async () => {
-  const store = { get: async () => null, set: async () => {} };
-  let generation = 0;
-  const gallery = hubGallery({
-    store,
-    scope: "s",
-    volume: "v",
-    api: async (route) => {
-      const after = new URL(route, "http://hub").searchParams.get("after");
-      return {
-        items: [{ path: `${after || "first"}-${generation}.jpg` }],
-        next: after ? null : "second",
-      };
-    },
-  });
-  const first = await gallery.first();
-  await gallery.more(first);
-  generation = 1;
-  const [fresh, more] = await Promise.all([
-    gallery.first(),
-    gallery.more(first),
-  ]);
-  assert.deepEqual(
-    fresh.items.map((item) => item.path),
-    ["first-1.jpg", "second-1.jpg"],
-  );
-  assert.deepEqual(more, fresh);
-});
-
-test("bounded hub cache keeps its matching cursor instead of truncating a page", async () => {
-  let saved;
-  const store = {
-    get: async () => saved,
-    set: async (_, value) => {
-      saved = value;
-    },
-  };
-  const api = async (route) => {
-    const after = new URL(route, "http://hub").searchParams.get("after");
-    const start = after ? 1500 : 0;
-    return {
-      items: Array.from({ length: 1500 }, (_, i) => ({
-        path: `${start + i}.jpg`,
-      })),
-      next: after ? null : "page2",
-    };
-  };
-  const gallery = hubGallery({ api, store, scope: "s", volume: "v" });
-  const first = await gallery.first();
-  assert.equal((await gallery.more(first)).items.length, 3000);
-  const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
-  const cached = await reopened.cached();
-  assert.equal(cached.items.length, 1500);
-  assert.equal(cached.next, "page2");
-  const complete = await reopened.more(cached);
-  assert.equal(new Set(complete.items.map((item) => item.path)).size, 3000);
-});
-
-test("gallery revisions survive refresh and offline cache", async () => {
-  let saved;
-  const store = {
-    get: async () => saved,
-    set: async (_, state) => {
-      saved = state;
-    },
-  };
-  const photo = {
-    path: "phone/a.heic",
-    hash: "cached",
-    rev: 42,
-  };
-  const api = async () => ({ items: [photo], next: null });
-  const gallery = hubGallery({ api, store, scope: "s", volume: "v" });
-  await gallery.first();
-  const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
-  const [item] = (await reopened.cached()).items;
-  assert.equal(item.rev, 42);
-  await gallery.forget(photo.path);
-  const afterDeletion = hubGallery({ api, store, scope: "s", volume: "v" });
-  assert.deepEqual((await afterDeletion.cached()).items, []);
-});
-
 test("mobile gallery retains the hub revision when a deleted local copy disappears or is restored", () => {
   const photo = { path: "a.heic", hash: "same-bytes", rev: 42 };
   const local = { path: photo.path, uri: "file:a.heic", size: 100, mtime: 1 };
@@ -735,49 +943,6 @@ test("thumbnail progress is visible before eight images finish, even if refresh 
   );
   assert.equal(result, null);
   assert.equal(Object.keys(visible).length, 5);
-});
-
-test("date navigation jumps directly to an old month and refresh stays at that month", async () => {
-  const calls = [];
-  const gallery = hubGallery({
-    scope: "s",
-    volume: "v",
-    store: { get: async (_, fallback) => fallback, set: async () => {} },
-    api: async (route) => {
-      const query = new URL("http://hub" + route).searchParams;
-      calls.push(query);
-      return {
-        items: [
-          { path: "old.jpg", hash: "old", date: "2014-05-01", kind: "image" },
-        ],
-        next: null,
-        timeline: [
-          { month: "2026-09", count: 3500 },
-          { month: "2014-05", count: 1 },
-        ],
-      };
-    },
-  });
-  const page = await gallery.seek("2014-05");
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].get("month"), "2014-05");
-  assert.equal(page.items[0].path, "old.jpg");
-  await gallery.first();
-  assert.equal(calls[1].get("month"), "2014-05");
-  await assert.rejects(gallery.seek("2014-99"), /Invalid gallery month/);
-});
-
-test("visible month follows the first group intersecting the desktop reading guide", async () => {
-  const { visibleGalleryMonth } =
-    await import("../apps/mobile/src/gallery-timeline.js");
-  const groups = new Map([
-    ["2026-08", { top: 620, height: 400 }],
-    ["2026-09", { top: 0, height: 600 }],
-  ]);
-  assert.equal(visibleGalleryMonth(groups, 0, 200), "2026-09");
-  assert.equal(visibleGalleryMonth(groups, 719, 200), "2026-09");
-  assert.equal(visibleGalleryMonth(groups, 720, 200), "2026-08");
-  assert.equal(visibleGalleryMonth(groups, 900, 200), "2026-08");
 });
 
 test("pinching moves between base, compact and years levels, sized by the current layout", async () => {
@@ -835,10 +1000,9 @@ test("pending uploads separate waiting photos from failed ones", async () => {
   );
 });
 
-test("the rail labels undated and uploading groups instead of an invalid date", async () => {
+test("the rail labels undated photos instead of an invalid date", async () => {
   const { railMonthLabel } = await import("../apps/mobile/src/gallery-timeline.js");
   assert.equal(railMonthLabel("undated"), "Undated");
-  assert.equal(railMonthLabel("uploading"), "Uploading");
   assert.match(railMonthLabel("2026-09"), /2026/);
   assert.doesNotMatch(railMonthLabel("2026-09"), /Invalid/);
 });

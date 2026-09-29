@@ -215,6 +215,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
           closing={!open}
           onExited={releaseOpen}
           title={items.length > 1 ? "Save files" : "Save file"}
+          icon="download"
           busy={busy}
           onClose={discard}
         >

@@ -172,6 +172,23 @@ export function Icon({ name, color, size = 20 }) {
     </Svg>
   );
 }
+export const PLACEHOLDER_GLYPH_MIN = 48;
+// The one "no image yet" look for every gallery surface; desktop mirrors it in .photo-open.
+export function MediaPlaceholder({ size, video = false, label }) {
+  const { s, c } = useDesign();
+  return (
+    <View style={s.mediaPlaceholder}>
+      {size >= PLACEHOLDER_GLYPH_MIN && (
+        <Icon name={video ? "play" : "image"} size={20} color={c.line} />
+      )}
+      {!!label && (
+        <Text numberOfLines={1} style={s.caption}>
+          {label}
+        </Text>
+      )}
+    </View>
+  );
+}
 export function Logo({ size = 76, glyph = true }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 512 512">
@@ -630,6 +647,9 @@ const AnimatedSafeArea = Animated.createAnimatedComponent(SafeAreaView);
 export function Sheet({
   overlay,
   title,
+  subtitle,
+  icon,
+  menu = false,
   onClose,
   children,
   busy = false,
@@ -638,7 +658,7 @@ export function Sheet({
   closing = false,
   onExited,
 }) {
-  const { s, wide } = useDesign();
+  const { s, c, wide } = useDesign();
   const { duration, easing } = useMotion();
   const progress = useRef(new Animated.Value(0)).current;
   const leaving = useRef(false);
@@ -714,12 +734,28 @@ export function Sheet({
               setHeight((known) => known ?? event.nativeEvent.layout.height)
             }
           >
-            {!title && !centered && <View style={s.sheetHandle} />}
+            {!dialog && <View style={s.sheetHandle} />}
             {!!title && (
-              <View style={s.sheetHeader}>
-                <Text accessibilityRole="header" style={[s.heading, s.flex]}>
-                  {title}
-                </Text>
+              <View style={[s.sheetHeader, dialog && s.sheetHeaderDialog]}>
+                {!!icon && (
+                  <View style={s.tile}>
+                    <Icon name={icon} color={c.accent} />
+                  </View>
+                )}
+                <View style={s.flex}>
+                  <Text
+                    accessibilityRole="header"
+                    numberOfLines={2}
+                    style={s.heading}
+                  >
+                    {title}
+                  </Text>
+                  {!!subtitle && (
+                    <Text numberOfLines={1} style={s.caption}>
+                      {subtitle}
+                    </Text>
+                  )}
+                </View>
                 <Button
                   label="Close"
                   quiet
@@ -732,7 +768,7 @@ export function Sheet({
             )}
             <KeyboardScrollView
               style={s.sheetScroll}
-              contentContainerStyle={s.content}
+              contentContainerStyle={menu ? s.sheetMenu : s.content}
               keyboardShouldPersistTaps="handled"
             >
               {busy && !!busyLabel && (

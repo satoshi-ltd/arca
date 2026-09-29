@@ -11,13 +11,11 @@ export const mediaDate = (path, mtime) =>
   galleryDate(path, null, mtime ? isoDay(mtime) : null).date;
 const order = (item) => `${item.date || ""}|${item.path}`;
 
-// Hub rows carry the chronology, local copies contribute file URIs, pending uploads lead.
-export function mergeTimeline({ index = [], entries = [], uploads = [] }) {
-  const items = new Map();
-  for (const row of index) {
-    const kind = mediaKind(row.path);
-    if (kind)
-      items.set(row.path, {
+export function timelineItem(row, entry) {
+  const kind = mediaKind((row || entry).path);
+  if (!kind || entry?.directory) return null;
+  const known = row
+    ? {
         path: row.path,
         hash: row.hash,
         rev: row.rev,
@@ -26,24 +24,34 @@ export function mergeTimeline({ index = [], entries = [], uploads = [] }) {
         kind,
         signature: row.hash,
         uri: null,
-      });
+      }
+    : {
+        path: entry.path,
+        hash: null,
+        kind,
+        date: mediaDate(entry.path, entry.mtime),
+      };
+  return entry
+    ? {
+        ...known,
+        uri: entry.uri,
+        size: entry.size ?? known.size ?? 0,
+        mtime: entry.mtime,
+        signature: `${entry.size}:${entry.mtime}`,
+      }
+    : known;
+}
+// Hub rows carry the chronology, local copies contribute file URIs, pending uploads lead.
+export function mergeTimeline({ index = [], entries = [], uploads = [] }) {
+  const rows = new Map(index.map((row) => [row.path, row]));
+  const items = new Map();
+  for (const row of index) {
+    const item = timelineItem(row);
+    if (item) items.set(row.path, item);
   }
   for (const entry of entries) {
-    const kind = mediaKind(entry.path);
-    if (entry.directory || !kind) continue;
-    const known = items.get(entry.path) || {
-      path: entry.path,
-      hash: null,
-      kind,
-      date: mediaDate(entry.path, entry.mtime),
-    };
-    items.set(entry.path, {
-      ...known,
-      uri: entry.uri,
-      size: entry.size ?? known.size ?? 0,
-      mtime: entry.mtime,
-      signature: `${entry.size}:${entry.mtime}`,
-    });
+    const item = timelineItem(rows.get(entry.path), entry);
+    if (item) items.set(entry.path, item);
   }
   const photos = [...items.values()].sort((a, b) =>
     order(a) > order(b) ? -1 : order(a) < order(b) ? 1 : 0,
@@ -63,7 +71,6 @@ export function mergeTimeline({ index = [], entries = [], uploads = [] }) {
   return pending.concat(photos);
 }
 export function monthLabel(month) {
-  if (month === "uploading") return "Uploading";
   if (!/^\d{4}-\d{2}$/.test(month)) return "Undated";
   return new Date(month + "-01T12:00:00").toLocaleDateString("en", {
     month: "long",
@@ -93,18 +100,6 @@ export const railMonthLabel = (month) =>
         year: "numeric",
       })
     : monthLabel(month);
-export function groupByMonth(items) {
-  const groups = [];
-  for (const item of items) {
-    const month = item.upload
-      ? "uploading"
-      : (item.date || "").slice(0, 7) || "undated";
-    const last = groups[groups.length - 1];
-    if (last && last.month === month) last.items.push(item);
-    else groups.push({ month, label: monthLabel(month), items: [item] });
-  }
-  return groups;
-}
 export function dateLabel(date) {
   if (!date) return "";
   if (/^\d{4}-\d{2}$/.test(date)) return monthLabel(date);
@@ -118,8 +113,6 @@ export function dateLabel(date) {
     ...(dayOnly ? {} : { hour: "2-digit", minute: "2-digit" }),
   });
 }
-export const photoCount = (items) =>
-  items.filter((item) => !item.upload).length;
 export function uploadStatus(source, { connected, paused, busy }) {
   const summary = source.summary || {};
   return source.mode === "converting"
@@ -137,12 +130,3 @@ export function uploadStatus(source, { connected, paused, busy }) {
               : "Up to date";
 }
 
-// Match desktop: the first month whose bottom crosses the viewport's 80 px guide.
-export function visibleGalleryMonth(groups, scrollY, rootTop = 0) {
-  return (
-    [...groups]
-      .sort((a, b) => a[1].top - b[1].top)
-      .find(([, box]) => box.top + box.height > scrollY - rootTop + 80)?.[0] ||
-    ""
-  );
-}

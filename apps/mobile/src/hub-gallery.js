@@ -1,3 +1,5 @@
+import { mergeTimeline } from "./gallery-timeline.js";
+
 const compact = (item) => ({
   path: item.path,
   hash: item.hash,
@@ -6,86 +8,250 @@ const compact = (item) => ({
   date: item.date,
   kind: item.kind,
 });
+export const galleryMonth = (item) =>
+  (item.date || "").slice(0, 7) || "undated";
+// Mirrors the hub cursor `date|path`: undated rows ("|path") sort above every dated month.
+const rank = (month) => (month === "undated" ? "~" : month);
+const cursorOf = (item) => `${item.date || ""}|${item.path}`;
+const CACHE_ITEMS = 600;
+const empty = () => ({ timeline: [], total: 0, months: {}, indexing: false });
+
+const monthOfCursor = (cursor) =>
+  cursor.startsWith("|") ? "undated" : cursor.slice(0, 7);
+const signature = (row) => `${row.count}:${row.rev ?? ""}`;
+const sameItems = (a, b) =>
+  a.length === b.length &&
+  a.every(
+    (item, index) =>
+      item.path === b[index].path &&
+      item.hash === b[index].hash &&
+      item.rev === b[index].rev &&
+      item.date === b[index].date,
+  );
+
+// A changed month keeps showing its rows until a fresh read replaces them.
+function withTimeline(state, data) {
+  const timeline = data.timeline || [];
+  const before = new Map(state.timeline.map((row) => [row.month, signature(row)]));
+  const after = new Map(timeline.map((row) => [row.month, signature(row)]));
+  const changed = new Set(
+    [...before.keys(), ...after.keys()].filter(
+      (month) => before.get(month) !== after.get(month),
+    ),
+  );
+  if (!changed.size) return { changed, state };
+  const months = { ...state.months };
+  for (const month of changed) {
+    if (!after.has(month)) delete months[month];
+    else if (months[month])
+      months[month] = { ...months[month], fresh: 0, complete: false, next: null };
+  }
+  return {
+    changed,
+    state: {
+      ...state,
+      timeline,
+      total: timeline.reduce((sum, row) => sum + row.count, 0),
+      months,
+    },
+  };
+}
+// A page is authoritative for the cursors below `upper` (exclusive; null: all) down to its last row, or to the end.
+function absorb(state, rows, next, upper) {
+  const items = rows.map(compact);
+  const lower = next === null || !items.length ? null : cursorOf(items[items.length - 1]);
+  const top = upper === null ? null : rank(monthOfCursor(upper));
+  const last = lower === null ? null : rank(galleryMonth(items[items.length - 1]));
+  const pages = new Map();
+  for (const item of items) {
+    const month = galleryMonth(item);
+    pages.set(month, [...(pages.get(month) || []), item]);
+  }
+  const months = { ...state.months };
+  let changed = false;
+  for (const month of new Set([
+    "undated",
+    ...state.timeline.map((row) => row.month),
+    ...Object.keys(state.months),
+    ...pages.keys(),
+  ])) {
+    const value = rank(month);
+    if ((top !== null && value > top) || (last !== null && value < last))
+      continue;
+    const old = state.months[month];
+    const kept = old && upper !== null ? old.items.filter((item) => cursorOf(item) >= upper) : [];
+    const fresh = pages.get(month) || [];
+    const complete = last === null || value > last;
+    const entry = {
+      items: [
+        ...kept,
+        ...fresh,
+        ...(complete || !old ? [] : old.items.filter((item) => cursorOf(item) < lower)),
+      ],
+      fresh: kept.length + fresh.length,
+      complete,
+      next: complete ? null : lower,
+    };
+    if (
+      old &&
+      old.fresh === entry.fresh &&
+      old.complete === entry.complete &&
+      old.next === entry.next &&
+      sameItems(old.items, entry.items)
+    )
+      continue;
+    // A shorter read of an unchanged month must not discard rows verified beyond it.
+    if (
+      old &&
+      !complete &&
+      old.fresh > entry.fresh &&
+      sameItems(old.items.slice(0, entry.fresh), entry.items.slice(0, entry.fresh))
+    )
+      continue;
+    months[month] = entry;
+    changed = true;
+  }
+  return changed ? { ...state, months } : state;
+}
+export function localGallery(entries) {
+  const months = {};
+  const counts = new Map();
+  for (const item of mergeTimeline({ entries })) {
+    const month = galleryMonth(item);
+    (months[month] ||= { items: [], complete: true, next: null }).items.push(
+      item,
+    );
+    if (month !== "undated") counts.set(month, (counts.get(month) || 0) + 1);
+  }
+  for (const entry of Object.values(months)) entry.fresh = entry.items.length;
+  const timeline = [...counts]
+    .map(([month, count]) => ({ month, count }))
+    .sort((a, b) => b.month.localeCompare(a.month));
+  return {
+    local: true,
+    timeline,
+    total: timeline.reduce((sum, row) => sum + row.count, 0),
+    months,
+    indexing: false,
+  };
+}
 // The phone keeps dates and hashes for ordering; photo bytes stay on the hub or in the working copy.
 export function hubGallery({ api, store, scope, volume }) {
-  const key = `gallery-index:${scope}:${volume}`;
-  let current = null;
-  let month = "";
+  const key = `gallery-months:${scope}:${volume}`;
+  let state = null;
+  let saved = "";
   let queue = Promise.resolve();
   const serial = (work) => {
     const result = queue.then(work);
     queue = result.catch(() => {});
     return result;
   };
-  const remember = async (state) => {
-    current = state;
-    // Keep a complete page boundary: truncating rows would skip photos on resume.
-    if (month || state.items.length > 2000) return state;
-    await store.set(key, state).catch(() => {});
+  const request = (params) =>
+    api(`/v1/gallery?${new URLSearchParams({ volume, ...params })}`);
+  const persist = async () => {
+    let budget = CACHE_ITEMS;
+    const months = {};
+    for (const month of ["undated", ...state.timeline.map((row) => row.month)]) {
+      const entry = state.months[month];
+      if (!entry) continue;
+      if (budget <= 0) break;
+      if (entry.items.length <= budget) {
+        months[month] = entry;
+        budget -= entry.items.length;
+      } else {
+        const items = entry.items.slice(0, budget);
+        const fresh = Math.min(entry.fresh, budget);
+        months[month] = {
+          items,
+          fresh,
+          complete: false,
+          next: fresh ? cursorOf(items[fresh - 1]) : null,
+        };
+        budget = 0;
+      }
+    }
+    const snapshot = { timeline: state.timeline, total: state.total, months };
+    const text = JSON.stringify(snapshot);
+    if (text === saved) return;
+    saved = text;
+    await store.set(key, snapshot).catch(() => {});
+  };
+  const finish = async (next, indexing) => {
+    state =
+      indexing === undefined || next.indexing === indexing
+        ? next
+        : { ...next, indexing };
+    await persist();
     return state;
   };
-  const page = (after) =>
-    api(
-      `/v1/gallery?${new URLSearchParams({ volume, ...(after ? { after } : month ? { month } : {}) })}`,
-    );
-  const first = async () => {
-    const target = current?.items.length || 0;
-    const data = await page();
-    const state = {
-      items: data.items.map(compact),
-      next: data.next,
-      total: (data.timeline || []).reduce((sum, month) => sum + month.count, 0),
-      indexing: !!data.indexing,
-      month,
-      timeline: data.timeline || [],
-    };
-    while (state.next && state.items.length < target) {
-      const next = await page(state.next);
-      state.items.push(...next.items.map(compact));
-      state.next = next.next;
-    }
-    return remember(state);
-  };
-  const apiClient = {
+  return {
     cached: () =>
       serial(async () => {
-        if (!current) current = await store.get(key, null).catch(() => null);
-        return current;
+        if (!state) {
+          const value = await store.get(key, null).catch(() => null);
+          if (value?.months) {
+            state = { ...empty(), ...value };
+            saved = JSON.stringify(value);
+          }
+        }
+        return state;
       }),
-    seek: (value) =>
+    refresh: () =>
       serial(async () => {
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value))
-          throw new Error("Invalid gallery month");
-        month = value;
-        current = null;
-        return first();
+        const data = await request({});
+        const next = withTimeline(state || empty(), data).state;
+        return finish(absorb(next, data.items, data.next, null), !!data.indexing);
       }),
-    first: () => serial(first),
+    load: (month) =>
+      serial(async () => {
+        if (month !== "undated" && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+          throw new Error("Invalid gallery month");
+        const current = state || empty();
+        const entry = current.months[month];
+        if (entry?.complete) return current;
+        const after = entry?.fresh && entry.next ? entry.next : null;
+        const params = after ? { after } : month === "undated" ? {} : { month };
+        const data = await request(params);
+        const { state: next, changed } = withTimeline(current, data);
+        // A continuation cursor into a month that changed would skip its new top rows.
+        if (after && changed.has(month)) return finish(next);
+        return finish(
+          absorb(
+            next,
+            data.items,
+            data.next,
+            after || (month === "undated" ? null : `${month}~`),
+          ),
+        );
+      }),
     forget: (path) =>
       serial(async () => {
-        const state = current || (await store.get(key, null).catch(() => null));
-        if (!state) return;
-        const items = state.items.filter((item) => item.path !== path);
-        return remember({
+        if (!state) state = await store.get(key, null).catch(() => null);
+        if (!state?.months) return state;
+        const month = Object.keys(state.months).find((name) =>
+          state.months[name].items.some((item) => item.path === path),
+        );
+        if (!month) return state;
+        const entry = state.months[month];
+        const index = entry.items.findIndex((item) => item.path === path);
+        const timeline = state.timeline
+          .map((row) =>
+            row.month === month ? { ...row, count: row.count - 1 } : row,
+          )
+          .filter((row) => row.count > 0);
+        return finish({
           ...state,
-          items,
-          total: Math.max(
-            0,
-            (state.total || 0) - (state.items.length - items.length),
-          ),
-        });
-      }),
-    more: (previous) =>
-      serial(async () => {
-        const state = current || previous;
-        if (!state?.next) return state;
-        const data = await page(state.next);
-        return remember({
-          ...state,
-          items: state.items.concat(data.items.map(compact)),
-          next: data.next,
+          timeline,
+          total: Math.max(0, state.total - 1),
+          months: {
+            ...state.months,
+            [month]: {
+              ...entry,
+              items: entry.items.filter((item) => item.path !== path),
+              fresh: entry.fresh - (index < entry.fresh ? 1 : 0),
+            },
+          },
         });
       }),
   };
-  return apiClient;
 }

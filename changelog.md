@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.7 — 2026-09-29
+
+- Mobile gallery scrolls infinitely in both directions with no “Show more” button: it lays out the whole timeline from the hub's per-month counts, mounts only rows near the viewport and fetches the months you scroll to. Photos not yet fetched show as neutral squares. Returning to the present after a jump is plain scrolling.
+- The mobile date rail is now a fast-scroll thumb on the right edge: an accent pill with up/down chevrons. It appears while scrolling, stays under the finger and drags continuously through the whole timeline. While dragging it shows a thin track, the month in an accent bubble and only sparse year chips, with no month ticks. Only the thumb takes touches, so edge photos stay tappable.
+- Photos without a thumbnail look the same everywhere: desktop tiles, the mobile month grid, year mosaics and album previews share one `placeholder` design token and a soft image or play glyph. Dense mobile tiles show only the fill.
+- Mobile gallery refresh reads one hub page every five seconds instead of every loaded page. Each page replaces the rows it covers, so edited, deleted and renamed photos never stay stale. A month that changed stays visible while it is re-read. Rows added above the viewport no longer move the photos being viewed. Offline, the gallery shows the phone's own working copy.
+- Mobile sheets use the desktop dialog header: drag handle, icon tile, title, context subtitle and a divider, aligned with their content. Folder actions become a compact menu with the folder's icon, name and summary and 48 dp rows. Every sheet keeps an explicit Close on phones and the Fold, like desktop dialogs.
+- The hub gallery timeline includes each month's newest revision, so clients notice edits that keep a month's count. Requires deploying the hub; older hubs fall back to counts.
+- Desktop gallery: the bottom “Load more” button is gone. The page loads the next batch whenever its end stays in view after a load, and failed loads retry automatically.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 381 tests with two platform skips and all 206 mobile source tests pass. An adversarial review's findings (stale edited rows, blanking months during uploads, desktop first-page retry, scroll jumps, undated thumbnail pruning) are fixed with regression tests. A second, full-context adversarial review's findings (an unchanged refresh re-reading the newest month, a paired-but-offline gallery ignoring the local copy, the rail model re-rendering the app for every page) are fixed too. No native build or deployment performed; physical-device scrolling acceptance is pending.
+
 ## 0.6.6 — 2026-09-28
 
 - Linked phone albums upload before the shared folder download in every cycle, with their own transfer turn. A large first download (the Fold's 26.6 GB `photos` copy) no longer blocks album uploads or keeps a stale album warning. A yielded or failing upload pass (for example, revoked Photos access) still lets the download run; the upload failure is reported after it.

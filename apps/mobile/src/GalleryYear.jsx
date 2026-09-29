@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
-import { Icon, useDesign } from "./components";
+import { MediaPlaceholder, useDesign } from "./components";
 import { mergeTimeline } from "./gallery-timeline";
 
 // Bounded samples: opening Years never downloads the complete photo catalog.
@@ -17,7 +17,7 @@ export function GalleryYear({
   onPress,
   onLayout,
 }) {
-  const { s, c } = useDesign();
+  const { s } = useDesign();
   const local = useMemo(
     () =>
       mergeTimeline({ entries })
@@ -110,9 +110,7 @@ export function GalleryYear({
                   }
                 />
               ) : (
-                <View style={s.galleryPlaceholder}>
-                  <Icon name="image" size={12} color={c.mute} />
-                </View>
+                <MediaPlaceholder size={size} />
               )}
             </View>
           );

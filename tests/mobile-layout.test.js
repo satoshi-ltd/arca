@@ -63,6 +63,7 @@ test("mobile surface and text colors match the desktop light and dark tokens", a
     tint: "tint",
     okFg: "okFg",
     hover: "hover",
+    placeholder: "placeholder",
     danger: "erFg",
     dangerBg: "erBg",
   };
@@ -369,15 +370,50 @@ test("app text size scales typography without zooming layout or icons", async ()
 
 test("closing folder actions retain their title after local removal without rendering stale actions", () => {
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
-  const title = app.slice(app.indexOf("{shownSheet && (")).match(/title=\{([\s\S]*?)\}\s+busy=/)[1];
+  const header = app.slice(app.indexOf("{shownSheet && (")).match(/\{\.\.\.(\(shownSheet\.kind === "rename-file"[\s\S]*?\))\}\s+busy=/)[1];
   const actions = app.match(/\{(shownSheet.kind === "folder-actions"[^{]*?) && \(/)[1];
   const volume = { id: "removed-share", name: "photos-demo", selected: 1 };
   assert.match(app, /setSheet\(\{\s*kind: "folder-actions",\s*volume: folder,?\s*\}\)/);
   const shownSheet = { kind: "folder-actions", volume };
-  assert.equal(vm.runInNewContext(title, { shownSheet, folder: null }), "photos-demo");
+  const shown = vm.runInNewContext(header, {
+    shownSheet,
+    folder: null,
+    photoFolder: false,
+    folderSubtitle: "",
+    bytes: () => "",
+  });
+  assert.equal(shown.title, "photos-demo");
+  assert.equal(shown.menu, true, "folder actions are a compact menu");
+  assert.equal(shown.icon, "folder");
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: volume }), true);
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: null }), false);
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: { id: "other" } }), false);
+});
+
+test("sheets share the desktop dialog header anatomy and menus stay compact", () => {
+  const components = fs.readFileSync(new URL("../apps/mobile/src/components.jsx", import.meta.url), "utf8");
+  const theme = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
+  const sheet = components.slice(components.indexOf("export function Sheet("), components.indexOf("export function ConfirmDialog("));
+  assert.match(sheet, /\{!dialog && <View style=\{s\.sheetHandle\} \/>\}/, "every bottom sheet shows its handle");
+  assert.match(sheet, /<View style=\{s\.tile\}>\s*<Icon name=\{icon\}/);
+  assert.match(sheet, /\{!!subtitle && \(/);
+  assert.match(sheet, /\{subtitle\}[\s\S]*?<Button\s+label="Close"/, "every titled sheet, menus included, has an explicit Close like desktop dialogs");
+  assert.doesNotMatch(sheet, /!menu && \(\s*<Button/);
+  assert.match(sheet, /contentContainerStyle=\{menu \? s\.sheetMenu : s\.content\}/);
+  assert.match(theme, /sheetHeader: \{[^}]*paddingHorizontal: wide \? g\.workspaceInset : 16,[^}]*borderBottomWidth: 1/);
+  assert.match(theme, /actionRow: \{[^}]*minHeight: g\.touchControlHeight,[^}]*paddingHorizontal: wide \? g\.workspaceInset : 16,/, "action rows align with the sheet title");
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const header = app.slice(app.indexOf("{shownSheet && (")).match(/\{\.\.\.(\(shownSheet\.kind === "rename-file"[\s\S]*?\))\}\s+busy=/)[1];
+  for (const kind of ["rename-file", "gallery", "history-filter", "folder-actions", "select", "conflict"]) {
+    const shown = vm.runInNewContext(header, {
+      shownSheet: { kind, path: "a/b.jpg", volume: { name: "photos", bytes: 1 }, original: { path: "a/c.jpg" } },
+      folder: { name: "photos" },
+      photoFolder: true,
+      folderSubtitle: "3598 photos · 13 GB local",
+      bytes: () => "1 B",
+    });
+    assert.ok(shown.title && shown.icon, kind);
+  }
 });
 
 test("local Open and Share stay available while hub-bound actions hold the action lock", () => {
@@ -457,14 +493,41 @@ test("folder problems use notices that reappear when the folder opens, not inlin
   assert.match(app, /\}, \[error, status\.error, locals, state\.catalog, notices, folder\?\.id\]\);/);
 });
 
-test("the gallery density follows the current layout and keeps paging while near the end", () => {
+test("the gallery windows rows over the whole timeline and only ever loads by scrolling", () => {
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  const rail = fs.readFileSync(new URL("../apps/mobile/src/GalleryDateRail.jsx", import.meta.url), "utf8");
   assert.match(app, /<FolderGallery[^>]*columns=\{wide \? 6 : 4\}/);
   assert.match(gallery, /const density = levelColumns\(level, columns\);/);
   assert.doesNotMatch(gallery, /useState\(columns\)/);
-  const resize = app.slice(app.indexOf("onContentSizeChange={(_, height) => {"));
-  assert.match(resize.slice(0, 400), /nearEnd\.current &&[\s\S]*setTimelineDemand/);
+  assert.match(gallery, /galleryWindow\(layout, range\.top, range\.bottom\)/);
+  assert.doesNotMatch(gallery, /Show more|Load more|setLimit/);
+  assert.doesNotMatch(app, /timelineDemand|nearEnd/);
+  assert.doesNotMatch(rail, /dateRailTick/);
+  assert.doesNotMatch(rail, /scrollY\.interpolate/, "the thumb follows the finger, not the native scroll value");
+  assert.match(app, /<FolderGallery[^>]*offline=\{!!status\.offline\}/, "paired is not online: the gallery needs the offline state");
+  assert.match(gallery, /const online = connected && !offline;/);
+  assert.match(gallery, /const source = gallery && \(online \|\| !local\.total\) \? gallery : local;/);
+  assert.match(gallery, /!current\.online \|\|/);
+  assert.match(gallery, /\[\s*onRail,\s*railShape,/, "the rail model republishes on shape changes, not on every loaded page");
+  assert.match(rail, /onResponderMove[\s\S]*place\(next\)[\s\S]*requestAnimationFrame/);
+});
+
+test("every gallery surface shares one placeholder: the token fill and a soft image or play glyph", () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/${file}`, import.meta.url), "utf8");
+  const theme = read("mobile/src/theme.js");
+  const components = read("mobile/src/components.jsx");
+  const css = read("desktop/src/style.css");
+  for (const file of ["FolderGallery.jsx", "GalleryYear.jsx", "GallerySource.jsx"]) {
+    const source = read(`mobile/src/${file}`);
+    assert.match(source, /<MediaPlaceholder/, file);
+    assert.doesNotMatch(source, /galleryPlaceholder/, file);
+  }
+  assert.match(components, /size >= PLACEHOLDER_GLYPH_MIN[\s\S]*video \? "play" : "image"[\s\S]*color=\{c\.line\}/);
+  for (const name of ["photoTile", "yearTile", "mediaPlaceholder"])
+    assert.match(theme, new RegExp(`${name}: \\{[^}]*backgroundColor: c\\.placeholder`), name);
+  assert.match(css, /\.photo-thumb \{[^}]*background: var\(--placeholder\);/);
+  assert.match(css, /\.photo-open \{[^}]*background: var\(--placeholder\);\s*color: var\(--line\);/);
 });
 
 test("recent revisions wait for the replica runtime before loading", () => {

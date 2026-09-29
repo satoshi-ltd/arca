@@ -313,7 +313,7 @@ export class Gallery {
     const timeline = s.db
       .prepare(
         source +
-          ` SELECT substr(date,1,7) AS month,count(*) AS count
+          ` SELECT substr(date,1,7) AS month,count(*) AS count,max(rev) AS rev
       FROM dated WHERE date IS NOT NULL GROUP BY month ORDER BY month DESC`,
       )
       .all(volume);

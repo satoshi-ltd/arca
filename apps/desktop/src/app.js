@@ -84,7 +84,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.6";
+const APP_VERSION = "0.6.7";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2220,9 +2220,9 @@ function mountGallery(volume) {
     const seek = state.seek;
     const live = () => current() && state.seek === seek;
     state.loading = true;
-    let waiting = false;
+    let waiting = false,
+      failed = false;
     const more = root.querySelector(".photo-more");
-    more.disabled = true;
     more.innerHTML = busyIcon();
     more.setAttribute("aria-label", "Loading gallery");
     more.setAttribute("aria-busy", "true");
@@ -2265,7 +2265,7 @@ function mountGallery(volume) {
       if (first) state.previous = data.previous ?? null;
       state.next = data.next;
       more.hidden = !data.next;
-      more.textContent = "Load more";
+      more.replaceChildren();
       more.removeAttribute("aria-label");
       if (!state.items.length)
         root.querySelector(".photo-days").innerHTML = empty(
@@ -2275,18 +2275,22 @@ function mountGallery(volume) {
           "images",
         );
     } catch {
+      failed = true;
       if (live()) {
-        more.textContent = "Could not load gallery. Retry";
+        more.textContent = "Could not load photos. Retrying…";
         more.removeAttribute("aria-label");
+        setTimeout(() => live() && state.load(), 5000);
       }
     } finally {
       if (live() && !waiting) {
         state.loading = false;
-        more.disabled = false;
         more.removeAttribute("aria-busy");
       }
     }
-    if (live()) loadNewerIfNear();
+    if (live() && !failed) {
+      loadNewerIfNear();
+      loadOlderIfNear();
+    }
   };
   function replaceItems(items) {
     const page = root.closest(".page");
@@ -2315,7 +2319,18 @@ function mountGallery(volume) {
     if (nextAnchor && offset != null)
       page.scrollTop += nextAnchor.getBoundingClientRect().top - offset;
   }
-  // IntersectionObserver stays silent while the top sentinel remains visible across loads.
+  // IntersectionObserver stays silent while a sentinel remains visible across loads.
+  const loadOlderIfNear = () => {
+    const sentinel = root.querySelector(".photo-more");
+    if (
+      state.next &&
+      sentinel &&
+      !sentinel.hidden &&
+      sentinel.getBoundingClientRect().top <
+        root.closest(".page").getBoundingClientRect().bottom + 400
+    )
+      void state.load();
+  };
   const loadNewerIfNear = () => {
     const sentinel = root.querySelector(".photo-newer");
     if (
@@ -2407,7 +2422,6 @@ function mountGallery(volume) {
   const refreshTimer = setInterval(refreshGallery, 5000);
   document.addEventListener("visibilitychange", refreshGallery);
   document.addEventListener("arca-changes", refreshGallery);
-  root.querySelector(".photo-more").onclick = state.load;
   state.moreObserver =
     typeof IntersectionObserver === "function"
       ? new IntersectionObserver(
@@ -3037,7 +3051,7 @@ async function folderBrowser(v, recent, pending = false) {
     ],
   )}<div>${folderTab === "files" ? `<button class="icon-button" data-action="folder-search-toggle" aria-label="${folderSearchOpen ? "Close search" : "Search files"}">${icon(folderSearchOpen ? "x" : "search")}</button>` : folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
   if (folderTab === "gallery")
-    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><button type="button" class="secondary photo-more" aria-label="Loading gallery" aria-busy="true" disabled>${busyIcon()}</button></div>`;
+    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
   if (pending && folderTab === "recent" && !recent)
     return tools + scaffoldRow("history");
   if (folderTab === "recent")

@@ -446,6 +446,12 @@ test("filename and album dates preserve precision, and timeline seeks unloaded m
     data.timeline.map((row) => row.month),
     ["2022-03", "2021-06"],
   );
+  for (const row of data.timeline)
+    assert.equal(
+      row.rev,
+      Math.max(...data.items.filter((item) => item.date.startsWith(row.month)).map((item) => item.rev)),
+      "each month carries its newest revision so clients notice edits that keep the count",
+    );
   const jump = await f.api(f.route + "&month=2021-06");
   assert.equal(jump.items[0].date, "2021-06");
   await assert.rejects(f.api(f.route + "&month=2021-99"), { status: 400 });

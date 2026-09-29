@@ -1,201 +1,189 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text } from "react-native";
-import { useDesign } from "./components";
-import { timelineSegments } from "../../desktop/src/gallery-timeline-layout.js";
-import { monthLabel, railMonthLabel } from "./gallery-timeline";
+import { Animated, Text, View } from "react-native";
+import { Icon, useDesign } from "./components";
+import { SCRUB_THUMB as THUMB, scrubYears } from "./gallery-layout";
 
-// One gesture chooses a month; fetching happens only when the finger is released.
-export function GalleryDateRail({ dates, controller, onSeek, viewport }) {
-  const { s } = useDesign();
-  const [height, setHeight] = useState(1);
-  const [position, setPosition] = useState(0);
-  const segments = timelineSegments(
-    dates.map((date) => date.count),
-    Math.max(1, height - 32),
-    4,
-  );
+const READING_GUIDE = 80;
+
+// Only the thumb takes touches (edge photos stay tappable); a native-scroll-bound position stops it following the finger.
+export function GalleryDateRail({ model, viewport, controller }) {
+  const { s, c } = useDesign();
   const [visible, setVisible] = useState(false);
-  const [month, setMonth] = useState("");
-  const [currentMonth, setCurrentMonth] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [label, setLabel] = useState("");
+  const thumb = useRef(new Animated.Value(0)).current;
   const timer = useRef(null),
-    rail = useRef(null),
-    bounds = useRef({ top: 0, height: 1 });
-  const held = useRef(false),
-    chosen = useRef("");
+    frame = useRef(null),
+    pending = useRef(null),
+    held = useRef(false),
+    shown = useRef(false),
+    top = useRef(0),
+    grab = useRef({ pageY: 0, top: 0 }),
+    current = useRef(model);
+  current.current = model;
+  const travel = Math.max(1, viewport.height - THUMB);
+  const travelRef = useRef(travel);
+  travelRef.current = travel;
+  const place = (value) => {
+    top.current = value;
+    thumb.setValue(value);
+  };
+  const follow = (offset) => {
+    const target = current.current;
+    if (!target || target.end <= target.start) return;
+    place(
+      Math.min(1, Math.max(0, (offset - target.start) / (target.end - target.start))) *
+        travelRef.current,
+    );
+  };
   const hideLater = () => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setVisible(false), 2000);
+    timer.current = setTimeout(() => {
+      shown.current = false;
+      setVisible(false);
+    }, 1500);
   };
   useEffect(() => {
     controller.current = {
-      update(value) {
-        setCurrentMonth(value || dates[0]?.month);
-      },
-      show(value) {
-        if (dates.length < 2) return;
-        setVisible(true);
-        setCurrentMonth(value || dates[0]?.month);
+      reveal(offset) {
         if (!held.current) {
-          setMonth(value || dates[0]?.month);
+          follow(offset);
           hideLater();
+        }
+        if (!shown.current) {
+          shown.current = true;
+          setVisible(true);
         }
       },
     };
     return () => {
       controller.current = null;
     };
-  }, [controller, dates]);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  const choose = (pageY) => {
-    const y = Math.max(
-      0,
-      Math.min(height - 32, pageY - bounds.current.top - 16),
-    );
-    const index = segments.findIndex(
-      (segment) => y < segment.top + segment.size,
-    );
-    chosen.current = dates[index < 0 ? dates.length - 1 : index]?.month;
-    setPosition(y);
-    setMonth(chosen.current);
+  }, [controller]);
+  useEffect(() => {
+    if (model && !held.current) follow(model.offset());
+  }, [model, travel]);
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
+  const at = (y) => {
+    const sections = current.current?.sections || [];
+    let found = sections[0];
+    for (const section of sections) {
+      if (section.offset > y + READING_GUIDE) break;
+      found = section;
+    }
+    return found;
   };
-  const finish = () => {
+  const release = () => {
     held.current = false;
+    cancelAnimationFrame(frame.current);
+    frame.current = null;
+    if (pending.current !== null) current.current?.scrollTo(pending.current);
+    pending.current = null;
     setDragging(false);
-    if (chosen.current) onSeek(chosen.current);
+    current.current?.scrub(false);
     hideLater();
   };
-  if (!visible || dates.length < 2) return null;
-  let previousYear = "",
-    lastTick = -Infinity;
-  const years = [];
-  const marks = dates.map((date, index) => {
-    const top = segments[index].top;
-    const year = date.month.slice(0, 4);
-    if (year !== previousYear) years.push({ index, top });
-    previousYear = year;
-    const tick = top - lastTick >= 4;
-    if (tick) lastTick = top;
-    return { ...date, top, tick };
-  });
-  const shown = [];
-  years.forEach((year, index) => {
-    const oldest = index === years.length - 1;
-    while (oldest && shown.length > 1 && year.top - shown.at(-1).top < 20)
-      shown.pop();
-    if (oldest || !shown.length || year.top - shown.at(-1).top >= 20)
-      shown.push(year);
-  });
-  const labelMonth = dragging ? month : currentMonth;
-  const labelTop = dragging
-    ? position
-    : segments[
-        Math.max(
-          0,
-          dates.findIndex((date) => date.month === currentMonth),
-        )
-      ]?.top || 0;
+  if (
+    !model?.sections.length ||
+    model.end - model.start <= viewport.height ||
+    (!visible && !dragging)
+  )
+    return null;
+  const index = Math.max(0, model.sections.indexOf(at(model.offset())));
+  const move = (step) => {
+    const target = model.sections[index + step];
+    if (target) model.scrollTo(Math.min(model.end, target.offset));
+  };
   return (
     <View
       style={[s.dateRailOverlay, { top: viewport.y, height: viewport.height }]}
       pointerEvents="box-none"
     >
-      {!!labelMonth && (
-        <Text
+      {dragging && <View pointerEvents="none" style={s.scrubTrack} />}
+      {dragging &&
+        scrubYears(model.sections, model.start, model.end, travel).map(
+          (year) => (
+            <Text
+              key={year.key}
+              pointerEvents="none"
+              style={[s.scrubYear, { top: year.top }]}
+            >
+              {year.year}
+            </Text>
+          ),
+        )}
+      {dragging && !!label && (
+        <Animated.View
           pointerEvents="none"
-          numberOfLines={1}
-          style={[s.dateRailBubble, { top: 16 + labelTop }]}
+          style={[
+            s.scrubBubble,
+            { transform: [{ translateY: Animated.add(thumb, THUMB / 2 - 16) }] },
+          ]}
         >
-          {dates[0]?.annual
-            ? labelMonth.slice(0, 4)
-            : railMonthLabel(labelMonth)}
-        </Text>
+          <Text numberOfLines={1} style={s.scrubBubbleText}>
+            {label}
+          </Text>
+        </Animated.View>
       )}
-      <View
-        ref={rail}
-        style={s.dateRail}
-        onLayout={(event) => setHeight(event.nativeEvent.layout.height)}
+      <Animated.View
+        accessible
         accessibilityRole="adjustable"
         accessibilityLabel="Photo date"
-        accessibilityValue={{
-          text: dates[0]?.annual
-            ? labelMonth.slice(0, 4)
-            : monthLabel(labelMonth),
-        }}
+        accessibilityValue={{ text: model.sections[index]?.label || "" }}
         accessibilityActions={[
-          {
-            name: "increment",
-            label: dates[0]?.annual ? "Older year" : "Older month",
-          },
-          {
-            name: "decrement",
-            label: dates[0]?.annual ? "Newer year" : "Newer month",
-          },
+          { name: "increment", label: model.annual ? "Older year" : "Older month" },
+          { name: "decrement", label: model.annual ? "Newer year" : "Newer month" },
         ]}
-        onAccessibilityAction={(event) => {
-          const index = Math.max(
-            0,
-            dates.findIndex((date) => date.month === labelMonth),
-          );
-          const next =
-            dates[
-              Math.max(
-                0,
-                Math.min(
-                  dates.length - 1,
-                  index +
-                    (event.nativeEvent.actionName === "increment" ? 1 : -1),
-                ),
-              )
-            ].month;
-          setMonth(next);
-          onSeek(next);
-          hideLater();
-        }}
+        onAccessibilityAction={(event) =>
+          move(event.nativeEvent.actionName === "increment" ? 1 : -1)
+        }
+        hitSlop={{ top: 12, bottom: 12, left: 24, right: 8 }}
+        style={[s.scrubThumb, { transform: [{ translateY: thumb }] }]}
         onStartShouldSetResponder={() => true}
         onMoveShouldSetResponder={() => true}
         onResponderTerminationRequest={() => false}
         onResponderGrant={(event) => {
           held.current = true;
-          setDragging(true);
           clearTimeout(timer.current);
-          const y = event.nativeEvent.pageY;
-          rail.current?.measureInWindow((x, top, width, height) => {
-            bounds.current = { top, height: Math.max(1, height) };
-            if (held.current) choose(y);
+          grab.current = { pageY: event.nativeEvent.pageY, top: top.current };
+          setDragging(true);
+          setLabel(at(model.offset())?.label || "");
+          model.scrub(true);
+        }}
+        onResponderMove={(event) => {
+          const target = current.current;
+          if (!target) return;
+          const next = Math.min(
+            travelRef.current,
+            Math.max(
+              0,
+              grab.current.top + event.nativeEvent.pageY - grab.current.pageY,
+            ),
+          );
+          place(next);
+          const y =
+            target.start + (next / travelRef.current) * (target.end - target.start);
+          pending.current = y;
+          frame.current ||= requestAnimationFrame(() => {
+            frame.current = null;
+            if (pending.current !== null) current.current?.scrollTo(pending.current);
           });
+          setLabel(at(y)?.label || "");
         }}
-        onResponderMove={(event) => choose(event.nativeEvent.pageY)}
-        onResponderRelease={finish}
-        onResponderTerminate={() => {
-          held.current = false;
-          setDragging(false);
-          hideLater();
-        }}
+        onResponderRelease={release}
+        onResponderTerminate={release}
       >
-        {marks.map((date, index) => (
-          <View
-            key={date.month}
-            pointerEvents="none"
-            style={[s.dateRailMark, { top: 16 + date.top }]}
-          >
-            {shown.some((year) => year.index === index) && (
-              <Text style={s.dateRailYear}>{date.month.slice(0, 4)}</Text>
-            )}
-            {(date.tick ||
-              currentMonth === date.month ||
-              (dragging && month === date.month)) && (
-              <View
-                style={[
-                  s.dateRailTick,
-                  dragging && month === date.month && s.dateRailHovered,
-                  currentMonth === date.month && s.dateRailCurrent,
-                ]}
-              />
-            )}
-          </View>
-        ))}
-      </View>
+        <View style={s.flipped}>
+          <Icon name="chevron-down" size={16} color={c.onAccent} />
+        </View>
+        <Icon name="chevron-down" size={16} color={c.onAccent} />
+      </Animated.View>
     </View>
   );
 }
