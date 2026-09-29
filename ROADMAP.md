@@ -68,11 +68,6 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
 - **P1-SITE** · needs deployment. Cloudflare `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_PAGES_PROJECT_NAME` are missing (DevOps); create a separate Pages project, attach `arca.satoshi-ltd.com`, disable Git auto-deploys and run the GitHub-to-Cloudflare publication end to end.
 - **P1-PUBLIC-ACCESS** · needs qualification. Anonymous GitHub access returned 404: confirm public downloadability before launch; replace store home-page links with real listing URLs once they exist; decide whether Docker Hub is public.
 
-## Documentation debt
-
-- **DOC-SPEC-STALE** · known gap. SPEC version lines still naming 0.6.5/build 28 and 0.6.4/build 27 as current; the desktop updater described as uncommitted although it shipped in 0.5.4; notes saying long polling and mobile OS scheduling are not implemented, which contradict the scheduler contract.
-- **DOC-README-STALE** · known gap. README: the first real Umbrel helper update marked "to be verified" (done); publication to GHCR (dropped); "No automatic updater" (the desktop updater exists); Files as the gallery folders' default tab (they open in Gallery); pointer-driven site motion (CSS-only); five-minute approval expiry (SPEC says ten); the v0.2.3 image note.
-
 ## Verify and close
 
 Items older notes still list as open, while later notes suggest they are resolved. Confirm, then delete them here and fix the older note:

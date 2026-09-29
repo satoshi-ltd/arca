@@ -1,6 +1,6 @@
 {
   "name": "arca-mobile",
-  "version": "0.6.14",
+  "version": "0.6.15",
   "private": true,
   "main": "index.js",
   "scripts": {

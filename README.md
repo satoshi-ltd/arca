@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.6.14 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.6.15 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -70,11 +70,11 @@ Implemented locally: secure pairing, persistent whole-folder sync with verified 
 
 **Shared gallery deletion:** any participant can explicitly delete a shared photo, including a source phone or a copy that has not downloaded it. Verified Live Photo resources are deleted together. Mobile supports long-press selection. All clients send confirmed deletions directly to the hub; failures are shown without queuing or automatic retries. Sources suppress automatic re-upload of explicitly deleted assets. Originals stay in the system Photos library. Recovery follows the folder’s ordinary revision retention. There is no separate deletion-review workflow. Source changes do not deploy Casa or update an installed app. Physical-device qualification remains open.
 
-**Desktop/web gallery:** album-linked folders use the Images icon and keep Files as the default tab, followed by Recent and Gallery. Gallery provides a dated thumbnail grid and a month/year navigation rail. Accepted photo uploads prepare reusable thumbnails in the hub’s background queue. Existing gallery folders are prepared in the background on activation and hub startup; metadata and thumbnails survive restart. Navigation reuses gallery pages and separate thumbnail/large-preview caches. Clicking an image opens a larger preview; videos open an authenticated streaming player with seek controls. This requires the updated hub daemon and desktop runtime, including production dependencies. It is implemented and tested locally, not deployed to Casa. Unsupported browser/OS video codecs and image formats retain original download.
+**Desktop/web gallery:** gallery folders use the Images icon and open in Gallery; View folder switches to Files and Recent (with All history). Gallery provides a dated thumbnail grid and a month/year navigation rail. Accepted photo uploads prepare reusable thumbnails in the hub’s background queue. Existing gallery folders are prepared in the background on activation and hub startup; metadata and thumbnails survive restart. Navigation reuses gallery pages and separate thumbnail/large-preview caches. Clicking an image opens a larger preview; videos open an authenticated streaming player with seek controls. This requires the updated hub daemon and desktop runtime, including production dependencies. It is implemented and tested locally, not deployed to Casa. Unsupported browser/OS video codecs and image formats retain original download.
 
 **Receiving files:** Share → Arca → selected folder → subfolder → Save. Receiving is transient: X, Cancel or Android Back discards the unsaved temporary copies without touching the originals. Nothing waits in an inbox or reopens after cancellation/restart. **Save a copy** exports local folder files outside Arca; it does not export synchronized history or create another syncing copy. Native picker/export and background behavior still require real-device qualification. Android incoming intent reception has been exercised; the iOS share extension is experimental.
 
-Native modules, incoming-share registration and icon/splash changes require a new binary. Metro does not install them. The hub needs the bounded-download `blobRanges` capability; Casa has received it, but the published v0.2.3 image predates these mobile-support changes.
+Native modules, incoming-share registration and icon/splash changes require a new binary. Metro does not install them. The hub needs the bounded-download `blobRanges` capability, which current releases include.
 
 ### Android builds
 
@@ -123,7 +123,7 @@ npm run update-umbrel -- --check  # Read-only connection, configuration and API 
 npm run update-umbrel            # Tests, stage current source, build and restart Arca on Umbrel
 ```
 
-This private, Git-ignored helper is `scripts/local/update-umbrel.py` (Python 3.11+). It uses SSH `umbrel@umbrel.local`, Python/PyYAML on Umbrel and the existing `umbrel` MCP entry in `~/.codex/config.toml`; credentials are read privately. Copy the helper separately when using another checkout. It includes uncommitted server/web source and builds the image locally through Umbrel’s normal app start. Arca is unavailable during that build, which can take several minutes. Existing persistent volumes, configuration, app-password reference and icon are retained; the previous pilot source overrides are replaced by the complete build. Source snapshots and previous app files stay under the app’s `updates/` directory for inspection. No image is published, and Casa, desktop, mobile and Metro are not updated. Reload Arca and sign in again after restart. The read-only check and preparation tests pass; the first actual update through this helper remains to be verified.
+This private, Git-ignored helper is `scripts/local/update-umbrel.py` (Python 3.11+). It uses SSH `umbrel@umbrel.local`, Python/PyYAML on Umbrel and the existing `umbrel` MCP entry in `~/.codex/config.toml`; credentials are read privately. Copy the helper separately when using another checkout. It includes uncommitted server/web source and builds the image locally through Umbrel’s normal app start. Arca is unavailable during that build, which can take several minutes. Existing persistent volumes, configuration, app-password reference and icon are retained; the previous pilot source overrides are replaced by the complete build. Source snapshots and previous app files stay under the app’s `updates/` directory for inspection. No image is published, and Casa, desktop, mobile and Metro are not updated. Reload Arca and sign in again after restart. The read-only check and preparation tests pass, and real updates of the Umbrel pilot have run through it.
 
 ## Update the Casa pilot
 
@@ -146,9 +146,9 @@ A deployment invalidates web sessions; reload and sign in again if requested. Pr
 
 ## Release and remaining work
 
-The **publish** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub/GHCR versioned images plus `latest`. Android builds remain manual through the EAS commands above and do not block this workflow. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` is alpha, not a stable-release guarantee.
+The **publish** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub versioned images plus `latest`. Android builds remain manual through the EAS commands above and do not block this workflow. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` is alpha, not a stable-release guarantee.
 
-macOS is ad-hoc signed and Windows unsigned by default; Developer ID signing/notarization is optional. No automatic updater, store submission or pilot deployment is part of publication. Detailed registry/signing setup belongs in [release operations](SPEC.md#release-setup-and-publication).
+macOS is ad-hoc signed and Windows unsigned by default; Developer ID signing/notarization is optional. Desktop installs update themselves from published releases with signed payloads; store submission and pilot deployment are not part of publication. Detailed registry/signing setup belongs in [release operations](SPEC.md#release-setup-and-publication).
 
 Before distribution: complete cross-client/offline/conflict workflows; real iOS/Android networking, background, import/export/share and launch acceptance; actual desktop installer/upgrade testing; accessibility and long-content visual review; sustained load and independent backup/recovery; native mobile CI qualification. See [ROADMAP.md](ROADMAP.md) for scope and evidence. Passing tests or producing packages does not close those gates.
 
@@ -165,7 +165,7 @@ Every commit requires a version bump and matching changelog entry, with package/
 
 ## Public website
 
-The single page in `site/` is static HTML/CSS with local brand fonts and no navigation menu, client-side framework, telemetry or runtime API. A small local script adds pointer-responsive illustration motion, respecting reduced-motion preferences. It follows `../alf`'s Node-build → GitHub Actions → Cloudflare Pages direct-upload approach.
+The single page in `site/` is static HTML/CSS with local brand fonts and no navigation menu, client-side framework, telemetry or runtime API. Illustration motion is CSS-only, with no cursor response or JavaScript, and respects reduced-motion preferences. It follows `../alf`'s Node-build → GitHub Actions → Cloudflare Pages direct-upload approach.
 
 ```sh
 npm run build:site
@@ -187,6 +187,6 @@ The lookup calls the GitHub REST API and writes `site/release.json`. CI always s
 
 **Version history:** hub folder headers offer Off, 1 day, 1 week, 1 month (30 days), or Forever. 30 days is the default; explicit choices are preserved. Shortening retention previews existing revisions to remove; automatic cleanup runs hourly while the hub is active. Current files and protected work remain, and unreferenced content has a 24-hour grace period before disk reclamation. Requires the updated hub daemon.
 
-**Web sign-in approval:** an authenticated hub administrator can enable “Allow web approval” in a machine’s actions. The login page can then request access from those machines. Open foreground clients show the shared confirmation with a matching reference, requester IP and reported browser details. Requests expire after five minutes. Shell sign-in codes remain available for initial access and recovery. Updated hub and client code is required; mobile background push delivery is not included.
+**Web sign-in approval:** an authenticated hub administrator can enable “Allow web approval” in a machine’s actions. The login page can then request access from those machines. Open foreground clients show the shared confirmation with a matching reference, requester IP and reported browser details. Requests expire after ten minutes. Shell sign-in codes remain available for initial access and recovery. Updated hub and client code is required; mobile background push delivery is not included.
 
 Docker upgrades: the image listens on container port 17831 explicitly, including with existing state. Compose accepts `ARCA_PORT` for the published port. For an installation whose clients already use 47831, run Compose with `ARCA_PORT=47831` to retain that external address. Do not change configured client addresses merely to upgrade.

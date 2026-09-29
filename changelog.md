@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.15 — 2026-09-30
+
+- Documentation catches up with the product. README: gallery folders open in Gallery, the site's motion is CSS-only, web approvals expire after ten minutes, desktop installs update themselves, Docker images publish to Docker Hub only, and Umbrel helper updates have run for real. SPEC: dated notes that read as current status are marked as history (source versions, the desktop updater, long polling). The two documentation-debt items leave ROADMAP.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 396 tests with two platform skips and all 223 mobile source tests pass. An adversarial review confirmed every claim against the code; its corrections (the folder view's tabs, SPEC still describing itself as the roadmap, one dated note) are applied.
+
 ## 0.6.14 — 2026-09-29
 
 - Relinking a desktop or server replica treats the hub as the source of truth, and so does any first sync that has not completed yet. Local files the hub deleted, or holds in a different version, go to the system Trash before anything is proposed, and the hub's version downloads. A relink no longer brings deleted files back or leaves conflict copies (the `photos-yuri` case). Files the hub never had still upload, and identical files are adopted.
