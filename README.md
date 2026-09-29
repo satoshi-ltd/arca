@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.6.11 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.6.12 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -150,13 +150,14 @@ The **publish** workflow runs tests/version checks on macOS, Windows and Linux. 
 
 macOS is ad-hoc signed and Windows unsigned by default; Developer ID signing/notarization is optional. No automatic updater, store submission or pilot deployment is part of publication. Detailed registry/signing setup belongs in [release operations](SPEC.md#release-setup-and-publication).
 
-Before distribution: complete cross-client/offline/conflict workflows; real iOS/Android networking, background, import/export/share and launch acceptance; actual desktop installer/upgrade testing; accessibility and long-content visual review; sustained load and independent backup/recovery; native mobile CI qualification. See [remaining tasks](SPEC.md#remaining-work-and-task-candidates) for scope and evidence. Passing tests or producing packages does not close those gates.
+Before distribution: complete cross-client/offline/conflict workflows; real iOS/Android networking, background, import/export/share and launch acceptance; actual desktop installer/upgrade testing; accessibility and long-content visual review; sustained load and independent backup/recovery; native mobile CI qualification. See [ROADMAP.md](ROADMAP.md) for scope and evidence. Passing tests or producing packages does not close those gates.
 
 ## Documentation and change policy
 
 - [README.md](README.md): orientation and entry commands.
 - [AGENTS.md](AGENTS.md): contributor instructions and operational boundaries.
-- [SPEC.md](SPEC.md): current state, remaining work, contracts, operations and shared design system.
+- [SPEC.md](SPEC.md): current state, contracts, operations and shared design system.
+- [ROADMAP.md](ROADMAP.md): remaining work, open decisions, pending deployments and qualification gates.
 
 `AGENTS.md` contains contributor instructions; `changelog.md` records versions. The original visual assets are references, not another specification. Third-party documentation/licenses remain with their dependencies.
 

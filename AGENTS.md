@@ -2,13 +2,14 @@
 
 ## Resume context
 
-The project has three maintained documents:
+The project has four maintained documents:
 
 - `AGENTS.md` — contributor instructions and live-environment boundaries.
 - `README.md` — human introduction and entry commands.
-- `SPEC.md` — current state, remaining work, product/technical contracts, operations and design system.
+- `SPEC.md` — current state, product/technical contracts, operations and design system.
+- `ROADMAP.md` — every remaining task, open decision, pending deployment, qualification gate and documentation debt.
 
-Read README, then SPEC's “Resume work here” and “Remaining work and task candidates”; consult its relevant contract, operations or design section for the task. Keep persistent decisions and task candidates in SPEC, not chat history or extra status/handoff/roadmap documents. `changelog.md` is the version ledger, not a competing specification. Original visual references and third-party documentation/licenses retain their separate purpose. Current user instructions override historical material.
+Read README, then SPEC's “Resume work here” and ROADMAP; consult SPEC's relevant contract, operations or design section for the task. Keep persistent decisions in SPEC and remaining work in ROADMAP, not chat history or extra status/handoff documents. When work ships, remove it from ROADMAP and record it in the changelog and SPEC. `changelog.md` is the version ledger, not a competing specification. Original visual references and third-party documentation/licenses retain their separate purpose. Current user instructions override historical material.
 
 ## Working rules
 
@@ -24,7 +25,7 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 - All app-owned text is English through phases 1 and 2. Preserve user names, paths and content. i18n is phase 3; conversation may be Spanish.
 - Implement only the scope requested or explicitly validated by the maintainer. You may propose product or UX changes, but never implement those proposals, additional controls or new flows without the maintainer’s explicit validation. Previous blanket authorization to refine UI/UX beyond the request is revoked. Within approved work, use shared tokens/components and update the design section of `SPEC.md`.
 - Update the owning document in the same change. Distinguish implemented, deployed, verified, proposed and planned. A build or API response is not full workflow validation.
-- Create a separate Codex task only when explicitly requested. Use the spec's task IDs, define outcome/acceptance evidence, and do not silently implement proposed features.
+- Create a separate Codex task only when explicitly requested. Use ROADMAP's task IDs, define outcome/acceptance evidence, and do not silently implement proposed features.
 
 ## Non-negotiable product decisions
 
@@ -46,4 +47,4 @@ Read README, then SPEC's “Resume work here” and “Remaining work and task c
 - Do not reset live state, delete user files, enable backup or resume a user pause as incidental cleanup. No automatic relocation/deletion of existing copies.
 - Casa deployment is user-managed (September 9): do not update or restart its Docker container unless explicitly requested again. Prepare and validate changes locally, and report deployment or client compatibility requirements. This supersedes the earlier standing deployment authorization.
 - Native changes require the running binary to reload/rebuild; daemon changes require service deployment/restart. Do not confuse a built bundle with the currently running dev process.
-- As of 2026-09-08: phase 1 alpha, not release-qualified. Event-driven remote sync/long polling is proposed, not implemented. Consult the spec for current open work instead of inferring completion from old messages.
+- As of 2026-09-29: phase 1 alpha, not release-qualified. Consult ROADMAP for current open work instead of inferring completion from old messages.

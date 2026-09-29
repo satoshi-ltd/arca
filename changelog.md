@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.12 — 2026-09-29
+
+- New `ROADMAP.md` owns everything still to do: next steps, maintainer decisions, pending Casa and desktop deployments, the phase 1 qualification gates, mobile, web, Umbrel, signing and website work, documentation debt, items to verify and close, and later phases, each with an ID, a status and its acceptance evidence. SPEC's remaining-work table moves there; AGENTS.md and README point to it.
+- SPEC passages that still described replicas falling back to hub previews (superseded by v0.6.9) are corrected.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 390 tests with two platform skips and all 216 mobile source tests pass. An adversarial review found no missing task; its corrections (a Casa redeploy listed for catalog totals every current hub already returns, the hosted CI history, the desktop build version, dated relink notes and two dropped SPEC links) are applied.
+
 ## 0.6.11 — 2026-09-29
 
 - Opening Info on a playing video pauses it and closing Info resumes it, instead of restarting it from the beginning. A video paused by hand, before or while Info is open, stays paused.
