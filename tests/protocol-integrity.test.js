@@ -80,13 +80,20 @@ for (const clear of [false, true])
     fs.writeFileSync(path.join(location, "note.txt"), "same");
     await r.api("/v1/select", { id: volume.id, path: location });
     if (clear) hub.engine.store.db.exec("DELETE FROM proposals");
+    const trashed = [];
+    r.engine.moveToTrash = async (files) => {
+      for (const file of files) {
+        trashed.push(path.basename(file));
+        fs.rmSync(file);
+      }
+    };
     await r.sync();
     const names = fs.readdirSync(location);
-    assert.equal(
-      names.some((x) => x.includes("conflict")),
-      true,
-    );
+    assert.deepEqual(trashed, ["note.txt"], "the stale copy goes to the Trash instead of being proposed");
+    assert.equal(names.some((x) => x.includes("conflict")), false);
     assert.equal(fs.existsSync(path.join(location, "note.txt")), false);
+    const head = hub.engine.store.current(volume.id, "note.txt");
+    assert.ok(!head || head.deleted, "the hub deletion is never replayed away");
   });
 test("SYNC-02 backup recovery ignore", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-audit-backup-"));

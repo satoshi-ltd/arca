@@ -31,6 +31,11 @@ async function setup(t, options = { timer: false }) {
           "Content-Type": "application/json",
         },
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),
+      }).catch((error) => {
+        throw new Error(
+          `${name} ${route}: ${error.cause?.code || error.cause?.message || error.message}`,
+          { cause: error },
+        );
       });
       const body = await r.json();
       if (!r.ok)
@@ -386,6 +391,15 @@ test("interrupted desktop snapshots release their hub leases", async (t) => {
   await replica.sync();
   assert.equal(replica.engine.error, null);
   assert.equal(read(replica, volume, "file-2.txt"), "2");
+});
+
+test("the daemon keeps idle connections long enough that clients never reuse a closing socket", async (t) => {
+  const { hub } = await setup(t);
+  const response = await fetch(`http://127.0.0.1:${hub.port}/v1/status`, {
+    headers: { Authorization: `Bearer ${hub.engine.config.adminToken}` },
+  });
+  await response.arrayBuffer();
+  assert.equal(response.headers.get("keep-alive"), "timeout=30");
 });
 
 test("a snapshot request abandoned during the hub scan leaves no lease", async (t) => {

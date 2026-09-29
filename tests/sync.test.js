@@ -216,6 +216,64 @@ test("selection is complete and unselection retains disk", async (t) => {
   assert.equal(read(a, volume, "a"), "latest");
 });
 
+test("relinking treats the hub as the source of truth and moves outdated local files to the Trash", async (t) => {
+  const { root, hub, volume, connect } = await setup(t);
+  const a = await connect("a");
+  write(hub, volume, "keep.txt", "shared");
+  write(hub, volume, "edit.txt", "first");
+  write(hub, volume, "gone.txt", "doomed");
+  await hub.sync();
+  await a.sync();
+  const local = a.engine.store.volume(volume.id).path;
+  await a.api("/v1/unselect", { id: volume.id, deleteFiles: false });
+  write(hub, volume, "edit.txt", "second");
+  fs.rmSync(path.join(hub.engine.store.volume(volume.id).path, "gone.txt"));
+  await hub.sync();
+  fs.writeFileSync(path.join(local, "new.txt"), "only here");
+  const trash = path.join(root, "trash");
+  fs.mkdirSync(trash);
+  a.engine.moveToTrash = async (files) => {
+    for (const file of files) fs.renameSync(file, path.join(trash, path.basename(file)));
+  };
+  await a.api("/v1/select", { id: volume.id, path: local });
+  await a.sync();
+  assert.equal(a.engine.error, null);
+  assert.deepEqual(fs.readdirSync(trash).sort(), ["edit.txt", "gone.txt"]);
+  assert.equal(fs.readFileSync(path.join(trash, "edit.txt"), "utf8"), "first");
+  assert.equal(read(a, volume, "edit.txt"), "second");
+  assert.equal(read(a, volume, "keep.txt"), "shared");
+  assert.equal(fs.existsSync(path.join(local, "gone.txt")), false);
+  const store = hub.engine.store;
+  assert.ok(!store.current(volume.id, "gone.txt") || store.current(volume.id, "gone.txt").deleted, "a hub deletion is not undone");
+  assert.equal(store.current(volume.id, "edit.txt").hash, a.engine.store.current(volume.id, "edit.txt").hash);
+  assert.ok(store.current(volume.id, "new.txt"), "files the hub never had still upload");
+  assert.equal(
+    store.rows(volume.id).filter((row) => row.path.includes(".conflict-") && !row.deleted).length,
+    0,
+    "no conflict copies",
+  );
+  a.engine.moveToTrash = async () => { throw new Error("Trash unavailable"); };
+  await a.api("/v1/unselect", { id: volume.id, deleteFiles: false });
+  write(hub, volume, "keep.txt", "changed on hub");
+  await hub.sync();
+  await a.api("/v1/select", { id: volume.id, path: local });
+  await assert.rejects(a.sync(), /Could not move 1 outdated local file to the Trash: Trash unavailable\. Move or delete it yourself \(keep\.txt\), then sync again\./);
+  const pages = [];
+  const json = a.engine.json.bind(a.engine);
+  a.engine.json = (route, ...args) => {
+    if (route.startsWith("/v1/changes?")) pages.push(route);
+    return json(route, ...args);
+  };
+  await assert.rejects(a.sync(), /Could not move 1 outdated local file/);
+  assert.deepEqual(pages, [], "a repeated Trash failure does not re-read the whole hub folder every cycle");
+  assert.equal(fs.readFileSync(path.join(local, "keep.txt"), "utf8"), "shared", "nothing is proposed or overwritten when the Trash fails");
+  assert.equal(store.current(volume.id, "keep.txt").hash, hub.engine.store.current(volume.id, "keep.txt").hash);
+  assert.equal(
+    store.rows(volume.id).filter((row) => row.path.includes(".conflict-") && !row.deleted).length,
+    0,
+  );
+});
+
 test("unlink with deleteFiles removes only files matching the hub and keeps everything else", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const a = await connect("a");

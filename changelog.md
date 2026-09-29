@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.14 — 2026-09-29
+
+- Relinking a desktop or server replica treats the hub as the source of truth, and so does any first sync that has not completed yet. Local files the hub deleted, or holds in a different version, go to the system Trash before anything is proposed, and the hub's version downloads. A relink no longer brings deleted files back or leaves conflict copies (the `photos-yuri` case). Files the hub never had still upload, and identical files are adopted.
+- Each volume uses its own trash, as the operating system does, so stale files on an external disk are never copied onto the startup disk. On macOS they go to the Trash, without Finder's Put Back. On Windows they go to the Recycle Bin, on fixed drives only, and never when the bin is turned off or too small (Windows would delete the file permanently instead). Linux follows the freedesktop Trash, and Docker replicas keep theirs in the state volume. If a file cannot be trashed, the folder stops with an error that names the files to move by hand, nothing is proposed, and the hub is not re-read on every retry.
+- The 0.6.13 release pipeline failed on one Windows test with `fetch failed`, which reran green. The likely cause is Node's 5-second keep-alive: a client reused an idle connection just as the daemon closed it. Daemons now keep idle connections for 30 seconds, which also removes that rare transient error between replicas and the hub. The test helpers report the underlying network error.
+- Verified locally: clean export on macOS with Node 24.14.0 and root-only dependencies; the exact macOS CI command passes 396 tests with two platform skips and all 223 mobile source tests pass. An adversarial review's findings (Windows permanently deleting files the Recycle Bin cannot hold, a possible hang on a Recycle Bin dialog, stale files on other volumes copied onto the startup disk, a hub re-read on every failing cycle, the scope wording) are fixed with tests. The Windows Recycle Bin path is exercised with a simulated PowerShell only; a real Windows run is still open.
+
 ## 0.6.13 — 2026-09-29
 
 - Phones keep each synchronized file once. Downloads and captured local edits used to stay in the app's object store after reaching the folder, doubling the space used: the Fold held about 55 GB for 26 GB of photos. The store now keeps only files still in transit (queued uploads and downloads being applied), and every successful sync collects the rest, so existing duplicates are freed on the first sync after updating.

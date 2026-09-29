@@ -25,6 +25,7 @@ import {
 } from "./maintenance.js";
 import { SyncWork, covers } from "./sync-work.js";
 import { Scanner } from "./scanner.js";
+import { moveToTrash } from "./trash.js";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -57,6 +58,8 @@ export class Engine {
   constructor(home) {
     this.store = new Store(home);
     this.config = this.store.config;
+    this.moveToTrash = moveToTrash;
+    this.staleHeads = new Map();
     if (this.config.destroyPending) {
       try {
         this.gallery?.close();
@@ -655,6 +658,50 @@ export class Engine {
     );
     return result;
   }
+  // Until a first sync completes, the hub is the source of truth for files the local index does not know.
+  async setAsideStale(v, disk, known) {
+    const unknown = [...disk].filter(
+      ([name, item]) => !item.directory && !known.has(name),
+    );
+    if (!unknown.length) return;
+    const saved = this.staleHeads.get(v.id);
+    const heads =
+      saved && Date.now() - saved.at < 10 * 60 * 1000 ? saved.heads : new Map();
+    if (heads !== saved?.heads)
+      for (let after = 0; ; ) {
+        const page = await this.json(
+          `/v1/changes?${new URLSearchParams({ volume: v.id, after })}`,
+        );
+        for (const row of page.files) heads.set(row.path, row);
+        if (page.next == null) break;
+        after = page.next;
+      }
+    const stale = unknown.filter(([name, item]) => {
+      const head = heads.get(name);
+      return (
+        head &&
+        !head.directory &&
+        (head.deleted || entryKey(head) !== entryKey(item))
+      );
+    });
+    if (!stale.length) return;
+    try {
+      await this.moveToTrash(
+        stale.map(([name]) => this.store.filePath(v, name)),
+      );
+    } catch (error) {
+      this.staleHeads.set(v.id, { at: Date.now(), heads });
+      fail(
+        `Could not move ${stale.length} outdated local ${stale.length === 1 ? "file" : "files"} to the Trash: ${error.message}. Move or delete ${stale.length === 1 ? "it" : "them"} yourself (${stale
+          .slice(0, 3)
+          .map(([name]) => name)
+          .join(", ")}${stale.length > 3 ? ", …" : ""}), then sync again.`,
+        409,
+      );
+    }
+    this.staleHeads.delete(v.id);
+    for (const [name] of stale) disk.delete(name);
+  }
   countProgress(size) {
     const p = this.progress;
     p.filesDone++;
@@ -827,6 +874,7 @@ export class Engine {
             const known = new Map(
               s.rowsInScope(v.id, plan.paths).map((r) => [r.path, r]),
             );
+            if (!v.last_sync) await this.setAsideStale(v, disk, known);
             const diskNames = new Set(
               [...disk.keys()].map((name) => name.toLowerCase()),
             );
