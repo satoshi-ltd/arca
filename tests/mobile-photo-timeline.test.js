@@ -1044,3 +1044,69 @@ test("the phone's derivative cache is flat, so older nested caches are never reu
   assert.match(source, /return isFlatCacheFile\(uri, root\.uri\) && new File\(uri\)\.exists;/);
   assert.match(source, /for \(const entry of entries\)\s*if \(entry instanceof Directory\)\s*try \{\s*entry\.delete\(\);/);
 });
+
+test("thumbnails prepare in parallel, stop when cancelled and never fail an original", async () => {
+  const { prepareThumbnails, nativeFirst } = await import("../apps/mobile/src/thumbnail-cache.js");
+  let running = 0;
+  let peak = 0;
+  const io = {
+    exists: async () => false,
+    render: async (item) => {
+      running++;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      running--;
+      if (item.path === "broken.heic") throw new Error("decode");
+      return `cache://${item.path}`;
+    },
+  };
+  const items = ["a.jpg", "b.heic", "c.jpg", "broken.heic", "d.mov", "e.jpg"].map((path, n) => ({ path, signature: `s${n}` }));
+  const done = await prepareThumbnails(items, {}, io, () => true, () => {}, items, 3);
+  assert.equal(peak, 3);
+  assert.deepEqual(Object.keys(done).sort(), ["a.jpg", "b.heic", "c.jpg", "d.mov", "e.jpg"]);
+  let alive = true;
+  let rendered = 0;
+  const cancelled = await prepareThumbnails(
+    items,
+    {},
+    { exists: async () => false, render: async (item) => { rendered++; alive = false; return `cache://${item.path}`; } },
+    () => alive,
+    () => {},
+    items,
+    3,
+  );
+  assert.equal(cancelled, null);
+  assert.ok(rendered <= 3, "cancellation stops every worker");
+
+  const calls = [];
+  assert.equal(await nativeFirst(async () => calls.push("native"), async () => "fallback"), null);
+  assert.equal(await nativeFirst(async () => { throw new Error("old binary"); }, async () => "fallback"), "fallback");
+  assert.equal(await nativeFirst(null, async () => "fallback"), "fallback");
+  assert.deepEqual(calls, ["native"]);
+});
+
+test("the gallery grid never decodes originals and keeps preparing thumbnails while folders sync", () => {
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const thumbnails = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
+  const viewer = fs.readFileSync(new URL("../apps/mobile/src/PhotoViewer.jsx", import.meta.url), "utf8");
+  assert.doesNotMatch(gallery, /if \(loading\) return;/);
+  assert.match(gallery, /\}, \[visibleKey, store, scope, volume, io, density\]\);/);
+  assert.match(gallery, /: item\.upload\s*\? item\.uri\s*: null;/, "without a derivative a tile stays a placeholder");
+  assert.match(gallery, /displayRef\.current\(item\),\s*\}\),\s*\[\],/, "sync status changes never restart thumbnail preparation");
+  assert.match(gallery, /\],\s*3,\s*\);/);
+  assert.match(app, /\}, \[\s*folder\?\.id,\s*listedFolder\?\.files,\s*listedFolder\?\.bytes,\s*listedFolder\?\.changes,\s*\]\);/, "remote renames and same-size edits refresh the listing");
+  const open = app.slice(app.indexOf("  async function openFolder(f) {"), app.indexOf("  async function getHistory("));
+  assert.doesNotMatch(open, /listFiles\(/, "the folder effect lists once, after the new folder is shown");
+  assert.match(thumbnails, /if \(rendered\+\+ % 24 === 0\) pruneCache\(root, target\.uri\);/);
+  assert.match(thumbnails, /\["large-", 256 \* 1024 \*\* 2\],\s*\["", 512 \* 1024 \*\* 2\],/);
+  assert.match(thumbnails, /!file\.name\.endsWith\("\.part"\)/);
+  const swift = fs.readFileSync(new URL("../apps/mobile/modules/arca-network/ios/Thumbnails.swift", import.meta.url), "utf8");
+  assert.doesNotMatch(swift, /\? try await/, "Swift rejects try to the right of a ternary");
+  assert.doesNotMatch(app, /status\.syncingVolume, status\.last\]/);
+  assert.match(app, /return coalescedRun\(/);
+  assert.match(thumbnails, /nativeThumbnail\(\s*entry\.uri,\s*target\.uri,\s*large \? 2048 : 360,\s*!large,\s*false,\s*\)/);
+  assert.match(thumbnails, /nativeThumbnail\(uri, target\.uri, 360, true, true\)/);
+  assert.match(viewer, /preview=\{item\.preview\}/);
+  assert.match(viewer, /\{!loaded && !!preview && \(/);
+});

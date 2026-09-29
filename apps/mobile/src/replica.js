@@ -55,6 +55,7 @@ export class Replica {
     this.gallery = new Gallery(this, media);
     this.galleryDeletions = new GalleryDeletions(this);
     this.busy = false;
+    this.folderChanges = new Map();
     this.stopped = false;
     this.progress = null;
     this.scope = null;
@@ -230,9 +231,9 @@ export class Replica {
       this.changed();
     }
   }
-  async cleanTransferObjects(scope, removedHashes) {
-    this.verified.clear();
-    const retained = new Set(await this.store.referencedHashes(scope));
+  // Working copies hold every file once; objects exist only while a transfer still needs them.
+  async cleanTransferObjects(scope, removedHashes = new Set()) {
+    const retained = new Set(await this.store.transferHashes(scope));
     for (const location of ["object", "partial"]) {
       const root = this.files.parent(
         this.files[location](scope, "0".repeat(64)),
@@ -243,8 +244,10 @@ export class Replica {
           /^[a-f0-9]{64}$/.test(entry.path) &&
           !retained.has(entry.path) &&
           (location === "object" || removedHashes.has(entry.path))
-        )
+        ) {
+          this.verified.delete(entry.uri);
           await this.files.remove(entry.uri);
+        }
       }
     }
   }
@@ -712,8 +715,16 @@ export class Replica {
       await this.snapshotLocal(row.volume, conflict, kept, 0);
     }
     await this.store.journal(this.scope, row);
+    const touched = () =>
+      this.folderChanges.set(
+        row.volume,
+        (this.folderChanges.get(row.volume) || 0) + 1,
+      );
     if (row.deleted) {
-      if (exists) await this.files.remove(target);
+      if (exists) {
+        await this.files.remove(target);
+        touched();
+      }
     } else if (actual !== row.hash) {
       const object = await this.download(row.hash, row.size);
       await this.space(row.size);
@@ -721,6 +732,7 @@ export class Replica {
       const temp = this.files.parent(target) + "/.arca-transfer-" + row.hash;
       await this.files.copy(object, temp);
       await this.files.replace(temp, target);
+      touched();
     }
     await this.store.applied(this.scope, row);
   }
@@ -1101,6 +1113,7 @@ export class Replica {
           this.changed();
         }
       }
+      await this.cleanTransferObjects(this.scope).catch(() => {});
       if (errors.length) {
         this.error = errors.join("; ");
         await this.report();

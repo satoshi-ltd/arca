@@ -445,13 +445,19 @@ export function FolderGallery({
   useEffect(() => {
     onSummary?.({ count: Math.max(loaded.length, source.total || 0) });
   }, [loaded.length, source.total]);
+  const displayRef = useRef(display);
+  displayRef.current = display;
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
   const io = useMemo(
     () => ({
       exists: thumbnailFiles.exists,
       render: (item) =>
-        item.kind === "video" ? thumbnailFiles.poster(item) : display(item),
+        item.kind === "video"
+          ? thumbnailFiles.poster(item)
+          : displayRef.current(item),
     }),
-    [nativeSource],
+    [],
   );
   useEffect(() => {
     let active = true;
@@ -465,7 +471,6 @@ export function FolderGallery({
       if (!active) return;
       thumbnailProgress.current = { key, value: cached };
       setThumbnails(cached);
-      if (loading) return;
       const next = await prepareThumbnails(
         visibleItems
           .filter((item) => !item.upload)
@@ -482,13 +487,15 @@ export function FolderGallery({
         complete
           ? loaded
           : [...loaded, ...Object.keys(cached).map((path) => ({ path }))],
+        3,
       );
-      if (active && next) await store.set(key, next).catch(() => {});
+      if (active && next && !loadingRef.current)
+        await store.set(key, next).catch(() => {});
     })().catch(() => {});
     return () => {
       active = false;
     };
-  }, [visibleKey, loading, store, scope, volume, io, density]);
+  }, [visibleKey, store, scope, volume, io, density]);
   const followTimer = useRef(null),
     followedAt = useRef(0);
   const follow = (y) => {
@@ -788,19 +795,22 @@ export function FolderGallery({
     () => mergeTimeline({ uploads: pending }),
     [pending],
   );
-  const photos = useMemo(
-    () =>
-      [...pendingItems, ...loaded].map((item) =>
-        item.kind === "video"
-          ? { ...item, poster: thumbnails[item.path]?.uri }
-          : item,
-      ),
-    [pendingItems, loaded, thumbnails],
-  );
   const thumb = (item) =>
     thumbnails[item.path]?.signature === item.signature
       ? thumbnails[item.path].uri
-      : item.uri || null;
+      : item.upload
+        ? item.uri
+        : null;
+  const photos = useMemo(
+    () =>
+      [...pendingItems, ...loaded].map((item) => {
+        const preview = thumb(item);
+        return item.kind === "video"
+          ? { ...item, poster: preview }
+          : { ...item, preview };
+      }),
+    [pendingItems, loaded, thumbnails],
+  );
   const actions = useRef({});
   actions.current = {
     open: (item) =>

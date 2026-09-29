@@ -1,6 +1,6 @@
 # Arca — specification and roadmap
 
-Updated 2026-09-29. **v0.6.12 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+Updated 2026-09-29. **v0.6.13 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AGENTS.md) for contributor instructions. This document owns implementation status, remaining work, technical contracts, operations and the shared design system. Original visual references are not competing specifications.
 
@@ -17,6 +17,8 @@ Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AG
 - [Design system and interactions](#design-system-and-interactions)
 
 ## Resume work here
+
+September 29 v0.6.13 mobile storage and gallery thumbnails (source; native build required): the Fold used about 55 GB for 26 GB of photos and most gallery tiles stayed empty. Downloads were kept twice (the object store plus the working copy, never collected), and captured local edits too. Now `cleanTransferObjects` runs after every successful cycle and keeps only hashes still in transit (`transferHashes`: pending uploads and applying rows). The gallery's folder walk restarted on every sync status change while thumbnail preparation waited for it, so tiles fell back to full-resolution originals (HEIC unrenderable on Android). Now `coalescedRun` allows one walk per folder, re-run only when the replica applies a change to that folder (`folderChanges`) or its file count or size moves. Preparation no longer waits, runs three at a time and ignores sync status churn, and tiles show placeholders until a derivative exists. Derivatives come from `ArcaNetwork.thumbnail` (Android `Thumbnails.kt`, iOS `Thumbnails.swift`), with manipulator/expo-video fallbacks on older binaries. Verified: the Android module compiles in debug and release test builds, `Thumbnails.swift` typechecks against the iOS 16.4 SDK and the JS suites pass. A release test build paired on the emulator with an isolated local hub and began downloading a real 98-file HEIC/JPG/MOV sample, but the emulator crashed before the gallery check. Device acceptance on the Fold is open.
 
 September 29 v0.6.11 gallery follow-ups (source, no build): three known gaps from the v0.6.9/v0.6.10 reviews are fixed. Opening Info no longer restarts a video: it pauses and resumes it. The phone's derivative cache is flat (`isFlatCacheFile`), so previews cached from the hub by v0.6.8 and earlier (`arca-gallery/hub/`) are never reused and are deleted at the next derivative render. The desktop gallery header counts videos apart from photos, using a new per-month `videos` count in the gallery timeline, and every refresh rewrites it (a page cached by 0.6.10 has no video counts). The desktop header needs the new desktop daemon, and the web header needs Casa redeployed; mobile only needs a Metro reload.
 

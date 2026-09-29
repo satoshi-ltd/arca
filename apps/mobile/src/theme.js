@@ -173,6 +173,11 @@ export function styles(
       height: "100%",
       opacity: 0.6,
     },
+    viewerPreview: {
+      position: "absolute",
+      width: "100%",
+      height: "100%",
+    },
     viewerVideoSurface: {
       flex: 1,
       width: "100%",

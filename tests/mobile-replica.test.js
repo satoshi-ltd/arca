@@ -544,7 +544,7 @@ test("confirmed mobile removal discards offline changes even after the hub share
   assert.deepEqual(f.requests, []);
 });
 
-test("mobile unsync retries failed cleanup and retains other folders and their objects", async (t) => {
+test("mobile unsync retries failed cleanup and retains other folders' files", async (t) => {
   const f = await fixture(t);
   const { replica, volume, files, store, daemon } = f;
   fs.writeFileSync(path.join(volume.path, "saved.txt"), "original");
@@ -582,7 +582,6 @@ test("mobile unsync retries failed cleanup and retains other folders and their o
   assert.equal(await store.folder(replica.scope, volume.id), undefined);
   assert.equal(fs.existsSync(files.folder(replica.scope, volume.id)), false);
   assert.equal(fs.existsSync(orphan), false);
-  assert.equal(fs.existsSync(files.object(replica.scope, row.hash)), true);
   assert.equal(
     fs.readFileSync(files.work(replica.scope, "other", "saved.txt"), "utf8"),
     "other copy",
@@ -3443,4 +3442,88 @@ test("mobile pulls a large folder without reloading its full index for each file
   for (let i = 0; i < 96; i++)
     assert.equal(fs.readFileSync(f.files.work(f.replica.scope, f.volume.id, `photo-${i}.jpg`), "utf8"), `photo ${i}`);
   assert.equal((await f.store.folder(f.replica.scope, f.volume.id)).initialized, 1);
+});
+
+test("mobile keeps each synchronized file once and objects only while a transfer needs them", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, files, store, daemon } = f;
+  const objects = () =>
+    fs.existsSync(files.parent(files.object(replica.scope, "0".repeat(64))))
+      ? fs.readdirSync(files.parent(files.object(replica.scope, "0".repeat(64))))
+      : [];
+  fs.writeFileSync(path.join(volume.path, "photo.jpg"), crypto.randomBytes(4096));
+  fs.writeFileSync(path.join(volume.path, "same.jpg"), fs.readFileSync(path.join(volume.path, "photo.jpg")));
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  assert.equal(
+    await files.hash(files.work(replica.scope, volume.id, "photo.jpg")),
+    await files.hash(path.join(volume.path, "photo.jpg")),
+  );
+  assert.ok(fs.existsSync(files.work(replica.scope, volume.id, "same.jpg")));
+  assert.deepEqual(objects(), [], "downloaded files are not kept a second time as objects");
+  const leftover = crypto.randomBytes(1024);
+  const stale = crypto.createHash("sha256").update(leftover).digest("hex");
+  fs.writeFileSync(files.object(replica.scope, stale), leftover);
+  fs.writeFileSync(files.work(replica.scope, volume.id, "local.bin"), crypto.randomBytes(2048));
+  const hold = f.stall;
+  let captured = null;
+  hold((url, options) => {
+    if (options.method === "PUT") {
+      captured = objects();
+      throw new TypeError("Network request failed");
+    }
+    return fetch(url.replace("https://fixture.invalid", `http://127.0.0.1:${daemon.port}`), options);
+  });
+  await replica.sync();
+  const pendingHash = (await store.pending(replica.scope, volume.id)).find((op) => op.path === "local.bin")?.hash;
+  assert.ok(pendingHash, "the local edit waits for the hub");
+  assert.ok(captured.includes(pendingHash), "an upload in flight keeps its captured object");
+  hold(null);
+  await sync(f);
+  assert.ok(daemon.engine.store.current(volume.id, "local.bin"));
+  assert.deepEqual(objects(), [], "accepted uploads and unreferenced leftovers are collected");
+});
+
+test("a folder that fails still lets the cycle free objects no transfer needs", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, files, daemon } = f;
+  fs.writeFileSync(path.join(volume.path, "a.txt"), "a");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const leftover = files.object(replica.scope, "b".repeat(64));
+  fs.writeFileSync(leftover, "stale duplicate");
+  const walk = files.walk;
+  files.walk = async function* (root, ...rest) {
+    if (root.startsWith(files.folder(replica.scope, volume.id))) throw new Error("disk error");
+    yield* walk.call(this, root, ...rest);
+  };
+  try {
+    await replica.sync(true);
+  } finally {
+    files.walk = walk;
+  }
+  assert.match(replica.error || "", /disk error/);
+  assert.equal(fs.existsSync(leftover), false);
+});
+
+test("mobile counts a folder's applied changes so views relist only when its files changed", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon } = f;
+  fs.writeFileSync(path.join(volume.path, "one.txt"), "1");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const first = replica.folderChanges.get(volume.id);
+  assert.ok(first > 0);
+  await sync(f);
+  assert.equal(replica.folderChanges.get(volume.id), first, "an idle cycle changes nothing");
+  fs.renameSync(path.join(volume.path, "one.txt"), path.join(volume.path, "two.txt"));
+  await daemon.engine.cycle();
+  await sync(f);
+  assert.ok(replica.folderChanges.get(volume.id) > first, "a remote rename relists");
 });

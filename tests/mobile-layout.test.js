@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { coalescedRun } from "../apps/mobile/src/folder-listing.js";
 import { browseEntries } from "../apps/mobile/src/browse.js";
 import { sidebarLayout, fileMenuPosition } from "../apps/mobile/src/layout.js";
 import { icons, iconNames } from "../apps/mobile/src/icons.js";
@@ -241,13 +242,13 @@ test("mobile single-line fields reserve stable geometry and grow only for access
     }
 });
 
-test("mobile folder refresh retains its cached files and ignores an older folder read", async () => {
+test("mobile folder refresh retains its cached files and never paints an older folder read", async () => {
   const source = fs.readFileSync(
     new URL("../apps/mobile/src/App.jsx", import.meta.url),
     "utf8",
   );
   const method = source.slice(
-    source.indexOf("  async function listFiles("),
+    source.indexOf("  function listFiles("),
     source.indexOf("  const notices ="),
   );
   let entries, release;
@@ -281,7 +282,9 @@ test("mobile folder refresh retains its cached files and ignores an older folder
       },
     },
     mounted: { current: true },
-    fileRequest: { current: 0 },
+    listing: { current: new Map() },
+    shownFolder: { current: "hub:A" },
+    coalescedRun,
     folderLists: { current: cache },
     setEntries: (value) => {
       entries = value;
@@ -294,6 +297,7 @@ test("mobile folder refresh retains its cached files and ignores an older folder
   const oldRead = context.readFolder("A");
   assert.equal(entries[0].path, "last-known.jpg");
   while (!release) await new Promise((resolve) => setImmediate(resolve));
+  context.shownFolder.current = "hub:B";
   const newRead = context.readFolder("B");
   assert.equal(
     entries.length,
@@ -308,8 +312,8 @@ test("mobile folder refresh retains its cached files and ignores an older folder
   assert.equal(persisted[0].key, "gallery-list:hub:B");
   release();
   await oldRead;
-  assert.equal(entries[0].path, "B.jpg");
-  assert.equal(cache.get("hub:A")[0].path, "last-known.jpg");
+  assert.equal(entries[0].path, "B.jpg", "the older folder's walk never paints over the shown folder");
+  assert.equal(cache.get("hub:A")[0].path, "A.jpg", "the finished walk is kept for when that folder opens again");
   const repeat = context.readFolder("B");
   assert.equal(entries[0].path, "B.jpg");
   await repeat;
@@ -544,7 +548,7 @@ test("folder rows show the gallery icon the hub assigns and selection states the
 test("the mobile gallery never fetches pixels from the hub and falls back to local files after repeated hub failures", () => {
   const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(gallery, /hub-previews|hubPreview|previews\./);
-  assert.match(gallery, /render: \(item\) =>\s*item\.kind === "video" \? thumbnailFiles\.poster\(item\) : display\(item\),/);
+  assert.match(gallery, /render: \(item\) =>\s*item\.kind === "video"\s*\? thumbnailFiles\.poster\(item\)\s*: displayRef\.current\(item\),/);
   assert.match(gallery, /const online = linked && failures < 2;/);
   assert.match(gallery, /setGallery\(fresh\);\s*setFailures\(0\);/);
   assert.match(gallery, /setFailures\(\(count\) => count \+ 1\);\s*setError\(e\.message\);/);

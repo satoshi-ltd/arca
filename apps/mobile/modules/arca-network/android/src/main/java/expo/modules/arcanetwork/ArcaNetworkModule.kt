@@ -89,6 +89,11 @@ class ArcaNetworkModule : Module() {
       digest.digest().joinToString("") { "%02x".format(it) }
       }
     }
+    AsyncFunction("thumbnail") Coroutine { source: String, destination: String, size: Int, cover: Boolean, video: Boolean ->
+      withContext(Dispatchers.IO) {
+        writeThumbnail(appContext.reactContext ?: error("App is unavailable"), source, destination, size, cover, video)
+      }
+    }
     AsyncFunction("exportGalleryAsset") Coroutine { id: String, destination: String ->
       withContext(Dispatchers.IO) {
       exportGalleryAsset(appContext.reactContext ?: error("App is unavailable"), id, destination)

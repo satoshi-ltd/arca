@@ -38,8 +38,10 @@ const begin = (touches, state, gesture) =>
       }
     : { pinch: false, state, dx: gesture.dx, dy: gesture.dy };
 
-function ZoomableImage({ uri, width, height, onZoomed, onError }) {
+function ZoomableImage({ uri, preview, width, height, onZoomed, onError }) {
   const { s } = useDesign();
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => setLoaded(false), [uri]);
   const state = useRef(rest);
   const scale = useRef(new Animated.Value(1)).current;
   const offset = useRef(new Animated.ValueXY()).current;
@@ -164,9 +166,17 @@ function ZoomableImage({ uri, width, height, onZoomed, onError }) {
           tap(event.nativeEvent.pageX, event.nativeEvent.pageY)
         }
       >
+        {!loaded && !!preview && (
+          <Image
+            source={{ uri: preview }}
+            resizeMode="contain"
+            style={s.viewerPreview}
+          />
+        )}
         <Animated.Image
           source={{ uri }}
           resizeMode="contain"
+          onLoad={() => setLoaded(true)}
           style={[
             viewport,
             {
@@ -250,12 +260,20 @@ function Page({
   if (!uri)
     return (
       <View style={frame}>
+        {!!item.preview && (
+          <Image
+            source={{ uri: item.preview }}
+            resizeMode="contain"
+            style={s.viewerPreview}
+          />
+        )}
         <Busy color="#fff" />
       </View>
     );
   return (
     <ZoomableImage
       uri={uri}
+      preview={item.preview}
       width={width}
       height={height}
       onZoomed={onZoomed}

@@ -93,6 +93,7 @@ import { FileHistory } from "./FileHistory";
 import { IncomingShare } from "./IncomingShare";
 import { GalleryDateRail } from "./GalleryDateRail";
 import { FolderGallery } from "./FolderGallery";
+import { coalescedRun } from "./folder-listing";
 import { FolderRecent } from "./FolderRecent";
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize } from "./format";
@@ -155,7 +156,8 @@ export default function App() {
   const engine = useRef(null),
     action = useRef(false),
     mounted = useRef(true),
-    fileRequest = useRef(0);
+    listing = useRef(new Map()),
+    shownFolder = useRef(null);
   const [replica, setReplica] = useState(null);
   const [state, setState] = useState(client.state()),
     [view, setView] = useState("Folders"),
@@ -217,7 +219,11 @@ export default function App() {
       ]);
     if (!mounted.current) return;
     setState((old) => retainSnapshot(old, client.state()));
-    const visibleFolders = folders.map((folder) => {
+    const visibleFolders = folders.map((stored) => {
+      const folder = {
+        ...stored,
+        changes: r.folderChanges?.get(stored.id) || 0,
+      };
       const transient =
         folder.issue &&
         (errorNotice(folder.issue).offline ||
@@ -261,49 +267,52 @@ export default function App() {
       if (mounted.current) setError(error.message || "Synchronization failed.");
     });
   }
-  async function listFiles(id = folder?.id) {
-    if (!id || !engine.current) return;
-    const request = ++fileRequest.current;
+  function listFiles(id = folder?.id) {
+    if (!id || !engine.current) return Promise.resolve();
     const r = engine.current;
     const scope = r.scope;
     const key = `${scope}:${id}`;
-    const known = folderLists.current.get(key);
-    setEntries(known || []);
-    setFilesLoading(true);
-    try {
-      if (!known) {
-        const cached = await r.store
-          .get(`gallery-list:${scope}:${id}`, [])
-          .catch(() => []);
-        if (
-          mounted.current &&
-          request === fileRequest.current &&
-          scope === r.scope
-        )
-          setEntries(cached);
-      }
-      const list = [];
-      const root = r.files.folder(scope, id);
-      if (await r.files.exists(root))
-        for await (const e of r.files.walk(root)) list.push(e);
-      if (
-        mounted.current &&
-        request === fileRequest.current &&
-        scope === r.scope
-      ) {
+    const shown = () =>
+      mounted.current && shownFolder.current === key && scope === r.scope;
+    if (listing.current.has(key) && shown()) {
+      setEntries(folderLists.current.get(key) || []);
+      if (!folderLists.current.has(key)) setFilesLoading(true);
+    }
+    return coalescedRun(
+      listing.current,
+      key,
+      async (first) => {
+        if (first) {
+          const known = folderLists.current.get(key);
+          if (shown()) {
+            setEntries(known || []);
+            if (!known) setFilesLoading(true);
+          }
+          if (!known) {
+            const cached = await r.store
+              .get(`gallery-list:${scope}:${id}`, [])
+              .catch(() => []);
+            if (shown() && !folderLists.current.has(key)) setEntries(cached);
+          }
+        }
+        const list = [];
+        const root = r.files.folder(scope, id);
+        if (await r.files.exists(root))
+          for await (const e of r.files.walk(root)) list.push(e);
         const sorted = list.sort((a, b) => a.path.localeCompare(b.path));
+        folderLists.current.delete(key);
         folderLists.current.set(key, sorted);
         while (folderLists.current.size > 20)
           folderLists.current.delete(folderLists.current.keys().next().value);
-        setEntries(sorted);
+        if (shown()) setEntries(sorted);
         await r.store
           .set(`gallery-list:${scope}:${id}`, sorted.slice(0, 2000))
           .catch(() => {});
-      }
-    } finally {
-      if (mounted.current && request === fileRequest.current)
-        setFilesLoading(false);
-    }
+      },
+      () => {
+        if (shown()) setFilesLoading(false);
+      },
+    );
   }
   const notices = useMemo(() => createNoticeStore(), []);
   const [photoCount, setPhotoCount] = useState(null);
@@ -450,13 +459,18 @@ export default function App() {
       engine.current?.stop();
     };
   }, []);
+  shownFolder.current =
+    folder && engine.current ? `${engine.current.scope}:${folder.id}` : null;
+  const listedFolder = locals.find((f) => f.id === folder?.id);
   useEffect(() => {
     if (!folder || !engine.current) return;
     listFiles(folder.id).catch((e) => setError(e.message));
-    return () => {
-      fileRequest.current++;
-    };
-  }, [folder?.id, status.syncingVolume, status.last]);
+  }, [
+    folder?.id,
+    listedFolder?.files,
+    listedFolder?.bytes,
+    listedFolder?.changes,
+  ]);
   const connection = state.connection,
     connected = connection?.linked,
     catalog = state.catalog,
@@ -663,7 +677,6 @@ export default function App() {
     setDirectory("");
     setVisibleCount(100);
     setSearch("");
-    await listFiles(f.id);
   }
   async function getHistory(target = null, more = false) {
     const selectedIds = historyFolderIds(

@@ -47,6 +47,9 @@ public class ArcaNetworkModule: Module {
         }
       }
     }
+    AsyncFunction("thumbnail") { (source: String, destination: String, size: Int, cover: Bool, video: Bool) async throws in
+      try await Thumbnails.write(source: source, destination: destination, size: size, cover: cover, video: video)
+    }
     AsyncFunction("exportGalleryAsset") { (id: String, destination: String) async throws -> [[String: String]] in
       return try await GalleryExport.export(id: id, destination: destination)
     }

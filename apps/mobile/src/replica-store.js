@@ -301,13 +301,11 @@ export class ReplicaStore {
       volume,
     );
   }
-  async referencedHashes(scope) {
+  async transferHashes(scope) {
     const rows = await this.db.getAllAsync(
       `
-      SELECT json_extract(row, '$.hash') AS hash FROM files WHERE scope=?
-      UNION SELECT json_extract(op, '$.hash') FROM pending WHERE scope=?
+      SELECT json_extract(op, '$.hash') AS hash FROM pending WHERE scope=?
       UNION SELECT json_extract(row, '$.hash') FROM applying WHERE scope=?`,
-      scope,
       scope,
       scope,
     );
