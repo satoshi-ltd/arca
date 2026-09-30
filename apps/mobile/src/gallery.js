@@ -131,7 +131,6 @@ export class Gallery {
     r.importing = r.busy = true;
     r.stopped = false;
     try {
-      await r.client.refresh();
       r.check();
       const folder = await r.store.folder(r.scope, volume);
       const source = galleryConfig(folder);
@@ -153,11 +152,14 @@ export class Gallery {
         };
         if (!asset.assetId)
           item.picked = { uri: asset.uri, name: item.name, key: "original" };
+        item.manual = true;
         item.retryAt = 0;
         await r.store.putGalleryAsset(r.scope, volume, item);
         if (!queued.some((previous) => previous.id === item.id))
           queued.push(item);
       }
+      await r.client.refresh();
+      r.check();
       const policy = await this.policy(volume);
       let failure;
       for (const item of queued) {
@@ -367,6 +369,8 @@ export class Gallery {
       for (const resource of exported) {
         r.check();
         const stat = await r.files.stat(resource.uri);
+        if (!stat && item.picked)
+          throw new Error("The picked photo is no longer available. Pick it again.");
         if (!stat || stat.directory || stat.size > 100 * 1024 ** 3)
           throw new Error("Unsupported gallery resource size");
         const prepared = {
@@ -485,6 +489,40 @@ export class Gallery {
       await r.files.clearGalleryStage(r.scope, folder.id);
     }
   }
+  async sendManual(folder, source) {
+    const r = this.r;
+    const manual = await r.store.galleryManual(
+      r.scope,
+      folder.id,
+      Date.now(),
+      24,
+    );
+    if (!manual.length) return;
+    r.moreGalleryWork ||= manual.length === 24;
+    const policy = await this.policy(folder.id);
+    for (const item of manual) {
+      r.check();
+      try {
+        await this.send(folder, item, policy);
+      } catch (error) {
+        if (r.syncAbort?.signal.aborted) r.check();
+        if (
+          ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
+          isHubUnreachable(error)
+        )
+          throw error;
+        item.state = "failed";
+        item.issue = error.message;
+        item.retryAt = Date.now() + 60000;
+        await r.store.putGalleryAsset(r.scope, folder.id, item);
+      }
+    }
+    source.summary = await r.store.gallerySummary(r.scope, folder.id);
+    source.issue = source.summary.failed
+      ? "Some photos could not be uploaded. Retry to continue."
+      : null;
+    await r.store.setGallery(r.scope, folder.id, source);
+  }
   async cycle(folder) {
     const r = this.r;
     let source = await r.store.gallery(r.scope, folder.id);
@@ -517,7 +555,10 @@ export class Gallery {
       r.moreGalleryWork ||= registration.length === 24;
       await r.galleryDeletions.receive(folder.id);
     }
-    if (!source.enabled) return;
+    if (!source.enabled) {
+      await this.sendManual(folder, source);
+      return;
+    }
     try {
       const permission = await this.permission(source.videos);
       source.limited = permission.accessPrivileges === "limited";

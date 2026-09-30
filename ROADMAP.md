@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-MOB-ADDPHOTOS** — Add photos… offline saves nothing while the notice says it did
-  `bug · agent · high`
-  accept: offline, Add photos… on an album folder records the picked photos as pending when a catalog is cached (or is disabled with a reason when none is), and they upload after reconnecting; the notice never claims edits were saved when nothing was. Replica test offline then online.
 - **MOB-MOVE-DOWNLOADS** — Move verified downloads into place
   `feature · agent · high`
   accept: materializing a download moves the verified object instead of copying it when no other row in the same pull needs that hash, so applying a file never needs space for two copies; a replica test proves one copy during apply and identical-hash rows still materialize.
@@ -96,7 +93,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
@@ -320,6 +317,13 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **CI-WIN-INTERRUPT-FLAKY** — Windows timing of the interrupted-sync interface test
   `chore · agent · low`
   accept: `interrupting sync does not abort an independent interface request` (`tests/sync.test.js`) no longer depends on a 6-second limit that a loaded Windows runner exceeded once (v0.6.27 run, green on rerun); raise the limit or wait on the events the test already observes, and explain the choice in the commit.
+
+- **MOB-PICKED-DURABLE** — Picked photos outlive a long offline stretch
+  `bug · agent · low`
+  accept: a photo picked with Add photos… is copied into app-owned storage when it is journaled, so the OS clearing the picker cache or an iOS container path change cannot lose it, and picks still upload when library permission is revoked or the linked album is gone (today the cycle's permission and album checks run first); a picked photo whose file is gone can be dismissed instead of staying failed until picked again, and Sync now makes failed manual picks retry at once while automatic uploads are off; replica tests for each.
+- **MOB-PICKED-RETRY** — Retry on the offline notice reopens the photo picker
+  `bug · agent · low`
+  accept: after an offline Add photos… failure, the notice's retry starts a sync instead of reopening the picker; a replica or layout test.
 
 ## Later phases
 

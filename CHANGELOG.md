@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.29 — 2026-09-30
+
+- Add photos… on a linked album now keeps the photos you pick when the hub is unreachable and uploads them once it is back, even with automatic uploads off, instead of dropping them while the notice said your edits were saved. A picked photo that disappeared meanwhile says it must be picked again.
+
+Needs: native build
+
 ## 0.6.28 — 2026-09-30
 
 - A phone now calls a silent hub offline after 10 seconds instead of 15, and a hub that answers in time stays online. Renaming, deleting, importing or pausing while that check is running no longer throws its result away: the answer is recorded when it arrives.

@@ -226,6 +226,17 @@ export class ReplicaStore {
       )
     ).map((r) => JSON.parse(r.row));
   }
+  async galleryManual(scope, volume, now, limit) {
+    return (
+      await this.db.getAllAsync(
+        "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed') AND retryAt<=? AND json_extract(row,'$.manual')=1 ORDER BY retryAt,asset LIMIT ?",
+        scope,
+        volume,
+        now,
+        limit,
+      )
+    ).map((r) => JSON.parse(r.row));
+  }
   async galleryNativeAsset(scope, volume, path, hash) {
     const row = await this.db.getFirstAsync(
       `SELECT asset.row FROM gallery_assets AS asset,

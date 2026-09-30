@@ -1837,6 +1837,88 @@ test("manual gallery picks share receipts with automatic album uploads", async (
   );
 });
 
+test("Add photos while the hub is unreachable keeps the picks pending and uploads them after reconnecting", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "offline-pick.jpg");
+  fs.writeFileSync(uri, "picked while offline");
+  const before = await f.store.gallerySummary(r.scope, f.volume.id);
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "offline-pick.jpg" }]));
+  const pending = await f.store.gallerySummary(r.scope, f.volume.id);
+  assert.equal(pending.pending, before.pending + 1, "the pick is journaled before the hub is needed");
+  assert.equal(pending.accepted, before.accepted);
+  f.online();
+  await sync(f);
+  assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).pending, 0);
+  const accepted = await f.store.galleryPreview(r.scope, f.volume.id, true, 10);
+  assert.ok(accepted.some((item) => item.name === "offline-pick.jpg"));
+});
+
+test("a pick made offline on a source with automatic uploads off still uploads after reconnecting", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  await r.gallery.setEnabled(f.volume.id, false);
+  const uri = path.join(f.root, "manual-pick.jpg");
+  fs.writeFileSync(uri, "picked with uploads off");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "manual-pick.jpg" }]));
+  f.online();
+  await sync(f);
+  assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).pending, 0);
+  const accepted = await f.store.galleryPreview(r.scope, f.volume.id, true, 10);
+  assert.ok(accepted.some((item) => item.name === "manual-pick.jpg"));
+});
+
+test("with automatic uploads off, manual picks upload past a backlog of library rows and clear a stale issue, with or without an asset id", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  await r.gallery.setEnabled(f.volume.id, false);
+  for (let i = 0; i < 25; i++)
+    await f.store.putGalleryAsset(r.scope, f.volume.id, {
+      id: `a-backlog-${String(i).padStart(2, "0")}`,
+      name: `${i}.jpg`,
+      state: "pending",
+      retryAt: 0,
+    });
+  const uri = path.join(f.root, "behind-backlog.jpg");
+  fs.writeFileSync(uri, "picked behind a backlog");
+  f.offline();
+  await assert.rejects(
+    r.gallery.addPhotos(f.volume.id, [
+      { uri, fileName: "behind-backlog.jpg" },
+      { assetId: "photo-1", fileName: "IMG_1234.HEIC" },
+    ]),
+  );
+  const source = await f.store.gallery(r.scope, f.volume.id);
+  source.issue = "Some photos could not be uploaded. Retry to continue.";
+  await f.store.setGallery(r.scope, f.volume.id, source);
+  f.online();
+  await sync(f);
+  const accepted = await f.store.galleryPreview(r.scope, f.volume.id, true, 10);
+  assert.ok(accepted.some((item) => item.name === "behind-backlog.jpg"));
+  assert.ok((await f.uploaded())?.accepted);
+  assert.equal((await f.store.gallery(r.scope, f.volume.id)).issue, null);
+});
+
+test("a pick whose temporary file disappeared while offline reports that it must be picked again", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "vanishing.jpg");
+  fs.writeFileSync(uri, "soon gone");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "vanishing.jpg" }]));
+  fs.rmSync(uri);
+  f.online();
+  await r.sync();
+  assert.match((await f.store.gallery(r.scope, f.volume.id)).issue, /Pick it again/);
+  assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).failed, 1);
+});
+
 test("picker-only photos upload without asking for library access", async (t) => {
   const f = await galleryFixture(t);
   const r = f.replica;
