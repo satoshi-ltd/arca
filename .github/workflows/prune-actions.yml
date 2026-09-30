@@ -1,0 +1,35 @@
+name: prune-actions
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List what would be deleted without deleting
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 3 * * 1"
+permissions:
+  actions: write
+  contents: read
+concurrency:
+  group: arca-prune
+  cancel-in-progress: false
+jobs:
+  prune:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Prune old runs and artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          flag="--apply"
+          if [ "$DRY_RUN" = "true" ]; then flag=""; fi
+          node scripts/prune-actions.js $flag

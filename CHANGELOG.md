@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.37 — 2026-09-30
+
+- GitHub Actions now tidies itself every Monday: completed runs beyond the newest 10 per workflow that are a week old, and week-old artifacts, are deleted. A manual run can list what it would delete first.
+
 ## 0.6.36 — 2026-09-30
 
 - On a phone without a hub connection, a file's detail now shows the phone's own copy as the current revision when the saved history does not include it or is older, and says "No saved revisions for this file" instead of implying it has no history.

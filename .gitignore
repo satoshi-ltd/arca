@@ -21,3 +21,4 @@ apps/mobile/modules/**/android/.gradle/
 /design_handoff_arca_v0.1/
 
 /site/release.json
+CLAUDE.md
