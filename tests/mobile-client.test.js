@@ -514,6 +514,110 @@ test("concurrent catalog refreshes share one request and a joined caller can sti
   assert.equal(requests, 1);
 });
 
+test("a caller that stops waiting never aborts the catalog request, which still records its answer", async () => {
+  const store = persistence();
+  await store.secrets.write({ url: "https://hub", token: "secret", id: "replica", hubId: "hub" });
+  let seen, answer;
+  const client = createClient({
+    ...store,
+    fetcher: async (url, options) => {
+      seen = options.signal;
+      await new Promise((resolve) => {
+        answer = resolve;
+      });
+      return Response.json({ id: "hub", protocol: 1, name: "Hub", volumes: [] });
+    },
+  });
+  await client.load();
+  const controller = new AbortController();
+  const waiting = client.refresh({ signal: controller.signal });
+  for (let i = 0; !answer && i < 100; i++)
+    await new Promise((resolve) => setImmediate(resolve));
+  controller.abort(new Error("local action"));
+  await assert.rejects(waiting, /local action/);
+  assert.equal(seen.aborted, false);
+  answer();
+  for (let i = 0; !client.state().catalog && i < 100; i++)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(client.state().catalog.name, "Hub");
+});
+
+for (const operation of ["destroy", "disconnect"]) {
+  test(`${operation} cancels a stalled catalog refresh instead of waiting for it`, { timeout: 3000 }, async () => {
+    const store = persistence();
+    await store.secrets.write({ url: "https://hub", token: "secret", id: "replica", hubId: "hub" });
+    const client = createClient({
+      ...store,
+      fetcher: (url, options) =>
+        url.endsWith("/v1/catalog")
+          ? new Promise((resolve, reject) =>
+              options.signal.addEventListener("abort", () => reject(options.signal.reason)),
+            )
+          : Promise.resolve(Response.json({})),
+    });
+    await client.load();
+    const refreshing = client.refresh().catch((error) => error.code);
+    await new Promise((resolve) => setImmediate(resolve));
+    await client[operation]();
+    assert.equal(await refreshing, "REQUEST_CANCELLED");
+    assert.equal(client.state().connection, null);
+  });
+}
+
+test("only the owner cancels a shared catalog refresh, and the next refresh starts a new request", { timeout: 3000 }, async () => {
+  const store = persistence();
+  await store.secrets.write({ url: "https://hub", token: "secret", id: "replica", hubId: "hub" });
+  let requests = 0;
+  const client = createClient({
+    ...store,
+    fetcher: (url, options) => {
+      requests++;
+      return requests === 1
+        ? new Promise((resolve, reject) =>
+            options.signal.addEventListener("abort", () => reject(options.signal.reason)),
+          )
+        : Promise.resolve(Response.json({ id: "hub", protocol: 1, name: "Hub", volumes: [] }));
+    },
+  });
+  await client.load();
+  const first = client.refresh({ owner: "sync" }).catch((error) => error.code);
+  await new Promise((resolve) => setImmediate(resolve));
+  client.cancelRefresh("other");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests, 1);
+  client.cancelRefresh("sync");
+  assert.equal(await first, "REQUEST_CANCELLED");
+  assert.equal((await client.refresh()).catalog.name, "Hub");
+  assert.equal(requests, 2);
+});
+
+test("a silent hub fails the catalog refresh at ten seconds, not the fifteen-second default", { timeout: 3000 }, async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const store = persistence();
+  await store.secrets.write({ url: "https://hub", token: "secret", id: "replica", hubId: "hub" });
+  const client = createClient({
+    ...store,
+    fetcher: (url, options) =>
+      new Promise((resolve, reject) =>
+        options.signal.addEventListener("abort", () => reject(options.signal.reason)),
+      ),
+  });
+  await client.load();
+  const outcome = client.refresh().then(
+    () => "answered",
+    (error) => error.code,
+  );
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  t.mock.timers.tick(9999);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  let early = true;
+  outcome.then(() => (early = false));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(early, true);
+  t.mock.timers.tick(1);
+  assert.equal(await outcome, "HUB_TIMEOUT");
+});
+
 test("per-request deadlines override the default and buffered bodies are never timed out late", async () => {
   const store = persistence();
   await store.secrets.write({

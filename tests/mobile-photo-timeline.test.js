@@ -13,7 +13,7 @@ import {
   toggleZoom,
   zoomAround,
 } from "../apps/mobile/src/viewer-gestures.js";
-import { hubGallery, localGallery } from "../apps/mobile/src/hub-gallery.js";
+import { hubGallery, hubPhotoInfo, localGallery } from "../apps/mobile/src/hub-gallery.js";
 import {
   galleryLayout,
   galleryWindow,
@@ -1086,4 +1086,20 @@ test("the gallery grid never decodes originals and keeps preparing thumbnails wh
   assert.match(thumbnails, /nativeThumbnail\(uri, target\.uri, 360, true, true\)/);
   assert.match(viewer, /preview=\{item\.preview\}/);
   assert.match(viewer, /\{!loaded && !!preview && \(/);
+});
+
+test("photo info sends nothing while the hub is known offline and asks the hub once it is linked", async () => {
+  const routes = [];
+  const api = async (route) => {
+    routes.push(route);
+    return { accepted: true };
+  };
+  const item = { path: "2024/a b.jpg", hash: "h1" };
+  await assert.rejects(
+    hubPhotoInfo({ api, linked: false, volume: "v1", item }),
+    /Connect to the hub/,
+  );
+  assert.deepEqual(routes, []);
+  assert.deepEqual(await hubPhotoInfo({ api, linked: true, volume: "v1", item }), { accepted: true });
+  assert.deepEqual(routes, ["/v1/gallery/info?volume=v1&path=2024%2Fa+b.jpg&hash=h1"]);
 });

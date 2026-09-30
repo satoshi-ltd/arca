@@ -1,6 +1,6 @@
 import { GalleryDeletions } from "./gallery-deletions.js";
 import { remoteView, warmViews } from "./remote-views.js";
-import { abortRequest } from "./request-control.js";
+import { abortRequest, abortable } from "./request-control.js";
 import { renamedPath } from "../../../packages/core/file-rename.js";
 import { DAMAGED_GALLERY, validPath, validRow } from "./validation.js";
 import { Gallery, galleryConfig } from "./gallery.js";
@@ -155,6 +155,10 @@ export class Replica {
         this.syncAbort,
         Object.assign(new Error("Sync paused"), { code: "SYNC_INTERRUPTED" }),
       );
+  }
+  suspend() {
+    this.stop();
+    this.interactiveClient.cancelRefresh("sync");
   }
   async settle() {
     this.stop();
@@ -962,6 +966,34 @@ export class Replica {
     });
     return this.active;
   }
+  hubAnswered() {
+    this.connectionEpoch++;
+    this.hubUnavailable = false;
+    this.error = null;
+    this.connectionChecked = true;
+  }
+  hubFailed(error) {
+    if (["SYNC_INTERRUPTED", "CLIENT_BUSY", "REQUEST_CANCELLED"].includes(error.code))
+      return;
+    this.connectionChecked = true;
+    this.hubUnavailable = isHubUnreachable(error);
+    this.error = error.message;
+  }
+  async refreshCatalog() {
+    const pending = this.interactiveClient.refresh({ owner: "sync" });
+    const signal = this.syncAbort?.signal;
+    try {
+      return await (signal ? abortable(() => pending, signal) : pending);
+    } catch (error) {
+      // A cycle stopped by a local action still learns what the hub answered.
+      if (signal?.aborted)
+        pending.then(
+          () => this.hubAnswered(),
+          (failure) => this.hubFailed(failure),
+        ).finally(() => this.changed());
+      throw error;
+    }
+  }
   async cycle() {
     if (
       (await this.store.get("destroyPending", false)) ||
@@ -985,11 +1017,8 @@ export class Replica {
         await this.transfer.begin();
         this.check();
       }
-      await this.client.refresh();
-      this.connectionEpoch++;
-      this.hubUnavailable = false;
-      this.error = null;
-      this.connectionChecked = true;
+      await this.refreshCatalog();
+      this.hubAnswered();
       const connection = this.client.state().connection;
       if (!connection?.linked) return;
       if (this.scope !== connection.hubId) {
@@ -1131,10 +1160,7 @@ export class Replica {
       await this.store.set(`lastSync:${this.scope}`, new Date().toISOString());
       await this.report();
     } catch (e) {
-      if (e.code === "SYNC_INTERRUPTED" || e.code === "CLIENT_BUSY") return;
-      this.connectionChecked = true;
-      this.hubUnavailable = isHubUnreachable(e);
-      this.error = e.message;
+      this.hubFailed(e);
     } finally {
       this.syncingVolume = null;
       this.busy = false;

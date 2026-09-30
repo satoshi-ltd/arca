@@ -50,7 +50,7 @@ if (Platform.OS === "android")
   native.addListener("transferStopped", ({ reason }) => {
     finishTransferTask?.();
     finishTransferTask = null;
-    currentReplica?.stop();
+    currentReplica?.suspend();
     const report = (error) => {
       if (currentReplica) currentReplica.error = error.message;
       changed();
@@ -206,7 +206,7 @@ export function runtime() {
 }
 if (Platform.OS === "ios")
   try {
-    BackgroundTask.addExpirationListener(() => currentReplica?.stop());
+    BackgroundTask.addExpirationListener(() => currentReplica?.suspend());
   } catch {}
 TaskManager.defineTask(BACKGROUND_TASK, async () => {
   try {

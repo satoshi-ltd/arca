@@ -13,12 +13,13 @@ import {
   parseGallery,
 } from "../apps/mobile/src/validation.js";
 import { galleryConfig } from "../apps/mobile/src/gallery.js";
+import { scopedActivity } from "../packages/core/scoped-activity.js";
 import { TransferSession, shouldStopSync } from "../apps/mobile/src/transfer-session.js";
 import { createClient } from "../apps/mobile/src/client.js";
 import { init } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 
-async function fixture(t) {
+async function fixture(t, { timeout } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-mobile-sync-")),
     home = path.join(root, "hub");
   init(home, { port: 0 });
@@ -49,6 +50,7 @@ async function fixture(t) {
   const ranges = [];
   const requests = [];
   const client = createClient({
+    timeout,
     secrets: {
       read: async () => saved,
       write: async (v) => {
@@ -2252,9 +2254,9 @@ test("mobile sync and rename accept accented Unicode filenames", async (t) => {
   );
 });
 
-for (const operation of ["rename", "delete", "import"]) {
+for (const operation of ["rename", "delete", "import", "pause"]) {
   test(
-    `mobile ${operation} interrupts a stalled cycle and releases its reservation`,
+    `mobile ${operation} interrupts a stalled cycle, keeps its catalog request and records the verdict when it settles`,
     { timeout: 5000 },
     async (t) => {
       const f = await fixture(t);
@@ -2267,13 +2269,15 @@ for (const operation of ["rename", "delete", "import"]) {
         f.volume.id,
         "action.txt",
       );
-      let entered;
+      let entered, fail;
       const started = new Promise((resolve) => {
         entered = resolve;
       });
       f.stall(() => {
         entered();
-        return new Promise(() => {});
+        return new Promise((_, reject) => {
+          fail = () => reject(new TypeError("Network request failed"));
+        });
       });
       const active = f.replica.sync();
       await started;
@@ -2286,6 +2290,7 @@ for (const operation of ["rename", "delete", "import"]) {
         );
       else if (operation === "delete")
         await f.replica.removeFile(f.volume.id, "action.txt");
+      else if (operation === "pause") await f.replica.pause(true);
       else
         await f.replica.withImportPicker(() =>
           f.replica.importFile(
@@ -2307,11 +2312,82 @@ for (const operation of ["rename", "delete", "import"]) {
       );
       assert.equal(f.replica.busy, false);
       assert.equal(f.replica.error, null);
+      assert.equal(f.replica.hubUnavailable, false, "the verdict is still pending");
+      fail();
+      for (let i = 0; !f.replica.hubUnavailable && i < 100; i++)
+        await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(f.replica.hubUnavailable, true, "the abandoned request's failure is recorded");
       f.stall(null);
+      if (operation === "pause") await f.replica.pause(false);
       await sync(f);
+      assert.equal(f.replica.hubUnavailable, false);
     },
   );
 }
+
+test("backgrounding cancels the catalog request so resuming starts a fresh one", { timeout: 5000 }, async (t) => {
+  const f = await fixture(t);
+  await f.daemon.engine.cycle();
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  let entered;
+  const started = new Promise((resolve) => {
+    entered = resolve;
+  });
+  f.stall((url, options) => {
+    entered();
+    return new Promise((resolve, reject) =>
+      options.signal.addEventListener("abort", () => reject(options.signal.reason)),
+    );
+  });
+  const active = f.replica.sync();
+  await started;
+  f.replica.suspend();
+  await active;
+  assert.equal(f.replica.hubUnavailable, false);
+  f.stall(null);
+  await sync(f);
+  assert.equal(f.replica.hubUnavailable, false);
+});
+
+test("the first cycle against a silent hub reports it offline at the client deadline, and a hub that answers in time stays online", async (t) => {
+  const f = await fixture(t, { timeout: 1000 });
+  await f.daemon.engine.cycle();
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const reopened = new Replica({ store: f.store, files: f.files, client: f.client });
+  await reopened.load();
+  assert.equal(reopened.connectionChecked, false);
+  f.stall(() => new Promise(() => {}));
+  const started = Date.now();
+  await reopened.sync();
+  assert.ok(Date.now() - started < 3000, "detection follows the client's metadata deadline");
+  assert.equal(reopened.connectionChecked, true);
+  assert.equal(reopened.hubUnavailable, true);
+  f.stall(async (url, options) => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return fetch(url.replace("https://fixture.invalid", `http://127.0.0.1:${f.daemon.port}`), options);
+  });
+  await reopened.sync();
+  assert.equal(reopened.hubUnavailable, false);
+  assert.equal(reopened.error, null);
+});
+
+test("History over several folders waits on a silent hub once, not once per folder", { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  await f.daemon.engine.cycle();
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  f.stall(() => new Promise(() => {}));
+  const started = Date.now();
+  const page = await scopedActivity(
+    (query) => f.replica.remoteView(`/v1/activity?${query}`),
+    ["a", "b", "c"],
+    new URLSearchParams({ limit: "50" }),
+  );
+  assert.ok(Date.now() - started < 5000, "three folders share one 3-second deadline");
+  assert.equal(page.offline, true);
+});
 
 test("mobile cold start reuses verified hashes and preserves last success across interruptions", async (t) => {
   const f = await fixture(t);

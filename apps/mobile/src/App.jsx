@@ -435,7 +435,7 @@ export default function App() {
         engine.current?.lastInventory.clear();
         engine.current?.sync(false, { scheduled: true });
       } else if (shouldStopSync(value, canContinueInBackground()))
-        engine.current?.stop();
+        engine.current?.suspend();
     });
     const timer = setInterval(() => {
       const r = engine.current;
@@ -456,7 +456,7 @@ export default function App() {
       clearTimeout(updateTimer);
       clearInterval(timer);
       app.remove();
-      engine.current?.stop();
+      engine.current?.suspend();
     };
   }, []);
   shownFolder.current =

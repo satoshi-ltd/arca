@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.28 — 2026-09-30
+
+- A phone now calls a silent hub offline after 10 seconds instead of 15, and a hub that answers in time stays online. Renaming, deleting, importing or pausing while that check is running no longer throws its result away: the answer is recorded when it arrives.
+- Disconnecting, deleting local copies or pairing while a check is stuck cancels it at once instead of asking you to wait.
+- Offline, a photo's Info shows the local copy's details without contacting the hub.
+
+Needs: native build
+
 ## 0.6.27 — 2026-09-30
 
 - History on a desktop or server replica no longer waits on the hub once per folder when the hub is unreachable: it reads all folders together from saved data (seven folders took 24 seconds, past the web view's 20-second limit, and now take about 3), and phones read their History pages together too.

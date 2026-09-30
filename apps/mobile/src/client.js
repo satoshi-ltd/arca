@@ -228,19 +228,22 @@ export function createClient({
       catalog,
     };
   }
-  async function leave() {
+  async function leave(options) {
     try {
-      await request(connection.url, "/v1/leave", connection.token, {});
+      await request(connection.url, "/v1/leave", connection.token, {}, options);
     } catch (error) {
       if (![401, 403].includes(error.status)) throw error;
     }
     await secrets.clear();
     connection = null;
   }
-  async function refresh(options = {}) {
+  async function refresh() {
     if (!connection) return state();
     if (connection.leaving) {
-      await leave();
+      await leave({
+        timeout: Math.min(timeout, 10000),
+        signal: refreshController?.signal,
+      });
       return state();
     }
     try {
@@ -250,7 +253,7 @@ export function createClient({
           "/v1/catalog",
           connection.token,
           undefined,
-          options,
+          { timeout: Math.min(timeout, 10000), signal: refreshController?.signal },
         ),
         connection.hubId,
       );
@@ -267,8 +270,25 @@ export function createClient({
     return state();
   }
   let refreshing = null;
+  let refreshController = null;
+  let refreshOwner = null;
+  function cancelRefresh(owner) {
+    if (refreshing && (!owner || refreshOwner === owner))
+      abortRequest(
+        refreshController,
+        Object.assign(new Error("Request cancelled"), {
+          code: "REQUEST_CANCELLED",
+        }),
+      );
+  }
+  async function exclusive(work) {
+    cancelRefresh();
+    await refreshing?.catch(() => {});
+    return serial(work);
+  }
   return {
     state,
+    cancelRefresh,
     fileTransfers,
     raw: authenticated,
     async api(route, body, options = {}) {
@@ -291,21 +311,19 @@ export function createClient({
     },
     refresh: function shared(options = {}) {
       if (!refreshing) {
-        refreshing = serial(() => refresh(options)).finally(() => {
+        refreshController = new AbortController();
+        refreshOwner = options.owner ?? null;
+        refreshing = serial(refresh).finally(() => {
           refreshing = null;
+          refreshController = null;
+          refreshOwner = null;
         });
-        refreshing.signal = options.signal;
       }
       const joined = refreshing;
-      if (options.signal) return abortable(() => joined, options.signal);
-      // A refresh stopped by the sync that started it is retried for callers that never cancelled.
-      return joined.catch((error) => {
-        if (joined.signal?.aborted) return shared();
-        throw error;
-      });
+      return options.signal ? abortable(() => joined, options.signal) : joined;
     },
     pair: (address, code, name) =>
-      serial(async () => {
+      exclusive(async () => {
         if (connection)
           throw new Error("Disconnect the current hub before pairing again.");
         let url = hubAddress(address, !!resolvePrivateURL);
@@ -347,7 +365,7 @@ export function createClient({
         return refresh();
       }),
     destroy: () =>
-      serial(async () => {
+      exclusive(async () => {
         if (connection) {
           // Hub cleanup is best effort; local destruction must work offline.
           const controller = new AbortController();
@@ -378,7 +396,7 @@ export function createClient({
         return state();
       }),
     disconnect: () =>
-      serial(async () => {
+      exclusive(async () => {
         if (!connection) return state();
         connection = { ...connection, leaving: true };
         await secrets.write(connection);

@@ -135,6 +135,13 @@ export function localGallery(entries) {
     indexing: false,
   };
 }
+export function hubPhotoInfo({ api, linked, volume, item }) {
+  if (!linked)
+    return Promise.reject(new Error("Connect to the hub for capture details."));
+  return api(
+    `/v1/gallery/info?${new URLSearchParams({ volume, path: item.path, hash: item.hash })}`,
+  );
+}
 // The phone keeps dates and hashes for ordering; photo bytes stay on the hub or in the working copy.
 export function hubGallery({ api, store, scope, volume }) {
   const key = `gallery-months:${scope}:${volume}`;

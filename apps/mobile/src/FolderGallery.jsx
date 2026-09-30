@@ -30,7 +30,7 @@ import {
   railMonthLabel,
   timelineItem,
 } from "./gallery-timeline";
-import { hubGallery, localGallery } from "./hub-gallery";
+import { hubGallery, hubPhotoInfo, localGallery } from "./hub-gallery";
 import { prepareThumbnails } from "./thumbnail-cache";
 import { thumbnailFiles } from "./gallery-thumbnails";
 import { ScrollPosition } from "./KeyboardPane";
@@ -1052,11 +1052,7 @@ export function FolderGallery({
           setViewer((value) => value && { ...value, index })
         }
         resolveLarge={(item, fallback = false) => display(item, true, fallback)}
-        info={(item) =>
-          api(
-            `/v1/gallery/info?${new URLSearchParams({ volume, path: item.path, hash: item.hash })}`,
-          )
-        }
+        info={(item) => hubPhotoInfo({ api, linked, volume, item })}
         folderName={folderName}
         resolveVideo={resolveVideo}
         history={leave(history)}

@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-MOB-DETECT** — Silent hub on phones: 15 s detection, sequential 3 s waits, interrupted cycles lose the verdict
-  `bug · agent · high`
-  accept: against a silent hub, History over several folders reads its pages in parallel under one shared deadline (reusing the shared `packages/core/scoped-activity.js` change from OFF-DESK-READS, tested on the phone side too); gallery info sends nothing when the hub is known offline; local actions (rename, delete, pause, picker) no longer abort the in-flight catalog refresh, whose result is recorded when it settles; first-cycle detection is bounded well below 15 s without marking a hub that answers in time offline (see MOB-HUB-LIVENESS). Replica tests for each.
 - **OFF-MOB-ADDPHOTOS** — Add photos… offline saves nothing while the notice says it did
   `bug · agent · high`
   accept: offline, Add photos… on an album folder records the picked photos as pending when a catalog is cached (or is disabled with a reason when none is), and they upload after reconnecting; the notice never claims edits were saved when nothing was. Replica test offline then online.
@@ -99,7 +96,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-MOB-DETECT, OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
@@ -236,7 +233,7 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
   accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.
 - **MOB-HUB-LIVENESS** — Hub-busy liveness probe on mobile
   `feature · agent · low`
-  accept: a busy hub is told apart from an unreachable one before the phone marks itself offline; client tests cover both.
+  accept: a busy hub is told apart from an unreachable one before the phone marks itself offline; client tests cover both, including a hub that needs more than the 10-second catalog deadline (it is now marked offline on every cycle); a deadline that grows on consecutive timeouts while no cycle has connected is one option.
 - **MOB-ADAPTIVE-CHUNKS** — Adaptive mobile download blocks
   `feature · agent · low · depends: a Fold throughput measurement`
   accept: block size grows toward desktop's 8 MiB on fast links and shrinks on slow ones, measured on the Fold before and after.
@@ -319,6 +316,10 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DESK-PREVIEW-TIMEOUT** — Retained-revision preview times out as "Hub unavailable" on a slow healthy hub
   `bug · agent · low`
   accept: a 3-second timeout on a reachable hub reads "The hub took too long to prepare this preview" instead of claiming it is unreachable, and `size=large` gets a longer cap; a daemon test with a slow hub.
+
+- **CI-WIN-INTERRUPT-FLAKY** — Windows timing of the interrupted-sync interface test
+  `chore · agent · low`
+  accept: `interrupting sync does not abort an independent interface request` (`tests/sync.test.js`) no longer depends on a 6-second limit that a loaded Windows runner exceeded once (v0.6.27 run, green on rerun); raise the limit or wait on the events the test already observes, and explain the choice in the commit.
 
 ## Later phases
 

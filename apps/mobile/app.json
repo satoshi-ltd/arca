@@ -2,7 +2,7 @@
   "expo": {
     "name": "arca",
     "slug": "arca",
-    "version": "0.6.27",
+    "version": "0.6.28",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
