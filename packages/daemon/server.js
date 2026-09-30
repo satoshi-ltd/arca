@@ -91,6 +91,8 @@ export async function start(home, options = {}) {
     fs.unlinkSync(lock);
     throw e;
   }
+  if (options.metadataTimeoutMs)
+    engine.metadataTimeoutMs = options.metadataTimeoutMs;
   const s = engine.store;
   const config = engine.config;
   if (options.transferIdleMs) engine.transferIdleMs = options.transferIdleMs;
@@ -2231,17 +2233,31 @@ export async function start(home, options = {}) {
   if (remoteEvents)
     void (async () => {
       let cursor = null;
+      const pause = (ms) =>
+        new Promise((resolve) => {
+          const done = () => {
+            clearTimeout(timer);
+            remoteEvents.signal.removeEventListener("abort", done);
+            resolve();
+          };
+          const timer = setTimeout(done, ms);
+          remoteEvents.signal.addEventListener("abort", done, { once: true });
+          if (remoteEvents.signal.aborted) done();
+        });
       while (!remoteEvents.signal.aborted) {
+        const probing = engine.hubUnavailable;
         try {
           if (!config.hub || engine.paused)
             throw new Error("Waiting for connection");
           const response = await engine.request(
-            `/v1/events?${new URLSearchParams(cursor ? { after: cursor } : {})}`,
+            `/v1/events?${new URLSearchParams(cursor && !probing ? { after: cursor } : {})}`,
             {
               trackConnection: false,
               signal: AbortSignal.any([
                 remoteEvents.signal,
-                AbortSignal.timeout(15000),
+                AbortSignal.timeout(
+                  probing ? (options.eventProbeMs ?? 5000) : 15000,
+                ),
               ]),
             },
           );
@@ -2255,17 +2271,21 @@ export async function start(home, options = {}) {
             cursor = next;
             void tick();
           }
-        } catch {
-          await new Promise((resolve) => {
-            const done = () => {
-              clearTimeout(timer);
-              remoteEvents.signal.removeEventListener("abort", done);
-              resolve();
-            };
-            const timer = setTimeout(done, options.eventRetryMs ?? 15000);
-            remoteEvents.signal.addEventListener("abort", done, { once: true });
-            if (remoteEvents.signal.aborted) done();
-          });
+          // A probe is answered at once; pace it until a cycle clears the offline state.
+          if (probing) await pause(options.eventRetryMs ?? 5000);
+        } catch (error) {
+          // Events never decide connectivity; only a transport failure asks the cycle to check the hub now.
+          if (
+            config.hub &&
+            !engine.paused &&
+            !engine.hubUnavailable &&
+            error.hubUnavailable &&
+            !error.status
+          )
+            void tick();
+          await pause(
+            options.eventRetryMs ?? (engine.hubUnavailable ? 5000 : 15000),
+          );
         }
       }
     })();

@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-DESK-DETECT** — A silent hub takes 60–70 s to be detected on desktop replicas
-  `bug · agent · high`
-  accept: the cycle's catalog refresh gets a 10 s deadline (transfers keep their longer budget), so a hub that accepts connections but never answers (a Tailscale peer that is down) marks a replica offline within about 12 s of its first cycle at startup; a hub that answers the catalog within that deadline stays online however busy, and telling a busy hub from a dead one stays with MOB-HUB-LIVENESS. Mid-session, a failed or timed-out hub event poll triggers a cycle (events still never decide connectivity themselves), so a silent hub is noticed within about 25 s instead of 70 s; while offline the replica probes the hub with short un-held event requests, so its return is noticed within about 10 s instead of 46 s. `tests/hub-availability.test.js` covers startup, mid-session and return with a silent hub; SPEC's connectivity section records the deadlines.
 - **OFF-DESK-DETAIL** — Folder detail waits for Recent before listing local files
   `bug · agent · high`
   accept: folder detail requests the local browse and the hub-backed Recent in parallel and renders Files as soon as the local listing answers; navigation updates the poll signature so an immediate status poll does not restart the wait. JSDOM test with a never-resolving `/v1/activity`.
@@ -108,7 +105,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-DESK-DETECT, OFF-MOB-DETECT, OFF-DESK-DETAIL, OFF-DESK-READS, OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-MOB-DETECT, OFF-DESK-DETAIL, OFF-DESK-READS, OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`

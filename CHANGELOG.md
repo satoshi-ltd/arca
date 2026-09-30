@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.25 — 2026-09-30
+
+- A desktop or server replica notices a hub that stops answering (for example a Tailscale peer that is down) within about 10 seconds when a sync starts, or 25 seconds between syncs, instead of 60–70 seconds, so the Offline state and saved views appear sooner. It also notices the hub coming back within about 10–15 seconds instead of up to 46.
+
+Needs: desktop build
+
 ## 0.6.24 — 2026-09-30
 
 - A desktop or server replica no longer reopens a stale "Allow this browser…" prompt every few seconds, even after restarts, while the hub is offline; Allow or Deny now fails at once when the hub is known unreachable instead of waiting 60 seconds.

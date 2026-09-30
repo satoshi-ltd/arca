@@ -129,7 +129,9 @@ async function relay(t, target, control = {}) {
     res.on("close", () => upstream.destroy());
     throttle(req, upstream, control.up);
   });
-  control.url = (await listen(t, server)).url;
+  const served = await listen(t, server);
+  control.url = served.url;
+  control.drop = served.drop;
   return control;
 }
 // Stalled hub requests only time out after 10–25 s; a few seconds proves an action never waited behind one.
@@ -257,6 +259,90 @@ test("a replica relays live web-approval requests and never replays a saved one 
       },
     ),
   );
+});
+
+test("a hub that accepts connections but never answers marks the replica offline within seconds", async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("silent-catalog");
+  await replica.sync();
+  replica.engine.config.hub.url = (await silent(t)).url;
+  await within(12500, () => assert.rejects(replica.sync()));
+  assert.equal(replica.engine.hubUnavailable, true);
+});
+
+test("a failed hub event poll makes the replica check the hub at once", async (t) => {
+  const { hub, connect } = await setup(t);
+  const control = await relay(t, `http://127.0.0.1:${hub.port}`);
+  const replica = await connect("event-check", {
+    timer: true,
+    eventRetryMs: 200,
+  });
+  replica.engine.config.hub.url = control.url;
+  await replica.sync();
+  await waitFor(() => !replica.engine.hubUnavailable && !replica.engine.error);
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  control.refuse = true;
+  control.drop();
+  await within(4000, () => waitFor(() => replica.engine.hubUnavailable, 4000));
+});
+
+function traced(replica) {
+  const calls = [];
+  const request = replica.engine.request.bind(replica.engine);
+  replica.engine.request = (route, ...rest) => {
+    calls.push({ route, url: replica.engine.config.hub.url, at: Date.now() });
+    return request(route, ...rest);
+  };
+  return calls;
+}
+
+test("a silent hub that comes back is noticed within seconds", async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("return", {
+    timer: true,
+    metadataTimeoutMs: 1000,
+    eventRetryMs: 200,
+    eventProbeMs: 2000,
+  });
+  const calls = traced(replica);
+  await replica.sync();
+  await waitFor(() => calls.some((c) => c.route.startsWith("/v1/events")));
+  const online = replica.engine.config.hub.url;
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  await waitFor(() => replica.engine.hubUnavailable, 15000);
+  const quiet = (await silent(t)).url;
+  replica.engine.config.hub.url = quiet;
+  await waitFor(
+    () => calls.some((c) => c.route === "/v1/events?" && c.url === quiet),
+    12000,
+  );
+  replica.engine.config.hub.url = online;
+  await within(5000, () => waitFor(() => !replica.engine.hubUnavailable));
+});
+
+test("offline probes stay paced while a cycle still waits on the hub", async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("paced", {
+    timer: true,
+    metadataTimeoutMs: 4000,
+    eventRetryMs: 1000,
+  });
+  const calls = traced(replica);
+  await replica.sync();
+  const online = replica.engine.config.hub.url;
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  await assert.rejects(replica.sync());
+  replica.engine.config.hub.url = (await silent(t)).url;
+  const stale = replica.sync().catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  replica.engine.config.hub.url = online;
+  const from = Date.now();
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  const probes = calls.filter(
+    (c) => c.route.startsWith("/v1/events") && c.at >= from,
+  ).length;
+  assert.ok(probes <= 4, `${probes} event requests in 3 s`);
+  await stale;
 });
 
 test("local file actions never queue behind a pending hub action or a paused report", async (t) => {

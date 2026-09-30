@@ -333,6 +333,12 @@ export class Engine {
       throw this.connectionLost(error, hub, version);
     });
   }
+  // Small metadata reads get a short deadline so a hub that accepts connections but never answers reads as offline within seconds; snapshots and transfers keep the 60 s budget.
+  metadata(route) {
+    return this.json(route, undefined, {
+      signal: AbortSignal.timeout(this.metadataTimeoutMs ?? 10000),
+    });
+  }
   hubAction(route, body, timeout = 10000) {
     if (this.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
     return this.json(route, body, { signal: AbortSignal.timeout(timeout) });
@@ -669,7 +675,7 @@ export class Engine {
       saved && Date.now() - saved.at < 10 * 60 * 1000 ? saved.heads : new Map();
     if (heads !== saved?.heads)
       for (let after = 0; ; ) {
-        const page = await this.json(
+        const page = await this.metadata(
           `/v1/changes?${new URLSearchParams({ volume: v.id, after })}`,
         );
         for (const row of page.files) heads.set(row.path, row);
@@ -790,7 +796,7 @@ export class Engine {
           }
         await this.scanHub(undefined, { incremental });
       } else if (this.config.hub) {
-        const catalog = await this.json("/v1/catalog");
+        const catalog = await this.metadata("/v1/catalog");
         this.hubListsRetained = catalog.retainedRevisions === true;
         this.hubUnavailable = false;
         this.error = null;
@@ -1034,11 +1040,13 @@ export class Engine {
             try {
               do {
                 try {
-                  page = await this.json(
-                    useChanges
-                      ? `/v1/changes?volume=${encodeURIComponent(v.id)}&after=${cursor}${through === undefined ? "" : `&through=${through}`}`
-                      : `/v1/snapshot?volume=${encodeURIComponent(v.id)}&limit=500${session ? `&session=${encodeURIComponent(session)}&after=${encodeURIComponent(after)}` : ""}`,
-                  );
+                  page = useChanges
+                    ? await this.metadata(
+                        `/v1/changes?volume=${encodeURIComponent(v.id)}&after=${cursor}${through === undefined ? "" : `&through=${through}`}`,
+                      )
+                    : await this.json(
+                        `/v1/snapshot?volume=${encodeURIComponent(v.id)}&limit=500${session ? `&session=${encodeURIComponent(session)}&after=${encodeURIComponent(after)}` : ""}`,
+                      );
                 } catch (e) {
                   if (useChanges && /409/.test(e.message)) {
                     this.work.cursor(v.id, 0);
@@ -1850,7 +1858,7 @@ export class Engine {
   async syncIgnore(v) {
     const s = this.store;
     s.ignoreRules(v); // Validate the local policy before touching ordinary files.
-    const { versions } = await this.json(
+    const { versions } = await this.metadata(
       `/v1/history?volume=${encodeURIComponent(v.id)}&path=${IGNORE_FILE}&limit=1`,
     );
     const remote = versions[0];
