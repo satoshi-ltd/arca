@@ -648,6 +648,7 @@ export class Replica {
           if (oldExact) {
             await this.files.mkdir(this.files.parent(target));
             await this.files.move(source, target);
+            this.touch(row.volume);
           }
         }
       }
@@ -682,8 +683,14 @@ export class Replica {
         );
       await this.store.journal(this.scope, row);
       if (row.deleted) {
-        if (exists) await this.files.removeDirectory(target);
-      } else await this.files.mkdir(target);
+        if (exists) {
+          await this.files.removeDirectory(target);
+          this.touch(row.volume);
+        }
+      } else {
+        await this.files.mkdir(target);
+        if (!exists) this.touch(row.volume);
+      }
       await this.store.applied(this.scope, row);
       return;
     }
@@ -720,15 +727,10 @@ export class Replica {
       await this.snapshotLocal(row.volume, conflict, kept, 0);
     }
     await this.store.journal(this.scope, row);
-    const touched = () =>
-      this.folderChanges.set(
-        row.volume,
-        (this.folderChanges.get(row.volume) || 0) + 1,
-      );
     if (row.deleted) {
       if (exists) {
         await this.files.remove(target);
-        touched();
+        this.touch(row.volume);
       }
     } else if (actual !== row.hash) {
       const object = await this.download(row.hash, row.size);
@@ -737,9 +739,12 @@ export class Replica {
       const temp = this.files.parent(target) + "/.arca-transfer-" + row.hash;
       await this.files.copy(object, temp);
       await this.files.replace(temp, target);
-      touched();
+      this.touch(row.volume);
     }
     await this.store.applied(this.scope, row);
+  }
+  touch(volume) {
+    this.folderChanges.set(volume, (this.folderChanges.get(volume) || 0) + 1);
   }
   async pull(folder) {
     let through;

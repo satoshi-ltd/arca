@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.30 — 2026-09-30
+
+- The phone's folder list now refreshes when a folder or file appears, disappears or changes only in case (`one.txt` to `ONE.txt`); before, it kept the old names until you reopened the folder.
+
+Needs: native build
+
 ## 0.6.29 — 2026-09-30
 
 - Add photos… on a linked album now keeps the photos you pick when the hub is unreachable and uploads them once it is back, even with automatic uploads off, instead of dropping them while the notice said your edits were saved. A picked photo that disappeared meanwhile says it must be picked again.

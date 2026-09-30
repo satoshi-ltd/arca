@@ -3835,6 +3835,33 @@ test("a folder that fails still lets the cycle free objects no transfer needs", 
   assert.equal(fs.existsSync(leftover), false);
 });
 
+test("mobile relists a folder when a directory appears or disappears or a name changes only in case", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon } = f;
+  fs.writeFileSync(path.join(volume.path, "one.txt"), "1");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  let seen = replica.folderChanges.get(volume.id);
+  fs.mkdirSync(path.join(volume.path, "album"));
+  await daemon.engine.cycle();
+  await sync(f);
+  assert.ok(replica.folderChanges.get(volume.id) > seen, "a new directory relists");
+  seen = replica.folderChanges.get(volume.id);
+  fs.rmdirSync(path.join(volume.path, "album"));
+  await daemon.engine.cycle();
+  await sync(f);
+  assert.ok(replica.folderChanges.get(volume.id) > seen, "a removed directory relists");
+  seen = replica.folderChanges.get(volume.id);
+  fs.renameSync(path.join(volume.path, "one.txt"), path.join(volume.path, "tmp-one.txt"));
+  fs.renameSync(path.join(volume.path, "tmp-one.txt"), path.join(volume.path, "ONE.txt"));
+  await daemon.engine.cycle();
+  await sync(f);
+  assert.ok(replica.folderChanges.get(volume.id) > seen, "a case-only rename relists");
+  assert.ok(fs.readdirSync(replica.files.folder(replica.scope, volume.id)).includes("ONE.txt"));
+});
+
 test("mobile counts a folder's applied changes so views relist only when its files changed", async (t) => {
   const f = await fixture(t);
   const { replica, volume, daemon } = f;

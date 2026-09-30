@@ -26,6 +26,12 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
+- **MOB-GALLERY-LOCAL-ONLY** — The online phone gallery hides photos that exist only on the phone
+  `bug · agent · high`
+  accept: online, local photo and video files with no row in the phone's own index (imported while sync was paused, not yet pushed) appear in the folder gallery under the date SPEC's gallery-date rules give them, including when the hub index lacks them and the gallery would otherwise read "No photos yet"; once the hub row arrives they show once, not twice; their Delete and Info stay disabled until a revision exists. A pure merge helper with tests in `tests/mobile-photo-timeline.test.js` and a replica test with an imported file and a hub index that lacks it.
+- **OFF-MOB-GALLERY-ORDER** — The offline phone gallery is ordered by download date
+  `bug · agent · high · depends: MOB-GALLERY-LOCAL-ONLY`
+  accept: (reproduced: a January 2020 photo read as September 2026, lost its `rev` and `hash` and could not be deleted) offline, local files matched to the cached hub gallery index (its newest 600 rows) keep that index's capture date and order, and to the phone's own index for revision and hash, so Delete and Info keep working; only files outside the cached index fall back to SPEC's rules (gallery-date filename rules, then modification time). SPEC's mobile gallery paragraph is rewritten to state exactly this. A test with a cached index and freshly downloaded files keeps the cached months.
 - **MOB-MOVE-DOWNLOADS** — Move verified downloads into place
   `feature · agent · high`
   accept: materializing a download moves the verified object instead of copying it when no other row in the same pull needs that hash, so applying a file never needs space for two copies; a replica test proves one copy during apply and identical-hash rows still materialize.
@@ -35,9 +41,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 - **OFF-MOB-FILEDETAIL** — Offline file detail on phones ignores the phone's own index row
   `bug · agent · normal`
   accept: offline, the phone's local row leads file detail when the saved history lacks it or is older (marked as the local copy, with the correct latest revision and Current badge), and an empty saved window reads "No saved revisions for this file". Replica test for a file outside the saved window and for a newer local revision.
-- **OFF-MOB-GALLERY-ORDER** — The offline phone gallery is ordered by download date
-  `bug · agent · normal`
-  accept: offline, local files matched to the cached hub gallery index (its newest 600 rows) keep that index's capture date and order, and to the phone's own index for revision and hash, so Delete and Info keep working; only files outside the cached index fall back to SPEC's rules (gallery-date filename rules, then modification time). SPEC's mobile gallery paragraph is rewritten to state exactly this. A test with a cached index and freshly downloaded files keeps the cached months.
 - **OFF-MOB-RECONNECT** — Reconnecting does not refresh Recent, Machines or an open file detail on phones
   `bug · agent · normal`
   accept: those views reload when the hub comes back (not only when the last-sync time changes), an open file detail re-enables hub actions without reopening, and Machines labels saved data from the response's own `offline` flag. Effect tests like the existing Machines readiness test.
