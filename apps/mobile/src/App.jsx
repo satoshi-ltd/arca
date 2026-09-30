@@ -928,7 +928,7 @@ export default function App() {
         },
         { label: source ? "Saving changes…" : "Enabling uploads…" },
       );
-    if (source) {
+    if (source && source.mode !== "damaged") {
       save();
       return;
     }
@@ -1021,9 +1021,11 @@ export default function App() {
   );
   const folderSubtitle = `${photoFolder ? `${photoCount ?? "—"} photos` : `${entrySummary.files} files`} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`;
   const timelineNotice =
-    sourceConfig && !sourceConfig.enabled
-      ? "Photo uploads are disabled for this album."
-      : "";
+    sourceConfig?.mode === "damaged"
+      ? sourceConfig.issue
+      : sourceConfig && !sourceConfig.enabled
+        ? "Photo uploads are disabled for this album."
+        : "";
   const timeline =
     folder && engine.current ? (
       <FolderGallery
@@ -2949,7 +2951,7 @@ export default function App() {
                               : "Enable uploads"
                           }
                           icon="upload"
-                          disabled={busy || source.mode === "converting"}
+                          disabled={busy || source.mode !== "source"}
                           onPress={() =>
                             run(() =>
                               engine.current.gallery.setEnabled(

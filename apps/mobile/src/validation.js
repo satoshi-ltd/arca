@@ -30,3 +30,29 @@ export function validRow(row, volume) {
     throw new Error("Invalid file metadata from hub");
   return row;
 }
+export const DAMAGED_GALLERY =
+  "Photo uploads settings are damaged. Choose Change album… to repair them.";
+export function parseGallery(value) {
+  if (value == null) return null;
+  let config = value;
+  if (typeof value === "string")
+    try {
+      config = JSON.parse(value);
+    } catch {
+      config = null;
+    }
+  return config &&
+    typeof config === "object" &&
+    ["source", "converting", "local"].includes(config.mode) &&
+    (config.prefix === undefined || typeof config.prefix === "string")
+    ? config
+    : { mode: "damaged", issue: DAMAGED_GALLERY };
+}
+export function gallerySettingsChanged(source, albumId, videos) {
+  return (
+    !source ||
+    source.mode === "damaged" ||
+    (source.albumId || null) !== (albumId || null) ||
+    !!source.videos !== videos
+  );
+}

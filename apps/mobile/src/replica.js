@@ -2,7 +2,7 @@ import { GalleryDeletions } from "./gallery-deletions.js";
 import { remoteView, warmViews } from "./remote-views.js";
 import { abortRequest } from "./request-control.js";
 import { renamedPath } from "../../../packages/core/file-rename.js";
-import { validPath, validRow } from "./validation.js";
+import { DAMAGED_GALLERY, validPath, validRow } from "./validation.js";
 import { Gallery, galleryConfig } from "./gallery.js";
 import {
   conditionNotices,
@@ -88,6 +88,7 @@ export class Replica {
         if (galleryConfig(folder)) {
           await this.files.clearGalleryStage(this.scope, folder.id);
           const source = galleryConfig(folder);
+          if (source.mode === "damaged") continue;
           if (/^(Request cancelled|Sync paused)$/.test(source.issue || ""))
             source.issue = null;
           source.summary = await this.store.gallerySummary(
@@ -1033,6 +1034,7 @@ export class Replica {
           const remote = catalog.volumes.find((v) => v.id === folder.id);
           if (remote.policyError) throw new Error(remote.policyError);
           const album = galleryConfig(folder);
+          if (album?.mode === "damaged") throw new Error(album.issue);
           if (album && (!folder.initialized || album.mode === "converting"))
             await this.files.mkdir(this.files.folder(this.scope, folder.id));
           if (album?.mode === "converting") {
@@ -1204,6 +1206,8 @@ export class Replica {
       const destination = validPath(renamedPath(name, newName));
       const folder = await this.store.folder(this.scope, volume);
       if (!folder?.selected) throw new Error("Select this folder first");
+      if (galleryConfig(folder)?.mode === "damaged")
+        throw new Error(DAMAGED_GALLERY);
       const row = await this.store.current(this.scope, volume, name);
       const file = this.files.work(this.scope, volume, name);
       const info = await this.files.stat(file);
@@ -1273,6 +1277,8 @@ export class Replica {
       await this.requireActiveReplica();
       const folder = await this.store.folder(this.scope, volume);
       if (!folder?.selected) throw new Error("Select this folder first");
+      if (galleryConfig(folder)?.mode === "damaged")
+        throw new Error(DAMAGED_GALLERY);
       const row = await this.store.current(this.scope, volume, name);
       const file = this.files.work(this.scope, volume, name);
       const info = await this.files.stat(file);

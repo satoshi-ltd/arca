@@ -48,6 +48,20 @@ test("notice queue stacks three, expires only info and suppresses dismissed cond
   store.dispose();
   assert.equal(timers.size, 0);
 });
+test("a damaged album record never breaks folder notices", () => {
+  const items = conditionNotices({
+    volumes: [
+      {
+        id: "a",
+        name: "Photos",
+        gallery: '{"mode":"conv',
+        issue: "Photo uploads settings are damaged.",
+      },
+    ],
+  });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, "Synchronization of Photos stopped");
+});
 test("conditions use per-folder identities and the same human copy for app and system", () => {
   const items = conditionNotices({
     hubName: "Casa",

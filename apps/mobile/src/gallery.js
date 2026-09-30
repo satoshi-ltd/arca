@@ -2,16 +2,13 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
-import { validPath, validRow } from "./validation.js";
+import { parseGallery, validPath, validRow } from "./validation.js";
 import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 
 const digest = (value) => bytesToHex(sha256(new TextEncoder().encode(value)));
 export function galleryConfig(folder) {
-  const config =
-    typeof folder?.gallery === "string"
-      ? JSON.parse(folder.gallery)
-      : folder?.gallery;
-  return config?.mode !== "local" ? config || null : null;
+  const config = parseGallery(folder?.gallery);
+  return config?.mode !== "local" ? config : null;
 }
 export function galleryPath(prefix, asset, resource) {
   const date = new Date(asset.creationTime ?? NaN);
@@ -89,8 +86,10 @@ export class Gallery {
           "This album is unavailable. Choose an accessible album.",
         );
       const old = await r.store.gallery(r.scope, volume);
+      const damaged = old?.mode === "damaged";
       if (
         old &&
+        !damaged &&
         (old.albumId !== (options.albumId || null) ||
           old.videos !== !!options.videos) &&
         (await r.store.gallerySummary(r.scope, volume)).pending
@@ -100,7 +99,8 @@ export class Gallery {
         );
       const source = {
         ...old,
-        mode: "source",
+        // A lost record may have been mid-conversion: recover missing files before any scan.
+        mode: damaged ? "converting" : "source",
         enabled: old?.mode === "source" ? old.enabled : true,
         albumId: options.albumId || null,
         albumName: options.albumName || "All accessible photos",
@@ -182,7 +182,7 @@ export class Gallery {
     } finally {
       try {
         const source = await r.store.gallery(r.scope, volume);
-        if (source) {
+        if (source && source.mode !== "damaged") {
           source.summary = await r.store.gallerySummary(r.scope, volume);
           source.issue = source.summary.failed
             ? "Some photos could not be uploaded. Retry to continue."

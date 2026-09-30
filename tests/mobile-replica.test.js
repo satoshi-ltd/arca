@@ -8,6 +8,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { Replica, CHUNK } from "../apps/mobile/src/replica.js";
 import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
+import {
+  gallerySettingsChanged,
+  parseGallery,
+} from "../apps/mobile/src/validation.js";
+import { galleryConfig } from "../apps/mobile/src/gallery.js";
 import { TransferSession, shouldStopSync } from "../apps/mobile/src/transfer-session.js";
 import { createClient } from "../apps/mobile/src/client.js";
 import { init } from "../packages/daemon/storage.js";
@@ -1311,6 +1316,99 @@ test("interrupted old album conversion restores missing files without publishing
     "keep",
   );
   assert.equal((await store.gallery(r.scope, volume.id)).mode, "source");
+});
+
+test("gallery records that are not valid settings read as damaged", () => {
+  assert.equal(parseGallery(null), null);
+  assert.deepEqual(parseGallery('{"mode":"source","prefix":"Machine-a"}'), {
+    mode: "source",
+    prefix: "Machine-a",
+  });
+  for (const value of ['{"mode":"conv', "[]", '"source"', "{}", '{"mode":"other"}'])
+    assert.equal(parseGallery(value).mode, "damaged");
+  assert.equal(galleryConfig({ gallery: '{"mode":"local"}' }), null);
+  assert.equal(galleryConfig({ gallery: "{" }).mode, "damaged");
+  assert.equal(
+    parseGallery('{"mode":"source","prefix":123}').mode,
+    "damaged",
+  );
+  assert.equal(gallerySettingsChanged(parseGallery("{"), null, false), true);
+  assert.equal(
+    gallerySettingsChanged({ mode: "source", albumId: null, videos: false }, null, false),
+    false,
+  );
+});
+
+test("a damaged album record blocks its folder without publishing deletions until the album is linked again", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, store, files, volume } = f;
+  fs.writeFileSync(path.join(volume.path, "keep.jpg"), "keep");
+  fs.writeFileSync(path.join(volume.path, "other.jpg"), "other");
+  await f.daemon.engine.cycle();
+  await sync(f);
+  f.data.delete("photo-1");
+  await f.enable();
+  await r.sync();
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).pending, 1);
+  f.data.set("photo-1", Buffer.from("original photo-1"));
+  fs.rmSync(files.work(r.scope, volume.id, "keep.jpg"));
+  const corrupt = '{"mode":"conv';
+  await store.db.runAsync(
+    "UPDATE gallery_sources SET config=? WHERE scope=? AND volume=?",
+    corrupt,
+    r.scope,
+    volume.id,
+  );
+  const raw = async () =>
+    (
+      await store.db.getFirstAsync(
+        "SELECT config FROM gallery_sources WHERE scope=? AND volume=?",
+        r.scope,
+        volume.id,
+      )
+    ).config;
+
+  await r.load();
+  await r.sync();
+  assert.match(r.error, /Photo uploads settings are damaged/);
+  assert.match(
+    (await store.folder(r.scope, volume.id)).issue,
+    /Photo uploads settings are damaged/,
+  );
+  assert.equal((await store.gallery(r.scope, volume.id)).mode, "damaged");
+  await assert.rejects(
+    r.gallery.addPhotos(volume.id, [{ assetId: "photo-1" }]),
+    /unavailable/,
+  );
+  await assert.rejects(r.removeFile(volume.id, "other.jpg"), /damaged/);
+  await assert.rejects(
+    r.renameFile(volume.id, "other.jpg", "renamed.jpg"),
+    /damaged/,
+  );
+  assert.equal(await raw(), corrupt);
+  await f.daemon.engine.cycle();
+  assert.equal(
+    fs.readFileSync(path.join(volume.path, "keep.jpg"), "utf8"),
+    "keep",
+  );
+
+  await r.gallery.configure(volume.id, {}, true);
+  await sync(f);
+  const repaired = await store.gallery(r.scope, volume.id);
+  assert.equal(repaired.mode, "source");
+  assert.equal(repaired.albumId, null);
+  assert.equal((await store.folder(r.scope, volume.id)).issue, null);
+  assert.equal(
+    fs.readFileSync(files.work(r.scope, volume.id, "keep.jpg"), "utf8"),
+    "keep",
+  );
+  await f.daemon.engine.cycle();
+  for (const [name, text] of [
+    ["keep.jpg", "keep"],
+    ["other.jpg", "other"],
+  ])
+    assert.equal(fs.readFileSync(path.join(volume.path, name), "utf8"), text);
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).accepted, 1);
 });
 
 test("gallery retries lost acceptance after remote deletion without reacquiring the deleted original", async (t) => {

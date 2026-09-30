@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.18 — 2026-09-30
+
+- A phone whose Photo uploads settings for a folder become unreadable no longer fails to start or crashes its screens. That folder stops with "Photo uploads settings are damaged. Choose Change album… to repair them." and is not scanned, and its local files cannot be renamed or deleted, so a lost record can never turn missing files into deletions on the hub. Change album… repairs it, turning uploads back on after the usual confirmation and restoring any missing files before syncing again.
+
+Needs: native build
+
 ## 0.6.17 — 2026-09-30
 
 - SPEC describes how Arca works today instead of how it got there: every dated note, validation log and stale status is folded into the section that owns it, in the present tense, or dropped when git and this changelog already keep it. It opens with a short current-state summary, and the API reference now names the real pairing endpoints.

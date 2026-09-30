@@ -178,10 +178,13 @@ export function conditionNotices(status = {}) {
         actionLabel: "Review",
         volume: folder.id,
       });
-    const album =
-      typeof folder.gallery === "string"
-        ? JSON.parse(folder.gallery)
-        : folder.gallery;
+    let album = folder.gallery;
+    if (typeof album === "string")
+      try {
+        album = JSON.parse(album);
+      } catch {
+        album = null;
+      }
     if (album?.enabled && album.issue)
       addError(
         { message: album.issue, code: "SOURCE_UNAVAILABLE" },

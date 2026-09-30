@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **MOB-GALLERY-CONFIG** — Tolerate a broken gallery record
-  `bug · agent · normal`
-  accept: a malformed gallery configuration never publishes deletions; a replica test with a corrupt record.
 - **MOB-LEASE-LOOKUP** — Path-scoped lookup for gallery conflict recovery
   `bug · agent · normal`
   accept: gallery conflict recovery after an interrupted propose no longer opens a replacing snapshot that cancels a paused first-download lease; a replica test shows the lease survives.
@@ -64,7 +61,7 @@ _None._
 
 - **BUILD-MOBILE** — Native mobile build from the current source
   `deploy · maintainer · high`
-  accept: an Android production build of v0.6.15 or later installed on the Fold. It carries the v0.6.13 `ArcaNetwork.thumbnail` module, the Android screen-off TransferSession fix and drops the obsolete exports and permission text of the removed deletion review.
+  accept: an Android production build of v0.6.18 or later installed on the Fold. It carries the v0.6.13 `ArcaNetwork.thumbnail` module, the Android screen-off TransferSession fix and the v0.6.18 damaged-album-record handling, and drops the obsolete exports and permission text of the removed deletion review.
 - **BUILD-DESKTOP** — Desktop build from the current source
   `deploy · maintainer · high`
   accept: the running desktop app and daemon report v0.6.15 or later (unlink deletes by default, local-only previews, photo/video header counts, relink with the hub as the source of truth, 30 s keep-alive).
@@ -264,6 +261,12 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **P2-WEB-TRUST** — Web trust and pairing features (product proposals)
   `decision · maintainer · low`
   accept: a decision on console-free initial trust, passkeys, background push for web approval, QR pairing, replica-to-replica pairing, remote hub-admin switching and one-click bidirectional pairing; each approved one becomes its own agent task.
+- **MOB-FULLSCAN-FAILING** — Full verification while one folder keeps failing
+  `bug · agent · low`
+  accept: a folder that fails every cycle no longer keeps `lastFullScan` from advancing, so healthy folders are not fully re-hashed on every sync after the first hour; a replica test with one permanently failing folder shows scheduled cycles stop forcing full verification once the healthy folders complete it.
+- **MOB-GALLERY-ASSET-ROWS** — Tolerate a corrupt gallery asset row
+  `bug · agent · low`
+  accept: a malformed `gallery_assets` row no longer stops the app from starting (`clearInterrupted` and the SQLite `json_extract` queries) or blocks other assets, and never publishes deletions; a replica test with a corrupt asset row.
 
 ## Later phases
 

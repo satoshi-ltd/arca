@@ -1,3 +1,5 @@
+import { parseGallery } from "./validation.js";
+
 export class ReplicaStore {
   constructor(db) {
     this.db = db;
@@ -163,7 +165,7 @@ export class ReplicaStore {
       scope,
       volume,
     );
-    return row ? JSON.parse(row.config) : null;
+    return row ? parseGallery(row.config) : null;
   }
   async setGallery(scope, volume, config) {
     await this.db.runAsync(

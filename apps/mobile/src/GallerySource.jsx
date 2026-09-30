@@ -13,6 +13,7 @@ import {
   useDesign,
 } from "./components";
 import { ErrorNotice } from "./Notice";
+import { gallerySettingsChanged } from "./validation.js";
 
 function GalleryDetails({ children }) {
   const { s } = useDesign();
@@ -121,10 +122,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
     options?.permission.accessPrivileges === "limited"
       ? "Allowed photos"
       : "All photos";
-  const changed =
-    !source ||
-    (source.albumId || null) !== (album?.id || null) ||
-    !!source.videos !== videos;
+  const changed = gallerySettingsChanged(source, album?.id, videos);
   if (choosing && options)
     return (
       <>
