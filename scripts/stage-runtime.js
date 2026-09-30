@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { pruneCargo } from "./prune-cargo.js";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const destination = path.join(root, "apps/desktop/src-tauri/runtime");
-const version = "24.14.0";
+const version = fs.readFileSync(path.join(root, ".node-version"), "utf8").trim();
 const platform = process.platform;
 if (!["darwin", "linux", "win32"].includes(platform))
   throw new Error("Unsupported runtime platform");

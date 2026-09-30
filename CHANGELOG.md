@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.23 — 2026-09-30
+
+- CI, the bundled desktop runtime and local validation read the Node version from one file, `.node-version`, and a test keeps the Dockerfile and the EAS profiles equal to it. EAS builds move from 24.14.1 to 24.14.0, the version everything else already used.
+
 ## 0.6.22 — 2026-09-30
 
 - The release check now verifies every place the version bump writes, from one shared list, including the README, SPEC and design-kit banners, and names the files that disagree.

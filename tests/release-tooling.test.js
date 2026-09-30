@@ -119,3 +119,29 @@ test("validation copies the working tree exactly, including case-only renames, d
   assert.equal(fs.readFileSync(path.join(destination, "CHANGELOG.md"), "utf8"), "old name");
   assert.equal(fs.readFileSync(path.join(destination, "nested", "new.txt"), "utf8"), "untracked");
 });
+
+test("every Node pin follows .node-version", () => {
+  const read = (file) =>
+    fs.readFileSync(path.join(repository, file), "utf8").replace(/\r\n/g, "\n");
+  const version = read(".node-version").trim();
+  assert.match(version, /^\d+\.\d+\.\d+$/);
+  const workflows = path.join(".github", "workflows");
+  for (const workflow of fs.readdirSync(path.join(repository, workflows))) {
+    if (!/\.ya?ml$/.test(workflow)) continue;
+    const text = read(path.join(workflows, workflow));
+    for (const step of text.split(/\n(?= +- )/).filter((step) => /uses: actions\/setup-node@/.test(step)))
+      assert.match(step, /\n +node-version-file: \.node-version(\n|$)/, workflow);
+    assert.doesNotMatch(text, /node-version:/, workflow);
+  }
+  const images = [...read(path.join("deploy", "Dockerfile")).matchAll(/^FROM node:(\S+?)-/gm)].map((m) => m[1]);
+  assert.ok(images.length);
+  assert.deepEqual([...new Set(images)], [version]);
+  const { build } = JSON.parse(read(path.join("apps", "mobile", "eas.json")));
+  const node = (name) => build[name].node ?? (build[name].extends ? node(build[name].extends) : undefined);
+  for (const profile of Object.keys(build)) assert.equal(node(profile), version, `EAS ${profile}`);
+  for (const script of ["stage-runtime.js", "validate-local.js"]) {
+    const text = read(path.join("scripts", script));
+    assert.match(text, /\.node-version/, script);
+    assert.doesNotMatch(text, /\d+\.\d+\.\d+/, script);
+  }
+});

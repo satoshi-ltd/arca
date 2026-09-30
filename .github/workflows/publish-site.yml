@@ -37,7 +37,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: "24.14.0"
+          node-version-file: .node-version
       - name: Verify deployment configuration
         run: |
           for key in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN SITE_URL CLOUDFLARE_PAGES_PROJECT_NAME; do

@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "24.14.0"
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
       - name: Check version agreement
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "24.14.0"
+          node-version-file: .node-version
       - id: version
         run: node scripts/check-release.js
       - name: Check whether the version needs publishing
@@ -145,7 +145,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "24.14.0"
+          node-version-file: .node-version
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
@@ -283,7 +283,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "24.14.0"
+          node-version-file: .node-version
       - name: Publish the updater manifest on the rolling desktop-latest tag
         env:
           GH_TOKEN: ${{ github.token }}

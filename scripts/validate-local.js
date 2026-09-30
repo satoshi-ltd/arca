@@ -24,9 +24,7 @@ export function cleanCopy(source, destination) {
 }
 
 function main() {
-  const required = /node-version:\s*"([^"]+)"/.exec(
-    fs.readFileSync(path.join(repository, ".github/workflows/publish.yml"), "utf8"),
-  )?.[1];
+  const required = fs.readFileSync(path.join(repository, ".node-version"), "utf8").trim();
   if (process.version !== `v${required}`) {
     console.error(`CI runs Node ${required}; this is ${process.version}. Run: npx -y node@${required} scripts/validate-local.js`);
     process.exit(1);

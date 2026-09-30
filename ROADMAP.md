@@ -26,9 +26,9 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **CI-NODE-VERSION** — One Node version for CI, Docker, runtime and EAS
-  `chore · agent · normal`
-  accept: the version lives in one place (for example `.node-version`) read by the workflows, `deploy/Dockerfile`, `stage-runtime.js`, `validate-local.js` and `apps/mobile/eas.json`; the EAS profile's 24.14.1 versus everything else's 24.14.0 is resolved.
+- **OFFLINE-AUDIT** — Replicas fully usable offline (reported by the maintainer)
+  `bug · agent · high`
+  accept: with the hub unreachable, a desktop/server replica (Tauri and web views) and a phone replica are exercised in isolated tests from startup and from a running session: every view each one offers (Folders, folder detail with Files, Recent and Gallery, file detail, History, Machines, Settings) renders from local or saved data without endless loading, blank screens or errors that block navigation; local files open, share, rename and delete where the product allows; hub-only actions are disabled with a reason; reconnecting refreshes without a restart. Every gap found is fixed with a regression test or filed as its own task, and SPEC's offline contract records the result.
 - **CI-TIDY** — Workflow consistency
   `chore · agent · low`
   accept: `publish-site.yml` uses the same `actions/checkout` and `actions/setup-node` majors as the other workflows, and the misindented `fi` in `publish.yml` is fixed; actionlint passes.
@@ -71,6 +71,9 @@ _None._
 
 ### Device checks
 
+- **OFFLINE-DEVICE** — Offline replicas on real machines
+  `verify · maintainer · high · depends: OFFLINE-AUDIT, BUILD-MOBILE, BUILD-DESKTOP`
+  accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
   accept: after the first sync, Android's storage figure for Arca drops to about the synchronized folders' size (from about 55 GB to about 26 GB for `photos`).
@@ -262,6 +265,13 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DESK-UPDATER-TESTS** — Rust tests for the update install flow and Windows
   `chore · agent · low`
   accept: `install_update`, daemon stop and the restore marker (`with_recovery`, resume on next launch) are covered by Rust unit tests with the process and plugin boundaries stubbed, and `rust-tests` also runs on `windows-2022` so the PowerShell listing and non-Unix exit handling execute; both pass in CI.
+
+- **NODE-LTS-UPDATE** — Move to the latest Node 24 LTS security release
+  `chore · agent · normal`
+  accept: `.node-version`, the Dockerfile and the EAS profiles move from 24.14.0 to the newest Node 24 LTS release that includes the 24.14.1, 24.17.0 and 24.18.1 security fixes; CI, runtime staging and the guard test pass. The shipped desktop runtime and Docker image then need a desktop build and a Casa redeploy (maintainer).
+- **DOCKER-RELEASE-REF** — Build the Docker image from the released commit
+  `bug · agent · normal`
+  accept: `publish-docker.yml` checks out `workflow_run.head_sha` on automatic runs, as `publish-site.yml` does, so rapid pushes can never publish a newer image or record its `docker-v` tag before that version's release exists; a workflow contract test covers it.
 
 ## Later phases
 
