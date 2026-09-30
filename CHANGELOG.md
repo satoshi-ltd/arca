@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.17 — 2026-09-30
+
+- SPEC describes how Arca works today instead of how it got there: every dated note, validation log and stale status is folded into the section that owns it, in the present tense, or dropped when git and this changelog already keep it. It opens with a short current-state summary, and the API reference now names the real pairing endpoints.
+- SPEC is reorganized into product decisions, architecture and access, synchronization, desktop and web, mobile, API reference, operations and the design system. Superseded details are corrected on the way: the 17831 port for Casa and Umbrel, the backup's `state/`-only layout, the current CLI commands and desktop motion.
+- README's pilot-update sections become pointers into SPEC operations, and links from README and ROADMAP follow the renamed headings.
+
 ## 0.6.16 — 2026-09-30
 
 - The project runs as an autonomous loop: `ROADMAP.md` is a task pool with owners, priorities and acceptance criteria, and `AGENTS.md` wires the maintainer's `next-task` workflow (implement, test, adversarial review, release, watch CI) and defines what each document owns; the changelog is now `CHANGELOG.md`.

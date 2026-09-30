@@ -28,7 +28,7 @@ Five documents, each answering one question. Put information in the one that own
   ```
 
   Name files or functions only when the maintainer must act on them.
-- Update the owning document in the same change as the code. Decisions go to SPEC and remaining work to ROADMAP, never to chat history or extra status files. Original visual references and third-party licences keep their own purpose. Current maintainer instructions override older material, including dated notes still in SPEC.
+- Update the owning document in the same change as the code. Decisions go to SPEC and remaining work to ROADMAP, never to chat history or extra status files. Original visual references and third-party licences keep their own purpose. Current maintainer instructions override older material.
 
 ## Workflow
 

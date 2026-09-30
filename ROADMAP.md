@@ -26,9 +26,33 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **DOC-SPEC-SLIM** — Keep SPEC to contracts, operations and design
+- **MOB-GALLERY-CONFIG** — Tolerate a broken gallery record
+  `bug · agent · normal`
+  accept: a malformed gallery configuration never publishes deletions; a replica test with a corrupt record.
+- **MOB-LEASE-LOOKUP** — Path-scoped lookup for gallery conflict recovery
+  `bug · agent · normal`
+  accept: gallery conflict recovery after an interrupted propose no longer opens a replacing snapshot that cancels a paused first-download lease; a replica test shows the lease survives.
+- **CI-RUST-TESTS** — Run the desktop Rust unit tests in CI
   `chore · agent · high`
-  accept: every still-true statement from the dated notes is folded, in the present tense, into the section that owns it; the notes, validation logs and stale "uncommitted" statuses are then deleted (git and the changelog keep the history); "Resume work here" becomes a current-state summary of about 2 KB; the catch-all tails of "Website publication" and "Umbrel packaging" move under the sections they describe; the "Desktop updates" contract moves out of "Remaining work"; README's pilot-update sections shrink to pointers into SPEC operations; links from README and ROADMAP follow any renamed heading; SPEC lands near 150–200 KB.
+  accept: the publish workflow runs `cargo test` for `apps/desktop/src-tauri` (daemon identity, locks, updater) and fails the pipeline on a failing test.
+- **REL-MANIFEST-LIST** — Share the release manifest list
+  `chore · agent · low`
+  accept: `scripts/check-release.js` and `scripts/bump-version.js` read one list of version locations; both tests still pass.
+- **CI-NODE-VERSION** — One Node version for CI, Docker, runtime and EAS
+  `chore · agent · normal`
+  accept: the version lives in one place (for example `.node-version`) read by the workflows, `deploy/Dockerfile`, `stage-runtime.js`, `validate-local.js` and `apps/mobile/eas.json`; the EAS profile's 24.14.1 versus everything else's 24.14.0 is resolved.
+- **CI-TIDY** — Workflow consistency
+  `chore · agent · low`
+  accept: `publish-site.yml` uses the same `actions/checkout` and `actions/setup-node` majors as the other workflows, and the misindented `fi` in `publish.yml` is fixed; actionlint passes.
+- **MOB-MOVE-DOWNLOADS** — Move verified downloads into place
+  `feature · agent · high`
+  accept: materializing a download moves the verified object instead of copying it when no other row in the same pull needs that hash, so applying a file never needs space for two copies; a replica test proves one copy during apply and identical-hash rows still materialize.
+- **MOB-CRASH-RECORD** — Record crashes from a global error handler
+  `feature · agent · normal`
+  accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display.
+- **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
+  `feature · agent · normal`
+  accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
 
 ## In progress
 
@@ -49,7 +73,7 @@ _None._
   accept: an iOS build installed on a physical device (only a simulator `xcodebuild` has passed, at v0.6.1).
 - **CASA-VERSION** — Record Casa's running version
   `verify · maintainer · high`
-  accept: the version is written into SPEC's Casa operations section.
+  accept: Casa's running version is reported to the maintainer and recorded in P1-CASA-DEPLOY, which depends on it.
 - **P1-CASA-DEPLOY** — Redeploy Casa
   `deploy · maintainer · high · depends: CASA-VERSION`
   accept: Casa runs v0.6.15 or later. Pending hub-side changes: v0.6.11 per-month video counts; v0.6.7 per-month newest revision; v0.6.6 lease renewal on page reads; removal of obsolete gallery endpoints; the v0.6.0 hub audit changes (503/412 gating, error codes, lease replacement, stored-part upload verification, lost-reply fast-forward). Order: Casa first, then desktop; from 0.6.2 on, replicas and phones go before or together with the hub.
@@ -111,7 +135,7 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
   accept: an update between two published versions on macOS (with and without Launch at login), Windows NSIS and Linux AppImage/deb, each ending with the daemon answering under the new version; hosted `.deb.sig` generation.
 - **P1-SERVER-ONBOARDING** — Server onboarding acceptance
   `verify · maintainer · normal`
-  accept: real-device replica pairing and selection from the new wizard, ARM, image upgrades. See [Server onboarding](SPEC.md#server-onboarding-and-first-access--september-12-correction).
+  accept: real-device replica pairing and selection from the new wizard, ARM, image upgrades. See [Server onboarding](SPEC.md#server-onboarding).
 - **P1-CASA-CPU** — Casa CPU stall
   `verify · maintainer · normal`
   accept: a capture or reproducer of the 98–103% CPU stall with HTTP and discovery timeouts. Do not repeat live evaluator-based profiling.
@@ -126,7 +150,7 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
   accept: keep 0.4.1, or move all three image references and the manifest version to a newer image (0.4.1 lacks the onboarding fixes). Moving it also retires `deploy/umbrel/arca/server-setup.js.template`, a copy of `packages/daemon/setup.js` mounted over the pinned image.
 - **P1-UMBREL** — Umbrel submission
   `deploy · maintainer · normal · depends: P1-UMBREL-IMAGE`
-  accept: ARM runtime and image-upgrade path qualified; real client addressing and `app_proxy` checked; public repository/support access and distribution licence resolved; checked screenshots and source logo attached; the real PR opened, its URL recorded in `submission`, and the full lint rerun. Keep the pilot icon override until the official gallery is published. The Umbrel update helper does not qualify arbitrary future schema upgrades or restores. See [Umbrel packaging](SPEC.md#umbrel-packaging-and-submission--september-12).
+  accept: ARM runtime and image-upgrade path qualified; real client addressing and `app_proxy` checked; public repository/support access and distribution licence resolved; checked screenshots and source logo attached; the real PR opened, its URL recorded in `submission`, and the full lint rerun. Keep the pilot icon override until the official gallery is published. The Umbrel update helper does not qualify arbitrary future schema upgrades or restores. See [Umbrel packaging](SPEC.md#umbrel-packaging-and-submission).
 - **P1-SITE** — Website domain
   `verify · maintainer · low`
   accept: `arca.satoshi-ltd.com` serves the Pages project and Git auto-deploys are off. Publication itself already works: `publish-site` deployed to Cloudflare Pages on September 29.
@@ -159,7 +183,7 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
   `decision · maintainer · low`
 - **DEC-CONVERTING-LEGACY** — Remove the legacy `converting` mode on phones?
   `decision · maintainer · normal`
-  accept: a yes or no. The JPEG/HEIC conversion was removed on September 26, but `replica.js`, `App.jsx` and a test still recover an interrupted conversion "from the previous build"; AGENTS.md forbids legacy modes, yet a phone could still hold that state.
+  accept: a yes or no. `replica.js`, `App.jsx` and a test still recover a folder interrupted mid-way through the former upload-only-to-working-copy transition (`converting` mode, restoring missing indexed files before switching to `source`); AGENTS.md forbids legacy modes, yet a phone could still hold that state.
 - **DEC-LICENSE** — Project licence
   `decision · maintainer · normal`
   accept: a licence chosen and added as `LICENSE` (the repository has none; P1-UMBREL and P1-PUBLIC-ACCESS need it).
@@ -175,7 +199,7 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
 
 ### Confirm and close
 
-Older notes still list these as open while later notes suggest they are resolved. Confirm each, then Claude deletes it and corrects the older note:
+Older notes listed these as open while later evidence suggests they are resolved. SPEC no longer carries those notes; confirm each and Claude deletes it (an item that turns out still open becomes its own task):
 
 - F44, resuming snapshots across turns — implemented in v0.6.6.
 - The Umbrel helper's first real update and the `update-docker` end-to-end run — both recorded as done.
@@ -189,25 +213,9 @@ Older notes still list these as open while later notes suggest they are resolved
 ## Proposed
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
-
-- **CI-RUST-TESTS** — Run the desktop Rust unit tests in CI
-  `chore · agent · high`
-  accept: the publish workflow runs `cargo test` for `apps/desktop/src-tauri` (daemon identity, locks, updater) and fails the pipeline on a failing test.
-- **MOB-MOVE-DOWNLOADS** — Move verified downloads into place
-  `feature · agent · high`
-  accept: materializing a download moves the verified object instead of copying it when no other row in the same pull needs that hash, so applying a file never needs space for two copies; a replica test proves one copy during apply and identical-hash rows still materialize.
-- **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
-  `feature · agent · normal`
-  accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
-- **MOB-CRASH-RECORD** — Record crashes from a global error handler
-  `feature · agent · normal`
-  accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display.
-- **MOB-GALLERY-CONFIG** — Tolerate a broken gallery record
-  `bug · agent · normal`
-  accept: a malformed gallery configuration never publishes deletions; a replica test with a corrupt record.
-- **MOB-LEASE-LOOKUP** — Path-scoped lookup for gallery conflict recovery
-  `bug · agent · normal`
-  accept: gallery conflict recovery after an interrupted propose no longer opens a replacing snapshot that cancels a paused first-download lease; a replica test shows the lease survives.
+- **DOC-README-SLIM** — Keep README to orientation and entry commands
+  `chore · agent · low`
+  accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.
 - **MOB-HUB-LIVENESS** — Hub-busy liveness probe on mobile
   `feature · agent · low`
   accept: a busy hub is told apart from an unreachable one before the phone marks itself offline; client tests cover both.
@@ -238,15 +246,6 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
   `feature · agent · low`
 - **NAT-SHARE-FEEDBACK** — Share-extension failure feedback
   `feature · agent · low`
-- **CI-NODE-VERSION** — One Node version for CI, Docker, runtime and EAS
-  `chore · agent · normal`
-  accept: the version lives in one place (for example `.node-version`) read by the workflows, `deploy/Dockerfile`, `stage-runtime.js`, `validate-local.js` and `apps/mobile/eas.json`; the EAS profile's 24.14.1 versus everything else's 24.14.0 is resolved.
-- **REL-MANIFEST-LIST** — Share the release manifest list
-  `chore · agent · low`
-  accept: `scripts/check-release.js` and `scripts/bump-version.js` read one list of version locations; both tests still pass.
-- **CI-TIDY** — Workflow consistency
-  `chore · agent · low`
-  accept: `publish-site.yml` uses the same `actions/checkout` and `actions/setup-node` majors as the other workflows, and the misindented `fi` in `publish.yml` is fixed; actionlint passes.
 - **ORG-DESKTOP-SCRIPTS** — Move desktop tooling into `apps/desktop/scripts`
   `chore · agent · low`
   accept: `desktop-dev`, `stage-runtime`, `sign-local`, `build-release`, `collect-release`, `updater-manifest` and `verify-bundle` live under `apps/desktop/scripts`; the workflows, `apps/desktop/package.json`, tests and SPEC references follow; a CI run passes.

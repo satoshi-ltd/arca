@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.6.16 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.6.17 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -55,7 +55,7 @@ node scripts/bump-version.js            # next patch, or pass x.y.z
 npx -y node@24.14.0 scripts/validate-local.js
 ```
 
-For isolated hub metadata/API load qualification, run `node scripts/verify-hub-load.js . 100000`. It creates temporary state and a child daemon, tests three concurrent snapshots alongside a verified 1 MiB upload/download, checks HTTP responsiveness and pause/resume, then removes only its fixtures. It never uses the live `~/.arca`. Docker execution and measured limits are in [hub load qualification](SPEC.md#05-docker-hub-load-qualification--september-22).
+For isolated hub metadata/API load qualification, run `node scripts/verify-hub-load.js . 100000`. It creates temporary state and a child daemon, tests three concurrent snapshots alongside a verified 1 MiB upload/download, checks HTTP responsiveness and pause/resume, then removes only its fixtures. It never uses the live `~/.arca`. The Docker command and its scope are in [isolated qualification](SPEC.md#isolated-qualification).
 
 Web/Tauri share `apps/desktop/src`. Vite reloads frontend changes; daemon changes require deployment/restart. Building a bundle does not replace an already running app. macOS local bundles are ad-hoc signed, not notarized.
 
@@ -121,35 +121,11 @@ The default container command uses `daemon --setup`: it prepares empty state for
 
 `deploy/umbrel/arca/` is a separate App Store package under preparation, pinned to the published **0.4.1** multiarch Docker image. It does not replace `compose.yaml`, `deploy/Dockerfile`, the Docker release pipeline or the Casa installation. Newer releases are not in that image.
 
-The package opens the shared first-run wizard to choose a hub or replica, with app-owned persistent storage and adds a browser page that exchanges Umbrel's per-install Arca app password for Arca's existing single-use sign-in code. Companion clients retain Arca pairing and credentials. Local checks and a real amd64 Umbrel installation, web sign-in, bidirectional sync and restart persistence have passed. The pilot opens at `http://umbrel.local:17831/umbrel`; App Store submission remains pending. See [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission--september-12) for package layout, test commands and remaining requirements.
+The package opens the shared first-run wizard to choose a hub or replica, with app-owned persistent storage and adds a browser page that exchanges Umbrel's per-install Arca app password for Arca's existing single-use sign-in code. Companion clients retain Arca pairing and credentials. Local checks and a real amd64 Umbrel installation, web sign-in, bidirectional sync and restart persistence have passed. The pilot opens at `http://umbrel.local:17831/`, with its app-password code page at `/umbrel`; App Store submission remains pending. See [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission) for package layout, test commands and remaining requirements.
 
-## Update the private Umbrel pilot
+## Update the private pilots
 
-```sh
-npm run update-umbrel -- --check  # Read-only connection, configuration and API checks
-npm run update-umbrel            # Tests, stage current source, build and restart Arca on Umbrel
-```
-
-This private, Git-ignored helper is `scripts/local/update-umbrel.py` (Python 3.11+). It uses SSH `umbrel@umbrel.local`, Python/PyYAML on Umbrel and the existing `umbrel` MCP entry in `~/.codex/config.toml`; credentials are read privately. Copy the helper separately when using another checkout. It includes uncommitted server/web source and builds the image locally through Umbrel’s normal app start. Arca is unavailable during that build, which can take several minutes. Existing persistent volumes, configuration, app-password reference and icon are retained; the previous pilot source overrides are replaced by the complete build. Source snapshots and previous app files stay under the app’s `updates/` directory for inspection. No image is published, and Casa, desktop, mobile and Metro are not updated. Reload Arca and sign in again after restart. The read-only check and preparation tests pass, and real updates of the Umbrel pilot have run through it.
-
-## Update the Casa pilot
-
-From this Mac checkout:
-
-```sh
-npm run update-docker -- --check  # Read-only SSH, Compose and hub checks
-npm run update-docker            # Tests, build current source, recreate Casa only
-```
-
-This command uses the **private, Git-ignored** `scripts/local/update-docker.js` and the existing SSH alias `casa`. Copy the helper separately for another checkout. It includes uncommitted source and preserves Casa's Compose, `.env`, state and mounted files. It refuses a paused hub, retains the previous image when Docker still has it, stops Casa and clears its process lock only after verifying the state is not in use by another container, and verifies the recreated container, deployed source hashes and configuration. It does not update Mac/mobile, publish images or restart Metro. Full procedure and failure/rollback commands: [spec operations](SPEC.md#update-casa-docker-from-this-checkout).
-
-```sh
-ssh casa 'docker exec arca node packages/cli/arca.js status'
-ssh casa 'docker exec arca node packages/cli/arca.js web-code'
-ssh casa 'docker logs --tail 50 arca'
-```
-
-A deployment invalidates web sessions; reload and sign in again if requested. Preparing/checking this helper does not deploy changes.
+The maintainer's Casa hub and Umbrel pilot are updated from this checkout with private, Git-ignored helpers: `npm run update-docker` and `npm run update-umbrel`, each with a read-only `--check`. Procedures, safeguards and rollback live in SPEC: [Update Casa Docker from this checkout](SPEC.md#update-casa-docker-from-this-checkout), [Casa pilot](SPEC.md#casa-pilot) and [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission). Deploying is the maintainer's decision; preparing or checking a helper deploys nothing.
 
 ## Release and remaining work
 
