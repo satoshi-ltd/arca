@@ -38,7 +38,7 @@ test("incremental scan reuses unchanged capture; changed metadata invalidates ca
       .verified,
     verified,
   );
-  fs.writeFileSync(file, "two");
+  fs.writeFileSync(file, "a longer second version");
   assert.notEqual(s.scan(v).get("a").hash, first.hash);
 });
 test("relocation verifies copies and retains originals; rejects nesting", (t) => {
@@ -61,7 +61,7 @@ test("relocation verifies copies and retains originals; rejects nesting", (t) =>
 });
 test("retention preserves current revisions and versions not yet acknowledged by backup", (t) => {
   const { s, v } = fixture(t);
-  for (const text of ["one", "two", "three"]) {
+  for (const text of ["one", "second", "third draft"]) {
     fs.writeFileSync(path.join(v.path, "a"), text);
     s.scanHub();
   }

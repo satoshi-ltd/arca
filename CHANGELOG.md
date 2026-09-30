@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.40 — 2026-10-01
+
+- Internal: two daemon tests no longer depend on the filesystem's timestamp resolution, which made the Windows pipeline fail intermittently.
+
 ## 0.6.39 — 2026-10-01
 
 - On Android, a sync that starts while the hub is known to be unreachable no longer raises the "Synchronizing folders" notification or asks for notification permission: it checks the hub first and starts the foreground service only once the hub answers.
