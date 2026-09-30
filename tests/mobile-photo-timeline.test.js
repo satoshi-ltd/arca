@@ -3,11 +3,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   dateLabel,
-  isGalleryVideo,
   mediaDate,
   mergeTimeline,
   monthLabel,
-  uploadStatus,
 } from "../apps/mobile/src/gallery-timeline.js";
 import {
   clampOffset,
@@ -100,7 +98,7 @@ test("timeline orders newest first from hub dates, fills local copies and leads 
   assert.equal(items[4].uri, null);
   assert.equal(items[4].signature, "h2");
   assert.equal(items[5].date, "2025-01-02");
-  assert.equal(isGalleryVideo(items[4]), true);
+  assert.equal(items[4].kind, "video");
   assert.deepEqual(mergeTimeline({}), []);
   assert.equal(mediaDate("Machine-ab12/2024/03/x.jpg"), "2024-03");
   assert.equal(mediaDate("x.jpg"), null);
@@ -123,27 +121,6 @@ test("month and date labels stay readable for undated photos", () => {
   assert.match(dateLabel("2026-09-15T10:12:00"), /10:12/);
   assert.equal(dateLabel(""), "");
   assert.equal(dateLabel("garbage"), "");
-});
-
-test("upload status mirrors the retired source card", () => {
-  const flags = { connected: true, paused: false, busy: false };
-  const ready = { enabled: true, scannedAt: 1, summary: { pending: 0 } };
-  assert.equal(uploadStatus(ready, flags), "Up to date");
-  assert.equal(
-    uploadStatus({ ...ready, summary: { pending: 3 } }, flags),
-    "Incomplete",
-  );
-  assert.equal(uploadStatus(ready, { ...flags, busy: true }), "Syncing");
-  assert.equal(
-    uploadStatus(ready, { ...flags, connected: false }),
-    "Needs attention",
-  );
-  assert.equal(uploadStatus(ready, { ...flags, paused: true }), "Paused");
-  assert.equal(uploadStatus({ ...ready, enabled: false }, flags), "Disabled");
-  assert.equal(
-    uploadStatus({ ...ready, mode: "converting" }, flags),
-    "Incomplete",
-  );
 });
 
 test("shared gallery date and media kind match the hub", () => {

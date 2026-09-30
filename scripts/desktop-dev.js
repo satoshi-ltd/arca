@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { pruneCargo } from "./prune-cargo.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -224,6 +225,7 @@ async function main() {
   const home = path.resolve(
     process.env.ARCA_HOME || path.join(os.homedir(), ".arca"),
   );
+  pruneCargo();
   await restartDevDaemon(
     home,
     path.join(root, "apps/desktop/src-tauri/runtime"),

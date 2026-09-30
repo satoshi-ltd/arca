@@ -1,6 +1,6 @@
 {
   "name": "arca",
-  "version": "0.6.15",
+  "version": "0.6.16",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,17 +16,13 @@
     "update-docker": "node scripts/local/update-docker.js",
     "update-umbrel": "python3 scripts/local/update-umbrel.py",
     "site:build": "node site/scripts/build.mjs",
-    "build:site": "npm run site:build",
     "site:release": "node site/scripts/read-release.mjs"
   },
   "devDependencies": {
-    "@fontsource-variable/instrument-sans": "^5.3.0",
-    "@fontsource/fragment-mono": "^5.3.0",
     "@noble/hashes": "2.0.1",
     "@tauri-apps/cli": "^2.0.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "29.1.1",
-    "lucide": "^0.460.0",
     "prettier": "^3.9.6",
     "vite": "^7.3.6"
   },

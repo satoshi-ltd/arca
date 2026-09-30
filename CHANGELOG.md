@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.16 — 2026-09-30
+
+- The project runs as an autonomous loop: `ROADMAP.md` is a task pool with owners, priorities and acceptance criteria, and `AGENTS.md` wires the maintainer's `next-task` workflow (implement, test, adversarial review, release, watch CI) and defines what each document owns; the changelog is now `CHANGELOG.md`.
+- New release tooling: `scripts/bump-version.js` moves every version manifest at once and `scripts/validate-local.js` validates a clean copy of the working tree with the CI's Node version.
+- Desktop start, build and release prune the Cargo cache past 10 GB (incremental caches first), Android builds keep only the latest dev and production APK, and staged desktop runtimes no longer carry deleted modules.
+- The scale and resilience qualification tools and the tray icon generator are now tracked and pass on the current product; unused dependencies, duplicate files, dead code and the `npm run build:site` alias are gone (use `npm run site:build`, which now clears its old output).
+
 ## 0.6.15 — 2026-09-30
 
 - Documentation catches up with the product. README: gallery folders open in Gallery, the site's motion is CSS-only, web approvals expire after ten minutes, desktop installs update themselves, Docker images publish to Docker Hub only, and Umbrel helper updates have run for real. SPEC: dated notes that read as current status are marked as history (source versions, the desktop updater, long polling). The two documentation-debt items leave ROADMAP.

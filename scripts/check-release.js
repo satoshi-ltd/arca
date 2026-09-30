@@ -43,8 +43,8 @@ if (
   String(mobile.android.versionCode) !== nativeCode
 )
   throw new Error("Mobile native build numbers disagree");
-if (!read("changelog.md").includes(`## ${version} —`))
-  throw new Error("Current version is missing from changelog.md");
+if (!read("CHANGELOG.md").includes(`## ${version} —`))
+  throw new Error("Current version is missing from CHANGELOG.md");
 if (process.env.GITHUB_OUTPUT)
   fs.appendFileSync(
     process.env.GITHUB_OUTPUT,

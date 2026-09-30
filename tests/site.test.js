@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -70,8 +71,12 @@ test("site build uses package.json version without metadata, release.json when p
       [path.join(root, "site/scripts/build.mjs"), ...args],
       { cwd: os.tmpdir(), env: { ...env, ...extra }, encoding: "utf8" },
     );
+  const stale = path.join(root, "site/dist/assets/motion.js");
+  fs.mkdirSync(path.dirname(stale), { recursive: true });
+  fs.writeFileSync(stale, "retired");
   const fallback = build();
   assert.equal(fallback.status, 0, fallback.stderr);
+  assert.equal(fs.existsSync(stale), false, "files a previous build left behind are removed");
   assert.match(fallback.stdout, /expected assets for v0\.3\.1/);
   const fallbackHtml = await readFile(
     path.join(root, "site/dist/index.html"),

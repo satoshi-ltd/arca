@@ -17,6 +17,9 @@ on:
     paths:
       - deploy/**
       - packages/**
+      - apps/desktop/src/**
+      - package.json
+      - package-lock.json
       - scripts/verify-docker.js
       - .github/workflows/publish-docker.yml
 permissions:

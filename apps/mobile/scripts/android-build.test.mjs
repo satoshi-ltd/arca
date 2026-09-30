@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { keepLatest } from './release-assets.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repository = path.resolve(root, '../..');
@@ -35,6 +36,7 @@ test('android-build rejects bad arguments, stops on check:release and derives th
   fs.mkdirSync(path.join(fixture, 'scripts'));
   fs.mkdirSync(path.join(fixture, 'node_modules/expo'), { recursive: true });
   fs.copyFileSync(script, path.join(fixture, 'scripts/android-build.mjs'));
+  fs.copyFileSync(path.join(root, 'scripts/release-assets.mjs'), path.join(fixture, 'scripts/release-assets.mjs'));
   fs.writeFileSync(
     path.join(fixture, 'app.json'),
     JSON.stringify({ expo: { version: '1.2.3', android: { package: 'com.example.demo' } } }),
@@ -48,4 +50,17 @@ test('android-build rejects bad arguments, stops on check:release and derives th
   const missing = build('exit 0', 'dev', '--install-only');
   assert.equal(missing.status, 1);
   assert.ok(missing.stderr.includes(path.join('release-assets', 'demo-1.2.3-android-dev.apk')), missing.stderr);
+});
+
+test('a new build keeps only the latest APK of its kind', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'arca-release-assets-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  for (const name of ['arca-0.6.9-android.apk', 'arca-0.6.15-android.apk', 'arca-0.6.13-android-dev.apk', 'arca-0.6.16-android-dev.apk', 'notes.txt', 'other-1.0.0-android.apk'])
+    fs.writeFileSync(path.join(directory, name), name);
+  keepLatest(path.join(directory, 'arca-0.6.16-android-dev.apk'));
+  assert.deepEqual(fs.readdirSync(directory).sort(), ['arca-0.6.15-android.apk', 'arca-0.6.16-android-dev.apk', 'arca-0.6.9-android.apk', 'notes.txt', 'other-1.0.0-android.apk']);
+  keepLatest(path.join(directory, 'arca-0.6.15-android.apk'));
+  assert.deepEqual(fs.readdirSync(directory).sort(), ['arca-0.6.15-android.apk', 'arca-0.6.16-android-dev.apk', 'notes.txt', 'other-1.0.0-android.apk'], 'other apps\' APKs are never touched');
+  const script = fs.readFileSync(path.join(root, 'scripts/android-build.mjs'), 'utf8');
+  assert.match(script, /if \(!installOnly\) keepLatest\(output\);/, 'an install-only run never deletes APKs');
 });

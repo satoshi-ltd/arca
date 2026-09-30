@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.6.15 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.6.16 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -40,12 +40,19 @@ npm ci
 npm start --prefix apps/desktop
 ```
 
-Each environment owns its commands: the repository root keeps the daemon, tests and site, `apps/desktop` the desktop app and `apps/mobile` the phone app. Run them with `--prefix` or from inside the directory. `npm run start:clean --prefix apps/desktop` clears only Vite caches before the same desktop startup. It preserves state, pairing, files and pause. Startup checks port 1425 first and stops with a clear error if another session owns it; it never kills an unknown port owner. When the same checkout/state is managed by the macOS login service, the launcher unloads and reloads that service around runtime preparation, preserving its login setting and avoiding automatic-restart races. Each start stops the existing local daemon, stages the current runtime, starts it and waits for readiness before opening Tauri. It uses `ARCA_HOME` when set, otherwise the real `~/.arca`, preserving pairing, folders and pause. First-run setup still initializes a new state directory. Closing the app leaves the daemon running; the next development launch replaces it. Automated tests use isolated state. Vite serves development UI on port 1425. The daemon uses 17831; Docker/server installations also serve web there.
+Desktop start, build and release clean the Cargo cache first when `apps/desktop/src-tauri/target` outgrows 10 GB (`ARCA_CARGO_BUDGET_GB` changes the budget): incremental caches go first, and the whole `target` is removed only if that is not enough. Each environment owns its commands: the repository root keeps the daemon, tests and site, `apps/desktop` the desktop app and `apps/mobile` the phone app. Run them with `--prefix` or from inside the directory. `npm run start:clean --prefix apps/desktop` clears only Vite caches before the same desktop startup. It preserves state, pairing, files and pause. Startup checks port 1425 first and stops with a clear error if another session owns it; it never kills an unknown port owner. When the same checkout/state is managed by the macOS login service, the launcher unloads and reloads that service around runtime preparation, preserving its login setting and avoiding automatic-restart races. Each start stops the existing local daemon, stages the current runtime, starts it and waits for readiness before opening Tauri. It uses `ARCA_HOME` when set, otherwise the real `~/.arca`, preserving pairing, folders and pause. First-run setup still initializes a new state directory. Closing the app leaves the daemon running; the next development launch replaces it. Automated tests use isolated state. Vite serves development UI on port 1425. The daemon uses 17831; Docker/server installations also serve web there.
 
 ```sh
 npm test
 npm run build --prefix apps/desktop
 npm run verify:bundle --prefix apps/desktop
+```
+
+Releases bump every manifest at once and validate a clean copy with the CI's Node version before pushing:
+
+```sh
+node scripts/bump-version.js            # next patch, or pass x.y.z
+npx -y node@24.14.0 scripts/validate-local.js
 ```
 
 For isolated hub metadata/API load qualification, run `node scripts/verify-hub-load.js . 100000`. It creates temporary state and a child daemon, tests three concurrent snapshots alongside a verified 1 MiB upload/download, checks HTTP responsiveness and pause/resume, then removes only its fixtures. It never uses the live `~/.arca`. Docker execution and measured limits are in [hub load qualification](SPEC.md#05-docker-hub-load-qualification--september-22).
@@ -90,7 +97,7 @@ npm run build:local:dev -- --install-only  # Reinstall the existing dev APK
 
 Development builds install on the first USB device, otherwise on a running emulator, otherwise they boot `Pixel_9_Pro_Fold`; set `ANDROID_AVD` for another emulator or `ANDROID_SERIAL` to pin a device. Installation uses `adb install -r`, preserves app data and stops on a signature mismatch; it never uninstalls the app. Start Metro yourself with `npm start`.
 
-Development builds compile only `arm64-v8a`, the ABI of every supported phone and of the Apple Silicon emulator, so the debug APK stays small enough for a crowded emulator; production keeps all ABIs. Local builds use `eas build --local`: compilation runs on this Mac, consumes no cloud build quota and retrieves the existing EAS signing credentials; native toolchain versions come from the machine. Cloud builds run in the [satoshi-ltd/arca](https://expo.dev/accounts/satoshi-ltd/projects/arca) EAS project, consume quota and download the finished APK. Every build runs `check:release` first and rerunning replaces its APK. Do not replace the signing key when updating an installed app. The repository root has no mobile scripts, and CI never builds or tests mobile installers: `npm test` inside `apps/mobile` checks the build script wiring.
+Development builds compile only `arm64-v8a`, the ABI of every supported phone and of the Apple Silicon emulator, so the debug APK stays small enough for a crowded emulator; production keeps all ABIs. Local builds use `eas build --local`: compilation runs on this Mac, consumes no cloud build quota and retrieves the existing EAS signing credentials; native toolchain versions come from the machine. Cloud builds run in the [satoshi-ltd/arca](https://expo.dev/accounts/satoshi-ltd/projects/arca) EAS project, consume quota and download the finished APK. Every build runs `check:release` first, rerunning replaces its APK, and a finished build keeps only the latest dev and the latest production APK in `release-assets/`. Do not replace the signing key when updating an installed app. The repository root has no mobile scripts, and CI never builds or tests mobile installers: `npm test` inside `apps/mobile` checks the build script wiring.
 
 Build profiles currently use Node 24.14.1 and APK output. Increasing native build numbers and store distribution remain release work. The installed pilot APK predates the latest icon/splash and other native refinements; do not infer native acceptance from a successful export.
 
@@ -112,7 +119,7 @@ The default container command uses `daemon --setup`: it prepares empty state for
 
 ## Umbrel package
 
-`deploy/umbrel/arca/` is a separate App Store package under preparation, pinned to the published **0.4.1** multiarch Docker image. It does not replace `compose.yaml`, `deploy/Dockerfile`, the Docker release pipeline or the Casa installation. The current 0.4.2 WIP is not included in that image.
+`deploy/umbrel/arca/` is a separate App Store package under preparation, pinned to the published **0.4.1** multiarch Docker image. It does not replace `compose.yaml`, `deploy/Dockerfile`, the Docker release pipeline or the Casa installation. Newer releases are not in that image.
 
 The package opens the shared first-run wizard to choose a hub or replica, with app-owned persistent storage and adds a browser page that exchanges Umbrel's per-install Arca app password for Arca's existing single-use sign-in code. Companion clients retain Arca pairing and credentials. Local checks and a real amd64 Umbrel installation, web sign-in, bidirectional sync and restart persistence have passed. The pilot opens at `http://umbrel.local:17831/umbrel`; App Store submission remains pending. See [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission--september-12) for package layout, test commands and remaining requirements.
 
@@ -155,11 +162,11 @@ Before distribution: complete cross-client/offline/conflict workflows; real iOS/
 ## Documentation and change policy
 
 - [README.md](README.md): orientation and entry commands.
-- [AGENTS.md](AGENTS.md): contributor instructions and operational boundaries.
+- [AGENTS.md](AGENTS.md): contributor instructions, the autonomous task workflow and operational boundaries.
 - [SPEC.md](SPEC.md): current state, contracts, operations and shared design system.
-- [ROADMAP.md](ROADMAP.md): remaining work, open decisions, pending deployments and qualification gates.
+- [ROADMAP.md](ROADMAP.md): the task pool — approved work, maintainer tasks and proposals.
 
-`AGENTS.md` contains contributor instructions; `changelog.md` records versions. The original visual assets are references, not another specification. Third-party documentation/licenses remain with their dependencies.
+`AGENTS.md` contains contributor instructions; `CHANGELOG.md` records versions. The original visual assets are references, not another specification. Third-party documentation/licenses remain with their dependencies.
 
 Every commit requires a version bump and matching changelog entry, with package/lockfiles and Tauri manifests aligned. **No commit or push without explicit authorization.**
 
@@ -168,11 +175,11 @@ Every commit requires a version bump and matching changelog entry, with package/
 The single page in `site/` is static HTML/CSS with local brand fonts and no navigation menu, client-side framework, telemetry or runtime API. Illustration motion is CSS-only, with no cursor response or JavaScript, and respects reduced-motion preferences. It follows `../alf`'s Node-build → GitHub Actions → Cloudflare Pages direct-upload approach.
 
 ```sh
-npm run build:site
+npm run site:build
 python3 -m http.server --directory site/dist 4178
 ```
 
-`npm run site:build` (alias `npm run build:site`) works locally without GitHub access: it reads `site/release.json`, or the file specified by `RELEASE_JSON`, and otherwise derives the version from `package.json` with the expected desktop installer URLs for tag `v<version>` and no APK link. With published metadata, version and buttons come from actual release assets, including alpha prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. At the user’s request, unconfigured stores link to their generic home pages for now; these are not Arca listing links.
+`npm run site:build` works locally without GitHub access: it reads `site/release.json`, or the file specified by `RELEASE_JSON`, and otherwise derives the version from `package.json` with the expected desktop installer URLs for tag `v<version>` and no APK link. With published metadata, version and buttons come from actual release assets, including alpha prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. At the user’s request, unconfigured stores link to their generic home pages for now; these are not Arca listing links.
 
 To build from published metadata locally, provide `GH_TOKEN` or `GITHUB_TOKEN` (or an authenticated GitHub CLI; the repository is private) and run:
 

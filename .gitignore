@@ -1,7 +1,5 @@
 node_modules/
 target/
-.arca/
-.demo/
 dist/
 .DS_Store
 *.log

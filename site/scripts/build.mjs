@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
+import { readFile, writeFile, mkdir, cp, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -142,6 +142,7 @@ if (
       playStore: process.env.PLAY_STORE_URL,
     },
   );
+  if (!process.env.SITE_OUTPUT) await rm(output, { recursive: true, force: true });
   await mkdir(path.join(output, "assets"), { recursive: true });
   await writeFile(path.join(output, "index.html"), html);
   await cp(path.join(root, "site/styles.css"), path.join(output, "styles.css"));

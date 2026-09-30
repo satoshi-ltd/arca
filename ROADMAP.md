@@ -1,89 +1,275 @@
 # Arca roadmap
 
-Updated 2026-09-29 · Phase 1 functional alpha, not release-qualified.
+Updated 2026-09-30 · Phase 1 functional alpha, not release-qualified.
 
-This document owns everything still to do: task candidates, open decisions, pending deployments, qualification gates and documentation debt. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [changelog.md](changelog.md) records what each version shipped. When an item ships, remove it here and record it in the changelog and in the SPEC section it changes. When an item is decided, move the decision into SPEC.
+This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
-Status words: **proposed** (needs maintainer validation), **decided** (validated, not started), **in progress**, **implemented** (in source, not deployed or verified), **needs deployment**, **needs qualification** (real-environment evidence missing), **known gap**, **planned**. Keep implemented, deployed and verified separate: a build, an API response or a passing test is not workflow acceptance.
+## How this file works
 
-For a new task, cite its ID and the SPEC contract it touches, define a bounded outcome, the affected code, validation and deployment target. Do not turn a proposal into active work, or create a Codex task, unless the maintainer asks.
+Every task is one entry that a single commit can finish, with fixed fields (decisions only need their question):
 
-## Next up
+- **ID** — stable, never reused. Keep an existing ID when SPEC or the changelog cites it.
+- **type** — `bug`, `feature`, `chore`, `verify` (evidence from a real device or environment), `deploy` (build, install or publish outside the repository) or `decision`.
+- **owner** — `agent` (Claude can finish it in the repository and prove it with tests) or `maintainer` (needs a device, a native build, Casa, credentials or a product choice).
+- **priority** — `high`, `normal` or `low`. Within a lane, order is priority, then position.
+- **depends** — IDs that must finish first.
+- **accept** — what proves it done. Agent tasks need evidence a test or command can show.
 
-- **P1-DEVICE-CHECK** · needs qualification. On the Fold after a native build with v0.6.13: storage drops to about the photos size after the first sync; grid thumbnails and video posters fill in quickly while folders sync; HEIC photos open fast. Also, with Metro reloaded: v0.6.7 infinite scroll and fast-scroll thumb (drag follows the finger, sparse year chips), pinch density levels (also on iOS); v0.6.9 offline gallery with every downloaded photo from local disk and placeholders for the rest; v0.6.10 local video posters and autoplay; v0.6.11 Info pausing/resuming a video.
-- **P1-DESKTOP-BUILD** · needs deployment. The running desktop daemon needs a build from v0.6.14 or later for unlink-deletes-by-default, local-only previews, the photo/video header counts and relinking with the hub as the source of truth.
-- **P1-CASA-DEPLOY** · needs deployment. Record Casa's running version first. Hub-side changes waiting on a redeploy: v0.6.11 per-month video counts (web header); v0.6.7 per-month newest revision (mobile detects edits that keep a month's count); v0.6.6 snapshot lease renewal on page reads (older hubs restart a resumed first download after 10 minutes); removal of obsolete gallery endpoints; the v0.6.0 hub audit changes (503/412 gating, error codes, lease replacement, stored-part upload verification, lost-reply fast-forward). Order: Casa first, then desktop. From 0.6.2 on, replicas and phones go before or together with the hub.
+Lanes:
 
-## Maintainer decisions
+- **Queue** — approved agent tasks, in the order they will be done. Only the maintainer moves a task here, with two exceptions that enter at the top: a bug the maintainer reports, and a red pipeline on `main`.
+- **In progress** — at most one agent task.
+- **Needs maintainer** — `verify`, `deploy` and `decision` tasks, and agent work waiting on one of them.
+- **Proposed** — ideas not yet approved, from the maintainer or from Claude. Never worked on until approved.
 
-- **P1-DECISIONS-SYNC** · proposed. Open choices from the offline audit: LAN permission caching; serving the first snapshot page without a hub scan; trusting recorded blob signatures (completed-blob checks still re-hash); merging on-disk entries into desktop browsing; offline deletion of unsynced files; renaming modified synced files; offline Disconnect; removing the unreachable picker-only gallery path.
-- **P1-EMULATOR-STORAGE** · proposed. The development emulator has about 171 MB free: create a new 64 GB AVD or reinitialize the existing one.
-- **P1-INFO-NOTICE** · proposed. Default colour of info notices: inverted paper or green.
-- **P1-CASA-POLICIES** · decided, waiting. Once every device runs 0.6.2 or later, remove the redundant `.DS_Store`/`Thumbs.db`/`desktop.ini`/`.git`/cache lines from Casa's `alpi-workspace`, `alpi-mirai-workspace` and `alpi-host` policies.
+When a task ships, delete it and record it in the changelog and in the SPEC section it changes. When a feature needs device evidence, split it: the implementation is an agent task; the device check is a maintainer `verify` task that depends on it. The loop never builds native code, so a `NAT-*` task ends with its JavaScript and contract tests; its compile and device evidence come from a maintainer build (BUILD-MOBILE or BUILD-IOS) recorded as a follow-up `verify`.
 
-## Leaving alpha: phase 1 qualification
+## Queue
+
+- **DOC-SPEC-SLIM** — Keep SPEC to contracts, operations and design
+  `chore · agent · high`
+  accept: every still-true statement from the dated notes is folded, in the present tense, into the section that owns it; the notes, validation logs and stale "uncommitted" statuses are then deleted (git and the changelog keep the history); "Resume work here" becomes a current-state summary of about 2 KB; the catch-all tails of "Website publication" and "Umbrel packaging" move under the sections they describe; the "Desktop updates" contract moves out of "Remaining work"; README's pilot-update sections shrink to pointers into SPEC operations; links from README and ROADMAP follow any renamed heading; SPEC lands near 150–200 KB.
+
+## In progress
+
+_None._
+
+## Needs maintainer
+
+### Builds and deployments
+
+- **BUILD-MOBILE** — Native mobile build from the current source
+  `deploy · maintainer · high`
+  accept: an Android production build of v0.6.15 or later installed on the Fold. It carries the v0.6.13 `ArcaNetwork.thumbnail` module, the Android screen-off TransferSession fix and drops the obsolete exports and permission text of the removed deletion review.
+- **BUILD-DESKTOP** — Desktop build from the current source
+  `deploy · maintainer · high`
+  accept: the running desktop app and daemon report v0.6.15 or later (unlink deletes by default, local-only previews, photo/video header counts, relink with the hub as the source of truth, 30 s keep-alive).
+- **BUILD-IOS** — First iOS device build on SDK 57
+  `deploy · maintainer · normal`
+  accept: an iOS build installed on a physical device (only a simulator `xcodebuild` has passed, at v0.6.1).
+- **CASA-VERSION** — Record Casa's running version
+  `verify · maintainer · high`
+  accept: the version is written into SPEC's Casa operations section.
+- **P1-CASA-DEPLOY** — Redeploy Casa
+  `deploy · maintainer · high · depends: CASA-VERSION`
+  accept: Casa runs v0.6.15 or later. Pending hub-side changes: v0.6.11 per-month video counts; v0.6.7 per-month newest revision; v0.6.6 lease renewal on page reads; removal of obsolete gallery endpoints; the v0.6.0 hub audit changes (503/412 gating, error codes, lease replacement, stored-part upload verification, lost-reply fast-forward). Order: Casa first, then desktop; from 0.6.2 on, replicas and phones go before or together with the hub.
+- **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on Casa
+  `deploy · maintainer · normal · depends: BUILD-DESKTOP, P1-CASA-DEPLOY`
+  accept: shipped installers and Casa carry the production dependencies (Sharp, exifr) and the gallery opens on both.
+
+### Device checks
+
+- **FOLD-STORAGE** — Storage after the object-store fix
+  `verify · maintainer · high · depends: BUILD-MOBILE`
+  accept: after the first sync, Android's storage figure for Arca drops to about the synchronized folders' size (from about 55 GB to about 26 GB for `photos`).
+- **FOLD-THUMBNAILS** — Gallery thumbnails, posters and viewer
+  `verify · maintainer · high · depends: BUILD-MOBILE`
+  accept: grid thumbnails and video posters fill in within seconds while folders sync; HEIC photos open quickly; the viewer shows the thumbnail at once; offline, every downloaded photo appears and the rest stay placeholders.
+- **FOLD-GALLERY-UX** — Gallery gestures and playback
+  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  accept: infinite scroll both ways, the fast-scroll thumb follows the finger with sparse year chips, pinch density levels (also on iOS), videos autoplay when opened, and Info pauses and resumes a video.
+- **P2-VIDEO** — Video on physical devices
+  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  accept: playback with audio, seeking and rotation on Android and iOS; local posters on iOS.
+- **P2-GALLERY** — Album uploads on physical devices
+  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  accept: original cloud access and EXIF/RAW/HEIC/Live Photo fidelity (limited access and editor workflows included), and a Samsung run with a library over 10 GiB covering screen-off/background continuity, battery restrictions, interruption and resumed completion. Verify the historical archive and real-phone uploads before removing Immich or claiming a migration.
+- **P2-GALLERY-DELETE-DEVICE** — Shared gallery deletion on devices
+  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  accept: with disposable photos on Android and iOS: direct shared deletion, Live Photo groups, connection failure, partial selection failure and unchanged Photos originals; deletions persist across remounts; non-recursive directory deletion works (Android `Files.delete`, iOS `rmdir`).
+- **P2-MOBILE** — Mobile replica acceptance
+  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  accept: complete persistent copies, honest incomplete-work reporting, imports reaching the hub, resumable transfers without corruption, no data loss on suspension; low storage, interrupted downloads, revoked credentials and offline access; keyboard handling on phone, Fold and iOS; text scaling; launcher and splash in a standalone build; rename; APK opening on Samsung; Fold sticky scroll; settings visuals; iOS LAN pairing; name propagation; Fold throughput.
+- **P2-SHARING** — Incoming sharing
+  `verify · maintainer · low · depends: BUILD-MOBILE`
+  accept: the iOS Share Extension works; cold-start, foreground and multiple-file shares work. Known gaps stay documented: text/plain streams, links and text are not imported, and duplicate temporary filenames must be shared separately.
+- **P2-FOLD-SCALING** — Fold scaling
+  `verify · maintainer · low · depends: BUILD-MOBILE`
+  accept: the original Fold scaling issue no longer reproduces with the text-size setting, or a new bug is filed.
+
+### Phase 1 qualification
 
 Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sync, independent destinations, offline edits, reconnection, conflict preservation, deletion, restoration, revocation and restart recovery; backup restore is checked independently; web authentication and unauthorized access are verified; users can identify the managed machine and recover from errors without guessing.
 
-- **P1-LOAD** · needs qualification. A large hub folder while unrelated replicas upload and receive. The bounded Docker run (100,000 entries, three concurrent snapshots, a verified 1 MiB transfer) passed; sustained proposal/mutation queue latency, pause/unlink responsiveness and abandoned snapshot leases remain. Also qualify large application-state folders per workload. Do not claim concurrency solved from a status request.
-- **P1-SCHEDULER** · implemented and deployed, needs qualification. Persistent dirty paths, incremental cursors, 15 s/60 s adaptive checks, six-hour reconciliation, long polling (`/v1/events`) and mobile OS background tasks. Measure idle wakeups, CPU, disk reads, traffic, battery and recovery correctness before changing timing defaults.
-- **P1-UX** · needs qualification. The actual running native binary: tray transitions, light/dark menu bars, reduced motion, long paths, dialogs, offline startup and error recovery; real sleep/wake on macOS, Windows and Linux; OS notification delivery, activation and click routing on Windows/Linux; the native gallery Save dialog and Maps launch; the 320 px tray viewport, role chips in Tauri and WebKit/Windows motion.
-- **P1-RECOVERY** · needs qualification. Prolonged soak, physical power loss and an independent real backup/restore drill. The pilot has no separate real backup yet.
-- **P1-RELEASE** · pipelines implemented, needs qualification. Release bundle checks, supported desktop distribution validation and real installer/runtime acceptance. Hosted workflows passed for v0.6.7–v0.6.11; v0.6.4–v0.6.6 were not checked. Hosted direct publication (draft assets, Docker Hub push) and the macOS installer retry still need a hosted confirmation. Docker and GitHub publication are not atomic.
-- **P1-UPDATER** · implemented, needs qualification. A real update between two published versions on macOS with and without Launch at login, Windows NSIS and Linux AppImage/deb, each ending with the daemon answering under the new version; hosted `.deb.sig` generation. Known gap: an NSIS failure after Arca exits leaves the daemon stopped until Arca reopens (candidate: a detached Windows watcher that restores it). The Rust unit tests in `apps/desktop/src-tauri` do not run in CI.
-- **P1-SERVER-ONBOARDING** · implemented, user acceptance in progress. Full real-device replica pairing and selection from the new wizard, ARM, image upgrades. See [Server onboarding and first access](SPEC.md#server-onboarding-and-first-access--september-12-correction).
-- **P1-CASA-CPU** · known gap. The Casa hub CPU stall (98–103% CPU with HTTP and discovery timeouts) has no identified cause. Capture or reproduce before attributing it; do not repeat live evaluator-based profiling.
+- **P1-LOAD** — Sustained load
+  `verify · maintainer · normal`
+  accept: a large hub folder while unrelated replicas upload and receive, measuring proposal/mutation queue latency, pause/unlink responsiveness and abandoned snapshot leases; large application-state folders per workload. The bounded Docker run (100,000 entries, three concurrent snapshots, a verified 1 MiB transfer) already passed.
+- **P1-SCHEDULER** — Scheduler measurements
+  `verify · maintainer · normal`
+  accept: idle wakeups, CPU, disk reads, traffic, battery and recovery correctness measured before any timing default changes.
+- **P1-UX** — Native binary acceptance
+  `verify · maintainer · normal · depends: BUILD-DESKTOP`
+  accept: tray transitions, light/dark menu bars, reduced motion, long paths, dialogs, offline startup and error recovery; real sleep/wake on macOS, Windows and Linux; OS notifications, activation and click routing on Windows and Linux; the native gallery Save dialog and Maps launch; the 320 px tray viewport, role chips in Tauri and WebKit/Windows motion.
+- **P1-RECOVERY** — Recovery drill
+  `verify · maintainer · normal`
+  accept: a prolonged soak, a physical power loss and an independent real backup/restore drill (the pilot has no separate real backup yet).
+- **P1-RELEASE** — Installer acceptance
+  `verify · maintainer · normal`
+  accept: release bundles install and run on each supported platform; a hosted confirmation of direct publication (draft assets, Docker Hub push) and of the macOS installer retry. Hosted `publish` passed for v0.6.7–v0.6.13 (v0.6.13 after a rerun) and v0.6.15.
+- **P1-UPDATER** — Real desktop update
+  `verify · maintainer · normal`
+  accept: an update between two published versions on macOS (with and without Launch at login), Windows NSIS and Linux AppImage/deb, each ending with the daemon answering under the new version; hosted `.deb.sig` generation.
+- **P1-SERVER-ONBOARDING** — Server onboarding acceptance
+  `verify · maintainer · normal`
+  accept: real-device replica pairing and selection from the new wizard, ARM, image upgrades. See [Server onboarding](SPEC.md#server-onboarding-and-first-access--september-12-correction).
+- **P1-CASA-CPU** — Casa CPU stall
+  `verify · maintainer · normal`
+  accept: a capture or reproducer of the 98–103% CPU stall with HTTP and discovery timeouts. Do not repeat live evaluator-based profiling.
+- **WIN-RECYCLE** — Recycle Bin on real Windows
+  `verify · maintainer · normal · depends: BUILD-DESKTOP`
+  accept: relinking a replica on a fixed Windows drive moves outdated files to the Recycle Bin, and a file larger than the bin or a disabled bin is refused rather than deleted (only a simulated PowerShell covers this today).
 
-## Mobile
+### Distribution
 
-- **P2-MOBILE** · implemented, needs qualification. Selected folders become complete persistent copies, incomplete work is reported honestly, imports reach the hub, transfers resume without corruption and suspension loses no data. Validate low storage, interrupted downloads, revoked credentials, offline access, keyboard handling (phone, Fold, iOS), text scaling, launcher/splash in a standalone build, rename, APK opening on Samsung, Fold sticky scroll, settings visuals, iOS LAN pairing, name propagation and Fold throughput after an updated build. Distribution configuration and store listings remain.
-- **P2-GALLERY** · implemented, needs qualification. Album uploads alongside a complete working copy: native installation and physical-device acceptance, original cloud access and EXIF/RAW/HEIC/Live Photo fidelity (including limited access and editor workflows), and a physical Samsung run with a library over 10 GiB, screen-off/background continuity, battery restrictions, interruption and resumed completion. Verify the historical archive and real-phone uploads independently before removing Immich or claiming a migration.
-- **P2-GALLERY-VIEW** · implemented, needs deployment and installer qualification. Desktop/web chronological gallery with authenticated persistent thumbnails prepared after photo acceptance, dated browsing and the image viewer. Isolated API/DOM tests and browser visual checks pass; it needs the updated hub and desktop production dependencies (Sharp, exifr) in shipped installers and on Casa.
-- **P2-GALLERY-DELETE-DEVICE** · needs qualification. With disposable photos on Android and iOS: direct shared deletion, Live Photo groups, connection failure, partial selection failure and unchanged Photos originals; persistence of gallery deletions across remounts; non-recursive directory deletion (Android `Files.delete`, iOS `rmdir`).
-- **P2-VIDEO** · needs qualification. Physical-device video/audio, seeking and rotation; local posters on iOS (the frame request retries until the player item attaches).
-- **P2-NATIVE-AUDIT** · not implemented, needs a native rebuild. F03 iOS cancel/session race; F01, F10 (native half), F29, F35 Android picker/share copies off the UI and module threads with verified completion and generated cache names; F12/F32 native error codes, Android cancel-before-connect and a write watchdog; native iOS hashing; a per-item iCloud photo picker; share-extension failure feedback.
-- **P2-MOBILE-ENGINE** · not implemented. Adaptive mobile download chunks (1 MiB sequential today, desktop honours 8 MiB) and moving the verified download into place instead of copying it (objects are collected after each cycle since v0.6.13, but materialization still needs space for two copies of the file being applied), pending measurement on the Fold; a hub-busy liveness probe; F73 credential identity check on 401 (deferred: a hub destroyed and set up again at the same address must still unpair replicas); a crash record from a global error handler; a tolerant `galleryConfig` that cannot publish deletions from a broken gallery record; a path-scoped lookup so gallery conflict recovery does not cancel a paused first-download lease.
-- **P2-MEDIA-LIBRARY** · not implemented. Migrate the gallery from `expo-media-library/legacy` to the `Query`/`Asset`/`Album` model.
-- **P2-SHARING** · known gap. The iOS Share Extension is configured but unverified; text/plain file streams, links and text are not imported; duplicate temporary filenames must be shared separately; cold-start, foreground and multiple-file cases are untested.
-- **P2-NATIVE-BUILD** · needs deployment. A native build that includes the Android screen-off TransferSession fix and drops the obsolete exports and permission text of the removed deletion review.
-- **P2-PERFORMANCE** · proposed. Measure native first paint, cold load and large-directory listing latency; consider native asynchronous inventory on mobile; narrow desktop DOM updates where measurements justify them.
-- **P2-FOLD-SCALING** · known gap. The Samsung Fold scaling issue has no recorded fix; the September 16 text-size setting may cover it. Verify.
+- **P1-UMBREL-IMAGE** — Choose the Umbrel release image
+  `decision · maintainer · normal`
+  accept: keep 0.4.1, or move all three image references and the manifest version to a newer image (0.4.1 lacks the onboarding fixes). Moving it also retires `deploy/umbrel/arca/server-setup.js.template`, a copy of `packages/daemon/setup.js` mounted over the pinned image.
+- **P1-UMBREL** — Umbrel submission
+  `deploy · maintainer · normal · depends: P1-UMBREL-IMAGE`
+  accept: ARM runtime and image-upgrade path qualified; real client addressing and `app_proxy` checked; public repository/support access and distribution licence resolved; checked screenshots and source logo attached; the real PR opened, its URL recorded in `submission`, and the full lint rerun. Keep the pilot icon override until the official gallery is published. The Umbrel update helper does not qualify arbitrary future schema upgrades or restores. See [Umbrel packaging](SPEC.md#umbrel-packaging-and-submission--september-12).
+- **P1-SITE** — Website domain
+  `verify · maintainer · low`
+  accept: `arca.satoshi-ltd.com` serves the Pages project and Git auto-deploys are off. Publication itself already works: `publish-site` deployed to Cloudflare Pages on September 29.
+- **P1-PUBLIC-ACCESS** — Public downloads
+  `decision · maintainer · low`
+  accept: anonymous GitHub downloads work before launch (they returned 404), store links point to real listings once they exist, and Docker Hub visibility is decided.
+- **P1-SIGNING** — Code signing
+  `decision · maintainer · low`
+  accept: a decision on Windows signing; optionally one signed macOS run with `sign_macos` checked and `publish` unchecked.
 
-## Web and pairing
+### Decisions
 
-- **P2-WEB-TRUST** · not implemented. Console-free initial trust and a passkey flow; background push for web sign-in approval; QR pairing; pairing a discovered replica directly from another replica, remote hub-administration switching and one-click bidirectional pairing (none implemented; proposals only).
-- **P1-CODE-BUDGET** · known limit. Anyone who reaches the hub can deliberately exhaust the short-code budget; keep access on trusted routes.
+- **DEC-LAN-PERMISSION** — Cache LAN permission?
+  `decision · maintainer · normal`
+- **DEC-FIRST-PAGE** — Serve the first snapshot page without a hub scan?
+  `decision · maintainer · normal`
+- **DEC-BLOB-SIGNATURES** — Trust recorded blob signatures instead of re-hashing completed blobs?
+  `decision · maintainer · normal`
+- **DEC-DESKTOP-DISK-ENTRIES** — Merge on-disk entries into desktop browsing?
+  `decision · maintainer · low`
+- **DEC-OFFLINE-DELETE** — Allow offline deletion of unsynced files?
+  `decision · maintainer · low`
+- **DEC-RENAME-MODIFIED** — Allow renaming modified synced files?
+  `decision · maintainer · low`
+- **DEC-OFFLINE-DISCONNECT** — Allow Disconnect while offline?
+  `decision · maintainer · low`
+- **DEC-PICKER-GALLERY** — Remove the unreachable picker-only gallery path?
+  `decision · maintainer · low`
+- **DEC-INFO-NOTICE** — Default colour of info notices: inverted paper or green?
+  `decision · maintainer · low`
+- **DEC-CONVERTING-LEGACY** — Remove the legacy `converting` mode on phones?
+  `decision · maintainer · normal`
+  accept: a yes or no. The JPEG/HEIC conversion was removed on September 26, but `replica.js`, `App.jsx` and a test still recover an interrupted conversion "from the previous build"; AGENTS.md forbids legacy modes, yet a phone could still hold that state.
+- **DEC-LICENSE** — Project licence
+  `decision · maintainer · normal`
+  accept: a licence chosen and added as `LICENSE` (the repository has none; P1-UMBREL and P1-PUBLIC-ACCESS need it).
+- **DEC-SITE-PALETTE** — Should the site share the app's tokens?
+  `decision · maintainer · low`
+  accept: `site/styles.css` keeps its own palette (paper `#f4f6ef` versus the app's `#F4F6F1`) or adopts the app tokens with a guard test.
+- **LOCAL-CLEANUP** — Old pre-SPEC documents
+  `decision · maintainer · low`
+  accept: keep, archive or delete `.cache/docs-before-consolidation` (PLAN, PROTOCOL, STATUS and the legacy Syncthing spec from before SPEC existed). APKs and the Cargo cache now prune themselves.
+- **P1-CASA-POLICIES** — Remove redundant Casa policy lines
+  `deploy · maintainer · low · depends: every device on 0.6.2 or later`
+  accept: the `.DS_Store`/`Thumbs.db`/`desktop.ini`/`.git`/cache lines are gone from Casa's `alpi-workspace`, `alpi-mirai-workspace` and `alpi-host` policies.
 
-## Hub, Docker and Umbrel
+### Confirm and close
 
-- **P1-UMBREL** · installed on amd64 Umbrel, submission pending. ARM runtime, image-version upgrade path, public metadata and licence, submission. Before submitting: choose the release image (keep 0.4.1, or update all three image references and the manifest version together after a newer image is published; the pinned 0.4.1 image lacks the onboarding fixes); qualify upgrades, real client addressing and the real `app_proxy`; resolve public repository/support access and the distribution licence; attach checked screenshots and the source logo; open the real PR, record its URL in `submission` and rerun the full lint. Keep the pilot icon override until the official gallery is published. The Umbrel update helper does not qualify arbitrary future schema upgrades or restores. See [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission--september-12).
+Older notes still list these as open while later notes suggest they are resolved. Confirm each, then Claude deletes it and corrects the older note:
 
-## Security and signing
+- F44, resuming snapshots across turns — implemented in v0.6.6.
+- The Umbrel helper's first real update and the `update-docker` end-to-end run — both recorded as done.
+- Fold/emulator sync after the port 17831 migration — the Fold syncs with Casa since.
+- Pending Windows/Ubuntu CI reruns from September — hosted runs have passed since.
+- Cache-first navigation marked proposed — partly implemented since.
+- Web approval delivery and Android incoming sharing via COROS — confirmed by the maintainer.
+- The cause of an earlier Fold pause — likely the album-first ordering fixed in v0.6.6.
+- The emulator storage decision — the emulator had 9.3 GB free on September 29.
 
-- **P1-SIGNING** · known gap. Windows signing is not implemented; macOS Developer ID signing/notarization stays optional (a signed run with `sign_macos` checked and `publish` unchecked remains to try).
-- F29 (expo-sharing writes to `cacheDir/<sender display name>`) is a security issue tracked in **P2-NATIVE-AUDIT**.
+## Proposed
 
-## Distribution and website
+Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
 
-- **P1-SITE** · needs deployment. Cloudflare `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_PAGES_PROJECT_NAME` are missing (DevOps); create a separate Pages project, attach `arca.satoshi-ltd.com`, disable Git auto-deploys and run the GitHub-to-Cloudflare publication end to end.
-- **P1-PUBLIC-ACCESS** · needs qualification. Anonymous GitHub access returned 404: confirm public downloadability before launch; replace store home-page links with real listing URLs once they exist; decide whether Docker Hub is public.
-
-## Verify and close
-
-Items older notes still list as open, while later notes suggest they are resolved. Confirm, then delete them here and fix the older note:
-
-- F44, resuming snapshots across turns: implemented in v0.6.6.
-- The Umbrel helper's first real update and the `update-docker` end-to-end run: both recorded as done.
-- Fold/emulator sync after the port 17831 migration: the Fold syncs with Casa since.
-- iOS on SDK 57: a simulator `xcodebuild` passed at v0.6.1; a device build is still missing.
-- Pending Windows/Ubuntu CI reruns from September: hosted runs have passed since.
-- Old Casa deployment gaps: later deployments happened; Casa's current version is not recorded (see **P1-CASA-DEPLOY**).
-- Cache-first navigation, marked proposed: partly implemented since.
-- Web approval delivery and Android incoming sharing via COROS: confirmed by the maintainer (iOS and multi-file sharing stay in **P2-SHARING**).
-- The cause of an earlier Fold pause: likely the album-first ordering fixed in v0.6.6.
+- **CI-RUST-TESTS** — Run the desktop Rust unit tests in CI
+  `chore · agent · high`
+  accept: the publish workflow runs `cargo test` for `apps/desktop/src-tauri` (daemon identity, locks, updater) and fails the pipeline on a failing test.
+- **MOB-MOVE-DOWNLOADS** — Move verified downloads into place
+  `feature · agent · high`
+  accept: materializing a download moves the verified object instead of copying it when no other row in the same pull needs that hash, so applying a file never needs space for two copies; a replica test proves one copy during apply and identical-hash rows still materialize.
+- **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
+  `feature · agent · normal`
+  accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
+- **MOB-CRASH-RECORD** — Record crashes from a global error handler
+  `feature · agent · normal`
+  accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display.
+- **MOB-GALLERY-CONFIG** — Tolerate a broken gallery record
+  `bug · agent · normal`
+  accept: a malformed gallery configuration never publishes deletions; a replica test with a corrupt record.
+- **MOB-LEASE-LOOKUP** — Path-scoped lookup for gallery conflict recovery
+  `bug · agent · normal`
+  accept: gallery conflict recovery after an interrupted propose no longer opens a replacing snapshot that cancels a paused first-download lease; a replica test shows the lease survives.
+- **MOB-HUB-LIVENESS** — Hub-busy liveness probe on mobile
+  `feature · agent · low`
+  accept: a busy hub is told apart from an unreachable one before the phone marks itself offline; client tests cover both.
+- **MOB-ADAPTIVE-CHUNKS** — Adaptive mobile download blocks
+  `feature · agent · low · depends: a Fold throughput measurement`
+  accept: block size grows toward desktop's 8 MiB on fast links and shrinks on slow ones, measured on the Fold before and after.
+- **MOB-401-IDENTITY** (F73) — Credential identity check on 401
+  `feature · agent · low`
+  accept: a 401 from a different hub identity is told apart from a revoked credential, while a hub destroyed and set up again at the same address still unpairs replicas.
+- **P2-MEDIA-LIBRARY** — Migrate to the new media library API
+  `chore · agent · low`
+  accept: the gallery uses `expo-media-library`'s `Query`/`Asset`/`Album` model instead of `expo-media-library/legacy`, with tests; device evidence is a follow-up `verify`.
+- **NAT-F29-SHARE-CACHE** — Safe cache names for incoming shares (security)
+  `bug · agent · high`
+  accept: Android shared files land under generated cache names, never `cacheDir/<sender display name>`; native change, device evidence follows in a `verify`.
+- **NAT-F01-F10-COPIES** — Android picker/share copies off the UI thread
+  `bug · agent · normal`
+  accept: picker and share copies (F01, F10 native half, F35) run off the UI and module threads with verified completion; device evidence follows.
+- **NAT-F12-F32-ERRORS** — Native error codes and write watchdog
+  `feature · agent · normal`
+  accept: native requests return error codes, Android cancels before connect, and a write watchdog bounds stalled writes; device evidence follows.
+- **NAT-F03-IOS-CANCEL** — iOS cancel/session race
+  `bug · agent · normal`
+  accept: cancelling during session setup never leaves a request running; device evidence follows.
+- **NAT-IOS-HASH** — Native hashing on iOS
+  `feature · agent · low`
+- **NAT-ICLOUD-PICKER** — Per-item iCloud photo picker
+  `feature · agent · low`
+- **NAT-SHARE-FEEDBACK** — Share-extension failure feedback
+  `feature · agent · low`
+- **CI-NODE-VERSION** — One Node version for CI, Docker, runtime and EAS
+  `chore · agent · normal`
+  accept: the version lives in one place (for example `.node-version`) read by the workflows, `deploy/Dockerfile`, `stage-runtime.js`, `validate-local.js` and `apps/mobile/eas.json`; the EAS profile's 24.14.1 versus everything else's 24.14.0 is resolved.
+- **REL-MANIFEST-LIST** — Share the release manifest list
+  `chore · agent · low`
+  accept: `scripts/check-release.js` and `scripts/bump-version.js` read one list of version locations; both tests still pass.
+- **CI-TIDY** — Workflow consistency
+  `chore · agent · low`
+  accept: `publish-site.yml` uses the same `actions/checkout` and `actions/setup-node` majors as the other workflows, and the misindented `fi` in `publish.yml` is fixed; actionlint passes.
+- **ORG-DESKTOP-SCRIPTS** — Move desktop tooling into `apps/desktop/scripts`
+  `chore · agent · low`
+  accept: `desktop-dev`, `stage-runtime`, `sign-local`, `build-release`, `collect-release`, `updater-manifest` and `verify-bundle` live under `apps/desktop/scripts`; the workflows, `apps/desktop/package.json`, tests and SPEC references follow; a CI run passes.
+- **ORG-TAILSCALE-EXPORT** — Move the Casa Tailscale exporter to `deploy/`
+  `chore · agent · low · depends: a maintainer check of Casa's cron path`
+  accept: `scripts/export-tailscale.py` lives under `deploy/` with SPEC updated, and Casa's cron keeps working.
+- **ORG-FORMAT** — Decide what `npm run format` covers
+  `chore · agent · low`
+  accept: the `format` script covers every hand-written source (mobile, design, site, deploy) or is removed; running it changes nothing unexpected.
+- **UI-LUCIDE-TRIM** — Ship only the Lucide icons in use
+  `chore · agent · low`
+  accept: `apps/desktop/src/vendor/lucide.js` (356 KB) holds only the icons the desktop and mobile registries use, and the mobile geometry test still passes.
+- **P2-PERFORMANCE** — Mobile and desktop performance measurements
+  `verify · maintainer · low`
+  accept: native first paint, cold load and large-directory listing latency measured; follow-up agent tasks only where the numbers justify them (native asynchronous inventory, narrower desktop DOM updates).
+- **P2-WEB-TRUST** — Web trust and pairing features (product proposals)
+  `decision · maintainer · low`
+  accept: a decision on console-free initial trust, passkeys, background push for web approval, QR pairing, replica-to-replica pairing, remote hub-admin switching and one-click bidirectional pairing; each approved one becomes its own agent task.
 
 ## Later phases
 
-- **P3-I18N** · planned. Extract strings into catalogs for Tauri, Expo and the shared web frontend; language selection; localized dates, numbers and sizes; dialogs, errors, tray menus and notifications; never translate user content. English-only through phases 1 and 2.
-- **P3-AUTO-LINK** · paused, not in target. Automatic machine linking under a same-Tailscale-owner policy.
-- Constraint for any future object-only gallery conversion: verify retained content and ask before removing working files.
+- **P3-I18N** — Localization
+  `feature · agent · planned for phase 3`
+  accept: strings in catalogs for Tauri, Expo and the shared web frontend; language selection; localized dates, numbers and sizes; dialogs, errors, tray menus and notifications; user content is never translated. English-only through phases 1 and 2.
+- **P3-AUTO-LINK** — Automatic machine linking under a same-Tailscale-owner policy
+  `feature · maintainer · paused, not in target`

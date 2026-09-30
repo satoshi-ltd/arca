@@ -3,12 +3,14 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { pruneCargo } from "./prune-cargo.js";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const destination = path.join(root, "apps/desktop/src-tauri/runtime");
 const version = "24.14.0";
 const platform = process.platform;
 if (!["darwin", "linux", "win32"].includes(platform))
   throw new Error("Unsupported runtime platform");
+pruneCargo();
 const name =
   platform === "win32"
     ? `win-${process.arch}/node.exe`
@@ -61,19 +63,12 @@ const stagedBinary = `${target}.next`;
 fs.copyFileSync(binary, stagedBinary);
 fs.chmodSync(stagedBinary, 0o755);
 fs.renameSync(stagedBinary, target);
+// A module removed from the source must not survive in a previously staged runtime.
+for (const staged of ["packages", "apps"])
+  fs.rmSync(path.join(destination, staged), { recursive: true, force: true });
 fs.cpSync(path.join(root, "packages"), path.join(destination, "packages"), {
   recursive: true,
 });
-// The daemon and both app renderers consume one platform-neutral notice contract.
-const sharedNotice = path.join(
-  destination,
-  "apps/desktop/src/notice-contract.js",
-);
-fs.mkdirSync(path.dirname(sharedNotice), { recursive: true });
-fs.copyFileSync(
-  path.join(root, "apps/desktop/src/notice-contract.js"),
-  sharedNotice,
-);
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json")));
 fs.writeFileSync(
   path.join(destination, "package.json"),

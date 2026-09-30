@@ -1,8 +1,8 @@
 # Arca — specification
 
-Updated 2026-09-29. **v0.6.15 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+**v0.6.16 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
-Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AGENTS.md) for contributor instructions. This document owns implementation status, technical contracts, operations and the shared design system; [ROADMAP.md](ROADMAP.md) owns remaining work. Original visual references are not competing specifications.
+Read [README.md](README.md) for a human-oriented introduction and [AGENTS.md](AGENTS.md) for contributor instructions. This document owns how Arca works today: product and technical contracts, operations and the shared design system. [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) what each version shipped. Original visual references are not competing specifications.
 
 ## Contents
 
@@ -377,8 +377,10 @@ The Current qualification boundaries and September 10 integrity section above ow
 | `packages/daemon/exclusions.js`, `default.arcaignore`, `folder-preview.js` | Rules, rule-free seed and read-only preview                                 |
 | `apps/desktop/src/`                                                        | Shared desktop/web UI, tokens and tray popover                              |
 | `apps/desktop/src-tauri/src/main.rs`                                       | Native bridge, window lifecycle and tray icon states                        |
-| `scripts/local/tray-badges.swift`                                          | Reproducible native tray assets                                             |
+| `scripts/tray-badges.swift` (run with `swift` from the repository root)   | Reproducible native tray assets                                             |
 | `tests/`, `scripts/verify-*.js`                                            | Regression and bounded integration/scale verification                       |
+| `scripts/bump-version.js`, `scripts/validate-local.js`                     | One-step version bump; clean-copy validation with the CI Node version       |
+| `AGENTS.md` “Workflow”                                                     | Project wiring for the maintainer's user-level `next-task` loop and reviewer |
 
 ## Scheduling: actual implementation
 
@@ -974,7 +976,7 @@ Release limitations and remaining phase-1 gates are recorded in [phase acceptanc
 
 ## Internal verification
 
-`npm test` exercises sync, authentication, recovery, filesystem events, pagination, cleanup and low-space handling. `node scripts/local/verify-scale.js` creates an isolated hub/replica, checks 1,000 full files and reports timings; `ARCA_TEST_FILES` accepts 1–10,000. It does not use the pilot configuration. Neither check substitutes for prolonged workload or real hardware validation.
+`npm test` exercises sync, authentication, recovery, filesystem events, pagination, cleanup and low-space handling. `node scripts/verify-scale.js` creates an isolated hub/replica, checks 1,000 full files and reports timings; `ARCA_TEST_FILES` accepts 1–10,000. It does not use the pilot configuration. Neither check substitutes for prolonged workload or real hardware validation.
 
 For an HTTPS reverse proxy, set `ARCA_WEB_ORIGIN=https://arca.example` to the exact public origin, preserve the Host header and restrict the backend to the proxy. This enables matching-origin validation and Secure session cookies, not automatic TLS certificate setup. The Casa pilot continues to use HTTP over Tailscale.
 
@@ -996,7 +998,7 @@ Android LAN requests bind to a Wi-Fi/Ethernet network handle; a handle mid-teard
 
 ### Repeatable isolated resilience qualification
 
-Run `node scripts/local/verify-resilience.js` from the checkout. It creates temporary hub/replica/backup child processes, compares independent SHA-256 manifests, exercises concurrent edits and rename/deletion, injects SIGKILL during a partial upload, restarts both sides, restores an actually synchronized backup into a fresh hub and observes the real scheduler for six minutes without writes. Its logs contain counts/timings, not credentials or user content. Only temporary state is removed. `ARCA_TEST_FILES=3000 node scripts/local/verify-scale.js` separately validates a larger initial copy. The resilience script deliberately runs outside the fast unit suite because it includes a six-minute observation period.
+Run `node scripts/verify-resilience.js` from the checkout. It creates temporary hub/replica/backup child processes, compares independent SHA-256 manifests, exercises concurrent edits and rename/deletion, injects SIGKILL during a partial upload, restarts both sides, restores an actually synchronized backup into a fresh hub and observes the real scheduler for six minutes without writes. Its logs contain counts/timings, not credentials or user content. Only temporary state is removed. `ARCA_TEST_FILES=3000 node scripts/verify-scale.js` separately validates a larger initial copy. The resilience script deliberately runs outside the fast unit suite because it includes a six-minute observation period.
 
 These checks do not simulate filesystem power-loss semantics, physically suspend the Mac, measure battery energy or establish multi-day leak freedom. Native DOM and bundle smoke checks do not replace interaction with the actual native tray/window.
 
@@ -1124,7 +1126,7 @@ Removed the empty root Expo app.json and unused generated Tauri icon variants: 6
 
 Removed unused demo.js/try.js launchers, the old live-mutating verify-casa.js smoke helper and the obsolete Ubuntu subset Dockerfile. Isolated tests and the release workflow are the maintained validation path. Removed their ignore rules and the rules for already-deleted placeholder/icon variants. Existing .demo data was not deleted as source cleanup.
 
-Retained ignored tools have specific purposes: update-docker updates only Casa; deploy-pilot rebuilds/restarts both Casa and the Mac runtime when explicitly requested; verify-deployment checks deployed source parity read-only; verify-scale and verify-resilience cover isolated long-running release qualification; tray-badges.swift regenerates native tray assets. Casa Compose and the Tailscale-export installer are private installation configuration. Original visual references remain used for design review. Dependencies, runtime/build output, Expo native generation and local state stay excluded and are not incidental cleanup targets.
+Retained ignored tools have specific purposes: update-docker updates only Casa; deploy-pilot rebuilds/restarts both Casa and the Mac runtime when explicitly requested; verify-deployment checks deployed source parity read-only. The isolated qualification tools `scripts/verify-scale.js` and `scripts/verify-resilience.js` and the tray asset generator `scripts/tray-badges.swift` are tracked in the repository. Casa Compose and the Tailscale-export installer are private installation configuration. Original visual references remain used for design review. Dependencies, runtime/build output, Expo native generation and local state stay excluded and are not incidental cleanup targets.
 
 ## Design system and interactions
 
@@ -1300,7 +1302,7 @@ The handoff’s wordmark is lowercase `arca`; prose continues to use `Arca`. New
 
 Folder lists render local status immediately. Remote catalog refreshes run in the background and preserve the last known catalog on failure; an unavailable hub must not leave the desktop on its startup placeholder. The floating notification retains its flex layout, padding and action alignment in the authenticated application, not only in access mode.
 
-The macOS menu-bar icon preserves the original arca mark. A small upper-right check badge indicates a completed sync with no pending selected folders, errors or conflicts. Pause has a separate full-contrast pause badge, with the arca mark at 45% opacity, and takes precedence over completion. Active sync uses a circular-arrow badge with the same dimensions as synced, paused and alert; unverified/stopped/error states never show the completion badge. Icons remain monochrome macOS templates so the system adapts them to light and dark menu bars. Generate badge assets with `swift scripts/local/tray-badges.swift` on macOS.
+The macOS menu-bar icon preserves the original arca mark. A small upper-right check badge indicates a completed sync with no pending selected folders, errors or conflicts. Pause has a separate full-contrast pause badge, with the arca mark at 45% opacity, and takes precedence over completion. Active sync uses a circular-arrow badge with the same dimensions as synced, paused and alert; unverified/stopped/error states never show the completion badge. Icons remain monochrome macOS templates so the system adapts them to light and dark menu bars. Generate badge assets with `swift scripts/tray-badges.swift` on macOS.
 
 The tray has four status badges: syncing, synced, paused and alert. The unbadged logo is reserved for startup or an unverified state. Alert uses an exclamation badge for sync errors, backup errors or conflicts; explicit pause retains the pause variant. All assets use a fixed 48×36px Retina canvas, rendered at 24×18pt by the tray library. Badges share a 20px diameter (10pt) and center; the arca mark is drawn from its original arch proportions rather than upscaling a small bitmap. Native status reads and pause responses update the icon from the same status used by the tray menu; applying the image and its macOS template flag is one operation.
 
@@ -1613,7 +1615,7 @@ Mobile date navigation is a fast-scroll thumb, not a copy of the desktop rail. T
 
 ## Script organization
 
-Versioned scripts in scripts/ implement builds, runtime staging, installation and release verification. Private maintenance helpers live in Git-ignored scripts/local/, and private deployment files in deploy/local/; their root-relative paths and npm update-docker entry point follow that location. Do not ignore scripts/*, which would hide future product tooling.
+Versioned scripts in scripts/ implement builds, runtime staging (which first runs `prune-cargo.js`: a Cargo `target` over `ARCA_CARGO_BUDGET_GB`, 10 GB by default, loses its incremental caches, then is removed if still over), installation, release tooling (`bump-version.js`, `validate-local.js`), isolated qualification (`verify-*.js`) and release verification. `apps/mobile/scripts/release-assets.mjs` keeps only the latest dev and production APK after each Android build. Private maintenance helpers live in Git-ignored scripts/local/, and private deployment files in deploy/local/; their root-relative paths and npm update-docker entry point follow that location. Do not ignore scripts/*, which would hide future product tooling.
 
 The local Casa Compose copy is deploy/local/casa.compose.yaml. Its build context and relative mounts were adjusted for the extra directory. The existing remote installation still uses /home/atlas/arca-pilot/deploy/casa.compose.yaml; helpers deliberately keep that live path. This repository reorganization does not move remote configuration or restart services. If copying the nested Compose to a new installation, retain its deploy/local location; do not overwrite the old remote path with a file whose relative mounts assume the new depth. deploy/Dockerfile remains versioned.
 

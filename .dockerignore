@@ -2,10 +2,13 @@ node_modules
 apps/desktop/src-tauri
 apps/desktop/node_modules
 apps/mobile
-.demo
 .git
+.cache
+**/dist
+release-assets
+scripts/local
+deploy/local
+# Casa's checkout keeps its live state beside the source.
 state
 files
-.cache
-
 tailscale-status

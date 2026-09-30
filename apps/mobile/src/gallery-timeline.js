@@ -1,6 +1,5 @@
 import { galleryDate, mediaKind } from "../../../packages/core/gallery-date.js";
 
-export const isGalleryVideo = (item) => mediaKind(item.path) === "video";
 const isoDay = (value) => {
   const date = new Date(value);
   return Number.isFinite(date.getTime())
@@ -112,21 +111,5 @@ export function dateLabel(date) {
     year: "numeric",
     ...(dayOnly ? {} : { hour: "2-digit", minute: "2-digit" }),
   });
-}
-export function uploadStatus(source, { connected, paused, busy }) {
-  const summary = source.summary || {};
-  return source.mode === "converting"
-    ? "Incomplete"
-    : !source.enabled
-      ? "Disabled"
-      : paused
-        ? "Paused"
-        : !connected || source.issue
-          ? "Needs attention"
-          : busy
-            ? "Syncing"
-            : summary.pending || !source.scannedAt || source.after
-              ? "Incomplete"
-              : "Up to date";
 }
 

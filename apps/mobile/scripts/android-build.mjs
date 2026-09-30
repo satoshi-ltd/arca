@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { keepLatest } from './release-assets.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
@@ -64,6 +65,7 @@ if (!installOnly) {
   }
 }
 if (!fs.existsSync(output)) fail(`No APK at ${output}`);
+if (!installOnly) keepLatest(output);
 console.log(`APK: ${output}`);
 
 if (mode === 'dev') {

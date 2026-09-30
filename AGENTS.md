@@ -1,50 +1,85 @@
-# arca — agent instructions and project memory
+# Arca — agent instructions
 
-## Resume context
+Arca is a personal drive for the maintainer's own machines: a hub owns shared folders and their history, desktop/server replicas and phones keep complete local copies, and everything synchronizes both ways. These are the rules for working on it.
 
-The project has four maintained documents:
+## Documents
 
-- `AGENTS.md` — contributor instructions and live-environment boundaries.
-- `README.md` — human introduction and entry commands.
-- `SPEC.md` — current state, product/technical contracts, operations and design system.
-- `ROADMAP.md` — every remaining task, open decision, pending deployment, qualification gate and documentation debt.
+Five documents, each answering one question. Put information in the one that owns it and nowhere else.
 
-Read README, then SPEC's “Resume work here” and ROADMAP; consult SPEC's relevant contract, operations or design section for the task. Keep persistent decisions in SPEC and remaining work in ROADMAP, not chat history or extra status/handoff documents. When work ships, remove it from ROADMAP and record it in the changelog and SPEC. `changelog.md` is the version ledger, not a competing specification. Original visual references and third-party documentation/licenses retain their separate purpose. Current user instructions override historical material.
+| File | Question | Never contains |
+| --- | --- | --- |
+| `README.md` | What is Arca, and how do I install, run and develop it? (for humans) | Status beyond its one-line version banner, history, pilot operations |
+| `AGENTS.md` | Which rules apply when working here? | Status, tasks, history |
+| `ROADMAP.md` | What is left to do? (its header defines fields and lanes) | Shipped work |
+| `SPEC.md` | How does Arca work today? The contracts code must keep: product decisions, protocol, data and state, operations, design system | Dates, statuses beyond its one-line version banner, test counts, investigation logs |
+| `CHANGELOG.md` | What did each version ship? | Implementation detail, test counts, review narrative |
 
-## Working rules
+- Start from README, SPEC's current-state summary and ROADMAP; then read the SPEC section the task touches.
+- **SPEC** is present tense and edited in place: when behavior changes, rewrite the section that owns it. History lives in git and the changelog.
+- **CHANGELOG** entries have one shape:
 
-- No commits or pushes unless explicitly requested. Remote: `git@github.com:satoshi-ltd/arca.git`.
-- Every commit must increment the project version and include a matching entry in `changelog.md`. Keep package/lockfiles, Tauri manifests, displayed/reported versions and the changelog aligned. Default to a patch bump unless the user specifies another version. This does not authorize commits or pushes.
-- No TypeScript; avoid inline styles and overengineering.
-- The desktop updater signs every payload with the key in `TAURI_SIGNING_PRIVATE_KEY`; its public half lives in `tauri.conf.json`. Never commit the private key, and keep `apps/desktop/src/app.js` reporting its version from the single `APP_VERSION` constant.
-- Enable the repository hooks once per clone with `git config core.hooksPath .githooks`; `pre-push` runs the version check and the exact CI test command before anything leaves the machine.
-- Each environment owns its commands: the root keeps the daemon, the test suite and the site; `apps/desktop` has `start`, `start:clean`, `ui`, `build`, `release` and `verify:bundle`; `apps/mobile` has its build scripts. Run them with `--prefix` and do not add aliases back to the root.
-- Mobile build tooling tests live in `apps/mobile` (`npm test` there), not in the root suite; CI never builds or tests mobile installers.
-- Tests run on Ubuntu, macOS and Windows in CI; `tests/mobile-*.test.js` runs on Ubuntu only, because that source ships to phones and never executes on a desktop runner. Build every filesystem expectation with `path.join`/`path.sep`, never a hardcoded `/`, and never assume the temp directory or line endings of one platform.
-- Before declaring a release ready, validate a clean checkout on the local Mac using the CI Node version, root-only `npm ci`, version-agreement check and the exact CI test command. Do not rely on installed mobile dependencies in the development workspace. Report local verification separately from actual GitHub macOS/Windows/Linux pipeline results.
-- All app-owned text is English through phases 1 and 2. Preserve user names, paths and content. i18n is phase 3; conversation may be Spanish.
-- Implement only the scope requested or explicitly validated by the maintainer. You may propose product or UX changes, but never implement those proposals, additional controls or new flows without the maintainer’s explicit validation. Previous blanket authorization to refine UI/UX beyond the request is revoked. Within approved work, use shared tokens/components and update the design section of `SPEC.md`.
-- Update the owning document in the same change. Distinguish implemented, deployed, verified, proposed and planned. A build or API response is not full workflow validation.
-- Create a separate Codex task only when explicitly requested. Use ROADMAP's task IDs, define outcome/acceptance evidence, and do not silently implement proposed features.
+  ```
+  ## x.y.z — YYYY-MM-DD
 
-## Non-negotiable product decisions
+  - What changed for someone using or running Arca, then why when it is not obvious. One or two sentences.
+  - At most five bullets; merge related changes, drop internal-only details.
 
-- Hub alone creates shares; IDs identify them. Every machine chooses independent local destinations. Ordinary replica selections edit bidirectionally with complete local files, no placeholders. Mobile linked albums add photo-library uploads to a complete bidirectional Arca working copy: every selected participant downloads the shared folder, including media from other machines. Keep these copies in app-owned storage, never import hub files into Photos or propagate deletions made in Photos. Explicit shared-gallery deletion is allowed for participants. Arca never removes originals from the system Photos library; shared deletions affect synchronized Arca copies only. Linking an album must preserve the existing Arca working copy.
-- Pause, replica unlink, hub local-copy unselection and hub Delete share are different operations. Preserve the documented file/history consequences.
-- Optional full backup is additional to desktop/server replica working sync. Mobile (phone and Fold) is replica-only: no hub or full backup. Do not retain pre-production backward-compatibility branches, legacy modes or unused code. Preserve current error recovery and platform support. Quit leaves the daemon running.
-- Discovery never links machines. Web access and pairing use separate six-digit, single-use, ten-minute codes with persistent failure budgets; credentials remain long/revocable.
-- Web is primary server administration; Tauri manages its local daemon. CLI is auxiliary, without interactive terminal menus. Do not imply remote hub admin authority from a replica credential.
-- New hub folders are always created with a rule-free `.arcaignore`; replicas never seed it and a missing one is fine (the hub's `.arcaignore…` button creates it). A fixed list of OS metadata, temporaries, caches, `.git` and `.obsidian` always applies and cannot be re-included; names that may be content (`cache/`, `build/`, `logs/`, `*.lock`, `.env`) never join it.
-- The user's `~/.alpi` policy follows `.gitignore` except `.env` and secrets are intentionally included. Never log secret contents. Read the actual policy before editing; older exclusion notes are superseded.
+  Needs: native build · desktop build · Casa redeploy   (only when true)
+  ```
+
+  Name files or functions only when the maintainer must act on them.
+- Update the owning document in the same change as the code. Decisions go to SPEC and remaining work to ROADMAP, never to chat history or extra status files. Original visual references and third-party licences keep their own purpose. Current maintainer instructions override older material, including dated notes still in SPEC.
+
+## Workflow
+
+The maintainer runs the project as an autonomous loop with the user-level `next-task` skill (usually `/loop /next-task`) and `adversarial-reviewer` agent in `~/.claude/`. Each iteration takes one approved task, implements and tests it, bumps the version and changelog, has the reviewer try to break it, applies the findings, validates, commits, pushes and watches CI.
+
+Project wiring for those tools:
+
+- **Task pool:** `ROADMAP.md`. Only `owner: agent` tasks in Queue are worked on; only the maintainer approves a task into Queue.
+- **Version:** `node scripts/bump-version.js` (patch by default), then the CHANGELOG entry. Every commit bumps the version; manifests, lockfiles, displayed versions and the changelog always agree (`scripts/check-release.js`).
+- **Validation:** `npx -y node@<CI version> scripts/validate-local.js` (it prints the exact command). It checks the working tree in a clean copy: root-only `npm ci`, the version check, the CI suite, off Linux the mobile source suite, and the mobile build-tooling tests. Report it separately from the real GitHub pipeline results.
+- **CI:** `gh run list` for the commit's full SHA: `publish`, then `publish-docker` and `publish-site`. A red pipeline on `main` is the next task.
+- **Review checklist**, on top of the generic one: Windows paths (`path.join`/`path.sep`), temp directories and line endings; hub, desktop replica and mobile role differences; `.arcaignore` and the fixed exclusion list; conflict preservation and deletion safety; native Kotlin/Swift against `apps/mobile/node_modules`.
+
+Rules of the loop:
+
+- Invoking `/next-task` or `/loop /next-task` is the maintainer's explicit request to commit and push each finished task once review and validation pass. Outside the loop, commit only when asked. When the maintainer says not to commit, prepare and validate but leave changes uncommitted until told otherwise.
+- Adversarial review before every commit; a second pass on the deltas when fixes were substantive.
+- Interruptions: triage before continuing, and say where each item went. A bug the maintainer reports goes to the top of Queue; a requested feature goes to Queue; ideas, including your own, go to Proposed; questions get answered.
+- Anything needing a native build, an installer, Casa, credentials, a physical device or a product choice becomes a `Needs maintainer` task.
+- Stop and report when Queue is empty or everything is blocked on the maintainer.
+
+## Engineering rules
+
+- Implement only the approved scope. You may propose product or UX changes, but never implement proposals, additional controls or new flows without the maintainer's explicit validation. Within approved work, use the shared tokens and components and update SPEC's design section.
+- Every functional change ships with tests that fail without it. CI runs on Ubuntu, macOS and Windows; `tests/mobile-*.test.js` runs on Ubuntu only because that code ships to phones. Build filesystem expectations with `path.join`/`path.sep`, never a hardcoded `/`, and never assume one platform's temp directory or line endings.
+- Mobile build-tooling tests live in `apps/mobile` (`npm test` there), not in the root suite; CI never builds mobile installers.
+- Each environment owns its commands: the root keeps the daemon, tests and site; `apps/desktop` has `start`, `start:clean`, `ui`, `build`, `release` and `verify:bundle`; `apps/mobile` has its build scripts. Run them with `--prefix`; add no aliases at the root.
+- No TypeScript, no inline styles, no overengineering.
+- App-owned text is English until the i18n phase; preserve user names, paths and content. Conversation with the maintainer is Spanish.
+- The desktop updater signs payloads with `TAURI_SIGNING_PRIVATE_KEY` (public half in `tauri.conf.json`). Never commit the private key; `apps/desktop/src/app.js` reports its version only through `APP_VERSION`.
+- Enable the hooks once per clone: `git config core.hooksPath .githooks` (`pre-push` repeats the version check and the CI suite). Remote: `git@github.com:satoshi-ltd/arca.git`.
+- A build or an API response is not workflow validation; keep implemented, deployed and verified apart in ROADMAP and in reports.
+- Create a separate Codex task only when asked, using ROADMAP IDs and acceptance evidence.
+
+## Product decisions (non-negotiable)
+
+- The hub alone creates shares, identified by ID. Every machine chooses its own local destinations. Replica selections edit both ways with complete local files, never placeholders.
+- Mobile linked albums add photo-library uploads to a complete two-way Arca working copy: every selected participant downloads the whole shared folder, including other machines' media, into app-owned storage. Never import hub files into Photos, never propagate deletions made in Photos, never remove originals from the system library. Participants may explicitly delete from a shared gallery; that affects synchronized Arca copies only. Linking an album preserves the existing working copy. Any future object-only gallery conversion verifies retained content and asks before removing working files.
+- Pause, replica unlink, hub local-copy unselection and hub Delete share are different operations with the file and history consequences SPEC documents.
+- Full backup is optional and only for desktop/server replicas. Phones are replicas only: no hub, no backup. Quit leaves the daemon running.
+- No backward-compatibility branches, legacy modes or unused code before release; keep current error recovery and platform support.
+- Discovery never links machines. Web access and pairing use separate six-digit, single-use, ten-minute codes with persistent failure budgets; credentials stay long-lived and revocable.
+- Web is the primary server administration; Tauri manages its local daemon; the CLI is auxiliary, without interactive menus. A replica credential never implies hub administration.
+- New hub folders get a rule-free `.arcaignore`; replicas never seed one and a missing one is fine. A fixed list of OS metadata, temporaries, caches, `.git` and `.obsidian` always applies and cannot be re-included; names that may be content (`cache/`, `build/`, `logs/`, `*.lock`, `.env`) never join it.
+- The maintainer's `~/.alpi` policy follows `.gitignore` except that `.env` and secrets are intentionally included. Never log secret contents; read the actual policy before editing it, since older exclusion notes are superseded.
 
 ## Live environment boundaries
 
-- Metro is user-managed: do not start or restart it. Ask the user to restart Metro when configuration changes require it.
-- Native builds and installers are user-managed: do not run a build or install an app unless the maintainer explicitly requests it. Source fixes and reviews do not authorize builds.
-
-- Workspace: `/Users/javi/git/arca`. Development normally uses the real `~/.arca`; tests should use isolated state.
-- Casa: SSH `casa`, Docker container `arca`, installation/state under `/home/atlas/arca-pilot`. Operational details and restart/deployment boundaries live in the spec.
-- Do not reset live state, delete user files, enable backup or resume a user pause as incidental cleanup. No automatic relocation/deletion of existing copies.
-- Casa deployment is user-managed (September 9): do not update or restart its Docker container unless explicitly requested again. Prepare and validate changes locally, and report deployment or client compatibility requirements. This supersedes the earlier standing deployment authorization.
-- Native changes require the running binary to reload/rebuild; daemon changes require service deployment/restart. Do not confuse a built bundle with the currently running dev process.
-- As of 2026-09-29: phase 1 alpha, not release-qualified. Consult ROADMAP for current open work instead of inferring completion from old messages.
+- Metro is the maintainer's: never start or restart it; ask when configuration changes need a restart.
+- Native builds and installs are the maintainer's unless explicitly requested in the turn. Source changes and reviews do not authorize them.
+- Casa (SSH `casa`, Docker container `arca`, state under `/home/atlas/arca-pilot`) is the maintainer's: never update or restart its container unless explicitly requested in the turn. Prepare and validate locally, then report deployment and client-compatibility requirements; operational details live in SPEC.
+- Development uses the real `~/.arca` in `/Users/javi/git/arca`; tests use isolated state.
+- Never reset live state, delete user files, enable backup or resume a user pause as incidental cleanup. Nothing relocates or deletes existing copies automatically, including code you write.
+- Native changes need the running binary rebuilt and daemon changes need the service restarted; a built bundle is not the running process.
