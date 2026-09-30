@@ -194,6 +194,71 @@ test("hub-only actions answer at once while the hub is known to be unavailable",
   assert.equal(replica.engine.config.backup.enabled, true);
 });
 
+test("a replica relays live web-approval requests and never replays a saved one while the hub is unavailable", async (t) => {
+  const { hub, connect } = await setup(t);
+  const replica = await connect("approver");
+  await hub.api("/v1/web-approvers", { id: replica.invite.id, enabled: true });
+  const base = `http://127.0.0.1:${hub.port}`;
+  const created = await (
+    await fetch(base + "/auth/approval", {
+      method: "POST",
+      headers: { Origin: base, "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "create" }),
+    })
+  ).json();
+  const live = await replica.api("/v1/web-approvals");
+  assert.deepEqual(
+    live.requests.map((r) => r.id),
+    [created.id],
+  );
+  assert.equal(live.offline, undefined);
+  await replica.api("/v1/web-approvals", { id: created.id, decision: "deny" });
+  assert.deepEqual((await replica.api("/v1/web-approvals")).requests, []);
+  replica.engine.store.db
+    .prepare("INSERT OR REPLACE INTO remote_views VALUES(?,?,?)")
+    .run(
+      `${replica.engine.config.hub.id}:/v1/web-approvals`,
+      JSON.stringify({
+        requests: [
+          {
+            id: "saved",
+            reference: "123456",
+            created: Date.now(),
+            expires: Date.now() + 600000,
+          },
+        ],
+      }),
+      Date.now(),
+    );
+  const offline = { requests: [], offline: true };
+  replica.engine.config.hub.url = (await silent(t)).url;
+  assert.deepEqual(
+    await within(5000, () => replica.api("/v1/web-approvals")),
+    offline,
+  );
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  assert.deepEqual(
+    await within(1000, () => replica.api("/v1/web-approvals")),
+    offline,
+  );
+  await assert.rejects(replica.sync());
+  assert.equal(replica.engine.hubUnavailable, true);
+  replica.engine.config.hub.url = (await silent(t)).url;
+  assert.deepEqual(
+    await within(1000, () => replica.api("/v1/web-approvals")),
+    offline,
+  );
+  await within(1000, () =>
+    assert.rejects(
+      replica.api("/v1/web-approvals", { id: "saved", decision: "deny" }),
+      {
+        status: 503,
+        message: "Hub unavailable. Try again when it is reachable.",
+      },
+    ),
+  );
+});
+
 test("local file actions never queue behind a pending hub action or a paused report", async (t) => {
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "a.txt", "a");

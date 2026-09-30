@@ -496,7 +496,24 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/web-approvals") {
         if (config.role !== "hub") {
           requireAdmin();
-          return send(200, await remoteView(route, () => ({ requests: [] })));
+          // Never replay saved requests: a stale one would prompt again on every poll while offline.
+          if (engine.hubUnavailable)
+            return send(200, { requests: [], offline: true });
+          try {
+            const response = await engine.request(route, {
+              signal: AbortSignal.timeout(3000),
+              trackConnection: false,
+            });
+            const { requests = [] } = await response.json().catch((error) => {
+              throw engine.connectionLost(error);
+            });
+            return send(200, {
+              requests: requests.filter((r) => !(r.expires <= Date.now())),
+            });
+          } catch (error) {
+            if (!error.hubUnavailable) throw error;
+            return send(200, { requests: [], offline: true });
+          }
         }
         if (!web) return send(200, { requests: [] });
         return send(200, {
@@ -1184,7 +1201,7 @@ export async function start(home, options = {}) {
         if (route === "/v1/web-approvals") {
           if (config.role !== "hub") {
             requireAdmin();
-            return send(200, await engine.json(route, b));
+            return send(200, await engine.hubAction(route, b));
           }
           if (!web || (!admin && !canApprove(device.id)))
             fail("Web approval is not allowed on this machine", 403);

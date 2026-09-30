@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.24 — 2026-09-30
+
+- A desktop or server replica no longer reopens a stale "Allow this browser…" prompt every few seconds, even after restarts, while the hub is offline; Allow or Deny now fails at once when the hub is known unreachable instead of waiting 60 seconds.
+
+Needs: desktop build
+
 ## 0.6.23 — 2026-09-30
 
 - CI, the bundled desktop runtime and local validation read the Node version from one file, `.node-version`, and a test keeps the Dockerfile and the EAS profiles equal to it. EAS builds move from 24.14.1 to 24.14.0, the version everything else already used.

@@ -3394,24 +3394,31 @@ test("web approval uses the shared confirmation and closes after another machine
     if (ms === 3000) timers.push(fn);
     return 0;
   };
-  let requests = [
-    {
-      id: "request",
-      reference: "042123",
-      browser: "Safari on macOS",
-      created: Date.now(),
-      expires: Date.now() + 600000,
-      agent: "Safari <script>",
-      ip: "100.1.2.3",
-    },
-  ];
+  const current = {
+    id: "request",
+    reference: "042123",
+    browser: "Safari on macOS",
+    created: Date.now(),
+    expires: Date.now() + 600000,
+    agent: "Safari <script>",
+    ip: "100.1.2.3",
+  };
+  const expired = {
+    ...current,
+    id: "expired",
+    created: Date.now() - 660000,
+    expires: Date.now() - 60000,
+  };
+  let requests = [current],
+    offline = true;
   w.__TAURI__ = {
     core: {
       invoke: async (command, args) => {
         if (command === "bootstrap") return { setup: false };
         if (command !== "api") return {};
         if (args.route === "/v1/status") return daemon.engine.status();
-        if (args.route === "/v1/web-approvals") return { requests };
+        if (args.route === "/v1/web-approvals")
+          return offline ? { requests, offline } : { requests };
         throw new Error("Unexpected route " + args.route);
       },
     },
@@ -3429,6 +3436,16 @@ test("web approval uses the shared confirmation and closes after another machine
     fs.rmSync(home, { recursive: true, force: true });
   });
   await w.eval(`(async()=>{${script}\n})()`);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+  timers[0]();
+  await settle();
+  assert.equal(w.document.querySelector("#dialog").open, false);
+  offline = false;
+  requests = [expired];
+  timers[0]();
+  await settle();
+  assert.equal(w.document.querySelector("#dialog").open, false);
+  requests = [current];
   timers[0]();
   await until(() => w.document.querySelector("#dialog").open);
   assert.ok(w.document.querySelector("#dialog.confirmation-dialog"));

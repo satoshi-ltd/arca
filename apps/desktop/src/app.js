@@ -84,7 +84,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.23";
+const APP_VERSION = "0.6.24";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5579,13 +5579,14 @@ async function checkWebApprovals() {
   checkingApprovals = true;
   try {
     const data = await api("/v1/web-approvals");
-    if (!ready) return;
-    if (approvalModal && !data.requests.some((r) => r.id === approvalModal)) {
+    if (!ready || data.offline) return;
+    const requests = data.requests.filter((r) => !(r.expires <= Date.now()));
+    if (approvalModal && !requests.some((r) => r.id === approvalModal)) {
       if ($("#dialog").dataset.approval === approvalModal) $("#dialog").close();
       approvalModal = null;
     }
-    if (busy || $("#dialog").open || !data.requests.length) return;
-    const r = data.requests[0];
+    if (busy || $("#dialog").open || !requests.length) return;
+    const r = requests[0];
     approvalModal = r.id;
     modal(
       modalHeader(

@@ -26,21 +26,57 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFFLINE-AUDIT** — Replicas fully usable offline (reported by the maintainer)
+- **OFF-DESK-DETECT** — A silent hub takes 60–70 s to be detected on desktop replicas
   `bug · agent · high`
-  accept: with the hub unreachable, a desktop/server replica (Tauri and web views) and a phone replica are exercised in isolated tests from startup and from a running session: every view each one offers (Folders, folder detail with Files, Recent and Gallery, file detail, History, Machines, Settings) renders from local or saved data without endless loading, blank screens or errors that block navigation; local files open, share, rename and delete where the product allows; hub-only actions are disabled with a reason; reconnecting refreshes without a restart. Every gap found is fixed with a regression test or filed as its own task, and SPEC's offline contract records the result.
-- **CI-TIDY** — Workflow consistency
-  `chore · agent · low`
-  accept: `publish-site.yml` uses the same `actions/checkout` and `actions/setup-node` majors as the other workflows, and the misindented `fi` in `publish.yml` is fixed; actionlint passes.
+  accept: the cycle's catalog refresh gets a 10 s deadline (transfers keep their longer budget), so a hub that accepts connections but never answers (a Tailscale peer that is down) marks a replica offline within about 12 s of its first cycle at startup; a hub that answers the catalog within that deadline stays online however busy, and telling a busy hub from a dead one stays with MOB-HUB-LIVENESS. Mid-session, a failed or timed-out hub event poll triggers a cycle (events still never decide connectivity themselves), so a silent hub is noticed within about 25 s instead of 70 s; while offline the replica probes the hub with short un-held event requests, so its return is noticed within about 10 s instead of 46 s. `tests/hub-availability.test.js` covers startup, mid-session and return with a silent hub; SPEC's connectivity section records the deadlines.
+- **OFF-DESK-DETAIL** — Folder detail waits for Recent before listing local files
+  `bug · agent · high`
+  accept: folder detail requests the local browse and the hub-backed Recent in parallel and renders Files as soon as the local listing answers; navigation updates the poll signature so an immediate status poll does not restart the wait. JSDOM test with a never-resolving `/v1/activity`.
+- **OFF-DESK-READS** — Remote-backed desktop reads stall or ignore saved data before and after detection
+  `bug · agent · high`
+  accept: `/v1/activity` intersects selections with the saved catalog instead of fetching it remotely and reads folder pages in parallel under one shared deadline (`packages/core/scoped-activity.js`), so History with seven folders renders saved rows within the web view's 20 s GET timeout; a historical-revision preview answers at once when the hub is known unavailable and within about 3 s otherwise (it waited 60 s); offline file history falls back to the saved folder history (`history_views`) filtered by path before giving up; desktop replicas prepare machine information after successful cycles, as phones do, and SPEC says so. Daemon and JSDOM tests with a silent hub.
+- **OFF-MOB-DETECT** — Silent hub on phones: 15 s detection, sequential 3 s waits, interrupted cycles lose the verdict
+  `bug · agent · high · depends: OFF-DESK-READS`
+  accept: against a silent hub, History over several folders reads its pages in parallel under one shared deadline (reusing the shared `packages/core/scoped-activity.js` change from OFF-DESK-READS, tested on the phone side too); gallery info sends nothing when the hub is known offline; local actions (rename, delete, pause, picker) no longer abort the in-flight catalog refresh, whose result is recorded when it settles; first-cycle detection is bounded well below 15 s without marking a hub that answers in time offline (see MOB-HUB-LIVENESS). Replica tests for each.
+- **OFF-MOB-ADDPHOTOS** — Add photos… offline saves nothing while the notice says it did
+  `bug · agent · high`
+  accept: offline, Add photos… on an album folder records the picked photos as pending when a catalog is cached (or is disabled with a reason when none is), and they upload after reconnecting; the notice never claims edits were saved when nothing was. Replica test offline then online.
 - **MOB-MOVE-DOWNLOADS** — Move verified downloads into place
   `feature · agent · high`
   accept: materializing a download moves the verified object instead of copying it when no other row in the same pull needs that hash, so applying a file never needs space for two copies; a replica test proves one copy during apply and identical-hash rows still materialize.
+- **OFF-HUB-ACTIONS** — Hub-only actions stay enabled offline and fail with a misleading notice
+  `bug · agent · normal`
+  accept: while the hub is known unavailable, desktop/web Restore, Resolve conflict, Choose folders / Select…, Enable gallery, gallery Delete and Disconnect… (which needs a reachable hub until DEC-OFFLINE-DISCONNECT decides otherwise), and mobile shared gallery Delete, are disabled with a short reason instead of waiting 10–25 s or failing; Link album shows why it is disabled; mobile Disconnect keeps working offline (the leave completes when the hub returns) and says so instead of showing an error; hub-only failures use a notice that never says edits were saved locally and never reads "Hub your hub unreachable"; an offline device rename confirms the local save. JSDOM and replica tests.
+- **OFF-MOB-FILEDETAIL** — Offline file detail on phones ignores the phone's own index row
+  `bug · agent · normal`
+  accept: offline, the phone's local row leads file detail when the saved history lacks it or is older (marked as the local copy, with the correct latest revision and Current badge), and an empty saved window reads "No saved revisions for this file". Replica test for a file outside the saved window and for a newer local revision.
+- **OFF-MOB-GALLERY-ORDER** — The offline phone gallery is ordered by download date
+  `bug · agent · normal`
+  accept: offline, local files matched to the cached hub gallery index (its newest 600 rows) keep that index's capture date and order, and to the phone's own index for revision and hash, so Delete and Info keep working; only files outside the cached index fall back to SPEC's rules (gallery-date filename rules, then modification time). SPEC's mobile gallery paragraph is rewritten to state exactly this. A test with a cached index and freshly downloaded files keeps the cached months.
+- **OFF-MOB-RECONNECT** — Reconnecting does not refresh Recent, Machines or an open file detail on phones
+  `bug · agent · normal`
+  accept: those views reload when the hub comes back (not only when the last-sync time changes), an open file detail re-enables hub actions without reopening, and Machines labels saved data from the response's own `offline` flag. Effect tests like the existing Machines readiness test.
+- **OFF-MOB-SESSION** — Every offline cycle starts the Android foreground transfer session
+  `bug · agent · normal`
+  accept: a foreground cycle skips the transfer session only when the last verdict was offline (connection checked and hub unavailable), and ends it at once when the refresh fails, so offline cycles never raise "Synchronizing folders" or request notification permission, while an online or first cycle still acquires it before catalog work as SPEC requires. Replica tests for offline and online cycles.
+- **OFF-MOB-WARM** — Saved views never reach folders late in the list on a slow hub
+  `bug · agent · normal`
+  accept: preparing saved views fetches missing or stalest routes first (every folder's revisions page before the rest) with bounded parallelism, so with 400 ms per request and four folders every folder has a saved revisions page within two cycles; replica test.
+- **OFF-DESK-LABELS** — Offline shows as Syncing, and saved or empty data is not labelled
+  `bug · agent · normal`
+  accept: Machines' "This machine" pill and the tray show Offline (not Syncing or a green "offline"); saved or never-saved Machines, Copies, Recent and file-detail history say so ("last known", "No saved revisions for this file") instead of "No retained revisions" or claiming there is nothing. JSDOM and tray tests.
 - **MOB-CRASH-RECORD** — Record crashes from a global error handler
   `feature · agent · normal`
   accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display.
 - **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
   `feature · agent · normal`
   accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
+- **OFF-MOB-LABELS** — Offline empty states on phones read as if there were no data
+  `bug · agent · low`
+  accept: Recent, file detail and a photo folder without local files distinguish "nothing saved while offline" from "no revisions" and never show a raw last error without Retry. Layout or replica tests.
+- **CI-TIDY** — Workflow consistency
+  `chore · agent · low`
+  accept: `publish-site.yml` uses the same `actions/checkout` and `actions/setup-node` majors as the other workflows, and the misindented `fi` in `publish.yml` is fixed; actionlint passes.
 
 ## In progress
 
@@ -72,7 +108,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFFLINE-AUDIT, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-DESK-DETECT, OFF-MOB-DETECT, OFF-DESK-DETAIL, OFF-DESK-READS, OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
@@ -272,6 +308,16 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DOCKER-RELEASE-REF** — Build the Docker image from the released commit
   `bug · agent · normal`
   accept: `publish-docker.yml` checks out `workflow_run.head_sha` on automatic runs, as `publish-site.yml` does, so rapid pushes can never publish a newer image or record its `docker-v` tag before that version's release exists; a workflow contract test covers it.
+
+- **WEB-REPLICA-CONFLICT-LINKS** — Conflict download links on a replica's web view
+  `bug · agent · low`
+  accept: the conflict dialog's download links on a server replica's web view use a route the replica serves (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409); DOM and API tests.
+- **WEB-REPLICA-DOWNLOAD** — Download button in a replica's web file detail (product proposal)
+  `decision · maintainer · low`
+  accept: a yes or no on offering Download for local files in a server replica's web file detail (today only the hub shows it).
+- **DESK-GALLERY-COUNT** — Gallery header counts only dated months
+  `bug · agent · low`
+  accept: the desktop gallery header counts every loaded photo and video, including those still waiting for a capture date (it read "0 photos" over three tiles); a DOM test.
 
 ## Later phases
 
