@@ -336,6 +336,7 @@ export class Replica {
     if ((await this.files.hash(object)) !== hash)
       throw new Error("File changed while reading. Retry synchronization.");
     this.verified.add(object);
+    this.pulling?.retained.add(hash);
     await this.store.queue(this.scope, { volume, path, base, hash, size });
   }
   async syncIgnore(folder) {
@@ -733,11 +734,27 @@ export class Replica {
         this.touch(row.volume);
       }
     } else if (actual !== row.hash) {
-      const object = await this.download(row.hash, row.size);
-      await this.space(row.size);
+      const pulling = this.pulling;
       await this.files.mkdir(this.files.parent(target));
       const temp = this.files.parent(target) + "/.arca-transfer-" + row.hash;
-      await this.files.copy(object, temp);
+      await this.files.remove(temp);
+      const placed = pulling?.placed.get(row.hash);
+      const source =
+        placed &&
+        placed !== target &&
+        (await this.files.exists(placed)) &&
+        (await this.files.hash(placed)) === row.hash
+          ? placed
+          : null;
+      const object = source ?? (await this.download(row.hash, row.size));
+      if (pulling && !source && !pulling.retained.has(row.hash)) {
+        this.verified.delete(object);
+        await this.files.move(object, temp);
+        pulling.placed.set(row.hash, target);
+      } else {
+        await this.space(row.size);
+        await this.files.copy(object, temp);
+      }
       await this.files.replace(temp, target);
       this.touch(row.volume);
     }
@@ -747,6 +764,17 @@ export class Replica {
     this.folderChanges.set(volume, (this.folderChanges.get(volume) || 0) + 1);
   }
   async pull(folder) {
+    this.pulling = {
+      retained: new Set(await this.store.transferHashes(this.scope)),
+      placed: new Map(),
+    };
+    try {
+      return await this.pullFolder(folder);
+    } finally {
+      this.pulling = null;
+    }
+  }
+  async pullFolder(folder) {
     let through;
     let directoryDeletes = [];
     let deferredFiles = [];

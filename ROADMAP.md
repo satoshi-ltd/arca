@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **MOB-MOVE-DOWNLOADS** — Move verified downloads into place
-  `feature · agent · high`
-  accept: materializing a download moves the verified object instead of copying it when no other row in the same pull needs that hash, so applying a file never needs space for two copies; a replica test proves one copy during apply and identical-hash rows still materialize.
 - **OFF-HUB-ACTIONS** — Hub-only actions stay enabled offline and fail with a misleading notice
   `bug · agent · normal`
   accept: while the hub is known unavailable, desktop/web Restore, Resolve conflict, Choose folders / Select…, Enable gallery, gallery Delete and Disconnect… (which needs a reachable hub until DEC-OFFLINE-DISCONNECT decides otherwise), and mobile shared gallery Delete, are disabled with a short reason instead of waiting 10–25 s or failing; Link album shows why it is disabled; mobile Disconnect keeps working offline (the leave completes when the hub returns) and says so instead of showing an error; hub-only failures use a notice that never says edits were saved locally and never reads "Hub your hub unreachable"; an offline device rename confirms the local save. JSDOM and replica tests.

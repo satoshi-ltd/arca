@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.32 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+**v0.6.33 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -213,7 +213,7 @@ The UI status loop and Tailscale discovery are separate from file synchronizatio
 ### Storage
 
 - **The hub** keeps a permanent content store; its visible folders are independent materialized copies of it.
-- **A replica keeps each file once**, in its working copy. Its object store holds only transfers in flight: a changed file from capture until the hub accepts it, a download until it is written to the folder, plus the small `.arcaignore` policy object. A scan trusts an unchanged signature whose hash the hub already accepted without keeping that object. Downloads are fetched only for rows that differ from disk, and identical files in one page share one download. A captured change still waiting for the hub keeps its object and signature across an interrupted cycle. Each replica cycle and each unlink collect every other object.
+- **A replica keeps each file once**, in its working copy. Its object store holds only transfers in flight: a changed file from capture until the hub accepts it, a download until it is written to the folder, plus the small `.arcaignore` policy object. A scan trusts an unchanged signature whose hash the hub already accepted without keeping that object. Downloads are fetched only for rows that differ from disk, and identical files in a pull share one download. A phone moves the verified object into place, so applying a file never holds two copies, unless a queued upload still needs those bytes; a later identical row of the same folder's pull copies from the file already placed after its hash is checked (the same bytes in another folder download again). A captured change still waiting for the hub keeps its object and signature across an interrupted cycle. Each replica cycle and each unlink collect every other object.
 - **Backups** keep their own permanent store (see [Backup](#backup)). Hub history cleanup forgets only the scan signatures of removed objects. Promotion clears the scan cache so the new hub captures every file into its store.
 - Hardlinks and reflinks are not used: a hardlink to an externally editable working file would break object immutability, and two copies on one disk are not disaster recovery.
 - Seven-day abandoned-partial cleanup and a 16 MiB free-space margin apply; there is no quota or reservation against concurrent external writers. Local scan maps grow with folder size and some materialization and relocation I/O is synchronous.

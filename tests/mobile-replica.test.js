@@ -3857,6 +3857,154 @@ test("the phone index tells synced files from ones imported and not yet synced",
   assert.ok(known.has("imported.jpg"), "after the push it is a known file");
 });
 
+test("applying a downloaded file moves the verified object instead of keeping two copies", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon, files } = f;
+  fs.writeFileSync(path.join(volume.path, "unique.bin"), "only one row needs these bytes");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  const copies = [];
+  const copy = files.copy;
+  files.copy = async (from, to) => {
+    copies.push(from);
+    return copy.call(files, from, to);
+  };
+  let objectAtReplace = null;
+  const replace = files.replace;
+  files.replace = async (from, to) => {
+    if (to.endsWith("unique.bin")) {
+      const hash = crypto.createHash("sha256").update("only one row needs these bytes").digest("hex");
+      objectAtReplace = fs.existsSync(files.object(replica.scope, hash));
+    }
+    return replace.call(files, from, to);
+  };
+  await sync(f);
+  files.copy = copy;
+  files.replace = replace;
+  assert.equal(fs.readFileSync(files.work(replica.scope, volume.id, "unique.bin"), "utf8"), "only one row needs these bytes");
+  assert.equal(objectAtReplace, false, "the object was moved into place, so one copy exists while applying");
+  assert.deepEqual(copies.filter((from) => from.includes(`${path.sep}objects${path.sep}`)), []);
+});
+
+test("a file edited after it was placed is not used as the source for a later identical row", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon, files } = f;
+  const same = "bytes shared by two files";
+  const hash = crypto.createHash("sha256").update(same).digest("hex");
+  fs.writeFileSync(path.join(volume.path, "a-first.txt"), same);
+  fs.writeFileSync(path.join(volume.path, "z-later.txt"), same);
+  for (let i = 0; i < 260; i++)
+    fs.writeFileSync(path.join(volume.path, `m-${String(i).padStart(3, "0")}.txt`), `filler ${i}`);
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  const api = f.client.api;
+  f.client.api = async (route, ...args) => {
+    if (route.startsWith("/v1/snapshot") && route.includes("after="))
+      fs.writeFileSync(files.work(replica.scope, volume.id, "a-first.txt"), "edited on the phone");
+    return api.call(f.client, route, ...args);
+  };
+  await sync(f);
+  f.client.api = api;
+  assert.equal(fs.readFileSync(files.work(replica.scope, volume.id, "z-later.txt"), "utf8"), same);
+  assert.equal(f.requests.filter((route) => route === `/v1/blobs/${hash}`).length, 2, "the edited copy is never taken for the shared bytes");
+});
+
+test("moving a verified object survives a leftover temporary file and a crash before it is replaced", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon, files } = f;
+  const text = "bytes that must reach the folder";
+  const hash = crypto.createHash("sha256").update(text).digest("hex");
+  fs.writeFileSync(path.join(volume.path, "survivor.bin"), text);
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  const move = files.move;
+  files.move = async (from, to) => {
+    if (fs.existsSync(to)) throw new Error("DestinationAlreadyExists");
+    return move.call(files, from, to);
+  };
+  const folder = files.folder(replica.scope, volume.id);
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, `.arca-transfer-${hash}`), "stale half file");
+  const replace = files.replace;
+  let crashes = 1;
+  files.replace = async (from, to) => {
+    if (to.endsWith("survivor.bin") && crashes-- > 0) throw new Error("killed before replace");
+    return replace.call(files, from, to);
+  };
+  await replica.sync();
+  assert.match(replica.error || "", /killed before replace/);
+  await sync(f);
+  files.move = move;
+  files.replace = replace;
+  assert.equal(fs.readFileSync(files.work(replica.scope, volume.id, "survivor.bin"), "utf8"), text);
+});
+
+test("a change queued while applying keeps its object out of the move", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon, files } = f;
+  fs.writeFileSync(path.join(volume.path, "seed.txt"), "seed");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const local = path.join(f.root, "edited.txt");
+  fs.writeFileSync(local, "queued bytes");
+  const hash = crypto.createHash("sha256").update("queued bytes").digest("hex");
+  replica.pulling = { retained: new Set(), placed: new Map() };
+  await replica.snapshotLocal(volume.id, "edited.txt", local, 0);
+  assert.ok(replica.pulling.retained.has(hash), "a hash queued during the pull is never moved away");
+  replica.pulling = null;
+});
+
+test("changes-feed rows are moved into place too", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon, files } = f;
+  fs.writeFileSync(path.join(volume.path, "first.txt"), "first");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const text = "arrives through the changes feed";
+  const hash = crypto.createHash("sha256").update(text).digest("hex");
+  fs.writeFileSync(path.join(volume.path, "later.bin"), text);
+  await daemon.engine.cycle();
+  let objectAtReplace = null;
+  const replace = files.replace;
+  files.replace = async (from, to) => {
+    if (to.endsWith("later.bin")) objectAtReplace = fs.existsSync(files.object(replica.scope, hash));
+    return replace.call(files, from, to);
+  };
+  await sync(f);
+  files.replace = replace;
+  assert.equal(fs.readFileSync(files.work(replica.scope, volume.id, "later.bin"), "utf8"), text);
+  assert.equal(objectAtReplace, false);
+});
+
+for (const [name, names] of [
+  ["in one snapshot page", ["a-first.txt", "a-second.txt"]],
+  ["across snapshot pages after the first copy moved into place", ["a-first.txt", "z-later.txt"]],
+]) {
+  test(`identical files materialize from one download ${name}`, async (t) => {
+    const f = await fixture(t);
+    const { replica, volume, daemon, files } = f;
+    const same = "identical bytes in two folders";
+    const hash = crypto.createHash("sha256").update(same).digest("hex");
+    for (const file of names) fs.writeFileSync(path.join(volume.path, file), same);
+    for (let i = 0; i < 260; i++)
+      fs.writeFileSync(path.join(volume.path, `m-${String(i).padStart(3, "0")}.txt`), `filler ${i}`);
+    await daemon.engine.cycle();
+    await f.client.refresh();
+    await replica.select(f.client.state().catalog.volumes[0]);
+    await sync(f);
+    for (const file of names)
+      assert.equal(fs.readFileSync(files.work(replica.scope, volume.id, file), "utf8"), same, file);
+    assert.equal(f.requests.filter((route) => route === `/v1/blobs/${hash}`).length, 1, "the shared bytes came from the hub once");
+  });
+}
+
 test("mobile relists a folder when a directory appears or disappears or a name changes only in case", async (t) => {
   const f = await fixture(t);
   const { replica, volume, daemon } = f;

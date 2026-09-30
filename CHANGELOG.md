@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.33 — 2026-09-30
+
+- A phone applying a downloaded file no longer needs room for two copies of it: the verified download is moved into place, which matters for large videos on a nearly full phone. Identical files still download once.
+
+Needs: native build
+
 ## 0.6.32 — 2026-09-30
 
 - Offline, the phone's gallery keeps each photo in the month and order the hub gave it instead of moving everything to the day it was downloaded, and keeps its revision so Info still works.
