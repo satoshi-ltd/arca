@@ -107,6 +107,10 @@ export async function remoteView(replica, route, options = {}) {
     options.signal?.removeEventListener("abort", cancel);
   }
 }
+const WARM_PARALLEL = 4;
+const priority = (route) =>
+  route === "/v1/machines" ? 0 : route.includes("filter=revisions") ? 1 : 2;
+export { key as viewKey };
 export async function warmViews(replica, folders) {
   const controller = new AbortController();
   const timer = setTimeout(
@@ -146,25 +150,44 @@ export async function warmViews(replica, folders) {
           `/v1/activity?${new URLSearchParams({ volume: folder.id, filter, limit: "50" })}`,
         );
     }
-    for (const route of routes) {
-      if (controller.signal.aborted || replica.stopped || replica.paused)
-        return;
-      const cached = await replica.store.db.getFirstAsync(
-        "SELECT updated FROM view_cache WHERE scope=? AND route=?",
-        replica.scope,
-        key(route),
+    const saved = new Map(
+      (
+        await replica.store.db.getAllAsync(
+          "SELECT route,updated FROM view_cache WHERE scope=?",
+          replica.scope,
+        )
+      ).map((row) => [row.route, row.updated]),
+    );
+    const due = routes
+      .map((route) => ({ route, updated: saved.get(key(route)) }))
+      .filter(({ updated }) => updated === undefined || Date.now() - updated >= 60000)
+      .sort(
+        (a, b) =>
+          priority(a.route) - priority(b.route) ||
+          (a.updated ?? -1) - (b.updated ?? -1),
       );
-      if (cached && Date.now() - cached.updated < 60000) continue;
-      const value = await remoteView(replica, route, {
-        signal: controller.signal,
-        silent: true,
-      });
-      if (value.offline) return;
-    }
+    let next = 0;
+    let offline = false;
+    const worker = async () => {
+      while (next < due.length && !offline) {
+        if (controller.signal.aborted || replica.stopped || replica.paused)
+          return;
+        const { route } = due[next++];
+        const value = await remoteView(replica, route, {
+          signal: controller.signal,
+          silent: true,
+        });
+        if (value.offline) offline = true;
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(WARM_PARALLEL, due.length) }, worker),
+    );
   } catch {
     /* Optional metadata never fails file synchronization. */
   } finally {
     clearTimeout(timer);
+    abortRequest(controller, new Error("Request cancelled"));
     replica.syncAbort?.signal.removeEventListener("abort", cancel);
   }
 }

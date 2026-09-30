@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.41 — 2026-10-01
+
+- On a phone with a slow hub, the saved copies of History and Recent now reach every folder instead of only the first ones in the list: the missing or oldest pages are fetched first, four at a time, so going offline later still shows each folder's recent changes.
+
+Needs: native build
+
 ## 0.6.40 — 2026-10-01
 
 - Internal: two daemon tests no longer depend on the filesystem's timestamp resolution, which made the Windows pipeline fail intermittently.

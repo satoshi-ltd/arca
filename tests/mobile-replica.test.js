@@ -14,6 +14,7 @@ import {
 } from "../apps/mobile/src/validation.js";
 import { galleryConfig } from "../apps/mobile/src/gallery.js";
 import { offlineFileHistory } from "../apps/mobile/src/file-history.js";
+import { viewKey, warmViews } from "../apps/mobile/src/remote-views.js";
 import { scopedActivity } from "../packages/core/scoped-activity.js";
 import { TransferSession, shouldStopSync } from "../apps/mobile/src/transfer-session.js";
 import { createClient } from "../apps/mobile/src/client.js";
@@ -2301,6 +2302,106 @@ test("a native failure while releasing the session does not hide that the hub is
   await reopened.sync().catch(() => {});
   assert.equal(reopened.hubUnavailable, true);
   assert.doesNotMatch(reopened.error || "", /native stop failed/);
+});
+
+test("warming saved views gives every folder a revisions page within the shared deadline on a slow hub", async (t) => {
+  const f = await fixture(t);
+  const { replica, daemon } = f;
+  for (const name of ["Two", "Three", "Four"]) daemon.engine.store.addVolume(name);
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  for (const volume of f.client.state().catalog.volumes) await replica.select(volume);
+  await sync(f);
+  await f.store.db.runAsync("DELETE FROM view_cache WHERE scope=?", replica.scope);
+  const folders = (await f.store.folders(replica.scope)).filter((folder) => folder.selected);
+  assert.equal(folders.length, 4);
+  f.stall(async (url, options) => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    return fetch(url.replace("https://fixture.invalid", `http://127.0.0.1:${daemon.port}`), options);
+  });
+  await warmViews(replica, folders);
+  f.stall(null);
+  const saved = (await f.store.db.getAllAsync("SELECT route FROM view_cache WHERE scope=?", replica.scope)).map((row) => row.route);
+  for (const folder of folders)
+    assert.ok(
+      saved.some((route) => route.includes(`volume=${folder.id}`) && route.includes("filter=revisions")),
+      `${folder.name} has a saved revisions page after one warm-up`,
+    );
+});
+
+test("warming saved views starts with machines, then missing and stalest revisions pages, skips fresh pages and keeps four requests in flight", async (t) => {
+  const f = await fixture(t);
+  const { replica, daemon } = f;
+  for (const name of ["Two", "Three", "Four", "Five"]) daemon.engine.store.addVolume(name);
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  for (const volume of f.client.state().catalog.volumes) await replica.select(volume);
+  await sync(f);
+  const folders = (await f.store.folders(replica.scope)).filter((folder) => folder.selected);
+  assert.equal(folders.length, 5);
+  const [current, fresh, stale, staler, missing] = folders;
+  const route = (folder, filter = "revisions") =>
+    `/v1/activity?${new URLSearchParams({ volume: folder.id, filter, limit: "50" })}`;
+  await f.store.db.runAsync("DELETE FROM view_cache WHERE scope=?", replica.scope);
+  const now = Date.now();
+  for (const [folder, age] of [[current, 10000], [fresh, 61000], [stale, 120000], [staler, 600000]])
+    await f.store.db.runAsync(
+      "INSERT INTO view_cache VALUES(?,?,?,?)",
+      replica.scope,
+      viewKey(route(folder)),
+      now - age,
+      JSON.stringify({ versions: [], next: null }),
+    );
+  const started = [];
+  let inFlight = 0;
+  let peak = 0;
+  f.stall(async (url, options) => {
+    const asked = new URL(url);
+    started.push(asked.pathname + asked.search);
+    peak = Math.max(peak, ++inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    inFlight--;
+    return fetch(url.replace("https://fixture.invalid", `http://127.0.0.1:${daemon.port}`), options);
+  });
+  await warmViews(replica, folders);
+  f.stall(null);
+  const volumeOf = (entry) => new URLSearchParams(entry.split("?")[1]).get("volume");
+  assert.equal(started[0], "/v1/machines", "machines is never starved behind the revisions pages");
+  assert.deepEqual(
+    started.slice(1, 5).map(volumeOf),
+    [missing.id, staler.id, stale.id, fresh.id],
+    "a missing page first, then the stalest, then fresher ones",
+  );
+  assert.equal(
+    started.filter((entry) => entry.includes(`volume=${current.id}`) && entry.includes("filter=revisions")).length,
+    0,
+    "a page younger than a minute is not requested again",
+  );
+  assert.equal(peak, 4, "four requests overlap and never more");
+});
+
+test("a failing view stops the whole warm-up instead of leaving workers running", async (t) => {
+  const f = await fixture(t);
+  const { replica, daemon } = f;
+  for (const name of ["Two", "Three", "Four"]) daemon.engine.store.addVolume(name);
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  for (const volume of f.client.state().catalog.volumes) await replica.select(volume);
+  await sync(f);
+  await f.store.db.runAsync("DELETE FROM view_cache WHERE scope=?", replica.scope);
+  const folders = (await f.store.folders(replica.scope)).filter((folder) => folder.selected);
+  let asked = 0;
+  f.stall(async (url, options) => {
+    if (asked++ === 0) return new Response(JSON.stringify({ error: "boom" }), { status: 500, headers: { "content-type": "application/json" } });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    return fetch(url.replace("https://fixture.invalid", `http://127.0.0.1:${daemon.port}`), options);
+  });
+  await warmViews(replica, folders);
+  const settled = asked;
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  f.stall(null);
+  assert.equal(asked, settled, "no request starts after warmViews returned");
+  assert.ok(settled < 13, "the remaining routes were not all requested");
 });
 
 test("an active native transfer drains multiple gallery batches and releases on completion", async (t) => {

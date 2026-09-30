@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-MOB-WARM** — Saved views never reach folders late in the list on a slow hub
-  `bug · agent · normal`
-  accept: preparing saved views fetches missing or stalest routes first (every folder's revisions page before the rest) with bounded parallelism, so with 400 ms per request and four folders every folder has a saved revisions page within two cycles; replica test.
 - **OFF-DESK-LABELS** — Offline shows as Syncing, and saved or empty data is not labelled
   `bug · agent · normal`
   accept: Machines' "This machine" pill and the tray show Offline (not Syncing or a green "offline"); saved or never-saved Machines, Copies, Recent and file-detail history say so ("last known", "No saved revisions for this file") instead of "No retained revisions" or claiming there is nothing. JSDOM and tray tests.
@@ -75,7 +72,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
