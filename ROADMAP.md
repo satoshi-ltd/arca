@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **CI-RUST-TESTS** — Run the desktop Rust unit tests in CI
-  `chore · agent · high`
-  accept: the publish workflow runs `cargo test` for `apps/desktop/src-tauri` (daemon identity, locks, updater) and fails the pipeline on a failing test.
 - **REL-MANIFEST-LIST** — Share the release manifest list
   `chore · agent · low`
   accept: `scripts/check-release.js` and `scripts/bump-version.js` read one list of version locations; both tests still pass.
@@ -264,6 +261,10 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **MOB-GALLERY-ASSET-ROWS** — Tolerate a corrupt gallery asset row
   `bug · agent · low`
   accept: a malformed `gallery_assets` row no longer stops the app from starting (`clearInterrupted` and the SQLite `json_extract` queries) or blocks other assets, and never publishes deletions; a replica test with a corrupt asset row.
+
+- **DESK-UPDATER-TESTS** — Rust tests for the update install flow and Windows
+  `chore · agent · low`
+  accept: `install_update`, daemon stop and the restore marker (`with_recovery`, resume on next launch) are covered by Rust unit tests with the process and plugin boundaries stubbed, and `rust-tests` also runs on `windows-2022` so the PowerShell listing and non-Unix exit handling execute; both pass in CI.
 
 ## Later phases
 

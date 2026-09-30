@@ -180,3 +180,17 @@ test("desktop development commands live in apps/desktop and the root keeps none"
   assert.match(workflow, /npm run release --prefix apps\/desktop/);
   assert.doesNotMatch(workflow, /npm run desktop:/);
 });
+
+test("publication waits for the desktop Rust unit tests", () => {
+  const workflow = fs
+    .readFileSync(path.join(repo, ".github/workflows/publish.yml"), "utf8")
+    .replace(/\r\n/g, "\n");
+  const job = workflow.match(/\n  rust-tests:(\n[\s\S]*?)\n  [a-z-]+:\n/)?.[1];
+  assert.ok(job, "publish.yml has a rust-tests job");
+  assert.match(
+    job,
+    /\n +cargo test --locked --manifest-path apps\/desktop\/src-tauri\/Cargo\.toml(\n|$)/,
+  );
+  assert.doesNotMatch(job, /\n +if:|continue-on-error|\|\|/);
+  assert.match(workflow, /\n  prepare:\n    needs: \[tests, rust-tests\]\n/);
+});

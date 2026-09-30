@@ -49,8 +49,25 @@ jobs:
           # shellcheck disable=SC2086
           node --test --test-reporter=tap --test-timeout=120000 $files
         timeout-minutes: 10
+  rust-tests:
+    name: Rust tests (macos-15)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Run desktop unit tests
+        run: |
+          set -euo pipefail
+          # tauri-build requires the bundled resource directory, which release builds stage.
+          mkdir -p apps/desktop/src-tauri/runtime
+          cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
   prepare:
-    needs: tests
+    needs: [tests, rust-tests]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.21 — 2026-09-30
+
+- The release pipeline runs the desktop app's Rust unit tests (daemon identity and locks that guard self-updates, tray states) on pushes to `main` and on pull requests, and a failing test now blocks publication.
+
 ## 0.6.20 — 2026-09-30
 
 - A phone retrying an interrupted photo upload no longer restarts a paused first download of that folder. Checking whether the hub had kept the upload as a conflict copy opened its own snapshot, which replaced the download's saved hub lease; it now reads the folder's change feed, which takes no lease.
