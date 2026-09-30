@@ -512,7 +512,10 @@ test("the gallery windows rows over the whole timeline and only ever loads by sc
   assert.doesNotMatch(rail, /scrollY\.interpolate/, "the thumb follows the finger, not the native scroll value");
   assert.match(app, /<FolderGallery[^>]*offline=\{!!status\.offline\}/, "paired is not online: the gallery needs the offline state");
   assert.match(gallery, /const linked = connected && !offline;/);
-  assert.match(gallery, /const source = gallery && \(online \|\| !local\.total\) \? gallery : local;/);
+  assert.match(gallery, /const base = gallery && \(online \|\| !local\.total\) \? gallery : local;/);
+  assert.match(gallery, /base\.local \? base : withLocalOnly\(base, entries, known\)/, "photos only on the phone join the hub index");
+  assert.doesNotMatch(gallery, /current\.source !== current\.gallery/, "a merged source is a new object; remote mode is online with a hub gallery");
+  assert.match(gallery, /neededMonth\(\s*current\.layout,\s*current\.source\.months/, "paging reads the merged months so local-only months never ask the hub");
   assert.match(gallery, /!current\.online \|\|/);
   assert.match(gallery, /\[\s*onRail,\s*railShape,/, "the rail model republishes on shape changes, not on every loaded page");
   assert.match(rail, /onResponderMove[\s\S]*place\(next\)[\s\S]*requestAnimationFrame/);

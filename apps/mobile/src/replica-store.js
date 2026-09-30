@@ -391,6 +391,17 @@ export class ReplicaStore {
       )
     ).map((r) => JSON.parse(r.row));
   }
+  async knownPaths(scope, volume) {
+    return new Set(
+      (
+        await this.db.getAllAsync(
+          "SELECT path FROM files WHERE scope=? AND volume=?",
+          scope,
+          volume,
+        )
+      ).map((r) => r.path),
+    );
+  }
   async current(scope, volume, path) {
     const r = await this.db.getFirstAsync(
       "SELECT row FROM files WHERE scope=? AND volume=? AND path=?",

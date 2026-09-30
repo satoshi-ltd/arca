@@ -1,4 +1,6 @@
-import { mergeTimeline } from "./gallery-timeline.js";
+import { mergeTimeline, mediaDate } from "./gallery-timeline.js";
+import { mediaKind } from "../../../packages/core/gallery-date.js";
+import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 
 const compact = (item) => ({
   path: item.path,
@@ -133,6 +135,54 @@ export function localGallery(entries) {
     total: timeline.reduce((sum, row) => sum + row.count, 0),
     months,
     indexing: false,
+  };
+}
+const before = (a, b) => `${a.date || ""}|${a.path}` > `${b.date || ""}|${b.path}`;
+export function withLocalOnly(state, entries, known) {
+  if (!known) return state;
+  const listed = new Set(
+    Object.values(state.months).flatMap((entry) => entry.items.map((item) => item.path)),
+  );
+  const extra = entries.filter(
+    (entry) =>
+      !entry.directory &&
+      mediaKind(entry.path) &&
+      !builtinExcluded(entry.path) &&
+      !known.has(entry.path) &&
+      !listed.has(entry.path),
+  );
+  if (!extra.length) return state;
+  const months = { ...state.months };
+  const counts = new Map(state.timeline.map((row) => [row.month, row.count]));
+  for (const entry of extra) {
+    const row = {
+      path: entry.path,
+      hash: null,
+      size: entry.size,
+      date: mediaDate(entry.path, entry.mtime),
+      kind: mediaKind(entry.path),
+    };
+    const month = galleryMonth(row);
+    const held = months[month] || {
+      items: [],
+      fresh: 0,
+      complete: !state.timeline.some((row) => row.month === month),
+      next: null,
+    };
+    const items = [...held.items];
+    const at = items.findIndex((item) => before(row, item));
+    items.splice(at < 0 ? items.length : at, 0, row);
+    months[month] = { ...held, items };
+    if (month !== "undated") counts.set(month, (counts.get(month) || 0) + 1);
+  }
+  const timeline = [...counts]
+    .map(([month, count]) => ({ month, count }))
+    .sort((a, b) => b.month.localeCompare(a.month));
+  return {
+    ...state,
+    timeline,
+    total: timeline.reduce((sum, row) => sum + row.count, 0),
+    months,
   };
 }
 export function hubPhotoInfo({ api, linked, volume, item }) {

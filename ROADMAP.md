@@ -26,11 +26,8 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **MOB-GALLERY-LOCAL-ONLY** — The online phone gallery hides photos that exist only on the phone
-  `bug · agent · high`
-  accept: online, local photo and video files with no row in the phone's own index (imported while sync was paused, not yet pushed) appear in the folder gallery under the date SPEC's gallery-date rules give them, including when the hub index lacks them and the gallery would otherwise read "No photos yet"; once the hub row arrives they show once, not twice; their Delete and Info stay disabled until a revision exists. A pure merge helper with tests in `tests/mobile-photo-timeline.test.js` and a replica test with an imported file and a hub index that lacks it.
 - **OFF-MOB-GALLERY-ORDER** — The offline phone gallery is ordered by download date
-  `bug · agent · high · depends: MOB-GALLERY-LOCAL-ONLY`
+  `bug · agent · high`
   accept: (reproduced: a January 2020 photo read as September 2026, lost its `rev` and `hash` and could not be deleted) offline, local files matched to the cached hub gallery index (its newest 600 rows) keep that index's capture date and order, and to the phone's own index for revision and hash, so Delete and Info keep working; only files outside the cached index fall back to SPEC's rules (gallery-date filename rules, then modification time). SPEC's mobile gallery paragraph is rewritten to state exactly this. A test with a cached index and freshly downloaded files keeps the cached months.
 - **MOB-MOVE-DOWNLOADS** — Move verified downloads into place
   `feature · agent · high`
@@ -327,6 +324,10 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **MOB-PICKED-RETRY** — Retry on the offline notice reopens the photo picker
   `bug · agent · low`
   accept: after an offline Add photos… failure, the notice's retry starts a sync instead of reopening the picker; a replica or layout test.
+
+- **MOB-GALLERY-IGNORE-POLICY** — Photos the folder's `.arcaignore` excludes still show as phone-only in the online gallery
+  `bug · agent · low`
+  accept: online, local photos and videos the folder's `.arcaignore` ignores never appear in the phone gallery (today only the fixed exclusion list filters them); a pure-helper test with a policy and a replica test reading the real `.arcaignore`.
 
 ## Later phases
 

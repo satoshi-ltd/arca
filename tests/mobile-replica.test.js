@@ -3835,6 +3835,26 @@ test("a folder that fails still lets the cycle free objects no transfer needs", 
   assert.equal(fs.existsSync(leftover), false);
 });
 
+test("the phone index tells synced files from ones imported and not yet synced", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon } = f;
+  fs.writeFileSync(path.join(volume.path, "synced.jpg"), "synced photo");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  let known = await f.store.knownPaths(replica.scope, volume.id);
+  assert.ok(known.has("synced.jpg"));
+  const source = path.join(f.root, "imported.jpg");
+  fs.writeFileSync(source, "imported photo");
+  await replica.importFile(volume.id, "imported.jpg", source);
+  known = await f.store.knownPaths(replica.scope, volume.id);
+  assert.equal(known.has("imported.jpg"), false, "an imported file has no row until it is pushed");
+  await sync(f);
+  known = await f.store.knownPaths(replica.scope, volume.id);
+  assert.ok(known.has("imported.jpg"), "after the push it is a known file");
+});
+
 test("mobile relists a folder when a directory appears or disappears or a name changes only in case", async (t) => {
   const f = await fixture(t);
   const { replica, volume, daemon } = f;

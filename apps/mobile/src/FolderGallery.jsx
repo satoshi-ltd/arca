@@ -30,7 +30,12 @@ import {
   railMonthLabel,
   timelineItem,
 } from "./gallery-timeline";
-import { hubGallery, hubPhotoInfo, localGallery } from "./hub-gallery";
+import {
+  hubGallery,
+  hubPhotoInfo,
+  localGallery,
+  withLocalOnly,
+} from "./hub-gallery";
 import { prepareThumbnails } from "./thumbnail-cache";
 import { thumbnailFiles } from "./gallery-thumbnails";
 import { ScrollPosition } from "./KeyboardPane";
@@ -307,7 +312,30 @@ export function FolderGallery({
     [entries],
   );
   const local = useMemo(() => localGallery(entries), [entries]);
-  const source = gallery && (online || !local.total) ? gallery : local;
+  const [known, setKnown] = useState(null);
+  useEffect(() => {
+    let active = true;
+    store
+      .knownPaths(scope, volume)
+      .then(
+        (paths) =>
+          active &&
+          setKnown((held) =>
+            held?.size === paths.size && [...paths].every((path) => held.has(path))
+              ? held
+              : paths,
+          ),
+      )
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [store, scope, volume, entries, refreshKey]);
+  const base = gallery && (online || !local.total) ? gallery : local;
+  const source = useMemo(
+    () => (base.local ? base : withLocalOnly(base, entries, known)),
+    [base, entries, known],
+  );
   const monthCache = useRef(new Map());
   const months = useMemo(() => {
     const view = new Map();
@@ -556,10 +584,9 @@ export function FolderGallery({
     )
       return;
     const top = lastScrollY.current - rootTop.current - canvasTop.current;
-    if (current.source !== current.gallery) return;
     const month = neededMonth(
       current.layout,
-      current.gallery.months,
+      current.source.months,
       current.range.top,
       current.range.bottom,
       top,

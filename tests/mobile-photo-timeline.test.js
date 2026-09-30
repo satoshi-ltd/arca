@@ -13,7 +13,7 @@ import {
   toggleZoom,
   zoomAround,
 } from "../apps/mobile/src/viewer-gestures.js";
-import { hubGallery, hubPhotoInfo, localGallery } from "../apps/mobile/src/hub-gallery.js";
+import { hubGallery, hubPhotoInfo, localGallery, withLocalOnly } from "../apps/mobile/src/hub-gallery.js";
 import {
   galleryLayout,
   galleryWindow,
@@ -1102,4 +1102,103 @@ test("photo info sends nothing while the hub is known offline and asks the hub o
   assert.deepEqual(routes, []);
   assert.deepEqual(await hubPhotoInfo({ api, linked: true, volume: "v1", item }), { accepted: true });
   assert.deepEqual(routes, ["/v1/gallery/info?volume=v1&path=2024%2Fa+b.jpg&hash=h1"]);
+});
+
+test("photos that exist only on the phone join the hub index by their own date and never twice", () => {
+  const hub = {
+    timeline: [{ month: "2024-05", count: 1 }],
+    total: 1,
+    indexing: false,
+    months: {
+      "2024-05": {
+        items: [{ path: "a.jpg", hash: "h1", rev: 3, date: "2024-05-10", kind: "image" }],
+        fresh: 1,
+        complete: true,
+        next: null,
+      },
+    },
+  };
+  const mtime = Date.UTC(2026, 8, 30, 12);
+  const entries = [
+    { path: "a.jpg", uri: "file:///a.jpg", size: 1, mtime },
+    { path: "IMG_20260115_101010.jpg", uri: "file:///b.jpg", size: 2, mtime },
+    { path: "fresh.jpg", uri: "file:///c.jpg", size: 3, mtime },
+    { path: "listed.jpg", uri: "file:///d.jpg", size: 4, mtime },
+    { path: "notes.txt", uri: "file:///n.txt", size: 5, mtime },
+    { path: "album", directory: true },
+  ];
+  assert.equal(withLocalOnly(hub, entries, null), hub, "nothing is added before the phone index is read");
+  const known = new Set(["a.jpg"]);
+  const merged = withLocalOnly(
+    { ...hub, months: { ...hub.months, "2024-05": { ...hub.months["2024-05"], items: [...hub.months["2024-05"].items, { path: "listed.jpg", hash: "h2", rev: 4, date: "2024-05-09", kind: "image" }] } } },
+    entries,
+    known,
+  );
+  assert.deepEqual(merged.timeline, [
+    { month: "2026-09", count: 1 },
+    { month: "2026-01", count: 1 },
+    { month: "2024-05", count: 1 },
+  ]);
+  assert.equal(merged.total, 3);
+  assert.deepEqual(merged.months["2026-09"].items.map((item) => item.path), ["fresh.jpg"]);
+  assert.equal(merged.months["2026-09"].items[0].hash, null);
+  assert.deepEqual(merged.months["2026-01"].items.map((item) => item.path), ["IMG_20260115_101010.jpg"]);
+  const paths = Object.values(merged.months).flatMap((entry) => entry.items.map((item) => item.path));
+  assert.equal(paths.filter((path) => path === "listed.jpg").length, 1);
+  const empty = withLocalOnly({ timeline: [], total: 0, months: {}, indexing: false }, [entries[2]], new Set());
+  assert.equal(empty.total, 1, "an empty hub index still shows the phone's own photo");
+});
+
+test("a merged gallery keeps paging the hub months and never asks the hub for a month only the phone has", () => {
+  const hub = {
+    timeline: [{ month: "2024-05", count: 40 }],
+    total: 40,
+    indexing: false,
+    months: {},
+  };
+  const mtime = Date.UTC(2026, 8, 30, 12);
+  const local = { path: "new.jpg", uri: "file:///new.jpg", size: 1, mtime };
+  const merged = withLocalOnly(hub, [local], new Set());
+  assert.notEqual(merged, hub);
+  assert.equal(merged.months["2026-09"].complete, true, "a month only the phone has is fully known");
+  const inHub = withLocalOnly(hub, [{ ...local, path: "IMG_20240501_101010.jpg" }], new Set());
+  assert.equal(inHub.months["2024-05"].complete, false, "a hub month not yet read is still incomplete");
+  assert.equal(inHub.months["2024-05"].fresh, 0);
+  const quiet = withLocalOnly({ timeline: [], total: 0, indexing: false, months: {} }, [local], new Set());
+  const layout = galleryLayout(
+    quiet.timeline.map((row) => ({ month: row.month, count: row.count })),
+    400,
+    4,
+  );
+  assert.equal(neededMonth(layout, quiet.months, 0, layout.height, 0, layout.height), null, "a phone-only month never asks the hub");
+  const both = withLocalOnly(hub, [local, { ...local, path: "IMG_20240501_101010.jpg" }], new Set());
+  const two = galleryLayout(both.timeline.map((row) => ({ month: row.month, count: row.count })), 400, 4);
+  assert.equal(neededMonth(two, both.months, 0, two.height, 0, two.height), "2024-05");
+});
+
+test("phone-only photos skip excluded and system files, sit in order inside their month and handle undated ones", () => {
+  const hub = { timeline: [], total: 0, indexing: false, months: {} };
+  const mtime = Date.UTC(2026, 8, 30, 12);
+  const entry = (path) => ({ path, uri: `file:///${path}`, size: 1, mtime });
+  const merged = withLocalOnly(
+    hub,
+    [
+      entry(".git/x.png"),
+      entry("._IMG_1.jpg"),
+      entry("@eaDir/t.jpg"),
+      entry("node_modules/logo.png"),
+      entry("IMG_20260110_100000.jpg"),
+      entry("IMG_20260120_100000.jpg"),
+      entry("IMG_20260115_100000.jpg"),
+    ],
+    new Set(),
+  );
+  assert.deepEqual(
+    merged.months["2026-01"].items.map((item) => item.path),
+    ["IMG_20260120_100000.jpg", "IMG_20260115_100000.jpg", "IMG_20260110_100000.jpg"],
+  );
+  assert.equal(merged.total, 3, "excluded names never count as photos");
+  const undated = withLocalOnly(hub, [{ path: "untitled.jpg", uri: "file:///u.jpg", size: 1 }], new Set());
+  assert.deepEqual(undated.months.undated.items.map((item) => item.path), ["untitled.jpg"]);
+  assert.equal(undated.total, 0, "undated photos are listed but not counted in a month");
 });
