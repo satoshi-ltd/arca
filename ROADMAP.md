@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **MOB-LEASE-LOOKUP** — Path-scoped lookup for gallery conflict recovery
-  `bug · agent · normal`
-  accept: gallery conflict recovery after an interrupted propose no longer opens a replacing snapshot that cancels a paused first-download lease; a replica test shows the lease survives.
 - **CI-RUST-TESTS** — Run the desktop Rust unit tests in CI
   `chore · agent · high`
   accept: the publish workflow runs `cargo test` for `apps/desktop/src-tauri` (daemon identity, locks, updater) and fails the pipeline on a failing test.
@@ -61,7 +58,7 @@ _None._
 
 - **BUILD-MOBILE** — Native mobile build from the current source
   `deploy · maintainer · high`
-  accept: an Android production build of v0.6.18 or later installed on the Fold. It carries the v0.6.13 `ArcaNetwork.thumbnail` module, the Android screen-off TransferSession fix and the v0.6.18 damaged-album-record handling, and drops the obsolete exports and permission text of the removed deletion review.
+  accept: an Android production build of v0.6.20 or later installed on the Fold. It carries the v0.6.13 `ArcaNetwork.thumbnail` module, the Android screen-off TransferSession fix, the v0.6.18 damaged-album-record handling and the v0.6.20 conflict-recovery lease fix, and drops the obsolete exports and permission text of the removed deletion review.
 - **BUILD-DESKTOP** — Desktop build from the current source
   `deploy · maintainer · high`
   accept: the running desktop app and daemon report v0.6.15 or later (unlink deletes by default, local-only previews, photo/video header counts, relink with the hub as the source of truth, 30 s keep-alive).

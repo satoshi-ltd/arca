@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.20 — 2026-09-30
+
+- A phone retrying an interrupted photo upload no longer restarts a paused first download of that folder. Checking whether the hub had kept the upload as a conflict copy opened its own snapshot, which replaced the download's saved hub lease; it now reads the folder's change feed, which takes no lease.
+
+Needs: native build
+
 ## 0.6.19 — 2026-09-30
 
 - A web sign-in request made with "Approve on a machine" always lasts exactly ten minutes. Its creation and expiry times came from two clock reads that could land a millisecond apart, which made one test fail intermittently on Windows CI.

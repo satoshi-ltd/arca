@@ -265,36 +265,34 @@ export class Gallery {
       before = page.next;
     } while (before);
     if (resource.attempted && recoverConflict) {
-      let session, after;
-      try {
-        do {
-          r.check();
-          const query = new URLSearchParams({
-            volume,
-            limit: "250",
-            ...(session ? { session, after } : {}),
-          });
-          const page = await r.client.api(`/v1/snapshot?${query}`);
-          session = page.session;
-          for (const row of page.files) {
-            validRow(row, volume);
-            if (
-              row.path.startsWith(resource.path + ".conflict-") &&
-              (await this.acknowledged(
-                volume,
-                { ...resource, path: row.path },
-                false,
-              ))
-            ) {
-              resource.path = row.path;
-              return true;
-            }
+      // The change feed takes no lease; a new snapshot would replace this phone's paused first-download lease.
+      let after = resource.base || 0,
+        through;
+      do {
+        r.check();
+        const query = new URLSearchParams({
+          volume,
+          after: String(after),
+          ...(through ? { through: String(through) } : {}),
+        });
+        const page = await r.client.api(`/v1/changes?${query}`);
+        through = page.through;
+        for (const row of page.files) {
+          validRow(row, volume);
+          if (
+            row.path.startsWith(resource.path + ".conflict-") &&
+            (await this.acknowledged(
+              volume,
+              { ...resource, path: row.path },
+              false,
+            ))
+          ) {
+            resource.path = row.path;
+            return true;
           }
-          after = page.next;
-        } while (after);
-      } finally {
-        if (session) r.releaseSnapshot(session);
-      }
+        }
+        after = page.next;
+      } while (after);
     }
     return false;
   }

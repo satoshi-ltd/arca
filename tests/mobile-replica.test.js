@@ -1672,6 +1672,75 @@ test("gallery recovers a lost conflict receipt after the hub deletes that confli
   assert.equal(f.exports.length, 1);
 });
 
+test("gallery conflict receipt recovery keeps a paused first-download lease", async (t) => {
+  const f = await galleryFixture(t),
+    { replica: r, volume, client, store } = f;
+  await f.enable();
+  const api = client.api;
+  let conflictPath;
+  client.api = async (route, body) => {
+    if (route === "/v1/propose" && body.hash && !conflictPath) {
+      fs.mkdirSync(path.dirname(path.join(volume.path, body.path)), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(volume.path, body.path),
+        "concurrent desktop file",
+      );
+      await f.daemon.engine.cycle();
+      const result = await api(route, body);
+      conflictPath = result.conflictPath;
+      throw new Error("conflict reply lost");
+    }
+    return api(route, body);
+  };
+  await r.sync();
+  assert.match((await store.gallery(r.scope, volume.id)).issue, /reply lost/);
+  const resource = { ...(await f.uploaded()) };
+  assert.equal(resource.attempted, true);
+
+  for (const name of ["a.txt", "b.txt", "c.txt"])
+    fs.writeFileSync(path.join(volume.path, name), `hub ${name}`);
+  await f.daemon.engine.cycle();
+  await store.resetCursor(r.scope, volume.id);
+  const check = r.checkTransferTurn.bind(r);
+  let transfers = 0;
+  r.checkTransferTurn = () => {
+    if (++transfers === 2)
+      throw Object.assign(new Error("Continuing next turn"), {
+        code: "SYNC_YIELD",
+      });
+    return check();
+  };
+  await assert.rejects(
+    r.pull(await store.folder(r.scope, volume.id)),
+    (error) => error.code === "SYNC_YIELD",
+  );
+  r.checkTransferTurn = check;
+  const saved = await store.snapshotCursor(r.scope, volume.id);
+  assert.ok(saved?.session);
+
+  const calls = [];
+  client.api = (route, ...rest) => {
+    calls.push(route);
+    return api(route, ...rest);
+  };
+  assert.equal(await r.gallery.acknowledged(volume.id, resource), true);
+  assert.equal(resource.path, conflictPath);
+  assert.equal(calls.filter((route) => route.startsWith("/v1/snapshot?")).length, 0);
+
+  calls.length = 0;
+  await r.pull(await store.folder(r.scope, volume.id));
+  const snapshots = calls.filter((route) => route.startsWith("/v1/snapshot?"));
+  assert.ok(snapshots.length);
+  assert.ok(snapshots.every((route) => route.includes(`session=${saved.session}`)));
+  for (const name of ["a.txt", "b.txt", "c.txt"])
+    assert.equal(
+      fs.readFileSync(f.files.work(r.scope, volume.id, name), "utf8"),
+      `hub ${name}`,
+    );
+});
+
 test("gallery handles limited access, low storage, changed originals and destroyed state without touching Photos", async (t) => {
   const f = await galleryFixture(t),
     { replica: r, files, store, volume } = f;
