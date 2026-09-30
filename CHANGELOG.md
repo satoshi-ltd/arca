@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.19 — 2026-09-30
+
+- A web sign-in request made with "Approve on a machine" always lasts exactly ten minutes. Its creation and expiry times came from two clock reads that could land a millisecond apart, which made one test fail intermittently on Windows CI.
+
 ## 0.6.18 — 2026-09-30
 
 - A phone whose Photo uploads settings for a folder become unreadable no longer fails to start or crashes its screens. That folder stops with "Photo uploads settings are damaged. Choose Change album… to repair them." and is not scanned, and its local files cannot be renamed or deleted, so a lost record can never turn missing files into deletions on the hub. Change album… repairs it, turning uploads back on after the usual confirmation and restoring any missing files before syncing again.

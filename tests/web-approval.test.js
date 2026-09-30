@@ -54,7 +54,15 @@ test("web approval requires delegated authority, binds redemption and resolves o
     (await api("/v1/web-approvers", { id: "device", enabled: true })).status,
     200,
   );
-  const r = await (await auth({ action: "create" })).json();
+  const realNow = Date.now;
+  let clock = realNow();
+  Date.now = () => clock++;
+  let r;
+  try {
+    r = await (await auth({ action: "create" })).json();
+  } finally {
+    Date.now = realNow;
+  }
   const list = await (await api("/v1/web-approvals", null, secret)).json();
   assert.equal(list.requests[0].id, r.id);
   assert.equal(list.requests[0].secret, undefined);

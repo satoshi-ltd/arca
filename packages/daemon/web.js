@@ -168,14 +168,15 @@ export class Web {
           fail("No devices can approve access. Use a sign-in code.", 409);
         if (this.requests.size >= 50) fail("Too many pending requests", 429);
         const secret = token(),
-          id = token();
+          id = token(),
+          created = Date.now();
         const r = {
           id,
           secret: digest(secret),
           reference: shortCode(),
           state: "pending",
-          created: Date.now(),
-          expires: Date.now() + 600000,
+          created,
+          expires: created + 600000,
           ip: req.socket.remoteAddress?.replace(/^::ffff:/, "") || "",
           agent: String(req.headers["user-agent"] || "Unknown browser").slice(
             0,
