@@ -650,3 +650,15 @@ test("phone hub-only actions say why they are unavailable offline and use the hu
   assert.match(app, /It is used when this phone connects to a hub\./);
   assert.doesNotMatch(app, /Connect to the hub and try again\./, "an offline rename is confirmed, not reported as an error");
 });
+
+test("offline file detail leads with the phone's own row and an empty saved window says so", () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
+  const app = read("App.jsx");
+  const detail = read("FileHistory.jsx");
+  assert.match(app, /offlineFileHistory\(page, saved, localEntry\)/);
+  assert.match(app, /currentRev: more \? target\.currentRev : own\.currentRev/);
+  assert.match(detail, /history\.offline\s+\? "No saved revisions for this file\."/);
+  assert.match(detail, /!current\.local &&\s+!current\.deleted/);
+  assert.match(detail, /current\.local\s+\? "Local copy"/);
+  assert.match(detail, /row\.created \? date\(row\.created\) : "This device"/);
+});

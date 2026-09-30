@@ -91,6 +91,7 @@ import {
 import config from "../app.json";
 import { HubConnection } from "./HubConnection";
 import { FileHistory } from "./FileHistory";
+import { offlineFileHistory } from "./file-history.js";
 import { IncomingShare } from "./IncomingShare";
 import { GalleryDateRail } from "./GalleryDateRail";
 import { FolderGallery } from "./FolderGallery";
@@ -759,8 +760,11 @@ export default function App() {
             .catch(() => null)
         : null;
     if (request !== historyRequest.current || !mounted.current) return;
+    const own = target && !more ? offlineFileHistory(page, saved, localEntry) : null;
     (target ? setFileHistory : setHistory)({
-      versions: more ? [...previous.versions, ...page.versions] : page.versions,
+      versions: more
+        ? [...previous.versions, ...page.versions]
+        : (own?.versions ?? page.versions),
       next: page.next,
       offline: !!page.offline,
     });
@@ -770,11 +774,7 @@ export default function App() {
         originEntry: target.originEntry || null,
         ...target,
         localEntry,
-        currentRev: more
-          ? target.currentRev
-          : saved && !saved.deleted
-            ? saved.rev
-            : page.versions[0]?.rev,
+        currentRev: more ? target.currentRev : own.currentRev,
       });
   }
   async function openFileDetail(entry) {

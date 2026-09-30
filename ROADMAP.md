@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-MOB-FILEDETAIL** — Offline file detail on phones ignores the phone's own index row
-  `bug · agent · normal`
-  accept: offline, the phone's local row leads file detail when the saved history lacks it or is older (marked as the local copy, with the correct latest revision and Current badge), and an empty saved window reads "No saved revisions for this file". Replica test for a file outside the saved window and for a newer local revision.
 - **OFF-MOB-RECONNECT** — Reconnecting does not refresh Recent, Machines or an open file detail on phones
   `bug · agent · normal`
   accept: those views reload when the hub comes back (not only when the last-sync time changes), an open file detail re-enables hub actions without reopening, and Machines labels saved data from the response's own `offline` flag. Effect tests like the existing Machines readiness test.
@@ -84,7 +81,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-MOB-FILEDETAIL, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.36 — 2026-09-30
+
+- On a phone without a hub connection, a file's detail now shows the phone's own copy as the current revision when the saved history does not include it or is older, and says "No saved revisions for this file" instead of implying it has no history.
+
+Needs: native build
+
 ## 0.6.35 — 2026-09-30
 
 - On a phone, shared gallery Delete (in the viewer and when several photos are selected) and Link album are disabled with "Needs the hub, which is unavailable." while the hub is unreachable, and failures of actions that need the hub no longer say your edits were saved locally.

@@ -44,6 +44,7 @@ export function FileHistory({
       )}
       {target.path.includes(".conflict-") &&
         current &&
+        !current.local &&
         !current.deleted &&
         !current.resolved && (
           <Card title="Conflict copy">
@@ -70,11 +71,13 @@ export function FileHistory({
           [
             "Status on hub",
             current
-              ? current.deleted
-                ? "Deleted"
-                : current.resolved
-                  ? "Resolved"
-                  : "Available"
+              ? current.local
+                ? "Local copy"
+                : current.deleted
+                  ? "Deleted"
+                  : current.resolved
+                    ? "Resolved"
+                    : "Available"
               : loading
                 ? "Loading…"
                 : "Not verified",
@@ -86,7 +89,10 @@ export function FileHistory({
               : "Unknown",
           ],
           ["Latest revision", current ? `rev ${current.rev}` : "Unknown"],
-          ["Last changed", current ? date(current.created) : "Unknown"],
+          [
+            "Last changed",
+            current?.created ? date(current.created) : "Unknown",
+          ],
         ].map(([label, value], index) => (
           <View
             key={label}
@@ -115,10 +121,16 @@ export function FileHistory({
                         color={row.deleted ? c.mute : c.accent}
                       />
                       <View style={[s.flex, s.stack]}>
-                        <Text style={s.rowTitle}>{date(row.created)}</Text>
+                        <Text style={s.rowTitle}>
+                          {row.created ? date(row.created) : "This device"}
+                        </Text>
                         <Text style={s.caption}>
                           {row.deleted ? "Deleted" : bytes(row.size)}
-                          {author ? ` · ${author(row.author)}` : ""}
+                          {row.local
+                            ? " · Local copy"
+                            : author
+                              ? ` · ${author(row.author)}`
+                              : ""}
                         </Text>
                       </View>
                       {wide && <Text style={s.mono}>rev {row.rev}</Text>}
@@ -143,7 +155,11 @@ export function FileHistory({
           </Section>
           {loading && <Scaffold kind="history" label="Loading file history" />}
           {!loading && !error && connected && !history.versions.length && (
-            <Text style={s.caption}>No retained revisions.</Text>
+            <Text style={s.caption}>
+              {history.offline
+                ? "No saved revisions for this file."
+                : "No retained revisions."}
+            </Text>
           )}
           {history.next && (
             <Button

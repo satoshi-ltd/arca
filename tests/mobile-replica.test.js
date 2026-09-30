@@ -13,6 +13,7 @@ import {
   parseGallery,
 } from "../apps/mobile/src/validation.js";
 import { galleryConfig } from "../apps/mobile/src/gallery.js";
+import { offlineFileHistory } from "../apps/mobile/src/file-history.js";
 import { scopedActivity } from "../packages/core/scoped-activity.js";
 import { TransferSession, shouldStopSync } from "../apps/mobile/src/transfer-session.js";
 import { createClient } from "../apps/mobile/src/client.js";
@@ -4004,6 +4005,41 @@ for (const [name, names] of [
     assert.equal(f.requests.filter((route) => route === `/v1/blobs/${hash}`).length, 1, "the shared bytes came from the hub once");
   });
 }
+
+test("offline file detail puts the phone's own row first when the saved history lacks it or is older", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon } = f;
+  fs.writeFileSync(path.join(volume.path, "newer.txt"), "one");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const first = (await f.store.current(replica.scope, volume.id, "newer.txt")).rev;
+  fs.writeFileSync(path.join(volume.path, "newer.txt"), "two");
+  fs.writeFileSync(path.join(volume.path, "outside.txt"), "new file");
+  await daemon.engine.cycle();
+  await sync(f);
+  f.offline();
+  const entry = (name) => ({ path: name, size: 3, mtime: Date.UTC(2026, 8, 30, 10) });
+  const history = (name) =>
+    replica.remoteView(`/v1/history?volume=${volume.id}&path=${name}&limit=50`);
+  const outside = await history("outside.txt");
+  assert.equal(outside.offline, true);
+  assert.deepEqual(outside.versions, [], "the saved window never saw this file");
+  const outsideRow = await f.store.current(replica.scope, volume.id, "outside.txt");
+  const led = offlineFileHistory(outside, outsideRow, entry("outside.txt"));
+  assert.equal(led.versions[0].local, true);
+  assert.equal(led.versions[0].rev, outsideRow.rev);
+  assert.equal(led.currentRev, outsideRow.rev, "the local revision is the current one");
+  const older = await history("newer.txt");
+  assert.equal(older.versions[0].rev, first, "the saved window stops at the first revision");
+  const newerRow = await f.store.current(replica.scope, volume.id, "newer.txt");
+  assert.ok(newerRow.rev > first, "the phone applied the second revision");
+  const newer = offlineFileHistory(older, newerRow, entry("newer.txt"));
+  assert.deepEqual(newer.versions.map((row) => row.rev), [newerRow.rev, first], "a newer local revision leads the saved window");
+  assert.equal(newer.versions[0].local, true);
+  assert.equal(newer.currentRev, newerRow.rev);
+});
 
 test("mobile relists a folder when a directory appears or disappears or a name changes only in case", async (t) => {
   const f = await fixture(t);
