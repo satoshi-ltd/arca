@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-MOB-SESSION** — Every offline cycle starts the Android foreground transfer session
-  `bug · agent · normal`
-  accept: a foreground cycle skips the transfer session only when the last verdict was offline (connection checked and hub unavailable), and ends it at once when the refresh fails, so offline cycles never raise "Synchronizing folders" or request notification permission, while an online or first cycle still acquires it before catalog work as SPEC requires. Replica tests for offline and online cycles.
 - **OFF-MOB-WARM** — Saved views never reach folders late in the list on a slow hub
   `bug · agent · normal`
   accept: preparing saved views fetches missing or stalest routes first (every folder's revisions page before the rest) with bounded parallelism, so with 400 ms per request and four folders every folder has a saved revisions page within two cycles; replica test.
@@ -78,7 +75,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`

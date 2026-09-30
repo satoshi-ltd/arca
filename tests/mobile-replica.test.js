@@ -2175,6 +2175,134 @@ test("gallery edits create revisions at the same Machine path, including reverti
   assert.equal(fs.existsSync(path.join(f.volume.path, first.path)), false);
 });
 
+function recordedSession(f) {
+  const events = [];
+  const session = {
+    active: false,
+    async begin() {
+      events.push({ event: "begin", requests: f.requests.length });
+      this.active = true;
+    },
+    async end() {
+      if (!this.active) return;
+      events.push({ event: "end", requests: f.requests.length });
+      this.active = false;
+    },
+  };
+  return { events, session };
+}
+
+test("a cycle whose last verdict was offline never raises the foreground session", async (t) => {
+  const f = await fixture(t);
+  const { replica } = f;
+  await replica.select(f.client.state().catalog.volumes[0]);
+  const { events, session } = recordedSession(f);
+  replica.transfer = session;
+  await sync(f);
+  assert.deepEqual(events.map((e) => e.event), ["begin", "end"], "an online cycle acquires and releases once");
+  f.offline();
+  await replica.sync();
+  assert.equal(replica.hubUnavailable, true);
+  assert.deepEqual(events.map((e) => e.event), ["begin", "end", "begin", "end"], "the first failure still acquired, and released at once");
+  const before = events.length;
+  await replica.sync();
+  await replica.sync();
+  assert.equal(events.length, before, "later offline cycles neither acquire nor release");
+});
+
+test("the first cycle against an unreachable hub acquires the session and releases it when the refresh fails", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const reopened = new Replica({ store: f.store, files: f.files, client: f.client });
+  await reopened.load();
+  assert.equal(reopened.connectionChecked, false);
+  const { events, session } = recordedSession(f);
+  reopened.transfer = session;
+  f.offline();
+  await reopened.sync();
+  assert.deepEqual(events.map((e) => e.event), ["begin", "end"]);
+  assert.equal(session.active, false);
+});
+
+test("when the hub answers again the session is acquired after the probe and before any transfer", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.volume.path, "back.txt"), "came back");
+  await f.daemon.engine.cycle();
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  const { events, session } = recordedSession(f);
+  f.replica.transfer = session;
+  f.offline();
+  await f.replica.sync();
+  await f.replica.sync();
+  assert.equal(f.replica.hubUnavailable, true);
+  events.length = 0;
+  f.online();
+  const mark = f.requests.length;
+  await sync(f);
+  assert.deepEqual(events.map((e) => e.event), ["begin", "end"]);
+  const first = f.requests.slice(mark);
+  assert.equal(first[0], "/v1/catalog", "the probe is the first request of the cycle");
+  assert.ok(events[0].requests > mark, "the session starts after the catalog answered");
+  assert.ok(events[0].requests <= mark + first.indexOf("/v1/blobs/" + crypto.createHash("sha256").update("came back").digest("hex")) || !first.some((route) => route.startsWith("/v1/blobs/")), "and before the first file transfer");
+  assert.equal(fs.readFileSync(f.files.work(f.replica.scope, f.volume.id, "back.txt"), "utf8"), "came back");
+});
+
+test("a forced follow-up cycle after a failed refresh does not keep the session the failed cycle took", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const reopened = new Replica({ store: f.store, files: f.files, client: f.client });
+  await reopened.load();
+  assert.equal(reopened.connectionChecked, false);
+  let probes = 0;
+  const refresh = reopened.refreshCatalog.bind(reopened);
+  reopened.refreshCatalog = (...args) => {
+    probes++;
+    return refresh(...args);
+  };
+  const events = [];
+  reopened.transfer = {
+    active: false,
+    async begin() {
+      this.active = true;
+      events.push(`begin@${probes}`);
+    },
+    async end() {
+      if (!this.active) return;
+      this.active = false;
+      events.push(`end@${probes}`);
+    },
+  };
+  f.offline();
+  const run = reopened.sync();
+  reopened.sync(true);
+  await run;
+  assert.equal(probes, 2, "the forced follow-up cycle ran");
+  assert.deepEqual(events, ["begin@0", "end@1"], "the lease is released before the follow-up cycle, which skips it");
+});
+
+test("a native failure while releasing the session does not hide that the hub is unreachable", async (t) => {
+  const f = await fixture(t);
+  await f.replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const reopened = new Replica({ store: f.store, files: f.files, client: f.client });
+  await reopened.load();
+  reopened.transfer = {
+    active: false,
+    async begin() {
+      this.active = true;
+    },
+    async end() {
+      throw new Error("native stop failed");
+    },
+  };
+  f.offline();
+  await reopened.sync().catch(() => {});
+  assert.equal(reopened.hubUnavailable, true);
+  assert.doesNotMatch(reopened.error || "", /native stop failed/);
+});
+
 test("an active native transfer drains multiple gallery batches and releases on completion", async (t) => {
   const assets = Array.from({ length: 8 }, (_, i) => ({
     id: "foreground-" + i,

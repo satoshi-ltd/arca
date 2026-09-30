@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.39 — 2026-10-01
+
+- On Android, a sync that starts while the hub is known to be unreachable no longer raises the "Synchronizing folders" notification or asks for notification permission: it checks the hub first and starts the foreground service only once the hub answers.
+
+Needs: native build
+
 ## 0.6.38 — 2026-10-01
 
 - On a phone, Recent, Machines and an open file detail now refresh by themselves when the hub comes back, instead of staying on saved data until the next sync finishes. An open file detail gets its Restore button back without being reopened, and Machines only says it shows saved information when it really does.

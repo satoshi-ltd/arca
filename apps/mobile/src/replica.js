@@ -1040,18 +1040,29 @@ export class Replica {
     if (!this.hubUnavailable) this.error = null;
     this.changed();
     try {
-      // Acquire while the app is visible, before metadata or file transfers.
-      // The same service spans all continuation turns until sync() exits.
-      if (
-        !this.paused &&
-        this.client.state().connection?.linked &&
-        (await this.store.folders(this.scope)).some((folder) => folder.selected)
-      ) {
-        await this.transfer.begin();
-        this.check();
+      // Acquire before file transfers; after an offline verdict only once the probe succeeds.
+      const acquire = async () => {
+        if (
+          !this.paused &&
+          this.client.state().connection?.linked &&
+          (await this.store.folders(this.scope)).some(
+            (folder) => folder.selected,
+          )
+        ) {
+          await this.transfer.begin();
+          this.check();
+        }
+      };
+      const offline = this.connectionChecked && this.hubUnavailable;
+      if (!offline) await acquire();
+      try {
+        await this.refreshCatalog();
+      } catch (error) {
+        await this.transfer.end().catch(() => {});
+        throw error;
       }
-      await this.refreshCatalog();
       this.hubAnswered();
+      if (offline) await acquire();
       const connection = this.client.state().connection;
       if (!connection?.linked) return;
       if (this.scope !== connection.hubId) {
