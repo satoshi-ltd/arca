@@ -576,11 +576,13 @@ test("mobile machine view waits for runtime and ignores responses after effect c
   const effect = app.slice(start).match(/useEffect\(\(\) => \{([\s\S]*?)\n  \}, \[([^\]]+)\]\);/);
   assert.ok(effect, "machine view effect is present");
   assert.match(effect[2], /\breplica\b/, "runtime readiness retriggers the effect even with an unchanged cached connection");
+  assert.match(effect[2], /status\.offline/, "the hub coming back reloads the machines");
   assert.match(app, /engine\.current = await runtime\(\);\s*if \(!mounted\.current\) return;\s*setReplica\(engine\.current\);/);
-  let shown = "old", requests = 0, finish;
+  let shown = "old", saved = "old", requests = 0, finish;
   const context = {
     screen: "Folders", connected: true, replica: null, engine: { current: null },
     setMachines: (value) => { shown = value; },
+    setMachinesSaved: (value) => { saved = value; },
   };
   const run = () => vm.runInNewContext(`(() => {${effect[1]}\n})()`, context);
   assert.doesNotThrow(run, "cached linked state can precede the async runtime");
@@ -588,9 +590,15 @@ test("mobile machine view waits for runtime and ignores responses after effect c
   context.replica = { remoteView: () => { requests++; return new Promise((resolve) => { finish = resolve; }); } };
   const cleanup = run();
   assert.equal(requests, 1);
-  finish({ machines: ["Fold"] });
+  finish({ machines: ["Fold"], offline: true });
   await new Promise(setImmediate);
   assert.deepEqual(shown, ["Fold"]);
+  assert.equal(saved, true, "the saved-data label follows the response's own flag");
+  const again = run();
+  finish({ machines: ["Fold"] });
+  await new Promise(setImmediate);
+  assert.equal(saved, false, "a live answer clears the saved-data label");
+  again();
   cleanup();
   const cancelled = run();
   cancelled();
@@ -661,4 +669,56 @@ test("offline file detail leads with the phone's own row and an empty saved wind
   assert.match(detail, /!current\.local &&\s+!current\.deleted/);
   assert.match(detail, /current\.local\s+\? "Local copy"/);
   assert.match(detail, /row\.created \? date\(row\.created\) : "This device"/);
+});
+
+test("views reload when the hub comes back and an open file detail refreshes quietly", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const recent = fs.readFileSync(new URL("../apps/mobile/src/FolderRecent.jsx", import.meta.url), "utf8");
+  assert.match(app, /updated=\{status\.last\}\s+offline=\{status\.offline\}/);
+  assert.match(recent, /\}, \[key, connected, updated, offline, attempt, onLoading\]\);/);
+  assert.match(app, /async function getHistory\(target = null, more = false, quiet = false\)/);
+  assert.match(app, /if \(!quiet\) \{\s+setFileHistory\(\{ versions: \[\], next: null \}\);\s+setSheet\(target\);\s+\}/);
+  assert.match(app, /if \(quiet && !sameDetail\(openSheet\.current, target\)\) return;/);
+  assert.match(app, /openSheet\.current = sheet;/);
+  const effect = app.match(/useEffect\(\(\) => \{\s+if \(\s+sheet\?\.kind === "history" &&[\s\S]*?\}, \[([^\]]+)\]\);/);
+  assert.ok(effect, "the reconnect refresh of an open file detail exists");
+  assert.match(effect[0], /!status\.offline &&\s+fileHistory\.offline/);
+  assert.match(effect[0], /false,\s+true,\s+\)\.catch/);
+  assert.match(effect[1], /status\.offline/);
+  for (const dependency of ["sheet?.kind", "sheet?.path", "fileHistory.offline"])
+    assert.ok(effect[1].includes(dependency), `${dependency} retriggers the refresh`);
+  assert.match(app, /machinesSaved && !!machines\?\.length/);
+});
+
+test("an open file detail refreshes only when the hub is back and its saved data is showing", async () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const effect = app.match(/useEffect\(\(\) => \{(\s+if \(\s+sheet\?\.kind === "history" &&[\s\S]*?)\}, \[[^\]]+\]\);/);
+  assert.ok(effect);
+  const calls = [];
+  const base = {
+    sheet: { kind: "history", volume: "v", path: "a.txt", originEntry: { path: "a.txt" }, localEntry: null },
+    connected: true,
+    replica: {},
+    status: { offline: false },
+    fileHistory: { offline: true, versions: [] },
+    getHistory: (...args) => {
+      calls.push(args);
+      return Promise.resolve();
+    },
+    setDetailError: () => {},
+  };
+  const run = (overrides) => vm.runInNewContext(`(() => {${effect[1]}\n})()`, { ...base, ...overrides });
+  run({ status: { offline: true } });
+  run({ fileHistory: { offline: false, versions: [] } });
+  run({ connected: false });
+  run({ replica: null });
+  run({ sheet: { kind: "select" } });
+  assert.equal(calls.length, 0, "nothing reloads while offline, when the data is live or without a file detail");
+  run({});
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(1), [false, true], "the refresh is quiet: no reset of the open detail");
+  assert.deepEqual(
+    { volume: calls[0][0].volume, path: calls[0][0].path },
+    { volume: "v", path: "a.txt" },
+  );
 });

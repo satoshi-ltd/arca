@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.38 — 2026-10-01
+
+- On a phone, Recent, Machines and an open file detail now refresh by themselves when the hub comes back, instead of staying on saved data until the next sync finishes. An open file detail gets its Restore button back without being reopened, and Machines only says it shows saved information when it really does.
+
+Needs: native build
+
 ## 0.6.37 — 2026-09-30
 
 - GitHub Actions now tidies itself every Monday: completed runs beyond the newest 10 per workflow that are a week old, and week-old artifacts, are deleted. A manual run can list what it would delete first.

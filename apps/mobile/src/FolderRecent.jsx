@@ -14,6 +14,7 @@ export function FolderRecent({
   connected,
   load,
   updated,
+  offline,
   date,
   open,
   onLoading,
@@ -49,7 +50,7 @@ export function FolderRecent({
       active = false;
       onLoading?.(false);
     };
-  }, [key, connected, updated, attempt, onLoading]);
+  }, [key, connected, updated, offline, attempt, onLoading]);
   if (!connected && !page)
     return (
       <Text style={s.text}>

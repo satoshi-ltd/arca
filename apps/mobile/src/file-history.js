@@ -19,3 +19,8 @@ export function offlineFileHistory(page, saved, localEntry) {
     currentRev: own.rev,
   };
 }
+
+export const sameDetail = (sheet, target) =>
+  sheet?.kind === "history" &&
+  sheet.volume === target.volume &&
+  sheet.path === target.path;

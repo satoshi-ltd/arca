@@ -91,7 +91,7 @@ import {
 import config from "../app.json";
 import { HubConnection } from "./HubConnection";
 import { FileHistory } from "./FileHistory";
-import { offlineFileHistory } from "./file-history.js";
+import { offlineFileHistory, sameDetail } from "./file-history.js";
 import { IncomingShare } from "./IncomingShare";
 import { GalleryDateRail } from "./GalleryDateRail";
 import { FolderGallery } from "./FolderGallery";
@@ -135,6 +135,7 @@ export default function App() {
     ];
   const { width, height, fontScale } = useWindowDimensions();
   const keyboardVisible = useKeyboardVisible();
+  const openSheet = useRef(null);
   const layout = useRef(false);
   const fileMenuTrigger = useRef(null);
   const pageRoot = useRef(null);
@@ -165,6 +166,7 @@ export default function App() {
     [view, setView] = useState("Folders"),
     [locals, setLocals] = useState([]),
     [machines, setMachines] = useState(null),
+    [machinesSaved, setMachinesSaved] = useState(false),
     [status, setStatus] = useState({}),
     [busy, setBusy] = useState(false),
     [actionLabel, setActionLabel] = useState(""),
@@ -461,6 +463,7 @@ export default function App() {
       engine.current?.suspend();
     };
   }, []);
+  openSheet.current = sheet;
   shownFolder.current =
     folder && engine.current ? `${engine.current.scope}:${folder.id}` : null;
   const listedFolder = locals.find((f) => f.id === folder?.id);
@@ -628,12 +631,15 @@ export default function App() {
       !replica
     ) {
       setMachines(null);
+      setMachinesSaved(false);
       return;
     }
     replica
       .remoteView("/v1/machines")
       .then((data) => {
-        if (!cancelled) setMachines(data.machines);
+        if (cancelled) return;
+        setMachines(data.machines);
+        setMachinesSaved(!!data.offline);
       })
       .catch(() => {
         if (!cancelled) setMachines(null);
@@ -641,7 +647,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [screen, connected, status.last, replica]);
+  }, [screen, connected, status.last, status.offline, replica]);
   useEffect(() => {
     if (screen === "History" && connected && replica)
       getHistory().catch((e) => setError(e.message));
@@ -680,7 +686,7 @@ export default function App() {
     setVisibleCount(100);
     setSearch("");
   }
-  async function getHistory(target = null, more = false) {
+  async function getHistory(target = null, more = false, quiet = false) {
     const selectedIds = historyFolderIds(
       await engine.current.store.folders(engine.current.scope),
       client.state().catalog?.volumes || [],
@@ -703,8 +709,10 @@ export default function App() {
           localEntry = { ...info, path: target.path, uri };
       }
       target = { ...target, kind: "history", localEntry };
-      setFileHistory({ versions: [], next: null });
-      setSheet(target);
+      if (!quiet) {
+        setFileHistory({ versions: [], next: null });
+        setSheet(target);
+      }
     }
     const previous = target ? fileHistory : history;
     const q = new URLSearchParams({
@@ -760,6 +768,7 @@ export default function App() {
             .catch(() => null)
         : null;
     if (request !== historyRequest.current || !mounted.current) return;
+    if (quiet && !sameDetail(openSheet.current, target)) return;
     const own = target && !more ? offlineFileHistory(page, saved, localEntry) : null;
     (target ? setFileHistory : setHistory)({
       versions: more
@@ -777,6 +786,32 @@ export default function App() {
         currentRev: more ? target.currentRev : own.currentRev,
       });
   }
+  useEffect(() => {
+    if (
+      sheet?.kind === "history" &&
+      connected &&
+      replica &&
+      !status.offline &&
+      fileHistory.offline
+    )
+      getHistory(
+        {
+          volume: sheet.volume,
+          path: sheet.path,
+          originEntry: sheet.originEntry,
+          localEntry: sheet.localEntry,
+        },
+        false,
+        true,
+      ).catch((e) => setDetailError(e.message));
+  }, [
+    status.offline,
+    connected,
+    replica,
+    sheet?.kind,
+    sheet?.path,
+    fileHistory.offline,
+  ]);
   async function openFileDetail(entry) {
     const target = {
       kind: "history",
@@ -1744,6 +1779,7 @@ export default function App() {
                                   connected={connected && !!replica}
                                   load={(route) => replica.remoteView(route)}
                                   updated={status.last}
+                                  offline={status.offline}
                                   date={date}
                                   open={(row) =>
                                     getHistory({
@@ -2140,7 +2176,7 @@ export default function App() {
                       {connection ? (
                         <Section>
                           <Text style={s.eyebrow}>HUB CONNECTION</Text>
-                          {status.offline && !!machines?.length && (
+                          {machinesSaved && !!machines?.length && (
                             <Text style={s.caption}>
                               Showing saved machine information.
                             </Text>

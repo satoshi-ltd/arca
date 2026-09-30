@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { offlineFileHistory } from "../apps/mobile/src/file-history.js";
+import { offlineFileHistory, sameDetail } from "../apps/mobile/src/file-history.js";
 
 const saved = { rev: 5, size: 12, deleted: 0 };
 const entry = { path: "a.txt", mtime: Date.UTC(2026, 8, 30, 10) };
@@ -42,4 +42,11 @@ test("a deleted local row never leads and a missing file date stays unknown", ()
   assert.deepEqual(offlineFileHistory(page, { rev: 6, deleted: 1 }, entry), { versions: page.versions, currentRev: 4 });
   const nodate = offlineFileHistory({ offline: true, versions: [], next: null }, saved, { path: "a.txt" });
   assert.equal(nodate.versions[0].created, null);
+});
+
+test("a quiet refresh only applies while the same file detail is still open", () => {
+  const target = { volume: "v", path: "a.txt" };
+  assert.equal(sameDetail({ kind: "history", volume: "v", path: "a.txt" }, target), true);
+  for (const moved of [null, undefined, { kind: "conflict", volume: "v", path: "a.txt" }, { kind: "rename-file", volume: "v", path: "a.txt" }, { kind: "history", volume: "v", path: "b.txt" }, { kind: "history", volume: "w", path: "a.txt" }])
+    assert.equal(sameDetail(moved, target), false, JSON.stringify(moved));
 });
