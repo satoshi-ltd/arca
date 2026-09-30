@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-DESK-DETAIL** — Folder detail waits for Recent before listing local files
-  `bug · agent · high`
-  accept: folder detail requests the local browse and the hub-backed Recent in parallel and renders Files as soon as the local listing answers; navigation updates the poll signature so an immediate status poll does not restart the wait. JSDOM test with a never-resolving `/v1/activity`.
 - **OFF-DESK-READS** — Remote-backed desktop reads stall or ignore saved data before and after detection
   `bug · agent · high`
   accept: `/v1/activity` intersects selections with the saved catalog instead of fetching it remotely and reads folder pages in parallel under one shared deadline (`packages/core/scoped-activity.js`), so History with seven folders renders saved rows within the web view's 20 s GET timeout; a historical-revision preview answers at once when the hub is known unavailable and within about 3 s otherwise (it waited 60 s); offline file history falls back to the saved folder history (`history_views`) filtered by path before giving up; desktop replicas prepare machine information after successful cycles, as phones do, and SPEC says so. Daemon and JSDOM tests with a silent hub.
@@ -105,7 +102,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-MOB-DETECT, OFF-DESK-DETAIL, OFF-DESK-READS, OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-MOB-DETECT, OFF-DESK-READS, OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`

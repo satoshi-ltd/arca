@@ -3977,7 +3977,13 @@ test("folder reentry keeps known files and revision while the brand shows refres
   click("folder-detail", other.id);
   await until(
     () =>
-      release && w.document.querySelector(".detail-revisions .scaffold-row"),
+      release &&
+      w.document.querySelector(".folder-explorer") &&
+      w.document.querySelector(".folder-stats .stat:nth-child(3) .scaffold-line"),
+  );
+  assert.equal(
+    w.document.querySelectorAll(".detail-revisions .scaffold-row").length,
+    0,
   );
   assert.doesNotMatch(
     w.document.querySelector(".detail-revisions").textContent,
@@ -3989,6 +3995,254 @@ test("folder reentry keeps known files and revision while the brand shows refres
   assert.doesNotMatch(
     w.document.querySelector(".folder-explorer").textContent,
     /known.txt/,
+  );
+});
+
+test("folder detail lists local files while the hub-backed Recent never answers", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-detail-first-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Photos");
+  fs.writeFileSync(path.join(volume.path, "local.txt"), "on disk");
+  await daemon.engine.cycle();
+  const w = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  }).window;
+  w.setInterval = () => 0;
+  let release;
+  const pending = new Set();
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap")
+          return { setup: false, status: daemon.engine.status() };
+        if (command !== "api") throw new Error(command);
+        const work = (async () => {
+          if (args.route.startsWith("/v1/activity?volume="))
+            await new Promise((resolve) => {
+              release = resolve;
+            });
+          const response = await fetch(
+            `http://127.0.0.1:${daemon.port}${args.route}`,
+            {
+              headers: {
+                Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+              },
+            },
+          );
+          if (!response.ok) throw new Error(`API ${response.status}`);
+          return response.json();
+        })();
+        pending.add(work);
+        try {
+          return await work;
+        } finally {
+          pending.delete(work);
+        }
+      },
+    },
+  };
+  t.after(async () => {
+    release?.();
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.document
+    .querySelector(`[data-action="folder-detail"][data-id="${volume.id}"]`)
+    .click();
+  await until(() => w.document.querySelector(".browser-file-row"));
+  assert.ok(release, "Recent is still waiting on the hub");
+  assert.match(
+    w.document.querySelector(".folder-explorer").textContent,
+    /local.txt/,
+  );
+  assert.ok(
+    w.document.querySelector(".folder-stats .stat:nth-child(3) .scaffold-line"),
+  );
+  release();
+  await until(() =>
+    /^rev \d+$/.test(
+      w.document.querySelector(".folder-stats .stat:nth-child(3) strong")
+        ?.textContent || "",
+    ),
+  );
+});
+
+test("a late Recent answer patches the open folder without rebuilding it, and a poll does not restart it", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-detail-patch-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Documents");
+  for (let n = 0; n < 5; n++)
+    fs.writeFileSync(path.join(volume.path, `file-${n}.txt`), `file ${n}`);
+  await daemon.engine.cycle();
+  const w = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  }).window;
+  const polls = [];
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) polls.push(fn);
+    return 0;
+  };
+  const releases = [];
+  let activity = 0;
+  const pending = new Set();
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap")
+          return { setup: false, status: daemon.engine.status() };
+        if (command !== "api") throw new Error(command);
+        const work = (async () => {
+          if (args.route.startsWith("/v1/activity?volume=")) {
+            activity++;
+            await new Promise((resolve) => releases.push(resolve));
+          }
+          const response = await fetch(
+            `http://127.0.0.1:${daemon.port}${args.route}`,
+            {
+              headers: {
+                Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+              },
+            },
+          );
+          if (!response.ok) throw new Error(`API ${response.status}`);
+          return response.json();
+        })();
+        pending.add(work);
+        try {
+          return await work;
+        } finally {
+          pending.delete(work);
+        }
+      },
+    },
+  };
+  t.after(async () => {
+    for (const release of releases) release();
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.document
+    .querySelector(`[data-action="folder-detail"][data-id="${volume.id}"]`)
+    .click();
+  await until(
+    () =>
+      w.document.querySelector(".browser-file-row") &&
+      w.document.body.getAttribute("aria-busy") === "false",
+  );
+  for (const poll of polls) await poll();
+  assert.equal(
+    activity,
+    1,
+    "a poll right after opening does not restart Recent",
+  );
+  w.document.querySelector('[data-action="folder-search-toggle"]').click();
+  await until(() => w.document.querySelector("#folder-search-input"));
+  const page = w.document.querySelector("#content .page");
+  const input = w.document.querySelector("#folder-search-input");
+  input.value = "file-3";
+  for (const release of releases.splice(0)) release();
+  await until(() =>
+    /^rev \d+$/.test(
+      w.document.querySelector(".folder-stats .stat:nth-child(3) strong")
+        ?.textContent || "",
+    ),
+  );
+  assert.equal(w.document.querySelector("#content .page"), page);
+  assert.equal(w.document.querySelector("#folder-search-input"), input);
+  assert.equal(input.value, "file-3");
+});
+
+test("a late Recent answer fills the open Recent tab in place", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-detail-recent-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Notes");
+  for (let n = 0; n < 3; n++)
+    fs.writeFileSync(path.join(volume.path, `note-${n}.txt`), `note ${n}`);
+  await daemon.engine.cycle();
+  const w = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  }).window;
+  w.setInterval = () => 0;
+  const releases = [];
+  const pending = new Set();
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap")
+          return { setup: false, status: daemon.engine.status() };
+        if (command !== "api") throw new Error(command);
+        const work = (async () => {
+          if (args.route.startsWith("/v1/activity?volume="))
+            await new Promise((resolve) => releases.push(resolve));
+          const response = await fetch(
+            `http://127.0.0.1:${daemon.port}${args.route}`,
+            {
+              headers: {
+                Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+              },
+            },
+          );
+          if (!response.ok) throw new Error(`API ${response.status}`);
+          return response.json();
+        })();
+        pending.add(work);
+        try {
+          return await work;
+        } finally {
+          pending.delete(work);
+        }
+      },
+    },
+  };
+  t.after(async () => {
+    for (const release of releases) release();
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.document
+    .querySelector(`[data-action="folder-detail"][data-id="${volume.id}"]`)
+    .click();
+  await until(() => w.document.querySelector(".browser-file-row"));
+  w.document
+    .querySelector('[data-action="folder-tab"][data-id="recent"]')
+    .click();
+  await until(() =>
+    w.document.querySelector(".detail-revisions .scaffold-row"),
+  );
+  const page = w.document.querySelector("#content .page");
+  const tabs = w.document.querySelector(
+    ".detail-revisions .folder-browser-tools",
+  );
+  for (const release of releases.splice(0)) release();
+  await until(
+    () =>
+      w.document.querySelectorAll(
+        ".detail-revisions .history-row, .detail-revisions [data-action='activity-file']",
+      ).length >= 3,
+  );
+  assert.equal(w.document.querySelector("#content .page"), page);
+  assert.equal(
+    w.document.querySelector(".detail-revisions .folder-browser-tools"),
+    tabs,
+  );
+  assert.equal(
+    w.document.querySelectorAll(".detail-revisions .scaffold-row").length,
+    0,
   );
 });
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.26 — 2026-09-30
+
+- On desktop and web, opening a folder lists its local files at once instead of waiting for the hub's recent revisions, which took 7 to 10 seconds or more when the hub was unreachable; Recent and the latest-revision figure fill in when the hub, or its saved copy, answers.
+
+Needs: desktop build · server image for server replicas
+
 ## 0.6.25 — 2026-09-30
 
 - A desktop or server replica notices a hub that stops answering (for example a Tailscale peer that is down) within about 10 seconds when a sync starts, or 25 seconds between syncs, instead of 60–70 seconds, so the Offline state and saved views appear sooner. It also notices the hub coming back within about 10–15 seconds instead of up to 46.
