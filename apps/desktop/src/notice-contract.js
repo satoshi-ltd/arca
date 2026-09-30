@@ -82,7 +82,7 @@ export function isHubUnreachable(error) {
 }
 export function errorNotice(
   error,
-  { id = "action", hubName = "your hub", action = "retry" } = {},
+  { id = "action", hubName = "your hub", action = "retry", hubOnly = false } = {},
 ) {
   const details = safeDetails(error?.message || error);
   const offline = isHubUnreachable(error);
@@ -101,7 +101,9 @@ export function errorNotice(
     kind: "error",
     icon: offline ? "wifi-off" : "circle-alert",
     title: offline
-      ? `Hub ${hubName} unreachable`
+      ? hubName === "your hub"
+        ? "Hub unreachable"
+        : `Hub ${hubName} unreachable`
       : revoked
         ? /revoked/i.test(details)
           ? "Hub access revoked"
@@ -112,7 +114,9 @@ export function errorNotice(
     body: storage
       ? "Not enough storage space. Free storage, then retry synchronization."
       : offline
-        ? `Your edits are saved locally and sync when ${hubName} is back.`
+        ? hubOnly
+          ? `This needs ${hubName}. Try again when it is reachable.`
+          : `Your edits are saved locally and sync when ${hubName} is back.`
         : revoked
           ? "Your local files are kept. Pair again with a fresh code from the hub."
           : forbidden

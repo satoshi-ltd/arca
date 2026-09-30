@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.34 — 2026-09-30
+
+- On a desktop or server replica, Restore, Resolve conflict, Choose folders, Select, Enable gallery, gallery Delete and Disconnect… are disabled with a short reason while the hub is unavailable, instead of waiting 10 to 25 seconds and failing.
+- Hub failures no longer read "Hub your hub unreachable", and an action that needs the hub no longer says your edits were saved locally.
+
+Needs: desktop build
+
 ## 0.6.33 — 2026-09-30
 
 - A phone applying a downloaded file no longer needs room for two copies of it: the verified download is moved into place, which matters for large videos on a nearly full phone. Identical files still download once.

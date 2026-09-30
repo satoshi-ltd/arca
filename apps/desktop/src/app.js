@@ -84,7 +84,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.33";
+const APP_VERSION = "0.6.34";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -264,8 +264,21 @@ function icons() {
 function pill(label, state = "id", symbol = "circle-dashed") {
   return `<span class="pill ${state}${symbol === "busy" ? " busy-status" : ""}">${symbol === "busy" ? busyIcon() : icon(symbol)}${escape(label)}</span>`;
 }
+const HUB_ONLY_REASON = "Needs the hub, which is unavailable.";
+const hubOnlyActions = new Set([
+  "add",
+  "select",
+  "restore",
+  "review-conflict",
+  "enable-gallery",
+  "disconnect-hub",
+]);
+function hubOffline() {
+  return status?.role === "replica" && !!status.hubUnavailable;
+}
 function button(label, action, id = "", cls = "secondary", symbol = "") {
-  return `<button type="button" class="${cls}" data-action="${action}" data-id="${escape(id)}">${symbol ? icon(symbol) : ""}${label}</button>`;
+  const waiting = hubOnlyActions.has(action) && hubOffline();
+  return `<button type="button" class="${cls}" data-action="${action}" data-id="${escape(id)}"${waiting ? ` disabled title="${HUB_ONLY_REASON}"` : ""}>${symbol ? icon(symbol) : ""}${label}</button>`;
 }
 function selectFolderButton(id) {
   return button("Select", "add", id, "secondary small-button", "download");
@@ -709,11 +722,43 @@ function renderNotices() {
   icons();
 }
 noticeStore.subscribe(renderNotices);
-function notice(message, error = false, options = {}) {
+function notice(message, error = false, { hubOnly = false, ...options } = {}) {
   const item = error
-    ? errorNotice(message, { hubName: status?.hubName || "your hub" })
+    ? errorNotice(message, { hubName: status?.hubName || "your hub", hubOnly })
     : { kind: "info", title: message };
   return noticeStore.push({ ...item, ...options });
+}
+function hubOnlyFailure(error) {
+  return /Hub unavailable\. Try again when it is reachable/i.test(
+    error?.message || "",
+  );
+}
+function hubOnlyBlocked() {
+  const message = "Hub unavailable. Try again when it is reachable.";
+  if ($("#dialog").open) {
+    $("#dialog-error").innerHTML = noticeMarkup({
+      ...errorNotice(message, {
+        hubName: status?.hubName || "your hub",
+        hubOnly: true,
+      }),
+      id: "dialog-error",
+      action: null,
+    });
+    $("#dialog-error").hidden = false;
+  } else notice(message, true, { hubOnly: true, action: null });
+}
+function syncHubOnlyControls() {
+  const waiting = hubOffline();
+  const selector = [...hubOnlyActions]
+    .map((name) => `button[data-action="${name}"]`)
+    .concat(".photo-selection-delete", ".photo-delete")
+    .join(",");
+  for (const control of document.querySelectorAll(selector)) {
+    if (pendingControls.has(control)) continue;
+    control.disabled = waiting;
+    if (waiting) control.title = HUB_ONLY_REASON;
+    else if (control.title === HUB_ONLY_REASON) control.removeAttribute("title");
+  }
 }
 let actionQueue = null;
 let activeUIRequests = 0;
@@ -767,7 +812,10 @@ async function performAction(work, exclusive, track = true) {
     if (daemonUnavailable(e)) showDaemonStopped();
     if ($("#dialog").open) {
       $("#dialog-error").innerHTML = noticeMarkup({
-        ...errorNotice(message),
+        ...errorNotice(message, {
+          hubName: status?.hubName || "your hub",
+          hubOnly: hubOnlyFailure(e),
+        }),
         id: "dialog-error",
         action: null,
       });
@@ -776,6 +824,7 @@ async function performAction(work, exclusive, track = true) {
       notice(message, true, {
         id: e.transportError && e.readOnly ? "connection" : "action",
         action: e.transportError && e.readOnly ? "refresh" : null,
+        hubOnly: hubOnlyFailure(e),
       });
     }
   } finally {
@@ -959,6 +1008,7 @@ async function refresh(renderView = true) {
   const next = await api("/v1/status");
   if (request !== statusRequestSerial) return lastSignature;
   status = next;
+  syncHubOnlyControls();
   if (daemonStopped) daemonRecovered();
   updateBrandActivity();
   if (status.needsSetup || status.onboarding) {
@@ -1537,7 +1587,7 @@ function revisionRow(v, compact = false) {
       status.volumes.find((x) => x.id === v.volume)?.selected)
       ? "review-conflict"
       : "activity-file";
-  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button" aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal", true)}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
+  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" title="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal", true)}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
 }
 function fileHistoryHeader() {
   const volume = status.volumes.find((v) => v.id === historyVolume);
@@ -1926,6 +1976,7 @@ function mountGallery(volume) {
   heading.classList.add("gallery-selection-host");
   heading.append(toolbar);
   toolbar.querySelector(".photo-selection-delete").hidden = !galleryCanDelete();
+  syncHubOnlyControls();
   function updateSelection() {
     toolbar.hidden = !state.selection.size;
     heading.classList.toggle(
@@ -2589,6 +2640,7 @@ function galleryCanDelete() {
 }
 function deleteGalleryPhotos(items) {
   if (!items.length || !galleryCanDelete()) return;
+  if (hubOffline()) return void hubOnlyBlocked();
   const state = galleryView;
   const inViewer = $("#dialog").classList.contains("photo-viewer");
   const remaining = items.map((item) => ({
@@ -2810,6 +2862,7 @@ async function openGalleryPhoto(index) {
   $(".photo-delete")?.addEventListener("click", () =>
     deleteGalleryPhotos([item]),
   );
+  syncHubOnlyControls();
   const infoPanel = $(".photo-info");
   const updateInfoActions = () => {
     infoPanel.querySelector(".photo-file").hidden = !item.metadata?.hasHistory;
@@ -5496,6 +5549,8 @@ const navigationActions = new Set([
 ]);
 function dispatchControl(control) {
   const { action: name, id } = control.dataset;
+  if (hubOnlyActions.has(name) && hubOffline())
+    return Promise.resolve(hubOnlyBlocked());
   const work = () => handle(name, id, control);
   return navigationActions.has(name) ? navigate(work) : action(work, control);
 }

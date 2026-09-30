@@ -1018,6 +1018,130 @@ test("local folders render while the hub catalog is still pending", async (t) =>
   assert.equal(w.document.body.classList.contains("view-loading"), false);
 });
 
+test("hub-only actions are disabled with a reason while the hub is unavailable and never reach the hub", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-hub-only-ui-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Local documents");
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const routes = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        routes.push(args.route);
+        if (args.route === "/v1/status")
+          return {
+            ...daemon.engine.status(),
+            role: "replica",
+            hubUnavailable: true,
+            hubName: "Casa",
+            hub: "http://127.0.0.1:49999",
+          };
+        if (args.route === "/v1/remote") return { offline: true, name: "Casa", volumes: [] };
+        if (args.route === "/v1/machines") return { offline: true, machines: [] };
+        return {};
+      },
+    },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  const choose = w.document.querySelector('#content [data-action="add"]');
+  assert.ok(choose, "Choose folders is present");
+  assert.equal(choose.disabled, true);
+  assert.match(choose.title, /Needs the hub/);
+  const before = routes.length;
+  const forced = w.document.createElement("button");
+  forced.dataset.action = "review-conflict";
+  forced.dataset.id = JSON.stringify({ volume: "x", path: "a.conflict-1.txt" });
+  w.document.body.append(forced);
+  forced.click();
+  await until(() => /This needs Casa\. Try again when it is reachable\./.test(w.document.body.textContent));
+  assert.doesNotMatch(w.document.body.textContent, /saved locally/);
+  assert.deepEqual(routes.slice(before).filter((route) => route !== "/v1/status"), [], "a guarded action sends nothing to the hub");
+  for (const name of ["restore", "enable-gallery", "disconnect-hub", "select"]) {
+    const count = routes.length;
+    const control = w.document.createElement("button");
+    control.dataset.action = name;
+    control.dataset.id = "x";
+    w.document.body.append(control);
+    control.click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(routes.slice(count).filter((route) => route !== "/v1/status"), [], `${name} is blocked offline`);
+  }
+});
+
+test("hub-only controls follow the hub's availability and a status-less 'Hub unavailable' failure reads as hub-only", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-hub-flip-ui-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Local documents");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  let offline = true;
+  let failStatus = false;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status") {
+          if (failStatus) throw "Hub unavailable. Try again when it is reachable.";
+          return {
+            ...daemon.engine.status(),
+            role: "replica",
+            hubUnavailable: offline,
+            hubName: "Casa",
+            hub: "http://127.0.0.1:49999",
+          };
+        }
+        if (args.route === "/v1/remote") return { offline, name: "Casa", volumes: [] };
+        return {};
+      },
+    },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  const extra = ["restore", "review-conflict", "enable-gallery", "disconnect-hub"].map((name) => {
+    const control = w.document.createElement("button");
+    control.dataset.action = name;
+    w.document.body.append(control);
+    return control;
+  });
+  const gallery = w.document.createElement("button");
+  gallery.className = "photo-selection-delete";
+  w.document.body.append(gallery);
+  offline = false;
+  w.document.querySelector('[data-action="refresh"], [data-view="folders"]').click();
+  await until(() => extra.every((control) => !control.disabled) && !gallery.disabled);
+  offline = true;
+  w.document.querySelector('[data-view="folders"]').click();
+  await until(() => extra.every((control) => control.disabled) && gallery.disabled);
+  assert.ok(extra.every((control) => /Needs the hub/.test(control.title)));
+  failStatus = true;
+  const retry = w.document.createElement("button");
+  retry.dataset.action = "refresh";
+  w.document.body.append(retry);
+  retry.click();
+  await until(() => /This needs Casa\. Try again when it is reachable\./.test(w.document.body.textContent));
+  assert.doesNotMatch(w.document.body.textContent, /saved locally/);
+});
+
 test("replica folder history uses the hub policy when local status omits it", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-retention-ui-"));
   init(home, { port: 0, name: "Local Mac" });

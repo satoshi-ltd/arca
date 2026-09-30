@@ -26,9 +26,9 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-HUB-ACTIONS** — Hub-only actions stay enabled offline and fail with a misleading notice
+- **OFF-HUB-ACTIONS-MOB** — Hub-only actions stay enabled offline on phones and fail with a misleading notice
   `bug · agent · normal`
-  accept: while the hub is known unavailable, desktop/web Restore, Resolve conflict, Choose folders / Select…, Enable gallery, gallery Delete and Disconnect… (which needs a reachable hub until DEC-OFFLINE-DISCONNECT decides otherwise), and mobile shared gallery Delete, are disabled with a short reason instead of waiting 10–25 s or failing; Link album shows why it is disabled; mobile Disconnect keeps working offline (the leave completes when the hub returns) and says so instead of showing an error; hub-only failures use a notice that never says edits were saved locally and never reads "Hub your hub unreachable"; an offline device rename confirms the local save. JSDOM and replica tests.
+  accept: while the hub is known unavailable, mobile shared gallery Delete is disabled with a short reason instead of failing, and Link album shows why it is disabled; mobile Disconnect keeps working offline (the leave completes when the hub returns) and says so instead of showing an error; hub-only failures on the phone use a notice that never says edits were saved locally; an offline device rename confirms the local save. Replica and layout tests.
 - **OFF-MOB-FILEDETAIL** — Offline file detail on phones ignores the phone's own index row
   `bug · agent · normal`
   accept: offline, the phone's local row leads file detail when the saved history lacks it or is older (marked as the local copy, with the correct latest revision and Current badge), and an empty saved window reads "No saved revisions for this file". Replica test for a file outside the saved window and for a newer local revision.
@@ -87,7 +87,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-HUB-ACTIONS-MOB, OFF-MOB-FILEDETAIL, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
@@ -322,6 +322,10 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **MOB-GALLERY-IGNORE-POLICY** — Photos the folder's `.arcaignore` excludes still show as phone-only in the online gallery
   `bug · agent · low`
   accept: online, local photos and videos the folder's `.arcaignore` ignores never appear in the phone gallery (today only the fixed exclusion list filters them); a pure-helper test with a policy and a replica test reading the real `.arcaignore`.
+
+- **DESK-HUB-ONLY-MORE** — Backup controls stay enabled on a replica while the hub is unavailable
+  `bug · agent · low`
+  accept: on a desktop or server replica, Enable and Disable full backup and their Choose… picker are disabled with "Needs the hub, which is unavailable." while the hub is unavailable (they call `/v1/backup`, which answers 503 offline), and follow reconnection like the other hub-only controls; a JSDOM test with the `hubOnlyActions` list.
 
 ## Later phases
 

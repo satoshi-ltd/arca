@@ -299,3 +299,14 @@ test("a persisted photo-export storage failure produces one readable notice", ()
   assert.equal(notices[0].details, issue);
   assert.equal(conditionNotices({ volumes: [{ ...folder, issue: "Read-only folder" }] }).length, 2);
 });
+
+test("an unnamed hub never reads 'Hub your hub' and hub-only failures never claim edits were saved", () => {
+  const unnamed = errorNotice("connect ETIMEDOUT");
+  assert.equal(unnamed.title, "Hub unreachable");
+  assert.match(unnamed.body, /Your edits are saved locally and sync when your hub is back/);
+  const named = errorNotice("connect ETIMEDOUT", { hubName: "Casa", hubOnly: true });
+  assert.equal(named.title, "Hub Casa unreachable");
+  assert.equal(named.body, "This needs Casa. Try again when it is reachable.");
+  assert.doesNotMatch(errorNotice("Hub unavailable. Try again when it is reachable.", { hubOnly: true }).body, /saved locally/);
+  assert.equal(errorNotice("Hub unavailable. Try again when it is reachable.", { hubOnly: true }).offline, true);
+});
