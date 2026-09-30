@@ -1,4 +1,5 @@
 import { nativeGallerySources, galleryDisplay } from "./gallery-display";
+import { HUB_ONLY_REASON } from "../../desktop/src/notice-contract.js";
 import React, {
   memo,
   useContext,
@@ -919,15 +920,19 @@ export function FolderGallery({
       }}
     >
       {!!selection.length && (
-        <View style={s.row}>
-          <Button
-            label={`Delete ${selection.length} selected…`}
-            danger
-            onPress={async () => {
-              await deleteItems(selection);
-            }}
-          />
-          <Button label="Cancel selection" onPress={() => setSelection([])} />
+        <View>
+          <View style={s.row}>
+            <Button
+              label={`Delete ${selection.length} selected…`}
+              danger
+              disabled={!linked}
+              onPress={async () => {
+                await deleteItems(selection);
+              }}
+            />
+            <Button label="Cancel selection" onPress={() => setSelection([])} />
+          </View>
+          {!linked && <Text style={s.caption}>{HUB_ONLY_REASON}</Text>}
         </View>
       )}
       {!!notice && <Text style={s.caption}>{notice}</Text>}
@@ -1097,7 +1102,8 @@ export function FolderGallery({
         resolveVideo={resolveVideo}
         history={leave(history)}
         share={leave(share)}
-        deletable={!!remove}
+        deletable={!!remove && linked}
+        deleteReason={linked ? undefined : HUB_ONLY_REASON}
         remove={deleteItems}
       />
     </View>

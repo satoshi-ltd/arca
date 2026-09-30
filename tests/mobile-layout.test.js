@@ -618,3 +618,35 @@ test("opening a video in the viewer starts local playback without a second tap",
   assert.match(video, /holdVideoPlayback\(player, held, hold\.current\);/);
   assert.match(video, /setLoadError,\s*\(\) => heldRef\.current,/);
 });
+
+test("phone hub-only actions say why they are unavailable offline and use the hub-only notice wording", () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
+  const app = read("App.jsx");
+  const gallery = read("FolderGallery.jsx");
+  const viewer = read("PhotoViewer.jsx");
+  const components = read("components.jsx");
+  assert.match(gallery, /deletable=\{!!remove && linked\}/);
+  assert.match(gallery, /deleteReason=\{linked \? undefined : HUB_ONLY_REASON\}/);
+  assert.match(gallery, /label=\{`Delete \$\{selection\.length\} selected…`\}\s+danger\s+disabled=\{!linked\}/);
+  assert.match(gallery, /<\/View>\s+\{!linked && <Text style=\{s\.caption\}>\{HUB_ONLY_REASON\}<\/Text>\}\s+<\/View>\s+\)\}/, "the reason sits under the button row, never inside it");
+  assert.match(components, /accessibilityHint=\{note\}/);
+  assert.match(viewer, /deleteReason \|\|\s+"Available after the hub confirms the photo/);
+  assert.match(app, /note=\{!source && status\.offline \? HUB_ONLY_REASON : undefined\}/);
+  assert.match(components, /note \? \(\s+<View style=\{s\.flex\}>[\s\S]*?<Text style=\{s\.caption\}>\{note\}<\/Text>/);
+  for (const marker of [
+    /\{ success: "Photos deleted", hubOnly: true \}/,
+    /\}, \{ hubOnly: true \}\),\s+"Restore",/,
+    /retry=\{\(\) => run\(\(\) => client\.refresh\(\), \{ hubOnly: true \}\)\}/,
+    /\{ hubOnly: true \},\s+\)\s+\}\s+loadMore/,
+    /label: "Restoring selected version…",\s+hubOnly: true,/,
+    /setView\("Folders"\);\s+\}, \{ hubOnly: true \}\)/,
+    /label: source \? "Saving changes…" : "Enabling uploads…",\s+hubOnly: true,/,
+  ])
+    assert.match(app, marker);
+  assert.match(app, /errorCode\.current = \{ message, code: e\.code, hubOnly: !!options\.hubOnly \}/);
+  assert.match(app, /hubOnly:\s+errorCode\.current\.message === error && !!errorCode\.current\.hubOnly/);
+  assert.match(app, /title: "Disconnect pending"/);
+  assert.match(app, /title: "Name saved on this device"/);
+  assert.match(app, /It is used when this phone connects to a hub\./);
+  assert.doesNotMatch(app, /Connect to the hub and try again\./, "an offline rename is confirmed, not reported as an error");
+});

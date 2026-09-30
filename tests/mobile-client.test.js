@@ -160,8 +160,22 @@ test("mobile persists pending disconnect across restart and never refreshes fold
     },
   });
   await offline.load();
-  await assert.rejects(offline.disconnect(), /Network request failed/);
+  const pending = await offline.disconnect();
+  assert.equal(pending.connection.leaving, true, "offline, the disconnect is recorded and completes later");
   assert.equal(offline.state().connection.linked, false);
+  const broken = createClient({
+    ...store,
+    fetcher: async () => Response.json({ error: "boom" }, { status: 500 }),
+  });
+  await broken.load();
+  await assert.rejects(broken.disconnect(), /boom|500/);
+  const unavailable = createClient({
+    ...store,
+    fetcher: async () => Response.json({ error: "Bad gateway" }, { status: 503 }),
+  });
+  await unavailable.load();
+  const still = await unavailable.disconnect();
+  assert.equal(still.connection.leaving, true, "a gateway answer for an unreachable hub also leaves the disconnect pending");
   const calls = [];
   const resumed = createClient({
     ...store,

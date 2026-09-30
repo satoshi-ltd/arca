@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.35 — 2026-09-30
+
+- On a phone, shared gallery Delete (in the viewer and when several photos are selected) and Link album are disabled with "Needs the hub, which is unavailable." while the hub is unreachable, and failures of actions that need the hub no longer say your edits were saved locally.
+- Disconnecting while offline now works: the phone records it, shows "Disconnect pending" and leaves the hub when it is reachable again, instead of showing an error. Renaming the phone offline confirms that the name was saved on the phone.
+
+Needs: native build
+
 ## 0.6.34 — 2026-09-30
 
 - On a desktop or server replica, Restore, Resolve conflict, Choose folders, Select, Enable gallery, gallery Delete and Disconnect… are disabled with a short reason while the hub is unavailable, instead of waiting 10 to 25 seconds and failing.

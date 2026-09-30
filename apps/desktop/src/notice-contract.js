@@ -15,6 +15,7 @@ export const noticeMetrics = Object.freeze({
   infoTimeout: 4000,
   maxVisible: 3,
 });
+export const HUB_ONLY_REASON = "Needs the hub, which is unavailable.";
 export function safeDetails(value) {
   return String(value || "")
     .replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]")

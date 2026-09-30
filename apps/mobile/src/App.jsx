@@ -19,6 +19,7 @@ import {
   errorNotice,
   conditionNotices,
   isHubUnreachable,
+  HUB_ONLY_REASON,
 } from "../../desktop/src/notice-contract.js";
 import { Onboarding } from "./Onboarding";
 import { selectFirstFolders } from "./onboarding";
@@ -390,7 +391,7 @@ export default function App() {
       retryAction.current = () => run(work, options);
       const message = e.message || "Could not complete this action.";
       retryAction.current.message = message;
-      errorCode.current = { message, code: e.code };
+      errorCode.current = { message, code: e.code, hubOnly: !!options.hubOnly };
       setError(message);
     } finally {
       action.current = false;
@@ -826,7 +827,7 @@ export default function App() {
                 if (connected && !status.paused) startSync();
               }
             },
-            { success: "Photos deleted" },
+            { success: "Photos deleted", hubOnly: true },
           ).then(() => resolve(false)),
         "Delete photo",
         () => resolve(false),
@@ -926,7 +927,10 @@ export default function App() {
           await listFiles();
           startSync();
         },
-        { label: source ? "Saving changes…" : "Enabling uploads…" },
+        {
+          label: source ? "Saving changes…" : "Enabling uploads…",
+          hubOnly: true,
+        },
       );
     if (source && source.mode !== "damaged") {
       save();
@@ -999,7 +1003,14 @@ export default function App() {
           const r = engine.current;
           r.stop();
           if (r.active) await r.active;
-          await client.disconnect();
+          const left = await client.disconnect();
+          if (left.connection?.leaving)
+            notices.push({
+              id: "disconnect-pending",
+              kind: "info",
+              title: "Disconnect pending",
+              body: "This phone leaves the hub once it is reachable again. Local files are kept.",
+            });
           setFolder(null);
           setHistory({ versions: [], next: null });
         }),
@@ -1142,7 +1153,7 @@ export default function App() {
             actionLabel: "Show",
             volume: row.volume,
           });
-        }),
+        }, { hubOnly: true }),
       "Restore",
     );
   }
@@ -1196,6 +1207,8 @@ export default function App() {
             id: "action",
             hubName: state.catalog?.name,
             action: retryAction.current ? "retry" : null,
+            hubOnly:
+              errorCode.current.message === error && !!errorCode.current.hubOnly,
           },
         ),
       );
@@ -2037,8 +2050,10 @@ export default function App() {
                         (f) => f.id === sheet.volume && f.selected,
                       )}
                       reviewConflict={() =>
-                        run(() =>
-                          resolveConflict({ path: sheet.path }, sheet.volume),
+                        run(
+                          () =>
+                            resolveConflict({ path: sheet.path }, sheet.volume),
+                          { hubOnly: true },
                         )
                       }
                       loadMore={() =>
@@ -2088,9 +2103,9 @@ export default function App() {
                           r.scope = client.state().connection.hubId;
                           await r.store.set("scope", r.scope);
                           await r.store.set("onboarding", "folders");
-                        })
+                        }, { hubOnly: true })
                       }
-                      retry={() => run(() => client.refresh())}
+                      retry={() => run(() => client.refresh(), { hubOnly: true })}
                       download={(ids) =>
                         run(async () => {
                           const r = engine.current;
@@ -2139,7 +2154,7 @@ export default function App() {
                             machine={machines?.find((m) => m.isHub)}
                             busy={actionLocked}
                             disconnect={disconnect}
-                            retry={() => run(() => client.refresh())}
+                            retry={() => run(() => client.refresh(), { hubOnly: true })}
                           />
                         </Section>
                       ) : (
@@ -2210,7 +2225,7 @@ export default function App() {
                                 await r.store.set("scope", r.scope);
                                 startSync();
                                 setView("Folders");
-                              })
+                              }, { hubOnly: true })
                             }
                           />
                         </>
@@ -2453,7 +2468,7 @@ export default function App() {
                               machine={machines?.find((m) => m.isHub)}
                               busy={actionLocked}
                               disconnect={disconnect}
-                              retry={() => run(() => client.refresh())}
+                              retry={() => run(() => client.refresh(), { hubOnly: true })}
                             />
                           </Section>
                         </>
@@ -2480,10 +2495,19 @@ export default function App() {
                                   await engine.current.rename(nextName);
                                 setName(nextName);
                                 setDeviceName(null);
-                                if (!reported)
+                                if (!reported && engine.current.nameReportError)
                                   setError(
-                                    `Name saved on this device, but not updated on the hub. ${engine.current.nameReportError || "Connect to the hub and try again."}`,
+                                    `Name saved on this device, but not updated on the hub. ${engine.current.nameReportError}`,
                                   );
+                                else if (!reported)
+                                  notices.push({
+                                    id: "name-saved",
+                                    kind: "info",
+                                    title: "Name saved on this device",
+                                    body: client.state().connection
+                                      ? "It reaches the hub once the hub is reachable."
+                                      : "It is used when this phone connects to a hub.",
+                                  });
                               });
                             }}
                           />
@@ -2932,6 +2956,7 @@ export default function App() {
                       )}
                       <ActionRow
                         label={source ? "Change album…" : "Link album…"}
+                        note={!source && status.offline ? HUB_ONLY_REASON : undefined}
                         icon="gallery"
                         disabled={
                           actionLocked ||
@@ -3062,6 +3087,7 @@ export default function App() {
                     onPress={() =>
                       run(() => chooseConflict(shownSheet.choice), {
                         label: "Restoring selected version…",
+                        hubOnly: true,
                       })
                     }
                   />

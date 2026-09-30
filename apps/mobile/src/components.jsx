@@ -825,21 +825,37 @@ export function ConfirmDialog({
   );
 }
 
-export function ActionRow({ label, icon, onPress, disabled, danger, divider }) {
+export function ActionRow({
+  label,
+  icon,
+  onPress,
+  disabled,
+  danger,
+  divider,
+  note,
+}) {
   const { s, c } = useDesign();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityHint={note}
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
       style={[s.actionRow, divider && s.separator, disabled && s.disabled]}
     >
       <Icon name={icon} size={20} color={danger ? c.danger : c.soft} />
-      <Text style={[s.buttonLabel, s.flex, danger && s.errorText]}>
-        {label}
-      </Text>
+      {note ? (
+        <View style={s.flex}>
+          <Text style={[s.buttonLabel, danger && s.errorText]}>{label}</Text>
+          <Text style={s.caption}>{note}</Text>
+        </View>
+      ) : (
+        <Text style={[s.buttonLabel, s.flex, danger && s.errorText]}>
+          {label}
+        </Text>
+      )}
     </Pressable>
   );
 }

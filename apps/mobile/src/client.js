@@ -3,6 +3,7 @@ import {
   abortRequest,
   cancellationReason,
 } from "./request-control.js";
+import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 // Platform-independent replica client. Native persistence is injected.
 export function hubAddress(input, privateNetwork = false) {
   let url;
@@ -400,7 +401,11 @@ export function createClient({
         if (!connection) return state();
         connection = { ...connection, leaving: true };
         await secrets.write(connection);
-        await leave();
+        try {
+          await leave({ timeout: Math.min(timeout, 10000) });
+        } catch (error) {
+          if (!isHubUnreachable(error)) throw error;
+        }
         return state();
       }),
     history: (volume, before) =>

@@ -406,6 +406,7 @@ export function PhotoViewer({
   share,
   remove,
   deletable,
+  deleteReason,
 }) {
   const { s } = useDesign();
   const { width, height } = useWindowDimensions();
@@ -586,7 +587,8 @@ export function PhotoViewer({
               accessibilityState={{ disabled: !canDelete }}
               accessibilityHint={
                 !canDelete
-                  ? "Available after the hub confirms the photo. Originals stay in Photos."
+                  ? deleteReason ||
+                    "Available after the hub confirms the photo. Originals stay in Photos."
                   : undefined
               }
               disabled={!canDelete}

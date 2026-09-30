@@ -340,6 +340,12 @@
   font-weight: 600;
   color: var(--m-ink);
 }
+.m-action .m-caption {
+  font-size: var(--m-touch-caption-font);
+  line-height: var(--m-touch-caption-line);
+  font-weight: 400;
+  color: var(--m-soft);
+}
 .m-action.m-danger,
 .m-action.m-danger span {
   color: var(--m-danger);

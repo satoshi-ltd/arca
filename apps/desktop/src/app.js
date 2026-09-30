@@ -4,6 +4,7 @@ import {
   errorNotice,
   conditionNotices,
   safeDetails,
+  HUB_ONLY_REASON,
 } from "./notice-contract.js";
 import { fileIcon } from "./file-icons.js";
 const folderPages = new Map();
@@ -84,7 +85,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.34";
+const APP_VERSION = "0.6.35";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -264,7 +265,6 @@ function icons() {
 function pill(label, state = "id", symbol = "circle-dashed") {
   return `<span class="pill ${state}${symbol === "busy" ? " busy-status" : ""}">${symbol === "busy" ? busyIcon() : icon(symbol)}${escape(label)}</span>`;
 }
-const HUB_ONLY_REASON = "Needs the hub, which is unavailable.";
 const hubOnlyActions = new Set([
   "add",
   "select",
