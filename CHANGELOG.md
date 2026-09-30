@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.22 — 2026-09-30
+
+- The release check now verifies every place the version bump writes, from one shared list, including the README, SPEC and design-kit banners, and names the files that disagree.
+
 ## 0.6.21 — 2026-09-30
 
 - The release pipeline runs the desktop app's Rust unit tests (daemon identity and locks that guard self-updates, tray states) on pushes to `main` and on pull requests, and a failing test now blocks publication.

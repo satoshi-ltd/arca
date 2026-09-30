@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **REL-MANIFEST-LIST** — Share the release manifest list
-  `chore · agent · low`
-  accept: `scripts/check-release.js` and `scripts/bump-version.js` read one list of version locations; both tests still pass.
 - **CI-NODE-VERSION** — One Node version for CI, Docker, runtime and EAS
   `chore · agent · normal`
   accept: the version lives in one place (for example `.node-version`) read by the workflows, `deploy/Dockerfile`, `stage-runtime.js`, `validate-local.js` and `apps/mobile/eas.json`; the EAS profile's 24.14.1 versus everything else's 24.14.0 is resolved.

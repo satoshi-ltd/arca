@@ -6,7 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bump, targets } from "../scripts/bump-version.js";
 import { cleanCopy } from "../scripts/validate-local.js";
-import { execFileSync } from "node:child_process";
+import { manifests } from "../scripts/release-manifests.js";
+import { execFileSync, spawnSync } from "node:child_process";
 
 const repository = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -31,6 +32,63 @@ test("bump-version moves every release manifest to the next version together", (
   assert.throws(() => bump(root, "7.0"), /Invalid version/);
   fs.writeFileSync(path.join(root, "packages/daemon/network.js"), "no version here");
   assert.throws(() => bump(root), /packages\/daemon\/network\.js: expected 1/);
+});
+
+test("check-release verifies every location bump-version writes, whatever the line endings", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-check-release-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const files = new Set([
+    ...manifests.map(([file]) => file),
+    "CHANGELOG.md",
+    path.join("scripts", "check-release.js"),
+    path.join("scripts", "release-manifests.js"),
+  ]);
+  for (const file of files) {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.copyFileSync(path.join(repository, file), path.join(root, file));
+  }
+  const check = () =>
+    spawnSync(process.execPath, [path.join(root, "scripts", "check-release.js")], {
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_OUTPUT: "" },
+    });
+  const agrees = () => {
+    const result = check();
+    assert.equal(result.status, 0, result.stderr);
+  };
+  agrees();
+  const lock = path.join(root, "apps", "desktop", "src-tauri", "Cargo.lock");
+  fs.writeFileSync(lock, fs.readFileSync(lock, "utf8").replace(/\r?\n/g, "\r\n"));
+  agrees();
+  const current = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
+  for (const [file, template, expected] of manifests) {
+    const target = path.join(root, file);
+    const original = fs.readFileSync(target, "utf8");
+    const text = original.replace(/\r\n/g, "\n");
+    const before = template.replace("{version}", current);
+    let at = -1;
+    for (let n = 0; n < expected; n++) at = text.indexOf(before, at + 1);
+    assert.ok(at >= 0, `${file} carries ${before}`);
+    fs.writeFileSync(
+      target,
+      text.slice(0, at) + template.replace("{version}", `${current}-rc.1`) + text.slice(at + before.length),
+    );
+    const drift = check();
+    assert.equal(drift.status, 1, `${file}: ${template}`);
+    assert.match(
+      drift.stderr,
+      file === "package.json" ? /x\.y\.z release version/ : new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+    fs.writeFileSync(target, original);
+  }
+  const { to } = bump(root);
+  assert.match(check().stderr, /missing from CHANGELOG/);
+  const changelog = path.join(root, "CHANGELOG.md");
+  fs.writeFileSync(
+    changelog,
+    fs.readFileSync(changelog, "utf8").replace(/# Changelog\r?\n/, `# Changelog\n\n## ${to} — 2026-01-01\n`),
+  );
+  agrees();
 });
 
 test("validation copies the working tree exactly, including case-only renames, deletions and new files", (t) => {

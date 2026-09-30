@@ -1,38 +1,28 @@
 import fs from "node:fs";
+import { found, manifests } from "./release-manifests.js";
+
 const read = (file) =>
-  fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+  fs
+    .readFileSync(new URL(`../${file}`, import.meta.url), "utf8")
+    .replace(/\r\n/g, "\n");
 const version = JSON.parse(read("package.json")).version;
 if (!/^\d+\.\d+\.\d+$/.test(version))
   throw new Error("Expected an x.y.z release version");
-const lock = JSON.parse(read("package-lock.json"));
-const versions = [
-  lock.version,
-  lock.packages[""].version,
-  JSON.parse(read("apps/mobile/package.json")).version,
-  JSON.parse(read("apps/mobile/package-lock.json")).version,
-  JSON.parse(read("apps/mobile/package-lock.json")).packages[""].version,
-  JSON.parse(read("apps/mobile/app.json")).expo.version,
-  JSON.parse(read("apps/desktop/src-tauri/tauri.conf.json")).version,
-  /^version = "([^"]+)"/m.exec(read("apps/desktop/src-tauri/Cargo.toml"))?.[1],
-  /name = "arca-desktop"\r?\nversion = "([^"]+)"/.exec(
-    read("apps/desktop/src-tauri/Cargo.lock"),
-  )?.[1],
-  /s\.version\s*=\s*'([^']+)'/.exec(
-    read("apps/mobile/modules/arca-network/ios/ArcaNetwork.podspec"),
-  )?.[1],
-  /^version\s*=\s*'([^']+)'/m.exec(
-    read("apps/mobile/modules/arca-network/android/build.gradle"),
-  )?.[1],
-  /versionName\s+'([^']+)'/.exec(
-    read("apps/mobile/modules/arca-network/android/build.gradle"),
-  )?.[1],
-  /version:\s*"([^"]+)"/.exec(read("packages/daemon/network.js"))?.[1],
-  /const APP_VERSION = "([^"]+)"/.exec(read("apps/desktop/src/app.js"))?.[1],
-  /Arca ([\d.]+) — personal drive/.exec(read("packages/cli/arca.js"))?.[1],
+const disagreeing = [
+  ...new Set(
+    manifests
+      .filter(([file, template, expected]) => {
+        const values = found(read(file), template).slice(0, expected);
+        return (
+          values.length < expected || values.some((value) => value !== version)
+        );
+      })
+      .map(([file]) => file),
+  ),
 ];
-if (versions.some((value) => value !== version))
+if (disagreeing.length)
   throw new Error(
-    "Release versions disagree across desktop/mobile packages, lockfiles and Tauri",
+    `Release versions disagree with package.json ${version}: ${disagreeing.join(", ")}`,
   );
 const mobile = JSON.parse(read("apps/mobile/app.json")).expo;
 const nativeCode = /versionCode\s+(\d+)/.exec(
