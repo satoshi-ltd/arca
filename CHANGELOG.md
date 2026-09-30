@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.27 — 2026-09-30
+
+- History on a desktop or server replica no longer waits on the hub once per folder when the hub is unreachable: it reads all folders together from saved data (seven folders took 24 seconds, past the web view's 20-second limit, and now take about 3), and phones read their History pages together too.
+- Offline, a file's history comes from the saved folder history instead of showing only the local copy, Machines shows the machines saved after the last sync even if it was never opened, and a preview of an older revision fails at once instead of stalling row thumbnails for 60 seconds.
+
+Needs: desktop build · native build
+
 ## 0.6.26 — 2026-09-30
 
 - On desktop and web, opening a folder lists its local files at once instead of waiting for the hub's recent revisions, which took 7 to 10 seconds or more when the hub was unreachable; Recent and the latest-revision figure fill in when the hub, or its saved copy, answers.

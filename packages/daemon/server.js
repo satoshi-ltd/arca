@@ -3,7 +3,7 @@ import {
   deleteGalleryAsset,
   galleryRemovalEvents,
 } from "./gallery-actions.js";
-import { cachedActivity } from "./history-cache.js";
+import { cachedActivity, cachedFileHistory } from "./history-cache.js";
 import { ChangeFeed } from "./change-feed.js";
 import { ImageMaintenance } from "./image-maintenance.js";
 import { galleryMedia, streamGalleryMedia } from "./gallery-media.js";
@@ -30,7 +30,7 @@ import {
 } from "./maintenance.js";
 import { snapshotCapacity, snapshotPage } from "./snapshots.js";
 import { Web } from "./web.js";
-import { Engine } from "./engine.js";
+import { Engine, HUB_UNAVAILABLE } from "./engine.js";
 import {
   Network,
   verifiedTailnetURL,
@@ -192,6 +192,36 @@ export async function start(home, options = {}) {
       );
     }
   }
+  // Optional hub previews never decide connectivity and never wait on the 60 s transfer deadline.
+  async function retainedPreview(route) {
+    if (engine.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
+    try {
+      return await engine.json(route, undefined, {
+        signal: AbortSignal.timeout(3000),
+        trackConnection: false,
+      });
+    } catch (error) {
+      if (error.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
+      throw error;
+    }
+  }
+  const machinesWarmed = { hub: null, at: 0, running: false };
+  engine.warmViews = () => {
+    const hub = config.hub?.id;
+    if (config.role !== "replica" || !hub || machinesWarmed.running) return;
+    if (machinesWarmed.hub === hub && Date.now() - machinesWarmed.at < 60000)
+      return;
+    machinesWarmed.running = true;
+    void engine.requestContext
+      .exit(() => remoteView("/v1/machines"))
+      .then((view) => {
+        if (!view.offline) Object.assign(machinesWarmed, { hub, at: Date.now() });
+      })
+      .catch(() => {})
+      .finally(() => {
+        machinesWarmed.running = false;
+      });
+  };
   const server = http.createServer(async (req, res) => {
     const send = (status, data) => {
       res.writeHead(status, {
@@ -736,7 +766,7 @@ export async function start(home, options = {}) {
               String(current.rev) !== url.searchParams.get("rev") ||
               current.hash !== url.searchParams.get("hash")
             )
-              return send(200, await engine.json(route + url.search));
+              return send(200, await retainedPreview(route + url.search));
             url.searchParams.delete("rev");
           }
         }
@@ -978,10 +1008,11 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/activity") {
         if (config.role !== "hub") {
           requireAdmin();
-          const shared = await remoteView("/v1/catalog", () => ({
-            volumes: config.catalog || [],
-          }));
-          const selectedIds = historyFolderIds(s.volumes(), shared.volumes);
+          // The saved catalog can lag the hub; never fetch it here, a silent hub would stall History.
+          const selectedIds = historyFolderIds(
+            s.volumes(),
+            config.catalog || [],
+          );
           const requested = url.searchParams.get("volume");
           if (requested && !selectedIds.includes(requested))
             fail("Select a shared folder to view its history", 403);
@@ -991,7 +1022,12 @@ export async function start(home, options = {}) {
               (query) =>
                 remoteView(`/v1/activity?${query}`, () =>
                   cachedActivity(s, config.hub?.id, query),
-                ),
+                ).catch((error) => {
+                  // A share deleted on the hub 404s while the saved catalog still lists it.
+                  if (error.status === 404 && /Unknown volume/.test(error.message))
+                    return { versions: [], next: null };
+                  throw error;
+                }),
               selectedIds,
               url.searchParams,
             ),
@@ -1031,11 +1067,14 @@ export async function start(home, options = {}) {
           if (!s.volumes().some((v) => v.id === volume && v.selected))
             fail("Select this folder to view its history", 403);
           const local = name ? s.current(volume, name) : null;
-          const view = await remoteView(`/v1/history${url.search}`, () => ({
-            versions: local ? [local] : [],
-            localOnly: true,
-            next: null,
-          }));
+          const view = await remoteView(`/v1/history${url.search}`, () => {
+            const saved = name
+              ? cachedFileHistory(s, config.hub?.id ?? "", volume, name)
+              : null;
+            return saved?.versions.length
+              ? { ...saved, next: null }
+              : { versions: local ? [local] : [], localOnly: true, next: null };
+          });
           if (view.offline && local && !(view.versions?.[0]?.rev >= local.rev))
             view.versions = [
               local,

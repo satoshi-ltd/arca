@@ -3191,8 +3191,13 @@ test("offline replica keeps local browsing, file actions and saved remote views 
   const localHistory = await replica.api(
     historyRoute.replace("limit=50", "limit=49"),
   );
-  assert.equal(localHistory.localOnly, true);
+  assert.equal(localHistory.offline, true);
+  assert.equal(localHistory.localOnly, undefined);
   assert.equal(localHistory.versions[0].path, "offline.txt");
+  replica.engine.store.db.prepare("DELETE FROM history_views").run();
+  const unsaved = await replica.api(historyRoute.replace("limit=50", "limit=48"));
+  assert.equal(unsaved.localOnly, true);
+  assert.equal(unsaved.versions[0].path, "offline.txt");
   const activity = await replica.api("/v1/activity?limit=50");
   assert.equal(activity.offline, true);
 

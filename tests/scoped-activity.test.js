@@ -45,6 +45,36 @@ test("selected history merges pages without leaking other folders or skipping re
   );
 });
 
+test("every folder page is requested before any settles and one failure fails the call", async () => {
+  const started = [];
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  const pending = scopedActivity(
+    async (q) => {
+      started.push(q.get("volume"));
+      await gate;
+      return { versions: [], next: null };
+    },
+    ["a", "b", "c"],
+    new URLSearchParams(),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, ["a", "b", "c"]);
+  release();
+  await pending;
+  await assert.rejects(
+    scopedActivity(
+      async (q) => {
+        if (q.get("volume") === "b") throw new Error("unreachable");
+        return { versions: [], next: null };
+      },
+      ["a", "b"],
+      new URLSearchParams(),
+    ),
+    /unreachable/,
+  );
+});
+
 test("retained copies of deleted shares do not block history of current selected folders", async () => {
   const ids = historyFolderIds(
     [

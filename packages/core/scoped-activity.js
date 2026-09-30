@@ -15,13 +15,15 @@ export async function scopedActivity(fetchPage, selected, query) {
   const limit = Number(query.get("limit") || 50);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
     throw new Error("Invalid activity limit");
-  const pages = [];
-  for (const id of volume ? [volume] : ids) {
-    const scoped = new URLSearchParams(query);
-    scoped.set("volume", id);
-    scoped.set("limit", String(limit));
-    pages.push(await fetchPage(scoped));
-  }
+  // Pages are read together so an unreachable hub costs one deadline, not one per folder.
+  const pages = await Promise.all(
+    (volume ? [volume] : ids).map((id) => {
+      const scoped = new URLSearchParams(query);
+      scoped.set("volume", id);
+      scoped.set("limit", String(limit));
+      return fetchPage(scoped);
+    }),
+  );
   const rows = pages
     .flatMap((page) => page.versions)
     .sort((a, b) => b.rev - a.rev);

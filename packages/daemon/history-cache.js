@@ -19,6 +19,20 @@ export function cachedActivity(store, hub, query) {
   };
 }
 
+export function cachedFileHistory(store, hub, volume, path) {
+  const saved = store.db
+    .prepare("SELECT value,updated FROM history_views WHERE hub=? AND volume=?")
+    .all(hub, volume);
+  const rows = new Map();
+  for (const view of saved)
+    for (const row of JSON.parse(view.value).versions)
+      if (row.path === path) rows.set(row.rev, row);
+  return {
+    savedAt: Math.max(0, ...saved.map((view) => view.updated)),
+    versions: [...rows.values()].sort((a, b) => b.rev - a.rev),
+  };
+}
+
 export async function warmHistory(engine) {
   const { store, config } = engine;
   if (config.role !== "replica" || !config.hub) return;

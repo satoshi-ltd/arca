@@ -45,7 +45,7 @@ import {
 
 const CHUNK = 1024 * 1024;
 const MIN_UPLOAD_CHUNK = 256 * 1024;
-const HUB_UNAVAILABLE = "Hub unavailable. Try again when it is reachable.";
+export const HUB_UNAVAILABLE = "Hub unavailable. Try again when it is reachable.";
 const MISSING_LOCAL =
   "This file is no longer in the local copy. The list updates after the next sync.";
 function fileDate(file) {
@@ -1273,6 +1273,7 @@ export class Engine {
         fail(folderErrors.join("; "), 409);
       }
       await warmHistory(this);
+      this.warmViews?.();
       this.lastSync = new Date().toISOString();
       this.phase = "idle";
       this.progress = null;

@@ -26,11 +26,8 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-DESK-READS** — Remote-backed desktop reads stall or ignore saved data before and after detection
-  `bug · agent · high`
-  accept: `/v1/activity` intersects selections with the saved catalog instead of fetching it remotely and reads folder pages in parallel under one shared deadline (`packages/core/scoped-activity.js`), so History with seven folders renders saved rows within the web view's 20 s GET timeout; a historical-revision preview answers at once when the hub is known unavailable and within about 3 s otherwise (it waited 60 s); offline file history falls back to the saved folder history (`history_views`) filtered by path before giving up; desktop replicas prepare machine information after successful cycles, as phones do, and SPEC says so. Daemon and JSDOM tests with a silent hub.
 - **OFF-MOB-DETECT** — Silent hub on phones: 15 s detection, sequential 3 s waits, interrupted cycles lose the verdict
-  `bug · agent · high · depends: OFF-DESK-READS`
+  `bug · agent · high`
   accept: against a silent hub, History over several folders reads its pages in parallel under one shared deadline (reusing the shared `packages/core/scoped-activity.js` change from OFF-DESK-READS, tested on the phone side too); gallery info sends nothing when the hub is known offline; local actions (rename, delete, pause, picker) no longer abort the in-flight catalog refresh, whose result is recorded when it settles; first-cycle detection is bounded well below 15 s without marking a hub that answers in time offline (see MOB-HUB-LIVENESS). Replica tests for each.
 - **OFF-MOB-ADDPHOTOS** — Add photos… offline saves nothing while the notice says it did
   `bug · agent · high`
@@ -102,7 +99,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-MOB-DETECT, OFF-DESK-READS, OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-MOB-DETECT, OFF-MOB-ADDPHOTOS, OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
@@ -312,6 +309,16 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DESK-GALLERY-COUNT** — Gallery header counts only dated months
   `bug · agent · low`
   accept: the desktop gallery header counts every loaded photo and video, including those still waiting for a capture date (it read "0 photos" over three tiles); a DOM test.
+
+- **DESK-SAVED-FILE-HISTORY** — Offline file history is a partial union of saved windows
+  `bug · agent · low`
+  accept: saved file history keeps only rows without holes (no row older than the oldest entry of any saved window that was full), its hint says "recent entries only" like the folder view, and Restore is disabled while `offline`; a daemon test with a busy folder.
+- **DESK-SELECT-CATALOG** — A folder selected while paused is missing from History
+  `bug · agent · low`
+  accept: `select` adds the folder to the saved catalog so History includes it before the next cycle; a replica test with a paused replica.
+- **DESK-PREVIEW-TIMEOUT** — Retained-revision preview times out as "Hub unavailable" on a slow healthy hub
+  `bug · agent · low`
+  accept: a 3-second timeout on a reachable hub reads "The hub took too long to prepare this preview" instead of claiming it is unreachable, and `size=large` gets a longer cap; a daemon test with a slow hub.
 
 ## Later phases
 

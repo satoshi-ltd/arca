@@ -345,6 +345,88 @@ test("offline probes stay paced while a cycle still waits on the hub", async (t)
   await stale;
 });
 
+test("offline reads on a replica serve saved data without waiting on the hub once per folder", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const others = [];
+  for (const name of ["Photos", "Music", "Notes"])
+    others.push(await hub.api("/v1/volumes", { name }));
+  write(hub, volume, "report.txt", "one");
+  await hub.sync();
+  write(hub, volume, "report.txt", "two");
+  await hub.sync();
+  const replica = await connect("reader");
+  for (const other of others) await replica.api("/v1/select", { id: other.id });
+  await replica.sync();
+  const quiet = (await silent(t)).url;
+  const online = replica.engine.config.hub.url;
+  replica.engine.config.hub.url = quiet;
+  const history = await within(5000, () =>
+    replica.api("/v1/activity?limit=50"),
+  );
+  assert.equal(history.offline, true);
+  assert.ok(history.versions.some((row) => row.path === "report.txt"));
+  const current = replica.engine.store.current(volume.id, "report.txt");
+  const old = replica.engine.store
+    .db.prepare("SELECT rev FROM files WHERE volume=? AND path=?")
+    .get(volume.id, "report.txt").rev - 1;
+  const preview = `/v1/gallery/preview?${new URLSearchParams({
+    volume: volume.id,
+    path: "report.txt",
+    hash: current.hash,
+    rev: String(old),
+  })}`;
+  await within(5000, () =>
+    assert.rejects(replica.api(preview), { status: 503 }),
+  );
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  await assert.rejects(replica.sync());
+  assert.equal(replica.engine.hubUnavailable, true);
+  replica.engine.config.hub.url = quiet;
+  await within(1000, () =>
+    assert.rejects(replica.api(preview), { status: 503 }),
+  );
+  const file = await within(1000, () =>
+    replica.api(
+      `/v1/history?${new URLSearchParams({ volume: volume.id, path: "report.txt", limit: "50" })}`,
+    ),
+  );
+  assert.equal(file.offline, true);
+  assert.equal(file.localOnly, undefined);
+  assert.ok(file.versions.length >= 2, "saved folder history covers the file");
+  const machines = await within(1000, () => replica.api("/v1/machines"));
+  assert.equal(machines.offline, true);
+  assert.ok(machines.machines.length >= 2, "machines were saved after sync");
+  replica.engine.config.hub.url = online;
+});
+
+test("history skips a folder the hub no longer shares while the saved catalog still lists it", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const other = await hub.api("/v1/volumes", { name: "Archive" });
+  write(hub, volume, "kept.txt", "kept");
+  await hub.sync();
+  const replica = await connect("stale-catalog");
+  await replica.api("/v1/select", { id: other.id });
+  await replica.sync();
+  await hub.api("/v1/delete-share", { id: other.id, confirmedName: "Archive" });
+  const history = await replica.api("/v1/activity?limit=50");
+  assert.ok(history.versions.some((row) => row.path === "kept.txt"));
+});
+
+test("file history after a failed sync and a cleared hub connection answers from the local row", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "solo.txt", "solo");
+  await hub.sync();
+  const replica = await connect("disconnected");
+  await replica.sync();
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  await assert.rejects(replica.sync());
+  replica.engine.clearHubConnection();
+  const file = await replica.api(
+    `/v1/history?${new URLSearchParams({ volume: volume.id, path: "solo.txt", limit: "50" })}`,
+  );
+  assert.equal(file.versions[0].path, "solo.txt");
+});
+
 test("local file actions never queue behind a pending hub action or a paused report", async (t) => {
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "a.txt", "a");
