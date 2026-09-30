@@ -391,15 +391,18 @@ export class ReplicaStore {
       )
     ).map((r) => JSON.parse(r.row));
   }
-  async knownPaths(scope, volume) {
-    return new Set(
+  async knownFiles(scope, volume) {
+    return new Map(
       (
         await this.db.getAllAsync(
-          "SELECT path FROM files WHERE scope=? AND volume=?",
+          "SELECT path, json_extract(row,'$.rev') AS rev, json_extract(row,'$.hash') AS hash, json_extract(row,'$.deleted') AS deleted FROM files WHERE scope=? AND volume=?",
           scope,
           volume,
         )
-      ).map((r) => r.path),
+      ).map((r) => [
+        r.path,
+        { rev: r.rev ?? undefined, hash: r.hash ?? null, deleted: !!r.deleted },
+      ]),
     );
   }
   async current(scope, volume, path) {

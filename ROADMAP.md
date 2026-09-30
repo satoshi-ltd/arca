@@ -26,9 +26,6 @@ When a task ships, delete it and record it in the changelog and in the SPEC sect
 
 ## Queue
 
-- **OFF-MOB-GALLERY-ORDER** — The offline phone gallery is ordered by download date
-  `bug · agent · high`
-  accept: (reproduced: a January 2020 photo read as September 2026, lost its `rev` and `hash` and could not be deleted) offline, local files matched to the cached hub gallery index (its newest 600 rows) keep that index's capture date and order, and to the phone's own index for revision and hash, so Delete and Info keep working; only files outside the cached index fall back to SPEC's rules (gallery-date filename rules, then modification time). SPEC's mobile gallery paragraph is rewritten to state exactly this. A test with a cached index and freshly downloaded files keeps the cached months.
 - **MOB-MOVE-DOWNLOADS** — Move verified downloads into place
   `feature · agent · high`
   accept: materializing a download moves the verified object instead of copying it when no other row in the same pull needs that hash, so applying a file never needs space for two copies; a replica test proves one copy during apply and identical-hash rows still materialize.
@@ -93,7 +90,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-GALLERY-ORDER, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-HUB-ACTIONS, OFF-MOB-FILEDETAIL, OFF-MOB-RECONNECT, OFF-MOB-SESSION, OFF-MOB-WARM, OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`

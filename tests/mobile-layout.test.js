@@ -514,6 +514,7 @@ test("the gallery windows rows over the whole timeline and only ever loads by sc
   assert.match(gallery, /const linked = connected && !offline;/);
   assert.match(gallery, /const base = gallery && \(online \|\| !local\.total\) \? gallery : local;/);
   assert.match(gallery, /base\.local \? base : withLocalOnly\(base, entries, known\)/, "photos only on the phone join the hub index");
+  assert.match(gallery, /online\s*\?\s*NO_LOCAL_GALLERY\s*:\s*localGallery\(entries, \{ cached: gallery, rows: known \}\)/, "offline photos keep the cached dates and the phone index revisions, and online never builds the local gallery");
   assert.doesNotMatch(gallery, /current\.source !== current\.gallery/, "a merged source is a new object; remote mode is online with a hub gallery");
   assert.match(gallery, /neededMonth\(\s*current\.layout,\s*current\.source\.months/, "paging reads the merged months so local-only months never ask the hub");
   assert.match(gallery, /!current\.online \|\|/);

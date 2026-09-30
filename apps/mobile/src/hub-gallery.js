@@ -115,10 +115,36 @@ function absorb(state, rows, next, upper) {
   }
   return changed ? { ...state, months } : state;
 }
-export function localGallery(entries) {
+export const NO_LOCAL_GALLERY = {
+  local: true,
+  timeline: [],
+  total: 0,
+  months: {},
+  indexing: false,
+};
+export function localGallery(entries, { cached, rows } = {}) {
+  const hub = new Map();
+  for (const month of Object.values(cached?.months || {}))
+    for (const item of month.items)
+      if (!(hub.get(item.path)?.rev > item.rev)) hub.set(item.path, item);
+  const index = [];
+  for (const entry of entries) {
+    const row = hub.get(entry.path);
+    const found = rows?.get(entry.path);
+    const mine = found?.deleted ? null : found;
+    if (entry.directory || !mediaKind(entry.path) || (!row && !mine)) continue;
+    index.push({
+      path: entry.path,
+      hash: mine ? mine.hash : (row.hash ?? null),
+      rev: mine ? mine.rev : row.rev,
+      size: row?.size ?? entry.size,
+      date: row ? row.date : mediaDate(entry.path, entry.mtime),
+      kind: mediaKind(entry.path),
+    });
+  }
   const months = {};
   const counts = new Map();
-  for (const item of mergeTimeline({ entries })) {
+  for (const item of mergeTimeline({ index, entries })) {
     const month = galleryMonth(item);
     (months[month] ||= { items: [], complete: true, next: null }).items.push(
       item,

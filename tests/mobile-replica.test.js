@@ -3843,15 +3843,17 @@ test("the phone index tells synced files from ones imported and not yet synced",
   await f.client.refresh();
   await replica.select(f.client.state().catalog.volumes[0]);
   await sync(f);
-  let known = await f.store.knownPaths(replica.scope, volume.id);
+  let known = await f.store.knownFiles(replica.scope, volume.id);
   assert.ok(known.has("synced.jpg"));
+  assert.ok(Number.isSafeInteger(known.get("synced.jpg").rev), "the phone index carries the revision");
+  assert.match(known.get("synced.jpg").hash, /^[0-9a-f]{64}$/, "and the hash");
   const source = path.join(f.root, "imported.jpg");
   fs.writeFileSync(source, "imported photo");
   await replica.importFile(volume.id, "imported.jpg", source);
-  known = await f.store.knownPaths(replica.scope, volume.id);
+  known = await f.store.knownFiles(replica.scope, volume.id);
   assert.equal(known.has("imported.jpg"), false, "an imported file has no row until it is pushed");
   await sync(f);
-  known = await f.store.knownPaths(replica.scope, volume.id);
+  known = await f.store.knownFiles(replica.scope, volume.id);
   assert.ok(known.has("imported.jpg"), "after the push it is a known file");
 });
 

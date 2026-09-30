@@ -1202,3 +1202,69 @@ test("phone-only photos skip excluded and system files, sit in order inside thei
   assert.deepEqual(undated.months.undated.items.map((item) => item.path), ["untitled.jpg"]);
   assert.equal(undated.total, 0, "undated photos are listed but not counted in a month");
 });
+
+test("offline, downloaded photos keep the cached index's date and order and the phone index's revision and hash", async () => {
+  const rows = [
+    { path: "old.jpg", hash: "hub-old", rev: 7, date: "2020-01-05" },
+    { path: "trip/b.jpg", hash: "hub-b", rev: 3, date: "2020-01-06" },
+    { path: "undated.jpg", hash: "hub-u", rev: 2, date: null },
+  ];
+  const { api } = fakeHub(rows);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  const cached = await gallery.refresh();
+  const download = Date.UTC(2026, 8, 30, 12);
+  const entries = [
+    { path: "old.jpg", uri: "file:///old.jpg", size: 10, mtime: download },
+    { path: "trip/b.jpg", uri: "file:///b.jpg", size: 11, mtime: download },
+    { path: "undated.jpg", uri: "file:///u.jpg", size: 12, mtime: download },
+    { path: "IMG_20260115_101010.jpg", uri: "file:///n.jpg", size: 13, mtime: download },
+    { path: "fresh.jpg", uri: "file:///f.jpg", size: 14, mtime: download },
+    { path: "unknown.jpg", uri: "file:///x.jpg", size: 15, mtime: download },
+  ];
+  const mine = new Map([
+    ["old.jpg", { rev: 8, hash: "mine-old" }],
+    ["fresh.jpg", { rev: 11, hash: "mine-fresh" }],
+  ]);
+  const local = localGallery(entries, { cached, rows: mine });
+  assert.deepEqual(
+    local.timeline.map((row) => row.month),
+    ["2026-09", "2026-01", "2020-01"],
+    "the cached months survive; nothing moves to the download date",
+  );
+  const byPath = new Map(
+    Object.values(local.months).flatMap((entry) => entry.items.map((item) => [item.path, item])),
+  );
+  assert.equal(byPath.get("old.jpg").date, "2020-01-05");
+  assert.equal(byPath.get("old.jpg").rev, 8, "the phone's own index owns revision and hash");
+  assert.equal(byPath.get("old.jpg").hash, "mine-old");
+  assert.equal(byPath.get("trip/b.jpg").date, "2020-01-06");
+  assert.equal(byPath.get("trip/b.jpg").rev, 3, "without a phone row the cached row supplies them");
+  assert.equal(byPath.get("fresh.jpg").rev, 11);
+  assert.equal(byPath.get("fresh.jpg").date, "2026-09-30", "outside the cached index the fallback rules date it");
+  assert.equal(byPath.get("IMG_20260115_101010.jpg").date.slice(0, 7), "2026-01");
+  assert.equal(byPath.get("unknown.jpg").hash, null);
+  assert.deepEqual(local.months.undated.items.map((item) => item.path), ["undated.jpg"], "an undated hub row stays undated");
+  assert.deepEqual(
+    local.months["2020-01"].items.map((item) => item.path),
+    ["trip/b.jpg", "old.jpg"],
+  );
+  const bare = localGallery(entries);
+  assert.equal(bare.months["2026-09"].items.length, 5, "without a cached index everything falls back to file dates");
+  assert.equal(bare.months["2026-01"].items[0].path, "IMG_20260115_101010.jpg");
+  const moved = localGallery(entries, {
+    cached: {
+      months: {
+        "2020-01": { items: [{ path: "old.jpg", hash: "current", rev: 7, date: "2020-01-05" }] },
+        "2019-12": { items: [{ path: "old.jpg", hash: "stale", rev: 2, date: "2019-12-01" }] },
+      },
+    },
+  });
+  assert.equal(moved.months["2020-01"].items[0].hash, "current", "of two cached rows for one path the higher revision wins");
+  assert.equal(moved.months["2019-12"], undefined);
+  const tomb = localGallery(entries, {
+    cached: { months: { "2020-01": { items: [{ path: "old.jpg", hash: "hub", rev: 7, date: "2020-01-05" }] } } },
+    rows: new Map([["old.jpg", { rev: 9, hash: null, deleted: true }]]),
+  });
+  const old = tomb.months["2020-01"].items[0];
+  assert.deepEqual([old.rev, old.hash], [7, "hub"], "a tombstone row never lends its revision to the cached hash");
+});

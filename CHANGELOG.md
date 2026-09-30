@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.32 — 2026-09-30
+
+- Offline, the phone's gallery keeps each photo in the month and order the hub gave it instead of moving everything to the day it was downloaded, and keeps its revision so Info still works.
+
+Needs: native build
+
 ## 0.6.31 — 2026-09-30
 
 - The phone's folder gallery now shows photos and videos that exist only on the phone (for example, imported while sync was paused) while the hub is reachable; before, it listed only what the hub's index already knew and could read "No photos yet" over a folder with photos.

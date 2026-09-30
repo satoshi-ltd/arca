@@ -34,6 +34,7 @@ import {
   hubGallery,
   hubPhotoInfo,
   localGallery,
+  NO_LOCAL_GALLERY,
   withLocalOnly,
 } from "./hub-gallery";
 import { prepareThumbnails } from "./thumbnail-cache";
@@ -311,19 +312,24 @@ export function FolderGallery({
       ),
     [entries],
   );
-  const local = useMemo(() => localGallery(entries), [entries]);
   const [known, setKnown] = useState(null);
   useEffect(() => {
     let active = true;
     store
-      .knownPaths(scope, volume)
+      .knownFiles(scope, volume)
       .then(
-        (paths) =>
+        (files) =>
           active &&
           setKnown((held) =>
-            held?.size === paths.size && [...paths].every((path) => held.has(path))
+            held?.size === files.size &&
+            [...files].every(
+              ([path, row]) =>
+                held.get(path)?.rev === row.rev &&
+                held.get(path)?.hash === row.hash &&
+                held.get(path)?.deleted === row.deleted,
+            )
               ? held
-              : paths,
+              : files,
           ),
       )
       .catch(() => {});
@@ -331,6 +337,13 @@ export function FolderGallery({
       active = false;
     };
   }, [store, scope, volume, entries, refreshKey]);
+  const local = useMemo(
+    () =>
+      online
+        ? NO_LOCAL_GALLERY
+        : localGallery(entries, { cached: gallery, rows: known }),
+    [online, entries, gallery, known],
+  );
   const base = gallery && (online || !local.total) ? gallery : local;
   const source = useMemo(
     () => (base.local ? base : withLocalOnly(base, entries, known)),
