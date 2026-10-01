@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-DESK-HUB-ONLY-MORE** — Backup controls wait for the hub
-  `ui · agent · normal`
-  accept: the board.
 - **UI-DESK-FOLDER-MENU** — Folder actions behind one menu
   `ui · agent · normal`
   accept: the board, with this decision: a desktop or server replica never offers Enable gallery (only the hub sets a folder's gallery type; phones do it by linking an album), so a replica's header keeps Open in Finder alone and the menu appears on the hub only; the replica-side gallery-link proxy goes if nothing else uses it.
@@ -317,10 +314,6 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **MOB-GALLERY-IGNORE-POLICY** — Photos the folder's `.arcaignore` excludes still show as phone-only in the online gallery
   `bug · agent · low`
   accept: online, local photos and videos the folder's `.arcaignore` ignores never appear in the phone gallery (today only the fixed exclusion list filters them); a pure-helper test with a policy and a replica test reading the real `.arcaignore`.
-
-- **DESK-HUB-ONLY-MORE** — Backup controls stay enabled on a replica while the hub is unavailable
-  `bug · agent · low`
-  accept: on a desktop or server replica, Enable and Disable full backup and their Choose… picker are disabled with "Needs the hub, which is unavailable." while the hub is unavailable (they call `/v1/backup`, which answers 503 offline), and follow reconnection like the other hub-only controls; a JSDOM test with the `hubOnlyActions` list. The interface follows board UI-DESK-HUB-ONLY-MORE.
 
 - **DESK-NATIVE-TRAY-OFFLINE** — The native tray still says "needs attention" while the hub is unavailable
   `bug · agent · normal`

@@ -36,29 +36,6 @@
 
       <section class="kit-section" id="boards">
         <h2>Boards <span>01</span></h2>
-        <article class="kit-board" data-board="UI-DESK-HUB-ONLY-MORE">
-          <header><code>UI-DESK-HUB-ONLY-MORE</code><h3>Backup controls wait for the hub</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> On a replica with the hub unavailable, the backup switch and its Choose… picker look usable but call the hub and fail. The proposal disables them with the reason every other hub-only control already carries as its title, and enables them again on reconnection. The alternative is to also print the reason as a hint under the card, which is visible without hovering but adds a line to an already full screen.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <div class="section-label">Full backup on this machine</div>
-              <div class="settings-card">
-                <div class="setting-row"><div class="row-main"><strong>Keep a full backup of the hub here</strong><p>Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.</p></div><label class="toggle"><input type="checkbox" aria-label="Enable hub backup" /><span></span></label></div>
-                <div class="setting-row"><div class="row-main"><strong>Backup location</strong><p><span class="path">Not configured</span></p></div><button type="button" class="secondary small-button"><span data-icon="folder-input"></span>Choose…</button></div>
-              </div>
-              <p class="kit-caption">The hub is unavailable, yet both controls answer and then fail with a 503.</p>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <div class="section-label">Full backup on this machine</div>
-              <div class="settings-card">
-                <div class="setting-row"><div class="row-main"><strong>Keep a full backup of the hub here</strong><p>Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.</p></div><label class="toggle"><input type="checkbox" aria-label="Enable hub backup" disabled title="Needs the hub, which is unavailable." /><span></span></label></div>
-                <div class="setting-row"><div class="row-main"><strong>Backup location</strong><p><span class="path">Not configured</span></p></div><button type="button" class="secondary small-button" disabled title="Needs the hub, which is unavailable."><span data-icon="folder-input"></span>Choose…</button></div>
-              </div>
-              <p class="kit-caption">Title on both controls: "Needs the hub, which is unavailable." They enable again when the hub is back.</p>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>On a desktop or server replica, Enable and Disable full backup and their Choose… picker are disabled with "Needs the hub, which is unavailable." while the hub is unavailable and follow reconnection like the other hub-only controls; a JSDOM test with the <code>hubOnlyActions</code> list covers it.</p></div></div>
-        </article>
         <article class="kit-board" data-board="UI-DESK-FOLDER-MENU">
           <header><code>UI-DESK-FOLDER-MENU</code><h3>Folder actions behind one menu</h3><span>Desktop</span></header>
           <p class="kit-note"><strong>Why.</strong> A replica's folder header shows Open in Finder and Enable gallery as two equal buttons, and a hub's shows four: Rename, .arcaignore…, Open folder and Enable gallery. Enable gallery is a one-time configuration most folders never use, yet it takes the same room as the daily action on every visit, and Rename and .arcaignore… are rarer still. The proposal keeps Open in Finder (and the Gallery toggle once a folder is a gallery) in the header and moves the rest into the ellipsis menu the file detail and the Machines rows already use, which is also how the phone groups them in its Folder actions sheet; a replica gets no menu, because only the hub decides that a folder is a gallery (a phone does it by linking an album). The alternative is an icon-only button row, which keeps everything visible but still spends the header on configuration.</p>

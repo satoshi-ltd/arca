@@ -303,8 +303,12 @@
                       <div class="setting-row"><div class="row-main"><strong>Appearance</strong><p>Follows the system unless you choose.</p></div><div class="segmented" role="group" aria-label="Appearance"><button type="button">Light</button><button type="button">Dark</button><button type="button" class="active">System</button></div></div>
                     </div>
                   </section>
-                  <section><div class="section-label">Hub backup</div>
-                    <div class="panel"><div class="setting-row"><div class="row-main"><strong>Full backup of the hub</strong><p>Keeps every shared folder and retained revision in a separate location, in addition to working copies.</p></div><button type="button" class="secondary small-button"><span data-icon="shield-check"></span>Enable backup…</button></div></div>
+                  <section><div class="section-label">Full backup on this machine</div>
+                    <div class="settings-card">
+                      <div class="setting-row"><div class="row-main"><strong>Keep a full backup of the hub here</strong><p>Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.</p></div><label class="toggle"><input type="checkbox" aria-label="Enable hub backup" /><span></span></label></div>
+                      <div class="setting-row"><div class="row-main"><strong>Backup location</strong><p><span class="path">Not configured</span></p></div><button type="button" class="secondary small-button"><span data-icon="folder-input"></span>Choose…</button></div>
+                      <div class="setting-row"><div class="row-main"><strong>Last completed backup</strong><p>Not yet</p></div><span class="pill id"><span data-icon="shield"></span>Off</span></div>
+                    </div>
                   </section>
                 </div>
               </section>
