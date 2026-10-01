@@ -1071,11 +1071,11 @@ test("the gallery grid never decodes originals and keeps preparing thumbnails wh
   assert.match(gallery, /\}, \[visibleKey, store, scope, volume, io, density\]\);/);
   assert.match(gallery, /savedThumbnail\(thumbnails, item\) \|\|\s+\(item\.upload \? item\.uri : null\)/, "without a derivative a tile stays a placeholder");
   assert.match(gallery, /displayRef\.current\(item\),\s*\}\),\s*\[\],/, "sync status changes never restart thumbnail preparation");
-  assert.match(gallery, /\],\s*3,\s*\);/);
+  assert.match(gallery, /\],\s*3,\s*undefined,\s*true,\s*\);/);
   assert.match(app, /\}, \[\s*folder\?\.id,\s*listedFolder\?\.files,\s*listedFolder\?\.bytes,\s*listedFolder\?\.changes,\s*\]\);/, "remote renames and same-size edits refresh the listing");
   const open = app.slice(app.indexOf("  async function openFolder(f) {"), app.indexOf("  async function getHistory("));
   assert.doesNotMatch(open, /listFiles\(/, "the folder effect lists once, after the new folder is shown");
-  assert.match(thumbnails, /if \(rendered\+\+ % 24 === 0\) pruneCache\(root, target\.uri\);/);
+  assert.match(thumbnails, /if \(rendered\+\+ % 200 === 0\) pruneCache\(root, target\.uri\);/);
   assert.match(thumbnails, /\["large-", 256 \* 1024 \*\* 2\],\s*\["", 512 \* 1024 \*\* 2\],/);
   assert.match(thumbnails, /!file\.name\.endsWith\("\.part"\)/);
   const swift = fs.readFileSync(new URL("../apps/mobile/modules/arca-network/ios/Thumbnails.swift", import.meta.url), "utf8");

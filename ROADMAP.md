@@ -26,12 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-THUMB-PROGRESS** — Show the preparation of previews in a photo folder
-  `feature · agent · normal`
-  accept: while a photo folder is open, previews are prepared for the photos on the phone beyond the visible window (newest first, three at a time, only while the screen is open), a failed preview is retried when the app returns to the foreground or on Retry, and the count of prepared photos is available to the screen; tests cover the order, the failure and the count. The interface follows board UI-MOB-THUMB-PROGRESS.
-- **UI-MOB-THUMB-PROGRESS** — Say that previews are being prepared
-  `ui · agent · normal`
-  accept: the board.
 - **MOB-CRASH-RECORD** — Record crashes from a global error handler
   `feature · agent · normal`
   accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display. The interface follows board UI-MOB-CRASH-RECORD.

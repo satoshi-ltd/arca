@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.53 — 2026-10-01
+
+- On phones, an open photo folder now prepares the previews of every photo it holds, newest first, instead of only the ones on screen, and a row above the grid shows how many are done or that some could not be made, with Retry.
+
+Needs: native build
+
 ## 0.6.52 — 2026-10-01
 
 - On phones, photo previews that cannot be made are no longer retried at every scroll, so unreadable files stop taking time from the readable ones.

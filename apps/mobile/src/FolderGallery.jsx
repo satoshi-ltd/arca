@@ -20,6 +20,7 @@ import {
 import {
   Button,
   OfflineEmpty,
+  StatusRow,
   Icon,
   MediaPlaceholder,
   Scaffold,
@@ -29,6 +30,7 @@ import {
   mergeTimeline,
   monthLabel,
   pendingUploadLabel,
+  previewCandidates,
   railMonthLabel,
   timelineItem,
 } from "./gallery-timeline";
@@ -39,7 +41,14 @@ import {
   NO_LOCAL_GALLERY,
   withLocalOnly,
 } from "./hub-gallery";
-import { prepareThumbnails, savedThumbnail } from "./thumbnail-cache";
+import {
+  createFlusher,
+  prepareThumbnails,
+  previewProgress,
+  pruneSaved,
+  savedThumbnail,
+} from "./thumbnail-cache";
+import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import { thumbnailFiles } from "./gallery-thumbnails";
 import { ScrollPosition } from "./KeyboardPane";
 import { PhotoViewer } from "./PhotoViewer";
@@ -216,6 +225,15 @@ export function FolderGallery({
   const [pending, setPending] = useState([]);
   const [thumbnails, setThumbnails] = useState({});
   const thumbnailProgress = useRef(null);
+  const [attempt, setAttempt] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
+  const [preparing, setPreparing] = useState(false);
+  const failedPaths = useRef(new Set());
+  const flusher = useRef(null);
+  const dirty = useRef(false);
+  const completeRef = useRef(false);
+  const visiblePaths = useRef(new Set());
+  const loadedRef = useRef([]);
   const [viewer, setViewer] = useState(null);
   const [hidden, setHidden] = useState(() => new Map());
   const [width, setWidth] = useState(0);
@@ -503,6 +521,56 @@ export function FolderGallery({
     }),
     [],
   );
+  const backgroundIo = useMemo(
+    () => ({
+      exists: thumbnailFiles.exists,
+      render: (item) =>
+        item.kind === "video"
+          ? thumbnailFiles.poster(item, true)
+          : thumbnailFiles.render(item, false, true),
+    }),
+    [],
+  );
+  const candidates = useMemo(
+    () => previewCandidates(entries, (path) => builtinExcluded(path)),
+    [entries],
+  );
+  const candidateKey = useMemo(
+    () => candidates.map((item) => `${item.path}:${item.signature}`).join("\n"),
+    [candidates],
+  );
+  visiblePaths.current = new Set(visibleItems.map((item) => item.path));
+  loadedRef.current = loaded;
+  completeRef.current = complete;
+  const flush = () => {
+    setThumbnails({ ...thumbnailProgress.current.value });
+    setFailedCount(failedPaths.current.size);
+  };
+  flusher.current ||= createFlusher(flush);
+  const queueFlush = (delay = 2000) => flusher.current.queue(delay);
+  const commit = (key, delta) => {
+    const value = thumbnailProgress.current?.value || {};
+    let seen = false;
+    for (const [path, saved] of Object.entries(delta)) {
+      if (saved) value[path] = saved;
+      else delete value[path];
+      if (visiblePaths.current.has(path)) seen = true;
+    }
+    thumbnailProgress.current = { key, value };
+    dirty.current = true;
+    queueFlush(seen ? 250 : 2000);
+  };
+  const save = (key) => {
+    if (!dirty.current || loadingRef.current) return Promise.resolve();
+    dirty.current = false;
+    return store.set(key, thumbnailProgress.current.value).catch(() => {});
+  };
+  useEffect(
+    () => () => {
+      flusher.current.cancel();
+    },
+    [],
+  );
   useEffect(() => {
     let active = true;
     if (density === "years") return;
@@ -513,9 +581,11 @@ export function FolderGallery({
           ? thumbnailProgress.current.value
           : await store.get(key, {}).catch(() => ({}));
       if (!active) return;
+      const first = thumbnailProgress.current?.key !== key;
       thumbnailProgress.current = { key, value: cached };
-      setThumbnails(cached);
-      const next = await prepareThumbnails(
+      if (first) setThumbnails({ ...cached });
+      else if (flusher.current.pending) flusher.current.now();
+      await prepareThumbnails(
         visibleItems
           .filter((item) => !item.upload)
           .map(withNative)
@@ -523,23 +593,104 @@ export function FolderGallery({
         cached,
         io,
         () => active,
-        (value) => {
+        (delta) => {
           if (!active) return;
-          thumbnailProgress.current = { key, value };
-          setThumbnails(value);
+          commit(key, delta);
         },
         complete
           ? loaded
           : [...loaded, ...Object.keys(cached).map((path) => ({ path }))],
         3,
+        undefined,
+        true,
       );
-      if (active && next && !loadingRef.current)
-        await store.set(key, next).catch(() => {});
+      if (active) await save(key);
     })().catch(() => {});
     return () => {
       active = false;
     };
   }, [visibleKey, store, scope, volume, io, density]);
+  useEffect(() => {
+    let active = true;
+    if (density === "years" || !candidates.length) {
+      setPreparing(false);
+      return;
+    }
+    const key = `gallery-thumbnails:${scope}:${volume}`;
+    (async () => {
+      const cached =
+        thumbnailProgress.current?.key === key
+          ? thumbnailProgress.current.value
+          : await store.get(key, {}).catch(() => ({}));
+      if (!active) return;
+      if (thumbnailProgress.current?.key !== key) {
+        thumbnailProgress.current = { key, value: cached };
+        setThumbnails({ ...cached });
+      }
+      setPreparing(true);
+      try {
+        await prepareThumbnails(
+          candidates,
+          thumbnailProgress.current.value,
+          backgroundIo,
+          () => active,
+          (delta) => {
+            if (active) commit(key, delta);
+          },
+          candidates,
+          3,
+          (entry) => {
+            if (active) {
+              failedPaths.current.add(entry.path);
+              queueFlush();
+            }
+          },
+          true,
+        );
+      } finally {
+        if (active) setPreparing(false);
+      }
+      if (!active) return;
+      const present = new Set(candidates.map((item) => item.path));
+      failedPaths.current = new Set(
+        [...failedPaths.current].filter((path) => present.has(path)),
+      );
+      if (completeRef.current && !loadingRef.current) {
+        const kept = pruneSaved(
+          thumbnailProgress.current.value,
+          new Set([...present, ...loadedRef.current.map((item) => item.path)]),
+        );
+        if (
+          Object.keys(kept).length !==
+          Object.keys(thumbnailProgress.current.value).length
+        )
+          dirty.current = true;
+        thumbnailProgress.current = { key, value: kept };
+      }
+      flusher.current.now();
+      await save(key);
+    })().catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [candidateKey, store, scope, volume, density, attempt]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active" && failedPaths.current.size)
+        setAttempt((value) => value + 1);
+    });
+    return () => subscription.remove();
+  }, []);
+  const progress = useMemo(
+    () => previewProgress(candidates, thumbnails, failedPaths.current),
+    [candidates, thumbnails, failedCount],
+  );
+  const retryPreviews = () => {
+    thumbnailFiles.retry();
+    failedPaths.current = new Set();
+    setFailedCount(0);
+    setAttempt((value) => value + 1);
+  };
   const followTimer = useRef(null),
     followedAt = useRef(0);
   const follow = (y) => {
@@ -960,6 +1111,28 @@ export function FolderGallery({
           </ScrollView>
         </View>
       )}
+      {!!candidates.length &&
+        density !== "years" &&
+        preparing &&
+        progress.waiting > 0 && (
+          <StatusRow
+            busy
+            title="Preparing previews"
+            caption={`${progress.done.toLocaleString("en")} of ${progress.total.toLocaleString("en")} ${progress.total === 1 ? "photo" : "photos"}`}
+          />
+        )}
+      {!!candidates.length &&
+        density !== "years" &&
+        progress.failed > 0 && (
+          <StatusRow
+            icon="image"
+            title={`${progress.failed.toLocaleString("en")} ${progress.failed === 1 ? "preview" : "previews"} could not be made`}
+            caption="The photos are on this phone."
+            action={
+              <Button label="Retry" icon="refresh" onPress={retryPreviews} />
+            }
+          />
+        )}
       {!!error && linked && !sections.length && (
         <View style={s.stack}>
           <Text style={s.caption}>{error}</Text>

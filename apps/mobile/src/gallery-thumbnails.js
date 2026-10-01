@@ -13,7 +13,7 @@ import {
   renderVideoPoster,
   videoPosterSource,
 } from "./video-playback";
-import { isFlatCacheFile, nativeFirst } from "./thumbnail-cache";
+import { createLimiter, isFlatCacheFile, nativeFirst } from "./thumbnail-cache";
 const video = requireOptionalNativeModule("ExpoVideo")
   ? require("expo-video")
   : null;
@@ -25,6 +25,7 @@ const nativeThumbnail =
 const onDisk = (uri) => !!uri?.startsWith("file://");
 const root = new Directory(Paths.cache, "arca-gallery");
 const jobs = new Map();
+const limiter = createLimiter(3, 30000);
 const posterAttempt = rememberFailures();
 const renderAttempt = rememberFailures(4096, "Thumbnail unavailable");
 AppState.addEventListener("change", (state) => {
@@ -64,7 +65,7 @@ function pruneCache(directory, keep) {
     }
   }
 }
-function cachedDerivative(entry, variant, produce) {
+function cachedDerivative(entry, variant, produce, background = false) {
   const key = bytesToHex(
     sha256(
       new TextEncoder().encode(
@@ -80,7 +81,7 @@ function cachedDerivative(entry, variant, produce) {
   if (jobs.has(key)) return jobs.get(key);
   const job = (async () => {
     root.create({ intermediates: true, idempotent: true });
-    const produced = await produce(target);
+    const produced = await limiter.run(() => produce(target), !background);
     if (produced) {
       const temporary = new File(produced);
       try {
@@ -91,7 +92,7 @@ function cachedDerivative(entry, variant, produce) {
         if (temporary.exists) temporary.delete();
       }
     } else if (!target.exists) throw new Error("Thumbnail unavailable");
-    if (rendered++ % 24 === 0) pruneCache(root, target.uri);
+    if (rendered++ % 200 === 0) pruneCache(root, target.uri);
     return target.uri;
   })().finally(() => jobs.delete(key));
   jobs.set(key, job);
@@ -101,55 +102,67 @@ export const thumbnailFiles = {
   async exists(uri) {
     return isFlatCacheFile(uri, root.uri) && new File(uri).exists;
   },
-  render(entry, large = false) {
+  render(entry, large = false, background = false) {
     const produce = () =>
-      cachedDerivative(entry, large ? "large" : "thumb", (target) =>
-        nativeFirst(
-          nativeThumbnail &&
-            onDisk(entry.uri) &&
-            (() =>
-              nativeThumbnail(
+      cachedDerivative(
+        entry,
+        large ? "large" : "thumb",
+        (target) =>
+          nativeFirst(
+            nativeThumbnail &&
+              onDisk(entry.uri) &&
+              (() =>
+                nativeThumbnail(
+                  entry.uri,
+                  target.uri,
+                  large ? 2048 : 360,
+                  !large,
+                  false,
+                )),
+            async () => {
+              const result = await manipulateAsync(
                 entry.uri,
-                target.uri,
-                large ? 2048 : 360,
-                !large,
-                false,
-              )),
-          async () => {
-            const result = await manipulateAsync(
-              entry.uri,
-              [{ resize: { width: large ? 2048 : 360 } }],
-              { compress: large ? 0.85 : 0.75, format: SaveFormat.JPEG },
-            );
-            return result.uri;
-          },
-        ),
+                [{ resize: { width: large ? 2048 : 360 } }],
+                { compress: large ? 0.85 : 0.75, format: SaveFormat.JPEG },
+              );
+              return result.uri;
+            },
+          ),
+        background,
       );
     return large
       ? produce()
       : renderAttempt(`${entry.uri}:${entry.size}:${entry.mtime}`, produce);
   },
-  async poster(item) {
+  async poster(item, background = false) {
     const uri = videoPosterSource(item);
     if (!uri || (!nativeThumbnail && !video))
       throw new Error("Video thumbnail unavailable");
     return posterAttempt(`${uri}:${item.size}:${item.mtime}`, () =>
-      cachedDerivative({ ...item, uri }, "poster", (target) =>
-        nativeFirst(
-          nativeThumbnail &&
-            onDisk(uri) &&
-            (() => nativeThumbnail(uri, target.uri, 360, true, true)),
-          () => {
-            if (!video) throw new Error("Video thumbnail unavailable");
-            return renderVideoPoster(uri, {
-              createPlayer: video.createVideoPlayer,
-              manipulate: (source) => ImageManipulator.manipulate(source),
-              platform: Platform.OS,
-              format: SaveFormat.JPEG,
-            });
-          },
-        ),
+      cachedDerivative(
+        { ...item, uri },
+        "poster",
+        (target) =>
+          nativeFirst(
+            nativeThumbnail &&
+              onDisk(uri) &&
+              (() => nativeThumbnail(uri, target.uri, 360, true, true)),
+            () => {
+              if (!video) throw new Error("Video thumbnail unavailable");
+              return renderVideoPoster(uri, {
+                createPlayer: video.createVideoPlayer,
+                manipulate: (source) => ImageManipulator.manipulate(source),
+                platform: Platform.OS,
+                format: SaveFormat.JPEG,
+              });
+            },
+          ),
+        background,
       ),
     );
+  },
+  retry() {
+    posterAttempt.clear();
+    renderAttempt.clear();
   },
 };

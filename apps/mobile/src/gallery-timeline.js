@@ -69,6 +69,14 @@ export function mergeTimeline({ index = [], entries = [], uploads = [] }) {
     }));
   return pending.concat(photos);
 }
+const PREVIEW_LIMIT = 5000;
+export function previewCandidates(entries, excluded = () => false) {
+  return mergeTimeline({
+    entries: entries.filter((entry) => !excluded(entry.path)),
+  })
+    .sort((a, b) => (a.kind === "video") - (b.kind === "video"))
+    .slice(0, PREVIEW_LIMIT);
+}
 export function monthLabel(month) {
   if (!/^\d{4}-\d{2}$/.test(month)) return "Undated";
   return new Date(month + "-01T12:00:00").toLocaleDateString("en", {

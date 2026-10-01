@@ -869,6 +869,32 @@ export function ActionRow({
   );
 }
 
+export function StatusRow({
+  busy = false,
+  icon = "image",
+  title,
+  caption,
+  action,
+}) {
+  const { s, c } = useDesign();
+  return (
+    <View style={[s.card, s.folderRow]}>
+      <View style={s.tile}>
+        {busy ? (
+          <Busy color={c.accent} />
+        ) : (
+          <Icon name={icon} size={16} color={c.accent} />
+        )}
+      </View>
+      <View style={[s.flex, s.stack]}>
+        <Text style={s.rowTitle}>{title}</Text>
+        {!!caption && <Text style={s.caption}>{caption}</Text>}
+      </View>
+      {action}
+    </View>
+  );
+}
+
 export function FolderRow({
   selectable = false,
   selected = false,
