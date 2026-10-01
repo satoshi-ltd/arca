@@ -5660,3 +5660,56 @@ test("the wizard sets up name and role on one page, says who each role is for an
     w.close();
   }
 });
+
+for (const umbrel of [false, true]) {
+  test("the server access step " + (umbrel ? "keeps the Umbrel link and shows no command" : "shows the documented command with Copy and where the code is"), async (t) => {
+    const { initializeServer } = await import("../packages/daemon/setup.js");
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-access-command-"));
+    initializeServer(home, { port: 0 });
+    const previous = process.env.ARCA_SETUP_CODE_PATH;
+    if (umbrel) process.env.ARCA_SETUP_CODE_PATH = "/umbrel";
+    else delete process.env.ARCA_SETUP_CODE_PATH;
+    const daemon = await start(home, { timer: false });
+    const base = "http://127.0.0.1:" + daemon.port;
+    const w = new JSDOM(html, { runScripts: "outside-only", url: base }).window;
+    w.setInterval = () => 0;
+    w.fetch = async (route, options = {}) =>
+      fetch(new URL(route, base), { ...nodeInit(options), headers: { ...options.headers, Origin: base } });
+    let copied = null;
+    Object.defineProperty(w.navigator, "clipboard", { value: { writeText: async (value) => (copied = value) } });
+    t.after(async () => {
+      w.close();
+      await daemon.close();
+      fs.rmSync(home, { recursive: true, force: true });
+      if (previous === undefined) delete process.env.ARCA_SETUP_CODE_PATH;
+      else process.env.ARCA_SETUP_CODE_PATH = previous;
+    });
+    await w.eval(`(async()=>{${script}\n})()`);
+    const submit = () => w.document.querySelector("#setup-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+    const waitFor = (selector) => until(() => w.document.querySelector(selector) && w.document.body.getAttribute("aria-busy") === "false");
+    await waitFor("#setup-form");
+    submit();
+    await waitFor('[name="name"]');
+    w.document.querySelector('[name="name"]').value = "Server";
+    submit();
+    await waitFor('[data-code="setup-access"]');
+    const page = w.document.querySelector("#content");
+    const command = "docker exec <container> node packages/cli/arca.js web-code";
+    if (umbrel) {
+      assert.ok(page.querySelector('a[href="/umbrel"]'));
+      assert.doesNotMatch(page.textContent, /docker exec/);
+      assert.equal(page.querySelector('[data-action="copy"]'), null);
+      return;
+    }
+    assert.equal(page.querySelector('a[href="/umbrel"]'), null);
+    assert.match(page.textContent, /On the server, run:/);
+    assert.ok(page.textContent.includes(command));
+    assert.match(page.textContent, /The reply is JSON: enter the value of code\./);
+    assert.doesNotMatch(page.textContent, /run arca web-code/);
+    const copy = page.querySelector('[data-action="copy"]');
+    assert.equal(copy.dataset.id, command);
+    copy.click();
+    await until(() => copied !== null);
+    assert.equal(copied, command);
+  });
+}

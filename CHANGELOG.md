@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.50 — 2026-10-01
+
+- On a Docker server, the first-run access step now shows the command that issues the web access code, with a Copy button, and says the code is the `code` value of its JSON reply, instead of a bare command with no container to run it in.
+
+Needs: Casa redeploy
+
 ## 0.6.49 — 2026-10-01
 
 - On desktop, web and server, the setup wizard now asks for the machine's name and role on one page, says who each role is for, and shows a three-step rail (This machine, Connect, Folders) in which Connect reads Not needed for a hub.

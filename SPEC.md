@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.49 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+**v0.6.50 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -156,7 +156,7 @@ Both live in Settings → Danger zone, need explicit confirmation and share one 
 
 #### Server onboarding
 
-An unconfigured server opens the shared welcome wizard even without a web session: welcome → this machine (name and hub or replica) → confirm administrator access (under This machine in the rail) → pairing (replicas only) → persistent folder root → Finish. Name and role stay tentative browser values until the wizard asks for the existing single-use web code, before any configuration is saved. Umbrel links to its app-password code page in another tab; ordinary Docker uses `arca web-code`. Authentication and CSRF guard every setup mutation, and accepted progress resumes from the server after sign-in. Replicas select whole folders after setup; sync stays idle during it. Configured-server login offers machine approval only when discovery reports at least one authorized approver.
+An unconfigured server opens the shared welcome wizard even without a web session: welcome → this machine (name and hub or replica) → confirm administrator access (under This machine in the rail) → pairing (replicas only) → persistent folder root → Finish. Name and role stay tentative browser values until the wizard asks for the existing single-use web code, before any configuration is saved. Umbrel links to its app-password code page in another tab; ordinary Docker shows the command `docker exec <container> node packages/cli/arca.js web-code` with a Copy button and says the code is the `code` value of its JSON reply. Authentication and CSRF guard every setup mutation, and accepted progress resumes from the server after sign-in. Replicas select whole folders after setup; sync stays idle during it. Configured-server login offers machine approval only when discovery reports at least one authorized approver.
 
 `packages/daemon/setup.js` owns `initializeServer` and root inspection. Docker runs `daemon --setup` with `ARCA_FILES=/data/files`: existing server configurations start unchanged (identity, role, pause, data), empty state becomes a provisional replica with `needsSetup` and no hub or backup, and incomplete state without a config is refused. The root must be empty, writable and resolve inside `ARCA_FILES`, symlink escapes included; custom containers set `ARCA_FILES` to their durable files mount. The wizard explains that the destination is on the server. Explicit `init --role hub|replica` still works.
 

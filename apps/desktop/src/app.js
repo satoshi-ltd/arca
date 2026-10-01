@@ -86,7 +86,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.49";
+const APP_VERSION = "0.6.50";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5946,6 +5946,8 @@ function renderOnboarding() {
   const activeStep = { 0: 0, access: 0, 2: 1, 3: 2 }[o.step] ?? o.step;
   const steps = ["This machine", "Connect", "Folders"];
   const connectSkipped = o.role === "hub" && o.step !== 0 && o.step !== -1;
+  const webCodeCommand =
+    "docker exec <container> node packages/cli/arca.js web-code";
   let body = "";
   if (o.step === -1)
     body = `<p>Your personal drive, on your own machines.</p><h1>Many devices.<br><em class="accent-text">One space.</em></h1><p>Arca keeps the folders you choose in sync across your laptop, tablet and phone, with complete local copies and a hub you run yourself.</p>${[
@@ -5991,7 +5993,7 @@ function renderOnboarding() {
       )
       .join("")}`;
   if (o.step === "access")
-    body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p>${o.setupCodePath ? '<p><a href="/umbrel" target="_blank" rel="noopener">Get a code from Umbrel</a>, then return here.</p>' : "<p>On this server, run <code>arca web-code</code> and copy the code from the reply.</p>"}<label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
+    body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p>${o.setupCodePath ? '<p><a href="/umbrel" target="_blank" rel="noopener">Get a code from Umbrel</a>, then return here.</p>' : `<p>On the server, run:</p><div class="settings-card">${setting("Command", `<span class="mono">${escape(webCodeCommand)}</span>`, button("Copy", "copy", webCodeCommand, "secondary small-button", "copy"))}</div><p class="hint">The reply is JSON: enter the value of <code>code</code>.</p>`}<label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
   if (o.step === 2 && !o.paired)
     body = `<h1>Pair with your hub</h1><p>Connect with a single-use code from your hub.</p>${textField("Hub address", "url", o.url, "server", "https://arca.your-network", "mono")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">${icon("clock")}Single use · valid ten minutes.</p>`;
   if (o.step === 2 && o.paired)

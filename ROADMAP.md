@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-ONB-SERVER-ACCESS** — The command for the server access code
-  `ui · agent · normal`
-  accept: the board.
 - **UI-ONB-DESK-DISCOVERY** — Hubs found nearby while pairing
   `ui · agent · normal`
   accept: the board. First confirm that an unconfigured daemon serves discovery during the wizard; if it does not, report it and split the daemon change into its own task before drawing on it.
