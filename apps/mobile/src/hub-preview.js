@@ -36,15 +36,13 @@ export function createAccepted({
       return Promise.resolve(null);
     const key = `${item.uri}:${item.size}:${item.mtime}:${row.hash}`;
     if (!memo.has(key)) {
-      memo.set(
-        key,
-        limiter
-          .run(() => acceptedHash(known, item, hashFile), urgent)
-          .catch(() => {
-            memo.delete(key);
-            return null;
-          }),
-      );
+      const task = limiter
+        .run(() => acceptedHash(known, item, hashFile), urgent)
+        .catch(() => {
+          if (memo.get(key) === task) memo.delete(key);
+          return null;
+        });
+      memo.set(key, task);
       if (memo.size > limit) memo.delete(memo.keys().next().value);
     }
     return memo.get(key);

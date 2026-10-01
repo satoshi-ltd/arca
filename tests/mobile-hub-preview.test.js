@@ -383,3 +383,24 @@ test("the viewer is allowed without the grid's pause but never offline, and a fa
   await wrap(fail, true)(item());
   assert.deepEqual(seen, [false, true]);
 });
+
+test("a timeout that settles after a clear does not erase the newer verification", async () => {
+  let calls = 0;
+  const known = new Map([["a.heic", { hash: "h1", size: 10 }]]);
+  const accepted = createAccepted({
+    hashFile: async () => {
+      calls++;
+      await new Promise((resolve) => setTimeout(resolve, calls === 1 ? 300 : 5));
+      return "h1";
+    },
+    limiter: createLimiter(1, 50),
+  });
+  const first = accepted(known, item());
+  accepted.clear();
+  const second = accepted(known, item());
+  await first;
+  const third = accepted(known, item());
+  assert.equal(await second, "h1");
+  assert.equal(await third, "h1");
+  assert.equal(calls, 2, "the third call joins the second instead of hashing again");
+});

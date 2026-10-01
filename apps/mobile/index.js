@@ -1,3 +1,4 @@
+import "./src/crash";
 import "./src/runtime";
 import React from "react";
 import { registerRootComponent } from "expo";

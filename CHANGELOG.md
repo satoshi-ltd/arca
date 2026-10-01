@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.58 — 2026-10-01
+
+- On phones, when Arca closes because of an uncaught error, the next launch shows one notice ("Arca closed unexpectedly") with the saved error under Details and a Copy button, so it can be reported; nothing is sent anywhere.
+
+Needs: native build
+
 ## 0.6.57 — 2026-10-01
 
 - Phone previews from the hub verify the local photo's contents first, so an edit that keeps the same size cannot display an older image.

@@ -14,6 +14,8 @@ import { ConfirmDialog } from "./components";
 import { useRetained } from "./motion";
 import { subscribeNotificationResponse } from "./runtime";
 import { NoticeStack, ErrorNotice } from "./Notice";
+import { crashRecord } from "./crash";
+import { crashNotice } from "./crash-record";
 import {
   createNoticeStore,
   errorNotice,
@@ -350,6 +352,10 @@ export default function App() {
       off();
       notices.dispose();
     };
+  }, [notices]);
+  useEffect(() => {
+    const crash = crashRecord.take();
+    if (crash) notices.push(crashNotice(crash));
   }, [notices]);
   const retryAction = useRef(null);
   const errorCode = useRef({});
