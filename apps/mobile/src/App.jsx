@@ -271,6 +271,9 @@ export default function App() {
       if (mounted.current) setError(error.message || "Synchronization failed.");
     });
   }
+  function reconnect() {
+    if (status.offline) startSync();
+  }
   function listFiles(id = folder?.id) {
     if (!id || !engine.current) return Promise.resolve();
     const r = engine.current;
@@ -1080,6 +1083,7 @@ export default function App() {
         api={galleryAPI}
         connected={connected}
         offline={!!status.offline}
+        reconnect={reconnect}
         store={engine.current.store}
         scope={engine.current.scope}
         volume={folder.id}
@@ -1780,6 +1784,7 @@ export default function App() {
                                   load={(route) => replica.remoteView(route)}
                                   updated={status.last}
                                   offline={status.offline}
+                                  reconnect={reconnect}
                                   date={date}
                                   open={(row) =>
                                     getHistory({
@@ -2062,11 +2067,12 @@ export default function App() {
                       loading={detailLoading}
                       error={detailError}
                       localEntry={sheet.localEntry}
-                      retry={() =>
+                      retry={() => {
+                        reconnect();
                         getHistory(sheet).catch((e) =>
                           setDetailError(e.message),
-                        )
-                      }
+                        );
+                      }}
                       author={(id) =>
                         machines?.find(
                           (m) => m.machineId === id || m.credentialId === id,

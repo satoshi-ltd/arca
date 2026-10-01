@@ -665,7 +665,7 @@ test("offline file detail leads with the phone's own row and an empty saved wind
   const detail = read("FileHistory.jsx");
   assert.match(app, /offlineFileHistory\(page, saved, localEntry\)/);
   assert.match(app, /currentRev: more \? target\.currentRev : own\.currentRev/);
-  assert.match(detail, /history\.offline\s+\? "No saved revisions for this file\."/);
+  assert.match(detail, /title="No saved revisions for this file"/);
   assert.match(detail, /!current\.local &&\s+!current\.deleted/);
   assert.match(detail, /current\.local\s+\? "Local copy"/);
   assert.match(detail, /row\.created \? date\(row\.created\) : "This device"/);
@@ -721,4 +721,43 @@ test("an open file detail refreshes only when the hub is back and its saved data
     { volume: calls[0][0].volume, path: calls[0][0].path },
     { volume: "v", path: "a.txt" },
   );
+});
+
+test("offline empty states say nothing is saved, end in Retry that probes the hub, and never show a bare raw error", () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
+  const app = read("App.jsx");
+  const card = read("components.jsx").match(/export function OfflineEmpty\(\{ title, text, retry \}\) \{[\s\S]*?\n\}\n/);
+  assert.ok(card, "one shared card");
+  assert.match(card[0], /<Card title=\{title\}>/);
+  assert.match(card[0], /<Button label="Retry" icon="refresh" onPress=\{retry\} \/>/);
+  assert.match(app, /function reconnect\(\) \{\s+if \(status\.offline\) startSync\(\);\s+\}/);
+  assert.match(app.match(/<FolderGallery[\s\S]*?\n +\/>/)[0], /reconnect=\{reconnect\}/);
+  assert.match(app.match(/<FolderRecent[\s\S]*?\n +\/>/)[0], /reconnect=\{reconnect\}/);
+  assert.match(app, /retry=\{\(\) => \{\s+reconnect\(\);\s+getHistory\(sheet\)/);
+
+  const gallery = read("FolderGallery.jsx");
+  assert.match(gallery, /\{!!error && linked && !sections\.length && \(/, "a raw error shows only while the hub is reachable, with Retry");
+  assert.match(gallery, /!\(error && linked\) &&/, "no empty copy under an error with Retry");
+  assert.match(gallery, /!sections\.length &&\s+!pendingItems\.length &&\s+!\(error && linked\)/, "no empty copy beside the pending uploads strip");
+  const offline = gallery.match(/connected && offline \? \(\s+<OfflineEmpty([\s\S]*?)\/>/);
+  assert.ok(offline, "a folder without local photos offline gets the card");
+  assert.match(offline[1], /title="Nothing saved on this phone"/);
+  assert.match(offline[1], /text="You are offline\. Photos from this folder appear here once they have downloaded\."/);
+  assert.match(offline[1], /reconnect\?\.\(\);\s+setError\(""\);\s+setRetry\(\(value\) => value \+ 1\);/);
+  assert.match(gallery, /<Text style=\{s\.heading\}>No photos yet<\/Text>/, "a hub that answered empty keeps its own copy");
+
+  const recent = read("FolderRecent.jsx");
+  const empty = recent.match(/if \(!page\.versions\.length && unreachable\)\s+return \(\s+<OfflineEmpty([\s\S]*?)\/>/);
+  assert.ok(empty, "Recent without saved revisions offline gets the card");
+  assert.match(recent, /const unreachable = !!page\.offline \|\| !!offline;/, "a hub error is not an offline verdict");
+  assert.match(empty[1], /title="No saved revisions"/);
+  assert.match(empty[1], /text="You are offline\. Revisions appear here once the hub is reachable\."/);
+  assert.match(empty[1], /reconnect\?\.\(\);\s+retry\(\(n\) => n \+ 1\);/);
+  assert.match(recent, /<Text style=\{s\.text\}>No revisions yet\.<\/Text>/);
+
+  const detail = read("FileHistory.jsx");
+  const file = detail.match(/\(offline && !error \? \(\s+<OfflineEmpty([\s\S]*?)\/>\s+\) : \(\s+!error && <Text style=\{s\.caption\}>No retained revisions\.<\/Text>/);
+  assert.ok(file, "file detail offline gets the card, a hub that answered empty keeps its caption");
+  assert.match(file[1], /text="You are offline\. Revisions appear here once the hub is reachable\."/);
+  assert.match(file[1], /retry=\{retry\}/);
 });

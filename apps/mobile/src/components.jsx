@@ -494,6 +494,15 @@ export function Card({
     </View>
   );
 }
+export function OfflineEmpty({ title, text, retry }) {
+  const { s } = useDesign();
+  return (
+    <Card title={title}>
+      <Text style={s.text}>{text}</Text>
+      <Button label="Retry" icon="refresh" onPress={retry} />
+    </Card>
+  );
+}
 export function Tag({ children, variant }) {
   const { s } = useDesign();
   return (

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.44 — 2026-10-01
+
+- On phones, offline Recent, a file's detail and a photo folder with nothing saved now say "No saved revisions" or "Nothing saved on this phone" with a Retry that probes the hub again, instead of a bare error or a claim that there is no history or no photos.
+
+Needs: native build
+
 ## 0.6.43 — 2026-10-01
 
 - On desktop and web, a replica whose hub is unreachable now says Offline in its own Machines pill and in the tray heading instead of Syncing, other machines in the saved list read Offline and last known, and Recent and a file with no saved revisions say so ("No saved revisions") instead of claiming the hub has none.

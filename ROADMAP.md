@@ -32,9 +32,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 - **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
   `feature · agent · normal`
   accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
-- **OFF-MOB-LABELS** — Offline empty states on phones read as if there were no data
-  `bug · agent · low`
-  accept: Recent, file detail and a photo folder without local files distinguish "nothing saved while offline" from "no revisions" and never show a raw last error without Retry. Layout or replica tests. The interface follows board UI-OFF-MOB-LABELS.
 - **CI-TIDY** — Workflow consistency
   `chore · agent · low`
   accept: `publish-site.yml` uses the same `actions/checkout` and `actions/setup-node` majors as the other workflows, and the misindented `fi` in `publish.yml` is fixed; actionlint passes.
@@ -69,7 +66,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`

@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import {
   Button,
+  OfflineEmpty,
   Icon,
   MediaPlaceholder,
   Scaffold,
@@ -154,6 +155,7 @@ export function FolderGallery({
   history,
   share,
   remove,
+  reconnect,
   columns = 4,
 }) {
   const { s, c } = useDesign();
@@ -962,18 +964,16 @@ export function FolderGallery({
           </ScrollView>
         </View>
       )}
-      {!!error && !sections.length && (
+      {!!error && linked && !sections.length && (
         <View style={s.stack}>
           <Text style={s.caption}>{error}</Text>
-          {linked && (
-            <Button
-              label="Retry"
-              onPress={() => {
-                setError("");
-                setRetry((value) => value + 1);
-              }}
-            />
-          )}
+          <Button
+            label="Retry"
+            onPress={() => {
+              setError("");
+              setRetry((value) => value + 1);
+            }}
+          />
         </View>
       )}
       {density === "years" &&
@@ -1076,8 +1076,20 @@ export function FolderGallery({
       )}
       {density !== "years" &&
         !sections.length &&
-        (loading || (!gallery && linked && !error) ? (
+        !pendingItems.length &&
+        !(error && linked) &&
+        (loading || (!gallery && linked) ? (
           <Scaffold label="Loading photos" />
+        ) : connected && offline ? (
+          <OfflineEmpty
+            title="Nothing saved on this phone"
+            text="You are offline. Photos from this folder appear here once they have downloaded."
+            retry={() => {
+              reconnect?.();
+              setError("");
+              setRetry((value) => value + 1);
+            }}
+          />
         ) : (
           <View style={s.center}>
             <Icon name="image" size={32} color={c.mute} />

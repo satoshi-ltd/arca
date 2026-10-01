@@ -2,7 +2,7 @@ import { Scaffold } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { Icon, Button, useDesign } from "./components";
+import { Icon, OfflineEmpty, useDesign } from "./components";
 import { bytes } from "./format";
 
 const knownRecent = new Map();
@@ -15,6 +15,7 @@ export function FolderRecent({
   load,
   updated,
   offline,
+  reconnect,
   date,
   open,
   onLoading,
@@ -60,6 +61,18 @@ export function FolderRecent({
   if (error && !page)
     return <ErrorNotice error={error} retry={() => retry((n) => n + 1)} />;
   if (!page) return <Scaffold kind="history" label="Loading recent changes" />;
+  const unreachable = !!page.offline || !!offline;
+  if (!page.versions.length && unreachable)
+    return (
+      <OfflineEmpty
+        title="No saved revisions"
+        text="You are offline. Revisions appear here once the hub is reachable."
+        retry={() => {
+          reconnect?.();
+          retry((n) => n + 1);
+        }}
+      />
+    );
   return (
     <View style={s.section}>
       {error && <ErrorNotice error={error} retry={() => retry((n) => n + 1)} />}

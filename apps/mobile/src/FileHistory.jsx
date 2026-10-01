@@ -4,7 +4,7 @@ import { Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React from "react";
 import { Text, View } from "react-native";
-import { Badge, Button, Card, Icon, useDesign } from "./components";
+import { Badge, Button, Card, Icon, OfflineEmpty, useDesign } from "./components";
 import { bytes } from "./format";
 
 export function FileHistory({
@@ -154,13 +154,18 @@ export function FileHistory({
             )}
           </Section>
           {loading && <Scaffold kind="history" label="Loading file history" />}
-          {!loading && !error && connected && !history.versions.length && (
-            <Text style={s.caption}>
-              {history.offline
-                ? "No saved revisions for this file."
-                : "No retained revisions."}
-            </Text>
-          )}
+          {!loading &&
+            connected &&
+            !history.versions.length &&
+            (offline && !error ? (
+              <OfflineEmpty
+                title="No saved revisions for this file"
+                text="You are offline. Revisions appear here once the hub is reachable."
+                retry={retry}
+              />
+            ) : (
+              !error && <Text style={s.caption}>No retained revisions.</Text>
+            ))}
           {history.next && (
             <Button
               label="Load older revisions"
