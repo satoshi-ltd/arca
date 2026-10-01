@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.51 — 2026-10-01
+
+- Internal: the setup wizard's detected-hubs list moved to a maintainer decision, because a fresh desktop installation has no daemon to ask before pairing.
+
 ## 0.6.50 — 2026-10-01
 
 - On a Docker server, the first-run access step now shows the command that issues the web access code, with a Copy button, and says the code is the `code` value of its JSON reply, instead of a bare command with no container to run it in.
