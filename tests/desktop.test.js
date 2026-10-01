@@ -5713,3 +5713,99 @@ for (const umbrel of [false, true]) {
     assert.equal(copied, command);
   });
 }
+
+test("a server replica's web file detail downloads the file from its own copy, the hub from its store", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-replica-download-"));
+  const nodes = [];
+  async function node(name, role) {
+    const home = path.join(root, name);
+    init(home, { name, role, port: 0 });
+    const daemon = await start(home, { timer: false });
+    nodes.push(daemon);
+    daemon.base = `http://127.0.0.1:${daemon.port}`;
+    daemon.request = (route, body) =>
+      fetch(daemon.base + route, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    daemon.api = async (route, body) => {
+      const r = await daemon.request(route, body);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+      return data;
+    };
+    return daemon;
+  }
+  const hub = await node("Hub", "hub");
+  const server = await node("Server", "replica");
+  const folder = await hub.api("/v1/volumes", { name: "Shared" });
+  fs.writeFileSync(path.join(folder.path, "keep.txt"), "Keep this file");
+  await hub.engine.cycle();
+  const invite = await hub.api("/v1/devices", { name: "Server", role: "replica" });
+  await server.api("/v1/connect", { url: hub.base, token: invite.token });
+  await server.api("/v1/select", { id: folder.id });
+  await server.engine.cycle();
+  const doms = [];
+  let inFlight = 0;
+  t.after(async () => {
+    await until(() => inFlight === 0);
+    await new Promise((resolve) => setImmediate(resolve));
+    for (const dom of doms) dom.window.close();
+    for (const daemon of nodes.reverse()) await daemon.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  async function open(daemon, hash) {
+    const dom = new JSDOM(html, { runScripts: "outside-only", url: daemon.base + "/" + hash });
+    doms.push(dom);
+    const w = dom.window;
+    w.setInterval = () => 0;
+    w.fetch = async (route, options = {}) => {
+      inFlight++;
+      try {
+        const response = await daemon.request(route, options.body === undefined ? undefined : JSON.parse(options.body));
+        const body = await response.json();
+        return { ok: response.ok, status: response.status, json: async () => body };
+      } finally {
+        inFlight--;
+      }
+    };
+    await w.eval(`(async()=>{${script}\n})()`);
+    await until(() => w.document.querySelector(".file-header-actions") && w.document.body.getAttribute("aria-busy") === "false");
+    return w;
+  }
+  const route = `#/history?${new URLSearchParams({ volume: folder.id, path: "keep.txt" })}`;
+  const replica = await open(server, route);
+  const link = replica.document.querySelector(".file-header-actions a[download]");
+  assert.ok(link, "a replica's web file detail offers Download file");
+  assert.equal(link.textContent.trim(), "Download file");
+  assert.equal(link.getAttribute("download"), "keep.txt");
+  const href = link.getAttribute("href");
+  assert.match(href, /^\/v1\/gallery\/download\?/, "served by the replica itself, never the hub");
+  assert.equal(replica.document.querySelector('[data-action="history-open-file"]'), null, "web cannot open the file on the machine");
+  const served = await server.request(href);
+  assert.equal(served.status, 200);
+  assert.equal(await served.text(), "Keep this file");
+  assert.equal(served.headers.get("content-disposition"), "attachment; filename*=UTF-8''keep.txt");
+  const web = await open(hub, route);
+  assert.match(web.document.querySelector(".file-header-actions a[download]").getAttribute("href"), /^\/v1\/blobs\//, "the hub keeps serving its store");
+  const hubServed = await hub.request(web.document.querySelector(".file-header-actions a[download]").getAttribute("href"));
+  assert.equal(hubServed.status, 200);
+  fs.writeFileSync(path.join(folder.path, "keep.txt"), "Edited on the hub");
+  await hub.engine.cycle();
+  const lagging = await open(server, route);
+  const lag = lagging.document.querySelector(".file-header-actions a[download]");
+  assert.ok(lag, "a replica behind the hub still offers its own copy");
+  assert.equal(lag.getAttribute("href"), href, "the link names the revision the replica holds, not the hub's newest");
+  const stillServed = await server.request(lag.getAttribute("href"));
+  assert.equal(stillServed.status, 200);
+  assert.equal(await stillServed.text(), "Keep this file");
+  fs.rmSync(path.join(server.engine.store.volume(folder.id).path, "keep.txt"));
+  const missing = await server.request(href);
+  assert.equal(missing.status, 409);
+  assert.match((await missing.json()).error, /Local copy missing/, "a copy that is not on disk is told apart from a changed one");
+  await server.api("/v1/unselect", { id: folder.id });
+  const refused = await server.request(href);
+  assert.equal(refused.status, 404, "an unlinked folder serves nothing");
+  assert.match((await refused.json()).error, /Unknown volume/);
+});

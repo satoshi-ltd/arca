@@ -726,9 +726,11 @@ export async function start(home, options = {}) {
           row.hash !== hash ||
           s.visibleRules(volume)(name, false)
         )
-          fail("This photo is no longer available", 404);
+          fail("This file is no longer available", 404);
         const file = config.role === "hub" ? s.blob(hash) : s.filePath(v, name);
-        if (!fs.existsSync(file) || (await hashFileAsync(file)) !== hash)
+        if (!fs.existsSync(file))
+          fail("Local copy missing. Sync before downloading.", 409);
+        if ((await hashFileAsync(file)) !== hash)
           fail("File changed. Sync before downloading.", 409);
         checkCredential();
         res.writeHead(200, {
@@ -1080,6 +1082,8 @@ export async function start(home, options = {}) {
               local,
               ...(view.versions || []).filter((row) => row.rev !== local.rev),
             ];
+          if (local && !local.deleted && !local.directory)
+            view.local = { rev: local.rev, hash: local.hash, size: local.size };
           return send(200, view);
         }
         s.volume(volume);

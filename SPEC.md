@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.60 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+**v0.6.61 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -811,7 +811,7 @@ One pure contract, `apps/desktop/src/notice-contract.js`, owns notice kinds, con
 
 ### File detail and history
 
-Opening a file from Files, Recent or History shows a detail header with back to its origin, the file icon and the filename (never the folder name) using the full width and wrapping. Open file stays visible; Rename…, Delete file (after a divider) and, on macOS, Open in Finder sit in the trailing ⋯ menu, which closes on selection, outside click, focus loss and Escape. Below, the summary shows hub availability, accepted size, latest revision and author, and last change; revisions sit on the left and File location (folder name, wrapping relative path, View folder) on the right, one column when narrow. The latest revision reads Current; Restore appears only on older content revisions. Web hubs offer Download file; deleted files have no file action. Rename opens a prefilled filename editor that changes only the last component and explains that older revisions stay under the previous name.
+Opening a file from Files, Recent or History shows a detail header with back to its origin, the file icon and the filename (never the folder name) using the full width and wrapping. Open file stays visible; Rename…, Delete file (after a divider) and, on macOS, Open in Finder sit in the trailing ⋯ menu, which closes on selection, outside click, focus loss and Escape. Below, the summary shows hub availability, accepted size, latest revision and author, and last change; revisions sit on the left and File location (folder name, wrapping relative path, View folder) on the right, one column when narrow. The latest revision reads Current; Restore appears only on older content revisions. Web hubs offer Download file from the hub store, and a server replica's web offers it for a selected folder's file from its own working copy (`/v1/gallery/download` with the replica's own current hash, which `/v1/history` reports as `local`, never through the hub); deleted files have no file action. Rename opens a prefilled filename editor that changes only the last component and explains that older revisions stay under the previous name.
 
 Conflict review, reachable from conflict rows and file details, shows Original file and Conflict copy with paths, timestamps and sizes, then one Restore selected as new revision action; the original is selected unless deleted. Web can download each version and desktop can open local ones. Keep both and Cancel leave everything unchanged.
 

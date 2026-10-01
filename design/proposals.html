@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.60 · proposals</span>
+      <span class="kit-version">v0.6.61 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -36,19 +36,6 @@
 
       <section class="kit-section" id="boards">
         <h2>Boards <span>01</span></h2>
-        <article class="kit-board" data-board="UI-WEB-REPLICA-DOWNLOAD">
-          <header><code>UI-WEB-REPLICA-DOWNLOAD</code><h3>Download in a replica's web file detail</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> A product decision drawn as a proposal. A server replica's web administration cannot open a file on the machine, so its file detail offers nothing to do with the file itself, while the hub's shows Download file. The proposal adds the same secondary action, served from the replica's own complete local copy and never from the hub. The alternative is to leave a replica's file detail read-only, as today.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <div class="detail-head file-detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>History</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="file-text"></span></div><div><h1>brief.md</h1></div></div><div class="file-header-actions"></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <div class="detail-head file-detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>History</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="file-text"></span></div><div><h1>brief.md</h1></div></div><div class="file-header-actions"><a class="secondary" href="#"><span data-icon="download"></span>Download file</a></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>A yes or no on offering Download. Yes: a server replica's web file detail shows Download file for an available local file, served from its own copy with no hub request, and a JSDOM test covers it on a replica and on the hub. No: this board is deleted.</p></div></div>
-        </article>
         <article class="kit-board" data-board="UI-DESK-SAVED-FILE-HISTORY">
           <header><code>UI-DESK-SAVED-FILE-HISTORY</code><h3>Offline file history without holes</h3><span>Desktop</span></header>
           <p class="kit-note"><strong>Why.</strong> Offline, a file's history is a union of saved windows, so a recent burst is followed by old revisions with nothing between them, and Restore still looks available. The proposal keeps only rows without holes, says so with the same hint the folder view uses, and disables Restore like the other hub-only actions. The alternative is to show every saved row with a divider where the gap is, which keeps more rows but still cannot restore.</p>

@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-WEB-REPLICA-DOWNLOAD** — Download in a replica's web file detail
-  `ui · agent · normal`
-  accept: the board (yes to Download).
 - **UI-DESK-SAVED-FILE-HISTORY** — Offline file history without holes
   `ui · agent · normal`
   accept: the board.

@@ -86,7 +86,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.60";
+const APP_VERSION = "0.6.61";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -527,6 +527,7 @@ let status,
   historyRows = [],
   historyNext = null,
   historyVersions = [],
+  historyLocal = null,
   historyOffline = false,
   fileRevision = null,
   submitDialog,
@@ -1596,7 +1597,7 @@ function fileHistoryHeader() {
   const volume = status.volumes.find((v) => v.id === historyVolume);
   const current = historyVersions[0];
   const filename = historyPath.split("/").at(-1);
-  const available = current && !current.deleted;
+  const available = current && !current.deleted && !current.directory;
   const access =
     available && native && volume?.path
       ? button(
@@ -1608,7 +1609,9 @@ function fileHistoryHeader() {
         )
       : available && !native && status.role === "hub"
         ? `<a class="secondary" href="/v1/blobs/${escape(current.hash)}" download="${escape(filename)}">${icon("download")}Download file</a>`
-        : "";
+        : available && !native && volume?.selected && historyLocal?.hash
+          ? `<a class="secondary" href="/v1/gallery/download?${escape(new URLSearchParams({ volume: historyVolume, path: historyPath, hash: historyLocal.hash }))}" download="${escape(filename)}">${icon("download")}Download file</a>`
+          : "";
   const conflictAction =
     available &&
     !current.resolved &&
@@ -3325,6 +3328,7 @@ async function renderHistory(
     if (!data) {
       if (cached) {
         historyVersions = [];
+        historyLocal = null;
         historyOffline = false;
         list.innerHTML = section("File revisions", scaffoldRow("history"));
       }
@@ -3336,6 +3340,7 @@ async function renderHistory(
       ? [...historyVersions, ...data.versions]
       : data.versions;
     historyOffline = !!data.offline;
+    historyLocal = data.local || null;
     if (data.localOnly) {
       list.innerHTML = section(
         "File revisions",

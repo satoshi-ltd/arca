@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.61 — 2026-10-01
+
+- On a server replica's web administration, a file's detail now offers Download file, served from the replica's own copy, as the hub's already did.
+
+Needs: Casa redeploy
+
 ## 0.6.60 — 2026-10-01
 
 - Info notices (saved, copied, unlinked) are now the primary green with its on-green text on desktop, web and phones, instead of inverting the page's colours for the least important message.
