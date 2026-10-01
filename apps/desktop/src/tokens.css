@@ -25,9 +25,9 @@
   --notice-details-height: 32px;
   --notice-duration: 180ms;
   --notice-surface: #ffffff;
-  --notice-info-bg: #121a16;
-  --notice-info-fg: #f4f6f1;
-  --notice-info-link: #accb80;
+  --notice-info-bg: #2e6350;
+  --notice-info-fg: #ffffff;
+  --notice-info-link: #ffffff;
   --notice-link: #2e6350;
   /* Shared sizing, rhythm and interaction layers (CSS pixels). */
   --tag-height: 20px;
@@ -171,9 +171,9 @@
 }
 [data-theme="dark"] {
   --notice-surface: #1f2521;
-  --notice-info-bg: #f4f6f1;
-  --notice-info-fg: #121a16;
-  --notice-info-link: #2e6350;
+  --notice-info-bg: #7fb893;
+  --notice-info-fg: #0f1512;
+  --notice-info-link: #0f1512;
   --notice-link: #7fb893;
   --paper: #0f1512;
   --surface: #161e19;

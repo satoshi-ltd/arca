@@ -310,3 +310,19 @@ test("an unnamed hub never reads 'Hub your hub' and hub-only failures never clai
   assert.doesNotMatch(errorNotice("Hub unavailable. Try again when it is reachable.", { hubOnly: true }).body, /saved locally/);
   assert.equal(errorNotice("Hub unavailable. Try again when it is reachable.", { hubOnly: true }).offline, true);
 });
+
+test("info notices use the primary green and its ink in both themes, on desktop and mobile", async () => {
+  const { palettes } = await import("../apps/mobile/src/palette.js");
+  const css = fs.readFileSync(new URL("../apps/desktop/src/tokens.css", import.meta.url), "utf8");
+  const [light, dark] = css.split('[data-theme="dark"] {');
+  const parse = (source) => Object.fromEntries([...source.matchAll(/--([\w-]+):\s*(#[\da-f]+);/gi)].map((m) => [m[1], m[2]]));
+  const tokens = { light: parse(light), dark: { ...parse(light), ...parse(dark) } };
+  for (const theme of ["light", "dark"]) {
+    assert.equal(tokens[theme]["notice-info-bg"], tokens[theme].green, `${theme}: the info surface is the primary green`);
+    assert.equal(tokens[theme]["notice-info-fg"], tokens[theme].onGreen, `${theme}: its text is the on-green ink`);
+    assert.equal(tokens[theme]["notice-info-link"], tokens[theme].onGreen, `${theme}: and so is its link`);
+    assert.equal(palettes[theme].noticeInfoBg, tokens[theme]["notice-info-bg"], `${theme}: mobile surface`);
+    assert.equal(palettes[theme].noticeInfoFg, tokens[theme]["notice-info-fg"], `${theme}: mobile text`);
+    assert.equal(palettes[theme].noticeInfoLink, tokens[theme]["notice-info-link"], `${theme}: mobile link`);
+  }
+});

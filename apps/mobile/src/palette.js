@@ -2,9 +2,9 @@
 export const palettes = {
   light: {
     noticeSurface: "#ffffff",
-    noticeInfoBg: "#121a16",
-    noticeInfoFg: "#f4f6f1",
-    noticeInfoLink: "#accb80",
+    noticeInfoBg: "#2e6350",
+    noticeInfoFg: "#ffffff",
+    noticeInfoLink: "#ffffff",
     noticeLink: "#2e6350",
     paper: "#f4f6f1",
     surface: "#ffffff",
@@ -27,9 +27,9 @@ export const palettes = {
   },
   dark: {
     noticeSurface: "#1f2521",
-    noticeInfoBg: "#f4f6f1",
-    noticeInfoFg: "#121a16",
-    noticeInfoLink: "#2e6350",
+    noticeInfoBg: "#7fb893",
+    noticeInfoFg: "#0f1512",
+    noticeInfoLink: "#0f1512",
     noticeLink: "#7fb893",
     paper: "#0f1512",
     surface: "#161e19",

@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.59 · proposals</span>
+      <span class="kit-version">v0.6.60 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -36,21 +36,6 @@
 
       <section class="kit-section" id="boards">
         <h2>Boards <span>01</span></h2>
-        <article class="kit-board" data-board="UI-INFO-NOTICE">
-          <header><code>UI-INFO-NOTICE</code><h3>Default colour of info notices</h3><span>System</span></header>
-          <p class="kit-note"><strong>Why.</strong> A decision drawn as a proposal. Info notices (saved, unlinked, copied) invert paper and ink today, the strongest surface in the app for its least important message. The proposal takes the primary green in both themes and keeps the shape, the four-second timing and the link. The alternative is to keep the inverted paper: no work, SPEC already documents it.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <div class="kit-notices"><div class="notice-card notice-info" role="status"><div class="notice-main"><span data-icon="circle-check"></span><div class="notice-content"><strong>Folder unlinked</strong><p>photos-yuri stopped syncing on macbook-pro.</p><div class="notice-actions"><button class="notice-link">Show</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <div class="kit-variant-green">
-              <div class="kit-notices"><div class="notice-card notice-info" role="status"><div class="notice-main"><span data-icon="circle-check"></span><div class="notice-content"><strong>Folder unlinked</strong><p>photos-yuri stopped syncing on macbook-pro.</p><div class="notice-actions"><button class="notice-link">Show</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></div></div>
-              </div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>A yes or no on green. Yes: the info notice tokens (<code>--notice-info-bg</code>, <code>--notice-info-fg</code>, <code>--notice-info-link</code>) and their mobile counterparts take the green surface in light and dark, SPEC's Notices variants line is rewritten, a token test covers both themes and <code>design/</code> is regenerated. No: this board is deleted and the inverted paper stays.</p></div></div>
-        </article>
         <article class="kit-board" data-board="UI-WEB-REPLICA-DOWNLOAD">
           <header><code>UI-WEB-REPLICA-DOWNLOAD</code><h3>Download in a replica's web file detail</h3><span>Desktop</span></header>
           <p class="kit-note"><strong>Why.</strong> A product decision drawn as a proposal. A server replica's web administration cannot open a file on the machine, so its file detail offers nothing to do with the file itself, while the hub's shows Download file. The proposal adds the same secondary action, served from the replica's own complete local copy and never from the hub. The alternative is to leave a replica's file detail read-only, as today.</p>

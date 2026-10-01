@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-INFO-NOTICE** — Default colour of info notices
-  `ui · agent · normal`
-  accept: the board (yes to green).
 - **UI-WEB-REPLICA-DOWNLOAD** — Download in a replica's web file detail
   `ui · agent · normal`
   accept: the board (yes to Download).

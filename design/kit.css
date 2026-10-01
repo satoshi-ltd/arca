@@ -393,15 +393,6 @@ body.kit {
 .kit-board-pair .onboarding .code-inputs input {
   width: var(--space-6);
 }
-.kit-variant-green .notice-info {
-  background: var(--green);
-  color: var(--onGreen);
-  border-color: var(--green);
-}
-.kit-variant-green .notice-info .notice-link,
-.kit-variant-green .notice-info .notice-main > .icon {
-  color: var(--onGreen);
-}
 .kit-tray {
   width: 100%;
   max-width: 320px;

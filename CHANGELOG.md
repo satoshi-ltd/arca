@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.60 — 2026-10-01
+
+- Info notices (saved, copied, unlinked) are now the primary green with its on-green text on desktop, web and phones, instead of inverting the page's colours for the least important message.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.59 — 2026-10-01
 
 - Internal: the site and the weekly cleanup workflows use the same checkout and Node setup actions as the release workflows, and a test now keeps them aligned.
