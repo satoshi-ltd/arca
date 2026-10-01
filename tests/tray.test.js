@@ -287,3 +287,29 @@ test("tray offers Start service and Quit while the daemon is unavailable", async
     w.close();
   }
 });
+
+test("tray heading reads Offline while the hub is unavailable, except when paused or disconnected", async () => {
+  const run = async (status) => {
+    const dom = new JSDOM('<div id="tray-content"></div>', { runScripts: "outside-only", url: "http://tauri.localhost" });
+    const w = dom.window;
+    w.setInterval = () => 0;
+    w.matchMedia = () => ({ matches: false });
+    w.ResizeObserver = class { observe() {} };
+    w.lucide = { createIcons() {} };
+    w.__TAURI__ = { core: { invoke: async () => ({ name: "Mac", role: "replica", lastSync: "2026-09-30T14:02:00.000Z", volumes: [], ...status }) } };
+    try {
+      const source = fs.readFileSync(new URL("../apps/desktop/src/tray.js", import.meta.url), "utf8");
+      await w.eval(`(async () => {${source}\n})()`);
+      const heading = w.document.querySelector(".tray-heading");
+      return { text: heading.querySelector("strong").textContent, tone: [...heading.classList].find((name) => name.startsWith("tray-tone-")) };
+    } finally {
+      dom.window.close();
+    }
+  };
+  for (const phase of ["offline", "syncing", "idle", "error"])
+    assert.deepEqual(await run({ phase, hubUnavailable: true }), { text: "Offline", tone: "tray-tone-disconnected" }, phase);
+  assert.deepEqual(await run({ phase: "syncing", hubUnavailable: false }), { text: "Syncing", tone: "tray-tone-syncing" });
+  assert.deepEqual(await run({ phase: "error", hubUnavailable: false }), { text: "Needs attention", tone: "tray-tone-error" });
+  assert.deepEqual(await run({ phase: "paused", hubUnavailable: true }), { text: "Paused", tone: "tray-tone-paused" });
+  assert.deepEqual(await run({ phase: "unlinked", hubUnavailable: true }), { text: "Disconnected", tone: "tray-tone-conflict" });
+});

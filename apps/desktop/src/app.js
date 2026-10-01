@@ -14,6 +14,7 @@ const folderPageKey = (route) =>
 function knownFolderPage(route) {
   return folderPages.get(folderPageKey(route));
 }
+const recentSaved = new Map();
 async function readFolderPage(route, pending = false) {
   if (pending) return knownFolderPage(route);
   try {
@@ -85,7 +86,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.42";
+const APP_VERSION = "0.6.43";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -484,6 +485,7 @@ const api = (route, body) => {
       if (error?.status === 401 || error?.status === 403) {
         folderCacheEpoch++;
         folderPages.clear();
+        recentSaved.clear();
       }
       throw error instanceof Error
         ? error
@@ -525,6 +527,7 @@ let status,
   historyRows = [],
   historyNext = null,
   historyVersions = [],
+  historyOffline = false,
   fileRevision = null,
   submitDialog,
   renderSerial = 0,
@@ -1656,7 +1659,7 @@ function fileHistorySummary() {
   if (current && !current.created)
     return `<div class="file-history-summary"><p class="hint">Local copy · ${bytes(current.size)} · hub history unavailable</p></div>`;
   const available = current && !current.deleted;
-  return `<div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : "No retained revisions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
+  return `<div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : historyOffline ? "No saved revisions" : "No retained revisions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
 }
 
 function fileHistorySide() {
@@ -3140,7 +3143,12 @@ async function folderBrowser(v, recent, pending = false) {
       tools +
       (recent.length
         ? `<div class="history-group">${recent.map((r) => revisionRow(r, true)).join("")}</div>`
-        : empty("No revisions yet", "History appears after the first sync."))
+        : recentSaved.get(v.id)
+          ? empty(
+              "No saved revisions",
+              "Offline. Connect to the hub to load its history.",
+            )
+          : empty("No revisions yet", "History appears after the first sync."))
     );
   const parts = folderPrefix.split("/").filter(Boolean);
   const trail = `<nav class="folder-breadcrumb" aria-label="File location">${icon("folder")}${parts.length ? button(escape(v.name), "browse-directory", "", "text-button") : `<span aria-current="location">${escape(v.name)}</span>`}${parts.map((part, i) => `${icon("chevron-right")}${i === parts.length - 1 ? `<span aria-current="location">${escape(part)}</span>` : button(escape(part), "browse-directory", parts.slice(0, i + 1).join("/"), "text-button")}`).join("")}</nav>`;
@@ -3222,11 +3230,15 @@ async function renderDetail(pending = false) {
     await renderDetail(true);
   const recentRoute = `/v1/activity?volume=${encodeURIComponent(v.id)}&limit=4`;
   const known = knownFolderPage(recentRoute)?.versions;
+  const shownSaved = !!recentSaved.get(v.id);
   // Recent needs the hub; local files must not wait for it.
   const recentRead = pending
     ? null
     : readFolderPage(recentRoute).then(
-        (page) => page?.versions || known || [],
+        (page) => {
+          recentSaved.set(v.id, !!page?.offline);
+          return page?.versions || known || [];
+        },
         () => known || [],
       );
   const current = () =>
@@ -3236,7 +3248,9 @@ async function renderDetail(pending = false) {
       ? `rev ${recent[0].rev}`
       : !recent
         ? scaffoldLine("short")
-        : "Not yet";
+        : recentSaved.get(v.id)
+          ? "No saved revisions"
+          : "Not yet";
   const browser = await folderBrowser(v, known, pending);
   if (!current()) return;
   const state = stateFor(v);
@@ -3251,7 +3265,12 @@ async function renderDetail(pending = false) {
 
   // Patch only what depends on Recent, so scrolling, focus and typed search survive.
   void recentRead?.then(async (recent) => {
-    if (!current() || JSON.stringify(recent) === JSON.stringify(known)) return;
+    if (
+      !current() ||
+      (JSON.stringify(recent) === JSON.stringify(known) &&
+        !!recentSaved.get(v.id) === shownSaved)
+    )
+      return;
     const cell = $("#content .folder-stats .stat:nth-child(3) strong");
     if (cell) cell.innerHTML = revisionCell(recent);
     if (folderTab !== "recent") return;
@@ -3306,6 +3325,7 @@ async function renderHistory(
     if (!data) {
       if (cached) {
         historyVersions = [];
+        historyOffline = false;
         list.innerHTML = section("File revisions", scaffoldRow("history"));
       }
       return;
@@ -3315,10 +3335,14 @@ async function renderHistory(
     historyVersions = append
       ? [...historyVersions, ...data.versions]
       : data.versions;
+    historyOffline = !!data.offline;
     if (data.localOnly) {
       list.innerHTML = section(
         "File revisions",
-        '<p class="hint">History is unavailable while the hub is offline. Your local file is still available.</p>',
+        empty(
+          "No saved revisions for this file",
+          `Offline. Connect to the hub to load its history.${historyVersions[0] ? " Your local file is still available." : ""}`,
+        ),
       );
       return;
     }
@@ -3330,10 +3354,15 @@ async function renderHistory(
         "File revisions",
         historyVersions.length
           ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
-          : empty(
-              "No retained revisions",
-              "This file has no history available on the hub.",
-            ),
+          : data.offline
+            ? empty(
+                "No saved revisions for this file",
+                "Offline. Connect to the hub to load its history.",
+              )
+            : empty(
+                "No retained revisions",
+                "This file has no history available on the hub.",
+              ),
       ) +
       `${data.next ? `<div class="pagination">${button("Load more", "history-page", data.next)}</div>` : ""}`;
     icons();
@@ -3402,6 +3431,17 @@ const machineRow = (
 ) =>
   `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This machine</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
 
+function selfPill() {
+  if (!status.hub) return pill("Disconnected", "wa", "unlink");
+  if (status.hubUnavailable && status.phase !== "paused")
+    return pill("Offline", "wa", "wifi-off");
+  const [label, tone, symbol] = {
+    idle: ["Up to date", "ok", "circle-check"],
+    paused: ["Paused", "id", "pause"],
+    error: ["Needs attention", "er", "circle-alert"],
+  }[status.phase] || ["Syncing", "sy", "busy"];
+  return pill(label, tone, symbol);
+}
 async function renderMachines(serial = renderSerial, fetchData = true) {
   let issue = "";
   if (fetchData) {
@@ -3442,7 +3482,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     p ? escape(platformLabel(p.os || p.arca.platform)) : "";
   const row = machineRow;
   const summary = roster?.offline
-    ? '<p class="hint">Offline · showing saved machine information</p>'
+    ? '<p class="hint">Offline · showing saved machine information · last known</p>'
     : "";
   let machineRows = "";
   let html =
@@ -3512,35 +3552,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
       `<span class="tag">${escape(status.role)}</span>${status.backup?.enabled ? '<span class="tag">Backs up hub</span>' : ""}`,
       selfAddress ? `Tailscale · ${escape(selfAddress)}` : "",
       "",
-      pill(
-        !status.hub
-          ? "Disconnected"
-          : status.phase === "idle"
-            ? "Up to date"
-            : status.phase === "paused"
-              ? "Paused"
-              : status.phase === "error"
-                ? "Needs attention"
-                : "Syncing",
-        !status.hub
-          ? "wa"
-          : status.phase === "idle"
-            ? "ok"
-            : status.phase === "error"
-              ? "er"
-              : status.phase === "paused"
-                ? "id"
-                : "sy",
-        !status.hub
-          ? "unlink"
-          : status.phase === "idle"
-            ? "circle-check"
-            : status.phase === "error"
-              ? "circle-alert"
-              : status.phase === "paused"
-                ? "pause"
-                : "busy",
-      ),
+      selfPill(),
       "",
       true,
       false,
@@ -3592,20 +3604,25 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
             row(
               m.name,
               `<span class="tag">${escape(m.role)}</span>`,
-              connection(
-                peers.find(
-                  (p) =>
-                    p.arca.id === m.machineId ||
-                    p.addresses?.includes(m.lastAddress),
+              [
+                connection(
+                  peers.find(
+                    (p) =>
+                      p.arca.id === m.machineId ||
+                      p.addresses?.includes(m.lastAddress),
+                  ),
+                  m.lastAddress,
                 ),
-                m.lastAddress,
-              ),
+                roster.offline ? "last known" : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
               "",
-              pill(
-                m.revoked ? "Revoked" : "Linked",
-                m.revoked ? "er" : "id",
-                m.revoked ? "unlink" : "link",
-              ),
+              m.revoked
+                ? pill("Revoked", "er", "unlink")
+                : roster.offline && status.hubUnavailable
+                  ? pill("Offline", "id", "circle-dashed")
+                  : pill("Linked", "id", "link"),
               "",
               false,
               false,
@@ -5756,6 +5773,7 @@ async function showLogin(message = "") {
   viewReads.clear();
   folderCacheEpoch++;
   folderPages.clear();
+  recentSaved.clear();
   document.body.classList.remove("view-loading");
   $("#content").setAttribute("aria-busy", "false");
   ready = false;

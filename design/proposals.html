@@ -20,7 +20,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.42 · proposals</span>
+      <span class="kit-version">v0.6.43 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -61,45 +61,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>A yes or no on offering Download. Yes: a server replica's web file detail shows Download file for an available local file, served from its own copy with no hub request, and a JSDOM test covers it on a replica and on the hub. No: this board is deleted.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-OFF-DESK-LABELS">
-          <header><code>UI-OFF-DESK-LABELS</code><h3>Offline reads as offline on desktop</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> With the hub unreachable, this machine's own pill and the tray keep saying Syncing, and a file with nothing saved says the hub has no history for it, as if that were a fact. The proposal shows Offline in the warning pill and in the tray heading, marks other machines' details as last known, and tells never-saved from never-existed in a file's history. Copies and Recent already read this way and keep their copy. The alternative is to leave the pill alone and mark only the captions.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Machines</p>
-              <div class="kit-stack">
-                <p class="hint">Offline · showing saved machine information</p>
-                <div class="device-row"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>macbook-pro</strong><span class="tag">Replica</span><span class="tag self">This machine</span></div><p class="connection-line">macOS · native · Arca 0.6.8</p></div><div class="row-end"><span class="pill sy busy-status"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing</span></div></div>
-                <div class="device-row"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong><span class="tag">Replica</span></div><p class="connection-line">Android · Arca 0.6.8 · 192.168.1.144</p></div><div class="row-end"><span class="pill id"><span data-icon="circle-dashed"></span>Offline</span></div></div>
-              </div>
-              <p class="kit-caption">Tray</p>
-              <div class="kit-tray">
-                <div class="tray-heading tray-tone-synced"><img class="tray-brand-icon" src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="Arca" /><div class="tray-title"><strong>Syncing</strong><p>Last completed 14:02</p></div><span class="tray-role">replica</span></div>
-                <div class="tray-folders"><button type="button" class="tray-tone-synced"><span data-icon="images"></span><span class="tray-folder-name">photos</span><small>26.0 GB</small></button><button type="button" class="tray-tone-synced"><span data-icon="folder"></span><span class="tray-folder-name">documents</span><small>14.2 MB</small></button></div>
-                <div class="tray-menu"><button type="button"><span data-icon="refresh-cw"></span>Sync now<kbd>⌘R</kbd></button><button type="button"><span data-icon="pause"></span>Pause for 1 hour</button></div>
-              </div>
-              <p class="kit-caption">File detail · revisions</p>
-              <div class="empty"><span data-icon="history" data-size="24"></span><h2>No retained revisions</h2><p>This file has no history available on the hub.</p></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">Machines</p>
-              <div class="kit-stack">
-                <p class="hint">Offline · showing saved machine information · last known</p>
-                <div class="device-row"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>macbook-pro</strong><span class="tag">Replica</span><span class="tag self">This machine</span></div><p class="connection-line">macOS · native · Arca 0.6.8</p></div><div class="row-end"><span class="pill wa"><span data-icon="wifi-off"></span>Offline</span></div></div>
-                <div class="device-row"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong><span class="tag">Replica</span></div><p class="connection-line">Android · Arca 0.6.8 · 192.168.1.144 · last known</p></div><div class="row-end"><span class="pill id"><span data-icon="circle-dashed"></span>Offline</span></div></div>
-              </div>
-              <p class="kit-caption">Tray</p>
-              <div class="kit-tray">
-                <div class="tray-heading tray-tone-disconnected"><img class="tray-brand-icon" src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="Arca" /><div class="tray-title"><strong>Offline</strong><p>Last completed 14:02</p></div><span class="tray-role">replica</span></div>
-                <div class="tray-folders"><button type="button" class="tray-tone-synced"><span data-icon="images"></span><span class="tray-folder-name">photos</span><small>26.0 GB</small></button><button type="button" class="tray-tone-synced"><span data-icon="folder"></span><span class="tray-folder-name">documents</span><small>14.2 MB</small></button></div>
-                <div class="tray-menu"><button type="button"><span data-icon="refresh-cw"></span>Sync now<kbd>⌘R</kbd></button><button type="button"><span data-icon="pause"></span>Pause for 1 hour</button></div>
-              </div>
-              <p class="kit-caption">File detail · revisions</p>
-              <div class="empty"><span data-icon="history" data-size="24"></span><h2>No saved revisions for this file</h2><p>Offline. Connect to the hub to load its history.</p></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>The Machines pill of this machine and the tray heading read Offline while the hub is unavailable (never Syncing, never a green state); saved Machines rows say last known; a file with no saved revisions says so instead of claiming the hub has none. JSDOM and tray tests cover each line; <code>design/desktop.html</code> shows the Offline pill.</p></div></div>
         </article>
         <article class="kit-board" data-board="UI-DESK-SAVED-FILE-HISTORY">
           <header><code>UI-DESK-SAVED-FILE-HISTORY</code><h3>Offline file history without holes</h3><span>Desktop</span></header>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.43 — 2026-10-01
+
+- On desktop and web, a replica whose hub is unreachable now says Offline in its own Machines pill and in the tray heading instead of Syncing, other machines in the saved list read Offline and last known, and Recent and a file with no saved revisions say so ("No saved revisions") instead of claiming the hub has none.
+
+Needs: desktop build
+
 ## 0.6.42 — 2026-10-01
 
 - Internal: the design kit becomes a self-contained module with its own contract, a Proposals tab for visual ideas that are still proposals and a generator (`npm run design`) for the mobile tokens and the favicon.

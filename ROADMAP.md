@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **OFF-DESK-LABELS** — Offline shows as Syncing, and saved or empty data is not labelled
-  `bug · agent · normal`
-  accept: Machines' "This machine" pill and the tray show Offline (not Syncing or a green "offline"); saved or never-saved Machines, Copies, Recent and file-detail history say so ("last known", "No saved revisions for this file") instead of "No retained revisions" or claiming there is nothing. JSDOM and tray tests. The interface follows board UI-OFF-DESK-LABELS.
 - **MOB-CRASH-RECORD** — Record crashes from a global error handler
   `feature · agent · normal`
   accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display. The interface follows board UI-MOB-CRASH-RECORD.
@@ -72,7 +69,7 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: OFF-DESK-LABELS, OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: OFF-MOB-LABELS, BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
@@ -309,6 +306,10 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DESK-HUB-ONLY-MORE** — Backup controls stay enabled on a replica while the hub is unavailable
   `bug · agent · low`
   accept: on a desktop or server replica, Enable and Disable full backup and their Choose… picker are disabled with "Needs the hub, which is unavailable." while the hub is unavailable (they call `/v1/backup`, which answers 503 offline), and follow reconnection like the other hub-only controls; a JSDOM test with the `hubOnlyActions` list. The interface follows board UI-DESK-HUB-ONLY-MORE.
+
+- **DESK-NATIVE-TRAY-OFFLINE** — The native tray still says "needs attention" while the hub is unavailable
+  `bug · agent · normal`
+  accept: on macOS and Windows the tray icon, tooltip and status menu item read Offline (not the alert icon or "Arca · needs attention") while the hub is unavailable and the replica is not paused; today `tray_state` in `apps/desktop/src-tauri/src/main.rs` returns the alert state whenever `status.error` is set and any unknown phase, including "offline", falls to "needs attention"; a Rust test next to the existing `tray_state` test. Needs a desktop build.
 
 ## Later phases
 

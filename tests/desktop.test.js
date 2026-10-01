@@ -1081,6 +1081,194 @@ test("hub-only actions are disabled with a reason while the hub is unavailable a
   }
 });
 
+test("offline labels: this machine reads Offline, saved machines say last known and nothing-saved screens say so", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-offline-labels-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const hubDown = true;
+  let saved = true;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return {
+            ...daemon.engine.status(),
+            role: "replica",
+            phase: hubDown ? "offline" : "syncing",
+            hubUnavailable: hubDown,
+            hubName: "Casa",
+            hub: "http://127.0.0.1:49999",
+          };
+        if (args.route === "/v1/remote") return { offline: saved, name: "Casa", volumes: [{ ...volume, selected: 1 }] };
+        if (args.route === "/v1/machines")
+          return {
+            offline: saved,
+            machines: [
+              { name: "phone-fold", role: "replica", platform: "android", machineId: "fold", lastAddress: "192.168.1.144", isHub: false },
+            ],
+          };
+        if (args.route.startsWith("/v1/history")) {
+          if (args.route.includes("local-only.txt"))
+            return { offline: true, localOnly: true, versions: [{ rev: 7, size: 12, deleted: 0 }], next: null };
+          if (args.route.includes("empty-saved.txt")) return { offline: true, versions: [], next: null };
+          return { offline: true, localOnly: true, versions: [], next: null };
+        }
+        if (args.route.startsWith("/v1/activity")) return { offline: saved, versions: [], next: null };
+        if (args.route.startsWith("/v1/browse")) return { entries: [], next: null };
+        return {};
+      },
+    },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  const body = () => w.document.body.textContent;
+  const machines = async () => {
+    w.document.querySelector('[data-view="devices"]').click();
+    await until(() => w.document.querySelectorAll(".device-row").length >= 3);
+    const rows = [...w.document.querySelectorAll(".device-row")];
+    return {
+      own: rows.find((row) => row.querySelector(".tag.self")),
+      other: rows.find((row) => /phone-fold/.test(row.textContent)),
+    };
+  };
+  const { own, other } = await machines();
+  assert.equal(own.querySelector(".pill").textContent.trim(), "Offline");
+  assert.ok(own.querySelector(".pill.wa"), "a warning pill, never Syncing or a green state");
+  assert.equal(other.querySelector(".pill").textContent.trim(), "Offline");
+  assert.match(other.querySelector(".connection-line").textContent, / · last known$/);
+  assert.match(w.document.querySelector("#content").textContent, /Offline · showing saved machine information · last known/);
+  const openFile = async (file, expected, gone = /^$/) => {
+    const forced = w.document.createElement("button");
+    forced.dataset.action = "activity-file";
+    forced.dataset.id = JSON.stringify({ volume: volume.id, path: file });
+    w.document.body.append(forced);
+    forced.click();
+    await until(() => body().includes(file) && expected.test(body()) && !gone.test(body()));
+    forced.remove();
+  };
+  await openFile("nothing-saved.txt", /No saved revisions for this file/);
+  assert.match(body(), /Offline\. Connect to the hub to load its history\./);
+  assert.doesNotMatch(body(), /Your local file is still available|No retained revisions/, "no local row, so it does not promise one");
+  await openFile("local-only.txt", /Your local file is still available/);
+  assert.match(body(), /No saved revisions for this file/);
+  assert.match(body(), /Local copy/);
+  await openFile("empty-saved.txt", /No saved revisions for this file/, /Local copy|Your local file is still available/);
+  assert.doesNotMatch(body(), /Your local file is still available|No retained revisions/);
+  const recent = () => w.document.querySelector("#content").textContent;
+  const cell = () => w.document.querySelector("#content .folder-stats .stat:nth-child(3) strong")?.textContent;
+  const openRecent = async () => {
+    w.document.querySelector('[data-view="folders"]').click();
+    await until(() => w.document.querySelector('[data-action="folder-detail"]'));
+    w.document.querySelector('[data-action="folder-detail"]').click();
+    await until(() => w.document.querySelector('[data-action="folder-tab"][data-id="recent"]'));
+    w.document.querySelector('[data-action="folder-tab"][data-id="recent"]').click();
+  };
+  await openRecent();
+  await until(() => /Offline\. Connect to the hub to load its history\./.test(recent()));
+  assert.match(recent(), /No saved revisions/);
+  assert.equal(cell(), "No saved revisions");
+  assert.doesNotMatch(recent(), /No revisions yet/);
+  const refresh = w.document.createElement("button");
+  refresh.dataset.action = "refresh";
+  w.document.body.append(refresh);
+  saved = false;
+  refresh.click();
+  await until(() => /No revisions yet/.test(recent()));
+  assert.equal(cell(), "Not yet", "a live empty answer is not 'saved'");
+  assert.doesNotMatch(recent(), /Connect to the hub to load its history/);
+  saved = true;
+  refresh.click();
+  await until(() => /Offline\. Connect to the hub to load its history\./.test(recent()));
+  assert.equal(cell(), "No saved revisions", "equal empty pages still repaint when only the saved flag changes");
+  await until(() => w.document.body.getAttribute("aria-busy") !== "true");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+});
+
+test("a paused replica stays Paused and a live list while the hub is unavailable stays Linked", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-paused-labels-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  let phase = "paused";
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase, hubUnavailable: true, hubName: "Casa", hub: "http://127.0.0.1:49999" };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [] };
+        if (args.route === "/v1/machines")
+          return { machines: [{ name: "phone-fold", role: "replica", platform: "android", machineId: "fold", lastAddress: "192.168.1.144", isHub: false }] };
+        return {};
+      },
+    },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  w.document.querySelector('[data-view="devices"]').click();
+  await until(() => w.document.querySelectorAll(".device-row").length >= 3);
+  const rows = [...w.document.querySelectorAll(".device-row")];
+  assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").textContent.trim(), "Paused", "pausing is a choice that outranks Offline");
+  const other = rows.find((row) => /phone-fold/.test(row.textContent));
+  assert.equal(other.querySelector(".pill").textContent.trim(), "Linked", "a live list is never marked Offline just because the hub is");
+  assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
+});
+
+test("online, the machines list keeps real states and never says last known", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-online-labels-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: "syncing", hubUnavailable: false, hubName: "Casa", hub: "http://127.0.0.1:49999" };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [] };
+        if (args.route === "/v1/machines")
+          return { machines: [{ name: "phone-fold", role: "replica", platform: "android", machineId: "fold", lastAddress: "192.168.1.144", isHub: false }] };
+        return {};
+      },
+    },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  w.document.querySelector('[data-view="devices"]').click();
+  await until(() => w.document.querySelectorAll(".device-row").length >= 3);
+  const rows = [...w.document.querySelectorAll(".device-row")];
+  assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").textContent.trim(), "Syncing");
+  const other = rows.find((row) => /phone-fold/.test(row.textContent));
+  assert.equal(other.querySelector(".pill").textContent.trim(), "Linked");
+  assert.doesNotMatch(w.document.querySelector("#content").textContent, /last known|showing saved machine information/);
+});
+
 test("hub-only controls follow the hub's availability and a status-less 'Hub unavailable' failure reads as hub-only", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-hub-flip-ui-"));
   init(home, { port: 0, name: "Local Mac" });

@@ -42,11 +42,13 @@ async function refresh() {
       unlinked: "Disconnected",
       "needs-folder": "Choose a shared folder",
     };
-    const label = labels[state.phase] || state.phase;
+    const offline =
+      state.hubUnavailable && !["paused", "unlinked"].includes(state.phase);
+    const label = offline ? "Offline" : labels[state.phase] || state.phase;
     const folderScroll =
       document.querySelector(".tray-folders")?.scrollTop || 0;
     document.querySelector("#tray-content").innerHTML =
-      `<div class="tray-heading tray-tone-${state.phase === "error" ? "error" : state.phase === "unlinked" ? "conflict" : state.phase === "paused" ? "paused" : state.phase === "syncing" ? "syncing" : "synced"}"><img class="tray-brand-icon" src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><div class="tray-title"><strong>${escape(label)}</strong><p>${state.lastSync ? "Last completed " + new Date(state.lastSync).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "Not yet verified"}</p></div><span class="tray-role">${escape(state.role)}</span></div><div class="tray-folders">${state.volumes
+      `<div class="tray-heading tray-tone-${offline ? "disconnected" : state.phase === "error" ? "error" : state.phase === "unlinked" ? "conflict" : state.phase === "paused" ? "paused" : state.phase === "syncing" ? "syncing" : "synced"}"><img class="tray-brand-icon" src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><div class="tray-title"><strong>${escape(label)}</strong><p>${state.lastSync ? "Last completed " + new Date(state.lastSync).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "Not yet verified"}</p></div><span class="tray-role">${escape(state.role)}</span></div><div class="tray-folders">${state.volumes
         .filter((v) => v.selected)
         .map((v) => {
           const phase =
