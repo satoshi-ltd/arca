@@ -218,7 +218,7 @@ export class ReplicaStore {
   async galleryWork(scope, volume, now, limit = 3) {
     return (
       await this.db.getAllAsync(
-        "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed') AND retryAt<=? ORDER BY retryAt,asset LIMIT ?",
+        "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable') AND retryAt<=? ORDER BY retryAt,asset LIMIT ?",
         scope,
         volume,
         now,
@@ -229,7 +229,7 @@ export class ReplicaStore {
   async galleryManual(scope, volume, now, limit) {
     return (
       await this.db.getAllAsync(
-        "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed') AND retryAt<=? AND json_extract(row,'$.manual')=1 ORDER BY retryAt,asset LIMIT ?",
+        "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable') AND retryAt<=? AND json_extract(row,'$.manual')=1 ORDER BY retryAt,asset LIMIT ?",
         scope,
         volume,
         now,
@@ -278,7 +278,7 @@ export class ReplicaStore {
   }
   async galleryPreview(scope, volume, accepted, limit = 12, offset = 0) {
     const rows = await this.db.getAllAsync(
-      `SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND ${accepted ? "state='accepted'" : "state NOT IN ('accepted','removed')"}
+      `SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND ${accepted ? "state='accepted'" : "state NOT IN ('accepted','removed','unavailable')"}
        ORDER BY ${accepted ? "COALESCE(json_extract(row, '$.acceptedAt'), json_extract(row, '$.creationTime'),0) DESC, asset" : "CASE state WHEN 'failed' THEN 0 WHEN 'uploading' THEN 1 ELSE 2 END, asset"} LIMIT ? OFFSET ?`,
       scope,
       volume,
@@ -292,7 +292,7 @@ export class ReplicaStore {
       `SELECT COUNT(*) AS discovered,
       COALESCE(SUM(state='accepted'),0) AS accepted,
       COALESCE(SUM(state='failed'),0) AS failed,
-      COALESCE(SUM(state NOT IN ('accepted','removed')),0) AS pending,
+      COALESCE(SUM(state NOT IN ('accepted','removed','unavailable')),0) AS pending,
       (SELECT COALESCE(SUM(size),0) FROM (
         SELECT DISTINCT json_extract(resource.value, '$.path') AS path,
           json_extract(resource.value, '$.hash') AS hash,
@@ -309,7 +309,7 @@ export class ReplicaStore {
   }
   async retryGallery(scope, volume) {
     await this.db.runAsync(
-      "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed')",
+      "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable')",
       scope,
       volume,
     );

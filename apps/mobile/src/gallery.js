@@ -153,6 +153,7 @@ export class Gallery {
         if (!asset.assetId)
           item.picked = { uri: asset.uri, name: item.name, key: "original" };
         item.manual = true;
+        if (item.state === "unavailable") item.state = "pending";
         item.retryAt = 0;
         await r.store.putGalleryAsset(r.scope, volume, item);
         if (!queued.some((previous) => previous.id === item.id))
@@ -323,6 +324,32 @@ export class Gallery {
     }
     await r.store.putGalleryAsset(r.scope, folder.id, item);
     return result.removed;
+  }
+  async gone(id) {
+    if (!this.media.exists) return false;
+    try {
+      return !(await this.media.exists(id));
+    } catch {
+      return false;
+    }
+  }
+  async release(folder, item) {
+    if (item.previousResources) {
+      const fresh = new Map(
+        (item.resources || [])
+          .filter((resource) => resource.accepted)
+          .map((resource) => [resource.key, resource]),
+      );
+      item.state = "accepted";
+      item.resources = item.previousResources.map(
+        (resource) => fresh.get(resource.key) || resource,
+      );
+      delete item.previousResources;
+      delete item.modificationTime;
+    } else item.state = "unavailable";
+    item.issue = null;
+    item.retryAt = 0;
+    await this.r.store.putGalleryAsset(this.r.scope, folder.id, item);
   }
   async send(folder, item, policy) {
     const r = this.r;
@@ -606,6 +633,14 @@ export class Gallery {
               prefix: source.prefix,
               state: "pending",
             });
+          } else if (known.state === "unavailable") {
+            await r.store.putGalleryAsset(r.scope, folder.id, {
+              ...known,
+              modificationTime: asset.modificationTime,
+              state: "pending",
+              retryAt: 0,
+              issue: null,
+            });
           } else if (
             known.state === "accepted" &&
             Number.isFinite(asset.modificationTime) &&
@@ -651,6 +686,16 @@ export class Gallery {
             isHubUnreachable(error)
           )
             throw error;
+          if (
+            error.code === "SOURCE_UNAVAILABLE" &&
+            !item.picked &&
+            permission.granted &&
+            permission.accessPrivileges !== "limited" &&
+            (await this.gone(item.id))
+          ) {
+            await this.release(folder, item);
+            continue;
+          }
           item.state = "failed";
           item.issue = error.message;
           item.retryAt = Date.now() + 60000;

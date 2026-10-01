@@ -32,5 +32,14 @@ export const mediaLibrary = {
       modificationTime: asset.modificationTime,
     };
   },
+  async exists(id) {
+    try {
+      return !!(await MediaLibrary.getAssetInfoAsync(id, {
+        shouldDownloadFromNetwork: false,
+      }));
+    } catch {
+      return true;
+    }
+  },
   export: (id, destination) => native.exportGalleryAsset(id, destination),
 };

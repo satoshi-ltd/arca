@@ -4315,3 +4315,178 @@ test("mobile counts a folder's applied changes so views relist only when its fil
   await sync(f);
   assert.ok(replica.folderChanges.get(volume.id) > first, "a remote rename relists");
 });
+
+const twoPhotos = [
+  { id: "photo-1", filename: "IMG_1234.HEIC", creationTime: 1750000000000, modificationTime: 1 },
+  { id: "photo-2", filename: "IMG_5678.HEIC", creationTime: 1750000001000, modificationTime: 1 },
+];
+const listed = (dir) =>
+  fs.existsSync(dir)
+    ? fs.readdirSync(dir, { recursive: true }).map((name) => String(name))
+    : [];
+
+test("a photo deleted from the library before it uploads leaves the pending counts, is never retried and touches no hub copy", async (t) => {
+  const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+  const { replica: r, store, volume } = f;
+  f.media.exists = async (id) => f.data.has(id);
+  const routes = [];
+  const api = f.client.api.bind(f.client);
+  f.client.api = (route, body, options) => {
+    routes.push(route);
+    return api(route, body, options);
+  };
+  f.data.delete("photo-1");
+  await f.enable();
+  await r.sync();
+  const gone = await store.galleryAsset(r.scope, volume.id, "photo-1");
+  assert.equal(gone.state, "unavailable");
+  assert.equal(gone.issue, null);
+  const summary = await store.gallerySummary(r.scope, volume.id);
+  assert.equal(summary.pending, 0);
+  assert.equal(summary.failed, 0);
+  assert.equal(summary.accepted, 1, "the other photo still uploads in the same run");
+  assert.equal((await store.gallery(r.scope, volume.id)).issue, null, "no failure is left on the album");
+  assert.equal((await store.galleryPreview(r.scope, volume.id, false)).length, 0, "the Pending uploads row is empty");
+  assert.equal(listed(volume.path).some((name) => name.includes("IMG_1234")), false, "nothing of it reached the hub");
+  assert.equal(listed(volume.path).some((name) => name.includes("IMG_5678")), true);
+  const attempts = f.exports.filter((id) => id === "photo-1").length;
+  f.assets.splice(0, 1);
+  await r.sync(true);
+  await r.sync(true);
+  assert.equal(f.exports.filter((id) => id === "photo-1").length, attempts, "it is not exported again");
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "unavailable", "the row stays");
+  assert.equal(routes.some((route) => /gallery\/(delete|remove)/.test(route)), false, "a library deletion is never published");
+  assert.equal(r.error, null);
+});
+
+test("an unavailable photo that comes back with the same id uploads again", async (t) => {
+  const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+  const { replica: r, store, volume } = f;
+  f.media.exists = async (id) => f.data.has(id);
+  f.data.delete("photo-1");
+  await f.enable();
+  await r.sync();
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "unavailable");
+  f.data.set("photo-1", Buffer.from("original photo-1"));
+  await r.sync(true);
+  const back = await store.galleryAsset(r.scope, volume.id, "photo-1");
+  assert.equal(back.state, "accepted");
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).accepted, 2);
+  assert.equal(listed(volume.path).some((name) => name.includes("IMG_1234")), true);
+});
+
+test("limited photo access or a failed lookup never turns a missing export into a terminal state", async (t) => {
+  const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+  const { replica: r, store, volume } = f;
+  f.data.delete("photo-1");
+  f.media.exists = async () => false;
+  f.media.permission = async () => ({ granted: true, accessPrivileges: "limited" });
+  await f.enable();
+  await r.sync();
+  let row = await store.galleryAsset(r.scope, volume.id, "photo-1");
+  assert.equal(row.state, "failed", "limited access cannot tell a deleted photo from a hidden one");
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).failed, 1);
+  f.media.permission = async () => ({ granted: false, accessPrivileges: "limited" });
+  await r.sync(true);
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "failed", "also when the system reports limited as not granted");
+  f.media.permission = async () => ({ granted: true, accessPrivileges: "all" });
+  f.media.exists = async () => {
+    throw new Error("Library unavailable");
+  };
+  await r.sync(true);
+  row = await store.galleryAsset(r.scope, volume.id, "photo-1");
+  assert.equal(row.state, "failed", "a lookup that cannot answer keeps the retry");
+  assert.equal(r.error, null, "and the failed lookup does not fail the cycle");
+  f.media.exists = async (id) => f.data.has(id);
+  await r.sync(true);
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "unavailable", "a confirmed deletion with full access is terminal");
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).failed, 0);
+});
+
+test("an accepted photo that was edited and then deleted goes back to accepted with its uploaded resources", async (t) => {
+  const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+  const { replica: r, store, volume } = f;
+  f.media.exists = async (id) => f.data.has(id);
+  await f.enable();
+  await r.sync();
+  const before = await store.galleryAsset(r.scope, volume.id, "photo-1");
+  assert.equal(before.state, "accepted");
+  const uploads = f.exports.filter((id) => id === "photo-1").length;
+  f.assets[0].modificationTime = 2;
+  f.data.delete("photo-1");
+  await r.sync(true);
+  const after = await store.galleryAsset(r.scope, volume.id, "photo-1");
+  assert.equal(after.state, "accepted");
+  assert.deepEqual(after.resources, before.resources, "the hub keeps the revision it accepted");
+  assert.equal(after.previousResources, undefined);
+  assert.equal(after.issue, null);
+  const summary = await store.gallerySummary(r.scope, volume.id);
+  assert.equal(summary.pending, 0);
+  assert.equal(summary.failed, 0);
+  f.assets.splice(0, 1);
+  await r.sync(true);
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "accepted");
+  assert.equal(f.exports.filter((id) => id === "photo-1").length, uploads + 1, "only the attempted re-export of the edit");
+});
+
+test("a pick that fails stays failed, an unavailable id picked again leaves the terminal state, and a retry never revives unavailable rows", async (t) => {
+  const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+  const { replica: r, store, volume } = f;
+  f.media.exists = async () => false;
+  await f.enable();
+  const uri = path.join(f.root, "vanishing.jpg");
+  fs.writeFileSync(uri, "soon gone");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(volume.id, [{ uri, fileName: "vanishing.jpg" }]));
+  fs.rmSync(uri);
+  f.online();
+  f.data.delete("photo-1");
+  await r.sync(true);
+  const failed = (await store.galleryPreview(r.scope, volume.id, false, 24)).filter((item) => item.picked);
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].state, "failed", "a picked file that is gone is not a library deletion");
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "unavailable");
+  await store.db.runAsync("UPDATE gallery_assets SET retryAt=999 WHERE asset=?", "photo-1");
+  await store.retryGallery(r.scope, volume.id);
+  const kept = await store.db.getFirstAsync("SELECT retryAt FROM gallery_assets WHERE asset=?", "photo-1");
+  assert.equal(kept.retryAt, 999, "a retry does not revive an unavailable row");
+  f.data.set("photo-1", Buffer.from("original photo-1"));
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(volume.id, [{ assetId: "photo-1", fileName: "IMG_1234.HEIC" }]));
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "pending", "picking it again queues it");
+  f.online();
+  await r.sync(true);
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "accepted");
+});
+
+test("an edit that reappears after the photo was gone uploads again, and a partly uploaded edit keeps its accepted resources", async (t) => {
+  const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+  const { replica: r, store, volume } = f;
+  f.media.exists = async (id) => f.data.has(id);
+  await f.enable();
+  await r.sync();
+  f.assets[0].modificationTime = 2;
+  f.data.delete("photo-1");
+  await r.sync(true);
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "accepted");
+  f.data.set("photo-1", Buffer.from("edited photo-1"));
+  await r.sync(true);
+  const edited = await store.galleryAsset(r.scope, volume.id, "photo-1");
+  assert.equal(edited.state, "accepted");
+  assert.equal(edited.modificationTime, 2, "the edit that came back was uploaded");
+  const item = {
+    id: "x",
+    state: "pending",
+    previousResources: [
+      { key: "a", hash: "old-a", accepted: true },
+      { key: "b", hash: "old-b", accepted: true },
+    ],
+    resources: [
+      { key: "a", hash: "new-a", accepted: true },
+      { key: "b", hash: "new-b", accepted: false },
+    ],
+  };
+  await r.gallery.release(f.volume, item);
+  assert.deepEqual(item.resources.map((resource) => resource.hash), ["new-a", "old-b"], "what the hub accepted wins, the rest keeps the old revision");
+  assert.equal(item.state, "accepted");
+});
