@@ -55,8 +55,13 @@ Rules of the loop:
 - Implement only the approved scope. You may propose product or UX changes, but never implement proposals, additional controls or new flows without the maintainer's explicit validation. Within approved work, use the shared tokens and components and update SPEC's design section.
 - Every functional change ships with tests that fail without it. CI runs on Ubuntu, macOS and Windows; `tests/mobile-*.test.js` runs on Ubuntu only because that code ships to phones. Build filesystem expectations with `path.join`/`path.sep`, never a hardcoded `/`, and never assume one platform's temp directory or line endings.
 - Mobile build-tooling tests live in `apps/mobile` (`npm test` there), not in the root suite; CI never builds mobile installers.
-- Each environment owns its commands: the root keeps the daemon, tests and site; `apps/desktop` has `start`, `start:clean`, `ui`, `build`, `release` and `verify:bundle`; `apps/mobile` has its build scripts. Run them with `--prefix`; add no aliases at the root.
+- Each environment owns its commands: the root keeps the daemon, tests, site and the design kit (`npm run design`); `apps/desktop` has `start`, `start:clean`, `ui`, `build`, `release` and `verify:bundle`; `apps/mobile` has its build scripts. Run them with `--prefix`; add no aliases at the root.
 - No TypeScript, no inline styles, no overengineering.
+- **Design kit.** After a visible change, update the hand-authored pages in `design/` and run `npm run design`; the design-kit contract, board format and lifecycle live in `design/AGENTS.md`.
+- **Views in sync.** The views (System and every interface tab) show what ships; Proposals shows what is proposed.
+  Shipping a proposal is one change: the code, the views regenerated so they show the new design, the board deleted,
+  its `ui` line deleted, and the changelog and the spec updated. A board left standing after its change shipped, or a
+  view that still draws the old look, fails the adversarial review before the commit.
 - App-owned text is English until the i18n phase; preserve user names, paths and content. Conversation with the maintainer is Spanish.
 - The desktop updater signs payloads with `TAURI_SIGNING_PRIVATE_KEY` (public half in `tauri.conf.json`). Never commit the private key; `apps/desktop/src/app.js` reports its version only through `APP_VERSION`.
 - Enable the hooks once per clone: `git config core.hooksPath .githooks` (`pre-push` repeats the version check and the CI suite). Remote: `git@github.com:satoshi-ltd/arca.git`.

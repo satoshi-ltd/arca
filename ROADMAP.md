@@ -9,7 +9,7 @@ This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operati
 Every task is one entry that a single commit can finish, with fixed fields (decisions only need their question):
 
 - **ID** — stable, never reused. Keep an existing ID when SPEC or the changelog cites it.
-- **type** — `bug`, `feature`, `chore`, `verify` (evidence from a real device or environment), `deploy` (build, install or publish outside the repository) or `decision`.
+- **type** — `bug`, `feature`, `chore`, `ui` (a visual change whose proposal is a board on `design/proposals.html`), `verify` (evidence from a real device or environment), `deploy` (build, install or publish outside the repository) or `decision`.
 - **owner** — `agent` (Claude can finish it in the repository and prove it with tests) or `maintainer` (needs a device, a native build, Casa, credentials or a product choice).
 - **priority** — `high`, `normal` or `low`. Within a lane, order is priority, then position.
 - **depends** — IDs that must finish first.
@@ -22,22 +22,22 @@ Lanes:
 - **Needs maintainer** — `verify`, `deploy` and `decision` tasks, and agent work waiting on one of them.
 - **Proposed** — ideas not yet approved, from the maintainer or from Claude. Never worked on until approved.
 
-When a task ships, delete it and record it in the changelog and in the SPEC section it changes. When a feature needs device evidence, split it: the implementation is an agent task; the device check is a maintainer `verify` task that depends on it. The loop never builds native code, so a `NAT-*` task ends with its JavaScript and contract tests; its compile and device evidence come from a maintainer build (BUILD-MOBILE or BUILD-IOS) recorded as a follow-up `verify`.
+A purely visual idea is not filed here as Proposed: its board in `design/proposals.html` is the proposal. Once the maintainer approves it, it enters Queue as a `ui` task with the board ID and `accept: the board`; when it ships, delete the task and the board. A task that mixes logic and a screen splits: the screen is board `UI-<TASKID>`, the logic stays under its ID and its accept says "the interface follows board UI-<TASKID>"; a board ID never equals a non-`ui` task ID. When a task ships, delete it and record it in the changelog and in the SPEC section it changes. When a feature needs device evidence, split it: the implementation is an agent task; the device check is a maintainer `verify` task that depends on it. The loop never builds native code, so a `NAT-*` task ends with its JavaScript and contract tests; its compile and device evidence come from a maintainer build (BUILD-MOBILE or BUILD-IOS) recorded as a follow-up `verify`.
 
 ## Queue
 
 - **OFF-DESK-LABELS** — Offline shows as Syncing, and saved or empty data is not labelled
   `bug · agent · normal`
-  accept: Machines' "This machine" pill and the tray show Offline (not Syncing or a green "offline"); saved or never-saved Machines, Copies, Recent and file-detail history say so ("last known", "No saved revisions for this file") instead of "No retained revisions" or claiming there is nothing. JSDOM and tray tests.
+  accept: Machines' "This machine" pill and the tray show Offline (not Syncing or a green "offline"); saved or never-saved Machines, Copies, Recent and file-detail history say so ("last known", "No saved revisions for this file") instead of "No retained revisions" or claiming there is nothing. JSDOM and tray tests. The interface follows board UI-OFF-DESK-LABELS.
 - **MOB-CRASH-RECORD** — Record crashes from a global error handler
   `feature · agent · normal`
-  accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display.
+  accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display. The interface follows board UI-MOB-CRASH-RECORD.
 - **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
   `feature · agent · normal`
   accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
 - **OFF-MOB-LABELS** — Offline empty states on phones read as if there were no data
   `bug · agent · low`
-  accept: Recent, file detail and a photo folder without local files distinguish "nothing saved while offline" from "no revisions" and never show a raw last error without Retry. Layout or replica tests.
+  accept: Recent, file detail and a photo folder without local files distinguish "nothing saved while offline" from "no revisions" and never show a raw last error without Retry. Layout or replica tests. The interface follows board UI-OFF-MOB-LABELS.
 - **CI-TIDY** — Workflow consistency
   `chore · agent · low`
   accept: `publish-site.yml` uses the same `actions/checkout` and `actions/setup-node` majors as the other workflows, and the misindented `fi` in `publish.yml` is fixed; actionlint passes.
@@ -170,8 +170,6 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
   `decision · maintainer · low`
 - **DEC-PICKER-GALLERY** — Remove the unreachable picker-only gallery path?
   `decision · maintainer · low`
-- **DEC-INFO-NOTICE** — Default colour of info notices: inverted paper or green?
-  `decision · maintainer · low`
 - **DEC-CONVERTING-LEGACY** — Remove the legacy `converting` mode on phones?
   `decision · maintainer · normal`
   accept: a yes or no. `replica.js`, `App.jsx` and a test still recover a folder interrupted mid-way through the former upload-only-to-working-copy transition (`converting` mode, restoring missing indexed files before switching to `source`); AGENTS.md forbids legacy modes, yet a phone could still hold that state.
@@ -278,14 +276,14 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
   accept: the conflict dialog's download links on a server replica's web view use a route the replica serves (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409); DOM and API tests.
 - **WEB-REPLICA-DOWNLOAD** — Download button in a replica's web file detail (product proposal)
   `decision · maintainer · low`
-  accept: a yes or no on offering Download for local files in a server replica's web file detail (today only the hub shows it).
+  accept: a yes or no on offering Download for local files in a server replica's web file detail (today only the hub shows it). If yes, the interface follows board UI-WEB-REPLICA-DOWNLOAD.
 - **DESK-GALLERY-COUNT** — Gallery header counts only dated months
   `bug · agent · low`
   accept: the desktop gallery header counts every loaded photo and video, including those still waiting for a capture date (it read "0 photos" over three tiles); a DOM test.
 
 - **DESK-SAVED-FILE-HISTORY** — Offline file history is a partial union of saved windows
   `bug · agent · low`
-  accept: saved file history keeps only rows without holes (no row older than the oldest entry of any saved window that was full), its hint says "recent entries only" like the folder view, and Restore is disabled while `offline`; a daemon test with a busy folder.
+  accept: saved file history keeps only rows without holes (no row older than the oldest entry of any saved window that was full), its hint says "recent entries only" like the folder view, and Restore is disabled while `offline`; a daemon test with a busy folder. The interface follows board UI-DESK-SAVED-FILE-HISTORY.
 - **DESK-SELECT-CATALOG** — A folder selected while paused is missing from History
   `bug · agent · low`
   accept: `select` adds the folder to the saved catalog so History includes it before the next cycle; a replica test with a paused replica.
@@ -310,7 +308,7 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 
 - **DESK-HUB-ONLY-MORE** — Backup controls stay enabled on a replica while the hub is unavailable
   `bug · agent · low`
-  accept: on a desktop or server replica, Enable and Disable full backup and their Choose… picker are disabled with "Needs the hub, which is unavailable." while the hub is unavailable (they call `/v1/backup`, which answers 503 offline), and follow reconnection like the other hub-only controls; a JSDOM test with the `hubOnlyActions` list.
+  accept: on a desktop or server replica, Enable and Disable full backup and their Choose… picker are disabled with "Needs the hub, which is unavailable." while the hub is unavailable (they call `/v1/backup`, which answers 503 offline), and follow reconnection like the other hub-only controls; a JSDOM test with the `hubOnlyActions` list. The interface follows board UI-DESK-HUB-ONLY-MORE.
 
 ## Later phases
 

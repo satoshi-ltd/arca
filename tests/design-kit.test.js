@@ -3,19 +3,19 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mobileTokens } from "../scripts/design-tokens.js";
+import { mobileTokens } from "../design/build.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (...parts) =>
   fs.readFileSync(path.join(root, ...parts), "utf8").replace(/\r\n/g, "\n");
-const pages = ["index.html", "desktop.html", "mobile.html"];
+const pages = ["index.html", "desktop.html", "mobile.html", "proposals.html"];
 const kitStyles = [read("design", "kit.css"), read("design", "mobile.css")];
 
 test("the design kit's mobile tokens are generated from the app palette and geometry", () => {
   assert.equal(
     read("design", "mobile-tokens.css"),
     mobileTokens(),
-    "run `node scripts/design-tokens.js` after changing palette.js or design-tokens.js",
+    "run `npm run design` after changing palette.js or design-tokens.js",
   );
 });
 
@@ -63,4 +63,29 @@ test("design styles take every colour and size from defined tokens", () => {
     assert.ok(names.has(name), `${name} is not a defined token`);
   for (const css of kitStyles)
     assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "kit styles use tokens, not literal colours");
+});
+
+test("every design page links a favicon inside design/ that equals the project icon", () => {
+  const source = fs.readFileSync(
+    path.join(root, "apps", "desktop", "src", "assets", "arca-icon.svg"),
+  );
+  const found = fs
+    .readdirSync(path.join(root, "design"))
+    .filter((name) => name.endsWith(".html"));
+  assert.deepEqual([...found].sort(), [...pages].sort());
+  assert.equal(found.length, 4);
+  for (const page of found) {
+    const href = read("design", page).match(
+      /<link rel="icon" href="([^"]+)"/,
+    )?.[1];
+    assert.ok(href, `${page} links no favicon`);
+    assert.ok(!href.startsWith("."), `${page} favicon leaves design/`);
+    const file = path.join(root, "design", href);
+    assert.ok(fs.existsSync(file), `${page} favicon ${href} is missing`);
+    assert.deepEqual(
+      fs.readFileSync(file),
+      source,
+      "run `npm run design` to refresh design/favicon.svg",
+    );
+  }
 });

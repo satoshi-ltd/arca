@@ -22,3 +22,4 @@ apps/mobile/modules/**/android/.gradle/
 
 /site/release.json
 CLAUDE.md
+design/CLAUDE.md

@@ -265,6 +265,110 @@ body.kit {
   color: var(--mute);
   margin-top: var(--space-2);
 }
+.kit-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+.kit-empty strong {
+  font-size: var(--text-row);
+}
+.kit-empty p {
+  margin: 0;
+  font-size: var(--text-control);
+  line-height: 1.55;
+  color: var(--soft);
+}
+.kit-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--div);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  min-width: 0;
+}
+.kit-board > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+}
+.kit-board > header h3 {
+  margin: 0;
+  font-size: var(--text-row);
+}
+.kit-board > header code,
+.kit-board > header span {
+  font: var(--text-caption) var(--font-mono);
+  color: var(--mute);
+}
+.kit-board-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+}
+.kit-board-pair figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.kit-board-pair figcaption {
+  font: 11px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mute);
+}
+.kit-board-pair .kit-draw {
+  padding: var(--space-4);
+  border: 1px solid var(--div);
+  border-radius: var(--r-control);
+  background: var(--paper);
+}
+.kit-board-pair .m-device {
+  width: 100%;
+  max-width: 392px;
+  height: 500px;
+  margin: 0 auto;
+}
+.kit-board-pair .m-fragment {
+  height: auto;
+  border: 1px solid var(--m-divider);
+  border-radius: var(--m-card-radius);
+}
+.kit-board-pair .m-fragment .m-body {
+  padding-top: 16px;
+}
+.kit-board-pair .kit-notices {
+  width: var(--notice-width);
+}
+.kit-variant-green .notice-info {
+  background: var(--green);
+  color: var(--onGreen);
+  border-color: var(--green);
+}
+.kit-variant-green .notice-info .notice-link,
+.kit-variant-green .notice-info .notice-main > .icon {
+  color: var(--onGreen);
+}
+.kit-tray {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+}
 @media (max-width: 760px) {
   .kit-header {
     flex-wrap: wrap;

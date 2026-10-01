@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arca Proposals</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../apps/desktop/src/tokens.css" />
+    <link rel="stylesheet" href="../apps/desktop/src/style.css" />
+    <link rel="stylesheet" href="kit.css" />
+    <script src="../apps/desktop/src/vendor/lucide.js"></script>
+    <script src="kit.js" defer></script>
+  </head>
+  <body class="kit">
+    <header class="kit-header">
+      <div class="brand-lockup"><img src="../apps/desktop/src/assets/arca-icon.svg" alt="" />arca</div>
+      <nav aria-label="Design kit">
+        <a href="index.html">System</a>
+        <a href="desktop.html">Desktop</a>
+        <a href="mobile.html">Mobile</a>
+        <a href="proposals.html" aria-current="page">Proposals</a>
+      </nav>
+      <span class="kit-version">v0.6.42 · proposals</span>
+      <div class="segmented" role="group" aria-label="Theme">
+        <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
+        <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
+      </div>
+    </header>
+    <main class="kit-main">
+      <section class="kit-intro">
+        <h1>Proposals</h1>
+        <p>Purely visual ideas, drawn with the kit's own classes, only while they are proposals. A board is the proposal: there is no ROADMAP entry until the maintainer approves it.</p>
+      </section>
+
+      <section class="kit-section" id="boards">
+        <h2>Boards <span>01</span></h2>
+        <article class="kit-board" data-board="UI-INFO-NOTICE">
+          <header><code>UI-INFO-NOTICE</code><h3>Default colour of info notices</h3><span>System</span></header>
+          <p class="kit-note"><strong>Why.</strong> A decision drawn as a proposal. Info notices (saved, unlinked, copied) invert paper and ink today, the strongest surface in the app for its least important message. The proposal takes the primary green in both themes and keeps the shape, the four-second timing and the link. The alternative is to keep the inverted paper: no work, SPEC already documents it.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <div class="kit-notices"><div class="notice-card notice-info" role="status"><div class="notice-main"><span data-icon="circle-check"></span><div class="notice-content"><strong>Folder unlinked</strong><p>photos-yuri stopped syncing on macbook-pro.</p><div class="notice-actions"><button class="notice-link">Show</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></div></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <div class="kit-variant-green">
+              <div class="kit-notices"><div class="notice-card notice-info" role="status"><div class="notice-main"><span data-icon="circle-check"></span><div class="notice-content"><strong>Folder unlinked</strong><p>photos-yuri stopped syncing on macbook-pro.</p><div class="notice-actions"><button class="notice-link">Show</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></div></div>
+              </div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>A yes or no on green. Yes: the info notice tokens (<code>--notice-info-bg</code>, <code>--notice-info-fg</code>, <code>--notice-info-link</code>) and their mobile counterparts take the green surface in light and dark, SPEC's Notices variants line is rewritten, a token test covers both themes and <code>design/</code> is regenerated. No: this board is deleted and the inverted paper stays.</p></div></div>
+        </article>
+        <article class="kit-board" data-board="UI-WEB-REPLICA-DOWNLOAD">
+          <header><code>UI-WEB-REPLICA-DOWNLOAD</code><h3>Download in a replica's web file detail</h3><span>Desktop</span></header>
+          <p class="kit-note"><strong>Why.</strong> A product decision drawn as a proposal. A server replica's web administration cannot open a file on the machine, so its file detail offers nothing to do with the file itself, while the hub's shows Download file. The proposal adds the same secondary action, served from the replica's own complete local copy and never from the hub. The alternative is to leave a replica's file detail read-only, as today.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <div class="detail-head file-detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>History</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="file-text"></span></div><div><h1>brief.md</h1></div></div><div class="file-header-actions"></div></div></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <div class="detail-head file-detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>History</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="file-text"></span></div><div><h1>brief.md</h1></div></div><div class="file-header-actions"><a class="secondary" href="#"><span data-icon="download"></span>Download file</a></div></div></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>A yes or no on offering Download. Yes: a server replica's web file detail shows Download file for an available local file, served from its own copy with no hub request, and a JSDOM test covers it on a replica and on the hub. No: this board is deleted.</p></div></div>
+        </article>
+        <article class="kit-board" data-board="UI-OFF-DESK-LABELS">
+          <header><code>UI-OFF-DESK-LABELS</code><h3>Offline reads as offline on desktop</h3><span>Desktop</span></header>
+          <p class="kit-note"><strong>Why.</strong> With the hub unreachable, this machine's own pill and the tray keep saying Syncing, and a file with nothing saved says the hub has no history for it, as if that were a fact. The proposal shows Offline in the warning pill and in the tray heading, marks other machines' details as last known, and tells never-saved from never-existed in a file's history. Copies and Recent already read this way and keep their copy. The alternative is to leave the pill alone and mark only the captions.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <p class="kit-caption">Machines</p>
+              <div class="kit-stack">
+                <p class="hint">Offline · showing saved machine information</p>
+                <div class="device-row"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>macbook-pro</strong><span class="tag">Replica</span><span class="tag self">This machine</span></div><p class="connection-line">macOS · native · Arca 0.6.8</p></div><div class="row-end"><span class="pill sy busy-status"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing</span></div></div>
+                <div class="device-row"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong><span class="tag">Replica</span></div><p class="connection-line">Android · Arca 0.6.8 · 192.168.1.144</p></div><div class="row-end"><span class="pill id"><span data-icon="circle-dashed"></span>Offline</span></div></div>
+              </div>
+              <p class="kit-caption">Tray</p>
+              <div class="kit-tray">
+                <div class="tray-heading tray-tone-synced"><img class="tray-brand-icon" src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="Arca" /><div class="tray-title"><strong>Syncing</strong><p>Last completed 14:02</p></div><span class="tray-role">replica</span></div>
+                <div class="tray-folders"><button type="button" class="tray-tone-synced"><span data-icon="images"></span><span class="tray-folder-name">photos</span><small>26.0 GB</small></button><button type="button" class="tray-tone-synced"><span data-icon="folder"></span><span class="tray-folder-name">documents</span><small>14.2 MB</small></button></div>
+                <div class="tray-menu"><button type="button"><span data-icon="refresh-cw"></span>Sync now<kbd>⌘R</kbd></button><button type="button"><span data-icon="pause"></span>Pause for 1 hour</button></div>
+              </div>
+              <p class="kit-caption">File detail · revisions</p>
+              <div class="empty"><span data-icon="history" data-size="24"></span><h2>No retained revisions</h2><p>This file has no history available on the hub.</p></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <p class="kit-caption">Machines</p>
+              <div class="kit-stack">
+                <p class="hint">Offline · showing saved machine information · last known</p>
+                <div class="device-row"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>macbook-pro</strong><span class="tag">Replica</span><span class="tag self">This machine</span></div><p class="connection-line">macOS · native · Arca 0.6.8</p></div><div class="row-end"><span class="pill wa"><span data-icon="wifi-off"></span>Offline</span></div></div>
+                <div class="device-row"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong><span class="tag">Replica</span></div><p class="connection-line">Android · Arca 0.6.8 · 192.168.1.144 · last known</p></div><div class="row-end"><span class="pill id"><span data-icon="circle-dashed"></span>Offline</span></div></div>
+              </div>
+              <p class="kit-caption">Tray</p>
+              <div class="kit-tray">
+                <div class="tray-heading tray-tone-disconnected"><img class="tray-brand-icon" src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="Arca" /><div class="tray-title"><strong>Offline</strong><p>Last completed 14:02</p></div><span class="tray-role">replica</span></div>
+                <div class="tray-folders"><button type="button" class="tray-tone-synced"><span data-icon="images"></span><span class="tray-folder-name">photos</span><small>26.0 GB</small></button><button type="button" class="tray-tone-synced"><span data-icon="folder"></span><span class="tray-folder-name">documents</span><small>14.2 MB</small></button></div>
+                <div class="tray-menu"><button type="button"><span data-icon="refresh-cw"></span>Sync now<kbd>⌘R</kbd></button><button type="button"><span data-icon="pause"></span>Pause for 1 hour</button></div>
+              </div>
+              <p class="kit-caption">File detail · revisions</p>
+              <div class="empty"><span data-icon="history" data-size="24"></span><h2>No saved revisions for this file</h2><p>Offline. Connect to the hub to load its history.</p></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>The Machines pill of this machine and the tray heading read Offline while the hub is unavailable (never Syncing, never a green state); saved Machines rows say last known; a file with no saved revisions says so instead of claiming the hub has none. JSDOM and tray tests cover each line; <code>design/desktop.html</code> shows the Offline pill.</p></div></div>
+        </article>
+        <article class="kit-board" data-board="UI-DESK-SAVED-FILE-HISTORY">
+          <header><code>UI-DESK-SAVED-FILE-HISTORY</code><h3>Offline file history without holes</h3><span>Desktop</span></header>
+          <p class="kit-note"><strong>Why.</strong> Offline, a file's history is a union of saved windows, so a recent burst is followed by old revisions with nothing between them, and Restore still looks available. The proposal keeps only rows without holes, says so with the same hint the folder view uses, and disables Restore like the other hub-only actions. The alternative is to show every saved row with a divider where the gap is, which keeps more rows but still cannot restore.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <p class="hint">Offline · showing saved history</p>
+              <div class="section-label">File revisions</div>
+              <div class="history-group">
+                <div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Sep 30, 14:02</strong><p>4.2 MB · macbook-pro</p></div><span class="mono revision">rev 165764</span><div class="row-actions"><span class="pill id"><span data-icon="check"></span>Current</span></div></div>
+                <div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Sep 30, 13:40</strong><p>4.1 MB · macbook-pro</p></div><span class="mono revision">rev 165760</span><div class="row-actions"><button type="button" class="text-button"><span data-icon="undo-2"></span>Restore</button></div></div>
+                <div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Sep 30, 11:15</strong><p>4.1 MB · macbook-pro</p></div><span class="mono revision">rev 165755</span><div class="row-actions"><button type="button" class="text-button"><span data-icon="undo-2"></span>Restore</button></div></div>
+                <div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Aug 12, 09:15</strong><p>3.8 MB · macbook-pro</p></div><span class="mono revision">rev 165234</span><div class="row-actions"><button type="button" class="text-button"><span data-icon="undo-2"></span>Restore</button></div></div>
+                <div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Aug 12, 09:02</strong><p>3.8 MB · macbook-pro</p></div><span class="mono revision">rev 165230</span><div class="row-actions"><button type="button" class="text-button"><span data-icon="undo-2"></span>Restore</button></div></div>
+              </div>
+              <p class="kit-caption">Revisions 165755 to 165234 were never saved, yet the list reads as complete and every row can be restored.</p>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <p class="hint">Showing saved history · recent entries only. Connect to the hub for updated retention and older revisions.</p>
+              <div class="section-label">File revisions</div>
+              <div class="history-group">
+                <div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Sep 30, 14:02</strong><p>4.2 MB · macbook-pro</p></div><span class="mono revision">rev 165764</span><div class="row-actions"><span class="pill id"><span data-icon="check"></span>Current</span></div></div>
+                <div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Sep 30, 13:40</strong><p>4.1 MB · macbook-pro</p></div><span class="mono revision">rev 165760</span><div class="row-actions"><button type="button" class="text-button" disabled title="Needs the hub, which is unavailable."><span data-icon="undo-2"></span>Restore</button></div></div>
+                <div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Sep 30, 11:15</strong><p>4.1 MB · macbook-pro</p></div><span class="mono revision">rev 165755</span><div class="row-actions"><button type="button" class="text-button" disabled title="Needs the hub, which is unavailable."><span data-icon="undo-2"></span>Restore</button></div></div>
+              </div>
+              <p class="kit-caption">Restore is disabled with the title "Needs the hub, which is unavailable."</p>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>Saved file history lists only rows without holes, its hint reads "recent entries only" like the folder view, and Restore is disabled with the hub-only reason while offline; a daemon test with a busy folder and a JSDOM test cover it, and <code>design/desktop.html</code> is updated.</p></div></div>
+        </article>
+        <article class="kit-board" data-board="UI-DESK-HUB-ONLY-MORE">
+          <header><code>UI-DESK-HUB-ONLY-MORE</code><h3>Backup controls wait for the hub</h3><span>Desktop</span></header>
+          <p class="kit-note"><strong>Why.</strong> On a replica with the hub unavailable, the backup switch and its Choose… picker look usable but call the hub and fail. The proposal disables them with the reason every other hub-only control already carries as its title, and enables them again on reconnection. The alternative is to also print the reason as a hint under the card, which is visible without hovering but adds a line to an already full screen.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <div class="section-label">Full backup on this machine</div>
+              <div class="settings-card">
+                <div class="setting-row"><div class="row-main"><strong>Keep a full backup of the hub here</strong><p>Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.</p></div><label class="toggle"><input type="checkbox" aria-label="Enable hub backup" /><span></span></label></div>
+                <div class="setting-row"><div class="row-main"><strong>Backup location</strong><p><span class="path">Not configured</span></p></div><button type="button" class="secondary small-button"><span data-icon="folder-input"></span>Choose…</button></div>
+              </div>
+              <p class="kit-caption">The hub is unavailable, yet both controls answer and then fail with a 503.</p>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <div class="section-label">Full backup on this machine</div>
+              <div class="settings-card">
+                <div class="setting-row"><div class="row-main"><strong>Keep a full backup of the hub here</strong><p>Every shared folder and its retained history, in a dedicated folder outside your synced folders. Your own folders keep syncing. This copy never publishes edits.</p></div><label class="toggle"><input type="checkbox" aria-label="Enable hub backup" disabled title="Needs the hub, which is unavailable." /><span></span></label></div>
+                <div class="setting-row"><div class="row-main"><strong>Backup location</strong><p><span class="path">Not configured</span></p></div><button type="button" class="secondary small-button" disabled title="Needs the hub, which is unavailable."><span data-icon="folder-input"></span>Choose…</button></div>
+              </div>
+              <p class="kit-caption">Title on both controls: "Needs the hub, which is unavailable." They enable again when the hub is back.</p>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>On a desktop or server replica, Enable and Disable full backup and their Choose… picker are disabled with "Needs the hub, which is unavailable." while the hub is unavailable and follow reconnection like the other hub-only controls; a JSDOM test with the <code>hubOnlyActions</code> list covers it.</p></div></div>
+        </article>
+        <article class="kit-board" data-board="UI-OFF-MOB-LABELS">
+          <header><code>UI-OFF-MOB-LABELS</code><h3>Offline empty states on phones</h3><span>Mobile</span></header>
+          <p class="kit-note"><strong>Why.</strong> Offline, a photo folder without local files shows the raw last error with no way out, and Recent and file detail read like there was never anything to show. The proposal gives each screen its own copy for nothing saved while offline, separate from No revisions yet for a hub that answered empty, and always ends with Retry. The alternative is a single shared offline notice above the list, which says less about what is missing on each screen.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <div class="m-device"><div class="m-screen">
+                <div class="m-status"><span>9:41</span><span data-icon="wifi-off" data-size="16"></span></div>
+                <div class="m-header"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Folders</span><div class="m-title-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-detail-title">photos</span><span class="m-caption">0 photos local</span></div></div></div>
+                <div class="m-body"><span class="m-caption">Network request failed</span></div>
+                <div class="m-tabs"><span class="m-tab m-selected"><span data-icon="folder" data-size="20"></span>Folders</span><span class="m-tab"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span><span class="m-tab"><span data-icon="history" data-size="20"></span>History</span><span class="m-tab"><span data-icon="settings" data-size="20"></span>Settings</span></div>
+              </div></div>
+              <p class="kit-caption">Recent</p>
+              <div class="m-screen m-fragment"><div class="m-body"><span class="m-text">No revisions yet.</span></div></div>
+              <p class="kit-caption">File detail</p>
+              <div class="m-screen m-fragment"><div class="m-body"><span class="m-caption">No saved revisions for this file.</span></div></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <div class="m-device"><div class="m-screen">
+                <div class="m-status"><span>9:41</span><span data-icon="wifi-off" data-size="16"></span></div>
+                <div class="m-header"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Folders</span><div class="m-title-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-detail-title">photos</span><span class="m-caption">0 photos local</span></div></div></div>
+                <div class="m-body"><div class="m-card"><span class="m-heading">Nothing saved on this phone</span><span class="m-text">You are offline. Photos from this folder appear here once they have downloaded.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div>
+                <div class="m-tabs"><span class="m-tab m-selected"><span data-icon="folder" data-size="20"></span>Folders</span><span class="m-tab"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span><span class="m-tab"><span data-icon="history" data-size="20"></span>History</span><span class="m-tab"><span data-icon="settings" data-size="20"></span>Settings</span></div>
+              </div></div>
+              <p class="kit-caption">Recent</p>
+              <div class="m-screen m-fragment"><div class="m-body"><div class="m-card"><span class="m-heading">No saved revisions</span><span class="m-text">You are offline. Revisions appear here once the hub is reachable.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div></div>
+              <p class="kit-caption">File detail</p>
+              <div class="m-screen m-fragment"><div class="m-body"><div class="m-card"><span class="m-heading">No saved revisions for this file</span><span class="m-text">You are offline. Revisions appear here once the hub is reachable.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>Recent, file detail and a photo folder without local files distinguish nothing saved while offline from no revisions, use the copy drawn and never show a raw last error without Retry; layout or replica tests cover each screen and <code>design/mobile.html</code> shows the states.</p></div></div>
+        </article>
+        <article class="kit-board" data-board="UI-MOB-CRASH-RECORD">
+          <header><code>UI-MOB-CRASH-RECORD</code><h3>A notice after a crash</h3><span>Mobile</span></header>
+          <p class="kit-note"><strong>Why.</strong> After an uncaught error the app closes without a word and the next launch opens as if nothing had happened. The proposal shows one error notice on that launch, once, persistent until dismissed, with Details and Copy holding the recorded message so it can be reported; nothing is sent anywhere. The alternative is a warning notice with Dismiss only: shorter, but nothing to copy.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <div class="m-device"><div class="m-screen">
+                <div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div>
+                <div class="m-header"><div class="m-title-row"><img src="../apps/desktop/src/assets/arca-icon.svg" width="32" height="32" alt="" /><span class="m-title">Folders</span></div></div>
+                <div class="m-body">
+                  <div class="m-section"><span class="m-eyebrow">On this phone</span>
+                    <div class="m-list">
+                      <div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos</span><span class="m-caption">3,598 photos · 13.4 GB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                      <div class="m-row"><div class="m-tile"><span data-icon="folder"></span></div><div class="m-stack"><span class="m-row-title">documents</span><span class="m-caption">20 files · 14.2 MB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="m-tabs"><span class="m-tab m-selected"><span data-icon="folder" data-size="20"></span>Folders</span><span class="m-tab"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span><span class="m-tab"><span data-icon="history" data-size="20"></span>History</span><span class="m-tab"><span data-icon="settings" data-size="20"></span>Settings</span></div>
+              </div></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <div class="m-device"><div class="m-screen">
+                <div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div>
+                <div class="m-header"><div class="m-title-row"><img src="../apps/desktop/src/assets/arca-icon.svg" width="32" height="32" alt="" /><span class="m-title">Folders</span></div></div>
+                <div class="m-body">
+                  <div class="m-section"><span class="m-eyebrow">On this phone</span>
+                    <div class="m-list">
+                      <div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos</span><span class="m-caption">3,598 photos · 13.4 GB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                      <div class="m-row"><div class="m-tile"><span data-icon="folder"></span></div><div class="m-stack"><span class="m-row-title">documents</span><span class="m-caption">20 files · 14.2 MB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="m-notice-slot"><div class="kit-notices"><div class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="circle-alert"></span><div class="notice-content"><strong>Arca closed unexpectedly</strong><p>Your files are safe. The error was saved on this phone.</p><div class="notice-actions"><button class="notice-link notice-muted">Dismiss</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div><details class="notice-details"><summary><span data-icon="chevron-right"></span><span>Details</span><button class="notice-copy notice-link">Copy</button></summary><pre>TypeError: undefined is not an object · Sep 30 21:14</pre></details></div></div></div>
+                <div class="m-tabs"><span class="m-tab m-selected"><span data-icon="folder" data-size="20"></span>Folders</span><span class="m-tab"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span><span class="m-tab"><span data-icon="history" data-size="20"></span>History</span><span class="m-tab"><span data-icon="settings" data-size="20"></span>Settings</span></div>
+              </div></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>An uncaught JavaScript error on mobile is persisted and shown once, on the next launch, as the error notice drawn, with its recorded message under Details and Copy and never again after Dismiss; a test covers record and display and <code>design/mobile.html</code> shows the notice.</p></div></div>
+        </article>
+      </section>
+
+      <section class="kit-section" id="format">
+        <h2>Format <span>02</span></h2>
+        <div class="kit-rules">
+          <div><strong>Board</strong><p>One article per idea, tagged with its task ID. It carries the ID, the area (System, Desktop, Mobile), a title, why it is worth doing, a "Now" drawing of what exists, a "Proposed" drawing, and what proves it done.</p></div>
+          <div><strong>Drawings</strong><p>Both drawings use production and kit classes only, so the page reads as the app would. A drawing is never a screenshot and never introduces a colour or size outside the tokens.</p></div>
+          <div><strong>Lifecycle</strong><p>Idea: a board only. Approved: one ROADMAP Queue line of type ui with the board ID, whose accept is the board. Shipped: the board is deleted, the changelog and SPEC record it, and this kit is updated.</p></div>
+          <div><strong>No visual part</strong><p>Behaviour, data and infrastructure tasks live only in ROADMAP and never get a board.</p></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

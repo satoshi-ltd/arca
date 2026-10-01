@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.42 — 2026-10-01
+
+- Internal: the design kit becomes a self-contained module with its own contract, a Proposals tab for visual ideas that are still proposals and a generator (`npm run design`) for the mobile tokens and the favicon.
+
 ## 0.6.41 — 2026-10-01
 
 - On a phone with a slow hub, the saved copies of History and Recent now reach every folder instead of only the first ones in the list: the missing or oldest pages are fetched first, four at a time, so going offline later still shows each folder's recent changes.
