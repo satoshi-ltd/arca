@@ -29,9 +29,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 - **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
   `feature · agent · normal`
   accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
-- **CI-TIDY** — Workflow consistency
-  `chore · agent · low`
-  accept: `publish-site.yml` uses the same `actions/checkout` and `actions/setup-node` majors as the other workflows, and the misindented `fi` in `publish.yml` is fixed; actionlint passes.
 
 ## In progress
 

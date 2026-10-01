@@ -145,3 +145,24 @@ test("every Node pin follows .node-version", () => {
     assert.doesNotMatch(text, /\d+\.\d+\.\d+/, script);
   }
 });
+
+test("every workflow uses the same checkout and setup-node majors and closes its shell conditionals at their own indentation", () => {
+  const directory = new URL("../.github/workflows/", import.meta.url);
+  const workflows = fs.readdirSync(directory).filter((name) => name.endsWith(".yml"));
+  assert.ok(workflows.length >= 4);
+  const versions = { checkout: new Set(), "setup-node": new Set() };
+  for (const name of workflows) {
+    const lines = fs.readFileSync(new URL(name, directory), "utf8").replace(/\r\n/g, "\n").split("\n");
+    const open = [];
+    lines.forEach((line, index) => {
+      const use = line.match(/uses:\s*actions\/(checkout|setup-node)@(v\d+)/);
+      if (use) versions[use[1]].add(use[2]);
+      if (/^\s*if\b.*;\s*then\s*$/.test(line)) open.push(line.search(/\S/));
+      if (/^\s*fi\s*$/.test(line))
+        assert.equal(line.search(/\S/), open.pop(), `${name}:${index + 1} closes its if at another indentation`);
+    });
+    assert.deepEqual(open, [], `${name} leaves an if without fi`);
+  }
+  assert.equal(versions.checkout.size, 1, `one actions/checkout major, found ${[...versions.checkout]}`);
+  assert.equal(versions["setup-node"].size, 1, `one actions/setup-node major, found ${[...versions["setup-node"]]}`);
+});

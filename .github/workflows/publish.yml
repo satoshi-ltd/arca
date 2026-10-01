@@ -100,7 +100,7 @@ jobs:
           set -euo pipefail
           if [[ "$PUBLISH" == true ]]; then
             test "$GITHUB_REF" = refs/heads/main || { echo 'Publish from main only'; exit 1; }
-                fi
+          fi
           if [[ "$SIGN" == true ]]; then
             for key in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
               test -n "${!key}" || { echo "Missing secret: $key"; exit 1; }

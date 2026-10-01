@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.59 — 2026-10-01
+
+- Internal: the site and the weekly cleanup workflows use the same checkout and Node setup actions as the release workflows, and a test now keeps them aligned.
+
 ## 0.6.58 — 2026-10-01
 
 - On phones, when Arca closes because of an uncaught error, the next launch shows one notice ("Arca closed unexpectedly") with the saved error under Details and a Copy button, so it can be reported; nothing is sent anywhere.
