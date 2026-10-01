@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.48 — 2026-10-01
+
+- On phones, the pairing screen now says that the hub's Machines → Pair a machine shows the address and the code, and asks for them in that order, then the phone's name, which keeps its default.
+
+Needs: native build
+
 ## 0.6.47 — 2026-10-01
 
 - On phones, the welcome screen now says where the hub comes from: install Arca on a computer or a server, make it the hub and open Machines → Pair a machine there for the code, instead of ending with a bare "You will need a hub and a pairing code."

@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.47 · proposals</span>
+      <span class="kit-version">v0.6.48 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -164,19 +164,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>The web access step of an unconfigured Docker server shows the documented command with a Copy button and says the code is the <code>code</code> value of the JSON reply; Umbrel keeps its link; no code is ever shown or logged by the page; a JSDOM test covers both variants and <code>design/desktop.html</code> shows the step.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-ONB-MOB-PAIR">
-          <header><code>UI-ONB-MOB-PAIR</code><h3>Pairing asks for what the hub shows, in its order</h3><span>Mobile</span></header>
-          <p class="kit-note"><strong>Why.</strong> The pairing screen starts with the phone's name, which already has a default, and only then asks for the two things the person is carrying over from the hub, with no hint of where they come from. The proposal says on top that the hub's Machines → Pair a machine shows both, and orders the fields as the hub does: address, code, then the name, which keeps its default. The alternative is a QR code scanned from the hub, which removes typing but needs a camera module and a native build, so it is filed apart as an idea.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-<div class="m-device m-tall"><div class="m-screen"><div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div><div class="m-body"><div class="m-section"><span class="m-title">Pair with your hub</span><span class="m-text">Connect with a single-use code from your hub.</span></div><div class="m-section"><span class="m-heading">Name this phone</span><div class="m-field m-filled"><span data-icon="phone"></span>Android</div></div><div class="m-section"><span class="m-heading">Hub address</span><div class="m-field"><span data-icon="server"></span>https://arca.your-network</div></div><div class="m-section"><span class="m-heading">Pairing code</span><div class="m-code"><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span></div><span class="m-caption m-hint"><span data-icon="clock" data-size="16"></span>Single use · valid ten minutes</span></div><span class="m-grow"></span><span class="m-button m-primary" aria-disabled="true"><span data-icon="key"></span>Pair this phone</span><div class="m-dots"><span class="m-dot"></span><span class="m-dot m-selected"></span><span class="m-dot"></span></div></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-<div class="m-device m-tall"><div class="m-screen"><div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div><div class="m-body"><div class="m-section"><span class="m-title">Pair with your hub</span><span class="m-text">On the hub, open Machines → Pair a machine. It shows the address and a single-use code.</span></div><div class="m-section"><span class="m-heading">Hub address</span><div class="m-field"><span data-icon="server"></span>https://arca.your-network</div></div><div class="m-section"><span class="m-heading">Pairing code</span><div class="m-code"><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span></div><span class="m-caption m-hint"><span data-icon="clock" data-size="16"></span>Single use · valid ten minutes</span></div><div class="m-section"><span class="m-heading">Name this phone</span><div class="m-field m-filled"><span data-icon="phone"></span>Android</div></div><span class="m-grow"></span><span class="m-button m-primary" aria-disabled="true"><span data-icon="key"></span>Pair this phone</span><div class="m-dots"><span class="m-dot"></span><span class="m-dot m-selected"></span><span class="m-dot"></span></div></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>The mobile pairing step shows the sentence and the order drawn, keeps the same fields, validation and disabled state of Pair this phone, the expiry hint with its clock, the three progress dots and the name's default; a layout test covers the order and the sentence and <code>design/mobile.html</code> shows the step.</p></div></div>
         </article>
         <article class="kit-board" data-board="UI-MOB-THUMB-PROGRESS">
           <header><code>UI-MOB-THUMB-PROGRESS</code><h3>Say that previews are being prepared</h3><span>Mobile</span></header>

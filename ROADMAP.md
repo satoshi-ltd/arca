@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-ONB-MOB-PAIR** — Pairing asks for what the hub shows, in its order
-  `ui · agent · normal`
-  accept: the board.
 - **UI-ONB-DESK-FLOW** — One step for name and role, and no early Finish
   `ui · agent · normal`
   accept: the board.
@@ -325,7 +322,7 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 
 - **MOB-PAIR-QR** — Pair a phone by scanning a code from the hub
   `feature · agent · low`
-  accept: the hub's Pair a machine dialog also shows a QR code carrying the hub address and the single-use code, and the phone's pairing step can scan it with the camera and fill both fields; the code stays single use, ten minutes and under the same failure budgets, and a pure parser test covers a valid payload, a malformed one and an expired code. Needs a camera module, so a native build and a maintainer `verify`; the dialog and the scan screen need a board before approval (alternative considered in board UI-ONB-MOB-PAIR).
+  accept: the hub's Pair a machine dialog also shows a QR code carrying the hub address and the single-use code, and the phone's pairing step can scan it with the camera and fill both fields; the code stays single use, ten minutes and under the same failure budgets, and a pure parser test covers a valid payload, a malformed one and an expired code. Needs a camera module, so a native build and a maintainer `verify`; the dialog and the scan screen need a board before approval.
 
 ## Later phases
 

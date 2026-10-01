@@ -86,16 +86,9 @@ export function Onboarding({
           Pair with your hub
         </Text>
         <Text style={s.text}>
-          Connect with a single-use code from your hub.
+          On the hub, open Machines → Pair a machine. It shows the address and a
+          single-use code.
         </Text>
-        <Field
-          label={`Name this ${device}`}
-          icon="phone"
-          value={name}
-          onChangeText={setName}
-          maxLength={100}
-          editable={!busy}
-        />
         <Field
           label="Hub address"
           icon="server"
@@ -117,6 +110,14 @@ export function Onboarding({
             <Text style={s.caption}>Single use · valid ten minutes</Text>
           </View>
         </View>
+        <Field
+          label={`Name this ${device}`}
+          icon="phone"
+          value={name}
+          onChangeText={setName}
+          maxLength={100}
+          editable={!busy}
+        />
         <View style={s.flex} />
         <Button
           label={`Pair this ${device}`}
