@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.45 — 2026-10-01
+
+- Internal: six new proposal boards (five for onboarding on desktop, web, server and phones, one for preview progress in photo folders) and a fix so the mobile boards in the design kit render with their styles.
+
 ## 0.6.44 — 2026-10-01
 
 - On phones, offline Recent, a file's detail and a photo folder with nothing saved now say "No saved revisions" or "Nothing saved on this phone" with a Retry that probes the hub again, instead of a bare error or a claim that there is no history or no photos.

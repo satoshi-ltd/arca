@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-09-30 · Phase 1 functional alpha, not release-qualified.
+Updated 2026-10-01 · Phase 1 functional alpha, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -26,6 +26,24 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
+- **MOB-THUMB-STALL** — Photos already on the phone keep grey tiles
+  `bug · agent · high`
+  accept: on a phone where a photo folder's files are all downloaded and nothing is pending, every tile gets its thumbnail; find the cause (the preparation effect in `FolderGallery.jsx` restarts whenever the visible set changes and drops failures without a retry, and falls back to `expo-image-manipulator` on a binary without `ArcaNetwork.thumbnail`) and prove the fix with a test that fails without it. If the cause needs device evidence, file a maintainer `verify` with the exact logcat to capture (reported on the Fold after the v0.6.44 build, 2026-10-01).
+- **UI-ONB-MOB-WELCOME** — Say where the hub comes from
+  `ui · agent · normal`
+  accept: the board.
+- **UI-ONB-MOB-PAIR** — Pairing asks for what the hub shows, in its order
+  `ui · agent · normal`
+  accept: the board.
+- **UI-ONB-DESK-FLOW** — One step for name and role, and no early Finish
+  `ui · agent · normal`
+  accept: the board.
+- **UI-ONB-SERVER-ACCESS** — The command for the server access code
+  `ui · agent · normal · depends: UI-ONB-DESK-FLOW`
+  accept: the board.
+- **UI-ONB-DESK-DISCOVERY** — Hubs found nearby while pairing
+  `ui · agent · normal · depends: UI-ONB-DESK-FLOW`
+  accept: the board. First confirm that an unconfigured daemon serves discovery during the wizard; if it does not, report it and split the daemon change into its own task before drawing on it.
 - **MOB-CRASH-RECORD** — Record crashes from a global error handler
   `feature · agent · normal`
   accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display. The interface follows board UI-MOB-CRASH-RECORD.
@@ -196,6 +214,9 @@ Older notes listed these as open while later evidence suggests they are resolved
 ## Proposed
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
+- **MOB-THUMB-PROGRESS** — Show the preparation of previews in a photo folder
+  `feature · agent · normal · depends: MOB-THUMB-STALL`
+  accept: while a photo folder is open, previews are prepared for the photos on the phone beyond the visible window (newest first, three at a time, only while the screen is open), a failed preview is retried when the app returns to the foreground or on Retry, and the count of prepared photos is available to the screen; tests cover the order, the failure and the count. The interface follows board UI-MOB-THUMB-PROGRESS.
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.
@@ -307,6 +328,10 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DESK-NATIVE-TRAY-OFFLINE** — The native tray still says "needs attention" while the hub is unavailable
   `bug · agent · normal`
   accept: on macOS and Windows the tray icon, tooltip and status menu item read Offline (not the alert icon or "Arca · needs attention") while the hub is unavailable and the replica is not paused; today `tray_state` in `apps/desktop/src-tauri/src/main.rs` returns the alert state whenever `status.error` is set and any unknown phase, including "offline", falls to "needs attention"; a Rust test next to the existing `tray_state` test. Needs a desktop build.
+
+- **MOB-PAIR-QR** — Pair a phone by scanning a code from the hub
+  `feature · agent · low`
+  accept: the hub's Pair a machine dialog also shows a QR code carrying the hub address and the single-use code, and the phone's pairing step can scan it with the camera and fill both fields; the code stays single use, ten minutes and under the same failure budgets, and a pure parser test covers a valid payload, a malformed one and an expired code. Needs a camera module, so a native build and a maintainer `verify`; the dialog and the scan screen need a board before approval (alternative considered in board UI-ONB-MOB-PAIR).
 
 ## Later phases
 
