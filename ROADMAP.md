@@ -26,6 +26,9 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
+- **MOB-UPLOAD-SOURCE-GONE** — A photo deleted from the library before it uploads stays in limbo
+  `bug · agent · high`
+  accept: when an album-linked photo is removed from the system library before it reaches the hub, the phone stops treating it as pending: its ledger row becomes a terminal `unavailable` state (never `removed`, never propagated; hub copies and Photos untouched), it leaves the pending and failed counts, is no longer retried, no longer blocks Change album or the folder's Up to date, and goes back to pending if an asset with the same id reappears; an edited, previously accepted asset deleted afterwards returns to accepted with its old resources; this applies only when media permission is granted with full access, so revoked or limited access keeps today's retry. Replica tests: delete before upload while a second asset still uploads, the same id reappearing, limited access and revoked permission staying failed, and edited-then-deleted. Today the item is retried about every 60 s forever (`Gallery.cycle` marks it `failed` with retry in 60 s), counts as pending and failed, and the only way out is Stop syncing…, which also removes the folder's local copy. Picked photos (Add photos…) stay with MOB-PICKED-DURABLE.
 - **MOB-CRASH-RECORD** — Record crashes from a global error handler
   `feature · agent · normal`
   accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display. The interface follows board UI-MOB-CRASH-RECORD.
