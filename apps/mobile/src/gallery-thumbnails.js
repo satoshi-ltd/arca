@@ -6,6 +6,7 @@ import {
   manipulateAsync,
   SaveFormat,
 } from "expo-image-manipulator";
+import { toByteArray } from "base64-js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import {
@@ -26,6 +27,7 @@ const onDisk = (uri) => !!uri?.startsWith("file://");
 const root = new Directory(Paths.cache, "arca-gallery");
 const jobs = new Map();
 const limiter = createLimiter(3, 30000);
+const hubLimiter = createLimiter(2, 60000);
 const posterAttempt = rememberFailures();
 const renderAttempt = rememberFailures(4096, "Thumbnail unavailable");
 AppState.addEventListener("change", (state) => {
@@ -49,6 +51,17 @@ function pruneCache(directory, keep) {
       } catch {
         /* A concurrent pass already removed it. */
       }
+  for (const entry of entries)
+    if (
+      entry instanceof File &&
+      entry.name.endsWith(".part") &&
+      Date.now() - (entry.modificationTime || 0) > 600000
+    )
+      try {
+        entry.delete();
+      } catch {
+        /* A concurrent pass already removed it. */
+      }
   const files = entries
     .filter((file) => file instanceof File && !file.name.endsWith(".part"))
     .sort((a, b) => (a.modificationTime || 0) - (b.modificationTime || 0));
@@ -65,7 +78,13 @@ function pruneCache(directory, keep) {
     }
   }
 }
-function cachedDerivative(entry, variant, produce, background = false) {
+function cachedDerivative(
+  entry,
+  variant,
+  produce,
+  background = false,
+  unlimited = false,
+) {
   const key = bytesToHex(
     sha256(
       new TextEncoder().encode(
@@ -81,7 +100,9 @@ function cachedDerivative(entry, variant, produce, background = false) {
   if (jobs.has(key)) return jobs.get(key);
   const job = (async () => {
     root.create({ intermediates: true, idempotent: true });
-    const produced = await limiter.run(() => produce(target), !background);
+    const produced = await (unlimited
+      ? produce(target)
+      : limiter.run(() => produce(target), !background));
     if (produced) {
       const temporary = new File(produced);
       try {
@@ -159,6 +180,31 @@ export const thumbnailFiles = {
           ),
         background,
       ),
+    );
+  },
+  fromHub(entry, variant, load) {
+    return cachedDerivative(
+      entry,
+      variant,
+      async (target) => {
+        const bytes = toByteArray(await hubLimiter.run(load));
+        const part = new File(`${target.uri}.part`);
+        try {
+          part.create({ intermediates: true, overwrite: true });
+          const handle = part.open();
+          try {
+            handle.writeBytes(bytes);
+          } finally {
+            handle.close();
+          }
+        } catch (error) {
+          if (part.exists) part.delete();
+          throw error;
+        }
+        return part.uri;
+      },
+      false,
+      true,
     );
   },
   retry() {

@@ -50,6 +50,8 @@ import {
 } from "./thumbnail-cache";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import { thumbnailFiles } from "./gallery-thumbnails";
+import { acceptedHash, createHubPreviews, hubFallback } from "./hub-preview";
+import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 import { ScrollPosition } from "./KeyboardPane";
 import { PhotoViewer } from "./PhotoViewer";
 
@@ -334,6 +336,7 @@ export function FolderGallery({
     [entries],
   );
   const [known, setKnown] = useState(null);
+  const [knownLoaded, setKnownLoaded] = useState(false);
   useEffect(() => {
     let active = true;
     store
@@ -347,13 +350,15 @@ export function FolderGallery({
               ([path, row]) =>
                 held.get(path)?.rev === row.rev &&
                 held.get(path)?.hash === row.hash &&
+                held.get(path)?.size === row.size &&
                 held.get(path)?.deleted === row.deleted,
             )
               ? held
               : files,
           ),
       )
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => active && setKnownLoaded(true));
     return () => {
       active = false;
     };
@@ -511,25 +516,52 @@ export function FolderGallery({
   displayRef.current = display;
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
+  const previews = useMemo(
+    () =>
+      createHubPreviews({
+        api,
+        save: (item, variant, load) =>
+          thumbnailFiles.fromHub(item, variant, load),
+        unreachable: isHubUnreachable,
+        busy: (error) => [409, 429].includes(error.status),
+      }),
+    [api],
+  );
+  const hubContext = useRef(null);
+  hubContext.current = { linked: online, volume, known };
+  const withHub = useMemo(
+    () =>
+      hubFallback({
+        previews,
+        context: (item) => ({
+          linked: hubContext.current.linked,
+          volume: hubContext.current.volume,
+          hash: acceptedHash(hubContext.current.known, item),
+        }),
+      }),
+    [previews],
+  );
   const io = useMemo(
     () => ({
       exists: thumbnailFiles.exists,
-      render: (item) =>
+      render: withHub((item) =>
         item.kind === "video"
           ? thumbnailFiles.poster(item)
           : displayRef.current(item),
+      ),
     }),
-    [],
+    [withHub],
   );
   const backgroundIo = useMemo(
     () => ({
       exists: thumbnailFiles.exists,
-      render: (item) =>
+      render: withHub((item) =>
         item.kind === "video"
           ? thumbnailFiles.poster(item, true)
           : thumbnailFiles.render(item, false, true),
+      ),
     }),
-    [],
+    [withHub],
   );
   const candidates = useMemo(
     () => previewCandidates(entries, (path) => builtinExcluded(path)),
@@ -612,7 +644,7 @@ export function FolderGallery({
   }, [visibleKey, store, scope, volume, io, density]);
   useEffect(() => {
     let active = true;
-    if (density === "years" || !candidates.length) {
+    if (density === "years" || !candidates.length || !knownLoaded) {
       setPreparing(false);
       return;
     }
@@ -673,20 +705,22 @@ export function FolderGallery({
     return () => {
       active = false;
     };
-  }, [candidateKey, store, scope, volume, density, attempt]);
+  }, [candidateKey, store, scope, volume, density, attempt, knownLoaded, online]);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") previews.clear();
       if (state === "active" && failedPaths.current.size)
         setAttempt((value) => value + 1);
     });
     return () => subscription.remove();
-  }, []);
+  }, [previews]);
   const progress = useMemo(
     () => previewProgress(candidates, thumbnails, failedPaths.current),
     [candidates, thumbnails, failedCount],
   );
   const retryPreviews = () => {
     thumbnailFiles.retry();
+    previews.clear();
     failedPaths.current = new Set();
     setFailedCount(0);
     setAttempt((value) => value + 1);

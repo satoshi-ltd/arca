@@ -4077,6 +4077,7 @@ test("the phone index tells synced files from ones imported and not yet synced",
   assert.ok(known.has("synced.jpg"));
   assert.ok(Number.isSafeInteger(known.get("synced.jpg").rev), "the phone index carries the revision");
   assert.match(known.get("synced.jpg").hash, /^[0-9a-f]{64}$/, "and the hash");
+  assert.equal(known.get("synced.jpg").size, "synced photo".length, "and the accepted size");
   const source = path.join(f.root, "imported.jpg");
   fs.writeFileSync(source, "imported photo");
   await replica.importFile(volume.id, "imported.jpg", source);

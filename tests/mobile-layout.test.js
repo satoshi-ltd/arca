@@ -549,14 +549,22 @@ test("folder rows show the gallery icon the hub assigns and selection states the
   assert.doesNotMatch(app, /free here/);
 });
 
-test("the mobile gallery never fetches pixels from the hub and falls back to local files after repeated hub failures", () => {
+test("the mobile gallery renders from local files first and asks the hub only for photos on the phone that fail", () => {
   const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
-  assert.doesNotMatch(gallery, /hub-previews|hubPreview|previews\./);
-  assert.match(gallery, /render: \(item\) =>\s*item\.kind === "video"\s*\? thumbnailFiles\.poster\(item\)\s*: displayRef\.current\(item\),/);
+  assert.doesNotMatch(gallery, /hub-previews|hubPreview\(/, "the removed browsing previews stay removed");
+  assert.match(gallery, /render: withHub\(\(item\) =>\s*item\.kind === "video"\s*\? thumbnailFiles\.poster\(item\)\s*: displayRef\.current\(item\),\s*\),/);
+  assert.match(gallery, /hash: acceptedHash\(hubContext\.current\.known, item\),/, "only a file that still has the accepted size is asked for");
+  assert.match(gallery, /busy: \(error\) => \[409, 429\]\.includes\(error\.status\),/);
+  assert.match(gallery, /linked: hubContext\.current\.linked,/);
   assert.match(gallery, /const online = linked && failures < 2;/);
   assert.match(gallery, /setGallery\(fresh\);\s*setFailures\(0\);/);
   assert.match(gallery, /setFailures\(\(count\) => count \+ 1\);\s*setError\(e\.message\);/);
   assert.equal(fs.existsSync(new URL("../apps/mobile/src/hub-previews.js", import.meta.url)), false);
+  const thumbnails = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
+  assert.match(thumbnails, /fromHub\(entry, variant, load\) \{/);
+  assert.match(thumbnails, /toByteArray\(await hubLimiter\.run\(load\)\)/);
+  assert.match(gallery, /if \(state === "active"\) previews\.clear\(\);/);
+  assert.match(gallery, /thumbnailFiles\.retry\(\);\s*previews\.clear\(\);/);
 });
 
 test("recent revisions wait for the replica runtime before loading", () => {
@@ -796,15 +804,16 @@ test("an open photo folder prepares every local preview in the background and sa
   const has = (source, ...pieces) => pieces.forEach((piece) => assert.ok(source.includes(piece), piece));
   has(gallery, "const candidates = useMemo(", "previewCandidates(entries, (path) => builtinExcluded(path))");
   has(gallery, "await prepareThumbnails( candidates, thumbnailProgress.current.value, backgroundIo,", "candidates, 3, (entry) => { if (active) { failedPaths.current.add(entry.path); queueFlush(); } }, true, );");
-  assert.match(gallery, /\}, \[candidateKey, store, scope, volume, density, attempt\]\);/, "a scroll never restarts the background pass");
-  has(gallery, 'render: (item) => item.kind === "video" ? thumbnailFiles.poster(item, true) : thumbnailFiles.render(item, false, true),');
+  assert.match(gallery, /\}, \[candidateKey, store, scope, volume, density, attempt, knownLoaded, online\]\);/, "a scroll never restarts the background pass, and it waits for the phone index");
+  has(gallery, "if (density === \"years\" || !candidates.length || !knownLoaded) {");
+  has(gallery, 'render: withHub((item) => item.kind === "video" ? thumbnailFiles.poster(item, true) : thumbnailFiles.render(item, false, true), ),');
   assert.match(gallery, /\}, \[visibleKey, store, scope, volume, io, density\]\);/, "the visible pass keeps its own dependencies");
   has(gallery, "(delta) => { if (!active) return; commit(key, delta); },", "} finally { if (active) setPreparing(false); }", "if (completeRef.current && !loadingRef.current) { const kept = pruneSaved(", "if (!dirty.current || loadingRef.current) return Promise.resolve();", "else if (flusher.current.pending) flusher.current.now();");
-  has(gallery, 'AppState.addEventListener("change", (state) => { if (state === "active" && failedPaths.current.size) setAttempt((value) => value + 1); });', "queueFlush(seen ? 250 : 2000);");
+  has(gallery, 'AppState.addEventListener("change", (state) => { if (state === "active") previews.clear(); if (state === "active" && failedPaths.current.size) setAttempt((value) => value + 1); });', "queueFlush(seen ? 250 : 2000);");
   has(gallery, 'preparing && progress.waiting > 0 && ( <StatusRow busy title="Preparing previews"', '${progress.done.toLocaleString("en")} of ${progress.total.toLocaleString("en")}');
   has(gallery, 'progress.failed > 0 && ( <StatusRow icon="image"', "could not be made", 'caption="The photos are on this phone."', '<Button label="Retry" icon="refresh" onPress={retryPreviews} />');
-  has(gallery, "const retryPreviews = () => { thumbnailFiles.retry(); failedPaths.current = new Set(); setFailedCount(0); setAttempt((value) => value + 1); };");
-  has(thumbnails, "const limiter = createLimiter(3, 30000);", "const produced = await limiter.run(() => produce(target), !background);");
+  has(gallery, "const retryPreviews = () => { thumbnailFiles.retry(); previews.clear(); failedPaths.current = new Set(); setFailedCount(0); setAttempt((value) => value + 1); };");
+  has(thumbnails, "const limiter = createLimiter(3, 30000);", "limiter.run(() => produce(target), !background)", "const hubLimiter = createLimiter(2, 60000);");
   assert.match(thumbnails, /retry\(\) \{\s+posterAttempt\.clear\(\);\s+renderAttempt\.clear\(\);\s+\},/);
   assert.match(components, /export function StatusRow\([\s\S]*?<View style=\{\[s\.card, s\.folderRow\]\}/);
 });
