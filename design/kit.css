@@ -349,6 +349,23 @@ body.kit {
 .kit-board-pair .kit-notices {
   width: var(--notice-width);
 }
+.kit-stats-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.kit-board-pair .detail-head {
+  padding: var(--space-4);
+  border: 1px solid var(--div);
+  border-radius: var(--r-card);
+  background: var(--paper);
+}
+.kit-board-pair .file-header-actions,
+.kit-board-pair .heading-actions {
+  align-items: flex-start;
+}
+.kit-board-pair .details-menu[open] .menu-items {
+  position: static;
+  margin-top: var(--space-2);
+}
 .kit-wizard .onboarding {
   min-height: 0;
   height: 520px;

@@ -26,6 +26,36 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
+- **UI-INFO-NOTICE** — Default colour of info notices
+  `ui · agent · normal`
+  accept: the board (yes to green).
+- **UI-WEB-REPLICA-DOWNLOAD** — Download in a replica's web file detail
+  `ui · agent · normal`
+  accept: the board (yes to Download).
+- **UI-DESK-SAVED-FILE-HISTORY** — Offline file history without holes
+  `ui · agent · normal`
+  accept: the board.
+- **UI-DESK-HUB-ONLY-MORE** — Backup controls wait for the hub
+  `ui · agent · normal`
+  accept: the board.
+- **UI-DESK-FOLDER-MENU** — Folder actions behind one menu
+  `ui · agent · normal`
+  accept: the board, with this decision: a desktop or server replica never offers Enable gallery (only the hub sets a folder's gallery type; phones do it by linking an album), so a replica's header keeps Open in Finder alone and the menu appears on the hub only; the replica-side gallery-link proxy goes if nothing else uses it.
+- **UI-MOB-EMPTY-STATES** — One empty state on the phone
+  `ui · agent · normal`
+  accept: the board.
+- **UI-DESK-EMPTY-ONE-CTA** — One call to action on an empty Folders
+  `ui · agent · normal`
+  accept: the board.
+- **UI-DESK-FINDER-WORDS** — Open and show in the Finder say different things
+  `ui · agent · normal`
+  accept: the board.
+- **UI-DESK-RETENTION-PANEL** — The retention control leaves the summary
+  `ui · agent · normal`
+  accept: the board.
+- **UI-DESK-CLEANUP-WORDS** — Cleanup says what it removes
+  `ui · agent · normal`
+  accept: the board.
 - **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
   `feature · agent · normal`
   accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
@@ -190,6 +220,15 @@ Older notes listed these as open while later evidence suggests they are resolved
 ## Proposed
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
+- **FOLDER-LAST-CHANGE** — The phone's folder summary knows its newest accepted revision
+  `feature · agent · low`
+  accept: the folder detail reads the newest activity row of the folder (`/v1/activity?volume=…&limit=1`, the saved view offline) and exposes its time, path and author to the summary, reusing the Recent cache when it has it; a replica test covers online, offline and a folder with no revisions. The interface follows board UI-FOLDER-STATS.
+- **DESK-FILES-PAGING** — Files, History and a file's history grow by appending
+  `chore · agent · low`
+  accept: the desktop folder browser keeps the rows it has and appends the next cursor page instead of replacing them, up to a bounded number of rows, and typed search and scroll survive; History and a file's history keep appending; JSDOM tests cover the three lists. The interface follows board UI-DESK-FILES-PAGING.
+- **DESIGN-COVERAGE** — Draw the shipped views the design kit still lacks
+  `chore · agent · low`
+  accept: `design/mobile.html` draws Files and Recent of an ordinary folder, the file detail, History, Machines (connected and unpaired), Settings, the incoming share sheet, the viewer and the approval sheet as the app renders them; `design/desktop.html` draws the file detail, the gallery viewer with Info, the Daemon stopped page, web access, the approval dialog, Settings → Network and the danger zone; the design tests keep passing and no board is added.
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.
@@ -262,9 +301,6 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **WEB-REPLICA-CONFLICT-LINKS** — Conflict download links on a replica's web view
   `bug · agent · low`
   accept: the conflict dialog's download links on a server replica's web view use a route the replica serves (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409); DOM and API tests.
-- **WEB-REPLICA-DOWNLOAD** — Download button in a replica's web file detail (product proposal)
-  `decision · maintainer · low`
-  accept: a yes or no on offering Download for local files in a server replica's web file detail (today only the hub shows it). If yes, the interface follows board UI-WEB-REPLICA-DOWNLOAD.
 - **DESK-GALLERY-COUNT** — Gallery header counts only dated months
   `bug · agent · low`
   accept: the desktop gallery header counts every loaded photo and video, including those still waiting for a capture date (it read "0 photos" over three tiles); a DOM test.

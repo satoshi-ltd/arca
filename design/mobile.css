@@ -576,3 +576,45 @@
   width: var(--m-touch-control-height);
   height: var(--m-touch-control-height);
 }
+.m-stats {
+  display: flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--m-divider);
+  border-radius: var(--m-card-radius);
+  background: var(--m-surface);
+}
+.m-stat {
+  width: 50%;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.m-stat.m-wide {
+  width: 100%;
+}
+.m-stat-value {
+  font-size: var(--m-touch-row-font);
+  line-height: var(--m-touch-row-line);
+  font-weight: 600;
+  color: var(--m-ink);
+}
+.m-explorer-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 20px;
+  color: var(--m-mute);
+}
+.m-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 20px;
+  border: 1px dashed var(--m-line);
+  border-radius: var(--m-card-radius);
+  text-align: center;
+  color: var(--m-mute);
+}
