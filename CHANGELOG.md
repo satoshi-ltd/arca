@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.47 — 2026-10-01
+
+- On phones, the welcome screen now says where the hub comes from: install Arca on a computer or a server, make it the hub and open Machines → Pair a machine there for the code, instead of ending with a bare "You will need a hub and a pairing code."
+
+Needs: native build
+
 ## 0.6.46 — 2026-10-01
 
 - On phones, the photo gallery no longer crashes with "Cannot read property 'uri' of undefined" when it shows an item without a content hash, such as a pending or failed upload.

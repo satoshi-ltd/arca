@@ -761,3 +761,16 @@ test("offline empty states say nothing is saved, end in Retry that probes the hu
   assert.match(file[1], /text="You are offline\. Revisions appear here once the hub is reachable\."/);
   assert.match(file[1], /retry=\{retry\}/);
 });
+
+test("the mobile welcome says where the hub comes from instead of a bare caption", () => {
+  const onboarding = fs.readFileSync(new URL("../apps/mobile/src/Onboarding.jsx", import.meta.url), "utf8");
+  const welcome = onboarding.slice(onboarding.indexOf('if (step === "welcome")'), onboarding.indexOf('if (step === "pair")')).replace(/\s+/g, " ");
+  assert.match(
+    welcome,
+    /<Card title="You need a hub first"> <Text style=\{s\.text\}> Install Arca on a computer or a server and make it the hub\. Then open Machines → Pair a machine there to get a code\. <\/Text> <\/Card>/,
+  );
+  assert.ok(welcome.indexOf("You need a hub first") > welcome.indexOf("FeatureRow"), "the card follows the feature rows");
+  assert.ok(welcome.indexOf("You need a hub first") < welcome.indexOf('label="Get started"'), "and leads to the action");
+  assert.doesNotMatch(welcome, /You will need a hub and a pairing code/);
+  assert.match(welcome, /label="Get started"[\s\S]*onPress=\{start\}/, "Get started still starts pairing");
+});

@@ -7,6 +7,9 @@
   box-shadow: var(--shadow-window);
   flex: none;
 }
+.m-device.m-tall {
+  height: 900px;
+}
 .m-device.m-fold {
   width: 760px;
   height: 640px;
@@ -548,4 +551,28 @@
 .m-dot.m-selected {
   width: 24px;
   background: var(--m-accent);
+}
+.m-body.m-setup {
+  padding: 32px 24px 24px;
+  gap: 24px;
+}
+.m-display {
+  font-size: 36px;
+  line-height: 38px;
+  letter-spacing: -1.4px;
+  font-weight: 600;
+  color: var(--m-ink);
+}
+.m-emphasis {
+  font-style: italic;
+  color: var(--m-accent);
+}
+.m-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.m-tile.m-large {
+  width: var(--m-touch-control-height);
+  height: var(--m-touch-control-height);
 }

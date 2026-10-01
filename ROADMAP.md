@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-ONB-MOB-WELCOME** — Say where the hub comes from
-  `ui · agent · normal`
-  accept: the board.
 - **UI-ONB-MOB-PAIR** — Pairing asks for what the hub shows, in its order
   `ui · agent · normal`
   accept: the board.

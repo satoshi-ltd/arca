@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.46 · proposals</span>
+      <span class="kit-version">v0.6.47 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -164,19 +164,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>The web access step of an unconfigured Docker server shows the documented command with a Copy button and says the code is the <code>code</code> value of the JSON reply; Umbrel keeps its link; no code is ever shown or logged by the page; a JSDOM test covers both variants and <code>design/desktop.html</code> shows the step.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-ONB-MOB-WELCOME">
-          <header><code>UI-ONB-MOB-WELCOME</code><h3>Say where the hub comes from</h3><span>Mobile</span></header>
-          <p class="kit-note"><strong>Why.</strong> A phone is never a hub, so the first person to install the app without a hub meets a wall: the welcome ends with You will need a hub and a pairing code, and nothing says where either comes from. The proposal replaces that caption with a card that says to install Arca on a computer or a server, make it the hub and open Machines → Pair a machine. It adds no control and no step. The alternative is a link to the install page, which needs a browser round trip and a public address that does not exist yet.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-<div class="m-device m-tall"><div class="m-screen"><div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div><div class="m-body"><img src="../apps/desktop/src/assets/arca-icon.svg" width="58" height="58" alt="" /><span class="m-text">Your personal drive, on your own machines.</span><span class="m-title">Many devices. One space.</span><div class="m-row"><div class="m-tile"><span data-icon="folder-check"></span></div><div class="m-stack"><span class="m-heading">Complete local copies</span><span class="m-text">The folders you choose, whole, on this phone. Offline is a normal day.</span></div></div><div class="m-row"><div class="m-tile"><span data-icon="history"></span></div><div class="m-stack"><span class="m-heading">A way back</span><span class="m-text">Restore earlier versions. Conflicts keep both files.</span></div></div><div class="m-row"><div class="m-tile"><span data-icon="server"></span></div><div class="m-stack"><span class="m-heading">A hub you control</span><span class="m-text">Your storage, your machines. No cloud account, no telemetry.</span></div></div><span class="m-grow"></span><span class="m-button m-primary">Get started<span data-icon="arrow-right"></span></span><span class="m-caption">You will need a hub and a pairing code.</span></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-<div class="m-device m-tall"><div class="m-screen"><div class="m-status"><span>9:41</span><span data-icon="wifi" data-size="16"></span></div><div class="m-body"><img src="../apps/desktop/src/assets/arca-icon.svg" width="58" height="58" alt="" /><span class="m-text">Your personal drive, on your own machines.</span><span class="m-title">Many devices. One space.</span><div class="m-row"><div class="m-tile"><span data-icon="folder-check"></span></div><div class="m-stack"><span class="m-heading">Complete local copies</span><span class="m-text">The folders you choose, whole, on this phone. Offline is a normal day.</span></div></div><div class="m-row"><div class="m-tile"><span data-icon="history"></span></div><div class="m-stack"><span class="m-heading">A way back</span><span class="m-text">Restore earlier versions. Conflicts keep both files.</span></div></div><div class="m-row"><div class="m-tile"><span data-icon="server"></span></div><div class="m-stack"><span class="m-heading">A hub you control</span><span class="m-text">Your storage, your machines. No cloud account, no telemetry.</span></div></div><div class="m-card"><span class="m-heading">You need a hub first</span><span class="m-text">Install Arca on a computer or a server and make it the hub. Then open Machines → Pair a machine there to get a code.</span></div><span class="m-grow"></span><span class="m-button m-primary">Get started<span data-icon="arrow-right"></span></span></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>The mobile welcome shows the You need a hub first card with the copy drawn in place of the caption, in light and dark and in the Fold layout, with no new control or step; SPEC's mobile onboarding line, which says there are no welcome cards, is rewritten; a layout test covers it and <code>design/mobile.html</code> shows the welcome.</p></div></div>
         </article>
         <article class="kit-board" data-board="UI-ONB-MOB-PAIR">
           <header><code>UI-ONB-MOB-PAIR</code><h3>Pairing asks for what the hub shows, in its order</h3><span>Mobile</span></header>

@@ -63,6 +63,12 @@ export function Onboarding({
             {description}
           </FeatureRow>
         ))}
+        <Card title="You need a hub first">
+          <Text style={s.text}>
+            Install Arca on a computer or a server and make it the hub. Then
+            open Machines → Pair a machine there to get a code.
+          </Text>
+        </Card>
         <View style={s.flex} />
         <Button
           label="Get started"
@@ -71,9 +77,6 @@ export function Onboarding({
           busy={busy}
           onPress={start}
         />
-        <Text style={[s.caption, s.centerText]}>
-          You will need a hub and a pairing code.
-        </Text>
       </>
     );
   if (step === "pair")
