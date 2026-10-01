@@ -50,7 +50,8 @@ import {
 } from "./thumbnail-cache";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import { thumbnailFiles } from "./gallery-thumbnails";
-import { acceptedHash, createHubPreviews, hubFallback } from "./hub-preview";
+import { files } from "./files";
+import { createAccepted, createHubPreviews, hubFallback } from "./hub-preview";
 import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 import { ScrollPosition } from "./KeyboardPane";
 import { PhotoViewer } from "./PhotoViewer";
@@ -525,19 +526,24 @@ export function FolderGallery({
       }),
     [api],
   );
+  const accepted = useMemo(
+    () => createAccepted({ hashFile: (uri) => files.hash(uri) }),
+    [],
+  );
   const hubContext = useRef(null);
   hubContext.current = { linked: online, volume, known };
   const withHub = useMemo(
     () =>
       hubFallback({
         previews,
-        context: (item) => ({
+        context: () => ({
           linked: hubContext.current.linked,
           volume: hubContext.current.volume,
-          hash: acceptedHash(hubContext.current.known, item),
+          hashOf: (item, large) =>
+            accepted(hubContext.current.known, item, large),
         }),
       }),
-    [previews],
+    [previews, accepted],
   );
   const display = (item, large = false, fallback = false) =>
     large
@@ -712,12 +718,15 @@ export function FolderGallery({
   }, [candidateKey, store, scope, volume, density, attempt, knownLoaded, online]);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") previews.clear();
+      if (state === "active") {
+        previews.clear();
+        accepted.clear();
+      }
       if (state === "active" && failedPaths.current.size)
         setAttempt((value) => value + 1);
     });
     return () => subscription.remove();
-  }, [previews]);
+  }, [previews, accepted]);
   const progress = useMemo(
     () => previewProgress(candidates, thumbnails, failedPaths.current),
     [candidates, thumbnails, failedCount],
@@ -725,6 +734,7 @@ export function FolderGallery({
   const retryPreviews = () => {
     thumbnailFiles.retry();
     previews.clear();
+    accepted.clear();
     failedPaths.current = new Set();
     setFailedCount(0);
     setAttempt((value) => value + 1);

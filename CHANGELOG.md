@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.57 — 2026-10-01
+
+- Phone previews from the hub verify the local photo's contents first, so an edit that keeps the same size cannot display an older image.
+- Manually picked library photos deleted before upload stop retrying even with automatic uploads disabled. Restricted or unavailable library access still keeps them retryable.
+
 ## 0.6.56 — 2026-10-01
 
 - On phones, a photo deleted from the library before it uploads no longer stays as "Needs attention" and retried forever: it leaves the pending uploads, stops blocking Change album and Up to date, and nothing already in the hub is touched.

@@ -4490,3 +4490,44 @@ test("an edit that reappears after the photo was gone uploads again, and a partl
   assert.deepEqual(item.resources.map((resource) => resource.hash), ["new-a", "old-b"], "what the hub accepted wins, the rest keeps the old revision");
   assert.equal(item.state, "accepted");
 });
+
+
+test("manual library picks deleted before upload leave pending even with automatic uploads off", async (t) => {
+  const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+  const { replica: r, store, volume } = f;
+  await f.enable();
+  await r.gallery.setEnabled(volume.id, false);
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(volume.id, [{ assetId: "photo-1", fileName: "IMG_1234.HEIC" }]));
+  f.data.delete("photo-1");
+  f.media.exists = async (id) => f.data.has(id);
+  f.media.permission = async () => ({ granted: true, accessPrivileges: "all" });
+  f.online();
+  await sync(f);
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "unavailable");
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).failed, 0);
+  assert.equal(f.daemon.engine.store.rows(volume.id).some((row) => row.deleted && row.path.includes("IMG_1234")), false);
+});
+
+
+for (const access of ["limited", "denied", "unavailable"]) {
+  test(`manual missing library picks remain retryable when permission is ${access}`, async (t) => {
+    const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+    const { replica: r, store, volume } = f;
+    await f.enable();
+    await r.gallery.setEnabled(volume.id, false);
+    f.offline();
+    await assert.rejects(r.gallery.addPhotos(volume.id, [{ assetId: "photo-1", fileName: "IMG_1234.HEIC" }]));
+    f.data.delete("photo-1");
+    let lookups = 0;
+    f.media.exists = async () => { lookups++; return false; };
+    f.media.permission = async () => {
+      if (access === "unavailable") throw new Error("Permission query failed");
+      return { granted: access === "limited", accessPrivileges: access === "limited" ? "limited" : "none" };
+    };
+    f.online();
+    await sync(f);
+    assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "failed");
+    assert.equal(lookups, 0, "restricted access never proves a deletion");
+  });
+}

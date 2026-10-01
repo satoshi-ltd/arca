@@ -553,7 +553,9 @@ test("the mobile gallery renders from local files first and asks the hub only fo
   const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(gallery, /hub-previews|hubPreview\(/, "the removed browsing previews stay removed");
   assert.match(gallery, /render: withHub\(\(item\) =>\s*item\.kind === "video"\s*\? thumbnailFiles\.poster\(item\)\s*: displayRef\.current\(item\),\s*\),/);
-  assert.match(gallery, /hash: acceptedHash\(hubContext\.current\.known, item\),/, "only a file that still has the accepted size is asked for");
+  assert.match(gallery, /hashOf: \(item, large\) =>\s*accepted\(hubContext\.current\.known, item, large\),/, "hub previews verify the local content through the memo");
+  assert.match(gallery, /createAccepted\(\{ hashFile: \(uri\) => files\.hash\(uri\) \}\)/);
+  assert.match(gallery, /previews\.clear\(\);\s+accepted\.clear\(\);/, "forgetting refusals forgets verifications");
   assert.match(gallery, /busy: \(error\) => \[409, 429\]\.includes\(error\.status\),/);
   assert.match(gallery, /linked: hubContext\.current\.linked,/);
   assert.match(gallery, /const online = linked && failures < 2;/);
@@ -563,7 +565,7 @@ test("the mobile gallery renders from local files first and asks the hub only fo
   const thumbnails = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
   assert.match(thumbnails, /fromHub\(entry, variant, load\) \{/);
   assert.match(thumbnails, /toByteArray\(await hubLimiter\.run\(load\)\)/);
-  assert.match(gallery, /if \(state === "active"\) previews\.clear\(\);/);
+  assert.match(gallery, /if \(state === "active"\) \{\s+previews\.clear\(\);\s+accepted\.clear\(\);\s+\}/);
   assert.match(gallery, /thumbnailFiles\.retry\(\);\s*previews\.clear\(\);/);
 });
 
@@ -809,10 +811,10 @@ test("an open photo folder prepares every local preview in the background and sa
   has(gallery, 'render: withHub((item) => item.kind === "video" ? thumbnailFiles.poster(item, true) : thumbnailFiles.render(item, false, true), ),');
   assert.match(gallery, /\}, \[visibleKey, store, scope, volume, io, density\]\);/, "the visible pass keeps its own dependencies");
   has(gallery, "(delta) => { if (!active) return; commit(key, delta); },", "} finally { if (active) setPreparing(false); }", "if (completeRef.current && !loadingRef.current) { const kept = pruneSaved(", "if (!dirty.current || loadingRef.current) return Promise.resolve();", "else if (flusher.current.pending) flusher.current.now();");
-  has(gallery, 'AppState.addEventListener("change", (state) => { if (state === "active") previews.clear(); if (state === "active" && failedPaths.current.size) setAttempt((value) => value + 1); });', "queueFlush(seen ? 250 : 2000);");
+  has(gallery, 'AppState.addEventListener("change", (state) => { if (state === "active") { previews.clear(); accepted.clear(); } if (state === "active" && failedPaths.current.size) setAttempt((value) => value + 1); });', "queueFlush(seen ? 250 : 2000);");
   has(gallery, 'preparing && progress.waiting > 0 && ( <StatusRow busy title="Preparing previews"', '${progress.done.toLocaleString("en")} of ${progress.total.toLocaleString("en")}');
   has(gallery, 'progress.failed > 0 && ( <StatusRow icon="image"', "could not be made", 'caption="The photos are on this phone."', '<Button label="Retry" icon="refresh" onPress={retryPreviews} />');
-  has(gallery, "const retryPreviews = () => { thumbnailFiles.retry(); previews.clear(); failedPaths.current = new Set(); setFailedCount(0); setAttempt((value) => value + 1); };");
+  has(gallery, "const retryPreviews = () => { thumbnailFiles.retry(); previews.clear(); accepted.clear(); failedPaths.current = new Set(); setFailedCount(0); setAttempt((value) => value + 1); };");
   has(thumbnails, "const limiter = createLimiter(3, 30000);", "limiter.run(() => produce(target), !background)", "const hubLimiter = createLimiter(2, 60000);");
   assert.match(thumbnails, /retry\(\) \{\s+posterAttempt\.clear\(\);\s+renderAttempt\.clear\(\);\s+\},/);
   assert.match(components, /export function StatusRow\([\s\S]*?<View style=\{\[s\.card, s\.folderRow\]\}/);

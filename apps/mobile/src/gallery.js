@@ -333,6 +333,18 @@ export class Gallery {
       return false;
     }
   }
+  async releaseMissing(folder, source, item, error, permission) {
+    if (error.code !== "SOURCE_UNAVAILABLE" || item.picked) return false;
+    permission ||= await this.permission(source.videos).catch(() => null);
+    if (
+      !permission?.granted ||
+      permission.accessPrivileges === "limited" ||
+      !(await this.gone(item.id))
+    )
+      return false;
+    await this.release(folder, item);
+    return true;
+  }
   async release(folder, item) {
     if (item.previousResources) {
       const fresh = new Map(
@@ -538,6 +550,7 @@ export class Gallery {
           isHubUnreachable(error)
         )
           throw error;
+        if (await this.releaseMissing(folder, source, item, error)) continue;
         item.state = "failed";
         item.issue = error.message;
         item.retryAt = Date.now() + 60000;
@@ -686,16 +699,8 @@ export class Gallery {
             isHubUnreachable(error)
           )
             throw error;
-          if (
-            error.code === "SOURCE_UNAVAILABLE" &&
-            !item.picked &&
-            permission.granted &&
-            permission.accessPrivileges !== "limited" &&
-            (await this.gone(item.id))
-          ) {
-            await this.release(folder, item);
+          if (await this.releaseMissing(folder, source, item, error, permission))
             continue;
-          }
           item.state = "failed";
           item.issue = error.message;
           item.retryAt = Date.now() + 60000;

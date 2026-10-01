@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createLimiter } from "../apps/mobile/src/thumbnail-cache.js";
 import {
   acceptedHash,
+  createAccepted,
   createHubPreviews,
   fetchHubPreview,
   hubFallback,
@@ -37,18 +39,101 @@ test("the hub preview request names the volume, path and hash and returns the JP
   await assert.rejects(fetchHubPreview({ api: async () => ({ data: "data:image/png;base64,AA" }), volume: "v1", item: item(), hash: "h1" }), /Hub preview unavailable/);
 });
 
-test("the hash is the accepted revision only when the local file still has its size", () => {
+test("the hash is the accepted revision only when the local bytes match, and only matching rows are ever hashed", async () => {
   const known = new Map([
     ["a.heic", { rev: 3, hash: "h1", size: 10, deleted: false }],
     ["b.heic", { rev: 1, hash: "h2", size: 10, deleted: true }],
     ["c.heic", { rev: 1, hash: null, size: 10, deleted: false }],
   ]);
-  assert.equal(acceptedHash(known, item()), "h1");
-  assert.equal(acceptedHash(known, item({ size: 11 })), null, "an edited file is not the accepted revision");
-  assert.equal(acceptedHash(known, item({ path: "b.heic" })), null, "a deleted row");
-  assert.equal(acceptedHash(known, item({ path: "c.heic" })), null, "a row without a hash");
-  assert.equal(acceptedHash(known, item({ path: "new.heic" })), null, "a file the hub never accepted");
-  assert.equal(acceptedHash(null, item()), null, "before the phone index loads");
+  const hashed = [];
+  const hashFile = async (uri) => {
+    hashed.push(uri);
+    return "h1";
+  };
+  assert.equal(await acceptedHash(known, item(), hashFile), "h1");
+  assert.equal(hashed.length, 1);
+  assert.equal(await acceptedHash(known, item({ size: 11 }), hashFile), null, "an edited file is not the accepted revision");
+  assert.equal(await acceptedHash(known, item({ uri: null }), hashFile), null, "a file that is not on the phone");
+  assert.equal(await acceptedHash(known, item({ path: "b.heic" }), hashFile), null, "a deleted row");
+  assert.equal(await acceptedHash(known, item({ path: "c.heic" }), hashFile), null, "a row without a hash");
+  assert.equal(await acceptedHash(known, item({ path: "new.heic" }), hashFile), null, "a file the hub never accepted");
+  assert.equal(await acceptedHash(null, item(), hashFile), null, "before the phone index loads");
+  assert.equal(hashed.length, 1, "none of those read the file");
+  assert.equal(await acceptedHash(known, item(), async () => "edited"), null, "a same-size edit has other bytes");
+  assert.equal(await acceptedHash(known, item(), async () => { throw new Error("File disappeared"); }), null);
+});
+
+test("a verification is computed once per file and revision, one file at a time, and forgotten on clear", async () => {
+  const known = new Map([
+    ["a.heic", { hash: "h1", size: 10 }],
+    ["b.heic", { hash: "h2", size: 10 }],
+    ["c.heic", { hash: "h3", size: 10 }],
+  ]);
+  let running = 0;
+  let peak = 0;
+  const calls = [];
+  const hashFile = async (uri) => {
+    calls.push(uri);
+    running++;
+    peak = Math.max(peak, running);
+    await new Promise(setImmediate);
+    running--;
+    return { "file:///a.heic": "h1", "file:///b.heic": "other", "file:///c.heic": "h3" }[uri];
+  };
+  const accepted = createAccepted({ hashFile });
+  const a = item({ uri: "file:///a.heic", path: "a.heic" });
+  const b = item({ uri: "file:///b.heic", path: "b.heic" });
+  const c = item({ uri: "file:///c.heic", path: "c.heic" });
+  const results = await Promise.all([accepted(known, a), accepted(known, a), accepted(known, b), accepted(known, c)]);
+  assert.deepEqual(results, ["h1", "h1", null, "h3"]);
+  assert.deepEqual(calls, ["file:///a.heic", "file:///b.heic", "file:///c.heic"], "the same file in flight is hashed once");
+  assert.equal(peak, 1, "files are hashed one at a time");
+  assert.equal(await accepted(known, b), null);
+  assert.equal(calls.length, 3, "a negative result is remembered too");
+  assert.equal(await accepted(known, { ...a, mtime: 2 }), "h1");
+  assert.equal(calls.length, 4, "an edited file is verified again");
+  accepted.clear();
+  assert.equal(await accepted(known, a), "h1");
+  assert.equal(calls.length, 5, "clearing forgets what was verified");
+});
+
+test("the cheap gates run before any hashing, and the viewer ignores the grid's pause", async () => {
+  let clock = 0;
+  const previews = createHubPreviews({
+    api: async () => {
+      throw new Error("Network request failed");
+    },
+    save: async (entry, variant, load) => load(),
+    unreachable: (error) => /Network/.test(error.message),
+    busy: never,
+    now: () => clock,
+  });
+  assert.equal(previews.allowed({ linked: true, item: item() }), true);
+  assert.equal(previews.allowed({ linked: false, item: item() }), false, "offline");
+  assert.equal(previews.allowed({ linked: true, item: item({ uri: null }) }), false, "not on the phone");
+  assert.equal(previews.allowed({ linked: true, item: item({ upload: "pending" }) }), false, "a pending upload");
+  await previews.preview({ linked: true, volume: "v1", hash: "h", item: item() });
+  assert.equal(previews.allowed({ linked: true, item: item({ uri: "file:///b" }) }), false, "paused after an unreachable answer");
+  assert.equal(previews.allowed({ linked: true, item: item({ uri: "file:///b" }), large: true }), true, "the viewer asks anyway");
+  clock += 30000;
+  assert.equal(previews.allowed({ linked: true, item: item({ uri: "file:///b" }) }), true);
+  const hashed = [];
+  const wrap = hubFallback({
+    previews,
+    context: () => ({ linked: true, volume: "v1", hashOf: async (value) => (hashed.push(value.uri), "h") }),
+  });
+  const render = wrap(async () => {
+    throw new Error("Unsupported image");
+  });
+  await assert.rejects(render(item({ uri: "file:///c" })), /Unsupported image/);
+  assert.deepEqual(hashed, ["file:///c"], "an allowed fallback verifies the file");
+  await assert.rejects(render(item({ uri: "file:///d" })), /Unsupported image/);
+  assert.deepEqual(hashed, ["file:///c"], "a paused hub means no hashing at all");
+  const offline = hubFallback({ previews, context: () => ({ linked: false, volume: "v1", hashOf: async (value) => (hashed.push(value.uri), "h") }) })(async () => {
+    throw new Error("Unsupported image");
+  });
+  await assert.rejects(offline(item({ uri: "file:///e" })), /Unsupported image/);
+  assert.deepEqual(hashed, ["file:///c"], "offline means no hashing either");
 });
 
 test("the hub is asked only for photos already on the phone, once, and a saved preview needs no request", async () => {
@@ -203,4 +288,98 @@ test("the viewer's large preview comes from the hub only for photos on the phone
     throw new Error("Unsupported image");
   }, true);
   assert.equal(await render(item(), true, false), "cache://hub-large", "the fallback reports that it is for the large preview");
+});
+
+
+test("hub fallback waits for local hash verification before requesting a preview", async () => {
+  let requests = 0;
+  const known = new Map([["a.heic", { hash: "accepted", size: 10 }]]);
+  let contents = "edited";
+  const accepted = createAccepted({ hashFile: async () => contents });
+  const render = hubFallback({
+    previews: {
+      allowed: () => true,
+      preview: async ({ hash }) => {
+        if (!hash) return null;
+        requests++;
+        return "cache://verified";
+      },
+    },
+    context: () => ({ linked: true, volume: "v1", hashOf: (entry) => accepted(known, entry) }),
+  })(async () => {
+    throw new Error("Unsupported image");
+  });
+  await assert.rejects(render(item()), /Unsupported image/);
+  assert.equal(requests, 0);
+  accepted.clear();
+  contents = "accepted";
+  assert.equal(await render(item()), "cache://verified");
+  assert.equal(requests, 1);
+});
+
+test("the verification memo stays bounded", async () => {
+  let calls = 0;
+  const known = new Map(["a", "b", "c"].map((name) => [`${name}.heic`, { hash: "h", size: 10 }]));
+  const accepted = createAccepted({ hashFile: async () => (calls++, "h"), limit: 2 });
+  const of = (name) => item({ uri: `file:///${name}.heic`, path: `${name}.heic` });
+  for (const name of ["a", "b", "c"]) await accepted(known, of(name));
+  assert.equal(calls, 3);
+  await accepted(known, of("c"));
+  assert.equal(calls, 3, "the newest are remembered");
+  await accepted(known, of("a"));
+  assert.equal(calls, 4, "the oldest was forgotten");
+});
+
+test("a new accepted revision with the same file is verified again, a hash that times out is not remembered, and the viewer goes first", async () => {
+  const known = new Map([["a.heic", { hash: "h1", size: 10 }]]);
+  let calls = 0;
+  const accepted = createAccepted({ hashFile: async () => (calls++, "h2") });
+  assert.equal(await accepted(known, item()), null, "the file has other bytes than the accepted revision");
+  known.set("a.heic", { hash: "h2", size: 10 });
+  assert.equal(await accepted(known, item()), "h2", "the hub accepted a new revision with the same uri, size and mtime");
+  assert.equal(calls, 2);
+
+  let slow = 0;
+  const stuck = createAccepted({
+    hashFile: async () => {
+      slow++;
+      if (slow === 1) await new Promise((resolve) => setTimeout(resolve, 60));
+      return "h1";
+    },
+    limiter: createLimiter(1, 10),
+  });
+  const first = await stuck(new Map([["a.heic", { hash: "h1", size: 10 }]]), item());
+  assert.equal(first, null, "a timeout answers null for that call");
+  const again = await stuck(new Map([["a.heic", { hash: "h1", size: 10 }]]), item());
+  assert.equal(again, "h1", "and is not remembered");
+
+  const order = [];
+  const lanes = createAccepted({
+    hashFile: async (uri) => {
+      order.push(uri);
+      await new Promise(setImmediate);
+      return "h";
+    },
+  });
+  const rows = new Map(["a", "b", "c", "d"].map((name) => [`${name}.heic`, { hash: "h", size: 10 }]));
+  const of = (name) => item({ uri: `file:///${name}.heic`, path: `${name}.heic` });
+  await Promise.all([lanes(rows, of("a")), lanes(rows, of("b")), lanes(rows, of("c")), lanes(rows, of("d"), true)]);
+  assert.deepEqual(order, ["file:///a.heic", "file:///d.heic", "file:///b.heic", "file:///c.heic"], "the viewer's file jumps the background queue");
+});
+
+test("the viewer is allowed without the grid's pause but never offline, and a fallback passes whether it is for the viewer", async () => {
+  const previews = createHubPreviews({ api: async () => reply(), save: async () => "cache://x", unreachable: never, busy: never });
+  assert.equal(previews.allowed({ linked: false, item: item(), large: true }), false);
+  assert.equal(previews.allowed({ linked: true, item: item({ uri: null }), large: true }), false);
+  const seen = [];
+  const wrap = hubFallback({
+    previews: { allowed: () => true, preview: async () => "cache://hub" },
+    context: () => ({ linked: true, volume: "v1", hashOf: async (value, large) => (seen.push(large), "h") }),
+  });
+  const fail = async () => {
+    throw new Error("Unsupported image");
+  };
+  await wrap(fail)(item());
+  await wrap(fail, true)(item());
+  assert.deepEqual(seen, [false, true]);
 });
