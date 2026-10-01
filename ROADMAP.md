@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-DESK-SAVED-FILE-HISTORY** — Offline file history without holes
-  `ui · agent · normal`
-  accept: the board.
 - **UI-DESK-HUB-ONLY-MORE** — Backup controls wait for the hub
   `ui · agent · normal`
   accept: the board.
@@ -299,9 +296,6 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
   `bug · agent · low`
   accept: the desktop gallery header counts every loaded photo and video, including those still waiting for a capture date (it read "0 photos" over three tiles); a DOM test.
 
-- **DESK-SAVED-FILE-HISTORY** — Offline file history is a partial union of saved windows
-  `bug · agent · low`
-  accept: saved file history keeps only rows without holes (no row older than the oldest entry of any saved window that was full), its hint says "recent entries only" like the folder view, and Restore is disabled while `offline`; a daemon test with a busy folder. The interface follows board UI-DESK-SAVED-FILE-HISTORY.
 - **DESK-SELECT-CATALOG** — A folder selected while paused is missing from History
   `bug · agent · low`
   accept: `select` adds the folder to the saved catalog so History includes it before the next cycle; a replica test with a paused replica.

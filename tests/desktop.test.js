@@ -5809,3 +5809,79 @@ test("a server replica's web file detail downloads the file from its own copy, t
   assert.equal(refused.status, 404, "an unlinked folder serves nothing");
   assert.match((await refused.json()).error, /Unknown volume/);
 });
+
+test("offline file history shows only the saved rows, says they are recent entries and keeps Restore for the hub", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-offline-file-history-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  let poll = null;
+  w.setInterval = (callback, ms) => {
+    if (ms === 5000) poll = callback;
+    return 0;
+  };
+  let hubDown = true;
+  const rows = [120, 115, 110].map((rev) => ({ rev, path: "brief.md", size: 4000 + rev, deleted: 0, author: daemon.engine.config.id, created: `2026-09-30T1${String(rev % 10)}:00:00Z` }));
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: hubDown ? "offline" : "idle", hubUnavailable: hubDown, hubName: "Casa", hub: "http://127.0.0.1:49999" };
+        if (args.route === "/v1/remote") return { offline: true, name: "Casa", volumes: [{ ...volume, selected: 1 }] };
+        if (args.route === "/v1/machines") return { offline: true, machines: [] };
+        if (args.route.startsWith("/v1/history") && args.route.includes("before=")) return { offline: true, truncated: true, versions: [], next: null };
+        if (args.route.startsWith("/v1/history")) return { offline: true, truncated: !args.route.includes("quiet.md"), versions: rows, next: args.route.includes("quiet.md") ? null : 110 };
+        if (args.route.startsWith("/v1/activity")) return { offline: true, versions: [], next: null };
+        if (args.route.startsWith("/v1/browse")) return { entries: [], next: null };
+        return {};
+      },
+    },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  const forced = w.document.createElement("button");
+  forced.dataset.action = "activity-file";
+  forced.dataset.id = JSON.stringify({ volume: volume.id, path: "brief.md" });
+  w.document.body.append(forced);
+  forced.click();
+  await until(() => w.document.querySelectorAll(".file-version-row").length === 3 && w.document.body.getAttribute("aria-busy") === "false");
+  const content = w.document.querySelector("#content");
+  assert.match(content.querySelector("#history-list .hint").textContent, /^Showing saved history · recent entries only\. Connect to the hub for updated retention and older revisions\.$/);
+  assert.doesNotMatch(content.textContent, /Offline · showing saved history/);
+  content.querySelector('.pagination button[data-action="history-page"]').click();
+  await until(() => !content.querySelector(".pagination") && w.document.body.getAttribute("aria-busy") === "false");
+  assert.equal(content.querySelectorAll(".file-version-row").length, 3, "an empty continuation keeps the rows already shown");
+  assert.doesNotMatch(content.textContent, /No saved revisions for this file/);
+  assert.match(content.querySelector("#history-list .hint").textContent, /recent entries only/, "an exhausted saved window still means older rows exist on the hub");
+  const versions = [...content.querySelectorAll(".file-version-row")];
+  assert.ok(versions[0].querySelector(".pill"), "the newest saved row is Current");
+  const restores = versions.slice(1).map((row) => row.querySelector(".row-actions button"));
+  assert.equal(restores.length, 2);
+  for (const restore of restores) {
+    assert.match(restore.textContent, /Restore/);
+    assert.equal(restore.disabled, true, "Restore needs the hub");
+    assert.match(restore.title, /Needs the hub, which is unavailable\./);
+    assert.equal(restore.dataset.action, "restore", "it is the same control the hub-only sync re-enables");
+  }
+  hubDown = false;
+  await poll();
+  await until(() => restores.every((restore) => !restore.disabled && !restore.title));
+  hubDown = true;
+  await poll();
+  await until(() => restores.every((restore) => restore.disabled));
+  const quiet = w.document.createElement("button");
+  quiet.dataset.action = "activity-file";
+  quiet.dataset.id = JSON.stringify({ volume: volume.id, path: "quiet.md" });
+  w.document.body.append(quiet);
+  quiet.click();
+  await until(() => w.document.querySelector("#history-list .hint")?.textContent.startsWith("Showing saved history. ") && w.document.body.getAttribute("aria-busy") === "false");
+  assert.equal(w.document.querySelector("#history-list .hint").textContent, "Showing saved history. Connect to the hub for updated retention.", "a complete saved history does not claim to be recent entries only");
+});

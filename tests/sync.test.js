@@ -3305,3 +3305,79 @@ test("replica prepares bounded offline history without opening History and refre
   const count = replica.engine.store.db.prepare("SELECT COUNT(*) n FROM history_views").get().n;
   assert.equal(count, 3, "one bounded page per filter for the selected folder");
 });
+
+test("a busy folder's saved file history is hole-free offline and says it is partial", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  for (let i = 1; i <= 20; i++) {
+    write(hub, volume, "busy.txt", `draft ${i}`);
+    write(hub, volume, `noise-${i}.txt`, `noise ${i}`);
+    await hub.sync();
+    if (i === 2) {
+      fs.rmSync(path.join(volume.path, "busy.txt"));
+      await hub.sync();
+    }
+  }
+  for (let i = 1; i <= 20; i++) {
+    write(hub, volume, `late-${i}.txt`, `late ${i}`);
+    await hub.sync();
+  }
+  const replica = await connect("busy-history");
+  await replica.sync();
+  const live = await hub.api(`/v1/history?volume=${volume.id}&path=busy.txt&limit=50`);
+  const address = replica.engine.config.hub.url;
+  replica.engine.hubUnavailable = true;
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  const saved = await replica.api(`/v1/history?volume=${volume.id}&path=busy.txt&limit=50`);
+  assert.equal(saved.offline, true);
+  assert.equal(saved.truncated, true, "older revisions of the busy file exist on the hub beyond the saved windows");
+  assert.ok(saved.versions.length > 0 && saved.versions.length < live.versions.length);
+  const shown = saved.versions.map((r) => r.rev);
+  const floor = Math.min(...shown);
+  const expected = live.versions.filter((r) => r.rev >= floor).map((r) => r.rev);
+  assert.deepEqual(shown, expected, "every hub revision of the file above the oldest shown row is present, deletions included");
+  assert.ok(live.versions.some((r) => r.deleted && r.rev < floor), "the early deletion sits below the floor, where a plain union would show it with a hole above");
+  assert.equal(saved.next, null);
+  const page = await replica.api(`/v1/history?volume=${volume.id}&path=busy.txt&limit=50&before=${shown[0]}`);
+  assert.deepEqual(page.versions.map((r) => r.rev), shown.slice(1), "a before cursor continues without repeating the first row");
+  const exhausted = await replica.api(`/v1/history?volume=${volume.id}&path=busy.txt&limit=50&before=${floor}`);
+  assert.deepEqual({ ...exhausted, local: undefined }, { versions: [], next: null, truncated: true, offline: true, local: undefined }, "a continuation past the saved windows ends empty but still says older rows exist");
+  replica.engine.config.hub.url = address;
+});
+
+test("saved history windows are written together, so a hub that drops out mid-pass leaves nothing half-saved", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "pair.txt", "one");
+  await hub.sync();
+  const replica = await connect("half-saved");
+  const original = replica.engine.request.bind(replica.engine);
+  replica.engine.request = async (route, options) => {
+    if (String(route).includes("filter=deleted")) throw new Error("hub dropped out");
+    return original(route, options);
+  };
+  await replica.sync();
+  const count = () => replica.engine.store.db.prepare("SELECT COUNT(*) n FROM history_views WHERE volume=?").get(volume.id).n;
+  assert.equal(count(), 0, "a pass that lost the hub saves none of the folder's windows");
+  replica.engine.request = original;
+  await replica.sync();
+  assert.equal(count(), 3);
+});
+
+test("a failed saved-history write never fails the file sync", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "kept.txt", "one");
+  await hub.sync();
+  const replica = await connect("full-disk");
+  const db = replica.engine.store.db;
+  const prepare = db.prepare.bind(db);
+  db.prepare = (sql) => (sql.includes("INTO history_views") ? { run() { throw new Error("disk I/O error"); } } : prepare(sql));
+  t.after(() => { db.prepare = prepare; });
+  await replica.sync();
+  assert.equal(replica.engine.status().phase, "idle");
+  assert.equal(replica.engine.folderStates.get(volume.id)?.state, "synced", "the folder's files synced; only the optional history is missing");
+  assert.equal(fs.readFileSync(path.join(replica.engine.store.volume(volume.id).path, "kept.txt"), "utf8"), "one");
+  const count = () => db.prepare("SELECT COUNT(*) n FROM history_views WHERE volume=?").get(volume.id).n;
+  assert.equal(count(), 0);
+  db.prepare = prepare;
+  await replica.sync();
+  assert.equal(count(), 3, "the next pass saves the windows once writes succeed again");
+});

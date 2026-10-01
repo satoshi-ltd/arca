@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.62 — 2026-10-01
+
+- Offline, a file's history on desktop and web shows only the saved revisions that follow each other without gaps, says it is showing recent entries only, and keeps Restore for when the hub is back instead of offering it.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.61 — 2026-10-01
 
 - On a server replica's web administration, a file's detail now offers Download file, served from the replica's own copy, as the hub's already did.

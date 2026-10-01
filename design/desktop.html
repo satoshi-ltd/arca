@@ -20,7 +20,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.61 · replica macbook-pro · hub casa</span>
+      <span class="kit-version">v0.6.62 · replica macbook-pro · hub casa</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -357,6 +357,45 @@
 <div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps"><div class="step current" aria-current="step"><span>1</span>This machine</div><div class="step "><span>2</span>Connect</div><div class="step "><span>3</span>Folders</div></div></div><div class="onboarding-body"><h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p><p>On the server, run:</p><div class="settings-card"><div class="setting-row"><div class="row-main"><strong>Command</strong><p><span class="mono">docker exec &lt;container&gt; node packages/cli/arca.js web-code</span></p></div><button type="button" class="secondary small-button"><span data-icon="copy"></span>Copy</button></div></div><p class="hint">The reply is JSON: enter the value of <code>code</code>.</p><label>Web access code</label><div class="code-inputs" role="group" aria-label="Six-digit code"><input aria-label="Digit" readonly><input aria-label="Digit" readonly><input aria-label="Digit" readonly><span class="separator">—</span><input aria-label="Digit" readonly><input aria-label="Digit" readonly><input aria-label="Digit" readonly></div><p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p><div class="dialog-actions"><button type="button" class="ghost"><span data-icon="chevron-left"></span>Back</button><button type="button" class="primary">Continue<span data-icon="chevron-right"></span></button></div></div></div>
         </div>
         <p class="kit-caption">Server access · web only, under This machine</p>
+      </section>
+
+      <section class="kit-section">
+        <h2>File detail <span>10</span></h2>
+        <div class="kit-window">
+          <div class="shell">
+            <aside class="sidebar">
+              <a class="brand" href="#"><div class="brand-mark"><img class="brand-logo" src="../apps/desktop/src/assets/arca-icon.svg" alt="Arca" /></div><span><b>arca</b></span></a>
+              <div class="managing"><span data-icon="monitor"></span><strong>macbook-pro</strong><span class="machine-role">Replica</span></div>
+              <nav aria-label="Main navigation">
+                <button class="nav-item"><span data-icon="folder"></span>Folders</button>
+                <button class="nav-item"><span data-icon="monitor-smartphone"></span>Machines</button>
+                <button class="nav-item active"><span data-icon="history"></span>History</button>
+                <button class="nav-item"><span data-icon="settings"></span>Settings</button>
+              </nav>
+              <div class="sidebar-bottom">
+                <div class="status-card"><div class="sync-status-heading"><strong><span data-icon="wifi-off"></span>Offline</strong></div><span>Completed 2 h ago</span><div><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button><button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button></div></div>
+              </div>
+            </aside>
+            <main>
+              <section id="content">
+                <div class="detail-head file-detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>History</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="file-text"></span></div><div><h1>brief.md</h1></div></div><div class="file-header-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open file</button><details class="details-menu file-actions-menu"><summary class="icon-button" aria-label="File actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="folder-search"></span>Open in Finder</button><button type="button" class="secondary"><span data-icon="pencil"></span>Rename…</button><button type="button" class="secondary danger menu-item-separated"><span data-icon="trash-2"></span>Delete file…</button></div></details></div></div></div>
+                <div class="page detail-page">
+                  <div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>Available</strong></div><div class="stat"><span>File size</span><strong>4.2 MB</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">rev 165764</strong><p>macbook-pro</p></div><div class="stat"><span>Last changed</span><strong>Sep 30, 14:02</strong><p>Accepted by the hub</p></div></div></div>
+                  <div class="detail-grid">
+                    <div id="history-list" class="detail-revisions">
+                      <p class="hint">Showing saved history · recent entries only. Connect to the hub for updated retention and older revisions.</p>
+                      <section><div class="section-label">File revisions</div>
+                        <div class="history-group"><div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Sep 30, 14:02</strong><p>4.2 MB · macbook-pro</p></div><span class="mono revision">rev 165764</span><div class="row-actions"><span class="pill id"><span data-icon="check"></span>Current</span></div></div><div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Sep 30, 13:40</strong><p>4.1 MB · macbook-pro</p></div><span class="mono revision">rev 165760</span><div class="row-actions"><button type="button" class="text-button" disabled title="Needs the hub, which is unavailable."><span data-icon="undo-2"></span>Restore</button></div></div><div class="history-row file-version-row"><span data-icon="git-commit-horizontal"></span><div><strong>Sep 30, 11:15</strong><p>4.1 MB · macbook-pro</p></div><span class="mono revision">rev 165755</span><div class="row-actions"><button type="button" class="text-button" disabled title="Needs the hub, which is unavailable."><span data-icon="undo-2"></span>Restore</button></div></div></div>
+                      </section>
+                    </div>
+                    <aside class="detail-side"><section><div class="section-label">File location</div><div class="panel"><strong>documents</strong><p class="path">brief.md</p><button type="button" class="secondary"><span data-icon="folder"></span>View folder</button></div></section></aside>
+                  </div>
+                </div>
+              </section>
+            </main>
+          </div>
+        </div>
+        <p class="kit-caption">File detail · offline, saved rows only, Restore waits for the hub</p>
       </section>
     </main>
   </body>

@@ -19,18 +19,43 @@ export function cachedActivity(store, hub, query) {
   };
 }
 
-export function cachedFileHistory(store, hub, volume, path) {
+// A file's rows live in two windows (its content and its deletions); only their shared range, at one folder version, is hole-free.
+export function cachedFileHistory(
+  store,
+  hub,
+  volume,
+  path,
+  before = Number.MAX_SAFE_INTEGER,
+) {
   const saved = store.db
-    .prepare("SELECT value,updated FROM history_views WHERE hub=? AND volume=?")
-    .all(hub, volume);
+    .prepare(
+      "SELECT filter,version,value,updated FROM history_views WHERE hub=? AND volume=?",
+    )
+    .all(hub, volume)
+    .map((view) => ({ ...view, page: JSON.parse(view.value) }));
+  const savedAt = Math.max(0, ...saved.map((view) => view.updated));
+  const unusable = { savedAt, versions: [], truncated: saved.length > 0 };
+  const conflict = path.includes(".conflict-");
+  const windows = [conflict ? "conflicts" : "revisions", "deleted"].map((kind) =>
+    saved.find((entry) => entry.filter === kind),
+  );
+  if (windows.some((view) => !view) || windows[0].version !== windows[1].version)
+    return unusable;
+  let floor = 0;
+  let partial = false;
+  for (const view of windows)
+    if (view.page.next !== null) {
+      partial = true;
+      floor = Math.max(floor, view.page.versions.at(-1)?.rev ?? Infinity);
+    }
   const rows = new Map();
-  for (const view of saved)
-    for (const row of JSON.parse(view.value).versions)
-      if (row.path === path) rows.set(row.rev, row);
-  return {
-    savedAt: Math.max(0, ...saved.map((view) => view.updated)),
-    versions: [...rows.values()].sort((a, b) => b.rev - a.rev),
-  };
+  for (const view of windows)
+    for (const row of view.page.versions)
+      if (row.path === path && row.rev >= floor && row.rev < before)
+        rows.set(row.rev, row);
+  const versions = [...rows.values()].sort((a, b) => b.rev - a.rev);
+  if (conflict && versions[0]?.deleted) return unusable;
+  return { savedAt, versions, truncated: partial };
 }
 
 export async function warmHistory(engine) {
@@ -61,6 +86,7 @@ export async function warmHistory(engine) {
       remote.historyRetention,
       remote.conflictRevision,
     ]);
+    const pages = [];
     for (const filter of ["revisions", "deleted", "conflicts"]) {
       const saved = store.db
         .prepare(
@@ -79,21 +105,26 @@ export async function warmHistory(engine) {
           signal,
           trackConnection: false,
         });
-        const value = await response.json();
-        if (signal.aborted || config.hub?.id !== hub) return;
-        store.db
-          .prepare("INSERT OR REPLACE INTO history_views VALUES(?,?,?,?,?,?)")
-          .run(
-            hub,
-            folder.id,
-            filter,
-            version,
-            Date.now(),
-            JSON.stringify(value),
-          );
+        pages.push([filter, JSON.stringify(await response.json())]);
       } catch {
         return;
       } // Optional history must not fail a completed file sync.
+    }
+    if (!pages.length || signal.aborted || config.hub?.id !== hub) return;
+    const write = store.db.prepare(
+      "INSERT OR REPLACE INTO history_views VALUES(?,?,?,?,?,?)",
+    );
+    try {
+      store.db.exec("BEGIN IMMEDIATE");
+      for (const [filter, value] of pages)
+        write.run(hub, folder.id, filter, version, Date.now(), value);
+      store.db.exec("COMMIT");
+    } catch {
+      try {
+        store.db.exec("ROLLBACK");
+      } catch {
+        /* No transaction to roll back when BEGIN itself failed. */
+      }
     }
   }
 }

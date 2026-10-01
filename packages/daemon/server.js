@@ -1071,13 +1071,25 @@ export async function start(home, options = {}) {
           const local = name ? s.current(volume, name) : null;
           const view = await remoteView(`/v1/history${url.search}`, () => {
             const saved = name
-              ? cachedFileHistory(s, config.hub?.id ?? "", volume, name)
+              ? cachedFileHistory(
+                  s,
+                  config.hub?.id ?? "",
+                  volume,
+                  name,
+                  Number(url.searchParams.get("before") || Number.MAX_SAFE_INTEGER),
+                )
               : null;
-            return saved?.versions.length
-              ? { ...saved, next: null }
-              : { versions: local ? [local] : [], localOnly: true, next: null };
+            if (saved?.versions.length) return { ...saved, next: null };
+            if (url.searchParams.has("before"))
+              return { versions: [], next: null, truncated: true };
+            return { versions: local ? [local] : [], localOnly: true, next: null };
           });
-          if (view.offline && local && !(view.versions?.[0]?.rev >= local.rev))
+          if (
+            view.offline &&
+            local &&
+            !url.searchParams.has("before") &&
+            !(view.versions?.[0]?.rev >= local.rev)
+          )
             view.versions = [
               local,
               ...(view.versions || []).filter((row) => row.rev !== local.rev),
