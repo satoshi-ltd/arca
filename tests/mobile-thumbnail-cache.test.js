@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareThumbnails } from "../apps/mobile/src/thumbnail-cache.js";
+import fs from "node:fs";
+import { mergeTimeline, timelineItem } from "../apps/mobile/src/gallery-timeline.js";
+import { prepareThumbnails, savedThumbnail } from "../apps/mobile/src/thumbnail-cache.js";
 
 test("mobile thumbnail cache reuses unchanged images, regenerates changed or evicted copies and drops deletions", async () => {
   const entries = [
@@ -54,4 +56,24 @@ test("mobile thumbnail cache reuses unchanged images, regenerates changed or evi
     },
   );
   assert.deepEqual(failed, {});
+});
+
+test("a saved thumbnail is found by path and signature and an item without a signature never throws", () => {
+  const saved = { "a.jpg": { signature: "20:1", uri: "cache://a" } };
+  assert.equal(savedThumbnail(saved, { path: "a.jpg", signature: "20:1" }), "cache://a");
+  assert.equal(savedThumbnail(saved, { path: "a.jpg", signature: "20:2" }), null, "a changed file is regenerated");
+  assert.equal(savedThumbnail(saved, { path: "c.jpg", signature: "9:9" }), null);
+  const pending = mergeTimeline({ uploads: [{ id: 1, state: "pending", uri: "file:///x.jpg", filename: "x.jpg" }] })[0];
+  assert.equal(pending.signature, undefined);
+  assert.equal(savedThumbnail(saved, pending), null, "a pending upload has no signature and no saved thumbnail");
+  const unhashed = timelineItem({ path: "d.jpg", size: 1, date: "2026-09-01", kind: "image" });
+  assert.equal(unhashed.signature, undefined);
+  assert.equal(savedThumbnail(saved, unhashed), null, "a hub row without a hash has no signature");
+  assert.equal(savedThumbnail({}, pending), null);
+});
+
+test("the gallery resolves saved thumbnails through savedThumbnail", () => {
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  assert.match(gallery, /savedThumbnail\(thumbnails, item\)/);
+  assert.doesNotMatch(gallery, /thumbnails\[item\.path\]\?\.signature === item\.signature/);
 });

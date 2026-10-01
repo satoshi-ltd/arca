@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.46 — 2026-10-01
+
+- On phones, the photo gallery no longer crashes with "Cannot read property 'uri' of undefined" when it shows an item without a content hash, such as a pending or failed upload.
+
+Needs: native build
+
 ## 0.6.45 — 2026-10-01
 
 - Internal: six new proposal boards (five for onboarding on desktop, web, server and phones, one for preview progress in photo folders) and a fix so the mobile boards in the design kit render with their styles.

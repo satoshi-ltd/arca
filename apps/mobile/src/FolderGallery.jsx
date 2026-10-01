@@ -39,7 +39,7 @@ import {
   NO_LOCAL_GALLERY,
   withLocalOnly,
 } from "./hub-gallery";
-import { prepareThumbnails } from "./thumbnail-cache";
+import { prepareThumbnails, savedThumbnail } from "./thumbnail-cache";
 import { thumbnailFiles } from "./gallery-thumbnails";
 import { ScrollPosition } from "./KeyboardPane";
 import { PhotoViewer } from "./PhotoViewer";
@@ -839,11 +839,7 @@ export function FolderGallery({
     [pending],
   );
   const thumb = (item) =>
-    thumbnails[item.path]?.signature === item.signature
-      ? thumbnails[item.path].uri
-      : item.upload
-        ? item.uri
-        : null;
+    savedThumbnail(thumbnails, item) || (item.upload ? item.uri : null);
   const photos = useMemo(
     () =>
       [...pendingItems, ...loaded].map((item) => {

@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-THUMB-STALL** — Photos already on the phone keep grey tiles
-  `bug · agent · high`
-  accept: on a phone where a photo folder's files are all downloaded and nothing is pending, every tile gets its thumbnail; find the cause (the preparation effect in `FolderGallery.jsx` restarts whenever the visible set changes and drops failures without a retry, and falls back to `expo-image-manipulator` on a binary without `ArcaNetwork.thumbnail`) and prove the fix with a test that fails without it. If the cause needs device evidence, file a maintainer `verify` with the exact logcat to capture (reported on the Fold after the v0.6.44 build, 2026-10-01).
 - **UI-ONB-MOB-WELCOME** — Say where the hub comes from
   `ui · agent · normal`
   accept: the board.
@@ -91,7 +88,7 @@ _None._
   accept: after the first sync, Android's storage figure for Arca drops to about the synchronized folders' size (from about 55 GB to about 26 GB for `photos`).
 - **FOLD-THUMBNAILS** — Gallery thumbnails, posters and viewer
   `verify · maintainer · high · depends: BUILD-MOBILE`
-  accept: grid thumbnails and video posters fill in within seconds while folders sync; HEIC photos open quickly; the viewer shows the thumbnail at once; offline, every downloaded photo appears and the rest stay placeholders.
+  accept: grid thumbnails and video posters fill in within seconds while folders sync; HEIC photos open quickly; the viewer shows the thumbnail at once; offline, every downloaded photo appears and the rest stay placeholders. Reported on the v0.6.44 build: grey tiles with every photo downloaded and a gallery crash (`Cannot read property 'uri' of undefined`, fixed in v0.6.46); if tiles stay grey on v0.6.46, connect the Fold by adb and capture the gallery's native errors so the cause can be found.
 - **FOLD-GALLERY-UX** — Gallery gestures and playback
   `verify · maintainer · normal · depends: BUILD-MOBILE`
   accept: infinite scroll both ways, the fast-scroll thumb follows the finger with sparse year chips, pinch density levels (also on iOS), videos autoplay when opened, and Info pauses and resumes a video.
@@ -215,7 +212,7 @@ Older notes listed these as open while later evidence suggests they are resolved
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
 - **MOB-THUMB-PROGRESS** — Show the preparation of previews in a photo folder
-  `feature · agent · normal · depends: MOB-THUMB-STALL`
+  `feature · agent · normal · depends: FOLD-THUMBNAILS`
   accept: while a photo folder is open, previews are prepared for the photos on the phone beyond the visible window (newest first, three at a time, only while the screen is open), a failed preview is retried when the app returns to the foreground or on Retry, and the count of prepared photos is available to the screen; tests cover the order, the failure and the count. The interface follows board UI-MOB-THUMB-PROGRESS.
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`

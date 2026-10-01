@@ -54,6 +54,11 @@ export async function prepareThumbnails(
   return next;
 }
 
+export function savedThumbnail(saved, item) {
+  const found = saved[item.path];
+  return found && found.signature === item.signature ? found.uri : null;
+}
+
 export function isFlatCacheFile(uri, directory) {
   const prefix = directory.endsWith("/") ? directory : `${directory}/`;
   return (
