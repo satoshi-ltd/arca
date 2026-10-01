@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.55 — 2026-10-01
+
+- On phones, opening a photo the phone cannot decode itself now shows the hub's large preview instead of "could not be displayed", and keeps it for offline use.
+
+Needs: native build
+
 ## 0.6.54 — 2026-10-01
 
 - On phones, a photo or video the phone cannot decode itself (such as a large HEIC on Android) now gets its preview from the hub, requested once and kept for offline use, instead of staying a grey tile.

@@ -817,3 +817,17 @@ test("an open photo folder prepares every local preview in the background and sa
   assert.match(thumbnails, /retry\(\) \{\s+posterAttempt\.clear\(\);\s+renderAttempt\.clear\(\);\s+\},/);
   assert.match(components, /export function StatusRow\([\s\S]*?<View style=\{\[s\.card, s\.folderRow\]\}/);
 });
+
+test("the viewer's large preview falls back to the hub through the same module and the grid path is untouched", () => {
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8").replace(/\s+/g, " ");
+  assert.ok(gallery.includes("const renderLocal = (item, large = false, fallback = false) => galleryDisplay(item, {"));
+  assert.ok(gallery.includes("const display = (item, large = false, fallback = false) => large ? withHub(renderLocal, true)(item, true, fallback) : renderLocal(item, false, fallback);"));
+  assert.ok(gallery.includes("resolveLarge={(item, fallback = false) => display(item, true, fallback)}"));
+  assert.ok(gallery.includes("const displayRef = useRef(display); displayRef.current = display;"));
+  assert.ok(gallery.indexOf("const display = (item") > gallery.indexOf("const withHub = useMemo("), "display is defined after the hub fallback it uses");
+});
+
+test("the gallery api forwards the request options so slow hub previews get their own timeout", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /function galleryAPI\(route, body, options\) \{\s+return client\.api\(route, body, options\);\s+\}/);
+});

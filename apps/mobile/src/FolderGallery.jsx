@@ -214,7 +214,7 @@ export function FolderGallery({
         : undefined,
     [uploads?.store, uploads?.media, scope, volume, refreshKey],
   );
-  const display = (item, large = false, fallback = false) =>
+  const renderLocal = (item, large = false, fallback = false) =>
     galleryDisplay(item, {
       large,
       fallback,
@@ -512,8 +512,6 @@ export function FolderGallery({
   useEffect(() => {
     onSummary?.({ count: Math.max(loaded.length, source.total || 0) });
   }, [loaded.length, source.total]);
-  const displayRef = useRef(display);
-  displayRef.current = display;
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
   const previews = useMemo(
@@ -541,6 +539,12 @@ export function FolderGallery({
       }),
     [previews],
   );
+  const display = (item, large = false, fallback = false) =>
+    large
+      ? withHub(renderLocal, true)(item, true, fallback)
+      : renderLocal(item, false, fallback);
+  const displayRef = useRef(display);
+  displayRef.current = display;
   const io = useMemo(
     () => ({
       exists: thumbnailFiles.exists,

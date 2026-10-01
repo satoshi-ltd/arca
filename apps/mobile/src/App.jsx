@@ -3198,6 +3198,6 @@ export default function App() {
   );
 }
 
-function galleryAPI(route) {
-  return client.api(route);
+function galleryAPI(route, body, options) {
+  return client.api(route, body, options);
 }

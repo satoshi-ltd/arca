@@ -20,12 +20,19 @@ const never = () => false;
 
 test("the hub preview request names the volume, path and hash and returns the JPEG payload", async () => {
   const routes = [];
-  const api = async (route) => {
+  const options = [];
+  const api = async (route, body, extra) => {
     routes.push(route);
+    options.push([body, extra]);
     return reply("QUJD");
   };
   assert.equal(await fetchHubPreview({ api, volume: "v1", item: item(), hash: "h1" }), "QUJD");
-  assert.deepEqual(routes, ["/v1/gallery/preview?volume=v1&path=a.heic&hash=h1"]);
+  assert.equal(await fetchHubPreview({ api, volume: "v1", item: item(), hash: "h1", large: true }), "QUJD");
+  assert.deepEqual(routes, [
+    "/v1/gallery/preview?volume=v1&path=a.heic&hash=h1",
+    "/v1/gallery/preview?volume=v1&path=a.heic&hash=h1&size=large",
+  ]);
+  assert.deepEqual(options, [[undefined, { timeout: 30000 }], [undefined, { timeout: 30000 }]], "a HEIC the hub still has to decode gets more time than the default");
   await assert.rejects(fetchHubPreview({ api: async () => ({ unavailable: true }), volume: "v1", item: item(), hash: "h1" }), /Hub preview unavailable/);
   await assert.rejects(fetchHubPreview({ api: async () => ({ data: "data:image/png;base64,AA" }), volume: "v1", item: item(), hash: "h1" }), /Hub preview unavailable/);
 });
@@ -148,6 +155,52 @@ test("the fallback runs only after the local render fails and rethrows the local
   assert.equal(await render(item({ path: "b.jpg" })), "cache://local/b.jpg");
   assert.deepEqual(calls, [], "a decodable photo never reaches the hub");
   assert.equal(await render(item({ path: "ok.heic" })), "cache://hub");
-  assert.deepEqual(calls[0], { linked: true, volume: "v1", hash: "h-ok.heic", item: item({ path: "ok.heic" }) });
+  assert.deepEqual(calls[0], { linked: true, volume: "v1", hash: "h-ok.heic", item: item({ path: "ok.heic" }), large: false });
   await assert.rejects(render(item({ path: "bad.heic" })), /Unsupported image/);
+});
+
+test("the viewer's large preview comes from the hub only for photos on the phone and is asked for again at every open", async () => {
+  let clock = 0;
+  let attempts = 0;
+  let failure = null;
+  const variants = [];
+  const previews = createHubPreviews({
+    api: async (route) => {
+      attempts++;
+      if (failure) throw failure;
+      assert.match(route, /size=large/);
+      return reply("TEFSR0U=");
+    },
+    save: async (entry, variant, load) => {
+      variants.push(variant);
+      return `cache://${variant}/${await load()}`;
+    },
+    unreachable: (error) => /Network/.test(error.message),
+    busy: never,
+    now: () => clock,
+  });
+  const context = { linked: true, volume: "v1", hash: "h1", large: true, item: item() };
+  assert.equal(await previews.preview(context), "cache://large/TEFSR0U=");
+  assert.deepEqual(variants, ["large"]);
+  assert.equal(await previews.preview({ ...context, item: item({ uri: null }) }), null, "never for a photo that is not on the phone");
+  assert.equal(await previews.preview({ ...context, linked: false }), null, "offline asks nothing");
+  failure = Object.assign(new Error("This photo is no longer available"), { status: 404 });
+  assert.equal(await previews.preview(context), null);
+  assert.equal(await previews.preview(context), null);
+  assert.equal(attempts, 3, "a refusal is not remembered for the viewer");
+  failure = new Error("Network request failed");
+  assert.equal(await previews.preview(context), null);
+  assert.equal(await previews.preview(context), null);
+  assert.equal(attempts, 5, "an unreachable hub is asked again at the next open");
+  assert.equal(await previews.preview({ ...context, large: false }), null);
+  assert.equal(attempts, 6, "the grid thumbnail is unaffected by the viewer");
+  assert.equal(await previews.preview({ ...context, large: false }), null);
+  assert.equal(attempts, 6, "but the unreachable answer paused the grid");
+  assert.equal(await previews.preview(context), null);
+  assert.equal(attempts, 7, "while the viewer ignores that pause and asks at every open");
+  const wrap = hubFallback({ previews: { preview: async (request) => (request.large ? "cache://hub-large" : null) }, context: () => ({ linked: true, volume: "v1", hash: "h1" }) });
+  const render = wrap(async () => {
+    throw new Error("Unsupported image");
+  }, true);
+  assert.equal(await render(item(), true, false), "cache://hub-large", "the fallback reports that it is for the large preview");
 });

@@ -1,9 +1,12 @@
 const JPEG = "data:image/jpeg;base64,";
 const PAUSE = 30000;
 
-export async function fetchHubPreview({ api, volume, item, hash }) {
+export async function fetchHubPreview({ api, volume, item, hash, large }) {
   const query = new URLSearchParams({ volume, path: item.path, hash });
-  const result = await api(`/v1/gallery/preview?${query}`);
+  if (large) query.set("size", "large");
+  const result = await api(`/v1/gallery/preview?${query}`, undefined, {
+    timeout: 30000,
+  });
   if (typeof result?.data !== "string" || !result.data.startsWith(JPEG))
     throw new Error("Hub preview unavailable");
   return result.data.slice(JPEG.length);
@@ -26,17 +29,21 @@ export function createHubPreviews({
   const refused = new Set();
   let pausedUntil = 0;
   return {
-    async preview({ linked, volume, hash, item }) {
+    async preview({ linked, volume, hash, item, large = false }) {
       if (!linked || !hash || !item.uri || item.upload) return null;
-      if (now() < pausedUntil) return null;
-      const variant = item.kind === "video" ? "poster" : "thumb";
+      const variant = large
+        ? "large"
+        : item.kind === "video"
+          ? "poster"
+          : "thumb";
       const key = `${item.uri}:${item.size}:${item.mtime}:${variant}`;
-      if (refused.has(key)) return null;
+      if (!large && (now() < pausedUntil || refused.has(key))) return null;
       try {
         return await save(item, variant, () =>
-          fetchHubPreview({ api, volume, item, hash }),
+          fetchHubPreview({ api, volume, item, hash, large }),
         );
       } catch (error) {
+        if (large) return null;
         if (unreachable(error)) pausedUntil = now() + PAUSE;
         else if (!busy(error)) refused.add(key);
         return null;
@@ -50,12 +57,12 @@ export function createHubPreviews({
 }
 
 export function hubFallback({ previews, context }) {
-  return (render) =>
+  return (render, large = false) =>
     async (item, ...rest) => {
       try {
         return await render(item, ...rest);
       } catch (error) {
-        const uri = await previews.preview({ ...context(item), item });
+        const uri = await previews.preview({ ...context(item), item, large });
         if (uri) return uri;
         throw error;
       }
