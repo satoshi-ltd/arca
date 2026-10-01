@@ -2,7 +2,7 @@
 
 A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
 
-**v0.6.48 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.6.49 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -25,7 +25,7 @@ The September 10 checkout includes synchronization-integrity fixes: pause/deadli
 
 `.arcaignore` is synchronized and editable; new hub folders start with a rule-free one, and the hub's `.arcaignore…` button creates it if missing. OS metadata, temporary files, regenerable caches (`node_modules`, `.venv`, `.cache`…), `.git` and `.obsidian` are always excluded by the shared core. Obsidian notes and attachments remain synchronized.
 
-First-run desktop and server setup walks through welcome, machine name, role, pairing and an empty/new folder root; hubs skip pairing. Mobile pairs and then offers whole-folder selection or Skip for now, using app-owned storage. An interrupted first catalog load retains the accepted pairing; no folders download until setup permits it.
+First-run desktop and server setup walks through welcome, this machine (name and role), pairing and an empty/new folder root; hubs skip pairing. Mobile pairs and then offers whole-folder selection or Skip for now, using app-owned storage. An interrupted first catalog load retains the accepted pairing; no folders download until setup permits it.
 
 In-app feedback shares one notice contract across web, desktop and mobile: info, warning and error, with grouped incidents and optional collapsible diagnostics. Mobile confirmations use the shared in-app dialog. System alerts retain OS styling and are reserved for unresolved conditions while Arca is in the background.
 
@@ -113,7 +113,7 @@ Casa's pilot LAN endpoint is `http://192.168.1.190:17831`; Tailscale is `http://
 
 ## Docker first run
 
-Build/start with `docker compose up -d --build`, then open `http://localhost:17831`. Complete welcome → machine name → hub or replica → confirm server access → pairing (replicas only) → folder root → Finish. For access confirmation, run `docker compose exec arca node packages/cli/arca.js web-code` and paste its single-use code into the wizard. A replica selects folders after setup; no working files download during onboarding.
+Build/start with `docker compose up -d --build`, then open `http://localhost:17831`. Complete welcome → this machine (name and hub or replica) → confirm server access → pairing (replicas only) → folder root → Finish. For access confirmation, run `docker compose exec arca node packages/cli/arca.js web-code` and paste its single-use code into the wizard. A replica selects folders after setup; no working files download during onboarding.
 
 The default container command uses `daemon --setup`: it prepares empty state for authenticated setup and leaves existing configurations unchanged. Explicit CLI `init --role hub|replica` remains available. State and files retain their separate persistent Docker volumes. Setup destinations must be empty/new and inside `/data/files`; for a custom deployment, set `ARCA_FILES` to the persistent files mount visible inside that container. This is a server path, not a folder on the browser computer. These Docker source changes require rebuilding the image; they do not update existing containers or published images.
 

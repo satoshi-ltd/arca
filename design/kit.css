@@ -349,6 +349,13 @@ body.kit {
 .kit-board-pair .kit-notices {
   width: var(--notice-width);
 }
+.kit-wizard .onboarding {
+  min-height: 0;
+  height: 520px;
+}
+.kit-wizard + .kit-caption {
+  margin-bottom: var(--space-5);
+}
 .kit-board-pair .m-device.m-tall {
   height: 780px;
 }

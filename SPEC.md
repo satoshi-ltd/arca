@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.48 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
+**v0.6.49 · Phase 1: functional alpha, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -150,13 +150,13 @@ Both live in Settings → Danger zone, need explicit confirmation and share one 
 
 ### Onboarding
 
-- **Desktop:** welcome → machine name → role → pairing → folder root → Finish; hubs skip pairing. The daemon starts in a durable onboarding state and blocks sync until Finish. Pairing saves the accepted credential before fetching the catalog, so a catalog outage or reload never needs the consumed code again. The final root must be empty or new; the check verifies canonical ancestry against state and reports real free space without creating the directory. New roots and suggested destinations default to `~/arca`.
+- **Desktop:** welcome → this machine (name and role on one page, with a line on who each role is for) → pairing → folder root → Finish; hubs skip pairing. The rail reads This machine, Connect and Folders, and Connect reads Not needed for a hub. The daemon starts in a durable onboarding state and blocks sync until Finish. Pairing saves the accepted credential before fetching the catalog, so a catalog outage or reload never needs the consumed code again. The final root must be empty or new; the check verifies canonical ancestry against state and reports real free space without creating the directory. New roots and suggested destinations default to `~/arca`.
 - **Mobile:** welcome → pairing (hub address, six-digit code, machine name) → first-folder selection, with Skip for now. Destinations are app-owned, so there is no destination step. Credentials are saved first, the onboarding marker survives retries, automatic sync waits for selection or Skip, and selection preflights the total space. A device with a retained catalog enters the normal offline interface instead.
 - **Web** uses the desktop wizard when setup is required; browser authentication stays separate.
 
 #### Server onboarding
 
-An unconfigured server opens the shared welcome wizard even without a web session: welcome → machine name → hub or replica → confirm administrator access → pairing (replicas only) → persistent folder root → Finish. Name and role stay tentative browser values until the wizard asks for the existing single-use web code, before any configuration is saved. Umbrel links to its app-password code page in another tab; ordinary Docker uses `arca web-code`. Authentication and CSRF guard every setup mutation, and accepted progress resumes from the server after sign-in. Replicas select whole folders after setup; sync stays idle during it. Configured-server login offers machine approval only when discovery reports at least one authorized approver.
+An unconfigured server opens the shared welcome wizard even without a web session: welcome → this machine (name and hub or replica) → confirm administrator access (under This machine in the rail) → pairing (replicas only) → persistent folder root → Finish. Name and role stay tentative browser values until the wizard asks for the existing single-use web code, before any configuration is saved. Umbrel links to its app-password code page in another tab; ordinary Docker uses `arca web-code`. Authentication and CSRF guard every setup mutation, and accepted progress resumes from the server after sign-in. Replicas select whole folders after setup; sync stays idle during it. Configured-server login offers machine approval only when discovery reports at least one authorized approver.
 
 `packages/daemon/setup.js` owns `initializeServer` and root inspection. Docker runs `daemon --setup` with `ARCA_FILES=/data/files`: existing server configurations start unchanged (identity, role, pause, data), empty state becomes a provisional replica with `needsSetup` and no hub or backup, and incomplete state without a config is refused. The root must be empty, writable and resolve inside `ARCA_FILES`, symlink escapes included; custom containers set `ARCA_FILES` to their durable files mount. The wizard explains that the destination is on the server. Explicit `init --role hub|replica` still works.
 

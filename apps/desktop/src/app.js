@@ -86,7 +86,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.48";
+const APP_VERSION = "0.6.49";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5943,13 +5943,9 @@ function renderOnboarding() {
   document.body.classList.remove("access-mode");
   document.body.classList.add("onboarding-mode");
   const o = onboarding;
-  const activeStep = o.step === "access" ? 1 : o.step;
-  const steps = [
-    "Name this machine",
-    "Choose its role",
-    "Pair with your hub",
-    "Pick a folder root",
-  ];
+  const activeStep = { 0: 0, access: 0, 2: 1, 3: 2 }[o.step] ?? o.step;
+  const steps = ["This machine", "Connect", "Folders"];
+  const connectSkipped = o.role === "hub" && o.step !== 0 && o.step !== -1;
   let body = "";
   if (o.step === -1)
     body = `<p>Your personal drive, on your own machines.</p><h1>Many devices.<br><em class="accent-text">One space.</em></h1><p>Arca keeps the folders you choose in sync across your laptop, tablet and phone, with complete local copies and a hub you run yourself.</p>${[
@@ -5975,19 +5971,17 @@ function renderOnboarding() {
       )
       .join("")}`;
   if (o.step === 0)
-    body = `<h1>Name this machine</h1><p>Shown to other machines and in history.</p>${textField("Machine name", "name", o.name, "monitor")}${o.platform ? `<p class="hint">${escape(platformLabel(o.platform))}${o.arch ? ` · ${escape(o.arch)}` : ""}</p>` : ""}`;
-  if (o.step === 1)
-    body = `<h1>What is ${escape(o.name)}?</h1><p>A hub keeps your folders. Every other machine keeps a copy.</p>${[
+    body = `<h1>Set up this machine</h1><p>Shown to other machines and in history.</p>${textField("Machine name", "name", o.name, "monitor")}${o.platform ? `<p class="hint">${escape(platformLabel(o.platform))}${o.arch ? ` · ${escape(o.arch)}` : ""}</p>` : ""}${[
       [
         "hub",
         "server",
-        "Make it the hub",
-        "Keeps the folders and their history.",
+        "The hub",
+        "Keeps the folders and their history. Choose this for the machine that stays on: a server, a NAS or a computer that is rarely off.",
       ],
       [
         "replica",
         "monitor-smartphone",
-        "Join an existing hub",
+        "A replica",
         "Keeps the folders you select. Needs a pairing code from the hub.",
       ],
     ]
@@ -6005,13 +5999,13 @@ function renderOnboarding() {
   if (o.step === 3)
     body = `<h1>A home for your folders</h1><p>${o.role === "replica" ? "Folders you select from the hub live here, as ordinary folders." : "Choose a default location for the folders you share."}</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${native ? button("Change…", "pick-path", "root", "secondary small-button", "folder-input") : ""}</div><div id="setup-space"></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p>${native ? "" : '<p class="hint">This path is on the server. In Docker or Umbrel, use persistent mounted storage; the default is /data/files.</p>'}`;
   $("#content").innerHTML =
-    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${activeStep === i ? "current" : activeStep > i && !(o.role === "hub" && i === 2) ? "done" : ""}" ${activeStep === i ? 'aria-current="step"' : ""}><span>${activeStep > i && !(o.role === "hub" && i === 2) ? icon("check") : i + 1}</span>${label}${i === 2 && o.role === "hub" && o.step > 0 ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button><button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button></div></form></div>`;
+    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${activeStep === i ? "current" : activeStep > i && !(connectSkipped && i === 1) ? "done" : ""}" ${activeStep === i ? 'aria-current="step"' : ""}><span>${activeStep > i && !(connectSkipped && i === 1) ? icon("check") : i + 1}</span>${label}${i === 1 && connectSkipped ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button><button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button></div></form></div>`;
   $("#setup-back").onclick = () => {
     o.step =
-      o.step === "access"
-        ? 1
-        : o.step === 3 && o.role === "hub"
-          ? 1
+      o.step === "access" || o.step === 2 || (o.step === 3 && o.role === "hub")
+        ? 0
+        : o.step === 3
+          ? 2
           : o.step - 1;
     renderOnboarding();
   };
@@ -6048,11 +6042,6 @@ function renderOnboarding() {
           o.name = String(f.get("name")).trim();
           if (!o.name || o.name.length > 100)
             throw new Error("Choose a name of up to 100 characters.");
-          o.step = 1;
-          renderOnboarding();
-          return;
-        }
-        if (o.step === 1) {
           o.role = f.get("role");
           o.step = o.serverAccessRequired ? "access" : o.role === "hub" ? 3 : 2;
           renderOnboarding();

@@ -20,7 +20,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.48 · replica macbook-pro · hub casa</span>
+      <span class="kit-version">v0.6.49 · replica macbook-pro · hub casa</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -333,6 +333,26 @@
             </dialog>
           </div>
         </div>
+      </section>
+
+      <section class="kit-section">
+        <h2>Onboarding <span>09</span></h2>
+        <div class="kit-window kit-wizard">
+<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps"><div class="step current" aria-current="step"><span>1</span>This machine</div><div class="step "><span>2</span>Connect</div><div class="step "><span>3</span>Folders</div></div></div><div class="onboarding-body"><h1>Set up this machine</h1><p>Shown to other machines and in history.</p><label>Machine name</label><div class="field-with-icon"><span data-icon="monitor"></span><input aria-label="Machine name" class="" value="macbook-pro" readonly></div><p class="hint">macOS · arm64</p><label class="role-card"><input name="role-kit" type="radio" value="hub" disabled><span data-icon="server"></span><div><strong>The hub</strong><p>Keeps the folders and their history. Choose this for the machine that stays on: a server, a NAS or a computer that is rarely off.</p></div></label><label class="role-card"><input name="role-kit" type="radio" value="replica" checked disabled><span data-icon="monitor-smartphone"></span><div><strong>A replica</strong><p>Keeps the folders you select. Needs a pairing code from the hub.</p></div></label><div class="dialog-actions"><button type="button" class="ghost"><span data-icon="chevron-left"></span>Back</button><button type="button" class="primary">Continue<span data-icon="chevron-right"></span></button></div></div></div>
+        </div>
+        <p class="kit-caption">This machine · name and role on one page</p>
+        <div class="kit-window kit-wizard">
+<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps"><div class="step done"><span><span data-icon="check"></span></span>This machine</div><div class="step current" aria-current="step"><span>2</span>Connect</div><div class="step "><span>3</span>Folders</div></div></div><div class="onboarding-body"><h1>Pair with your hub</h1><p>Connect with a single-use code from your hub.</p><label>Hub address</label><div class="field-with-icon"><span data-icon="server"></span><input aria-label="Hub address" class="mono" value="http://100.64.0.7:17831" readonly></div><label>Pairing code</label><div class="code-inputs" role="group" aria-label="Six-digit code"><input aria-label="Digit" readonly><input aria-label="Digit" readonly><input aria-label="Digit" readonly><span class="separator">—</span><input aria-label="Digit" readonly><input aria-label="Digit" readonly><input aria-label="Digit" readonly></div><p class="hint"><span data-icon="clock"></span>Single use · valid ten minutes.</p><div class="dialog-actions"><button type="button" class="ghost"><span data-icon="chevron-left"></span>Back</button><button type="button" class="primary">Continue<span data-icon="chevron-right"></span></button></div></div></div>
+        </div>
+        <p class="kit-caption">Connect · replicas only, a hub skips it</p>
+        <div class="kit-window kit-wizard">
+<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps"><div class="step done"><span><span data-icon="check"></span></span>This machine</div><div class="step done"><span><span data-icon="check"></span></span>Connect</div><div class="step current" aria-current="step"><span>3</span>Folders</div></div></div><div class="onboarding-body"><h1>A home for your folders</h1><p>Folders you select from the hub live here, as ordinary folders.</p><div class="root-selection"><div class="tile large"><span data-icon="folder"></span></div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" value="/Users/javi/arca" readonly></div></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p><div class="dialog-actions"><button type="button" class="ghost"><span data-icon="chevron-left"></span>Back</button><button type="button" class="primary">Finish<span data-icon="chevron-right"></span></button></div></div></div>
+        </div>
+        <p class="kit-caption">Folders · the last page ends in Finish</p>
+        <div class="kit-window kit-wizard">
+<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps"><div class="step done"><span><span data-icon="check"></span></span>This machine</div><div class="step "><span>2</span>Connect · Not needed</div><div class="step current" aria-current="step"><span>3</span>Folders</div></div></div><div class="onboarding-body"><h1>A home for your folders</h1><p>Choose a default location for the folders you share.</p><div class="root-selection"><div class="tile large"><span data-icon="folder"></span></div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" value="/Users/javi/arca" readonly></div></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p><div class="dialog-actions"><button type="button" class="ghost"><span data-icon="chevron-left"></span>Back</button><button type="button" class="primary">Finish<span data-icon="chevron-right"></span></button></div></div></div>
+        </div>
+        <p class="kit-caption">Folders · a hub's rail marks Connect Not needed</p>
       </section>
     </main>
   </body>

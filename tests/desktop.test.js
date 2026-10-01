@@ -627,12 +627,7 @@ test("desktop onboarding submits chosen role and root without a browser credenti
         w.document.body.getAttribute("aria-busy") === "false",
     );
     w.document.querySelector('[name="name"]').value = "My PC";
-    submit();
-    await until(
-      () =>
-        w.document.querySelector('[name="role"]') &&
-        w.document.body.getAttribute("aria-busy") === "false",
-    );
+    assert.ok(w.document.querySelector('[name="role"][value="replica"]').checked);
     w.document.querySelector('[name="role"][value="hub"]').checked = true;
     submit();
     await until(
@@ -2929,8 +2924,6 @@ test("replica onboarding follows welcome, name, role, pairing and root, and resu
   submit();
   await waitFor('[name="name"]');
   w.document.querySelector('[name="name"]').value = "Studio Mac";
-  submit();
-  await waitFor('[name="role"]');
   assert.ok(w.document.querySelector('[name="role"][value="replica"]').checked);
   submit();
   await waitFor('[name="url"]');
@@ -3831,14 +3824,22 @@ for (const role of ["hub", "replica"])
       submit();
       await waitFor('[name="name"]');
       w.document.querySelector('[name="name"]').value = "Chosen server";
-      submit();
-      await waitFor('[name="role"]');
       w.document.querySelector('[name="role"][value="' + role + '"]').checked =
         true;
       submit();
       await waitFor('[data-code="setup-access"]');
       assert.equal(mutations, 0);
       assert.equal(daemon.engine.config.needsSetup, true);
+      const rail = () =>
+        [...w.document.querySelectorAll(".onboarding .steps .step")].map((el) => el.textContent.trim().replace(/^\d+/, ""));
+      assert.deepEqual(rail(), ["This machine", role === "hub" ? "Connect · Not needed" : "Connect", "Folders"]);
+      assert.equal(w.document.querySelector(".onboarding .step.current").textContent.trim().replace(/^\d+/, ""), "This machine", "the access page sits under This machine");
+      w.document.querySelector("#setup-back").click();
+      await waitFor('[name="name"]');
+      assert.equal(w.document.querySelector('[name="name"]').value, "Chosen server");
+      assert.ok(w.document.querySelector('[name="role"][value="' + role + '"]').checked, "Back from access keeps the name and role");
+      submit();
+      await waitFor('[data-code="setup-access"]');
       submit();
       await until(() => !w.document.querySelector("#setup-error").hidden);
       assert.match(
@@ -5611,4 +5612,51 @@ test("after seeking a month the gallery loads newer photos above when scrolling 
   assert.equal(chip.textContent, "Mar 2026");
   await until(() => chip.hidden);
   assert.equal(galleryRequests.length, count, "nothing newer remains to load");
+});
+
+test("the wizard sets up name and role on one page, says who each role is for and keeps a three-step rail", async () => {
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.setTimeout = () => 0;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: true, root: "/tmp/Arca", name: "studio", platform: "macos", arch: "arm64" };
+        if (command === "setup_info") return { root: args.root, freeBytes: 1000000000 };
+        throw new Error(command);
+      },
+    },
+  };
+  const submit = () => w.document.querySelector("#setup-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  const steps = () => [...w.document.querySelectorAll(".onboarding .steps .step")].map((el) => el.textContent.trim());
+  try {
+    await w.eval(`(async()=>{${script}\n})()`);
+    submit();
+    await until(() => w.document.querySelector('[name="name"]') && idle());
+    const page = w.document.querySelector("#content");
+    assert.match(page.textContent, /Set up this machine/);
+    assert.deepEqual(steps().map((label) => label.replace(/^\d+/, "")), ["This machine", "Connect", "Folders"]);
+    assert.equal(w.document.querySelector(".onboarding .step.current").textContent.trim().replace(/^\d+/, ""), "This machine");
+    assert.equal(w.document.querySelectorAll('[name="role"]').length, 2);
+    assert.match(page.textContent, /Choose this for the machine that stays on: a server, a NAS or a computer that is rarely off\./);
+    assert.match(page.textContent, /Needs a pairing code from the hub\./);
+    assert.doesNotMatch(page.textContent, /What is /);
+    w.document.querySelector('[name="role"][value="hub"]').checked = true;
+    submit();
+    await until(() => w.document.querySelector('[name="root"]') && idle());
+    assert.match(w.document.querySelector("#content").textContent, /A home for your folders/);
+    assert.deepEqual(steps().map((label) => label.replace(/^\d+/, "")), ["This machine", "Connect · Not needed", "Folders"]);
+    assert.equal(w.document.querySelector(".onboarding .step.current").textContent.trim().replace(/^\d+/, ""), "Folders");
+    w.document.querySelector("#setup-back").click();
+    await until(() => w.document.querySelector('[name="role"]') && idle());
+    assert.match(w.document.querySelector("#content").textContent, /Set up this machine/);
+    assert.ok(w.document.querySelector('[name="role"][value="hub"]').checked, "the chosen role is kept");
+    w.document.querySelector("#setup-back").click();
+    await until(() => w.document.querySelector("#content").textContent.includes("Many devices") && idle());
+    assert.deepEqual(steps().map((label) => label.replace(/^\d+/, "")), ["This machine", "Connect", "Folders"], "the welcome rail never says Not needed");
+  } finally {
+    w.close();
+  }
 });

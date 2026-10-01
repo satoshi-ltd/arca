@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.49 — 2026-10-01
+
+- On desktop, web and server, the setup wizard now asks for the machine's name and role on one page, says who each role is for, and shows a three-step rail (This machine, Connect, Folders) in which Connect reads Not needed for a hub.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.48 — 2026-10-01
 
 - On phones, the pairing screen now says that the hub's Machines → Pair a machine shows the address and the code, and asks for them in that order, then the phone's name, which keeps its default.

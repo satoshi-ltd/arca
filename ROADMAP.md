@@ -26,14 +26,11 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-ONB-DESK-FLOW** — One step for name and role, and no early Finish
+- **UI-ONB-SERVER-ACCESS** — The command for the server access code
   `ui · agent · normal`
   accept: the board.
-- **UI-ONB-SERVER-ACCESS** — The command for the server access code
-  `ui · agent · normal · depends: UI-ONB-DESK-FLOW`
-  accept: the board.
 - **UI-ONB-DESK-DISCOVERY** — Hubs found nearby while pairing
-  `ui · agent · normal · depends: UI-ONB-DESK-FLOW`
+  `ui · agent · normal`
   accept: the board. First confirm that an unconfigured daemon serves discovery during the wizard; if it does not, report it and split the daemon change into its own task before drawing on it.
 - **MOB-CRASH-RECORD** — Record crashes from a global error handler
   `feature · agent · normal`
