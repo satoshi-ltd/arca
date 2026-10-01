@@ -26,8 +26,12 @@ const onDisk = (uri) => !!uri?.startsWith("file://");
 const root = new Directory(Paths.cache, "arca-gallery");
 const jobs = new Map();
 const posterAttempt = rememberFailures();
+const renderAttempt = rememberFailures(4096, "Thumbnail unavailable");
 AppState.addEventListener("change", (state) => {
-  if (state === "active") posterAttempt.clear();
+  if (state === "active") {
+    posterAttempt.clear();
+    renderAttempt.clear();
+  }
 });
 const budgets = [
   ["large-", 256 * 1024 ** 2],
@@ -98,28 +102,32 @@ export const thumbnailFiles = {
     return isFlatCacheFile(uri, root.uri) && new File(uri).exists;
   },
   render(entry, large = false) {
-    return cachedDerivative(entry, large ? "large" : "thumb", (target) =>
-      nativeFirst(
-        nativeThumbnail &&
-          onDisk(entry.uri) &&
-          (() =>
-            nativeThumbnail(
+    const produce = () =>
+      cachedDerivative(entry, large ? "large" : "thumb", (target) =>
+        nativeFirst(
+          nativeThumbnail &&
+            onDisk(entry.uri) &&
+            (() =>
+              nativeThumbnail(
+                entry.uri,
+                target.uri,
+                large ? 2048 : 360,
+                !large,
+                false,
+              )),
+          async () => {
+            const result = await manipulateAsync(
               entry.uri,
-              target.uri,
-              large ? 2048 : 360,
-              !large,
-              false,
-            )),
-        async () => {
-          const result = await manipulateAsync(
-            entry.uri,
-            [{ resize: { width: large ? 2048 : 360 } }],
-            { compress: large ? 0.85 : 0.75, format: SaveFormat.JPEG },
-          );
-          return result.uri;
-        },
-      ),
-    );
+              [{ resize: { width: large ? 2048 : 360 } }],
+              { compress: large ? 0.85 : 0.75, format: SaveFormat.JPEG },
+            );
+            return result.uri;
+          },
+        ),
+      );
+    return large
+      ? produce()
+      : renderAttempt(`${entry.uri}:${entry.size}:${entry.mtime}`, produce);
   },
   async poster(item) {
     const uri = videoPosterSource(item);

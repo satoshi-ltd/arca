@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { mergeTimeline, timelineItem } from "../apps/mobile/src/gallery-timeline.js";
 import { prepareThumbnails, savedThumbnail } from "../apps/mobile/src/thumbnail-cache.js";
+import { rememberFailures } from "../apps/mobile/src/video-playback.js";
 
 test("mobile thumbnail cache reuses unchanged images, regenerates changed or evicted copies and drops deletions", async () => {
   const entries = [
@@ -76,4 +77,39 @@ test("the gallery resolves saved thumbnails through savedThumbnail", () => {
   const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
   assert.match(gallery, /savedThumbnail\(thumbnails, item\)/);
   assert.doesNotMatch(gallery, /thumbnails\[item\.path\]\?\.signature === item\.signature/);
+});
+
+test("a photo whose preview cannot be made is attempted once across preparation passes until it changes or the app returns", async () => {
+  const entry = { path: "a.heic", uri: "file:///a", size: 20, mtime: 1 };
+  const good = { path: "b.jpg", uri: "file:///b", size: 30, mtime: 1 };
+  const attempt = rememberFailures(4096, "Thumbnail unavailable");
+  const calls = [];
+  const io = {
+    exists: async () => true,
+    render: (item) =>
+      attempt(`${item.uri}:${item.size}:${item.mtime}`, async () => {
+        calls.push(item.path);
+        if (item.path === "a.heic") throw new Error("Unsupported image");
+        return `cache://${item.path}`;
+      }),
+  };
+  let saved = await prepareThumbnails([entry, good], {}, io);
+  saved = await prepareThumbnails([entry, good], saved, io);
+  saved = await prepareThumbnails([entry, good], saved, io);
+  assert.deepEqual(calls, ["a.heic", "b.jpg"], "the unreadable photo is tried once, the readable one is kept");
+  assert.deepEqual(Object.keys(saved), ["b.jpg"]);
+  await prepareThumbnails([{ ...entry, mtime: 2 }], saved, io);
+  assert.equal(calls.filter((path) => path === "a.heic").length, 2, "an edited file is tried again");
+  attempt.clear();
+  await prepareThumbnails([entry], saved, io);
+  assert.equal(calls.filter((path) => path === "a.heic").length, 3, "and so is everything after the app returns");
+  await assert.rejects(attempt("k", async () => { throw new Error("x"); }), /x/);
+  await assert.rejects(attempt("k", async () => "never"), /^Error: Thumbnail unavailable$/);
+});
+
+test("photo thumbnails remember failures like video posters and forget them when the app returns", () => {
+  const source = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
+  assert.match(source, /const renderAttempt = rememberFailures\(4096, "Thumbnail unavailable"\);/);
+  assert.match(source, /if \(state === "active"\) \{\s+posterAttempt\.clear\(\);\s+renderAttempt\.clear\(\);\s+\}/);
+  assert.match(source, /return large\s+\? produce\(\)\s+: renderAttempt\(`\$\{entry\.uri\}:\$\{entry\.size\}:\$\{entry\.mtime\}`, produce\);/, "only grid thumbnails are remembered; the viewer's large preview is retried on each open");
 });

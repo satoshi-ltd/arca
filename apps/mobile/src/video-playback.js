@@ -103,10 +103,13 @@ export async function renderVideoPoster(
   }
 }
 
-export function rememberFailures(limit = 512) {
+export function rememberFailures(
+  limit = 512,
+  message = "Video thumbnail unavailable",
+) {
   const failed = new Set();
   const attempt = async (key, work) => {
-    if (failed.has(key)) throw new Error("Video thumbnail unavailable");
+    if (failed.has(key)) throw new Error(message);
     try {
       return await work();
     } catch (error) {

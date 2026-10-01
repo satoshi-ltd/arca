@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.52 — 2026-10-01
+
+- On phones, photo previews that cannot be made are no longer retried at every scroll, so unreadable files stop taking time from the readable ones.
+
+Needs: native build
+
 ## 0.6.51 — 2026-10-01
 
 - Internal: the setup wizard's detected-hubs list moved to a maintainer decision, because a fresh desktop installation has no daemon to ask before pairing.

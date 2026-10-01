@@ -612,7 +612,7 @@ test("video posters are prepared after photos and never retried for an unchanged
   const thumbnails = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
   assert.match(gallery, /\.map\(withNative\)\s*\.sort\(\(a, b\) => \(a\.kind === "video"\) - \(b\.kind === "video"\)\)/);
   assert.match(thumbnails, /return posterAttempt\(`\$\{uri\}:\$\{item\.size\}:\$\{item\.mtime\}`,/);
-  assert.match(thumbnails, /if \(state === "active"\) posterAttempt\.clear\(\);/);
+  assert.match(thumbnails, /if \(state === "active"\) \{\s+posterAttempt\.clear\(\);\s+renderAttempt\.clear\(\);\s+\}/);
 });
 
 test("opening a video in the viewer starts local playback without a second tap", () => {

@@ -26,6 +26,12 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
+- **MOB-THUMB-PROGRESS** — Show the preparation of previews in a photo folder
+  `feature · agent · normal`
+  accept: while a photo folder is open, previews are prepared for the photos on the phone beyond the visible window (newest first, three at a time, only while the screen is open), a failed preview is retried when the app returns to the foreground or on Retry, and the count of prepared photos is available to the screen; tests cover the order, the failure and the count. The interface follows board UI-MOB-THUMB-PROGRESS.
+- **UI-MOB-THUMB-PROGRESS** — Say that previews are being prepared
+  `ui · agent · normal`
+  accept: the board.
 - **MOB-CRASH-RECORD** — Record crashes from a global error handler
   `feature · agent · normal`
   accept: an uncaught JS error on mobile is persisted and shown once as a notice on next launch; a test covers record and display. The interface follows board UI-MOB-CRASH-RECORD.
@@ -148,12 +154,6 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
 
 ### Decisions
 
-- **DEC-WIZARD-DISCOVERY** — List detected hubs in the setup wizard?
-  `decision · maintainer · normal`
-  accept: board UI-ONB-DESK-DISCOVERY cannot ship as drawn. Discovery lists Tailscale peers only (empty without Tailscale), so "Found nearby" would read "Found on Tailscale". A server's unconfigured daemon, and a desktop one after a replica reset, answers 409 on `/v1/discovery` until setup completes; opening it for the administrator is a change to the allowlist at `packages/daemon/server.js` (~441-451). On a fresh desktop installation no daemon exists until the pairing step submits (`initialize` runs `init` and starts it), so the wizard has nothing to ask before the person types an address. Choose: (a) servers and reset desktops only, titled Found on Tailscale; (b) also fresh desktops, by starting the daemon at the This machine step, which saves name and role earlier and changes what Back can undo; (c) drop the board.
-- **UI-ONB-DESK-DISCOVERY** — Hubs found nearby while pairing
-  `ui · agent · normal · depends: DEC-WIZARD-DISCOVERY`
-  accept: the board, as the decision amends it.
 - **DEC-LAN-PERMISSION** — Cache LAN permission?
   `decision · maintainer · normal`
 - **DEC-FIRST-PAGE** — Serve the first snapshot page without a hub scan?
@@ -202,9 +202,6 @@ Older notes listed these as open while later evidence suggests they are resolved
 ## Proposed
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
-- **MOB-THUMB-PROGRESS** — Show the preparation of previews in a photo folder
-  `feature · agent · normal · depends: FOLD-THUMBNAILS`
-  accept: while a photo folder is open, previews are prepared for the photos on the phone beyond the visible window (newest first, three at a time, only while the screen is open), a failed preview is retried when the app returns to the foreground or on Retry, and the count of prepared photos is available to the screen; tests cover the order, the failure and the count. The interface follows board UI-MOB-THUMB-PROGRESS.
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.

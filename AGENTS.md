@@ -37,7 +37,7 @@ The maintainer runs the project as an autonomous loop with the user-level `next-
 Project wiring for those tools:
 
 - **Task pool:** `ROADMAP.md`. Only `owner: agent` tasks in Queue are worked on; only the maintainer approves a task into Queue.
-- **Version:** `node scripts/bump-version.js` (patch by default), then the CHANGELOG entry. Every commit bumps the version; manifests, lockfiles, displayed versions and the changelog always agree (`scripts/check-release.js`).
+- **Version:** `node scripts/bump-version.js` (patch by default), then the CHANGELOG entry. Every commit bumps the version; manifests, lockfiles, displayed versions and the changelog always agree (`scripts/check-release.js`). A commit that changes only `ROADMAP.md` or `design/` bumps nothing and adds no changelog entry.
 - **Validation:** `npx -y node@<CI version> scripts/validate-local.js` (it prints the exact command). It checks the working tree in a clean copy: root-only `npm ci`, the version check, the CI suite, off Linux the mobile source suite, and the mobile build-tooling tests. Report it separately from the real GitHub pipeline results.
 - **CI:** `gh run list` for the commit's full SHA: `publish`, then `publish-docker` and `publish-site`. `prune-actions.yml` deletes runs beyond the newest 10 per workflow once they are a week old, so do not rely on older run logs. A red pipeline on `main` is the next task.
 - **Review checklist**, on top of the generic one: Windows paths (`path.join`/`path.sep`), temp directories and line endings; hub, desktop replica and mobile role differences; `.arcaignore` and the fixed exclusion list; conflict preservation and deletion safety; native Kotlin/Swift against `apps/mobile/node_modules`.
