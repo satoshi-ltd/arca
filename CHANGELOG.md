@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.83 — 2026-10-02
+
+- The local pre-push check and `validate-local` now run the test suite on half of the machine's cores instead of all but one, so a full run no longer saturates the computer; set `ARCA_TEST_CONCURRENCY` to change it.
+
 ## 0.6.82 — 2026-10-02
 
 - Arca now builds and runs on Node 24.21.0, which carries the security fixes of 24.14.1, 24.17.0 and 24.18.1, for the desktop app, the Docker image and the phone build tooling.

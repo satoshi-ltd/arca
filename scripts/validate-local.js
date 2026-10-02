@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { testConcurrency } from "./test-concurrency.js";
 
 const repository = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -66,7 +67,7 @@ function main() {
   ];
   let failed = false;
   for (const [label, files] of suites) {
-    const result = run("node", ["--test", "--test-reporter=tap", "--test-timeout=120000", ...files]);
+    const result = run("node", ["--test", `--test-concurrency=${testConcurrency()}`, "--test-reporter=tap", "--test-timeout=120000", ...files]);
     const summary = result.output.match(/^# (tests|pass|fail|cancelled|skipped) \d+$/gm) || [];
     console.log(`${label}: ${summary.map((line) => line.slice(2)).join(", ")}`);
     if (!result.ok) {

@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bump, targets } from "../scripts/bump-version.js";
 import { cleanCopy, gitFreeEnv } from "../scripts/validate-local.js";
+import { testConcurrency } from "../scripts/test-concurrency.js";
 import { manifests } from "../scripts/release-manifests.js";
 import { execFileSync, spawnSync } from "node:child_process";
 
@@ -191,4 +192,37 @@ test("the clean copy ignores git variables exported by hooks and never touches t
   assert.equal(fs.readFileSync(path.join(destination, "file.txt"), "utf8"), "content");
   assert.deepEqual(fs.readdirSync(foreign), []);
   assert.equal(fs.existsSync(path.join(destination, ".git")), true);
+});
+
+test("local full runs cap test parallelism while CI keeps the default", () => {
+  assert.equal(testConcurrency({}, 14), 7);
+  assert.equal(testConcurrency({}, 8), 4);
+  assert.equal(testConcurrency({}, 3), 1);
+  assert.equal(testConcurrency({}, 1), 1, "never below one");
+  assert.equal(testConcurrency({ ARCA_TEST_CONCURRENCY: "3" }, 14), 3, "the maintainer can override it");
+  for (const bad of ["0", "-2", "1.5", "abc", "", "0x10", "1e1", " 3 "])
+    assert.equal(testConcurrency({ ARCA_TEST_CONCURRENCY: bad }, 14), 7, `"${bad}" falls back to half the cores`);
+  const printed = execFileSync(process.execPath, [path.join(repository, "scripts", "test-concurrency.js")], {
+    encoding: "utf8",
+    env: { ...process.env, ARCA_TEST_CONCURRENCY: "2" },
+  });
+  assert.equal(printed.trim(), "2", "the hook reads the number from this script");
+  if (process.platform !== "win32") {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-concurrency-link-"));
+    try {
+      fs.symlinkSync(path.join(repository, "scripts"), path.join(root, "scripts"));
+      const linked = execFileSync(process.execPath, [path.join(root, "scripts", "test-concurrency.js")], {
+        encoding: "utf8",
+        env: { ...process.env, ARCA_TEST_CONCURRENCY: "2" },
+      });
+      assert.equal(linked.trim(), "2", "a symlinked checkout still prints the number");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+  const read = (file) => fs.readFileSync(path.join(repository, file), "utf8").replace(/\r\n/g, "\n");
+  assert.match(read(".githooks/pre-push"), /node --test --test-concurrency="\$\(node scripts\/test-concurrency\.js\)" /);
+  assert.match(read("scripts/validate-local.js"), /`--test-concurrency=\$\{testConcurrency\(\)\}`/);
+  for (const workflow of fs.readdirSync(path.join(repository, ".github", "workflows")))
+    assert.doesNotMatch(read(path.join(".github", "workflows", workflow)), /test-concurrency/, `${workflow} keeps Node's default`);
 });

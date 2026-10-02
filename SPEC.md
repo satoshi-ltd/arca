@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.82 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.6.83 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -501,7 +501,7 @@ npm run verify:bundle --prefix apps/desktop
 - `scripts/release-manifests.js` lists every version location (manifests, lockfiles, native modules, reported versions and the README, SPEC and `design/` banners). `node scripts/bump-version.js [x.y.z]` rewrites all of them at once and `node scripts/check-release.js` checks the same list, whatever the line endings, plus the changelog entry and that the Android versionCode, iOS buildNumber and native module versionCode are equal. Mobile build numbers are explicit and increase only when a native release is prepared.
 - `npx -y node@<.node-version> scripts/validate-local.js` (it refuses any other Node and prints the command) copies the working tree into a clean temporary checkout, runs root-only `npm ci`, the version check, the CI suite, off Linux the mobile source suite, and the mobile build-tooling tests. It keeps failures for inspection. Root-only installs matter: the development workspace can hide an undeclared root dependency through `apps/mobile/node_modules`.
 - CI runs the whole suite on Ubuntu and everything except `tests/mobile-*.test.js` on macOS and Windows. Tests build paths with `path.join`/`path.sep` and file URLs with `pathToFileURL`/`fileURLToPath`, accept CRLF checkouts and never assume one platform's temp directory. Windows refuses to truncate or remove files another process holds, so fixtures reuse or restore content in place and cleanup retries with backoff. DOM tests wait for `body[aria-busy="false"]` and drain pending native requests and their render callbacks before closing JSDOM; their delayed-response regressions stay. Tests that run `git` strip inherited `GIT_*` variables, because a pre-push hook in a linked worktree would otherwise act on the real repository.
-- `.githooks/pre-push` (enable with `git config core.hooksPath .githooks`) repeats the version check and the CI test command with the CI reporter. Neither it nor `validate-local.js` compiles Rust; no local script runs the desktop unit tests.
+- `.githooks/pre-push` (enable with `git config core.hooksPath .githooks`) repeats the version check and the CI test command with the CI reporter. Both the hook and `validate-local.js` run `node --test` with `--test-concurrency` set by `scripts/test-concurrency.js` (half the cores, at least one; `ARCA_TEST_CONCURRENCY` overrides) so a full local run does not saturate the machine; CI keeps Node's default. Neither the hook nor `validate-local.js` compiles Rust; no local script runs the desktop unit tests.
 - `npm test --prefix apps/mobile` checks the mobile build script wiring.
 
 ### Isolated qualification

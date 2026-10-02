@@ -26,7 +26,24 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **DESK-CLEANUP-KEEPS** — The cleanup dialog's kept counts follow Settings' older-versions count
+  `chore · agent · low`
+  accept: in Clean up older versions the per-folder and total kept figures count older versions only, like Settings → History, so the two numbers never disagree; a JSDOM or daemon test with current and superseded revisions.
+- **DOCKER-RELEASE-REF** — Build the Docker image from the released commit
+  `bug · agent · normal`
+  accept: `publish-docker.yml` checks out `workflow_run.head_sha` on automatic runs, as `publish-site.yml` does, so rapid pushes can never publish a newer image or record its `docker-v` tag before that version's release exists; a workflow contract test covers it.
+- **DESK-GALLERY-COUNT** — Gallery header counts only dated months
+  `bug · agent · low`
+  accept: the desktop gallery header counts every loaded photo and video, including those still waiting for a capture date (it read "0 photos" over three tiles); a DOM test.
+- **DESK-SELECT-CATALOG** — A folder selected while paused is missing from History
+  `bug · agent · low`
+  accept: `select` adds the folder to the saved catalog so History includes it before the next cycle; a replica test with a paused replica.
+- **DESK-PREVIEW-TIMEOUT** — Retained-revision preview times out as "Hub unavailable" on a slow healthy hub
+  `bug · agent · low`
+  accept: a 3-second timeout on a reachable hub reads "The hub took too long to prepare this preview" instead of claiming it is unreachable, and `size=large` gets a longer cap; a daemon test with a slow hub.
+- **CI-WIN-INTERRUPT-FLAKY** — Windows timing of the interrupted-sync interface test
+  `chore · agent · low`
+  accept: `interrupting sync does not abort an independent interface request` (`tests/sync.test.js`) no longer depends on a 6-second limit that a loaded Windows runner exceeded once (v0.6.27 run, green on rerun); raise the limit or wait on the events the test already observes, and explain the choice in the commit.
 
 ## In progress
 
@@ -204,12 +221,6 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.
-- **DESK-CLEANUP-KEEPS** — The cleanup dialog's kept counts follow Settings' older-versions count
-  `chore · agent · low`
-  accept: in Clean up older versions the per-folder and total kept figures count older versions only, like Settings → History, so the two numbers never disagree; a JSDOM or daemon test with current and superseded revisions.
-- **DEV-TEST-CONCURRENCY** — Cap test parallelism so a full run does not saturate the maintainer's machine
-  `chore · agent · low`
-  accept: `scripts/validate-local.js` and `.githooks/pre-push` run `node --test` with a bounded `--test-concurrency` (for example half the cores) and the suite still passes within CI's time budget; the maintainer's local deploy scripts are not touched.
 - **MOB-HUB-LIVENESS** — Hub-busy liveness probe on mobile
   `feature · agent · low`
   accept: a busy hub is told apart from an unreachable one before the phone marks itself offline; client tests cover both, including a hub that needs more than the 10-second catalog deadline (it is now marked offline on every cycle); a deadline that grows on consecutive timeouts while no cycle has connected is one option.
@@ -261,28 +272,9 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
   `chore · agent · low`
   accept: `install_update`, daemon stop and the restore marker (`with_recovery`, resume on next launch) are covered by Rust unit tests with the process and plugin boundaries stubbed, and `rust-tests` also runs on `windows-2022` so the PowerShell listing and non-Unix exit handling execute; both pass in CI.
 
-- **DOCKER-RELEASE-REF** — Build the Docker image from the released commit
-  `bug · agent · normal`
-  accept: `publish-docker.yml` checks out `workflow_run.head_sha` on automatic runs, as `publish-site.yml` does, so rapid pushes can never publish a newer image or record its `docker-v` tag before that version's release exists; a workflow contract test covers it.
-
 - **WEB-REPLICA-CONFLICT-LINKS** — Conflict download links on a replica's web view
   `bug · agent · low`
   accept: the conflict dialog's download links on a server replica's web view use a route the replica serves (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409); DOM and API tests.
-- **DESK-GALLERY-COUNT** — Gallery header counts only dated months
-  `bug · agent · low`
-  accept: the desktop gallery header counts every loaded photo and video, including those still waiting for a capture date (it read "0 photos" over three tiles); a DOM test.
-
-- **DESK-SELECT-CATALOG** — A folder selected while paused is missing from History
-  `bug · agent · low`
-  accept: `select` adds the folder to the saved catalog so History includes it before the next cycle; a replica test with a paused replica.
-- **DESK-PREVIEW-TIMEOUT** — Retained-revision preview times out as "Hub unavailable" on a slow healthy hub
-  `bug · agent · low`
-  accept: a 3-second timeout on a reachable hub reads "The hub took too long to prepare this preview" instead of claiming it is unreachable, and `size=large` gets a longer cap; a daemon test with a slow hub.
-
-- **CI-WIN-INTERRUPT-FLAKY** — Windows timing of the interrupted-sync interface test
-  `chore · agent · low`
-  accept: `interrupting sync does not abort an independent interface request` (`tests/sync.test.js`) no longer depends on a 6-second limit that a loaded Windows runner exceeded once (v0.6.27 run, green on rerun); raise the limit or wait on the events the test already observes, and explain the choice in the commit.
-
 - **DESK-NATIVE-TRAY-OFFLINE** — The native tray still says "needs attention" while the hub is unavailable
   `bug · agent · normal`
   accept: on macOS and Windows the tray icon, tooltip and status menu item read Offline (not the alert icon or "Arca · needs attention") while the hub is unavailable and the replica is not paused; today `tray_state` in `apps/desktop/src-tauri/src/main.rs` returns the alert state whenever `status.error` is set and any unknown phase, including "offline", falls to "needs attention"; a Rust test next to the existing `tray_state` test. Needs a desktop build.
