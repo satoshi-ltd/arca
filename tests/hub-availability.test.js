@@ -375,7 +375,10 @@ test("offline reads on a replica serve saved data without waiting on the hub onc
     rev: String(old),
   })}`;
   await within(5000, () =>
-    assert.rejects(replica.api(preview), { status: 503 }),
+    assert.rejects(replica.api(preview), {
+      status: 504,
+      message: /took too long to prepare this preview/,
+    }),
   );
   replica.engine.config.hub.url = "http://127.0.0.1:1";
   await assert.rejects(replica.sync());

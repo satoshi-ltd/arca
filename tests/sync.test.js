@@ -3006,7 +3006,7 @@ test("machine removal interrupts background work without waiting for an offline 
 });
 
 
-test("interrupting sync does not abort an independent interface request", { timeout: 6000 }, async (t) => {
+test("interrupting sync does not abort an independent interface request", { timeout: 60000 }, async (t) => {
   const { connect } = await setup(t);
   const replica = await connect("request-isolation");
   let entered, uiEntered, uiResponse;

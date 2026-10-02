@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.88 — 2026-10-03
+
+- A slow hub that cannot prepare the preview of an older photo version in time now answers that it took too long, instead of claiming to be unreachable, and large previews wait up to 15 seconds instead of 3.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.87 — 2026-10-03
 
 - A folder you start syncing while syncing is paused now shows up in History right away, instead of being missing until the next sync.

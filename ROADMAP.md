@@ -26,12 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-PREVIEW-TIMEOUT** — Retained-revision preview times out as "Hub unavailable" on a slow healthy hub
-  `bug · agent · low`
-  accept: a 3-second timeout on a reachable hub reads "The hub took too long to prepare this preview" instead of claiming it is unreachable, and `size=large` gets a longer cap; a daemon test with a slow hub.
-- **CI-WIN-INTERRUPT-FLAKY** — Windows timing of the interrupted-sync interface test
-  `chore · agent · low`
-  accept: `interrupting sync does not abort an independent interface request` (`tests/sync.test.js`) no longer depends on a 6-second limit that a loaded Windows runner exceeded once (v0.6.27 run, green on rerun); raise the limit or wait on the events the test already observes, and explain the choice in the commit.
+_None._
 
 ## In progress
 

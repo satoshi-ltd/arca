@@ -380,6 +380,53 @@ test("replicas render selected local previews and never ask the hub for photos t
     await assert.rejects(call(`${f.preview("photo.jpg", hash)}&rev=${rev + 1}`));
     assert.equal(previewRequests, 1, "only other retained revisions come from the hub");
     previewRequests = 0;
+    const realFetch = globalThis.fetch;
+    let silent = true;
+    globalThis.fetch = (url, options) =>
+      silent &&
+      String(url).startsWith(`http://127.0.0.1:${f.daemon.port}/v1/gallery/preview?`)
+        ? new Promise((_, reject) =>
+            options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }),
+          )
+        : realFetch(url, options);
+    replica.engine.json = remote;
+    replica.engine.previewTimeoutMs = 150;
+    replica.engine.largePreviewTimeoutMs = 600;
+    try {
+      const slow = async (suffix) => {
+        const started = Date.now();
+        const error = await call(`${f.preview("photo.jpg", hash)}&rev=${rev + 1}${suffix}`).catch((e) => e);
+        return { error, elapsed: Date.now() - started };
+      };
+      const small = await slow("");
+      assert.equal(small.error.status, 504);
+      assert.match(small.error.message, /The hub took too long to prepare this preview/);
+      assert.doesNotMatch(small.error.message, /unavailable/i);
+      assert.ok(small.elapsed < 500, `the thumbnail cap is short (${small.elapsed} ms)`);
+      const large = await slow("&size=large");
+      assert.equal(large.error.status, 504);
+      assert.ok(large.elapsed >= 550, `size=large waits longer (${large.elapsed} ms)`);
+      assert.equal(replica.engine.hubUnavailable, false, "a slow answer never marks a reachable hub as down");
+      globalThis.fetch = (url, options) =>
+        String(url).startsWith(`http://127.0.0.1:${f.daemon.port}/v1/gallery/preview?`)
+          ? Promise.reject(new TypeError("fetch failed"))
+          : realFetch(url, options);
+      const down = await slow("");
+      assert.equal(down.error.status, 503, "an unreachable hub still reads as unavailable");
+      assert.match(down.error.message, /Hub unavailable/);
+    } finally {
+      silent = false;
+      globalThis.fetch = realFetch;
+      replica.engine.json = async (route, ...args) => {
+        if (route.startsWith("/v1/gallery/preview?")) {
+          previewRequests++;
+          throw new Error("Hub unavailable");
+        }
+        return remote(route, ...args);
+      };
+      replica.engine.hubUnavailable = false;
+    }
+    previewRequests = 0;
     const localFolder = replica.engine.store.volume(f.v.id);
     fs.writeFileSync(path.join(localFolder.path, ".arcaignore"), "photo.jpg\n");
     await assert.rejects(call(f.preview("photo.jpg", hash)), { status: 404 });

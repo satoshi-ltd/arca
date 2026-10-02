@@ -195,12 +195,21 @@ export async function start(home, options = {}) {
   // Optional hub previews never decide connectivity and never wait on the 60 s transfer deadline.
   async function retainedPreview(route) {
     if (engine.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
+    const large =
+      new URL(route, "http://hub").searchParams.get("size") === "large";
     try {
       return await engine.json(route, undefined, {
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(
+          large
+            ? (engine.largePreviewTimeoutMs ?? 15000)
+            : (engine.previewTimeoutMs ?? 3000),
+        ),
         trackConnection: false,
+        timeoutUnavailable: false,
       });
     } catch (error) {
+      if (error.name === "TimeoutError")
+        fail("The hub took too long to prepare this preview. Try again.", 504);
       if (error.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
       throw error;
     }
