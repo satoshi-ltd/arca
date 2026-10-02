@@ -87,6 +87,7 @@ async fn api(app: tauri::AppHandle, route: String, method: Option<String>, body:
 }
 #[tauri::command]
 async fn bootstrap(app: tauri::AppHandle) -> Result<Value, String> {
+    sweep_update_watchers();
     let resumed = resume_daemon(&app).await.err();
     if !home().join("config.json").exists() {
         let root = home().parent().unwrap_or(&home()).join("arca");
@@ -507,6 +508,62 @@ async fn check_update(app: tauri::AppHandle) -> Result<UpdateStatus, String> {
     })
 }
 
+struct UpdateWatcher {
+    child: std::process::Child,
+    dir: PathBuf,
+}
+impl UpdateWatcher {
+    fn cancel(mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = fs::remove_dir_all(&self.dir);
+    }
+}
+fn sweep_update_watchers() {
+    if !cfg!(windows) {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry.file_name().to_string_lossy().starts_with("arca-update-watch-") {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+fn start_update_watcher(app: &tauri::AppHandle) -> Result<UpdateWatcher, String> {
+    let (node, cli) = runtime(app)?;
+    let dir = std::env::temp_dir().join(format!("arca-update-watch-{}", std::process::id()));
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let node_copy = dir.join(node.file_name().ok_or("Invalid runtime")?);
+    let script = dir.join("watch.mjs");
+    fs::copy(&node, &node_copy).map_err(|e| e.to_string())?;
+    fs::copy(cli.with_file_name("update-watch.js"), &script).map_err(|e| e.to_string())?;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let options = json!({
+        "appPid": std::process::id(),
+        "home": home().to_string_lossy(),
+        "node": node.to_string_lossy(),
+        "cli": cli.to_string_lossy(),
+        "appExe": exe.file_name().map(|name| name.to_string_lossy().to_string()),
+        "installerNames": [format!("{}*installer*", app.package_info().name)],
+        "cleanupDir": dir.to_string_lossy(),
+    });
+    let mut cmd = Command::new(&node_copy);
+    cmd.arg(&script)
+        .arg(options.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000200);
+    }
+    let child = cmd.spawn().map_err(|e| e.to_string())?;
+    Ok(UpdateWatcher { child, dir })
+}
 async fn with_recovery(app: &tauri::AppHandle, error: String) -> String {
     match resume_daemon(app).await {
         Ok(()) => error,
@@ -541,7 +598,15 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
             return Err(with_recovery(&app, error).await);
         }
     }
+    let watcher = if cfg!(windows) && (service || running) {
+        start_update_watcher(&app).ok()
+    } else {
+        None
+    };
     if let Err(error) = update.install(bytes) {
+        if let Some(watcher) = watcher {
+            watcher.cancel();
+        }
         return Err(with_recovery(&app, error.to_string()).await);
     }
     app.restart();

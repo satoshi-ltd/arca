@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-01 · Phase 1 functional, not release-qualified.
+Updated 2026-10-02 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -26,9 +26,51 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
-  `feature · agent · normal`
-  accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
+- **UI-VOCABULARY** — One word for each thing
+  `ui · agent · normal`
+  accept: the board.
+- **FOLDER-LAST-CHANGE** — The phone's folder summary knows its newest accepted revision
+  `feature · agent · low`
+  accept: the folder detail reads the newest activity row of the folder (`/v1/activity?volume=…&limit=1`, the saved view offline) and exposes its time, path and author to the summary, reusing the Recent cache when it has it; a replica test covers online, offline and a folder with no revisions. The interface follows board UI-FOLDER-STATS.
+- **UI-FOLDER-STATS** — A folder summary that adds to its title
+  `ui · agent · normal · depends: FOLDER-LAST-CHANGE`
+  accept: the board, with the words UI-VOCABULARY has set by then (Version history, Device).
+- **LICENSE-METADATA** — State the license in every manifest and image
+  `chore · agent · low`
+  accept: `apps/desktop/package.json`, `apps/mobile/package.json`, the Rust `Cargo.toml`, the Docker image label and `deploy/umbrel/arca/umbrel-app.yml` name the PolyForm Strict License (or point to `LICENSE`) without breaking `npm ci`, `cargo` or the Umbrel lint; a test lists every manifest.
+- **COPY-APP-VOICE** — Plain wording in the cold dialogs and Settings
+  `chore · agent · low · depends: UI-VOCABULARY`
+  accept: the strings a copy review flagged are rewritten in plain English with tests: "Destroy this hub?", "The reply is JSON: enter the value of code", the web sign-in hint that names `arca web-code` (it needs the Docker form in a container), "The daemon must support file browsing", the local-network "Files and credentials are not encrypted", and the pair dialog that mentions only the desktop; the vocabulary follows UI-VOCABULARY.
+- **SET-OLDER-REVISIONS-COUNT** — Settings' Older revisions counts only older revisions
+  `bug · agent · low`
+  accept: the number in Settings → History excludes each file's current revision and current deletions (today `status.historyRevisions` counts every revision, so a hub with 100 untouched files reads "100 kept" under Older revisions); a daemon test with current and superseded revisions, and SPEC's wording follows.
+- **DESK-CLEANUP-RECOUNT** — Editing a cleanup field after the count goes back to counting
+  `feature · agent · low`
+  accept: in the Clean up older revisions dialog, editing either field after See the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen; a JSDOM test.
+- **NAT-REVEAL-FILE** — Show a file in its own folder on Windows and Linux
+  `feature · agent · low`
+  accept: `open_file` with `reveal` works on every platform (Windows `explorer /select,<path>`, Linux the file's parent directory) and the file detail's Show in folder, and the photo viewer's, open the file's own folder instead of the shared folder's root; a Rust test next to the existing `open_file` code; native change, so a desktop build and a maintainer `verify` on real Windows and Linux follow.
+- **NAT-F29-SHARE-CACHE** — Safe cache names for incoming shares (security)
+  `bug · agent · high`
+  accept: Android shared files land under generated cache names, never `cacheDir/<sender display name>`; native change, device evidence follows in a `verify`.
+- **MOB-PICKED-DURABLE** — Picked photos outlive a long offline stretch
+  `bug · agent · low`
+  accept: a photo picked with Add photos… is copied into app-owned storage when it is journaled, so the OS clearing the picker cache or an iOS container path change cannot lose it, and picks still upload when library permission is revoked or the linked album is gone (today the cycle's permission and album checks run first); a picked photo whose file is gone can be dismissed instead of staying failed until picked again, and Sync now makes failed manual picks retry at once while automatic uploads are off; replica tests for each.
+- **MOB-GALLERY-ASSET-ROWS** — Tolerate a corrupt gallery asset row
+  `bug · agent · low`
+  accept: a malformed `gallery_assets` row no longer stops the app from starting (`clearInterrupted` and the SQLite `json_extract` queries) or blocks other assets, and never publishes deletions; a replica test with a corrupt asset row.
+- **MOB-FULLSCAN-FAILING** — Full verification while one folder keeps failing
+  `bug · agent · low`
+  accept: a folder that fails every cycle no longer keeps `lastFullScan` from advancing, so healthy folders are not fully re-hashed on every sync after the first hour; a replica test with one permanently failing folder shows scheduled cycles stop forcing full verification once the healthy folders complete it.
+- **MOB-PICKED-RETRY** — Retry on the offline notice reopens the photo picker
+  `bug · agent · low`
+  accept: after an offline Add photos… failure, the notice's retry starts a sync instead of reopening the picker; a replica or layout test.
+- **MOB-GALLERY-IGNORE-POLICY** — Photos the folder's `.arcaignore` excludes still show as phone-only in the online gallery
+  `bug · agent · low`
+  accept: online, local photos and videos the folder's `.arcaignore` ignores never appear in the phone gallery (today only the fixed exclusion list filters them); a pure-helper test with a policy and a replica test reading the real `.arcaignore`.
+- **NODE-LTS-UPDATE** — Move to the latest Node 24 LTS security release
+  `chore · agent · normal`
+  accept: `.node-version`, the Dockerfile and the EAS profiles move from 24.14.0 to the newest Node 24 LTS release that includes the 24.14.1, 24.17.0 and 24.18.1 security fixes; CI, runtime staging and the guard test pass. The shipped desktop runtime and Docker image then need a desktop build and a Casa redeploy (maintainer).
 
 ## In progress
 
@@ -74,6 +116,9 @@ _None._
 - **P2-VIDEO** — Video on physical devices
   `verify · maintainer · normal · depends: BUILD-MOBILE`
   accept: playback with audio, seeking and rotation on Android and iOS; local posters on iOS.
+- **WIN-UPDATE-WATCHER** — A failed Windows update gets the daemon back
+  `verify · maintainer · normal · depends: BUILD-DESKTOP`
+  accept: on a real Windows machine, with an update that fails after Arca closes (for example a locked installation file), the daemon is running again within about a minute without opening Arca, `update-watch.log` in the state directory says `restored` and `%TEMP%\arca-update-watch-*` is gone; a successful update logs `relaunched` and starts no second daemon.
 - **P2-GALLERY** — Album uploads on physical devices
   `verify · maintainer · normal · depends: BUILD-MOBILE`
   accept: original cloud access and EXIF/RAW/HEIC/Live Photo fidelity (limited access and editor workflows included), and a Samsung run with a library over 10 GiB covering screen-off/background continuity, battery restrictions, interruption and resumed completion. Verify the historical archive and real-phone uploads before removing Immich or claiming a migration.
@@ -187,24 +232,7 @@ Older notes listed these as open while later evidence suggests they are resolved
 ## Proposed
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
-- **LICENSE-METADATA** — State the license in every manifest and image
-  `chore · agent · low`
-  accept: `apps/desktop/package.json`, `apps/mobile/package.json`, the Rust `Cargo.toml`, the Docker image label and `deploy/umbrel/arca/umbrel-app.yml` name the PolyForm Strict License (or point to `LICENSE`) without breaking `npm ci`, `cargo` or the Umbrel lint; a test lists every manifest.
-- **COPY-APP-VOICE** — Plain wording in the cold dialogs and Settings
-  `chore · agent · low`
-  accept: the strings a copy review flagged are rewritten in plain English with tests: "Destroy this hub?", "The reply is JSON: enter the value of code", the web sign-in hint that names `arca web-code` (it needs the Docker form in a container), "The daemon must support file browsing", the local-network "Files and credentials are not encrypted", and the pair dialog that mentions only the desktop; the vocabulary follows board UI-VOCABULARY once approved.
-- **SET-OLDER-REVISIONS-COUNT** — Settings' Older revisions counts only older revisions
-  `bug · agent · low`
-  accept: the number in Settings → History excludes each file's current revision and current deletions (today `status.historyRevisions` counts every revision, so a hub with 100 untouched files reads "100 kept" under Older revisions); a daemon test with current and superseded revisions, and SPEC's wording follows.
-- **DESK-CLEANUP-RECOUNT** — Editing a cleanup field after the count goes back to counting
-  `feature · agent · low`
-  accept: in the Clean up older revisions dialog, editing either field after See the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen; a JSDOM test.
-- **NAT-REVEAL-FILE** — Show a file in its own folder on Windows and Linux
-  `feature · agent · low`
-  accept: `open_file` with `reveal` works on every platform (Windows `explorer /select,<path>`, Linux the file's parent directory) and the file detail's Show in folder, and the photo viewer's, open the file's own folder instead of the shared folder's root; a Rust test next to the existing `open_file` code; native change, so a desktop build and a maintainer `verify` on real Windows and Linux follow.
-- **FOLDER-LAST-CHANGE** — The phone's folder summary knows its newest accepted revision
-  `feature · agent · low`
-  accept: the folder detail reads the newest activity row of the folder (`/v1/activity?volume=…&limit=1`, the saved view offline) and exposes its time, path and author to the summary, reusing the Recent cache when it has it; a replica test covers online, offline and a folder with no revisions. The interface follows board UI-FOLDER-STATS.
+
 - **DESK-FILES-PAGING** — Files, History and a file's history grow by appending
   `chore · agent · low`
   accept: the desktop folder browser keeps the rows it has and appends the next cursor page instead of replacing them, up to a bounded number of rows, and typed search and scroll survive; History and a file's history keep appending; JSDOM tests cover the three lists. The interface follows board UI-DESK-FILES-PAGING.
@@ -226,9 +254,7 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **P2-MEDIA-LIBRARY** — Migrate to the new media library API
   `chore · agent · low`
   accept: the gallery uses `expo-media-library`'s `Query`/`Asset`/`Album` model instead of `expo-media-library/legacy`, with tests; device evidence is a follow-up `verify`.
-- **NAT-F29-SHARE-CACHE** — Safe cache names for incoming shares (security)
-  `bug · agent · high`
-  accept: Android shared files land under generated cache names, never `cacheDir/<sender display name>`; native change, device evidence follows in a `verify`.
+
 - **NAT-F01-F10-COPIES** — Android picker/share copies off the UI thread
   `bug · agent · normal`
   accept: picker and share copies (F01, F10 native half, F35) run off the UI and module threads with verified completion; device evidence follows.
@@ -262,20 +288,11 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **P2-WEB-TRUST** — Web trust and pairing features (product proposals)
   `decision · maintainer · low`
   accept: a decision on console-free initial trust, passkeys, background push for web approval, QR pairing, replica-to-replica pairing, remote hub-admin switching and one-click bidirectional pairing; each approved one becomes its own agent task.
-- **MOB-FULLSCAN-FAILING** — Full verification while one folder keeps failing
-  `bug · agent · low`
-  accept: a folder that fails every cycle no longer keeps `lastFullScan` from advancing, so healthy folders are not fully re-hashed on every sync after the first hour; a replica test with one permanently failing folder shows scheduled cycles stop forcing full verification once the healthy folders complete it.
-- **MOB-GALLERY-ASSET-ROWS** — Tolerate a corrupt gallery asset row
-  `bug · agent · low`
-  accept: a malformed `gallery_assets` row no longer stops the app from starting (`clearInterrupted` and the SQLite `json_extract` queries) or blocks other assets, and never publishes deletions; a replica test with a corrupt asset row.
 
 - **DESK-UPDATER-TESTS** — Rust tests for the update install flow and Windows
   `chore · agent · low`
   accept: `install_update`, daemon stop and the restore marker (`with_recovery`, resume on next launch) are covered by Rust unit tests with the process and plugin boundaries stubbed, and `rust-tests` also runs on `windows-2022` so the PowerShell listing and non-Unix exit handling execute; both pass in CI.
 
-- **NODE-LTS-UPDATE** — Move to the latest Node 24 LTS security release
-  `chore · agent · normal`
-  accept: `.node-version`, the Dockerfile and the EAS profiles move from 24.14.0 to the newest Node 24 LTS release that includes the 24.14.1, 24.17.0 and 24.18.1 security fixes; CI, runtime staging and the guard test pass. The shipped desktop runtime and Docker image then need a desktop build and a Casa redeploy (maintainer).
 - **DOCKER-RELEASE-REF** — Build the Docker image from the released commit
   `bug · agent · normal`
   accept: `publish-docker.yml` checks out `workflow_run.head_sha` on automatic runs, as `publish-site.yml` does, so rapid pushes can never publish a newer image or record its `docker-v` tag before that version's release exists; a workflow contract test covers it.
@@ -297,17 +314,6 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **CI-WIN-INTERRUPT-FLAKY** — Windows timing of the interrupted-sync interface test
   `chore · agent · low`
   accept: `interrupting sync does not abort an independent interface request` (`tests/sync.test.js`) no longer depends on a 6-second limit that a loaded Windows runner exceeded once (v0.6.27 run, green on rerun); raise the limit or wait on the events the test already observes, and explain the choice in the commit.
-
-- **MOB-PICKED-DURABLE** — Picked photos outlive a long offline stretch
-  `bug · agent · low`
-  accept: a photo picked with Add photos… is copied into app-owned storage when it is journaled, so the OS clearing the picker cache or an iOS container path change cannot lose it, and picks still upload when library permission is revoked or the linked album is gone (today the cycle's permission and album checks run first); a picked photo whose file is gone can be dismissed instead of staying failed until picked again, and Sync now makes failed manual picks retry at once while automatic uploads are off; replica tests for each.
-- **MOB-PICKED-RETRY** — Retry on the offline notice reopens the photo picker
-  `bug · agent · low`
-  accept: after an offline Add photos… failure, the notice's retry starts a sync instead of reopening the picker; a replica or layout test.
-
-- **MOB-GALLERY-IGNORE-POLICY** — Photos the folder's `.arcaignore` excludes still show as phone-only in the online gallery
-  `bug · agent · low`
-  accept: online, local photos and videos the folder's `.arcaignore` ignores never appear in the phone gallery (today only the fixed exclusion list filters them); a pure-helper test with a policy and a replica test reading the real `.arcaignore`.
 
 - **DESK-NATIVE-TRAY-OFFLINE** — The native tray still says "needs attention" while the hub is unavailable
   `bug · agent · normal`

@@ -31,6 +31,8 @@ try {
     throw new Error("Packaged Node does not match the runner architecture");
   if (!fs.existsSync(path.join(runtime, "LICENSE.node")))
     throw new Error("Packaged Node license missing");
+  if (!fs.existsSync(path.join(runtime, "packages/cli/update-watch.js")))
+    throw new Error("Packaged update watcher missing");
   const video = spawnSync(
     node,
     [

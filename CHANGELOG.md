@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.69 — 2026-10-02
+
+- On Windows, if the installer fails after Arca closes during an update, a small background watcher now starts the sync service again instead of leaving it stopped until you reopen Arca.
+
+Needs: desktop build
+
 ## 0.6.68 — 2026-10-02
 
 - Settings → History now has one row, Older revisions, with Clean up… and a line saying cleanup shows what it would remove first and never touches current files, pending changes or history not yet backed up. The dialog is titled Clean up older revisions, phrases its two fields as a sentence and shows the count before Apply cleanup; nothing is removed until then.
