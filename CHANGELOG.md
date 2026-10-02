@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.82 — 2026-10-02
+
+- Arca now builds and runs on Node 24.21.0, which carries the security fixes of 24.14.1, 24.17.0 and 24.18.1, for the desktop app, the Docker image and the phone build tooling.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.81 — 2026-10-02
 
 - On the phone, photos and videos that the folder's .arcaignore excludes no longer show up in the online gallery as "only on this phone".

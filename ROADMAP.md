@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **NODE-LTS-UPDATE** — Move to the latest Node 24 LTS security release
-  `chore · agent · normal`
-  accept: `.node-version`, the Dockerfile and the EAS profiles move from 24.14.0 to the newest Node 24 LTS release that includes the 24.14.1, 24.17.0 and 24.18.1 security fixes; CI, runtime staging and the guard test pass. The shipped desktop runtime and Docker image then need a desktop build and a Casa redeploy (maintainer).
+_None._
 
 ## In progress
 
