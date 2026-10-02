@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DOCKER-RELEASE-REF** — Build the Docker image from the released commit
-  `bug · agent · normal`
-  accept: `publish-docker.yml` checks out `workflow_run.head_sha` on automatic runs, as `publish-site.yml` does, so rapid pushes can never publish a newer image or record its `docker-v` tag before that version's release exists; a workflow contract test covers it.
 - **DESK-GALLERY-COUNT** — Gallery header counts only dated months
   `bug · agent · low`
   accept: the desktop gallery header counts every loaded photo and video, including those still waiting for a capture date (it read "0 photos" over three tiles); a DOM test.
@@ -218,6 +215,9 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.
+- **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
+  `bug · agent · low`
+  accept: `publish-docker.yml` publishes `latest` only when the run's commit is the current `main` tip (a re-run or a late run of an older version still pushes its version tag but never `latest`); a workflow contract test covers the condition.
 - **MOB-HUB-LIVENESS** — Hub-busy liveness probe on mobile
   `feature · agent · low`
   accept: a busy hub is told apart from an unreachable one before the phone marks itself offline; client tests cover both, including a hub that needs more than the 10-second catalog deadline (it is now marked offline on every cycle); a deadline that grows on consecutive timeouts while no cycle has connected is one option.

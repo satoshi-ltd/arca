@@ -226,3 +226,24 @@ test("local full runs cap test parallelism while CI keeps the default", () => {
   for (const workflow of fs.readdirSync(path.join(repository, ".github", "workflows")))
     assert.doesNotMatch(read(path.join(".github", "workflows", workflow)), /test-concurrency/, `${workflow} keeps Node's default`);
 });
+
+test("the Docker workflow builds and tags the commit of the release that triggered it", () => {
+  const read = (file) => fs.readFileSync(path.join(repository, file), "utf8").replace(/\r\n/g, "\n");
+  const docker = read(".github/workflows/publish-docker.yml");
+  const ref = "ref: ${{ github.event.workflow_run.head_sha || github.sha }}";
+  const checkouts = [...docker.matchAll(/- uses: actions\/checkout@v5\n((?: {8}.+\n)+)/g)];
+  assert.equal(checkouts.length, 2, "the gate and the build both check out the repository");
+  for (const [, options] of checkouts) assert.ok(options.includes(ref), `a checkout lacks ${ref}`);
+  assert.match(docker, /RELEASE_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/);
+  assert.match(docker, /-f sha="\$RELEASE_SHA"/);
+  assert.doesNotMatch(docker, /GITHUB_SHA|github\.sha(?! \}\}\n)/, "the tag never records the branch head");
+  const gate = docker.slice(docker.indexOf("  gate:"), docker.indexOf("    runs-on:", docker.indexOf("  gate:")));
+  for (const condition of [
+    "github.event.workflow_run.conclusion == 'success'",
+    "github.event.workflow_run.head_branch == 'main'",
+    "github.event.workflow_run.head_repository.full_name == github.repository",
+    "github.event.workflow_run.event == 'push'",
+  ])
+    assert.ok(gate.includes(condition), `the gate lacks ${condition}: fork code must never reach the publish path`);
+  assert.ok(read(".github/workflows/publish-site.yml").includes(ref), "publish-site pins the same commit");
+});

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.85 — 2026-10-03
+
+- The Docker image is now built and tagged from the exact commit whose release triggered it, so two quick pushes can no longer publish the newer version's image or tag before that version's release exists.
+
 ## 0.6.84 — 2026-10-02
 
 - In Clean up older versions, the numbers that say how many versions are kept now count older versions only, the same as Settings → History, so the two never disagree.
