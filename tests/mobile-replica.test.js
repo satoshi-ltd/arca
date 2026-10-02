@@ -1966,6 +1966,78 @@ test("Sync now retries failed manual picks at once while automatic uploads are o
   assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, pending.id)).state, "accepted", "Sync now retries it");
 });
 
+test("a corrupt gallery asset row is set aside: startup, queries and other assets carry on and nothing is deleted", async (t) => {
+  const f = await galleryFixture(
+    t,
+    [
+      { id: "photo-1", filename: "IMG_1.HEIC", creationTime: 1750000000000 },
+      { id: "photo-2", filename: "IMG_2.HEIC", creationTime: 1750000001000 },
+    ],
+  );
+  const { replica: r, store, volume } = f;
+  await f.enable();
+  await r.sync(true);
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).accepted, 2);
+  const deleted = () => f.daemon.engine.store.db.prepare("SELECT COUNT(*) AS n FROM revisions WHERE deleted=1").get().n;
+  const before = deleted();
+  const insert = (asset, state, row) =>
+    store.db.runAsync("INSERT INTO gallery_assets VALUES(?,?,?,?,?,?)", r.scope, volume.id, asset, state, 0, row);
+  await insert("broken-text", "failed", "{not json");
+  await insert("broken-shape", "accepted", '"just a string"');
+  await insert("broken-pending", "pending", "[1,2]");
+  await assert.rejects(store.db.getAllAsync("SELECT json_extract(row,'$.issue') FROM gallery_assets WHERE scope=?", r.scope), "the raw query really breaks on a bad row");
+  await store.clearInterrupted(r.scope);
+  const corrupt = await store.db.getAllAsync("SELECT asset FROM gallery_corrupt WHERE scope=? ORDER BY asset", r.scope);
+  assert.deepEqual(corrupt.map((row) => row.asset), ["broken-pending", "broken-shape", "broken-text"]);
+  assert.equal(await store.galleryAsset(r.scope, volume.id, "broken-text"), null);
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).accepted, 2);
+  assert.deepEqual(await store.galleryManual(r.scope, volume.id, Date.now(), 24), []);
+  assert.deepEqual(await store.unregisteredGalleryAssets(r.scope, volume.id), []);
+
+  f.assets.push({ id: "photo-3", filename: "IMG_3.HEIC", creationTime: 1750000002000 });
+  f.data.set("photo-3", Buffer.from("original photo-3"));
+  await r.sync(true);
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-3")).state, "accepted", "other assets are not blocked");
+  assert.equal(deleted(), before, "a corrupt row never publishes a deletion");
+  await store.db.runAsync("INSERT INTO gallery_assets VALUES(?,?,?,?,?,?)", r.scope, volume.id, "nul-row", "pending", 0, '{"id":"nul-row"}\u0000garbage');
+  assert.equal(await store.galleryAsset(r.scope, volume.id, "nul-row"), null, "a row JSON.parse rejects is set aside when read");
+  assert.equal((await store.db.getFirstAsync("SELECT COUNT(*) AS n FROM gallery_assets WHERE asset='nul-row'")).n, 0);
+});
+
+test("rows with the wrong shape are set aside too, and a corrupt pick whose app copy exists is queued again", async (t) => {
+  const f = await galleryFixture(t);
+  const { replica: r, store, volume } = f;
+  await f.enable();
+  const insert = (asset, state, row) =>
+    store.db.runAsync("INSERT INTO gallery_assets VALUES(?,?,?,?,?,?)", r.scope, volume.id, asset, state, 0, row);
+  await insert("bad-string", "accepted", '{"id":"x","resources":"abc"}');
+  await insert("bad-member", "accepted", '{"id":"y","resources":["abc"]}');
+  await insert("bad-object", "accepted", '{"id":"z","resources":{"a":"x"}}');
+  await insert("fine", "removed", '{"id":"fine","state":"removed","resources":[{"key":"original","accepted":true}]}');
+  await store.clearInterrupted(r.scope);
+  assert.deepEqual(
+    (await store.db.getAllAsync("SELECT asset FROM gallery_corrupt WHERE scope=? ORDER BY asset", r.scope)).map((row) => row.asset),
+    ["bad-member", "bad-object", "bad-string"],
+  );
+  assert.ok(await store.galleryAsset(r.scope, volume.id, "fine"));
+  await store.gallerySummary(r.scope, volume.id);
+  await store.galleryReceipt(r.scope, volume.id, "hash", 1, false);
+
+  const uri = path.join(f.root, "pick.jpg");
+  fs.writeFileSync(uri, "pick bytes");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(volume.id, [{ uri, fileName: "pick.jpg" }]));
+  const pending = (await store.galleryPreview(r.scope, volume.id, false, 24)).find((item) => item.picked);
+  await store.db.runAsync("UPDATE gallery_assets SET row=? WHERE asset=?", "{broken", pending.id);
+  await store.clearInterrupted(r.scope);
+  assert.equal(await store.galleryAsset(r.scope, volume.id, pending.id), null);
+  f.online();
+  await r.sync(true);
+  const recovered = await store.galleryAsset(r.scope, volume.id, pending.id);
+  assert.equal(recovered.state, "accepted", "the kept copy of the pick uploads again");
+  assert.deepEqual(await store.corruptPicks(r.scope, volume.id), []);
+});
+
 test("a pick whose app copy is gone can be dismissed instead of staying failed, and picking it again queues it", async (t) => {
   const f = await galleryFixture(t);
   const r = f.replica;

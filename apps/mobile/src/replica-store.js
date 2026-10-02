@@ -10,6 +10,7 @@ export class ReplicaStore {
       CREATE TABLE IF NOT EXISTS gallery_sources (scope TEXT, volume TEXT, config TEXT NOT NULL, PRIMARY KEY(scope,volume));
       CREATE TABLE IF NOT EXISTS gallery_assets (scope TEXT, volume TEXT, asset TEXT, state TEXT NOT NULL, retryAt INTEGER DEFAULT 0, row TEXT NOT NULL, PRIMARY KEY(scope,volume,asset));
       CREATE INDEX IF NOT EXISTS gallery_work ON gallery_assets(scope,volume,state,retryAt);
+      CREATE TABLE IF NOT EXISTS gallery_corrupt (scope TEXT, volume TEXT, asset TEXT, state TEXT, retryAt INTEGER, row TEXT, at INTEGER, PRIMARY KEY(scope,volume,asset));
       CREATE TABLE IF NOT EXISTS scan_cache (uri TEXT PRIMARY KEY, row TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS folders (scope TEXT, id TEXT, name TEXT, selected INTEGER DEFAULT 1, cursor INTEGER DEFAULT 0, initialized INTEGER DEFAULT 0, completed TEXT, issue TEXT, PRIMARY KEY(scope,id));
@@ -25,6 +26,7 @@ export class ReplicaStore {
         "view_cache",
         "scan_cache",
         "gallery_assets",
+        "gallery_corrupt",
         "gallery_sources",
         "files",
         "pending",
@@ -40,7 +42,52 @@ export class ReplicaStore {
     }
     await this.db.execAsync("PRAGMA wal_checkpoint(TRUNCATE)");
   }
+  async quarantineGallery(scope) {
+    const corrupt = `scope=? AND CASE WHEN json_valid(row) THEN (CASE WHEN json_type(row)='object' THEN (CASE WHEN json_type(row,'$.resources') IS NULL OR (json_type(row,'$.resources')='array' AND NOT EXISTS(SELECT 1 FROM json_each(row,'$.resources') WHERE type!='object')) THEN 1 ELSE 0 END) ELSE 0 END) ELSE 0 END=0`;
+    await this.db.runAsync(
+      `INSERT OR IGNORE INTO gallery_corrupt(scope,volume,asset,state,retryAt,row,at) SELECT scope,volume,asset,state,retryAt,row,? FROM gallery_assets WHERE ${corrupt}`,
+      Date.now(),
+      scope,
+    );
+    await this.db.runAsync(
+      `DELETE FROM gallery_assets WHERE ${corrupt}`,
+      scope,
+    );
+  }
+  async quarantineGalleryRow(scope, volume, asset) {
+    await this.db.runAsync(
+      "INSERT OR IGNORE INTO gallery_corrupt(scope,volume,asset,state,retryAt,row,at) SELECT scope,volume,asset,state,retryAt,row,? FROM gallery_assets WHERE scope=? AND volume=? AND asset=?",
+      Date.now(),
+      scope,
+      volume,
+      asset,
+    );
+    await this.db.runAsync(
+      "DELETE FROM gallery_assets WHERE scope=? AND volume=? AND asset=?",
+      scope,
+      volume,
+      asset,
+    );
+  }
+  async corruptPicks(scope, volume) {
+    return (
+      await this.db.getAllAsync(
+        "SELECT asset FROM gallery_corrupt WHERE scope=? AND volume=? AND asset GLOB 'picked-*'",
+        scope,
+        volume,
+      )
+    ).map((row) => row.asset);
+  }
+  async forgetCorruptPick(scope, volume, asset) {
+    await this.db.runAsync(
+      "DELETE FROM gallery_corrupt WHERE scope=? AND volume=? AND asset=?",
+      scope,
+      volume,
+      asset,
+    );
+  }
   async clearInterrupted(scope) {
+    await this.quarantineGallery(scope);
     await this.db.runAsync(
       "UPDATE folders SET issue=NULL WHERE scope=? AND issue IN ('Request cancelled','Sync paused')",
       scope,
@@ -130,6 +177,7 @@ export class ReplicaStore {
         "pending",
         "applying",
         "gallery_assets",
+        "gallery_corrupt",
         "gallery_sources",
       ])
         await this.db.runAsync(
@@ -182,7 +230,14 @@ export class ReplicaStore {
       volume,
       asset,
     );
-    return row ? JSON.parse(row.row) : null;
+    if (!row) return null;
+    try {
+      const item = JSON.parse(row.row);
+      if (item && typeof item === "object" && !Array.isArray(item))
+        return item;
+    } catch {}
+    await this.quarantineGalleryRow(scope, volume, asset);
+    return null;
   }
   async putGalleryAsset(scope, volume, item) {
     if (item.state === "accepted" && !item.acceptedAt)

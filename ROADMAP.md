@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-GALLERY-ASSET-ROWS** — Tolerate a corrupt gallery asset row
-  `bug · agent · low`
-  accept: a malformed `gallery_assets` row no longer stops the app from starting (`clearInterrupted` and the SQLite `json_extract` queries) or blocks other assets, and never publishes deletions; a replica test with a corrupt asset row.
 - **MOB-FULLSCAN-FAILING** — Full verification while one folder keeps failing
   `bug · agent · low`
   accept: a folder that fails every cycle no longer keeps `lastFullScan` from advancing, so healthy folders are not fully re-hashed on every sync after the first hour; a replica test with one permanently failing folder shows scheduled cycles stop forcing full verification once the healthy folders complete it.

@@ -647,6 +647,19 @@ export class Gallery {
     const r = this.r;
     let source = await r.store.gallery(r.scope, folder.id);
     source.prefix = source.prefix.replace(/^Phone-/, "Machine-");
+    for (const id of await r.store.corruptPicks(r.scope, folder.id)) {
+      if (await r.files.stat(r.files.picked(r.scope, folder.id, id)))
+        await r.store.putGalleryAsset(r.scope, folder.id, {
+          id,
+          name: "photo.jpg",
+          prefix: source.prefix,
+          state: "pending",
+          manual: true,
+          picked: { name: "photo.jpg", key: "original" },
+          retryAt: 0,
+        });
+      await r.store.forgetCorruptPick(r.scope, folder.id, id);
+    }
     await r.files.clearGalleryStage(r.scope, folder.id);
     const catalog = r.client.state().catalog;
     if (

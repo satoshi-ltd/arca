@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.78 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.6.79 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -429,7 +429,7 @@ Participants can explicitly delete gallery items from web, desktop or mobile, in
 
 - All clients send the confirmed action directly to the hub and report failures without persistent queues or automatic retries. Partial successes leave the selection and grid; failures stay. A lost response can mean the hub accepted, so refresh before retrying. Conflicts and stale selections keep later content.
 - The `galleryDeletion` capability advertises `/v1/gallery/register`, `/delete` and `/removals`, usable with replica credentials under the single-owner model (`/v1/delete-file` stays administrator-only). Native asset IDs stay on the phone; the hub receives an opaque digest, the source credential identity and exact resource paths, hashes and sizes.
-- `gallery_assets` and `gallery_members` record verified source groups, registered in bounded batches. Deleting any registered resource removes the whole group, and bulk selection skips companions already removed. Groups are never inferred from names or equal hashes.
+- `gallery_assets` and `gallery_members` record verified source groups, registered in bounded batches. A `gallery_assets` row that is not a JSON object, or whose `resources` is not a list of objects, is moved to `gallery_corrupt` at startup (and a row `JSON.parse` rejects is moved when read), so it never stops the app or other assets and never counts as a removed photo; a library photo it described is discovered again and uploaded to the same deterministic path, and a picked photo whose app copy still exists is queued again from the copy. Deleting any registered resource removes the whole group, and bulk selection skips companions already removed. Groups are never inferred from names or equal hashes.
 - `gallery_deletions` stores durable author and request IDs and tombstone results apart from the proposal cache; reusing a request ID for another target is rejected. All tombstones and pending materializations commit in one SQLite transaction, and replaying an old request cannot delete a restored or edited file.
 - Deletion suppresses source uploads in the hub registry and the phone's ledger; losing the ledger or relinking with the same paired identity rebuilds suppression from the `/removals` feed (durable sequence cursor). Restoring history does not reset suppression. Resetting pairing or native identity creates a distinct source that cannot be correlated by name or content.
 - There is no review screen, opt-in, native removal of originals, special restore flow or extra recovery retention; ordinary history restore applies under folder retention.

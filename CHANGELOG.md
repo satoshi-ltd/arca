@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.79 — 2026-10-02
+
+- A damaged record in the phone's photo upload list no longer stops Arca from starting or blocks other photos: it is set aside, and the photo it described is found again on the next scan (or, for a picked photo, from its saved copy) without deleting anything on the hub.
+
+Needs: native build
+
 ## 0.6.78 — 2026-10-02
 
 - Photos picked with Add photos… are now kept in Arca's own storage until the hub has them, so a cleared cache or a long offline stretch no longer loses them; they also upload when photo access is revoked or the album is gone, and Sync now retries failed picks at once even with automatic uploads off.
