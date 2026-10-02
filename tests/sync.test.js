@@ -1821,6 +1821,43 @@ test("copy reports agree through the hub and update selection while paused", asy
   assert.deepEqual(find(await hub.api("/v1/machines")).folderIds, [volume.id]);
 });
 
+test("a folder selected while paused is in the saved catalog, so History includes it before the next cycle", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("Paused Mac");
+  await mac.api("/v1/pause", { paused: true });
+  const added = await hub.api("/v1/volumes", { name: "Added while paused" });
+  assert.equal(
+    mac.engine.config.catalog.some((row) => row.id === added.id),
+    false,
+    "the saved catalog has not seen it yet",
+  );
+  await mac.api("/v1/select", { id: added.id });
+  assert.equal(mac.engine.paused, true);
+  const entry = mac.engine.config.catalog.find((row) => row.id === added.id);
+  assert.equal(entry.name, "Added while paused");
+  assert.equal(entry.historyRetention, "1m");
+  const history = await mac.api(`/v1/activity?volume=${added.id}&limit=4`);
+  assert.deepEqual(
+    history.versions,
+    [],
+    "History answers for the new folder instead of refusing it",
+  );
+  const count = () =>
+    mac.engine.config.catalog.filter((row) => row.id === added.id).length;
+  assert.equal(count(), 1);
+  await mac.api("/v1/select", { id: added.id });
+  assert.equal(count(), 1, "selecting again never duplicates the entry");
+  mac.engine.config.catalog = mac.engine.config.catalog.filter(
+    (row) => row.id !== added.id,
+  );
+  await mac.api("/v1/select", { id: added.id });
+  assert.equal(count(), 1, "selecting an already selected folder restores a missing entry");
+  assert.ok(
+    mac.engine.config.catalog.some((row) => row.id === volume.id),
+    "other folders stay",
+  );
+});
+
 test("hub scan releases the operation queue for a pending deletion without deleting unscanned files", async (t) => {
   const { hub, volume } = await setup(t);
   const other = await hub.api("/v1/volumes", { name: "Other" });

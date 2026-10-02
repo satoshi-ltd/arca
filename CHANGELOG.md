@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.87 — 2026-10-03
+
+- A folder you start syncing while syncing is paused now shows up in History right away, instead of being missing until the next sync.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.86 — 2026-10-03
 
 - The desktop gallery header now counts every photo and video, including those still waiting for a date, instead of reading "0 photos" over a grid of tiles.

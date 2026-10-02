@@ -816,22 +816,9 @@ export class Engine {
         if (catalog.id !== this.config.hub.id)
           fail("Hub identity changed; reconnect explicitly", 409);
         this.config.hub.name = catalog.name;
-        this.config.catalog = catalog.volumes.map((v) => ({
-          id: v.id,
-          name: v.name,
-          gallery: !!v.gallery,
-          historyRetention:
-            v.historyRetention ??
-            this.config.catalog?.find((saved) => saved.id === v.id)
-              ?.historyRetention ??
-            "1m",
-          conflictRevision: v.conflictRevision,
-          conflicts: Number.isSafeInteger(v.conflicts)
-            ? v.conflicts
-            : undefined,
-          files: Number.isSafeInteger(v.files) ? v.files : undefined,
-          bytes: Number.isSafeInteger(v.bytes) ? v.bytes : undefined,
-        }));
+        this.config.catalog = catalog.volumes.map((v) =>
+          this.catalogEntry(v),
+        );
         this.store.saveConfig();
         if (this.config.role === "backup")
           for (const v of catalog.volumes) this.registerBackupVolume(v);
@@ -2026,6 +2013,34 @@ export class Engine {
     this.folderStates.clear();
     return { disconnected: true, filesRetained: true };
   }
+  catalogEntry(v) {
+    return {
+      id: v.id,
+      name: v.name,
+      gallery: !!v.gallery,
+      historyRetention:
+        v.historyRetention ??
+        this.config.catalog?.find((saved) => saved.id === v.id)
+          ?.historyRetention ??
+        "1m",
+      conflictRevision: v.conflictRevision,
+      conflicts: Number.isSafeInteger(v.conflicts) ? v.conflicts : undefined,
+      files: Number.isSafeInteger(v.files) ? v.files : undefined,
+      bytes: Number.isSafeInteger(v.bytes) ? v.bytes : undefined,
+    };
+  }
+  rememberCatalogVolume(v) {
+    if (
+      this.config.role === "hub" ||
+      this.config.catalog?.some((row) => row.id === v.id)
+    )
+      return;
+    this.config.catalog = [
+      ...(this.config.catalog || []),
+      this.catalogEntry(v),
+    ];
+    this.store.saveConfig();
+  }
   async select(id, location, volumes = null) {
     const s = this.store;
     volumes ??=
@@ -2044,6 +2059,7 @@ export class Engine {
         "This folder already has a local destination. Moving an existing device requires a separate migration.",
         409,
       );
+    this.rememberCatalogVolume(v);
     if (existing?.selected) return existing;
     let local;
     s.db.exec("BEGIN IMMEDIATE");
