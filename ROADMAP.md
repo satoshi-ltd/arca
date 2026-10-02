@@ -26,12 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **FOLDER-LAST-CHANGE** — The phone's folder summary knows its newest accepted revision
-  `feature · agent · low`
-  accept: the folder detail reads the newest activity row of the folder (`/v1/activity?volume=…&limit=1`, the saved view offline) and exposes its time, path and author to the summary, reusing the Recent cache when it has it; a replica test covers online, offline and a folder with no revisions. The interface follows board UI-FOLDER-STATS.
-- **UI-FOLDER-STATS** — A folder summary that adds to its title
-  `ui · agent · normal · depends: FOLDER-LAST-CHANGE`
-  accept: the board, using the words the apps already use (Version history, Device).
 - **LICENSE-METADATA** — State the license in every manifest and image
   `chore · agent · low`
   accept: `apps/desktop/package.json`, `apps/mobile/package.json`, the Rust `Cargo.toml`, the Docker image label and `deploy/umbrel/arca/umbrel-app.yml` name the PolyForm Strict License (or point to `LICENSE`) without breaking `npm ci`, `cargo` or the Umbrel lint; a test lists every manifest.

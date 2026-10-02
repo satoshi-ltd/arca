@@ -735,6 +735,8 @@ export function styles(
     },
     statsGrid: { flexDirection: "row", flexWrap: "wrap" },
     statCell: { width: wide ? "25%" : "50%", padding: 12, gap: 6 },
+    statCellThird: { width: wide ? "33.333%" : "50%", padding: 12, gap: 6 },
+    statCellWide: { width: "100%" },
     detailGrid: { flexDirection: wide ? "row" : "column", gap: 16 },
     detailMain: { flex: wide ? 1 : undefined, minWidth: 0, gap: 12 },
     stickySideScroll: { flexGrow: 0 },

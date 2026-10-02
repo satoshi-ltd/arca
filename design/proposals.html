@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.70 · proposals</span>
+      <span class="kit-version">v0.6.71 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -36,27 +36,6 @@
 
       <section class="kit-section" id="boards">
         <h2>Boards <span>01</span></h2>
-        <article class="kit-board" data-board="UI-FOLDER-STATS">
-          <header><code>UI-FOLDER-STATS</code><h3>A folder summary that adds to its title</h3><span>Desktop · Mobile</span></header>
-          <p class="kit-note"><strong>Why.</strong> The folder summary repeats the header: Files 24 · 196.3 KB indexed sits under a title that already says 24 files · 196.3 KB local, and Latest known version shows an internal counter (rev 189886) nobody can act on. The phone has the same Files cell and keeps Last completed apart from Status. The proposal gives both platforms the same three cells: Status with when the last sync completed, Last change with when the newest accepted version arrived, which file and which device (the row both apps already read for Recent), and Version history as it is. The alternative keeps four cells and only swaps the version number for the file and device, which still repeats the count.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Desktop · Files repeats the title, the version is an internal counter</p>
-<div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="folder"></span></div><div><h1>alpi-satoshi-workspace</h1><p>24 files · 196.3 KB local</p></div></div><div class="heading-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open in Finder</button></div></div></div>
-<div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ok"><span data-icon="circle-check"></span>Up to date</strong><p>Completed just now</p></div><div class="stat"><span>Files</span><strong>24</strong><p>196.3 KB indexed</p></div><div class="stat"><span>Latest known version</span><strong class="mono">rev 189886</strong><p>Accepted by the hub</p></div><div class="stat"><span>Version history</span><strong>On · 1 week</strong><p>Older versions kept</p></div></div>
-              <p class="kit-caption">Phone · the same Files cell, and Last completed apart from Status</p>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-stats"><div class="m-stat"><span class="m-caption">Status</span><span class="m-stat-value">Up to date</span></div><div class="m-stat"><span class="m-caption">Files</span><span class="m-stat-value">24 · 196.3 KB</span></div><div class="m-stat"><span class="m-caption">Last completed</span><span class="m-stat-value">Oct 1, 19:34</span></div><div class="m-stat"><span class="m-caption">Version history</span><span class="m-stat-value">On · 1 week</span></div></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">Desktop · three cells, each saying something the title does not</p>
-<div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="folder"></span></div><div><h1>alpi-satoshi-workspace</h1><p>24 files · 196.3 KB local</p></div></div><div class="heading-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open in Finder</button></div></div></div>
-<div class="stats folder-stats kit-stats-3"><div class="stat"><span>Status</span><strong class="stat-status ok"><span data-icon="circle-check"></span>Up to date</strong><p>Completed just now</p></div><div class="stat"><span>Last change</span><strong>2 h ago</strong><p>brief.md · fold8</p></div><div class="stat"><span>Version history</span><strong>On · 1 week</strong><p>Older versions kept</p></div></div>
-              <p class="kit-caption">Phone · the same three, Status now carries the completion time</p>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-stats"><div class="m-stat"><span class="m-caption">Status</span><span class="m-stat-value">Up to date</span><span class="m-caption">Completed just now</span></div><div class="m-stat"><span class="m-caption">Last change</span><span class="m-stat-value">2 h ago</span><span class="m-caption">brief.md · fold8</span></div><div class="m-stat m-wide"><span class="m-caption">Version history</span><span class="m-stat-value">On · 1 week</span><span class="m-caption">Older versions kept</span></div></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>Desktop, web and phone folder details show Status (with the last completed sync), Last change (the newest accepted version's relative time, file and device, or No changes yet) and Version history, and no Files cell; the file count and size stay in the title; the hub's retention control keeps its cell; the phone reads the newest version as FOLDER-LAST-CHANGE describes; JSDOM and layout tests cover both, and the kit pages show the summary.</p></div></div>
-        </article>
         <article class="kit-board" data-board="UI-DESK-FILES-PAGING">
           <header><code>UI-DESK-FILES-PAGING</code><h3>One way to show more</h3><span>Desktop</span></header>
           <p class="kit-note"><strong>Why.</strong> Lists grow three different ways: the Files tab replaces its rows with First files and Next files, History appends with Load more, and the phone appends with Show more files and Load older versions; History also labels its placeholder rows Loading when nothing is cached yet. The proposal makes every list grow the same way, with one Show more button that appends the next rows (Show more files, Show more, Show more versions) and placeholder rows without a label. The alternative keeps page-by-page navigation on desktop and only renames the buttons.</p>

@@ -357,9 +357,6 @@ body.kit {
 .kit-board-pair .kit-notices {
   width: var(--notice-width);
 }
-.kit-stats-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
 .kit-board-pair .detail-head {
   padding: var(--space-4);
   border: 1px solid var(--div);

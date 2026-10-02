@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.71 — 2026-10-02
+
+- A folder's summary on desktop, web and phone now shows three cells that add to its title: Status with when the last sync completed, Last change (when, which file and which device, or No changes yet) and Version history; the Files cell and the internal revision counter are gone.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.70 — 2026-10-02
 
 - Desktop, web and phone now use the same words: Devices (not Machines, and no Replica label), Start syncing and Stop syncing (not Select, Keep a local copy and Unlink), Version (not revision) and Erase (not Destroy); on the hub, a machine's Disconnect is now Remove device.

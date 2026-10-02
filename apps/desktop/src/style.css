@@ -3565,9 +3565,12 @@ dialog.photo-viewer {
 }
 
 .folder-stats {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(212px, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-@media (max-width: 700px) {
+.stat-last-change p {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
   .folder-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3577,8 +3580,10 @@ dialog.photo-viewer {
   .folder-stats .stat:nth-child(even) {
     border-right: 0;
   }
-  .folder-stats .stat:nth-last-child(-n + 2) {
+  .folder-stats .stat:last-child {
+    grid-column: 1 / -1;
     border-bottom: 0;
+    border-right: 0;
   }
 }
 

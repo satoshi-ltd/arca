@@ -100,6 +100,12 @@ import { GalleryDateRail } from "./GalleryDateRail";
 import { FolderGallery } from "./FolderGallery";
 import { coalescedRun } from "./folder-listing";
 import { FolderRecent } from "./FolderRecent";
+import {
+  failedChange,
+  readLastChange,
+  seededChange,
+  shortName,
+} from "./recent-cache";
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize } from "./format";
 import { browseEntries } from "./browse";
@@ -171,6 +177,7 @@ export default function App() {
     [machines, setMachines] = useState(null),
     [machinesSaved, setMachinesSaved] = useState(false),
     [machinesLoaded, setMachinesLoaded] = useState(false),
+    [lastChange, setLastChange] = useState(undefined),
     [status, setStatus] = useState({}),
     [busy, setBusy] = useState(false),
     [actionLabel, setActionLabel] = useState(""),
@@ -596,6 +603,13 @@ export default function App() {
       "1m": "On · 30 days",
       forever: "Forever",
     }[historyRetention] || "On · 30 days";
+  const shownChange =
+    folder && replica && lastChange?.key === `${replica.scope}:${folder.id}`
+      ? lastChange.value
+      : undefined;
+  const authorName = (id) =>
+    machines?.find((m) => m.machineId === id || m.credentialId === id)?.name ||
+    (id === connection?.id ? name : "Unknown device");
   const sourceConfig = galleryConfig(currentFolder);
   const source = sourceConfig
     ? { ...sourceConfig, issue: currentFolder.issue || sourceConfig.issue }
@@ -663,6 +677,28 @@ export default function App() {
       cancelled = true;
     };
   }, [screen, connected, status.last, status.offline, replica]);
+  useEffect(() => {
+    if (!folder || screen !== "Folders" || photoFolder || !replica)
+      return undefined;
+    let cancelled = false;
+    const key = `${replica.scope}:${folder.id}`;
+    setLastChange((previous) => seededChange(previous, key));
+    readLastChange({
+      key,
+      volume: folder.id,
+      load: (route) => replica.remoteView(route),
+    })
+      .then((value) => {
+        if (!cancelled) setLastChange({ key, value });
+      })
+      .catch(() => {
+        if (!cancelled)
+          setLastChange((previous) => failedChange(previous, key));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [folder?.id, screen, photoFolder, replica, status.last, status.offline]);
   useEffect(() => {
     if (screen === "History" && connected && replica)
       getHistory().catch((e) => setError(e.message));
@@ -1667,22 +1703,53 @@ export default function App() {
                                   : currentFolder?.completed
                                     ? "Up to date"
                                     : "Not yet synced",
-                        ],
-                        [
-                          "Files",
-                          `${currentFolder?.files ?? 0} · ${bytes(currentFolder?.bytes)}`,
-                        ],
-                        [
-                          "Last completed",
                           currentFolder?.completed
-                            ? date(currentFolder.completed)
-                            : "Not yet",
+                            ? `Completed ${relative(currentFolder.completed)}`
+                            : "No completed sync yet",
                         ],
-                        ["Version history", retentionLabel],
-                      ].map(([label, value]) => (
-                        <View key={label} style={s.statCell}>
+                        shownChange === undefined
+                          ? ["Last change", "…", ""]
+                          : shownChange === null
+                            ? ["Last change", "Not available", ""]
+                            : shownChange.change
+                              ? [
+                                  "Last change",
+                                  relative(shownChange.change.created),
+                                  `${shortName(shownChange.change.path)}${machinesLoaded || shownChange.change.author === connection?.id ? ` · ${authorName(shownChange.change.author)}` : ""}${shownChange.saved ? " · last known" : ""}`,
+                                ]
+                              : shownChange.saved
+                                ? [
+                                    "Last change",
+                                    "No saved versions",
+                                    "Connect to the hub for the newest",
+                                  ]
+                                : [
+                                    "Last change",
+                                    "No changes yet",
+                                    "Accepted by the hub",
+                                  ],
+                        [
+                          "Version history",
+                          retentionLabel,
+                          historyRetention === "off"
+                            ? "Current files only"
+                            : "Older versions kept",
+                        ],
+                      ].map(([label, value, note], index) => (
+                        <View
+                          key={label}
+                          style={[
+                            s.statCellThird,
+                            !wide && index === 2 && s.statCellWide,
+                          ]}
+                        >
                           <Text style={s.caption}>{label}</Text>
                           <Text style={s.statValue}>{value}</Text>
+                          {!!note && (
+                            <Text numberOfLines={1} style={s.caption}>
+                              {note}
+                            </Text>
+                          )}
                         </View>
                       ))}
                     </View>
@@ -2088,12 +2155,7 @@ export default function App() {
                           setDetailError(e.message),
                         );
                       }}
-                      author={(id) =>
-                        machines?.find(
-                          (m) => m.machineId === id || m.credentialId === id,
-                        )?.name ||
-                        (id === connection?.id ? name : "Unknown device")
-                      }
+                      author={authorName}
                       volume={
                         volumes.find((v) => v.id === sheet.volume) ||
                         locals.find((v) => v.id === sheet.volume)

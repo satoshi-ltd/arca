@@ -1380,6 +1380,73 @@ test("Settings offers Clean up…, and the dialog shows the count before Apply c
   await until(() => /Cleanup applied\./.test(w.document.querySelector("#notice").textContent));
 });
 
+test("the folder summary has three cells: Status, Last change with file and device, Version history, and no Files cell", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-folder-summary-"));
+  init(home, { port: 0, name: "Test hub" });
+  const daemon = await start(home, { timer: false });
+  const busy = daemon.engine.store.addVolume("Busy");
+  const quiet = daemon.engine.store.addVolume("Quiet");
+  fs.mkdirSync(path.join(busy.path, "notes"));
+  fs.writeFileSync(path.join(busy.path, "notes", "brief.md"), "text");
+  await daemon.engine.cycle();
+  const requests = new Set();
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const work = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error("Unexpected native command");
+          const response = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method,
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.method === "POST" ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const value = await response.json();
+          if (!response.ok) throw new Error(value.error);
+          return value;
+        })();
+        requests.add(work);
+        work.then(() => requests.delete(work), () => requests.delete(work));
+        return work;
+      },
+    },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  const open = async (name) => {
+    w.document.querySelector('[data-action="back-folders"]')?.click();
+    await until(() => [...w.document.querySelectorAll(".folder-card")].length >= 2);
+    [...w.document.querySelectorAll(".folder-card")].find((card) => card.textContent.includes(name)).click();
+    await until(() => w.document.querySelector(".folder-stats") && w.document.body.getAttribute("aria-busy") === "false");
+  };
+  const cells = () => [...w.document.querySelectorAll(".folder-stats .stat")].map((cell) => ({
+    label: cell.querySelector("span").textContent,
+    value: cell.querySelector("strong").textContent,
+    note: cell.querySelector("p").textContent,
+  }));
+  await open("Busy");
+  await until(() => w.document.querySelector(".stat-last-change strong")?.textContent === "just now");
+  const busyCells = cells();
+  assert.deepEqual(busyCells.map((cell) => cell.label), ["Status", "Last change", "Version history"]);
+  assert.equal(busyCells[1].note, "brief.md · Test hub");
+  assert.equal(busyCells[2].value, "On · 30 days");
+  assert.equal(busyCells[2].note, "Older versions kept");
+  assert.doesNotMatch(w.document.querySelector(".folder-stats").textContent, /Files|indexed|Latest known/);
+  assert.match(w.document.querySelector(".detail-head h1 + p, .detail-head p").textContent, /\d+ files? · /);
+  await open("Quiet");
+  await until(() => w.document.querySelector(".stat-last-change strong")?.textContent === "No changes yet");
+  assert.equal(cells()[1].note, "Accepted by the hub");
+});
+
 test("offline labels: this machine reads Offline, saved machines say last known and nothing-saved screens say so", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-offline-labels-"));
   init(home, { port: 0, name: "Local Mac" });
@@ -1464,7 +1531,8 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   await openFile("empty-saved.txt", /No saved versions for this file/, /Local copy|Your local file is still available/);
   assert.doesNotMatch(body(), /Your local file is still available|No retained versions/);
   const recent = () => w.document.querySelector("#content").textContent;
-  const cell = () => w.document.querySelector("#content .folder-stats .stat:nth-child(3) strong")?.textContent;
+  const cell = () => w.document.querySelector("#content .folder-stats .stat-last-change strong")?.textContent;
+  const note = () => w.document.querySelector("#content .folder-stats .stat-last-change p")?.textContent;
   const openRecent = async () => {
     w.document.querySelector('[data-view="folders"]').click();
     await until(() => w.document.querySelector('[data-action="folder-detail"]'));
@@ -1476,6 +1544,7 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   await until(() => /Offline\. Connect to the hub to load its history\./.test(recent()));
   assert.match(recent(), /No saved versions/);
   assert.equal(cell(), "No saved versions");
+  assert.equal(note(), "Connect to the hub for the newest");
   assert.doesNotMatch(recent(), /No versions yet/);
   const refresh = w.document.createElement("button");
   refresh.dataset.action = "refresh";
@@ -1483,12 +1552,14 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   saved = false;
   refresh.click();
   await until(() => /No versions yet/.test(recent()));
-  assert.equal(cell(), "Not yet", "a live empty answer is not 'saved'");
+  assert.equal(cell(), "No changes yet");
+  assert.equal(note(), "Accepted by the hub", "a live empty answer is not 'saved'");
   assert.doesNotMatch(recent(), /Connect to the hub to load its history/);
   saved = true;
   refresh.click();
   await until(() => /Offline\. Connect to the hub to load its history\./.test(recent()));
-  assert.equal(cell(), "No saved versions", "equal empty pages still repaint when only the saved flag changes");
+  assert.equal(cell(), "No saved versions");
+  assert.equal(note(), "Connect to the hub for the newest", "equal empty pages still repaint when only the saved flag changes");
   await until(() => w.document.body.getAttribute("aria-busy") !== "true");
   await new Promise((resolve) => setTimeout(resolve, 50));
 });
@@ -4589,9 +4660,9 @@ test("folder reentry keeps known files and revision while the brand shows refres
   click("folder-detail", volume.id);
   await until(() => idle() && w.document.querySelector(".browser-file-row"));
   const revision = w.document.querySelector(
-    ".folder-stats .stat:nth-child(3) strong",
+    ".folder-stats .stat-last-change strong",
   ).textContent;
-  assert.match(revision, /^rev \d+$/);
+  assert.match(revision, /^(just now|\d+ min ago|\d+ h ago)$/);
   click("back-folders");
   await until(idle);
   hold = true;
@@ -4602,7 +4673,7 @@ test("folder reentry keeps known files and revision while the brand shows refres
     /known.txt/,
   );
   assert.equal(
-    w.document.querySelector(".folder-stats .stat:nth-child(3) strong")
+    w.document.querySelector(".folder-stats .stat-last-change strong")
       .textContent,
     revision,
   );
@@ -4629,7 +4700,7 @@ test("folder reentry keeps known files and revision while the brand shows refres
     /known.txt/,
   );
   assert.equal(
-    w.document.querySelector(".folder-stats .stat:nth-child(3) strong")
+    w.document.querySelector(".folder-stats .stat-last-change strong")
       .textContent,
     revision,
   );
@@ -4643,7 +4714,7 @@ test("folder reentry keeps known files and revision while the brand shows refres
     () =>
       release &&
       w.document.querySelector(".folder-explorer") &&
-      w.document.querySelector(".folder-stats .stat:nth-child(3) .scaffold-line"),
+      w.document.querySelector(".folder-stats .stat-last-change .scaffold-line"),
   );
   assert.equal(
     w.document.querySelectorAll(".detail-revisions .scaffold-row").length,
@@ -4660,6 +4731,73 @@ test("folder reentry keeps known files and revision while the brand shows refres
     w.document.querySelector(".folder-explorer").textContent,
     /known.txt/,
   );
+});
+
+test("the Last change cell says Not available when nothing could be read and recovers on the next answer", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-last-change-failed-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Failing recent");
+  fs.writeFileSync(path.join(volume.path, "local.txt"), "on disk");
+  await daemon.engine.cycle();
+  const w = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://tauri.localhost",
+  }).window;
+  w.setInterval = () => 0;
+  let fail = true;
+  const pending = new Set();
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap")
+          return { setup: false, status: daemon.engine.status() };
+        if (command !== "api") throw new Error(command);
+        const work = (async () => {
+          if (fail && args.route.startsWith("/v1/activity?volume="))
+            throw new Error("Hub offline");
+          const response = await fetch(
+            `http://127.0.0.1:${daemon.port}${args.route}`,
+            {
+              headers: {
+                Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+              },
+            },
+          );
+          if (!response.ok) throw new Error(`API ${response.status}`);
+          return response.json();
+        })();
+        pending.add(work);
+        try {
+          return await work;
+        } finally {
+          pending.delete(work);
+        }
+      },
+    },
+  };
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const click = (action, id) =>
+    w.document
+      .querySelector(`[data-action="${action}"]${id ? `[data-id="${id}"]` : ""}`)
+      .click();
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  const cell = () => w.document.querySelector(".folder-stats .stat-last-change");
+  await w.eval(`(async()=>{${script}\n})()`);
+  click("folder-detail", volume.id);
+  await until(() => idle() && cell() && /Not available/.test(cell().textContent));
+  assert.match(cell().textContent, /Try again when the hub is reachable/);
+  click("back-folders");
+  await until(idle);
+  fail = false;
+  click("folder-detail", volume.id);
+  await until(() => idle() && /^(just now|\d+ min ago|\d+ h ago)$/.test(cell()?.querySelector("strong").textContent));
+  assert.doesNotMatch(cell().textContent, /Not available/);
 });
 
 test("folder detail lists local files while the hub-backed Recent never answers", async (t) => {
@@ -4725,12 +4863,12 @@ test("folder detail lists local files while the hub-backed Recent never answers"
     /local.txt/,
   );
   assert.ok(
-    w.document.querySelector(".folder-stats .stat:nth-child(3) .scaffold-line"),
+    w.document.querySelector(".folder-stats .stat-last-change .scaffold-line"),
   );
   release();
   await until(() =>
-    /^rev \d+$/.test(
-      w.document.querySelector(".folder-stats .stat:nth-child(3) strong")
+    /^(just now|\d+ min ago|\d+ h ago)$/.test(
+      w.document.querySelector(".folder-stats .stat-last-change strong")
         ?.textContent || "",
     ),
   );
@@ -4816,8 +4954,8 @@ test("a late Recent answer patches the open folder without rebuilding it, and a 
   input.value = "file-3";
   for (const release of releases.splice(0)) release();
   await until(() =>
-    /^rev \d+$/.test(
-      w.document.querySelector(".folder-stats .stat:nth-child(3) strong")
+    /^(just now|\d+ min ago|\d+ h ago)$/.test(
+      w.document.querySelector(".folder-stats .stat-last-change strong")
         ?.textContent || "",
     ),
   );

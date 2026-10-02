@@ -4,8 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { EmptyState, Icon, OfflineEmpty, useDesign } from "./components";
 import { bytes } from "./format";
-
-const knownRecent = new Map();
+import { knownRecent, rememberRecent } from "./recent-cache";
 
 // Recent means accepted hub revisions on every client, not filesystem mtimes.
 export function FolderRecent({
@@ -35,9 +34,7 @@ export function FolderRecent({
       load(`/v1/activity?${new URLSearchParams({ volume, limit: "4" })}`)
         .then((value) => {
           if (active) {
-            knownRecent.set(key, value);
-            while (knownRecent.size > 40)
-              knownRecent.delete(knownRecent.keys().next().value);
+            rememberRecent(key, value);
             setLoaded({ key, value });
           }
         })
