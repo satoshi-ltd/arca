@@ -67,25 +67,29 @@ export function render(template, release, config = {}) {
       ? `<a class="button${primary ? " primary" : ""}" href="${escape(destination)}">${content}<span class="download-arrow" aria-hidden="true">↗</span></a>`
       : `<span class="button${primary ? " primary" : ""} link-pending" aria-disabled="true">${content}</span>`;
   };
-  const appStoreUrl = publicUrl(config.appStore || "https://apps.apple.com");
-  if (new URL(appStoreUrl).hostname !== "apps.apple.com")
+  const appStoreUrl = config.appStore ? publicUrl(config.appStore) : "";
+  if (appStoreUrl && new URL(appStoreUrl).hostname !== "apps.apple.com")
     throw new Error("Invalid App Store URL");
-  const playUrl = new URL(
-    config.playStore || "https://play.google.com/store/apps",
-  );
+  const playUrl = config.playStore ? new URL(config.playStore) : null;
   if (
-    playUrl.origin !== "https://play.google.com" ||
-    playUrl.hash ||
-    !(
-      (playUrl.pathname === "/store/apps" && !playUrl.search) ||
-      (playUrl.pathname === "/store/apps/details" &&
-        playUrl.searchParams.get("id"))
-    )
+    playUrl &&
+    (playUrl.origin !== "https://play.google.com" ||
+      playUrl.hash ||
+      !(
+        (playUrl.pathname === "/store/apps" && !playUrl.search) ||
+        (playUrl.pathname === "/store/apps/details" &&
+          playUrl.searchParams.get("id"))
+      ))
   ) {
     throw new Error("Invalid Google Play URL");
   }
-  const appStore = `<a class="store" href="${escape(appStoreUrl)}">${icon("apple")}<span>App Store<small>iPhone &amp; iPad ↗</small></span></a>`;
-  const play = `<a class="store" href="${escape(playUrl.href)}">${icon("android")}<span>Google Play<small>Android ↗</small></span></a>`;
+  const stores = [
+    appStoreUrl &&
+      `<a class="store" href="${escape(appStoreUrl)}">${icon("apple")}<span>App Store<small>iPhone &amp; iPad ↗</small></span></a>`,
+    playUrl &&
+      `<a class="store" href="${escape(playUrl.href)}">${icon("android")}<span>Google Play<small>Android ↗</small></span></a>`,
+  ].filter(Boolean);
+  const apk = assets.get(`arca-${version}-android.apk`);
   const tokens = {
     VERSION: escape(version),
     RELEASE_NOTES: escape(
@@ -94,10 +98,14 @@ export function render(template, release, config = {}) {
     MAC_DOWNLOAD: link("macos-arm64.dmg", "Download for macOS", "apple", true),
     WINDOWS_DOWNLOAD: link("windows-x64.exe", "Windows · x64", "windows"),
     LINUX_DOWNLOAD: link("linux-x64.AppImage", "Linux · AppImage", "linux"),
-    ANDROID_DOWNLOAD: link("android.apk", "Download Android APK", "android"),
+    ANDROID_APK:
+      apk && apk.size > 0
+        ? `<div class="download-alternatives"><span class="eyebrow">${stores.length ? "Outside the store" : "Android"}</span><div class="download-alternatives-list">${link("android.apk", "Download Android APK", "android")}</div><small>Install directly, without a store account.</small></div>`
+        : "",
     DOCKER_ICON: icon("docker"),
-    APP_STORE: appStore,
-    PLAY_STORE: play,
+    MOBILE_ACCESS: stores.length
+      ? `<div class="store-row">${stores.join("")}</div>`
+      : '<p class="mobile-status">The Android and iOS apps are not in the app stores yet. They are still being qualified.</p>',
     CANONICAL: config.siteUrl
       ? `<link rel="canonical" href="${escape(publicUrl(config.siteUrl))}/">`
       : "",
@@ -146,6 +154,7 @@ if (
   await mkdir(path.join(output, "assets"), { recursive: true });
   await writeFile(path.join(output, "index.html"), html);
   await cp(path.join(root, "site/styles.css"), path.join(output, "styles.css"));
+  await cp(path.join(root, "site/theme.js"), path.join(output, "theme.js"));
   await cp(
     path.join(root, "site/assets/platforms.svg"),
     path.join(output, "assets/platforms.svg"),

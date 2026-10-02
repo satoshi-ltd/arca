@@ -272,7 +272,7 @@ jobs:
           gh release upload "$TAG" assets/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
           macos_status="ad-hoc signed, not notarized (macOS may block downloaded apps)"
           if [[ "$SIGN" == true ]]; then macos_status="Developer ID signed and notarized"; fi
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes "Alpha direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION (amd64/arm64; also tagged latest) ships from publish-docker right after this release. No automatic updates or pilot deployment."
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes "Direct downloads: macOS $macos_status; Windows unsigned. Linux and Windows need real installation qualification. Docker: satoshiltd/arca:$VERSION (amd64/arm64; also tagged latest) ships from publish-docker right after this release. No automatic updates or pilot deployment."
   updater:
     if: needs.prepare.outputs.publish == 'true'
     needs: [prepare, publish]

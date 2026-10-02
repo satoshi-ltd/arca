@@ -1,8 +1,8 @@
 # arca
 
-A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry.
+A personal drive for your own machines: complete files on disk, bidirectional sync, revision history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.6.68 · Functional alpha, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.6.68 · Functional, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -129,7 +129,7 @@ The maintainer's Casa hub and Umbrel pilot are updated from this checkout with p
 
 ## Release and remaining work
 
-The **publish** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub versioned images plus `latest`. Android builds remain manual through the EAS commands above and do not block this workflow. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` is alpha, not a stable-release guarantee.
+The **publish** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub versioned images plus `latest`. Android builds remain manual through the EAS commands above and do not block this workflow. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` follows the newest release and is not a stable-release guarantee.
 
 macOS is ad-hoc signed and Windows unsigned by default; Developer ID signing/notarization is optional. Desktop installs update themselves from published releases with signed payloads; store submission and pilot deployment are not part of publication. Detailed registry/signing setup belongs in [release operations](SPEC.md#release-setup-and-publication).
 
@@ -146,18 +146,24 @@ Before distribution: complete cross-client/offline/conflict workflows; real iOS/
 
 Every commit requires a version bump and matching changelog entry, with package/lockfiles and Tauri manifests aligned. **No commit or push without explicit authorization.**
 
+## License and contributions
+
+Arca is free for personal and non-commercial use under the [PolyForm Strict License 1.0.0](LICENSE): you may use it, but not modify or redistribute it. That is deliberate: the project wants help, not forks.
+
+To contribute, open an issue or a pull request on GitHub. Satoshi Ltd., the licensor, gives you permission to modify and copy the software only as far as needed to prepare and submit a contribution to this repository. By submitting one you confirm it is your own work and grant Satoshi Ltd. a perpetual, worldwide, royalty-free, irrevocable license to use, modify, sublicense and relicense it as part of Arca, with no obligation to accept it. Third-party dependencies keep their own licenses.
+
 ## Public website
 
-The single page in `site/` is static HTML/CSS with local brand fonts and no navigation menu, client-side framework, telemetry or runtime API. Illustration motion is CSS-only, with no cursor response or JavaScript, and respects reduced-motion preferences. It follows `../alf`'s Node-build → GitHub Actions → Cloudflare Pages direct-upload approach.
+The single page in `site/` is static HTML/CSS with local brand fonts and no navigation menu, client-side framework, telemetry or runtime API. Illustration motion is CSS-only, with no cursor response, and respects reduced-motion preferences; the only script is the small theme switch. It follows `../alf`'s Node-build → GitHub Actions → Cloudflare Pages direct-upload approach.
 
 ```sh
 npm run site:build
 python3 -m http.server --directory site/dist 4178
 ```
 
-`npm run site:build` works locally without GitHub access: it reads `site/release.json`, or the file specified by `RELEASE_JSON`, and otherwise derives the version from `package.json` with the expected desktop installer URLs for tag `v<version>` and no APK link. With published metadata, version and buttons come from actual release assets, including alpha prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. At the user’s request, unconfigured stores link to their generic home pages for now; these are not Arca listing links.
+`npm run site:build` works locally without GitHub access: it reads `site/release.json`, or the file specified by `RELEASE_JSON`, and otherwise derives the version from `package.json` with the expected desktop installer URLs for tag `v<version>` and no APK link. With published metadata, version and buttons come from actual release assets, including prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. Without them the page says the mobile apps are not in the stores yet, and it shows the Android APK only when the release contains it; these are not Arca listing links.
 
-To build from published metadata locally, provide `GH_TOKEN` or `GITHUB_TOKEN` (or an authenticated GitHub CLI; the repository is private) and run:
+To build from published metadata locally, provide `GH_TOKEN` or `GITHUB_TOKEN` (or an authenticated GitHub CLI) and run:
 
 ```sh
 npm run site:release
@@ -166,7 +172,7 @@ npm run site:build
 
 The lookup calls the GitHub REST API and writes `site/release.json`. CI always sets `RELEASE_JSON`, and an explicitly configured file that is missing stops the build, so production never deploys the package.json fallback.
 
-`.github/workflows/publish-site.yml` runs after a successful `publish` workflow on `main` (push or manual run), or manually from `main`. Automatic runs check out the exact successful commit; failed/cancelled runs and pull requests do not deploy. It reads published release metadata through the GitHub REST API with the workflow token, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. This is prepared locally, not deployed. Cloudflare/DNS configuration and the first end-to-end release remain to be verified. See SPEC's website publication section for required configuration.
+`.github/workflows/publish-site.yml` runs after a successful `publish` workflow on `main` (push or manual run), or manually from `main`. Automatic runs check out the exact successful commit; failed/cancelled runs and pull requests do not deploy. It reads published release metadata through the GitHub REST API with the workflow token, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. See SPEC's website publication section for required configuration.
 
 **Version history:** hub folder headers offer Off, 1 day, 1 week, 1 month (30 days), or Forever. 30 days is the default; explicit choices are preserved. Shortening retention previews existing revisions to remove; automatic cleanup runs hourly while the hub is active. Current files and protected work remain, and unreferenced content has a 24-hour grace period before disk reclamation. Requires the updated hub daemon.
 

@@ -25,7 +25,7 @@ export async function prepareRelease({ github, repo, tag, sha }) {
       ...repo,
       tag_name: tag,
       target_commitish: sha,
-      name: `Arca ${tag} alpha`,
+      name: `Arca ${tag}`,
       body: "Build and verification in progress. Not ready for distribution.",
       draft: true,
       prerelease: true,

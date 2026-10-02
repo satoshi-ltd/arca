@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-01 · Phase 1 functional alpha, not release-qualified.
+Updated 2026-10-01 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -129,13 +129,13 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
   accept: keep 0.4.1, or move all three image references and the manifest version to a newer image (0.4.1 lacks the onboarding fixes). Moving it also retires `deploy/umbrel/arca/server-setup.js.template`, a copy of `packages/daemon/setup.js` mounted over the pinned image.
 - **P1-UMBREL** — Umbrel submission
   `deploy · maintainer · normal · depends: P1-UMBREL-IMAGE`
-  accept: ARM runtime and image-upgrade path qualified; real client addressing and `app_proxy` checked; public repository/support access and distribution licence resolved; checked screenshots and source logo attached; the real PR opened, its URL recorded in `submission`, and the full lint rerun. Keep the pilot icon override until the official gallery is published. The Umbrel update helper does not qualify arbitrary future schema upgrades or restores. See [Umbrel packaging](SPEC.md#umbrel-packaging-and-submission).
+  accept: ARM runtime and image-upgrade path qualified; real client addressing and `app_proxy` checked; public repository/support access resolved and the PolyForm Strict licence checked against Umbrel's App Store terms; checked screenshots and source logo attached; the real PR opened, its URL recorded in `submission`, and the full lint rerun. Keep the pilot icon override until the official gallery is published. The Umbrel update helper does not qualify arbitrary future schema upgrades or restores. See [Umbrel packaging](SPEC.md#umbrel-packaging-and-submission).
 - **P1-SITE** — Website domain
   `verify · maintainer · low`
   accept: `arca.satoshi-ltd.com` serves the Pages project and Git auto-deploys are off. Publication itself already works: `publish-site` deployed to Cloudflare Pages on September 29.
-- **P1-PUBLIC-ACCESS** — Public downloads
-  `decision · maintainer · low`
-  accept: anonymous GitHub downloads work before launch (they returned 404), store links point to real listings once they exist, and Docker Hub visibility is decided.
+- **P1-PUBLIC-ACCESS** — Store listings
+  `deploy · maintainer · low`
+  accept: `APP_STORE_URL` and `PLAY_STORE_URL` name real listings so the site's mobile card shows store buttons instead of saying the apps are not in the stores yet. Anonymous GitHub and Docker Hub downloads already work.
 - **P1-SIGNING** — Code signing
   `decision · maintainer · low`
   accept: a decision on Windows signing; optionally one signed macOS run with `sign_macos` checked and `publish` unchecked.
@@ -161,9 +161,6 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
 - **DEC-CONVERTING-LEGACY** — Remove the legacy `converting` mode on phones?
   `decision · maintainer · normal`
   accept: a yes or no. `replica.js`, `App.jsx` and a test still recover a folder interrupted mid-way through the former upload-only-to-working-copy transition (`converting` mode, restoring missing indexed files before switching to `source`); AGENTS.md forbids legacy modes, yet a phone could still hold that state.
-- **DEC-LICENSE** — Project licence
-  `decision · maintainer · normal`
-  accept: a licence chosen and added as `LICENSE` (the repository has none; P1-UMBREL and P1-PUBLIC-ACCESS need it).
 - **DEC-SITE-PALETTE** — Should the site share the app's tokens?
   `decision · maintainer · low`
   accept: `site/styles.css` keeps its own palette (paper `#f4f6ef` versus the app's `#F4F6F1`) or adopts the app tokens with a guard test.
@@ -190,6 +187,12 @@ Older notes listed these as open while later evidence suggests they are resolved
 ## Proposed
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
+- **LICENSE-METADATA** — State the license in every manifest and image
+  `chore · agent · low`
+  accept: `apps/desktop/package.json`, `apps/mobile/package.json`, the Rust `Cargo.toml`, the Docker image label and `deploy/umbrel/arca/umbrel-app.yml` name the PolyForm Strict License (or point to `LICENSE`) without breaking `npm ci`, `cargo` or the Umbrel lint; a test lists every manifest.
+- **COPY-APP-VOICE** — Plain wording in the cold dialogs and Settings
+  `chore · agent · low`
+  accept: the strings a copy review flagged are rewritten in plain English with tests: "Destroy this hub?", "The reply is JSON: enter the value of code", the web sign-in hint that names `arca web-code` (it needs the Docker form in a container), "The daemon must support file browsing", the local-network "Files and credentials are not encrypted", and the pair dialog that mentions only the desktop; the vocabulary follows board UI-VOCABULARY once approved.
 - **SET-OLDER-REVISIONS-COUNT** — Settings' Older revisions counts only older revisions
   `bug · agent · low`
   accept: the number in Settings → History excludes each file's current revision and current deletions (today `status.historyRevisions` counts every revision, so a hub with 100 untouched files reads "100 kept" under Older revisions); a daemon test with current and superseded revisions, and SPEC's wording follows.

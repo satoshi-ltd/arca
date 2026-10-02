@@ -6,7 +6,7 @@ version: "0.4.1"
 tagline: Your files, synchronized across your own machines
 description: >-
   Arca is a personal drive with complete local files, bidirectional sync,
-  revision history, and a hub you control. This is an alpha release.
+  revision history, and a hub you control.
 
 
   Choose whether this server is your hub or a replica during first-run setup.

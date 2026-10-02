@@ -4,10 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f4f6ef" />
+    <meta name="color-scheme" content="light dark" />
     <title>Arca — Your files. Your machines.</title>
     <meta
       name="description"
-      content="A personal drive on your own machines. Sync complete folders, work offline and restore earlier versions with a hub you control."
+      content="A free personal drive. Your devices keep complete copies of your folders and sync through a computer you run. No account, no telemetry."
     />
     {{CANONICAL}}
     <link rel="icon" href="assets/arca-icon.svg" type="image/svg+xml" />
@@ -18,24 +19,31 @@
       type="font/woff2"
       crossorigin
     />
+    <script src="theme.js"></script>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="masthead wrap">
+    <header class="masthead">
+      <div class="wrap masthead-row">
       <a class="brand" href="#" aria-label="Arca home"
         ><img src="assets/arca-icon.svg" width="40" height="40" alt="" />arca</a
       >
-      <span class="eyebrow release"><span class="dot"></span> {{VERSION}}</span>
+      <div class="masthead-end">
+        <span class="eyebrow release"><span class="dot"></span> {{VERSION}}</span>
+        <a class="nav-cta eyebrow" href="#download">Download</a>
+      </div>
+      </div>
     </header>
     <main>
       <section class="hero wrap">
         <div class="hero-copy">
-          <p class="eyebrow">Your personal drive, on your own machines.</p>
-          <h1>Many devices.<br /><em>One space.</em></h1>
+          <p class="eyebrow">Free · No account · No telemetry</p>
+          <h1>Your files.<br /><em>Your machines.</em></h1>
           <p class="intro">
-            Keep documents in sync and bring photos together on a computer you
-            control. That’s your hub. Choose which folders each device keeps,
-            with complete local copies ready to use offline.
+            Arca keeps the folders you choose in sync across your laptop, phone
+            and tablet through one computer you run: your hub. Complete files
+            stay on your own devices, ready to use offline. There is no company
+            server in the middle.
           </p>
           <div class="hero-download">
             {{MAC_DOWNLOAD}}<a class="setup-link" href="#setup"
@@ -43,8 +51,8 @@
             >
           </div>
           <p class="fine">
-            Apple Silicon · macOS<br />Your storage. No cloud storage account
-            required.
+            Apple Silicon · macOS<br />Free for personal use. Needs a computer
+            you run as your hub.
           </p>
         </div>
         <div
@@ -101,14 +109,35 @@
           <p class="scene-caption">Choose what belongs on each device.</p>
         </div>
       </section>
-      <div class="principles wrap">
-        <span>Complete local copies</span><span>Sync in both directions</span
-        ><span>Restore earlier versions</span><span>A hub you control</span>
-      </div>
+      <section class="section wrap free" id="free">
+        <div class="section-heading">
+          <p class="eyebrow">Free, on purpose</p>
+          <h2>Nothing to buy.<br />Nothing to sign up for.</h2>
+          <p>
+            Arca is a personal project. It costs nothing, has no account or
+            subscription, and nobody earns anything from it. The
+            only goal is that you govern your own data: your files stay on your
+            devices and their history stays on a computer you control.
+          </p>
+        </div>
+        <div class="ownership">
+          <h3>Free to use. Not free to copy.</h3>
+          <p>
+            Arca is free for personal and non-commercial use under the
+            <a href="https://github.com/satoshi-ltd/arca/blob/main/LICENSE"
+              >PolyForm Strict License</a
+            >. The source is public so you can read it, but Arca is not open
+            source: the license does not allow modifying or redistributing it,
+            and using it for a business or at work is not covered. Ideas, bug
+            reports and improvements are welcome
+            <a href="https://github.com/satoshi-ltd/arca">on GitHub</a>.
+          </p>
+        </div>
+      </section>
       <section class="section wrap">
         <div class="section-heading">
           <p class="eyebrow">01 / One person. More than one device.</p>
-          <h2>Move between devices.<br />Keep your files with you.</h2>
+          <h2>Edit on one device.<br />Continue on another.</h2>
           <p>
             Keep working in the apps you already use. Arca carries folder
             changes between devices, so you can pick up where you left off
@@ -137,17 +166,19 @@
             <h3>A way back.</h3>
             <p>
               Changed your mind about an edit? Restore an earlier version from
-              retained history. If edits conflict, Arca keeps both versions for
-              you to review.
+              your hub’s history, kept for 30 days by default and adjustable per
+              folder. Restoring needs the hub to be reachable. If edits
+              conflict, Arca keeps both versions for you to review.
             </p>
           </article>
         </div>
         <div class="ownership">
-          <h3>Your storage. On your terms.</h3>
+          <h3>You run it, so you keep it.</h3>
           <p>
-            Ordinary files on your own disks, with no external account, public
-            relay or telemetry. You run the hub and look after its storage and
-            backups.
+            Your working folders are ordinary files on your own disks, with no
+            Arca account, public relay or telemetry. The trade-off: you run the
+            hub and look after its storage and backups. The hub’s history is
+            kept in Arca’s own format, so Arca is what reads it.
           </p>
         </div>
       </section>
@@ -159,7 +190,8 @@
             <p class="intro">
               One computer or server is your hub: it keeps your shared folders
               and their history. An always-on machine lets your devices sync
-              without waiting for your laptop to wake up.
+              without waiting for your laptop to wake up. A phone or tablet
+              cannot be the hub.
             </p>
             <figure class="network">
               <svg
@@ -178,8 +210,8 @@
                 </desc>
                 <defs>
                   <linearGradient id="device-shell" x2="0.7" y2="1">
-                    <stop stop-color="#ffffff" />
-                    <stop offset="1" stop-color="#e3e9dc" />
+                    <stop class="stop-a" />
+                    <stop class="stop-b" offset="1" />
                   </linearGradient>
                   <linearGradient id="hub-shell" x2="0.8" y2="1">
                     <stop stop-color="#32715a" />
@@ -187,9 +219,8 @@
                   </linearGradient>
                   <symbol id="scene-folder" viewBox="0 0 32 26">
                     <path
+                      class="folder-body"
                       d="M2 6V3Q2 1 4 1H12L16 6H28Q30 6 30 8V23Q30 25 28 25H4Q2 25 2 23Z"
-                      fill="#dcebbe"
-                      stroke="#88a46c"
                     />
                   </symbol>
                   <symbol id="scene-photo" viewBox="0 0 60 58">
@@ -413,7 +444,7 @@
                       Another server
                     </text>
                     <text class="device-sublabel" x="49" y="128">
-                      A replica, too
+                      Keeps its own copy
                     </text>
                   </g>
                 </g>
@@ -425,10 +456,11 @@
             <li>
               <span>01</span>
               <div>
-                <h3>Choose your hub.</h3>
+                <h3>Pick your hub.</h3>
                 <p>
-                  Run Arca on your computer or a server with Docker. Use the web
-                  app to manage the server and choose the folders to share.
+                  Install Arca on a computer you can leave on, or run it with
+                  Docker on a server or NAS. A setup wizard guides you; a server
+                  asks for a one-time code printed by a command you run on it.
                 </p>
               </div>
             </li>
@@ -437,9 +469,10 @@
               <div>
                 <h3>Pair your devices.</h3>
                 <p>
-                  Connect with a single-use pairing code. Use your local
-                  network, or your own private network such as Tailscale when
-                  you’re away.
+                  Connect each device with a single-use pairing code. At home use
+                  your local network, which you switch on in the hub’s settings
+                  and which is plain HTTP. Away from home, use a private network
+                  you control, such as Tailscale.
                 </p>
               </div>
             </li>
@@ -448,9 +481,9 @@
               <div>
                 <h3>Choose your folders.</h3>
                 <p>
-                  Select whole folders independently on each device. Choose a
-                  local path on desktop; on mobile, Arca keeps the selected
-                  copies in app storage.
+                  Select whole folders independently on each device. On desktop
+                  you choose the local path; on a phone, Arca keeps its copies
+                  in app storage.
                 </p>
               </div>
             </li>
@@ -459,35 +492,45 @@
               <div>
                 <h3>Link your photo albums.</h3>
                 <p>
-                  Link a phone album to upload photos and videos to your hub,
-                  without a second Arca copy on your phone. Explore your gallery
-                  by date on desktop or the web.
+                  Link a phone album to upload its photos and videos to your
+                  hub. That phone then also keeps the complete shared folder in
+                  app storage, including photos from your other devices; Arca
+                  never imports them into your Photos library. Explore the
+                  gallery by date on desktop or the web.
                 </p>
               </div>
             </li>
             <li>
               <span>05</span>
               <div>
-                <h3>Set your history retention.</h3>
+                <h3>Check how long history is kept.</h3>
                 <p>
-                  Choose how long each folder retains earlier versions. Keep
-                  more history for ongoing work, or a shorter window for folders
-                  that change often.
+                  Each folder keeps earlier versions for 30 days by default.
+                  Change it per folder to Off, 1 day, 1 week, 30 days or
+                  Forever. A shorter window removes older versions for good.
                 </p>
               </div>
             </li>
           </ol>
         </div>
       </section>
-      <section class="section wrap download-section">
+      <section class="section wrap download-section" id="download">
         <div class="section-heading">
           <p class="eyebrow">03 / Start with the devices you own</p>
-          <h2>Put Arca to work.</h2>
+          <h2>Download Arca.</h2>
           <p>
             Start with a desktop or Docker hub, then add your phone, tablet and
             other computers.
           </p>
         </div>
+        <p class="install-note">
+          Arca works, but it is new and has not been tested on every setup.
+          macOS may warn about an unidentified developer and Windows about an
+          unknown publisher, because the macOS installer is not notarized and
+          the Windows one is not signed yet. The Windows and Linux builds are
+          still being tested, and the phone apps are not in the stores yet. Keep
+          an independent copy of anything important.
+        </p>
         <div class="download-grid">
           <article class="download-card mac-card">
             <div class="card-top">
@@ -511,19 +554,12 @@
               Take folders offline, save files from other apps and upload photo
               albums to your hub.
             </p>
-            <div class="store-row">{{APP_STORE}}{{PLAY_STORE}}</div>
+            {{MOBILE_ACCESS}}
             <small>
               Mobile connects to your hub. Background sync follows your phone’s
               system limits.
             </small>
-            <div class="download-alternatives">
-              <span class="eyebrow">Outside the store</span>
-              <div class="download-alternatives-list">{{ANDROID_DOWNLOAD}}</div>
-              <small
-                >Install directly, without Google Play or a store
-                account.</small
-              >
-            </div>
+            {{ANDROID_APK}}
           </article>
         </div>
         <article class="hub-download">
@@ -533,11 +569,11 @@
             <p>
               Install Arca with Docker on an always-on computer or a compatible
               NAS. Manage it in your browser and choose its role during setup:
-              create a hub or join an existing one as a replica.
+              create a hub or join an existing hub.
             </p>
             <p class="hub-platforms">
               Linux · macOS and Windows with Docker Desktop<br />Linux
-              containers · amd64 / arm64
+              containers · amd64 (arm64 is still being qualified)
             </p>
           </div>
           <div class="hub-download-action">
@@ -547,7 +583,12 @@
               ><span aria-hidden="true">↗</span></a
             ><small
               >Use persistent storage for your files and history, then open the
-              setup wizard in your browser on port 17831.
+              setup wizard in your browser on port 17831, from the Docker host or
+              over a private network. It asks for a one-time code that you
+              print with a command inside the container.
+              <a href="https://github.com/satoshi-ltd/arca#docker-first-run"
+                >First-run guide ↗</a
+              >
               <a href="https://hub.docker.com/r/satoshiltd/arca"
                 >View Docker image ↗</a
               ></small
@@ -558,12 +599,6 @@
           <summary>Release notes · {{VERSION}}</summary>
           <pre>{{RELEASE_NOTES}}</pre>
         </details>
-        <p class="alpha-note">
-          Arca is an early alpha. Installers and mobile workflows are still
-          being qualified. macOS builds may be unnotarized and Windows builds
-          unsigned; check the release’s installation status before installing.
-          Keep an independent backup of important files.
-        </p>
       </section>
       <section class="section wrap questions">
         <div>
@@ -572,86 +607,87 @@
         </div>
         <div class="answers">
           <details open>
+            <summary>Is Arca really free?</summary>
+            <p>
+              Yes. There is no price, no account and no subscription, and nobody earns anything from it. It is free for personal and non-commercial use under the PolyForm Strict License: you can read the source, but you may not modify or redistribute it, so it is not open source, and using it for a business or at work is not covered. If you want to help, bug reports and improvements are welcome on GitHub.
+            </p>
+          </details>
+          <details>
             <summary>Do I need a server to use Arca?</summary>
             <p>
-              A dedicated server is optional. A computer you already own can be
-              the hub, or you can run one with Docker. Phones and tablets
-              connect to a hub; they cannot act as one.
+              A dedicated server is optional. A computer you already own can be the hub, or you can run one with Docker. Phones and tablets connect to a hub; they cannot act as one.
             </p>
           </details>
           <details>
-            <summary>Where do my files live?</summary>
+            <summary>What happens if my hub breaks?</summary>
             <p>
-              On your hub and the devices where you select their folders.
-              Desktop copies use local paths you choose; mobile copies live in
-              app storage. Your own disks set the capacity.
-            </p>
-          </details>
-          <details>
-            <summary>Does every device need to keep everything?</summary>
-            <p>
-              No. Each device chooses whole folders independently. Selected
-              folders download as complete files, ready for offline use. A
-              linked phone album is different: it uploads without keeping a
-              second Arca copy on that phone.
-            </p>
-          </details>
-          <details>
-            <summary>Does my hub have to stay on?</summary>
-            <p>
-              Only to exchange changes. Once a folder finishes syncing, its
-              local files work offline. Edits wait until the hub is reachable
-              again. An always-on hub makes syncing more convenient.
-            </p>
-          </details>
-          <details>
-            <summary>Can I use Arca away from home?</summary>
-            <p>
-              Yes, if your device can reach the hub, for example through your
-              own private network with Tailscale. Arca provides no public relay
-              and requires no external storage account.
-            </p>
-          </details>
-          <details>
-            <summary>How do photo albums work?</summary>
-            <p>
-              Link a phone album to a hub folder. Arca uploads new photos and
-              videos; browse them by date on desktop or the web. Deleting from
-              your phone’s gallery keeps uploaded files, and hub changes never
-              write back to it.
-            </p>
-          </details>
-          <details>
-            <summary>Will my phone sync in the background?</summary>
-            <p>
-              Background work follows iOS and Android scheduling limits. Arca
-              also resumes work when you open it. Keep the app open for a large
-              first upload; background sync is not continuous.
+              Your devices keep complete copies of the folders they chose, so your files are still there. The history lives on the hub, so it is lost with the hub unless you turned on the optional full backup, which is off by default and runs on a desktop or server. A desktop or server device that holds a complete copy of every shared folder can take over as the new hub once you confirm the old one is gone for good; it starts a fresh history, and your other devices reconnect to it.
             </p>
           </details>
           <details>
             <summary>Is sync a backup?</summary>
             <p>
-              Sync also carries file deletions between ordinary folder copies.
-              Retained history offers a way back, but keep an independent
-              backup. Arca’s optional full hub backup runs on a desktop or
-              server, separately from working copies.
+              Sync also carries file deletions between ordinary folder copies. Retained history offers a way back, but keep an independent backup. Arca’s optional full hub backup is off by default and runs on a desktop or server, separately from working copies.
+            </p>
+          </details>
+          <details>
+            <summary>Who can see my data?</summary>
+            <p>
+              Only you and the devices you pair. Your files travel between your devices and your hub; Arca has no company server in the middle and no telemetry. The desktop app does check GitHub for signed updates, and downloads come from GitHub and Docker Hub. Arca does not claim end-to-end encryption: your hub and paired devices are trusted with your files, and on a local network without HTTPS the traffic is plain HTTP. Open in Maps on a photo opens Google Maps with its location. If you cannot trust your network, use a private network such as Tailscale.
+            </p>
+          </details>
+          <details>
+            <summary>Where do my files live?</summary>
+            <p>
+              On your hub and on the devices where you select their folders. Working folders are ordinary files you can open with any app; desktop copies use local paths you choose and phone copies live in app storage. The hub’s history and optional backup are kept in Arca’s own format, so Arca is what reads them. Your own disks set the capacity.
+            </p>
+          </details>
+          <details>
+            <summary>Does every device need to keep everything?</summary>
+            <p>
+              No. Each device chooses whole folders independently, and selected folders download as complete files, ready for offline use. A linked phone album adds its photos to a shared folder, and that phone then keeps the complete folder in app storage like any other device.
+            </p>
+          </details>
+          <details>
+            <summary>Does my hub have to stay on?</summary>
+            <p>
+              Only to exchange changes. Once a folder finishes syncing, its local files work offline. Edits wait until the hub is reachable again. An always-on hub makes syncing more convenient.
+            </p>
+          </details>
+          <details>
+            <summary>Can I use Arca away from home?</summary>
+            <p>
+              Yes, if your device can reach the hub. Arca has no public relay, so away from home you need a private network you control, such as Tailscale (a separate service you set up yourself), or your own HTTPS address.
+            </p>
+          </details>
+          <details>
+            <summary>How is Arca different from Dropbox, Nextcloud or Syncthing?</summary>
+            <p>
+              Cloud drives such as Dropbox, iCloud or Google Drive keep your files on a company’s servers. Nextcloud is a full self-hosted platform for many people. Syncthing syncs directly between devices, with no hub. Arca keeps complete copies of the folders each device chooses, and a hub you run keeps the shared folders and their history. It has no accounts or per-person permissions: every device you pair is trusted with all the shared folders, so it suits one person, or a group that trusts each other. It is a different trade-off, not a better one: for per-person sharing, or for no setup at all, those tools may suit you better.
+            </p>
+          </details>
+          <details>
+            <summary>How do photo albums work?</summary>
+            <p>
+              Link a phone album to a hub folder. Arca uploads new photos and videos without recompressing the originals; browse them by date on desktop or the web. Deleting from your phone’s gallery keeps the uploaded files, and hub changes never write back to your Photos library. Deleting a photo in Arca’s shared gallery removes it from every device’s Arca copy, and it stays recoverable while history is kept.
+            </p>
+          </details>
+          <details>
+            <summary>Will my phone sync in the background?</summary>
+            <p>
+              Background work follows iOS and Android scheduling limits. Arca also resumes work when you open it. Keep the app open for a large first upload; background sync is not continuous.
             </p>
           </details>
           <details>
             <summary>Can I undo an edit or recover a deleted file?</summary>
             <p>
-              Yes, while its history is retained. Restoring creates a new
-              revision, leaving earlier history intact. Conflicting edits are
-              kept as separate versions for you to review.
+              Yes, for as long as the folder’s history keeps it: 30 days by default, adjustable per folder. Restoring needs the hub to be reachable and adds a new version, leaving earlier history intact. Conflicting edits are kept as separate versions for you to review.
             </p>
           </details>
           <details>
             <summary>How do I update Arca?</summary>
             <p>
-              Download and install a new version on your devices; update your
-              server deployment separately. Check the release notes for any
-              requirement to update the hub and replicas together.
+              The desktop app updates itself from signed releases. Update a Docker server by pulling the new image, and phones by installing the new build. Check the release notes for any requirement to update the hub and its devices together.
             </p>
           </details>
         </div>
@@ -665,9 +701,17 @@
         <span class="eyebrow">{{VERSION}}</span>
       </div>
       <span
-        >By <a href="https://www.satoshi-ltd.com">Satoshi Ltd.</a> · no
-        telemetry</span
+        >By <a href="https://www.satoshi-ltd.com">Satoshi Ltd.</a> · free for
+        personal use ·
+        <a href="https://github.com/satoshi-ltd/arca/blob/main/LICENSE"
+          >PolyForm Strict License</a
+        >
+        · no telemetry</span
       >
     </footer>
+    <button class="theme-btn" type="button" aria-label="Switch theme">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></svg>
+    </button>
   </body>
 </html>

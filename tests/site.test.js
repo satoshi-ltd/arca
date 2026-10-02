@@ -11,7 +11,9 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
+import vm from "node:vm";
 import path from "node:path";
 import { render } from "../site/scripts/build.mjs";
 const template = await readFile(
@@ -38,6 +40,7 @@ test("site build uses package.json version without metadata, release.json when p
     "scripts/build.mjs",
     "index.html",
     "styles.css",
+    "theme.js",
     "assets/platforms.svg",
   ]) {
     await cp(
@@ -144,11 +147,60 @@ test("the Docker command never pins a version the registry may not have yet", ()
   assert.match(html, /docker pull satoshiltd\/arca:latest/);
   assert.doesNotMatch(html, /docker pull satoshiltd\/arca:\d/);
 });
-test("missing assets never get guessed download links; generic stores are explicit defaults", () => {
+test("missing assets never get guessed download links, and stores and the APK appear only when they exist", () => {
   const html = render(template, release);
   assert.doesNotMatch(html, /href="[^"]+\.(apk|exe|deb|AppImage)"/);
-  assert.match(html, /href="https:\/\/apps.apple.com"/);
-  assert.match(html, /href="https:\/\/play.google.com\/store\/apps"/);
+  assert.doesNotMatch(html, /apps\.apple\.com|play\.google\.com|Download Android APK|Outside the store/);
+  assert.match(html, /The Android and iOS apps are not in the app stores yet/);
+  const stores = render(template, release, {
+    appStore: "https://apps.apple.com/app/id1",
+    playStore: "https://play.google.com/store/apps/details?id=com.arca",
+  });
+  assert.match(stores, /href="https:\/\/apps\.apple\.com\/app\/id1"/);
+  assert.match(stores, /href="https:\/\/play\.google\.com\/store\/apps\/details\?id=com\.arca"/);
+  assert.doesNotMatch(stores, /not in the app stores yet/);
+  const apk = render(template, { ...release, assets: [...release.assets, asset("android.apk")] });
+  assert.match(apk, /href="[^"]+arca-0\.3\.1-android\.apk"/);
+  assert.match(apk, /<span class="eyebrow">Android<\/span>/);
+  assert.match(render(template, { ...release, assets: [...release.assets, asset("android.apk")] }, { playStore: "https://play.google.com/store/apps" }), /Outside the store/);
+});
+test("the page says it is free and names its license without claiming to be open source", async () => {
+  const html = render(template, release);
+  assert.match(html, /Free, on purpose/);
+  assert.match(html, /Is Arca really free\?/);
+  assert.match(html, /href="https:\/\/github\.com\/satoshi-ltd\/arca\/blob\/main\/LICENSE"[^>]*>PolyForm Strict License</);
+  for (const mention of html.match(/[^<>]{0,20}open[- ]source/gi) || [])
+    assert.match(mention, /not open source/, `unexpected open source claim: ${mention}`);
+  assert.equal((html.match(/using it for a business or at work is not covered/g) || []).length, 2);
+  assert.doesNotMatch(html, /You want to (use it for a business|share folders with other people)/);
+  const license = await readFile(new URL("../LICENSE", import.meta.url), "utf8");
+  assert.match(license, /^Required Notice: Copyright /);
+  assert.match(license, /# PolyForm Strict License 1\.0\.0/);
+  assert.match(license, /other than distributing the software or making changes or new works based on the software/);
+});
+test("the installation note comes before the downloads and the page states what it really needs", () => {
+  const html = render(template, release);
+  assert.ok(html.indexOf('class="install-note"') > 0);
+  assert.ok(html.indexOf('class="install-note"') < html.indexOf('class="download-grid"'));
+  assert.doesNotMatch(html, /alpha/i);
+  assert.match(html, /Needs a computer\s+you run as your hub/);
+  assert.match(html, /30 days by default/);
+  assert.match(html, /Restoring needs the hub to be reachable/);
+});
+test("the page never says a linked album keeps no copy on the phone, and its FAQ answers the hard questions", () => {
+  const html = render(template, release);
+  assert.doesNotMatch(html, /second Arca copy|without keeping/);
+  assert.match(html, /keeps the complete shared folder in\s+app storage/);
+  const questions = [...html.matchAll(/<summary>([^<]+)<\/summary>/g)].map((m) => m[1]);
+  for (const question of [
+    "Is Arca really free?",
+    "What happens if my hub breaks?",
+    "Is sync a backup?",
+    "Who can see my data?",
+    "How is Arca different from Dropbox, Nextcloud or Syncthing?",
+  ])
+    assert.ok(questions.includes(question), question);
+  assert.equal((html.match(/<details open>/g) || []).length, 1);
 });
 test("reject drafts, malformed versions and mismatched asset destinations", () => {
   for (const change of [{ draft: true }, { tag_name: "latest" }])
@@ -241,4 +293,108 @@ test("site masthead displays version without an alpha or early-access suffix", (
   const masthead = template.split("<header")[1].split("</header>")[0];
   assert.match(masthead, /\{\{VERSION\}\}/);
   assert.doesNotMatch(masthead, /alpha|early access/i);
+});
+
+const css = await readFile(new URL("../site/styles.css", import.meta.url), "utf8");
+const themeSource = await readFile(
+  new URL("../site/theme.js", import.meta.url),
+  "utf8",
+);
+const runTheme = ({ systemDark, stored }) => {
+  const listeners = { click: [] };
+  const meta = {
+    content: "",
+    setAttribute(name, value) {
+      this.content = value;
+    },
+  };
+  const button = {
+    label: "",
+    setAttribute(name, value) {
+      this.label = value;
+    },
+  };
+  const root = { dataset: {} };
+  const store = stored ? { "arca-theme": stored } : {};
+  vm.runInNewContext(themeSource, {
+    matchMedia: () => ({ matches: systemDark, addEventListener() {} }),
+    localStorage: {
+      getItem: (key) => store[key] ?? null,
+      setItem: (key, value) => {
+        store[key] = value;
+      },
+    },
+    document: {
+      documentElement: root,
+      querySelector: (selector) =>
+        selector === 'meta[name="theme-color"]'
+          ? meta
+          : selector === ".theme-btn"
+            ? button
+            : null,
+      addEventListener: (type, fn) => {
+        (listeners[type] = listeners[type] || []).push(fn);
+      },
+    },
+  });
+  return {
+    root,
+    meta,
+    button,
+    store,
+    click: () =>
+      listeners.click.forEach((fn) => fn({ target: { closest: () => ({}) } })),
+  };
+};
+test("site offers a theme switch in the same form as the sibling sites", () => {
+  assert.match(template, /<script src="theme\.js"><\/script>/);
+  assert.equal((template.match(/<script\b/g) || []).length, 1);
+  assert.match(template, /class="theme-btn"[\s\S]*class="sun"[\s\S]*class="moon"/);
+  assert.ok(css.includes(':root:not([data-theme="light"])'));
+  assert.ok(css.includes(':root[data-theme="dark"]'));
+  assert.ok(css.includes(':root[data-theme="light"] .theme-btn .sun'));
+  assert.doesNotMatch(template, /\sstyle="/);
+});
+test("theme follows the system until the reader picks one, then remembers the pick", () => {
+  assert.equal(runTheme({ systemDark: true }).root.dataset.theme, "dark");
+  assert.equal(runTheme({ systemDark: false }).root.dataset.theme, "light");
+  assert.equal(
+    runTheme({ systemDark: true, stored: "light" }).root.dataset.theme,
+    "light",
+  );
+  assert.equal(
+    runTheme({ systemDark: true, stored: "sepia" }).root.dataset.theme,
+    "dark",
+  );
+  const page = runTheme({ systemDark: false });
+  page.click();
+  assert.equal(page.root.dataset.theme, "dark");
+  assert.equal(page.store["arca-theme"], "dark");
+  assert.equal(page.meta.content, "#0f1512");
+  assert.equal(page.button.label, "Switch to light theme");
+});
+test("site build ships theme.js", async (t) => {
+  const output = await mkdtemp(path.join(os.tmpdir(), "arca-site-theme-"));
+  t.after(() => rm(output, { recursive: true, force: true }));
+  const run = spawnSync(
+    process.execPath,
+    [fileURLToPath(new URL("../site/scripts/build.mjs", import.meta.url))],
+    { env: { ...process.env, SITE_OUTPUT: output }, encoding: "utf8" },
+  );
+  assert.equal(run.status, 0, run.stderr);
+  assert.ok(fs.existsSync(path.join(output, "theme.js")));
+});
+test("anchor links scroll smoothly only for readers who allow motion", () => {
+  assert.match(css, /@media \(prefers-reduced-motion: no-preference\) \{\s*html \{\s*scroll-behavior: smooth;\s*\}\s*\}/);
+  assert.equal((css.match(/scroll-behavior/g) || []).length, 1);
+});
+test("site keeps a sticky header with the version and a download link to a real section", () => {
+  const header = template.split("<header")[1].split("</header>")[0];
+  const targets = [...header.matchAll(/href="#([a-z-]+)"/g)].map((m) => m[1]);
+  assert.match(css, /\.masthead \{[^}]*position: sticky;[^}]*top: 0;/);
+  assert.equal(targets.length, 1);
+  assert.ok(template.includes(`id="${targets[0]}"`));
+  assert.match(header, /class="nav-cta/);
+  assert.doesNotMatch(header, /<ul/);
+  assert.match(header, /\{\{VERSION\}\}/);
 });
