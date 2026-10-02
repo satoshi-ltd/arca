@@ -310,16 +310,19 @@ export class Gallery {
           ? rows[0].cursor
           : null;
     }
-    const timeline = s.db
+    const months = s.db
       .prepare(
         source +
           ` SELECT substr(date,1,7) AS month,count(*) AS count,max(rev) AS rev,sum(arca_media_kind(path)='video') AS videos
-      FROM dated WHERE date IS NOT NULL GROUP BY month ORDER BY month DESC`,
+      FROM dated GROUP BY month ORDER BY month DESC`,
       )
       .all(volume);
+    const timeline = months.filter((row) => row.month !== null);
+    const undated = months.find((row) => row.month === null);
     return {
       indexing,
       timeline,
+      undated: { count: undated?.count || 0, videos: undated?.videos || 0 },
       items: rows.map((row) => ({
         ...row,
         dateSource: galleryDate(row.path, row.captured, row.added, row.modified)

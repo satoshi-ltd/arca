@@ -6057,6 +6057,73 @@ test("the gallery retries a failed first page and loads pages whose sentinel sta
   assert.doesNotMatch(w.document.querySelector("#photo-gallery").textContent, /Load more/);
 });
 
+test("the gallery header counts photos that are still waiting for a date", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-gallery-undated-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  const sharp = (await import("sharp")).default;
+  const image = await sharp({ create: { width: 8, height: 8, channels: 3, background: "blue" } }).jpeg().toBuffer();
+  for (const name of ["first.jpg", "second.jpg", "third.jpg"]) fs.writeFileSync(path.join(v.path, name), image);
+  await daemon.engine.cycle();
+  const db = daemon.engine.store.db;
+  db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
+  await daemon.engine.gallery.background;
+  db.prepare("DELETE FROM revisions").run();
+  for (const name of ["first.jpg", "second.jpg", "third.jpg"])
+    db.prepare("INSERT OR REPLACE INTO gallery_metadata(hash,captured,date_checked) VALUES(?,NULL,1)").run(
+      daemon.engine.store.current(v.id, name).hash,
+    );
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.IntersectionObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  if (!w.document.querySelector(".photo-timeline"))
+    w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 3);
+  const summary = w.document.querySelector(".detail-head .heading p");
+  assert.match(summary.textContent, /^3 photos · /, "three tiles read 3 photos, never 0");
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 3 && w.document.querySelector(".photo-timeline"));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.match(w.document.querySelector(".detail-head .heading p").textContent, /^3 photos · /, "a re-render keeps counting the undated photos");
+});
+
 test("after seeking a month the gallery loads newer photos above when scrolling up", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-timeline-up-"));
   init(home, { port: 0, name: "Gallery" });

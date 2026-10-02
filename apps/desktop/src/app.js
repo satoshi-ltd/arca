@@ -87,7 +87,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.85";
+const APP_VERSION = "0.6.86";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1384,6 +1384,7 @@ async function render({ refreshStatus = false } = {}) {
       previous: galleryView.previous,
       range: galleryView.range,
       dates: galleryView.dates,
+      undated: galleryView.undated,
       month: galleryView.month,
       scroll: galleryView.root.closest(".page")?.scrollTop || 0,
     };
@@ -2259,11 +2260,12 @@ function mountGallery(volume) {
   function updateSummary(data) {
     const summary = $(".detail-head .heading p");
     if (!data.timeline || !summary || data.indexing) return;
-    const total = data.timeline.reduce((sum, row) => sum + row.count, 0);
-    const videos = data.timeline.reduce(
-      (sum, row) => sum + (row.videos || 0),
-      0,
-    );
+    const total =
+      data.timeline.reduce((sum, row) => sum + row.count, 0) +
+      (data.undated?.count || 0);
+    const videos =
+      data.timeline.reduce((sum, row) => sum + (row.videos || 0), 0) +
+      (data.undated?.videos || 0);
     summary.textContent = summary.textContent.replace(
       /^[\d,]+ (?:files?|photos?)(?: · [\d,]+ videos?)?(?= · )/,
       [
@@ -2276,6 +2278,7 @@ function mountGallery(volume) {
   }
   function updateTimeline(data) {
     if (data.timeline) state.dates = data.timeline;
+    if (data.undated) state.undated = data.undated;
     updateSummary(data);
     const rail = root.querySelector(".photo-timeline");
     if (data.timeline && !rail.children.length) {
@@ -2653,7 +2656,7 @@ function mountGallery(volume) {
       range: saved.range,
       month: saved.month,
     });
-    updateTimeline({ timeline: saved.dates });
+    updateTimeline({ timeline: saved.dates, undated: saved.undated });
     addItems(saved.items.filter((item) => !item.deleted));
     root.querySelector(".photo-more").hidden = !state.next;
     page.scrollTop = saved.scroll;
@@ -4759,6 +4762,7 @@ async function handle(name, id, control) {
         previous: galleryView.previous,
         range: galleryView.range,
         dates: galleryView.dates,
+        undated: galleryView.undated,
         month: galleryView.month,
         scroll: $(".page")?.scrollTop || 0,
       };

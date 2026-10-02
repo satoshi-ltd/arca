@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-GALLERY-COUNT** — Gallery header counts only dated months
-  `bug · agent · low`
-  accept: the desktop gallery header counts every loaded photo and video, including those still waiting for a capture date (it read "0 photos" over three tiles); a DOM test.
 - **DESK-SELECT-CATALOG** — A folder selected while paused is missing from History
   `bug · agent · low`
   accept: `select` adds the folder to the saved catalog so History includes it before the next cycle; a replica test with a paused replica.

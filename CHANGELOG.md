@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.86 — 2026-10-03
+
+- The desktop gallery header now counts every photo and video, including those still waiting for a date, instead of reading "0 photos" over a grid of tiles.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.85 — 2026-10-03
 
 - The Docker image is now built and tagged from the exact commit whose release triggered it, so two quick pushes can no longer publish the newer version's image or tag before that version's release exists.

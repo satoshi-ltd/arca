@@ -200,6 +200,8 @@ test("photos without any date still page through the whole gallery", async (t) =
     f.route + "&after=" + encodeURIComponent(first.next),
   );
   assert.equal(second.items.length, 2);
+  assert.deepEqual(first.timeline, [], "no dated month exists");
+  assert.deepEqual(first.undated, { count: 62, videos: 0 }, "the undated photos are counted for the header");
 });
 
 test("gallery is explicit, chronological, scoped and respects exclusions even for cached previews", async (t) => {
