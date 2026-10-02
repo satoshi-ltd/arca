@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.64 — 2026-10-02
+
+- Every empty list on the phone and Fold (Folders, Files, Recent, History, a file's history, Machines and the photo grid) now looks the same: a dashed frame with an icon, a heading and one line, and the offline cases keep Retry inside it.
+
+Needs: native build
+
 ## 0.6.63 — 2026-10-02
 
 - A folder's header keeps Open in Finder (Open folder elsewhere) and, on gallery folders, the Gallery toggle; on the hub, Enable gallery, Rename and .arcaignore… move into a Folder actions ⋯ menu like the one in the file detail.

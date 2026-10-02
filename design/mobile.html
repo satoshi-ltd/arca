@@ -22,7 +22,7 @@
         <a href="mobile.html" aria-current="page">Mobile</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.63 · phone and Fold</span>
+      <span class="kit-version">v0.6.64 · phone and Fold</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -182,13 +182,55 @@
       </section>
 
       <section class="kit-section">
-        <h2>Offline empty states <span>04</span></h2>
+        <h2>Empty states <span>04</span></h2>
+        <div class="kit-draw kit-fragments">
+        <p class="kit-caption">Folders · nothing shared yet</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="folder-open" data-size="24"></span><span class="m-heading">No folders yet</span><span class="m-text">Shared folders from your hub appear here.</span></div></div></div>
+        <p class="kit-caption">Files · a completed empty folder</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-list"><div class="m-row"><span class="m-text">documents</span></div></div><div class="m-empty"><span data-icon="folder" data-size="24"></span><span class="m-heading">This folder is empty</span><span class="m-text">Files appear here as they arrive from your hub.</span></div></div></div>
+        <p class="kit-caption">Files · the first copy is still incomplete</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-list"><div class="m-row"><span class="m-text">documents</span></div></div><div class="m-empty"><span data-icon="folder" data-size="24"></span><span class="m-heading">No local files yet</span><span class="m-text">Files appear here as they download from your hub.</span></div></div></div>
+        <p class="kit-caption">Files · search without a match</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-list"><div class="m-row"><span class="m-text">documents</span></div></div><div class="m-empty"><span data-icon="folder" data-size="24"></span><span class="m-heading">No matching files</span><span class="m-text">Try another name.</span></div></div></div>
+        <p class="kit-caption">Recent</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="history" data-size="24"></span><span class="m-heading">No revisions yet</span><span class="m-text">Recent changes appear here after the first sync.</span></div></div></div>
+        <p class="kit-caption">File detail · a hub that keeps nothing older</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="history" data-size="24"></span><span class="m-heading">No retained revisions</span><span class="m-text">Older revisions appear here when the hub retains them.</span></div></div></div>
+        <p class="kit-caption">History</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="history" data-size="24"></span><span class="m-heading">No history yet</span><span class="m-text">Try another filter or sync online to save recent history.</span></div></div></div>
+        <p class="kit-caption">History · a filter without a match</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="history" data-size="24"></span><span class="m-heading">No matching revisions</span><span class="m-text">Try another filter or sync online to save recent history.</span></div></div></div>
+        <p class="kit-caption">History · offline, nothing saved</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="history" data-size="24"></span><span class="m-heading">No saved history</span><span class="m-text">Try another filter or sync online to save recent history.</span></div></div></div>
+        <p class="kit-caption">Machines · nothing saved</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="monitor-smartphone" data-size="24"></span><span class="m-heading">No saved machines</span><span class="m-text">Sync online to save machine information.</span></div></div></div>
+        <p class="kit-caption">Photo folder · a hub that answered empty</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="image" data-size="24"></span><span class="m-heading">No photos yet</span><span class="m-text">Photos appear here as they arrive from other devices.</span></div></div></div>
+        <p class="kit-caption">Photo folder · an album this phone uploads</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="image" data-size="24"></span><span class="m-heading">No photos yet</span><span class="m-text">Photos from this phone appear here as they upload.</span></div></div></div>
+        </div>
         <div class="kit-devices">
+          <div>
+            <div class="m-device m-fold"><div class="m-screen">
+              <aside class="m-sidebar">
+                <div class="m-title-row" style="min-height: 48px"><img src="../apps/desktop/src/assets/arca-icon.svg" width="28" height="28" alt="" /><strong>arca</strong></div>
+                <span class="m-nav-item m-selected"><span data-icon="folder" data-size="20"></span>Folders</span>
+                <span class="m-nav-item"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span>
+                <span class="m-nav-item"><span data-icon="history" data-size="20"></span>History</span>
+                <span class="m-nav-item"><span data-icon="settings" data-size="20"></span>Settings</span>
+              </aside>
+              <div class="m-column">
+                <div class="m-header" style="padding-top: var(--m-workspace-inset)"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Folders</span><div class="m-title-row"><div class="m-tile"><span data-icon="folder"></span></div><div class="m-stack"><span class="m-title">documents</span><span class="m-caption">0 files · 0 B local</span></div></div></div>
+                <div class="m-body"><div class="m-list"><div class="m-row"><span class="m-text">documents</span></div></div><div class="m-empty"><span data-icon="folder" data-size="24"></span><span class="m-heading">This folder is empty</span><span class="m-text">Files appear here as they arrive from your hub.</span></div></div>
+              </div>
+            </div></div>
+            <p class="kit-caption">Fold · the same frame under the breadcrumb row of the wide explorer</p>
+          </div>
           <div>
             <div class="m-device"><div class="m-screen">
               <div class="m-status"><span>9:41</span><span data-icon="wifi-off" data-size="16"></span></div>
               <div class="m-header"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Folders</span><div class="m-title-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-detail-title">photos</span><span class="m-caption">0 photos local</span></div></div></div>
-              <div class="m-body"><div class="m-card"><span class="m-heading">Nothing saved on this phone</span><span class="m-text">You are offline. Photos from this folder appear here once they have downloaded.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div>
+              <div class="m-body"><div class="m-empty"><span data-icon="image" data-size="24"></span><span class="m-heading">Nothing saved on this phone</span><span class="m-text">You are offline. Photos from this folder appear here once they have downloaded.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div>
               <div class="m-tabs"><span class="m-tab m-selected"><span data-icon="folder" data-size="20"></span>Folders</span><span class="m-tab"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span><span class="m-tab"><span data-icon="history" data-size="20"></span>History</span><span class="m-tab"><span data-icon="settings" data-size="20"></span>Settings</span></div>
             </div></div>
             <p class="kit-caption">Photo folder · nothing saved while offline</p>
@@ -197,7 +239,7 @@
             <div class="m-device"><div class="m-screen">
               <div class="m-status"><span>9:41</span><span data-icon="wifi-off" data-size="16"></span></div>
               <div class="m-header"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Folders</span><div class="m-title-row"><div class="m-tile"><span data-icon="folder"></span></div><div class="m-stack"><span class="m-detail-title">documents</span><span class="m-caption">20 files · 14.2 MB local</span></div></div></div>
-              <div class="m-body"><div class="m-card"><span class="m-heading">No saved revisions</span><span class="m-text">You are offline. Revisions appear here once the hub is reachable.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div>
+              <div class="m-body"><div class="m-empty"><span data-icon="history" data-size="24"></span><span class="m-heading">No saved revisions</span><span class="m-text">You are offline. Revisions appear here once the hub is reachable.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div>
               <div class="m-tabs"><span class="m-tab m-selected"><span data-icon="folder" data-size="20"></span>Folders</span><span class="m-tab"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span><span class="m-tab"><span data-icon="history" data-size="20"></span>History</span><span class="m-tab"><span data-icon="settings" data-size="20"></span>Settings</span></div>
             </div></div>
             <p class="kit-caption">Recent · nothing saved while offline</p>
@@ -206,7 +248,7 @@
             <div class="m-device"><div class="m-screen">
               <div class="m-status"><span>9:41</span><span data-icon="wifi-off" data-size="16"></span></div>
               <div class="m-header"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Folders</span><div class="m-title-row"><div class="m-tile"><span data-icon="file"></span></div><div class="m-stack"><span class="m-detail-title">notes.md</span><span class="m-caption">Revisions</span></div></div></div>
-              <div class="m-body"><div class="m-card"><span class="m-heading">No saved revisions for this file</span><span class="m-text">You are offline. Revisions appear here once the hub is reachable.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div>
+              <div class="m-body"><div class="m-empty"><span data-icon="history" data-size="24"></span><span class="m-heading">No saved revisions for this file</span><span class="m-text">You are offline. Revisions appear here once the hub is reachable.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div>
               <div class="m-tabs"><span class="m-tab m-selected"><span data-icon="folder" data-size="20"></span>Folders</span><span class="m-tab"><span data-icon="monitor-smartphone" data-size="20"></span>Machines</span><span class="m-tab"><span data-icon="history" data-size="20"></span>History</span><span class="m-tab"><span data-icon="settings" data-size="20"></span>Settings</span></div>
             </div></div>
             <p class="kit-caption">File detail · nothing saved while offline</p>

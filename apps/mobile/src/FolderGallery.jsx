@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import {
   Button,
+  EmptyState,
   OfflineEmpty,
   StatusRow,
   Icon,
@@ -170,7 +171,7 @@ export function FolderGallery({
   reconnect,
   columns = 4,
 }) {
-  const { s, c } = useDesign();
+  const { s } = useDesign();
   const linked = connected && !offline;
   const [failures, setFailures] = useState(0);
   const online = linked && failures < 2;
@@ -1299,6 +1300,7 @@ export function FolderGallery({
           <Scaffold label="Loading photos" />
         ) : connected && offline ? (
           <OfflineEmpty
+            icon="image"
             title="Nothing saved on this phone"
             text="You are offline. Photos from this folder appear here once they have downloaded."
             retry={() => {
@@ -1308,15 +1310,15 @@ export function FolderGallery({
             }}
           />
         ) : (
-          <View style={s.center}>
-            <Icon name="image" size={32} color={c.mute} />
-            <Text style={s.heading}>No photos yet</Text>
-            <Text style={s.caption}>
-              {uploads
+          <EmptyState
+            icon="image"
+            title="No photos yet"
+            text={
+              uploads
                 ? "Photos from this phone appear here as they upload."
-                : "Photos appear here as they arrive from other devices."}
-            </Text>
-          </View>
+                : "Photos appear here as they arrive from other devices."
+            }
+          />
         ))}
       <PhotoViewer
         items={viewer ? viewer.items.map(withNative) : photos}

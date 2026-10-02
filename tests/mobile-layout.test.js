@@ -588,21 +588,24 @@ test("mobile machine view waits for runtime and ignores responses after effect c
   assert.match(effect[2], /\breplica\b/, "runtime readiness retriggers the effect even with an unchanged cached connection");
   assert.match(effect[2], /status\.offline/, "the hub coming back reloads the machines");
   assert.match(app, /engine\.current = await runtime\(\);\s*if \(!mounted\.current\) return;\s*setReplica\(engine\.current\);/);
-  let shown = "old", saved = "old", requests = 0, finish;
+  let shown = "old", saved = "old", loaded = "old", requests = 0, finish;
   const context = {
     screen: "Folders", connected: true, replica: null, engine: { current: null },
     setMachines: (value) => { shown = value; },
     setMachinesSaved: (value) => { saved = value; },
+    setMachinesLoaded: (value) => { loaded = value; },
   };
   const run = () => vm.runInNewContext(`(() => {${effect[1]}\n})()`, context);
   assert.doesNotThrow(run, "cached linked state can precede the async runtime");
   assert.equal(shown, null);
+  assert.equal(loaded, false, "no answer yet, so no empty frame");
   context.replica = { remoteView: () => { requests++; return new Promise((resolve) => { finish = resolve; }); } };
   const cleanup = run();
   assert.equal(requests, 1);
   finish({ machines: ["Fold"], offline: true });
   await new Promise(setImmediate);
   assert.deepEqual(shown, ["Fold"]);
+  assert.equal(loaded, true, "an answer, even an empty one, lets the empty frame show");
   assert.equal(saved, true, "the saved-data label follows the response's own flag");
   const again = run();
   finish({ machines: ["Fold"] });
@@ -736,10 +739,10 @@ test("an open file detail refreshes only when the hub is back and its saved data
 test("offline empty states say nothing is saved, end in Retry that probes the hub, and never show a bare raw error", () => {
   const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
   const app = read("App.jsx");
-  const card = read("components.jsx").match(/export function OfflineEmpty\(\{ title, text, retry \}\) \{[\s\S]*?\n\}\n/);
+  const card = read("components.jsx").match(/export function OfflineEmpty\(\{ icon, title, text, retry \}\) \{[\s\S]*?\n\}\n/);
   assert.ok(card, "one shared card");
-  assert.match(card[0], /<Card title=\{title\}>/);
-  assert.match(card[0], /<Button label="Retry" icon="refresh" onPress=\{retry\} \/>/);
+  assert.match(card[0], /<EmptyState\s+icon=\{icon\}\s+title=\{title\}\s+text=\{text\}/);
+  assert.match(card[0], /action=\{<Button label="Retry" icon="refresh" onPress=\{retry\} \/>\}/);
   assert.match(app, /function reconnect\(\) \{\s+if \(status\.offline\) startSync\(\);\s+\}/);
   assert.match(app.match(/<FolderGallery[\s\S]*?\n +\/>/)[0], /reconnect=\{reconnect\}/);
   assert.match(app.match(/<FolderRecent[\s\S]*?\n +\/>/)[0], /reconnect=\{reconnect\}/);
@@ -754,7 +757,7 @@ test("offline empty states say nothing is saved, end in Retry that probes the hu
   assert.match(offline[1], /title="Nothing saved on this phone"/);
   assert.match(offline[1], /text="You are offline\. Photos from this folder appear here once they have downloaded\."/);
   assert.match(offline[1], /reconnect\?\.\(\);\s+setError\(""\);\s+setRetry\(\(value\) => value \+ 1\);/);
-  assert.match(gallery, /<Text style=\{s\.heading\}>No photos yet<\/Text>/, "a hub that answered empty keeps its own copy");
+  assert.match(gallery, /<EmptyState\s+icon="image"\s+title="No photos yet"/, "a hub that answered empty keeps its own copy");
 
   const recent = read("FolderRecent.jsx");
   const empty = recent.match(/if \(!page\.versions\.length && unreachable\)\s+return \(\s+<OfflineEmpty([\s\S]*?)\/>/);
@@ -763,13 +766,53 @@ test("offline empty states say nothing is saved, end in Retry that probes the hu
   assert.match(empty[1], /title="No saved revisions"/);
   assert.match(empty[1], /text="You are offline\. Revisions appear here once the hub is reachable\."/);
   assert.match(empty[1], /reconnect\?\.\(\);\s+retry\(\(n\) => n \+ 1\);/);
-  assert.match(recent, /<Text style=\{s\.text\}>No revisions yet\.<\/Text>/);
+  assert.match(recent, /<EmptyState\s+icon="history"\s+title="No revisions yet"/);
 
   const detail = read("FileHistory.jsx");
-  const file = detail.match(/\(offline && !error \? \(\s+<OfflineEmpty([\s\S]*?)\/>\s+\) : \(\s+!error && <Text style=\{s\.caption\}>No retained revisions\.<\/Text>/);
+  const file = detail.match(/\(offline && !error \? \(\s+<OfflineEmpty([\s\S]*?)\/>\s+\) : \(\s+!error && \(\s+<EmptyState\s+icon="history"\s+title="No retained revisions"/);
   assert.ok(file, "file detail offline gets the card, a hub that answered empty keeps its caption");
   assert.match(file[1], /text="You are offline\. Revisions appear here once the hub is reachable\."/);
   assert.match(file[1], /retry=\{retry\}/);
+});
+
+test("every empty list on the phone uses the one EmptyState: icon, heading, one line and an optional action", async () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
+  const components = read("components.jsx");
+  const state = components.match(/export function EmptyState\(\{ icon, title, text, action \}\) \{[\s\S]*?\n\}\n/);
+  assert.ok(state, "one shared component");
+  assert.match(state[0], /<View style=\{s\.empty\}>/);
+  assert.match(state[0], /<Icon name=\{icon\} size=\{24\} color=\{c\.mute\} \/>/);
+  assert.match(state[0], /\{action\}/);
+  const sites = {
+    "App.jsx": ["No folders yet", "No matching files", "This folder is empty", "No local files yet", "No saved machines", "No saved history", "No matching revisions", "No history yet"],
+    "FolderRecent.jsx": ["No revisions yet", "No saved revisions"],
+    "FileHistory.jsx": ["No retained revisions", "No saved revisions for this file"],
+    "FolderGallery.jsx": ["No photos yet", "Nothing saved on this phone"],
+  };
+  for (const [file, titles] of Object.entries(sites)) {
+    const source = read(file);
+    for (const title of titles) assert.ok(source.includes(`"${title}"`), `${file} draws "${title}"`);
+    assert.doesNotMatch(source, /explorerEmpty/, `${file} has no private empty layout`);
+  }
+  const app = read("App.jsx");
+  assert.match(app, /<EmptyState\s+icon="folder-open"\s+title="No folders yet"/);
+  assert.match(app, /<\/View>\s+\{!filesLoading &&\s+!visibleEntries\.length && \(\s+<EmptyState\s+icon="folders"\s+title=\{/, "Files draws its frame under the bordered breadcrumb group, never inside it");
+  assert.match(app, /<EmptyState\s+icon="history"\s+title=\{\s+history\.offline\s+\? "No saved history"/);
+  assert.match(app, /machinesLoaded && \(\s+<EmptyState/, "Machines waits for its answer before saying nothing is saved");
+  assert.match(read("FolderRecent.jsx"), /\{!!page\.versions\.length && \(\s+<View style=\{s\.group\}>/, "no bordered box without rows");
+  assert.match(state[0], /<Text style=\{\[s\.heading, s\.centerText\]\}>\{title\}<\/Text>/);
+  for (const file of Object.keys(sites))
+    for (const call of read(file).matchAll(/<OfflineEmpty\s+([^>]*?)title=/g)) assert.match(call[1], /icon="/, `${file} gives every offline empty state an icon`);
+  const kit = fs.readFileSync(new URL("../design/mobile.html", import.meta.url), "utf8");
+  assert.match(kit, /<h2>Empty states /);
+  for (const title of Object.values(sites).flat()) assert.ok(kit.includes(`>${title}<`), `design/mobile.html draws "${title}"`);
+  assert.match(read("App.jsx"), /<EmptyState\s+icon="machines"\s+title="No saved machines"/);
+  assert.doesNotMatch(read("App.jsx"), /<Card title="No folders yet">|No saved machine information/);
+  assert.doesNotMatch(read("FolderRecent.jsx"), /No revisions yet\./);
+  const styles = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
+  assert.match(styles, /empty: \{[^}]*borderStyle: "dashed"[^}]*borderColor: c\.line[^}]*borderRadius: g\.cardRadius/s);
+  assert.doesNotMatch(styles, /explorerEmpty/);
+  assert.equal(iconNames["folder-open"], "FolderOpen");
 });
 
 test("the mobile welcome says where the hub comes from instead of a bare caption", () => {

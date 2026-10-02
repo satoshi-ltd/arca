@@ -599,14 +599,6 @@
   font-weight: 600;
   color: var(--m-ink);
 }
-.m-explorer-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 48px 20px;
-  color: var(--m-mute);
-}
 .m-empty {
   display: flex;
   flex-direction: column;

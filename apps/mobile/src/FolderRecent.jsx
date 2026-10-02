@@ -2,7 +2,7 @@ import { Scaffold } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { Icon, OfflineEmpty, useDesign } from "./components";
+import { EmptyState, Icon, OfflineEmpty, useDesign } from "./components";
 import { bytes } from "./format";
 
 const knownRecent = new Map();
@@ -65,6 +65,7 @@ export function FolderRecent({
   if (!page.versions.length && unreachable)
     return (
       <OfflineEmpty
+        icon="history"
         title="No saved revisions"
         text="You are offline. Revisions appear here once the hub is reachable."
         retry={() => {
@@ -79,55 +80,63 @@ export function FolderRecent({
       {(!connected || page.offline) && (
         <Text style={s.caption}>Offline · last known revisions</Text>
       )}
-      <View style={s.group}>
-        {page.versions.map((row, index) => (
-          <Pressable
-            key={row.rev}
-            accessibilityRole="button"
-            accessibilityLabel={`View history for ${row.path}`}
-            onPress={() => open(row)}
-            style={[s.settingRow, s.row, index > 0 && s.separator]}
-          >
-            <Icon
-              name={
-                row.deleted
-                  ? "trash"
-                  : row.path.includes(".conflict-")
-                    ? "conflict"
-                    : "revision"
-              }
-              color={
-                row.deleted
-                  ? c.mute
-                  : row.path.includes(".conflict-") && !row.resolved
-                    ? c.warning
-                    : c.accent
-              }
-            />
-            <View style={[s.flex, s.stack]}>
-              <Text
-                numberOfLines={wide ? 1 : undefined}
-                style={[s.rowTitle, row.deleted && s.deletedFile]}
-              >
-                {row.path}
-              </Text>
-              <Text style={s.caption}>
-                {row.deleted
-                  ? "Deleted · recoverable"
-                  : row.resolved
-                    ? "Resolved · copy kept"
+      {!!page.versions.length && (
+        <View style={s.group}>
+          {page.versions.map((row, index) => (
+            <Pressable
+              key={row.rev}
+              accessibilityRole="button"
+              accessibilityLabel={`View history for ${row.path}`}
+              onPress={() => open(row)}
+              style={[s.settingRow, s.row, index > 0 && s.separator]}
+            >
+              <Icon
+                name={
+                  row.deleted
+                    ? "trash"
                     : row.path.includes(".conflict-")
-                      ? "Conflict copy retained"
-                      : `${bytes(row.size)}`}
-              </Text>
-            </View>
-            {wide && <Text style={s.mono}>rev {row.rev}</Text>}
-            {wide && <Text style={s.caption}>{date(row.created)}</Text>}
-            <Icon name="chevron" color={c.mute} />
-          </Pressable>
-        ))}
-      </View>
-      {!page.versions.length && <Text style={s.text}>No revisions yet.</Text>}
+                      ? "conflict"
+                      : "revision"
+                }
+                color={
+                  row.deleted
+                    ? c.mute
+                    : row.path.includes(".conflict-") && !row.resolved
+                      ? c.warning
+                      : c.accent
+                }
+              />
+              <View style={[s.flex, s.stack]}>
+                <Text
+                  numberOfLines={wide ? 1 : undefined}
+                  style={[s.rowTitle, row.deleted && s.deletedFile]}
+                >
+                  {row.path}
+                </Text>
+                <Text style={s.caption}>
+                  {row.deleted
+                    ? "Deleted · recoverable"
+                    : row.resolved
+                      ? "Resolved · copy kept"
+                      : row.path.includes(".conflict-")
+                        ? "Conflict copy retained"
+                        : `${bytes(row.size)}`}
+                </Text>
+              </View>
+              {wide && <Text style={s.mono}>rev {row.rev}</Text>}
+              {wide && <Text style={s.caption}>{date(row.created)}</Text>}
+              <Icon name="chevron" color={c.mute} />
+            </Pressable>
+          ))}
+        </View>
+      )}
+      {!page.versions.length && (
+        <EmptyState
+          icon="history"
+          title="No revisions yet"
+          text="Recent changes appear here after the first sync."
+        />
+      )}
     </View>
   );
 }

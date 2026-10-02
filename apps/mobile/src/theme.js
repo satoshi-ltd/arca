@@ -932,11 +932,15 @@ export function styles(
       borderRadius: g.controlRadius,
       overflow: "hidden",
     },
-    explorerEmpty: {
+    empty: {
       alignItems: "center",
-      paddingVertical: 48,
+      gap: 10,
+      paddingVertical: 40,
       paddingHorizontal: 20,
-      gap: 8,
+      borderWidth: 1,
+      borderStyle: "dashed",
+      borderColor: c.line,
+      borderRadius: g.cardRadius,
     },
     settingRow: {
       paddingHorizontal: wide ? 14 : 16,

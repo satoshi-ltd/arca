@@ -79,6 +79,7 @@ import {
   Toggle,
   Sheet,
   ApprovalSheet,
+  EmptyState,
 } from "./components";
 import { client } from "./persistence";
 import { isPickerCancelled, sourceUnavailable } from "./action-errors.js";
@@ -169,6 +170,7 @@ export default function App() {
     [locals, setLocals] = useState([]),
     [machines, setMachines] = useState(null),
     [machinesSaved, setMachinesSaved] = useState(false),
+    [machinesLoaded, setMachinesLoaded] = useState(false),
     [status, setStatus] = useState({}),
     [busy, setBusy] = useState(false),
     [actionLabel, setActionLabel] = useState(""),
@@ -641,6 +643,7 @@ export default function App() {
     ) {
       setMachines(null);
       setMachinesSaved(false);
+      setMachinesLoaded(false);
       return;
     }
     replica
@@ -649,9 +652,12 @@ export default function App() {
         if (cancelled) return;
         setMachines(data.machines);
         setMachinesSaved(!!data.offline);
+        setMachinesLoaded(true);
       })
       .catch(() => {
-        if (!cancelled) setMachines(null);
+        if (cancelled) return;
+        setMachines(null);
+        setMachinesLoaded(true);
       });
     return () => {
       cancelled = true;
@@ -1857,20 +1863,27 @@ export default function App() {
                                     {filesLoading && !entries.length && (
                                       <Scaffold label="Loading files" />
                                     )}
-                                    {!filesLoading &&
-                                      !visibleEntries.length && (
-                                        <View style={s.explorerEmpty}>
-                                          <Icon name="folders" color={c.mute} />
-                                          <Text style={s.text}>
-                                            {search
-                                              ? "No matching files"
-                                              : currentFolder?.completed
-                                                ? "This folder is empty"
-                                                : "No local files yet"}
-                                          </Text>
-                                        </View>
-                                      )}
                                   </View>
+                                  {!filesLoading &&
+                                    !visibleEntries.length && (
+                                      <EmptyState
+                                        icon="folders"
+                                        title={
+                                          search
+                                            ? "No matching files"
+                                            : currentFolder?.completed
+                                              ? "This folder is empty"
+                                              : "No local files yet"
+                                        }
+                                        text={
+                                          search
+                                            ? "Try another name."
+                                            : currentFolder?.completed
+                                              ? "Files appear here as they arrive from your hub."
+                                              : "Files appear here as they download from your hub."
+                                        }
+                                      />
+                                    )}
                                   {visibleEntries.length > visibleCount && (
                                     <Button
                                       label="Show more files"
@@ -2056,11 +2069,11 @@ export default function App() {
                           {!locals.length &&
                             !volumes.length &&
                             (!connected || catalog || status.offline) && (
-                              <Card title="No folders yet">
-                                <Text style={s.text}>
-                                  Shared folders from your hub appear here.
-                                </Text>
-                              </Card>
+                              <EmptyState
+                                icon="folder-open"
+                                title="No folders yet"
+                                text="Shared folders from your hub appear here."
+                              />
                             )}
                         </>
                       )}
@@ -2334,10 +2347,13 @@ export default function App() {
                                     />
                                   ))
                               ) : (
-                                <Text style={s.caption}>
-                                  No saved machine information. Sync online to
-                                  save it.
-                                </Text>
+                                machinesLoaded && (
+                                  <EmptyState
+                                    icon="machines"
+                                    title="No saved machines"
+                                    text="Sync online to save machine information."
+                                  />
+                                )
                               )}
                             </View>
                           </Section>
@@ -2373,7 +2389,8 @@ export default function App() {
                         !historyLoading &&
                         !historyError &&
                         !history.versions.length && (
-                          <Card
+                          <EmptyState
+                            icon="history"
                             title={
                               history.offline
                                 ? "No saved history"
@@ -2381,12 +2398,8 @@ export default function App() {
                                   ? "No matching revisions"
                                   : "No history yet"
                             }
-                          >
-                            <Text style={s.text}>
-                              Try another filter or sync online to save recent
-                              history.
-                            </Text>
-                          </Card>
+                            text="Try another filter or sync online to save recent history."
+                          />
                         )}
                       {!!history.versions.length && (
                         <View style={s.historyGroups}>

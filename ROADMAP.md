@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-MOB-EMPTY-STATES** — One empty state on the phone
-  `ui · agent · normal`
-  accept: the board.
 - **UI-DESK-EMPTY-ONE-CTA** — One call to action on an empty Folders
   `ui · agent · normal`
   accept: the board.

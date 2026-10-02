@@ -341,12 +341,17 @@ body.kit {
   height: 500px;
   margin: 0 auto;
 }
-.kit-board-pair .m-fragment {
+.kit-board-pair .m-fragment,
+.kit-fragments .m-fragment {
   height: auto;
   border: 1px solid var(--m-divider);
   border-radius: var(--m-card-radius);
 }
-.kit-board-pair .m-fragment .m-body {
+.kit-fragments .m-fragment {
+  max-width: 372px;
+}
+.kit-board-pair .m-fragment .m-body,
+.kit-fragments .m-fragment .m-body {
   padding-top: 16px;
 }
 .kit-board-pair .kit-notices {

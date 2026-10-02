@@ -494,13 +494,25 @@ export function Card({
     </View>
   );
 }
-export function OfflineEmpty({ title, text, retry }) {
-  const { s } = useDesign();
+export function EmptyState({ icon, title, text, action }) {
+  const { s, c } = useDesign();
   return (
-    <Card title={title}>
-      <Text style={s.text}>{text}</Text>
-      <Button label="Retry" icon="refresh" onPress={retry} />
-    </Card>
+    <View style={s.empty}>
+      <Icon name={icon} size={24} color={c.mute} />
+      <Text style={[s.heading, s.centerText]}>{title}</Text>
+      <Text style={[s.text, s.centerText]}>{text}</Text>
+      {action}
+    </View>
+  );
+}
+export function OfflineEmpty({ icon, title, text, retry }) {
+  return (
+    <EmptyState
+      icon={icon}
+      title={title}
+      text={text}
+      action={<Button label="Retry" icon="refresh" onPress={retry} />}
+    />
   );
 }
 export function Tag({ children, variant }) {

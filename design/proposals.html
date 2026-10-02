@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.63 · proposals</span>
+      <span class="kit-version">v0.6.64 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -83,29 +83,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>Files, History and a file's history on desktop and web end in one Show more button (Show more files, Show more, Show more revisions) that appends the next rows and keeps scroll and typed search, as DESK-FILES-PAGING describes; the phone's buttons use the same words; placeholder rows carry no Loading label; JSDOM tests cover the three lists and <code>design/desktop.html</code> shows a list ending in Show more.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-MOB-EMPTY-STATES">
-          <header><code>UI-MOB-EMPTY-STATES</code><h3>One empty state on the phone</h3><span>Mobile</span></header>
-          <p class="kit-note"><strong>Why.</strong> An empty list looks different on every phone screen: Folders shows a card titled No folders yet, Files a centred icon with This folder is empty, Recent the bare line No revisions yet., a photo folder a heading with a caption, and the offline cases a card with Retry. Desktop has one empty state: a dashed frame with an icon, a heading, one line and an optional action. The proposal gives the phone the same one, EmptyState, used by Folders, Files, Recent, History, Machines, the photo grid and the offline cards. The alternative is to keep the card from the offline work everywhere, which is heavier than a dashed frame inside an already bordered list.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Folders · a card</p>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-card"><span class="m-heading">No folders yet</span><span class="m-text">Shared folders from your hub appear here.</span></div></div></div>
-              <p class="kit-caption">Files · a centred line</p>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-explorer-empty"><span data-icon="folders"></span><span class="m-text">This folder is empty</span></div></div></div>
-              <p class="kit-caption">Recent · a bare line; the photo grid and the offline cards differ again</p>
-<div class="m-screen m-fragment"><div class="m-body"><span class="m-text">No revisions yet.</span></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">One EmptyState · icon, heading, one line, optional action</p>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="folder-open" data-size="24"></span><span class="m-heading">No folders yet</span><span class="m-text">Shared folders from your hub appear here.</span></div></div></div>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="folders" data-size="24"></span><span class="m-heading">This folder is empty</span><span class="m-text">Files appear here as they arrive from your hub.</span></div></div></div>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="history" data-size="24"></span><span class="m-heading">No revisions yet</span><span class="m-text">Recent changes appear here after the first sync.</span></div></div></div>
-              <p class="kit-caption">The offline cards use the same frame</p>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-empty"><span data-icon="image" data-size="24"></span><span class="m-heading">Nothing saved on this phone</span><span class="m-text">You are offline. Photos from this folder appear here once they have downloaded.</span><span class="m-button"><span data-icon="refresh-cw"></span>Retry</span></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>Every empty list on the phone and Fold uses one EmptyState (icon, heading, one line, optional action) with the copy drawn, the offline cards included, in light and dark and on the Fold; a layout test lists the sites and <code>design/mobile.html</code> shows it.</p></div></div>
         </article>
         <article class="kit-board" data-board="UI-DESK-EMPTY-ONE-CTA">
           <header><code>UI-DESK-EMPTY-ONE-CTA</code><h3>One call to action on an empty Folders</h3><span>Desktop</span></header>
