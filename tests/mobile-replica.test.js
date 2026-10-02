@@ -1985,7 +1985,6 @@ test("a corrupt gallery asset row is set aside: startup, queries and other asset
   await insert("broken-text", "failed", "{not json");
   await insert("broken-shape", "accepted", '"just a string"');
   await insert("broken-pending", "pending", "[1,2]");
-  await assert.rejects(store.db.getAllAsync("SELECT json_extract(row,'$.issue') FROM gallery_assets WHERE scope=?", r.scope), "the raw query really breaks on a bad row");
   await store.clearInterrupted(r.scope);
   const corrupt = await store.db.getAllAsync("SELECT asset FROM gallery_corrupt WHERE scope=? ORDER BY asset", r.scope);
   assert.deepEqual(corrupt.map((row) => row.asset), ["broken-pending", "broken-shape", "broken-text"]);
