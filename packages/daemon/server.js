@@ -1363,20 +1363,6 @@ export async function start(home, options = {}) {
           );
         }
         if (route === "/v1/gallery/link") {
-          if (config.role !== "hub") {
-            requireAdmin();
-            if (!s.volume(b.volume).selected)
-              fail("Select this folder first", 403);
-            const result = await engine.hubAction(route, { volume: b.volume });
-            const known = config.catalog?.find(
-              (folder) => folder.id === b.volume,
-            );
-            if (known) {
-              known.gallery = true;
-              s.saveConfig();
-            }
-            return send(200, result);
-          }
           requireHub();
           await authorizedWork(() => {
             engine.gallery ||= new Gallery(s);

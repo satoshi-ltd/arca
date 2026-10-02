@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.63 — 2026-10-02
+
+- A folder's header keeps Open in Finder (Open folder elsewhere) and, on gallery folders, the Gallery toggle; on the hub, Enable gallery, Rename and .arcaignore… move into a Folder actions ⋯ menu like the one in the file detail.
+- Desktop and server replicas no longer offer Enable gallery: only the hub sets a folder's gallery type (phones do it by linking an album), and a replica's daemon now refuses `/v1/gallery/link` like every hub-only route.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.62 — 2026-10-01
 
 - Offline, a file's history on desktop and web shows only the saved revisions that follow each other without gaps, says it is showing recent entries only, and keeps Restore for when the hub is back instead of offering it.

@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-DESK-FOLDER-MENU** — Folder actions behind one menu
-  `ui · agent · normal`
-  accept: the board, with this decision: a desktop or server replica never offers Enable gallery (only the hub sets a folder's gallery type; phones do it by linking an album), so a replica's header keeps Open in Finder alone and the menu appears on the hub only; the replica-side gallery-link proxy goes if nothing else uses it.
 - **UI-MOB-EMPTY-STATES** — One empty state on the phone
   `ui · agent · normal`
   accept: the board.

@@ -3362,6 +3362,14 @@ test("saved history windows are written together, so a hub that drops out mid-pa
   assert.equal(count(), 3);
 });
 
+test("a replica's daemon refuses to link a gallery: only the hub sets a folder's gallery type", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("no-gallery-proxy");
+  await replica.api("/v1/select", { id: volume.id });
+  await assert.rejects(replica.api("/v1/gallery/link", { volume: volume.id }), /This device is not the hub/);
+  assert.equal((await hub.api("/v1/catalog")).volumes[0].gallery, false);
+});
+
 test("a failed saved-history write never fails the file sync", async (t) => {
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "kept.txt", "one");

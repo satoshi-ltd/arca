@@ -326,11 +326,14 @@ body.kit {
   letter-spacing: 0.06em;
   color: var(--mute);
 }
-.kit-board-pair .kit-draw {
+.kit-draw {
   padding: var(--space-4);
   border: 1px solid var(--div);
   border-radius: var(--r-control);
   background: var(--paper);
+}
+.kit-draw.menu-open {
+  padding-bottom: 164px;
 }
 .kit-board-pair .m-device {
   width: 100%;

@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.62 · proposals</span>
+      <span class="kit-version">v0.6.63 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -36,25 +36,6 @@
 
       <section class="kit-section" id="boards">
         <h2>Boards <span>01</span></h2>
-        <article class="kit-board" data-board="UI-DESK-FOLDER-MENU">
-          <header><code>UI-DESK-FOLDER-MENU</code><h3>Folder actions behind one menu</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> A replica's folder header shows Open in Finder and Enable gallery as two equal buttons, and a hub's shows four: Rename, .arcaignore…, Open folder and Enable gallery. Enable gallery is a one-time configuration most folders never use, yet it takes the same room as the daily action on every visit, and Rename and .arcaignore… are rarer still. The proposal keeps Open in Finder (and the Gallery toggle once a folder is a gallery) in the header and moves the rest into the ellipsis menu the file detail and the Machines rows already use, which is also how the phone groups them in its Folder actions sheet; a replica gets no menu, because only the hub decides that a folder is a gallery (a phone does it by linking an album). The alternative is an icon-only button row, which keeps everything visible but still spends the header on configuration.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Replica · two equal buttons for one daily action and one configuration</p>
-<div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="folder"></span></div><div><h1>alpi-satoshi-workspace</h1><p>24 files · 196.3 KB local</p></div></div><div class="heading-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open in Finder</button><button type="button" class="secondary"><span data-icon="images"></span>Enable gallery</button></div></div></div>
-              <p class="kit-caption">Hub · four, three of them rare</p>
-<div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="folder"></span></div><div><h1>documents</h1><p>20 files · 14.2 MB local</p></div></div><div class="heading-actions"><button type="button" class="secondary"><span data-icon="pencil"></span>Rename</button><button type="button" class="secondary"><span data-icon="file-pen-line"></span>.arcaignore…</button><button type="button" class="secondary"><span data-icon="external-link"></span>Open folder</button><button type="button" class="secondary"><span data-icon="images"></span>Enable gallery</button></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">Replica · Open in Finder alone: only the hub makes a folder a gallery</p>
-<div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="folder"></span></div><div><h1>alpi-satoshi-workspace</h1><p>24 files · 196.3 KB local</p></div></div><div class="heading-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open in Finder</button></div></div></div>
-              <p class="kit-caption">Hub · the same menu holds Rename and .arcaignore…</p>
-<div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="folder"></span></div><div><h1>documents</h1><p>20 files · 14.2 MB local</p></div></div><div class="heading-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open folder</button><details class="details-menu" open><summary class="icon-button" aria-label="Folder actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="images"></span>Enable gallery</button><button type="button" class="secondary"><span data-icon="pencil"></span>Rename</button><button type="button" class="secondary"><span data-icon="file-pen-line"></span>.arcaignore…</button></div></details></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>The folder detail header shows Open in Finder (Open folder elsewhere) and, on a gallery folder, the Gallery toggle, and nothing else; on the hub, Enable gallery, Rename and .arcaignore… sit in a Folder actions ellipsis menu (<code>details-menu</code>, as in the file detail) with their current confirmations; a replica never offers Enable gallery; a JSDOM test covers the hub and replica headers and <code>design/desktop.html</code> shows the header.</p></div></div>
-        </article>
         <article class="kit-board" data-board="UI-FOLDER-STATS">
           <header><code>UI-FOLDER-STATS</code><h3>A folder summary that adds to its title</h3><span>Desktop · Mobile</span></header>
           <p class="kit-note"><strong>Why.</strong> The folder summary repeats the header: Files 24 · 196.3 KB indexed sits under a title that already says 24 files · 196.3 KB local, and Latest known revision shows an internal counter (rev 189886) nobody can act on. The phone has the same Files cell and keeps Last completed apart from Status. The proposal gives both platforms the same three cells: Status with when the last sync completed, Last change with when the newest accepted revision arrived, which file and which machine (the row both apps already read for Recent), and Revision history as it is. The alternative keeps four cells and only swaps the revision number for the file and machine, which still repeats the count.</p>

@@ -1064,7 +1064,7 @@ test("hub-only actions are disabled with a reason while the hub is unavailable a
   await until(() => /This needs Casa\. Try again when it is reachable\./.test(w.document.body.textContent));
   assert.doesNotMatch(w.document.body.textContent, /saved locally/);
   assert.deepEqual(routes.slice(before).filter((route) => route !== "/v1/status"), [], "a guarded action sends nothing to the hub");
-  for (const name of ["restore", "enable-gallery", "disconnect-hub", "select"]) {
+  for (const name of ["restore", "disconnect-hub", "select"]) {
     const count = routes.length;
     const control = w.document.createElement("button");
     control.dataset.action = name;
@@ -1074,6 +1074,44 @@ test("hub-only actions are disabled with a reason while the hub is unavailable a
     await new Promise((resolve) => setTimeout(resolve, 20));
     assert.deepEqual(routes.slice(count).filter((route) => route !== "/v1/status"), [], `${name} is blocked offline`);
   }
+});
+
+test("a replica's folder header offers Open in Finder alone: no Enable gallery and no folder actions menu", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-replica-folder-header-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), platform: "darwin", role: "replica", hubUnavailable: false, hubName: "Casa", hub: "http://127.0.0.1:49999" };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [{ ...volume, selected: 1, gallery: false }] };
+        if (args.route === "/v1/machines") return { machines: [] };
+        if (args.route.startsWith("/v1/browse")) return { entries: [], next: null };
+        if (args.route.startsWith("/v1/activity") || args.route.startsWith("/v1/history")) return { versions: [], next: null };
+        return {};
+      },
+    },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector('.folder-card[data-action="folder-detail"]'));
+  w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
+  await until(() => w.document.querySelector(".detail-head .heading-actions") && w.document.body.getAttribute("aria-busy") === "false");
+  const actions = w.document.querySelector(".detail-head .heading-actions");
+  assert.deepEqual([...actions.querySelectorAll("[data-action]")].map((el) => el.dataset.action), ["open"]);
+  assert.match(actions.textContent, /Open in Finder/);
+  assert.equal(actions.querySelector("details"), null, "only the hub decides that a folder is a gallery");
+  assert.equal(w.document.querySelector('[data-action="enable-gallery"]'), null);
 });
 
 test("offline labels: this machine reads Offline, saved machines say last known and nothing-saved screens say so", async (t) => {
@@ -1300,7 +1338,7 @@ test("hub-only controls follow the hub's availability and a status-less 'Hub una
   };
   w.eval(`(async()=>{${script}\n})()`);
   await until(() => w.document.querySelector(".folder-card"));
-  const extra = ["restore", "review-conflict", "enable-gallery", "disconnect-hub"].map((name) => {
+  const extra = ["restore", "review-conflict", "disconnect-hub"].map((name) => {
     const control = w.document.createElement("button");
     control.dataset.action = name;
     w.document.body.append(control);
@@ -3374,7 +3412,28 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     ["files", "recent"],
   );
   assert.ok(w.document.querySelector('[data-action="open"]'));
+  const folderMenu = w.document.querySelector(".heading-actions details.folder-actions-menu");
+  assert.equal(folderMenu.querySelector("summary").getAttribute("aria-label"), "Folder actions");
+  assert.deepEqual(
+    [...folderMenu.querySelectorAll(".menu-items [data-action]")].map((el) => el.dataset.action),
+    ["enable-gallery", "rename-share", "edit-ignore"],
+    "configuration actions live in the menu",
+  );
+  assert.deepEqual(
+    [...w.document.querySelectorAll(".heading-actions > [data-action]")].map((el) => el.dataset.action),
+    ["open"],
+    "the header keeps the daily action alone",
+  );
+  folderMenu.open = true;
+  folderMenu.querySelector('[data-action="rename-share"]').dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(folderMenu.open, false, "Escape closes the menu");
+  assert.equal(w.document.activeElement, folderMenu.querySelector("summary"), "and returns focus to its summary");
+  folderMenu.open = true;
+  w.document.querySelector('[data-action="back-folders"]').focus();
+  assert.equal(folderMenu.open, false, "focus leaving the menu closes it");
+  folderMenu.open = true;
   w.document.querySelector('[data-action="enable-gallery"]').click();
+  assert.equal(folderMenu.open, false, "the menu closes on selection");
   assert.match(
     w.document.querySelector("#dialog-content").textContent,
     /Files and synchronization stay the same/,
@@ -3394,6 +3453,11 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     w.document.querySelector('.heading-actions [data-action="gallery-mode"]')
       .textContent,
     /View folder/,
+  );
+  assert.deepEqual(
+    [...w.document.querySelectorAll(".heading-actions .folder-actions-menu [data-action]")].map((el) => el.dataset.action),
+    ["rename-share", "edit-ignore"],
+    "a gallery folder keeps Rename and .arcaignore… in the menu, without Enable gallery",
   );
 
   assert.notEqual(

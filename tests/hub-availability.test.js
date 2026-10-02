@@ -173,7 +173,6 @@ test("hub-only actions answer at once while the hub is known to be unavailable",
         conflictRev: rev,
       },
     ],
-    ["/v1/gallery/link", { volume: volume.id }],
   ])
     await within(3000, () =>
       assert.rejects(replica.api(route, body), {
@@ -806,30 +805,6 @@ test("an event wait refused by a LAN policy change answers 412 like other LAN re
   const refused = await waiting;
   assert.equal(refused.status, 412);
   assert.equal((await refused.json()).error, "LAN access disabled");
-});
-
-test("linking a gallery from a replica saves the folder's gallery flag", async (t) => {
-  const { hub, volume, connect } = await setup(t);
-  const replica = await connect("gallery-link");
-  await replica.sync();
-  assert.deepEqual(
-    await replica.api("/v1/gallery/link", { volume: volume.id }),
-    {
-      ok: true,
-    },
-  );
-  const saved = JSON.parse(
-    fs.readFileSync(replica.engine.store.configPath, "utf8"),
-  );
-  assert.equal(
-    saved.catalog.find((folder) => folder.id === volume.id).gallery,
-    true,
-  );
-  assert.ok(
-    hub.engine.store.db
-      .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
-      .get(volume.id),
-  );
 });
 
 test("an interrupted push never proposes again what the hub already accepted", async (t) => {

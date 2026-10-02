@@ -319,6 +319,7 @@ test("replicas render selected local previews and never ask the hub for photos t
       "a replica keeps the photo only in its working copy",
     );
     assert.equal(replica.engine.status().volumes[0].gallery, true);
+    assert.equal(JSON.parse(fs.readFileSync(replica.engine.store.configPath, "utf8")).catalog.find((folder) => folder.id === f.v.id).gallery, true, "the replica keeps the hub's gallery flag in its saved catalog");
     assert.equal((await call(f.route)).items[0].path, "photo.jpg");
     await replica.engine.gallery.background;
     assert.ok(
