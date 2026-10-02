@@ -188,6 +188,7 @@ export default function App() {
     [name, setName] = useState(Platform.OS === "ios" ? "iPhone" : "Android");
   const [folder, setFolder] = useState(null),
     [entries, setEntries] = useState([]),
+    [ignorePolicy, setIgnorePolicy] = useState({ id: null, text: "" }),
     [search, setSearch] = useState(""),
     [searchOpen, setSearchOpen] = useState(false),
     [fileView, setFileView] = useState("files"),
@@ -627,6 +628,33 @@ export default function App() {
       folder.gallery ||
       catalog?.volumes?.find((v) => v.id === folder.id)?.gallery
     );
+  const policyEntry = entries.find((entry) => entry.path === ".arcaignore");
+  useEffect(() => {
+    const replica = engine.current;
+    if (!(photoFolder || fileView === "gallery") || !folder || !replica)
+      return undefined;
+    const id = folder.id;
+    let active = true;
+    (async () => {
+      const uri = replica.files.work(replica.scope, id, ".arcaignore");
+      const stat = await replica.files.stat(uri);
+      const text =
+        stat && !stat.directory && stat.size <= 65536
+          ? await replica.files.text(uri)
+          : "";
+      if (active) setIgnorePolicy({ id, text });
+    })().catch(() => active && setIgnorePolicy({ id, text: "" }));
+    return () => {
+      active = false;
+    };
+  }, [
+    photoFolder,
+    fileView,
+    folder?.id,
+    status.last,
+    policyEntry?.mtime,
+    policyEntry?.size,
+  ]);
   const onboarding = (!connection && !catalog) || !!prefs.onboarding;
   const onboardingStep = connection
     ? "folders"
@@ -1161,6 +1189,7 @@ export default function App() {
             : null
         }
         notice={timelineNotice}
+        ignoreText={ignorePolicy.id === folder.id ? ignorePolicy.text : ""}
         folderName={folder.name}
         resolveVideo={resolveVideo}
         history={(item) => openFileDetail(item)}

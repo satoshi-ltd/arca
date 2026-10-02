@@ -37,6 +37,7 @@ import {
 } from "./gallery-timeline";
 import {
   hubGallery,
+  folderIgnored,
   hubPhotoInfo,
   localGallery,
   NO_LOCAL_GALLERY,
@@ -158,6 +159,7 @@ export function FolderGallery({
   loading,
   uploads,
   notice,
+  ignoreText,
   refreshKey,
   onRail,
   scrollRef,
@@ -373,9 +375,10 @@ export function FolderGallery({
     [online, entries, gallery, known],
   );
   const base = gallery && (online || !local.total) ? gallery : local;
+  const ignored = useMemo(() => folderIgnored(ignoreText), [ignoreText]);
   const source = useMemo(
-    () => (base.local ? base : withLocalOnly(base, entries, known)),
-    [base, entries, known],
+    () => (base.local ? base : withLocalOnly(base, entries, known, ignored)),
+    [base, entries, known, ignored],
   );
   const monthCache = useRef(new Map());
   const months = useMemo(() => {
@@ -575,8 +578,12 @@ export function FolderGallery({
     [withHub],
   );
   const candidates = useMemo(
-    () => previewCandidates(entries, (path) => builtinExcluded(path)),
-    [entries],
+    () =>
+      previewCandidates(
+        entries,
+        (path) => builtinExcluded(path) || (online && !!ignored?.(path)),
+      ),
+    [entries, online, ignored],
   );
   const candidateKey = useMemo(
     () => candidates.map((item) => `${item.path}:${item.signature}`).join("\n"),

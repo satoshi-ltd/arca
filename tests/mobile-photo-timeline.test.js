@@ -13,7 +13,7 @@ import {
   toggleZoom,
   zoomAround,
 } from "../apps/mobile/src/viewer-gestures.js";
-import { hubGallery, hubPhotoInfo, localGallery, withLocalOnly } from "../apps/mobile/src/hub-gallery.js";
+import { folderIgnored, hubGallery, hubPhotoInfo, localGallery, withLocalOnly } from "../apps/mobile/src/hub-gallery.js";
 import {
   galleryLayout,
   galleryWindow,
@@ -1147,6 +1147,29 @@ test("photos that exist only on the phone join the hub index by their own date a
   assert.equal(paths.filter((path) => path === "listed.jpg").length, 1);
   const empty = withLocalOnly({ timeline: [], total: 0, months: {}, indexing: false }, [entries[2]], new Set());
   assert.equal(empty.total, 1, "an empty hub index still shows the phone's own photo");
+});
+
+test("photos the folder's .arcaignore excludes never join the online gallery as phone-only", () => {
+  const hub = { timeline: [], total: 0, months: {}, indexing: false };
+  const mtime = Date.UTC(2026, 8, 30, 12);
+  const entry = (path) => ({ path, uri: `file:///${path}`, size: 1, mtime });
+  const entries = [
+    entry("keep.jpg"),
+    entry("private/secret.jpg"),
+    entry("Raw/IMG_1.CR2.jpg"),
+    entry("clips/draft.mp4"),
+    entry("clips/final.mp4"),
+    entry("screenshot.png"),
+  ];
+  const ignored = folderIgnored("private/\n*.CR2.jpg\nclips/draft.*\n# comment\n*.png\n!screenshot.png\n");
+  const merged = withLocalOnly(hub, entries, new Set(), ignored);
+  const paths = Object.values(merged.months).flatMap((month) => month.items.map((item) => item.path)).sort();
+  assert.deepEqual(paths, ["clips/final.mp4", "keep.jpg", "screenshot.png"]);
+  assert.equal(merged.total, 3);
+  assert.equal(folderIgnored(""), null);
+  assert.equal(folderIgnored("   \n"), null, "an empty policy ignores nothing");
+  const everything = withLocalOnly(hub, entries, new Set(), null);
+  assert.equal(everything.total, 6, "without a policy only the fixed list filters");
 });
 
 test("a merged gallery keeps paging the hub months and never asks the hub for a month only the phone has", () => {

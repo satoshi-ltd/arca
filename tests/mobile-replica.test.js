@@ -14,6 +14,7 @@ import {
 } from "../apps/mobile/src/validation.js";
 import { galleryConfig } from "../apps/mobile/src/gallery.js";
 import { offlineFileHistory } from "../apps/mobile/src/file-history.js";
+import { folderIgnored, withLocalOnly } from "../apps/mobile/src/hub-gallery.js";
 import { viewKey, warmViews } from "../apps/mobile/src/remote-views.js";
 import { scopedActivity } from "../packages/core/scoped-activity.js";
 import { TransferSession, shouldStopSync } from "../apps/mobile/src/transfer-session.js";
@@ -3067,6 +3068,31 @@ test("forced verification survives a yielded folder with a recent inventory and 
   assert.ok(rehashed > 0, "continuation must bypass the verified hash cache");
   assert.equal(r.fullScanPending.size, 0);
   assert.equal(await f.store.get(`fullScan:${r.scope}`), r.lastFullScan);
+});
+
+test("the phone's own photos that the synchronized .arcaignore excludes stay out of the online gallery", async (t) => {
+  const f = await fixture(t);
+  const r = f.replica;
+  fs.writeFileSync(path.join(f.volume.path, ".arcaignore"), "private/\n*.tmp.jpg\n");
+  fs.writeFileSync(path.join(f.volume.path, "hub-photo.jpg"), "from the hub");
+  await f.daemon.engine.cycle();
+  await r.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const work = (name) => f.files.work(r.scope, f.volume.id, name);
+  assert.equal(fs.existsSync(work(".arcaignore")), true, "the policy file reached the phone");
+  const text = await f.files.text(work(".arcaignore"));
+  const mtime = Date.now();
+  const entries = ["keep.jpg", "private/secret.jpg", "edit.tmp.jpg", "hub-photo.jpg"].map((name) => ({
+    path: name,
+    uri: `file:///${name}`,
+    size: 1,
+    mtime,
+  }));
+  const hub = { timeline: [], total: 0, months: {}, indexing: false };
+  const known = new Set(["hub-photo.jpg"]);
+  const shown = (state) => Object.values(state.months).flatMap((month) => month.items.map((item) => item.path)).sort();
+  assert.deepEqual(shown(withLocalOnly(hub, entries, known, folderIgnored(text))), ["keep.jpg"]);
+  assert.deepEqual(shown(withLocalOnly(hub, entries, known, null)), ["edit.tmp.jpg", "keep.jpg", "private/secret.jpg"], "without the policy the phone-only photos would all appear");
 });
 
 test("a folder that fails every cycle does not keep scheduled cycles forcing full verification", async (t) => {

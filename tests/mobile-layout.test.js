@@ -513,7 +513,11 @@ test("the gallery windows rows over the whole timeline and only ever loads by sc
   assert.match(app, /<FolderGallery[^>]*offline=\{!!status\.offline\}/, "paired is not online: the gallery needs the offline state");
   assert.match(gallery, /const linked = connected && !offline;/);
   assert.match(gallery, /const base = gallery && \(online \|\| !local\.total\) \? gallery : local;/);
-  assert.match(gallery, /base\.local \? base : withLocalOnly\(base, entries, known\)/, "photos only on the phone join the hub index");
+  assert.match(gallery, /base\.local \? base : withLocalOnly\(base, entries, known, ignored\)/, "photos only on the phone join the hub index");
+  assert.match(gallery, /builtinExcluded\(path\) \|\| \(online && !!ignored\?\.\(path\)\)/, "ignored photos get no preview work while the hub index is shown");
+  assert.match(app, /photoFolder \|\| fileView === "gallery"/, "ordinary folders' Gallery tab reads the policy too");
+  assert.match(app, /stat\.size <= 65536/, "a policy the sync engine would refuse is not applied");
+  assert.match(app, /ignoreText=\{ignorePolicy\.id === folder\.id \? ignorePolicy\.text : ""\}/, "another folder's policy is never applied");
   assert.match(gallery, /online\s*\?\s*NO_LOCAL_GALLERY\s*:\s*localGallery\(entries, \{ cached: gallery, rows: known \}\)/, "offline photos keep the cached dates and the phone index revisions, and online never builds the local gallery");
   assert.doesNotMatch(gallery, /current\.source !== current\.gallery/, "a merged source is a new object; remote mode is online with a hub gallery");
   assert.match(gallery, /neededMonth\(\s*current\.layout,\s*current\.source\.months/, "paging reads the merged months so local-only months never ask the hub");
@@ -847,7 +851,7 @@ test("an open photo folder prepares every local preview in the background and sa
   const thumbnails = read("gallery-thumbnails.js");
   const components = read("components.jsx");
   const has = (source, ...pieces) => pieces.forEach((piece) => assert.ok(source.includes(piece), piece));
-  has(gallery, "const candidates = useMemo(", "previewCandidates(entries, (path) => builtinExcluded(path))");
+  has(gallery, "const candidates = useMemo(", "(path) => builtinExcluded(path) || (online && !!ignored?.(path))");
   has(gallery, "await prepareThumbnails( candidates, thumbnailProgress.current.value, backgroundIo,", "candidates, 3, (entry) => { if (active) { failedPaths.current.add(entry.path); queueFlush(); } }, true, );");
   assert.match(gallery, /\}, \[candidateKey, store, scope, volume, density, attempt, knownLoaded, online\]\);/, "a scroll never restarts the background pass, and it waits for the phone index");
   has(gallery, "if (density === \"years\" || !candidates.length || !knownLoaded) {");

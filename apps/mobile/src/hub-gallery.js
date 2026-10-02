@@ -1,6 +1,13 @@
 import { mergeTimeline, mediaDate } from "./gallery-timeline.js";
 import { mediaKind } from "../../../packages/core/gallery-date.js";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
+import ignore from "../../../packages/vendor/ignore/index.cjs";
+
+export function folderIgnored(text) {
+  if (!text || !text.trim()) return null;
+  const policy = ignore({ ignorecase: true }).add(text);
+  return (path) => policy.ignores(path);
+}
 
 const compact = (item) => ({
   path: item.path,
@@ -164,7 +171,7 @@ export function localGallery(entries, { cached, rows } = {}) {
   };
 }
 const before = (a, b) => `${a.date || ""}|${a.path}` > `${b.date || ""}|${b.path}`;
-export function withLocalOnly(state, entries, known) {
+export function withLocalOnly(state, entries, known, ignored = null) {
   if (!known) return state;
   const listed = new Set(
     Object.values(state.months).flatMap((entry) => entry.items.map((item) => item.path)),
@@ -174,6 +181,7 @@ export function withLocalOnly(state, entries, known) {
       !entry.directory &&
       mediaKind(entry.path) &&
       !builtinExcluded(entry.path) &&
+      !ignored?.(entry.path) &&
       !known.has(entry.path) &&
       !listed.has(entry.path),
   );

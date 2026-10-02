@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.81 — 2026-10-02
+
+- On the phone, photos and videos that the folder's .arcaignore excludes no longer show up in the online gallery as "only on this phone".
+
+Needs: native build
+
 ## 0.6.80 — 2026-10-02
 
 - On the phone, one folder that keeps failing no longer makes every sync re-check all the other folders' files from scratch: the hourly full check now counts as done once the healthy folders have finished it.
