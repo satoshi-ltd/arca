@@ -276,7 +276,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
                 <Text style={s.eyebrow}>SELECTED FOLDERS</Text>
                 {!destinations.length && (
                   <Text style={s.text}>
-                    Select a folder in Folders, then share the files again.
+                    Start syncing a folder in Folders, then share the files again.
                   </Text>
                 )}
                 <View style={s.group}>

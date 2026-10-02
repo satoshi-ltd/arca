@@ -71,12 +71,12 @@ export class Gallery {
         .catalog?.volumes.find((v) => v.id === volume);
       if (!r.client.state().connection?.linked || !remote)
         throw new Error(
-          "Connect to the hub and select an existing shared folder.",
+          "Connect to the hub and start syncing an existing shared folder.",
         );
       if (remote.policyError) throw new Error(remote.policyError);
       const folder = await r.store.folder(r.scope, volume);
       if (!folder?.selected)
-        throw new Error("Select and synchronize this folder first.");
+        throw new Error("Start syncing this folder first.");
       const permission = await this.permission(!!options.videos);
       if (
         options.albumId &&
@@ -447,7 +447,7 @@ export class Gallery {
             );
           if (!prior.rev && !(await this.acknowledged(folder.id, prior)))
             throw new Error(
-              "The previous photo revision could not be verified.",
+              "The previous photo version could not be verified.",
             );
           prepared.base = prior.rev;
           if (prior.hash === prepared.hash && prior.size === prepared.size) {

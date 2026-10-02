@@ -15,7 +15,7 @@ export function recoverBackup(sourceHome, targetHome) {
       .prepare("SELECT row FROM backup_history ORDER BY rev")
       .all()
       .map((r) => JSON.parse(r.row));
-    if (!history.length) fail("Backup has no archived revisions");
+    if (!history.length) fail("Backup has no archived versions");
     for (const row of history)
       if (
         row.hash &&

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.70 — 2026-10-02
+
+- Desktop, web and phone now use the same words: Devices (not Machines, and no Replica label), Start syncing and Stop syncing (not Select, Keep a local copy and Unlink), Version (not revision) and Erase (not Destroy); on the hub, a machine's Disconnect is now Remove device.
+- The daemon's own messages, the tray and the update notices follow the same words.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.69 — 2026-10-02
 
 - On Windows, if the installer fails after Arca closes during an update, a small background watcher now starts the sync service again instead of leaving it stopped until you reopen Arca.

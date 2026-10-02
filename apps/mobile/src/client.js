@@ -182,7 +182,7 @@ export function createClient({
   function validateCatalog(data, id) {
     if (data?.protocol !== 1 || data.id !== id || !Array.isArray(data.volumes))
       throw new Error(
-        "The hub identity or protocol changed. Reconnect from Machines.",
+        "The hub identity or protocol changed. Reconnect from Devices.",
       );
     for (const volume of data.volumes) {
       if (

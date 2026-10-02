@@ -588,7 +588,7 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     let service = launch_agent_loaded()?;
     let running = running_daemon(&state)?.is_some();
     if !service && !running && request("/v1/status", "GET", None).await.is_ok() {
-        return Err("An Arca daemon this app did not start is serving this machine. Stop it before updating.".into());
+        return Err("An Arca daemon this app did not start is serving this device. Stop it before updating.".into());
     }
     // The daemon executes the runtime inside the installation being replaced.
     if service || running {
@@ -654,7 +654,7 @@ fn main() {
                 .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
                 .icon_as_template(true)
                 .show_menu_on_left_click(false)
-                .tooltip("Arca · your files, on your machines")
+                .tooltip("Arca · your files, on your devices")
                 .menu(&menu)
                 .on_tray_icon_event(|tray,event| {
                     if let tauri::tray::TrayIconEvent::Click {button:tauri::tray::MouseButton::Left,button_state:tauri::tray::MouseButtonState::Up,position,..}=event {

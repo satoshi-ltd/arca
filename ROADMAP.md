@@ -26,27 +26,24 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-VOCABULARY** — One word for each thing
-  `ui · agent · normal`
-  accept: the board.
 - **FOLDER-LAST-CHANGE** — The phone's folder summary knows its newest accepted revision
   `feature · agent · low`
   accept: the folder detail reads the newest activity row of the folder (`/v1/activity?volume=…&limit=1`, the saved view offline) and exposes its time, path and author to the summary, reusing the Recent cache when it has it; a replica test covers online, offline and a folder with no revisions. The interface follows board UI-FOLDER-STATS.
 - **UI-FOLDER-STATS** — A folder summary that adds to its title
   `ui · agent · normal · depends: FOLDER-LAST-CHANGE`
-  accept: the board, with the words UI-VOCABULARY has set by then (Version history, Device).
+  accept: the board, using the words the apps already use (Version history, Device).
 - **LICENSE-METADATA** — State the license in every manifest and image
   `chore · agent · low`
   accept: `apps/desktop/package.json`, `apps/mobile/package.json`, the Rust `Cargo.toml`, the Docker image label and `deploy/umbrel/arca/umbrel-app.yml` name the PolyForm Strict License (or point to `LICENSE`) without breaking `npm ci`, `cargo` or the Umbrel lint; a test lists every manifest.
 - **COPY-APP-VOICE** — Plain wording in the cold dialogs and Settings
-  `chore · agent · low · depends: UI-VOCABULARY`
-  accept: the strings a copy review flagged are rewritten in plain English with tests: "Destroy this hub?", "The reply is JSON: enter the value of code", the web sign-in hint that names `arca web-code` (it needs the Docker form in a container), "The daemon must support file browsing", the local-network "Files and credentials are not encrypted", and the pair dialog that mentions only the desktop; the vocabulary follows UI-VOCABULARY.
-- **SET-OLDER-REVISIONS-COUNT** — Settings' Older revisions counts only older revisions
+  `chore · agent · low`
+  accept: the strings a copy review flagged are rewritten in plain English with tests: "Erase this hub?", "The reply is JSON: enter the value of code", the web sign-in hint that names `arca web-code` (it needs the Docker form in a container), "The daemon must support file browsing", the local-network "Files and credentials are not encrypted", and the pair dialog that mentions only the desktop; the vocabulary stays the one SPEC sets.
+- **SET-OLDER-REVISIONS-COUNT** — Settings' Older versions counts only older revisions
   `bug · agent · low`
-  accept: the number in Settings → History excludes each file's current revision and current deletions (today `status.historyRevisions` counts every revision, so a hub with 100 untouched files reads "100 kept" under Older revisions); a daemon test with current and superseded revisions, and SPEC's wording follows.
+  accept: the number in Settings → History excludes each file's current revision and current deletions (today `status.historyRevisions` counts every revision, so a hub with 100 untouched files reads "100 kept" under Older versions); a daemon test with current and superseded revisions, and SPEC's wording follows.
 - **DESK-CLEANUP-RECOUNT** — Editing a cleanup field after the count goes back to counting
   `feature · agent · low`
-  accept: in the Clean up older revisions dialog, editing either field after See the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen; a JSDOM test.
+  accept: in the Clean up older versions dialog, editing either field after See the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen; a JSDOM test.
 - **NAT-REVEAL-FILE** — Show a file in its own folder on Windows and Linux
   `feature · agent · low`
   accept: `open_file` with `reveal` works on every platform (Windows `explorer /select,<path>`, Linux the file's parent directory) and the file detail's Show in folder, and the photo viewer's, open the file's own folder instead of the shared folder's root; a Rust test next to the existing `open_file` code; native change, so a desktop build and a maintainer `verify` on real Windows and Linux follow.
@@ -238,7 +235,7 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
   accept: the desktop folder browser keeps the rows it has and appends the next cursor page instead of replacing them, up to a bounded number of rows, and typed search and scroll survive; History and a file's history keep appending; JSDOM tests cover the three lists. The interface follows board UI-DESK-FILES-PAGING.
 - **DESIGN-COVERAGE** — Draw the shipped views the design kit still lacks
   `chore · agent · low`
-  accept: `design/mobile.html` draws Files and Recent of an ordinary folder, the file detail, History, Machines (connected and unpaired), Settings, the incoming share sheet, the viewer and the approval sheet as the app renders them; `design/desktop.html` draws the file detail, the gallery viewer with Info, the Daemon stopped page, web access, the approval dialog, Settings → Network and the danger zone; the design tests keep passing and no board is added.
+  accept: `design/mobile.html` draws Files and Recent of an ordinary folder, the file detail, History, Devices (connected and unpaired), Settings, the incoming share sheet, the viewer and the approval sheet as the app renders them; `design/desktop.html` draws the file detail, the gallery viewer with Info, the Daemon stopped page, web access, the approval dialog, Settings → Network and the danger zone; the design tests keep passing and no board is added.
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.

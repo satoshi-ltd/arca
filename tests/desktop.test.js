@@ -1118,7 +1118,7 @@ test("a replica's folder header offers Open in Finder alone: no Enable gallery a
   assert.deepEqual(
     [...w.document.querySelectorAll(".detail-side .section-label")].map((label) => label.textContent),
     ["Local destination", "Copies"],
-    "a replica's side column has no Revision history panel",
+    "a replica's side column has no Version history panel",
   );
 });
 
@@ -1155,10 +1155,10 @@ test("an empty Folders shows its one action in the header and the empty state on
 
   const replica = { role: "replica", hub: "http://127.0.0.1:49999", hubName: "Casa" };
   const withRows = await open(replica, [available]);
-  await until(() => withRows.querySelector(".folder-card.unselected") && /or select one below/.test(withRows.querySelector(".empty").textContent));
+  await until(() => withRows.querySelector(".folder-card.unselected") && /or start syncing one below/.test(withRows.querySelector(".empty").textContent));
   assert.deepEqual(header(withRows), ["add"], "Choose folders once, in the header");
   assert.equal(withRows.querySelector(".empty button"), null, "the empty state has no button of its own");
-  assert.match(withRows.querySelector(".empty").textContent, /Pick folders from your hub, or select one below\. Full copies/);
+  assert.match(withRows.querySelector(".empty").textContent, /Pick folders from your hub, or start syncing one below\. Full copies/);
   assert.ok(withRows.querySelector('.folder-card.unselected [data-action="add"]'), "the available row keeps its Select");
 
   const bare = await open(replica, []);
@@ -1307,7 +1307,7 @@ test("Settings offers Clean up…, and the dialog shows the count before Apply c
   const section = control.closest("section");
   assert.equal(section.querySelector(".section-label").textContent, "History");
   assert.equal(control.textContent.trim(), "Clean up…");
-  assert.equal(section.querySelector(".setting-row strong").textContent, "Older revisions");
+  assert.equal(section.querySelector(".setting-row strong").textContent, "Older versions");
   assert.match(section.querySelector(".setting-row p").textContent, new RegExp(`^${before} kept across your folders\\. Each folder decides how long it keeps them\\.$`));
   assert.equal(
     section.querySelector("p.hint").textContent,
@@ -1318,9 +1318,9 @@ test("Settings offers Clean up…, and the dialog shows the count before Apply c
   control.click();
   await until(() => w.document.querySelector("#dialog").open && w.document.querySelector("#dialog-days"));
   const dialog = w.document.querySelector("#dialog");
-  assert.equal(dialog.querySelector("h2").textContent, "Clean up older revisions");
+  assert.equal(dialog.querySelector("h2").textContent, "Clean up older versions");
   assert.equal(dialog.querySelector(".modal-title p").textContent, "Nothing is removed until you apply. See the count first.");
-  assert.equal(dialog.querySelector('label[for="dialog-days"]').textContent, "Remove revisions older than (days)");
+  assert.equal(dialog.querySelector('label[for="dialog-days"]').textContent, "Remove versions older than (days)");
   assert.equal(dialog.querySelector('label[for="dialog-versions"]').textContent, "But always keep the last (versions per file)");
   assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "See the count");
   w.document.querySelector("#dialog-days").value = "0";
@@ -1419,7 +1419,7 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   assert.ok(own.querySelector(".pill.wa"), "a warning pill, never Syncing or a green state");
   assert.equal(other.querySelector(".pill").textContent.trim(), "Offline");
   assert.match(other.querySelector(".connection-line").textContent, / · last known$/);
-  assert.match(w.document.querySelector("#content").textContent, /Offline · showing saved machine information · last known/);
+  assert.match(w.document.querySelector("#content").textContent, /Offline · showing saved device information · last known/);
   const openFile = async (file, expected, gone = /^$/) => {
     const forced = w.document.createElement("button");
     forced.dataset.action = "activity-file";
@@ -1429,14 +1429,14 @@ test("offline labels: this machine reads Offline, saved machines say last known 
     await until(() => body().includes(file) && expected.test(body()) && !gone.test(body()));
     forced.remove();
   };
-  await openFile("nothing-saved.txt", /No saved revisions for this file/);
+  await openFile("nothing-saved.txt", /No saved versions for this file/);
   assert.match(body(), /Offline\. Connect to the hub to load its history\./);
-  assert.doesNotMatch(body(), /Your local file is still available|No retained revisions/, "no local row, so it does not promise one");
+  assert.doesNotMatch(body(), /Your local file is still available|No retained versions/, "no local row, so it does not promise one");
   await openFile("local-only.txt", /Your local file is still available/);
-  assert.match(body(), /No saved revisions for this file/);
+  assert.match(body(), /No saved versions for this file/);
   assert.match(body(), /Local copy/);
-  await openFile("empty-saved.txt", /No saved revisions for this file/, /Local copy|Your local file is still available/);
-  assert.doesNotMatch(body(), /Your local file is still available|No retained revisions/);
+  await openFile("empty-saved.txt", /No saved versions for this file/, /Local copy|Your local file is still available/);
+  assert.doesNotMatch(body(), /Your local file is still available|No retained versions/);
   const recent = () => w.document.querySelector("#content").textContent;
   const cell = () => w.document.querySelector("#content .folder-stats .stat:nth-child(3) strong")?.textContent;
   const openRecent = async () => {
@@ -1448,21 +1448,21 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   };
   await openRecent();
   await until(() => /Offline\. Connect to the hub to load its history\./.test(recent()));
-  assert.match(recent(), /No saved revisions/);
-  assert.equal(cell(), "No saved revisions");
-  assert.doesNotMatch(recent(), /No revisions yet/);
+  assert.match(recent(), /No saved versions/);
+  assert.equal(cell(), "No saved versions");
+  assert.doesNotMatch(recent(), /No versions yet/);
   const refresh = w.document.createElement("button");
   refresh.dataset.action = "refresh";
   w.document.body.append(refresh);
   saved = false;
   refresh.click();
-  await until(() => /No revisions yet/.test(recent()));
+  await until(() => /No versions yet/.test(recent()));
   assert.equal(cell(), "Not yet", "a live empty answer is not 'saved'");
   assert.doesNotMatch(recent(), /Connect to the hub to load its history/);
   saved = true;
   refresh.click();
   await until(() => /Offline\. Connect to the hub to load its history\./.test(recent()));
-  assert.equal(cell(), "No saved revisions", "equal empty pages still repaint when only the saved flag changes");
+  assert.equal(cell(), "No saved versions", "equal empty pages still repaint when only the saved flag changes");
   await until(() => w.document.body.getAttribute("aria-busy") !== "true");
   await new Promise((resolve) => setTimeout(resolve, 50));
 });
@@ -2048,7 +2048,7 @@ test("unlink confirms and completes while a native background status read is pen
   const q = (selector) => w.document.querySelector(selector);
   q('[data-action="unselect"]').click();
   await until(() => q("#dialog").open);
-  assert.match(q("#dialog-title").textContent, /Unlink.*Unlink example/);
+  assert.match(q("#dialog-title").textContent, /Stop syncing.*Unlink example/);
   assert.equal(
     mac.engine.store.volume(folder.id).selected,
     1,
@@ -2148,7 +2148,7 @@ test("a replica shows full-backup progress, waits quietly for the hub and never 
   const q = (selector) => w.document.querySelector(selector);
   await until(() => q("#backup-completion"));
   assert.equal(q("#backup-summary").textContent.trim(), "Backing up…");
-  assert.match(q("#backup-completion").textContent, /Copying history · 1,203 revisions/);
+  assert.match(q("#backup-completion").textContent, /Copying history · 1,203 versions/);
   assert.match(q("#backup-completion").textContent, /Running/);
   backup = { ...backup, progress: null, waiting: true };
   await poll();
@@ -2294,17 +2294,17 @@ test("unlink can also delete the replica files the hub already has", async (t) =
   await until(() => q("#dialog").open);
   const option = q('#dialog [name="deleteFiles"]');
   assert.equal(option.checked, true, "unlinking deletes the verified synced copy by default");
-  assert.equal(q("#submit-dialog").textContent, "Unlink and delete");
+  assert.equal(q("#submit-dialog").textContent, "Stop syncing and delete");
   option.checked = false;
   option.dispatchEvent(new w.Event("change"));
-  assert.equal(q("#submit-dialog").textContent, "Unlink folder");
+  assert.equal(q("#submit-dialog").textContent, "Stop syncing");
   assert.match(q('#dialog label[for="unlink-delete"]').textContent, /^Delete the files on this (Mac|machine)$/);
   assert.ok(q("#dialog").classList.contains("confirmation-dialog"), "an option keeps the compact confirmation");
   assert.equal(q("#cancel-dialog").autofocus, true, "a destructive confirmation opens on Cancel");
   assert.match(q("#dialog").textContent, /The hub keeps the shared folder, its files and history/);
   option.checked = true;
   option.dispatchEvent(new w.Event("change"));
-  assert.equal(q("#submit-dialog").textContent, "Unlink and delete");
+  assert.equal(q("#submit-dialog").textContent, "Stop syncing and delete");
   q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
   await until(() => !q("#dialog").open && bodies.length);
   assert.deepEqual(JSON.parse(JSON.stringify(bodies)), [{ id: folder.id, deleteFiles: true }]);
@@ -2449,7 +2449,7 @@ for (const surface of ["web", "desktop"]) {
       );
       assert.equal(
         w.document.querySelector('[data-view="devices"]').textContent.trim(),
-        "Machines",
+        "Devices",
       );
       w.document.querySelector('[data-view="folders"]').click();
       await until(
@@ -3378,7 +3378,7 @@ test("navigation paints before slow reads, retains updating feedback and ignores
   const releaseDiscovery = hold("/v1/discovery"),
     releaseMachines = hold("/v1/machines");
   nav("devices");
-  await until(() => title() === "Machines");
+  await until(() => title() === "Devices");
   await until(
     () => calls.includes("/v1/discovery") && calls.includes("/v1/machines"),
   );
@@ -3616,9 +3616,9 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     /on hub/,
   );
   const retention = w.document.querySelector(".detail-side .panel #folder-retention");
-  assert.ok(retention, "the hub's control lives in a Revision history panel of the side column");
-  assert.match(retention.closest("section").querySelector(".section-label").textContent, /^Revision history$/);
-  assert.equal(retention.closest(".panel").querySelector("h3").textContent, "Keep older revisions for");
+  assert.ok(retention, "the hub's control lives in a Version history panel of the side column");
+  assert.match(retention.closest("section").querySelector(".section-label").textContent, /^Version history$/);
+  assert.equal(retention.closest(".panel").querySelector("h3").textContent, "Keep older versions for");
   assert.deepEqual(
     [...retention.querySelectorAll("button")].map((option) => option.textContent),
     ["Off", "1 day", "1 week", "30 days", "Forever"],
@@ -3626,7 +3626,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   assert.equal(retention.querySelector(".segmented-compact"), null);
   assert.match(
     retention.closest(".panel").querySelector("p").textContent,
-    /Older revisions of every file in this folder stay restorable for 30 days after a change or deletion; after that, only the current files remain\./,
+    /Older versions of every file in this folder stay restorable for 30 days after a change or deletion; after that, only the current files remain\./,
   );
   assert.equal(
     retention.querySelector('[aria-pressed="true"]').dataset.id,
@@ -3655,7 +3655,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   assert.ok(w.document.querySelector("#dialog.confirmation-dialog"));
   assert.match(
     w.document.querySelector("#dialog-content").textContent,
-    /3 older revisions/,
+    /3 older versions/,
   );
   assert.equal(
     retention.querySelector('[aria-pressed="true"]').dataset.id,
@@ -4157,8 +4157,8 @@ for (const role of ["hub", "replica"])
       assert.equal(daemon.engine.config.needsSetup, true);
       const rail = () =>
         [...w.document.querySelectorAll(".onboarding .steps .step")].map((el) => el.textContent.trim().replace(/^\d+/, ""));
-      assert.deepEqual(rail(), ["This machine", role === "hub" ? "Connect · Not needed" : "Connect", "Folders"]);
-      assert.equal(w.document.querySelector(".onboarding .step.current").textContent.trim().replace(/^\d+/, ""), "This machine", "the access page sits under This machine");
+      assert.deepEqual(rail(), ["This device", role === "hub" ? "Connect · Not needed" : "Connect", "Folders"]);
+      assert.equal(w.document.querySelector(".onboarding .step.current").textContent.trim().replace(/^\d+/, ""), "This device", "the access page sits under This device");
       w.document.querySelector("#setup-back").click();
       await waitFor('[name="name"]');
       assert.equal(w.document.querySelector('[name="name"]').value, "Chosen server");
@@ -4292,7 +4292,7 @@ test("hub danger zone cancels safely and returns to onboarding after local destr
   );
   assert.match(
     w.document.querySelector("#dialog").textContent,
-    /Replicas keep their local files/,
+    /Other devices keep their local files/,
   );
   assert.ok(
     w.document.querySelector("#submit-dialog").classList.contains("danger"),
@@ -5038,8 +5038,8 @@ test("folder copies include linked phone albums without labeling them as replica
     row("phone-fold").querySelector(".tag").textContent,
     "Album source",
   );
-  assert.equal(row("macbook-pro").querySelector(".tag").textContent, "Replica");
-  assert.equal(row("casa").querySelector(".tag").textContent, "This machine");
+  assert.equal(row("macbook-pro").querySelector(".tag"), null, "an ordinary device carries no role label");
+  assert.equal(row("casa").querySelector(".tag").textContent, "This device");
 });
 
 test("the status card shows the last sync only when the machine is not up to date", async (t) => {
@@ -5302,7 +5302,7 @@ test("web admin reads time out into the connection notice while a stalled submis
   await until(() => sent.filter((r) => r === "GET /v1/status").length > 1);
   expire(20000);
   await polled;
-  assert.match(q("#notice").textContent, /Cannot reach this machine/);
+  assert.match(q("#notice").textContent, /Cannot reach this device/);
   assert.equal(q("#dialog").open, true, "the notice does not wait for the dialog");
 
   q("#cancel-dialog").click();
@@ -5316,7 +5316,7 @@ test("web admin reads time out into the connection notice while a stalled submis
   await until(() => daemon.engine.paused && idle());
   assert.match(q("#notice").textContent, /Connection interrupted/);
   assert.equal(daemon.engine.store.volume(v.id).name, "Original");
-  await until(() => !/Cannot reach this machine/.test(q("#notice").textContent));
+  await until(() => !/Cannot reach this device/.test(q("#notice").textContent));
 });
 
 test("Tauri replaces the stale view with Start service when the daemon stops and restores it once the daemon answers", async (t) => {
@@ -5546,13 +5546,13 @@ test("web admin reports gateway failures as an unreachable machine and keeps the
   await until(() => q(".folder-card") && idle());
   answers.set("/v1/status", { status: 502, body: "<html>Bad gateway</html>" });
   await poll();
-  assert.match(q("#notice").textContent, /Cannot reach this machine/);
+  assert.match(q("#notice").textContent, /Cannot reach this device/);
   answers.set("/v1/status", {
     status: 503,
     body: JSON.stringify({ error: "Tailscale access unavailable" }),
   });
   await poll();
-  assert.match(q("#notice").textContent, /Cannot reach this machine/);
+  assert.match(q("#notice").textContent, /Cannot reach this device/);
   assert.doesNotMatch(q("#notice").textContent, /Permission required/);
   answers.delete("/v1/status");
   answers.set("/v1/pause", {
@@ -5961,26 +5961,26 @@ test("the wizard sets up name and role on one page, says who each role is for an
     submit();
     await until(() => w.document.querySelector('[name="name"]') && idle());
     const page = w.document.querySelector("#content");
-    assert.match(page.textContent, /Set up this machine/);
-    assert.deepEqual(steps().map((label) => label.replace(/^\d+/, "")), ["This machine", "Connect", "Folders"]);
-    assert.equal(w.document.querySelector(".onboarding .step.current").textContent.trim().replace(/^\d+/, ""), "This machine");
+    assert.match(page.textContent, /Set up this device/);
+    assert.deepEqual(steps().map((label) => label.replace(/^\d+/, "")), ["This device", "Connect", "Folders"]);
+    assert.equal(w.document.querySelector(".onboarding .step.current").textContent.trim().replace(/^\d+/, ""), "This device");
     assert.equal(w.document.querySelectorAll('[name="role"]').length, 2);
-    assert.match(page.textContent, /Choose this for the machine that stays on: a server, a NAS or a computer that is rarely off\./);
-    assert.match(page.textContent, /Needs a pairing code from the hub\./);
+    assert.match(page.textContent, /Choose this for the device that stays on: a server, a NAS or a computer that is rarely off\./);
+    assert.match(page.textContent, /Needs a pairing code from your hub\./);
     assert.doesNotMatch(page.textContent, /What is /);
     w.document.querySelector('[name="role"][value="hub"]').checked = true;
     submit();
     await until(() => w.document.querySelector('[name="root"]') && idle());
     assert.match(w.document.querySelector("#content").textContent, /A home for your folders/);
-    assert.deepEqual(steps().map((label) => label.replace(/^\d+/, "")), ["This machine", "Connect · Not needed", "Folders"]);
+    assert.deepEqual(steps().map((label) => label.replace(/^\d+/, "")), ["This device", "Connect · Not needed", "Folders"]);
     assert.equal(w.document.querySelector(".onboarding .step.current").textContent.trim().replace(/^\d+/, ""), "Folders");
     w.document.querySelector("#setup-back").click();
     await until(() => w.document.querySelector('[name="role"]') && idle());
-    assert.match(w.document.querySelector("#content").textContent, /Set up this machine/);
+    assert.match(w.document.querySelector("#content").textContent, /Set up this device/);
     assert.ok(w.document.querySelector('[name="role"][value="hub"]').checked, "the chosen role is kept");
     w.document.querySelector("#setup-back").click();
     await until(() => w.document.querySelector("#content").textContent.includes("Many devices") && idle());
-    assert.deepEqual(steps().map((label) => label.replace(/^\d+/, "")), ["This machine", "Connect", "Folders"], "the welcome rail never says Not needed");
+    assert.deepEqual(steps().map((label) => label.replace(/^\d+/, "")), ["This device", "Connect", "Folders"], "the welcome rail never says Not needed");
   } finally {
     w.close();
   }
@@ -6179,12 +6179,12 @@ test("offline file history shows only the saved rows, says they are recent entri
   forced.click();
   await until(() => w.document.querySelectorAll(".file-version-row").length === 3 && w.document.body.getAttribute("aria-busy") === "false");
   const content = w.document.querySelector("#content");
-  assert.match(content.querySelector("#history-list .hint").textContent, /^Showing saved history · recent entries only\. Connect to the hub for updated retention and older revisions\.$/);
+  assert.match(content.querySelector("#history-list .hint").textContent, /^Showing saved history · recent entries only\. Connect to the hub for updated retention and older versions\.$/);
   assert.doesNotMatch(content.textContent, /Offline · showing saved history/);
   content.querySelector('.pagination button[data-action="history-page"]').click();
   await until(() => !content.querySelector(".pagination") && w.document.body.getAttribute("aria-busy") === "false");
   assert.equal(content.querySelectorAll(".file-version-row").length, 3, "an empty continuation keeps the rows already shown");
-  assert.doesNotMatch(content.textContent, /No saved revisions for this file/);
+  assert.doesNotMatch(content.textContent, /No saved versions for this file/);
   assert.match(content.querySelector("#history-list .hint").textContent, /recent entries only/, "an exhausted saved window still means older rows exist on the hub");
   const versions = [...content.querySelectorAll(".file-version-row")];
   assert.ok(versions[0].querySelector(".pill"), "the newest saved row is Current");

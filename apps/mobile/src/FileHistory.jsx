@@ -39,7 +39,7 @@ export function FileHistory({
       )}
       {connected && offline && (
         <Text style={s.caption}>
-          Showing saved revisions. Reconnect to restore or resolve.
+          Showing saved versions. Reconnect to restore or resolve.
         </Text>
       )}
       {target.path.includes(".conflict-") &&
@@ -54,8 +54,7 @@ export function FileHistory({
             </Text>
             {!canResolve && (
               <Text style={s.caption}>
-                Select this folder for synchronization before resolving
-                conflicts.
+                Start syncing this folder before resolving conflicts.
               </Text>
             )}
             <Button
@@ -88,7 +87,7 @@ export function FileHistory({
               ? bytes(current?.size ?? localEntry?.size)
               : "Unknown",
           ],
-          ["Latest revision", current ? `rev ${current.rev}` : "Unknown"],
+          ["Latest version", current ? `rev ${current.rev}` : "Unknown"],
           [
             "Last changed",
             current?.created ? date(current.created) : "Unknown",
@@ -106,7 +105,7 @@ export function FileHistory({
       <View style={s.detailGrid}>
         <View style={s.detailMain}>
           <Section>
-            <Text style={s.eyebrow}>FILE REVISIONS</Text>
+            <Text style={s.eyebrow}>FILE VERSIONS</Text>
             {!!history.versions.length && (
               <View style={s.group}>
                 {history.versions.map((row, index) => (
@@ -160,22 +159,22 @@ export function FileHistory({
             (offline && !error ? (
               <OfflineEmpty
                 icon="history"
-                title="No saved revisions for this file"
-                text="You are offline. Revisions appear here once the hub is reachable."
+                title="No saved versions for this file"
+                text="You are offline. Versions appear here once the hub is reachable."
                 retry={retry}
               />
             ) : (
               !error && (
                 <EmptyState
                   icon="history"
-                  title="No retained revisions"
-                  text="Older revisions appear here when the hub retains them."
+                  title="No retained versions"
+                  text="Older versions appear here when the hub retains them."
                 />
               )
             ))}
           {history.next && (
             <Button
-              label="Load older revisions"
+              label="Load older versions"
               busy={locked}
               onPress={loadMore}
             />

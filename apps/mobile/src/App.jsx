@@ -125,7 +125,7 @@ const date = (value) =>
         hourCycle: "h23",
       })
     : "No completed sync yet";
-const tabs = ["Folders", "Machines", "History", "Settings"];
+const tabs = ["Folders", "Devices", "History", "Settings"];
 export default function App() {
   const system = useColorScheme();
   const [prefs, setPrefs] = useState({});
@@ -637,7 +637,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     if (
-      !["Machines", "Settings", "Folders", "File detail"].includes(screen) ||
+      !["Devices", "Settings", "Folders", "File detail"].includes(screen) ||
       !connected ||
       !replica
     ) {
@@ -707,7 +707,7 @@ export default function App() {
       client.state().catalog?.volumes || [],
     );
     if (target && !selectedIds.includes(target.volume))
-      throw new Error("Select this folder to view its history.");
+      throw new Error("Start syncing this folder to view its history.");
     if (target && !more) {
       let localEntry = null;
       if (
@@ -861,7 +861,7 @@ export default function App() {
         Array.isArray(item)
           ? `Delete ${item.length} photos?`
           : "Delete this photo?",
-        "Deletes the selected photos and their Live Photo resources from the shared gallery for everyone. Originals stay in Photos. Recovery depends on this folder’s revision retention.",
+        "Deletes the selected photos and their Live Photo resources from the shared gallery for everyone. Originals stay in Photos. Recovery depends on this folder’s version retention.",
         () =>
           run(
             async () => {
@@ -1018,8 +1018,8 @@ export default function App() {
   }
   function destroy() {
     confirm(
-      "Destroy this replica?",
-      "Permanently deletes all downloaded folders and unsynced changes, credentials, selections, index, queues and caches. Arca returns to first-run setup. Hub files and history and other machines are kept. This cannot be undone. Works offline. If the hub cannot be reached, remove this machine from its Machines list separately.",
+      "Erase this device?",
+      "Permanently deletes all downloaded folders and unsynced changes, credentials, selections, index, queues and caches. Arca returns to first-run setup. Hub files and history and other devices are kept. This cannot be undone. Works offline. If the hub cannot be reached, remove this device from its Devices list separately.",
       () =>
         run(
           async () => {
@@ -1033,15 +1033,15 @@ export default function App() {
             setHistory({ versions: [], next: null });
             setName(Platform.OS === "ios" ? "iPhone" : "Android");
             setDeviceName(null);
-            setView("Machines");
+            setView("Devices");
           },
           {
-            label: "Destroying replica…",
-            errorTitle: "Could not destroy replica",
+            label: "Erasing this device…",
+            errorTitle: "Could not erase this device",
             destroy: true,
           },
         ),
-      "Destroy replica",
+      "Erase this device",
     );
   }
   function disconnect() {
@@ -1127,7 +1127,7 @@ export default function App() {
   async function resolveConflict(entry, volume = folder?.id) {
     if (!locals.find((f) => f.id === volume)?.selected)
       throw new Error(
-        "Select this folder for synchronization before resolving conflicts.",
+        "Start syncing this folder before resolving conflicts.",
       );
     const original = entry.path.slice(0, entry.path.lastIndexOf(".conflict-"));
     const query = (path) =>
@@ -1155,7 +1155,7 @@ export default function App() {
     const selected = await r.store.folder(r.scope, sheet.volume);
     if (!selected?.selected)
       throw new Error(
-        "Select this folder for synchronization before resolving conflicts.",
+        "Start syncing this folder before resolving conflicts.",
       );
     await r.sync();
     if (r.error) throw new Error(r.error);
@@ -1185,8 +1185,8 @@ export default function App() {
   }
   async function restore(row) {
     confirm(
-      "Restore this revision?",
-      "The hub creates a new revision. It will synchronize to every selected copy.",
+      "Restore this version?",
+      "The hub creates a new version. It will synchronize to every selected copy.",
       () =>
         run(async () => {
           const restored = await client.api("/v1/restore", {
@@ -1678,7 +1678,7 @@ export default function App() {
                             ? date(currentFolder.completed)
                             : "Not yet",
                         ],
-                        ["Revision history", retentionLabel],
+                        ["Version history", retentionLabel],
                       ].map(([label, value]) => (
                         <View key={label} style={s.statCell}>
                           <Text style={s.caption}>{label}</Text>
@@ -1702,8 +1702,8 @@ export default function App() {
                             changes.
                           </Text>
                           <Button
-                            label="Open Machines"
-                            onPress={() => setView("Machines")}
+                            label="Open Devices"
+                            onPress={() => setView("Devices")}
                           />
                         </Card>
                       )}
@@ -1926,7 +1926,7 @@ export default function App() {
                                       <Text style={[s.heading, s.flex]}>
                                         {name}
                                       </Text>
-                                      <Tag variant="self">This machine</Tag>
+                                      <Tag variant="self">This device</Tag>
                                     </View>
                                     {(machines || [])
                                       .filter(
@@ -1957,13 +1957,9 @@ export default function App() {
                                           <Text style={[s.heading, s.flex]}>
                                             {m.name}
                                           </Text>
-                                          <Tag>
-                                            {m.albumFolderIds?.includes(
-                                              folder.id,
-                                            )
-                                              ? "Album source"
-                                              : "Replica"}
-                                          </Tag>
+                                          {m.albumFolderIds?.includes(
+                                            folder.id,
+                                          ) && <Tag>Album source</Tag>}
                                         </View>
                                       ))}
                                   </View>
@@ -2096,7 +2092,7 @@ export default function App() {
                         machines?.find(
                           (m) => m.machineId === id || m.credentialId === id,
                         )?.name ||
-                        (id === connection?.id ? name : "Unknown machine")
+                        (id === connection?.id ? name : "Unknown device")
                       }
                       volume={
                         volumes.find((v) => v.id === sheet.volume) ||
@@ -2196,18 +2192,18 @@ export default function App() {
                       }
                     />
                   )}
-                  {screen === "Machines" && (
+                  {screen === "Devices" && (
                     <>
                       {connection ? (
                         <Section>
                           <Text style={s.eyebrow}>HUB CONNECTION</Text>
                           {machinesSaved && !!machines?.length && (
                             <Text style={s.caption}>
-                              Showing saved machine information.
+                              Showing saved device information.
                             </Text>
                           )}
                           {!machines && !status.offline && (
-                            <Scaffold label="Loading machines" />
+                            <Scaffold label="Loading devices" />
                           )}
                           <HubConnection
                             connection={connection}
@@ -2260,7 +2256,7 @@ export default function App() {
                             style={[s.input, s.code]}
                           />
                           <Text style={s.caption}>
-                            Get a code from Machines on the hub. Six digits ·
+                            Get a code from Devices on the hub. Six digits ·
                             single use · expires in ten minutes.
                           </Text>
                           <Button
@@ -2300,7 +2296,7 @@ export default function App() {
                       {connection && (
                         <>
                           <Section>
-                            <Text style={s.eyebrow}>MACHINES</Text>
+                            <Text style={s.eyebrow}>DEVICES</Text>
                             <View style={s.folderList}>
                               <MachineRow
                                 name={name}
@@ -2350,8 +2346,8 @@ export default function App() {
                                 machinesLoaded && (
                                   <EmptyState
                                     icon="machines"
-                                    title="No saved machines"
-                                    text="Sync online to save machine information."
+                                    title="No saved devices"
+                                    text="Sync online to save device information."
                                   />
                                 )
                               )}
@@ -2395,7 +2391,7 @@ export default function App() {
                               history.offline
                                 ? "No saved history"
                                 : historyFilter !== "revisions" || historyVolume
-                                  ? "No matching revisions"
+                                  ? "No matching versions"
                                   : "No history yet"
                             }
                             text="Try another filter or sync online to save recent history."
@@ -2506,7 +2502,7 @@ export default function App() {
                       )}
                       {history.next && (
                         <Button
-                          label="Load older revisions"
+                          label="Load older versions"
                           busy={historyLoading}
                           onPress={() =>
                             getHistory(null, true).catch((e) =>
@@ -2535,10 +2531,10 @@ export default function App() {
                         </>
                       )}
                       <Section>
-                        <Text style={s.eyebrow}>THIS MACHINE</Text>
+                        <Text style={s.eyebrow}>THIS DEVICE</Text>
                         <Card>
                           <Field
-                            label="Machine name"
+                            label="Device name"
                             value={deviceName ?? name}
                             onChangeText={setDeviceName}
                             maxLength={100}
@@ -2698,7 +2694,7 @@ export default function App() {
                             </Text>
                           </Card>
                           <Card title="Runtime">
-                            <Text style={s.text}>Mobile replica</Text>
+                            <Text style={s.text}>Mobile app</Text>
                             <Text style={s.caption}>
                               Sync runs while Arca is open. Background activity
                               depends on this device’s permissions and system
@@ -2762,11 +2758,11 @@ export default function App() {
                           DANGER ZONE
                         </Text>
                         <Card
-                          title="Destroy this replica"
+                          title="Erase this device"
                           danger
                           actions={
                             <Button
-                              label="Destroy replica…"
+                              label="Erase this device…"
                               icon="trash"
                               primary
                               danger
@@ -2777,7 +2773,7 @@ export default function App() {
                         >
                           <Text style={s.text}>
                             Deletes all local folders and resets Arca on this
-                            device. Hub files and other machines are kept.
+                            device. Hub files and other devices are kept.
                           </Text>
                         </Card>
                       </Section>
@@ -2824,7 +2820,7 @@ export default function App() {
                     ? "unlink"
                     : "alert")
               }
-              destructive={/destroy|delete|stop syncing|remove/i.test(
+              destructive={/erase|delete|stop syncing|remove/i.test(
                 shownConfirmation.label,
               )}
               closing={!confirmation}
@@ -3073,7 +3069,7 @@ export default function App() {
                 )}
               {shownSheet.kind === "select" && (
                 <>
-                  <Card title="Keep a local copy">
+                  <Card title="Start syncing">
                     <Text style={s.text}>
                       Download this folder and keep it in sync.
                     </Text>
@@ -3085,7 +3081,7 @@ export default function App() {
                     </Text>
                   </Card>
                   <Button
-                    label="Select"
+                    label="Start syncing"
                     primary
                     busy={busy}
                     onPress={() =>

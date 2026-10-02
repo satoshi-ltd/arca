@@ -17,7 +17,7 @@ export function resetTargets(store) {
       store.home.startsWith(target + path.sep)
     )
       fail(
-        "Arca data overlaps the state directory; resolve its location before destroying",
+        "Arca data overlaps the state directory; resolve its location before erasing",
         409,
       );
     if (!fs.existsSync(target)) return { path: target, missing: true };

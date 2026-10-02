@@ -1050,7 +1050,7 @@ test("mobile destruction resumes interrupted local cleanup while offline", async
   await assert.rejects(f.replica.destroy(true), /storage unavailable/);
   assert.equal(await f.store.get("destroyPending"), true);
   assert.ok(f.client.state().catalog);
-  await assert.rejects(f.replica.select(f.volume), /cleanup is pending/);
+  await assert.rejects(f.replica.select(f.volume), /Erasing this device is pending/);
   f.files.destroy = remove;
   await f.replica.load();
   assert.equal(fs.existsSync(local), false);

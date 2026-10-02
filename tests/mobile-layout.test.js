@@ -569,7 +569,7 @@ test("the mobile gallery renders from local files first and asks the hub only fo
   assert.match(gallery, /thumbnailFiles\.retry\(\);\s*previews\.clear\(\);/);
 });
 
-test("recent revisions wait for the replica runtime before loading", () => {
+test("recent versions wait for the replica runtime before loading", () => {
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   const start = app.indexOf("<FolderRecent");
   const recent = app.slice(start, app.indexOf("/>", start));
@@ -678,7 +678,7 @@ test("offline file detail leads with the phone's own row and an empty saved wind
   const detail = read("FileHistory.jsx");
   assert.match(app, /offlineFileHistory\(page, saved, localEntry\)/);
   assert.match(app, /currentRev: more \? target\.currentRev : own\.currentRev/);
-  assert.match(detail, /title="No saved revisions for this file"/);
+  assert.match(detail, /title="No saved versions for this file"/);
   assert.match(detail, /!current\.local &&\s+!current\.deleted/);
   assert.match(detail, /current\.local\s+\? "Local copy"/);
   assert.match(detail, /row\.created \? date\(row\.created\) : "This device"/);
@@ -763,15 +763,15 @@ test("offline empty states say nothing is saved, end in Retry that probes the hu
   const empty = recent.match(/if \(!page\.versions\.length && unreachable\)\s+return \(\s+<OfflineEmpty([\s\S]*?)\/>/);
   assert.ok(empty, "Recent without saved revisions offline gets the card");
   assert.match(recent, /const unreachable = !!page\.offline \|\| !!offline;/, "a hub error is not an offline verdict");
-  assert.match(empty[1], /title="No saved revisions"/);
-  assert.match(empty[1], /text="You are offline\. Revisions appear here once the hub is reachable\."/);
+  assert.match(empty[1], /title="No saved versions"/);
+  assert.match(empty[1], /text="You are offline\. Versions appear here once the hub is reachable\."/);
   assert.match(empty[1], /reconnect\?\.\(\);\s+retry\(\(n\) => n \+ 1\);/);
-  assert.match(recent, /<EmptyState\s+icon="history"\s+title="No revisions yet"/);
+  assert.match(recent, /<EmptyState\s+icon="history"\s+title="No versions yet"/);
 
   const detail = read("FileHistory.jsx");
-  const file = detail.match(/\(offline && !error \? \(\s+<OfflineEmpty([\s\S]*?)\/>\s+\) : \(\s+!error && \(\s+<EmptyState\s+icon="history"\s+title="No retained revisions"/);
+  const file = detail.match(/\(offline && !error \? \(\s+<OfflineEmpty([\s\S]*?)\/>\s+\) : \(\s+!error && \(\s+<EmptyState\s+icon="history"\s+title="No retained versions"/);
   assert.ok(file, "file detail offline gets the card, a hub that answered empty keeps its caption");
-  assert.match(file[1], /text="You are offline\. Revisions appear here once the hub is reachable\."/);
+  assert.match(file[1], /text="You are offline\. Versions appear here once the hub is reachable\."/);
   assert.match(file[1], /retry=\{retry\}/);
 });
 
@@ -784,9 +784,9 @@ test("every empty list on the phone uses the one EmptyState: icon, heading, one 
   assert.match(state[0], /<Icon name=\{icon\} size=\{24\} color=\{c\.mute\} \/>/);
   assert.match(state[0], /\{action\}/);
   const sites = {
-    "App.jsx": ["No folders yet", "No matching files", "This folder is empty", "No local files yet", "No saved machines", "No saved history", "No matching revisions", "No history yet"],
-    "FolderRecent.jsx": ["No revisions yet", "No saved revisions"],
-    "FileHistory.jsx": ["No retained revisions", "No saved revisions for this file"],
+    "App.jsx": ["No folders yet", "No matching files", "This folder is empty", "No local files yet", "No saved devices", "No saved history", "No matching versions", "No history yet"],
+    "FolderRecent.jsx": ["No versions yet", "No saved versions"],
+    "FileHistory.jsx": ["No retained versions", "No saved versions for this file"],
     "FolderGallery.jsx": ["No photos yet", "Nothing saved on this phone"],
   };
   for (const [file, titles] of Object.entries(sites)) {
@@ -806,9 +806,9 @@ test("every empty list on the phone uses the one EmptyState: icon, heading, one 
   const kit = fs.readFileSync(new URL("../design/mobile.html", import.meta.url), "utf8");
   assert.match(kit, /<h2>Empty states /);
   for (const title of Object.values(sites).flat()) assert.ok(kit.includes(`>${title}<`), `design/mobile.html draws "${title}"`);
-  assert.match(read("App.jsx"), /<EmptyState\s+icon="machines"\s+title="No saved machines"/);
-  assert.doesNotMatch(read("App.jsx"), /<Card title="No folders yet">|No saved machine information/);
-  assert.doesNotMatch(read("FolderRecent.jsx"), /No revisions yet\./);
+  assert.match(read("App.jsx"), /<EmptyState\s+icon="machines"\s+title="No saved devices"/);
+  assert.doesNotMatch(read("App.jsx"), /<Card title="No folders yet">|No saved device information/);
+  assert.doesNotMatch(read("FolderRecent.jsx"), /No versions yet\./);
   const styles = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
   assert.match(styles, /empty: \{[^}]*borderStyle: "dashed"[^}]*borderColor: c\.line[^}]*borderRadius: g\.cardRadius/s);
   assert.doesNotMatch(styles, /explorerEmpty/);
@@ -820,7 +820,7 @@ test("the mobile welcome says where the hub comes from instead of a bare caption
   const welcome = onboarding.slice(onboarding.indexOf('if (step === "welcome")'), onboarding.indexOf('if (step === "pair")')).replace(/\s+/g, " ");
   assert.match(
     welcome,
-    /<Card title="You need a hub first"> <Text style=\{s\.text\}> Install Arca on a computer or a server and make it the hub\. Then open Machines → Pair a machine there to get a code\. <\/Text> <\/Card>/,
+    /<Card title="You need a hub first"> <Text style=\{s\.text\}> Install Arca on a computer or a server and make it the hub\. Then open Devices → Pair a device there to get a code\. <\/Text> <\/Card>/,
   );
   assert.ok(welcome.indexOf("You need a hub first") > welcome.indexOf("FeatureRow"), "the card follows the feature rows");
   assert.ok(welcome.indexOf("You need a hub first") < welcome.indexOf('label="Get started"'), "and leads to the action");
@@ -831,7 +831,7 @@ test("the mobile welcome says where the hub comes from instead of a bare caption
 test("the mobile pairing step says where the hub shows its details and asks in the hub's order", () => {
   const onboarding = fs.readFileSync(new URL("../apps/mobile/src/Onboarding.jsx", import.meta.url), "utf8");
   const pair = onboarding.slice(onboarding.indexOf('if (step === "pair")'), onboarding.indexOf("const folders = catalog")).replace(/\s+/g, " ");
-  assert.match(pair, /On the hub, open Machines → Pair a machine\. It shows the address and a single-use code\./);
+  assert.match(pair, /On the hub, open Devices → Pair a device\. It shows the address and a single-use code\./);
   assert.doesNotMatch(pair, /Connect with a single-use code from your hub/);
   const order = ['label="Hub address"', 'label="Pairing code"', "Single use · valid ten minutes", "label={`Name this ${device}`}", "label={`Pair this ${device}`}", "<StepIndicator step={1} />"].map((marker) => pair.indexOf(marker));
   assert.ok(order.every((at) => at > 0), "every element of the step is still there");

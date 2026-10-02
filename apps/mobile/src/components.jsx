@@ -947,8 +947,8 @@ export function FolderRow({
         )
       ) : available ? (
         <Button
-          label="Select"
-          icon="download"
+          label="Start syncing"
+          icon="refresh"
           disabled={disabled}
           onPress={onPress}
         />
@@ -1006,12 +1006,11 @@ export function Navigation({ wide, compact, view, onSelect, name, hub }) {
               <Text numberOfLines={1} style={[s.flex, s.caption]}>
                 {name}
               </Text>
-              <Text style={s.caption}>Replica</Text>
             </View>
           )}
         </>
       )}
-      {["Folders", "Machines", "History", "Settings"].map((tab) => (
+      {["Folders", "Devices", "History", "Settings"].map((tab) => (
         <Pressable
           key={tab}
           accessibilityRole="tab"
@@ -1067,10 +1066,11 @@ export function MachineRow({
   actions,
 }) {
   const { s, c, wide } = useDesign();
+  const shownRole = role.toLowerCase() === "replica" ? "" : role;
   return (
     <View
       style={[s.card, s.machineRow]}
-      accessibilityLabel={`${name}, ${role}${self ? ", this machine" : ""}, ${description}${state ? `, ${state}` : ""}`}
+      accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}, ${description}${state ? `, ${state}` : ""}`}
     >
       <View style={s.row}>
         <View style={[s.tile, s.machineTile, hub && s.hubTile]}>
@@ -1090,8 +1090,10 @@ export function MachineRow({
             <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
               {name}
             </Text>
-            <Tag variant={hub ? "hub" : undefined}>{role.toUpperCase()}</Tag>
-            {self && <Tag variant="self">THIS MACHINE</Tag>}
+            {!!shownRole && (
+              <Tag variant={hub ? "hub" : undefined}>{shownRole.toUpperCase()}</Tag>
+            )}
+            {self && <Tag variant="self">THIS DEVICE</Tag>}
           </View>
           <Text numberOfLines={1} style={wide ? s.mono : s.caption}>
             {description}

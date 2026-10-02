@@ -592,7 +592,7 @@ export class Engine {
     } else if (stale) {
       if (name === IGNORE_FILE)
         fail(
-          "Sync paused: .arcaignore differs between this machine and the hub. Use the same rules on both before retrying.",
+          "Sync paused: .arcaignore differs between this device and the hub. Use the same rules on both before retrying.",
           409,
         );
       if (!hash)
@@ -1410,7 +1410,7 @@ export class Engine {
   }
   promotionPlan() {
     if (this.config.role !== "replica")
-      fail("Only a replica can become a replacement hub", 409);
+      fail("Only a device connected to a hub can become a replacement hub", 409);
     const catalog = this.config.catalog || [];
     const localVolumes = this.store.volumes();
     const folders = catalog.map((v) => {
@@ -1551,7 +1551,7 @@ export class Engine {
   }
   async configureBackup(enabled, location) {
     if (this.config.role !== "replica" || !this.config.hub)
-      fail("Connect a replica to a hub before enabling backup", 409);
+      fail("Connect this device to a hub before enabling backup", 409);
     if (typeof enabled !== "boolean") fail("Choose whether backup is enabled");
     if (!enabled) {
       this.closeBackup();
@@ -1896,7 +1896,7 @@ export class Engine {
         : localText !== DEFAULT_IGNORE && localText !== ""
     )
       fail(
-        "Sync paused: .arcaignore differs between this machine and the hub. Use the same rules on both before retrying.",
+        "Sync paused: .arcaignore differs between this device and the hub. Use the same rules on both before retrying.",
         409,
       );
     await this.download(remote.hash, remote.size);
@@ -1910,8 +1910,8 @@ export class Engine {
     return this.destroyInstallation("hub");
   }
   async destroyInstallation(role) {
-    if (this.config.role !== role) fail(`Only a ${role} can be destroyed`, 409);
-    if (this.destroying) fail("Destruction is already in progress", 409);
+    if (this.config.role !== role) fail(`Only ${role === "hub" ? "a hub" : "a device"} can be erased here`, 409);
+    if (this.destroying) fail("Erasing is already in progress", 409);
     this.destroying = true;
     this.interruptCycle();
     try {
@@ -1954,7 +1954,7 @@ export class Engine {
   }
   async disconnect() {
     if (this.config.role !== "replica")
-      fail("Only a replica can disconnect from a hub", 409);
+      fail("Only a device connected to a hub can disconnect from it", 409);
     if (!this.config.hub) return { disconnected: true };
     const wasPaused = this.paused;
     const backup = this.backupEngine;
@@ -2037,7 +2037,7 @@ export class Engine {
       s.resolveLocation(location) !== existing.path
     )
       fail(
-        "This folder already has a local destination. Moving an existing replica requires a separate migration.",
+        "This folder already has a local destination. Moving an existing device requires a separate migration.",
         409,
       );
     if (existing?.selected) return existing;

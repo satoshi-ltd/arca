@@ -37,7 +37,7 @@ export function Onboarding({
     return (
       <>
         <Logo size={58} />
-        <Text style={s.text}>Your personal drive, on your own machines.</Text>
+        <Text style={s.text}>Your personal drive, on your own devices.</Text>
         <Text accessibilityRole="header" style={s.displayTitle}>
           Many devices.{"\n"}
           <Text style={s.emphasis}>One space.</Text>
@@ -56,7 +56,7 @@ export function Onboarding({
           [
             "server",
             "A hub you control",
-            "Your storage, your machines. No cloud account, no telemetry.",
+            "Your storage, your devices. No cloud account, no telemetry.",
           ],
         ].map(([icon, title, description]) => (
           <FeatureRow key={title} icon={icon} title={title}>
@@ -66,7 +66,7 @@ export function Onboarding({
         <Card title="You need a hub first">
           <Text style={s.text}>
             Install Arca on a computer or a server and make it the hub. Then
-            open Machines → Pair a machine there to get a code.
+            open Devices → Pair a device there to get a code.
           </Text>
         </Card>
         <View style={s.flex} />
@@ -86,7 +86,7 @@ export function Onboarding({
           Pair with your hub
         </Text>
         <Text style={s.text}>
-          On the hub, open Machines → Pair a machine. It shows the address and a
+          On the hub, open Devices → Pair a device. It shows the address and a
           single-use code.
         </Text>
         <Field

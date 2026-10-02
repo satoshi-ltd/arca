@@ -9,21 +9,21 @@ description: >-
   revision history, and a hub you control.
 
 
-  Choose whether this server is your hub or a replica during first-run setup.
+  Choose whether this server is your hub or another device that connects to one during first-run setup.
   Open the app to start setup. When asked to confirm server access, use the
   app password shown by Umbrel to get a single-use code, then paste it into
   the wizard. No terminal access is needed.
 
 
-  As a hub, create shared folders. As a replica, pair with your hub and select
-  folders to synchronize. Use Arca's persistent /data/files storage location. Files and history are
+  As a hub, create shared folders. As another device, pair with your hub and
+  start syncing folders. Use Arca's persistent /data/files storage location. Files and history are
   stored in this app's private data directory. Uninstalling the Umbrel app
   removes its stored data; export files before uninstalling.
 
 
   To connect Arca desktop or mobile clients over your trusted local network,
   enable Settings → Local network → Allow HTTP connections in Arca, then use
-  this app's address and a separate pairing code from Machines. Local HTTP
+  this app's address and a separate pairing code from Devices. Local HTTP
   traffic is unencrypted. Never expose this installation directly to the Internet.
 releaseNotes: ""
 

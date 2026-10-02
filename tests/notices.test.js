@@ -258,7 +258,7 @@ test("connection outages are recognised by code or transport text, never by loca
   }
   for (const value of [
     "java.io.FileNotFoundException: Inputstream for content://provider/doc was null.",
-    "Reconnect from Machines.",
+    "Reconnect from Devices.",
     "Too many active snapshots; retry after snapshots expire",
     "Original download timed out. Keep Arca open and retry.",
     "Photo export timed out. Keep Arca open and retry.",

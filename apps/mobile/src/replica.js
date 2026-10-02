@@ -78,7 +78,7 @@ export class Replica {
       try {
         await this.finishDestroy();
       } catch (error) {
-        this.error = `Replica cleanup incomplete. Retry Destroy replica. ${error.message}`;
+        this.error = `Erasing this device is incomplete. Retry Erase this device. ${error.message}`;
       }
     }
     this.scope = await this.store.get("scope");
@@ -103,7 +103,7 @@ export class Replica {
   async requireActiveReplica() {
     if (await this.store.get("destroyPending", false))
       throw new Error(
-        "Replica cleanup is pending. Retry Destroy replica before continuing.",
+        "Erasing this device is pending. Retry Erase this device before continuing.",
       );
   }
   async finishDestroy() {
@@ -119,7 +119,7 @@ export class Replica {
   }
   async destroy(confirmed = false) {
     if (!confirmed)
-      throw new Error("Confirm permanent replica destruction first");
+      throw new Error("Confirm erasing this device first");
     if (this.removing || this.importing)
       throw new Error("Wait for the current operation to finish.");
     this.removing = true;
@@ -1248,7 +1248,7 @@ export class Replica {
       await this.active;
     }
     const folder = await this.store.folder(this.scope, volume);
-    if (!folder?.selected) throw new Error("Select this folder first");
+    if (!folder?.selected) throw new Error("Start syncing this folder first");
     const target = this.files.work(this.scope, volume, name);
     await this.space((await this.files.stat(source)).size * 2);
     if (await this.files.exists(target)) {
@@ -1275,7 +1275,7 @@ export class Replica {
       validPath(name);
       const destination = validPath(renamedPath(name, newName));
       const folder = await this.store.folder(this.scope, volume);
-      if (!folder?.selected) throw new Error("Select this folder first");
+      if (!folder?.selected) throw new Error("Start syncing this folder first");
       if (galleryConfig(folder)?.mode === "damaged")
         throw new Error(DAMAGED_GALLERY);
       const row = await this.store.current(this.scope, volume, name);
@@ -1346,7 +1346,7 @@ export class Replica {
       }
       await this.requireActiveReplica();
       const folder = await this.store.folder(this.scope, volume);
-      if (!folder?.selected) throw new Error("Select this folder first");
+      if (!folder?.selected) throw new Error("Start syncing this folder first");
       if (galleryConfig(folder)?.mode === "damaged")
         throw new Error(DAMAGED_GALLERY);
       const row = await this.store.current(this.scope, volume, name);

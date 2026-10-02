@@ -701,7 +701,7 @@ test("destroy replica requires confirmation, removes local data and hub registra
   await assert.rejects(r.api("/v1/destroy-replica", {}), /Confirm/);
   await assert.rejects(
     f.hub.api("/v1/destroy-replica", { confirmed: true }),
-    /Only a replica/,
+    /Only a device/,
   );
   assert.ok(fs.existsSync(v.path));
   await r.api("/v1/destroy-replica", { confirmed: true });
@@ -767,7 +767,7 @@ test("desktop destruction can resume after filesystem failure and rejects swappe
   }
   assert.ok(r.engine.config.destroyPending);
   assert.ok(fs.existsSync(folder));
-  await assert.rejects(r.api("/v1/sync", {}), /reset requires/);
+  await assert.rejects(r.api("/v1/sync", {}), /requires setup or retrying the erase/);
   const moved = folder + "-original";
   fs.renameSync(folder, moved);
   fs.mkdirSync(folder);

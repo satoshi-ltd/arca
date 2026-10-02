@@ -86,7 +86,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.69";
+const APP_VERSION = "0.6.70";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -280,8 +280,26 @@ function button(label, action, id = "", cls = "secondary", symbol = "") {
   const waiting = hubOnlyActions.has(action) && hubOffline();
   return `<button type="button" class="${cls}" data-action="${action}" data-id="${escape(id)}"${waiting ? ` disabled title="${HUB_ONLY_REASON}"` : ""}>${symbol ? icon(symbol) : ""}${label}</button>`;
 }
+function roleTag(role) {
+  return !role || role === "replica" ? "" : `<span class="tag">${escape(role)}</span>`;
+}
+function copyTag(m, v) {
+  const label =
+    m.machineId === status.id
+      ? "This device"
+      : m.revoked
+        ? "Access revoked"
+        : m.albumFolderIds?.includes(v.id)
+          ? "Album source"
+          : m.isHub
+            ? "Hub"
+            : "";
+  return label
+    ? `<span class="tag ${m.machineId === status.id ? "self" : m.isHub ? "hub" : ""}">${label}</span>`
+    : "";
+}
 function selectFolderButton(id) {
-  return button("Select", "add", id, "secondary small-button", "download");
+  return button("Start syncing", "add", id, "secondary small-button", "refresh-cw");
 }
 function segmented(label, items, cls = "") {
   return `<div class="segmented ${cls}" role="group" aria-label="${escape(label)}">${items.map((item) => `<button type="button" data-action="${item.action}" data-id="${escape(item.id || "")}" class="${item.active ? "active" : ""}" aria-pressed="${Boolean(item.active)}" ${item.disabled ? "disabled" : ""}>${item.symbol ? icon(item.symbol) : ""}${escape(item.label)}${item.count ? `<span class="filter-count">${Number(item.count)}</span>` : ""}</button>`).join("")}</div>`;
@@ -343,7 +361,7 @@ function transportError(body) {
   return Object.assign(
     new Error(
       body === undefined
-        ? "Cannot reach this machine. Check your connection and retry."
+        ? "Cannot reach this device. Check your connection and retry."
         : "Connection interrupted. The result is unknown. Refresh before trying again.",
     ),
     { transportError: true, readOnly: body === undefined },
@@ -607,7 +625,7 @@ function renderCopies() {
     known
       .map(
         (m) =>
-          `<div class="copy-row">${icon(m.isHub ? "server" : /android|ios/.test(m.platform) ? "smartphone" : "monitor")}<strong>${escape(m.name)}</strong><span class="tag ${m.machineId === status.id ? "self" : m.isHub ? "hub" : ""}">${m.machineId === status.id ? "This machine" : m.revoked ? "Access revoked" : m.albumFolderIds?.includes(v.id) ? "Album source" : m.isHub ? "Hub" : "Replica"}</span></div>`,
+          `<div class="copy-row">${icon(m.isHub ? "server" : /android|ios/.test(m.platform) ? "smartphone" : "monitor")}<strong>${escape(m.name)}</strong>${copyTag(m, v)}</div>`,
       )
       .join("") +
     (copiesUnavailable
@@ -620,7 +638,7 @@ function renderCopies() {
     (copiesRoster?.machines.some(
       (m) => !m.isHub && !m.revoked && !Array.isArray(m.folderIds),
     )
-      ? '<p class="hint">Some machines have not reported their folders yet.</p>'
+      ? '<p class="hint">Some devices have not reported their folders yet.</p>'
       : "");
   icons();
 }
@@ -867,7 +885,7 @@ function stateFor(v) {
 const countLabel = (n, singular, plural = `${singular}s`) =>
   `${n.toLocaleString("en")} ${n === 1 ? singular : plural}`;
 const machineLabel = () =>
-  native && status?.platform === "darwin" ? "this Mac" : "this machine";
+  native && status?.platform === "darwin" ? "this Mac" : "this device";
 const platformLabel = (value) =>
   ({ darwin: "macOS", linux: "Linux", win32: "Windows" })[value] ||
   value ||
@@ -884,9 +902,10 @@ const hubName = () =>
       : "not linked");
 function updateShell() {
   const nav = document.querySelector('nav [data-view="devices"]');
-  if (nav) nav.innerHTML = icon("monitor-smartphone") + "Machines";
+  if (nav) nav.innerHTML = icon("monitor-smartphone") + "Devices";
 
-  $("#managed-role").textContent = status.role === "hub" ? "Hub" : "Replica";
+  $("#managed-role").textContent = status.role === "hub" ? "Hub" : "";
+  $("#managed-role").hidden = status.role !== "hub";
   $("#managed-name").textContent = status.name;
   const states = {
     idle: ["Up to date", "ok", "circle-check"],
@@ -913,7 +932,7 @@ function updateShell() {
   $("#connection").className = color;
   $("#last-sync").textContent =
     status.role !== "hub" && !status.hub
-      ? "Local files are kept on this machine"
+      ? "Local files are kept on this device"
       : status.lastSync
         ? `Last sync ${relative(status.lastSync)}`
         : "Not synced yet";
@@ -956,8 +975,8 @@ function updateShell() {
     ) + `<span>${backupLabel}</span>`;
   backup.title =
     status.role === "hub"
-      ? "View backup reports from your machines"
-      : "Manage this machine’s additional full copy of the hub and its history";
+      ? "View backup reports from your devices"
+      : "Manage this device’s additional full copy of the hub and its history";
   $("#conflict-count").textContent = conflicts;
   $("#conflict-count").hidden = !conflicts;
   document.querySelectorAll("nav [data-view]").forEach((el) => {
@@ -1113,14 +1132,14 @@ async function refresh(renderView = true) {
   return signature;
 }
 const retainedFor = (span) =>
-  `Older revisions of every file in this folder stay restorable for ${span} after a change or deletion; after that, only the current files remain.`;
+  `Older versions of every file in this folder stay restorable for ${span} after a change or deletion; after that, only the current files remain.`;
 const folderRetentionChoices = [
   {
     id: "off",
     label: "Off",
     summary: "Off",
     effect:
-      "Only the current files are kept: older revisions of every file in this folder are removed.",
+      "Only the current files are kept: older versions of every file in this folder are removed.",
   },
   { id: "1d", label: "1 day", summary: "On · 1 day", effect: retainedFor("a day") },
   { id: "1w", label: "1 week", summary: "On · 1 week", effect: retainedFor("a week") },
@@ -1129,7 +1148,7 @@ const folderRetentionChoices = [
     id: "forever",
     label: "Forever",
     summary: "Forever",
-    effect: "Every older revision of every file in this folder is kept from now on.",
+    effect: "Every older version of every file in this folder is kept from now on.",
   },
 ];
 function folderRetentionMode(volume) {
@@ -1145,13 +1164,13 @@ function folderRetentionSummary(volume) {
   const label =
     folderRetentionChoices.find((choice) => choice.id === mode)?.summary ||
     "Unknown";
-  return `<div class="stat folder-history-status"><span>Revision history</span><strong>${escape(label)}</strong><p>${mode === "off" ? "Current files only" : "Older revisions kept"}</p></div>`;
+  return `<div class="stat folder-history-status"><span>Version history</span><strong>${escape(label)}</strong><p>${mode === "off" ? "Current files only" : "Older versions kept"}</p></div>`;
 }
 function folderRetentionPanel(volume) {
   const mode = folderRetentionMode(volume);
   const effect = folderRetentionChoices.find((choice) => choice.id === mode)?.effect;
-  return `<div class="panel"><h3>Keep older revisions for</h3><div id="folder-retention" data-volume="${escape(volume.id)}">${segmented(
-    "Revision history retention",
+  return `<div class="panel"><h3>Keep older versions for</h3><div id="folder-retention" data-volume="${escape(volume.id)}">${segmented(
+    "Version history retention",
     folderRetentionChoices.map((choice) => ({
       label: choice.label,
       action: "folder-retention",
@@ -1180,8 +1199,8 @@ async function changeFolderRetention(mode, control) {
     if (preview.remove) {
       modal(
         modalHeader(
-          "Remove older revisions?",
-          `${preview.remove} older revisions will be permanently removed. Current files are kept.`,
+          "Remove older versions?",
+          `${preview.remove} older versions will be permanently removed. Current files are kept.`,
           "history",
         ),
         apply,
@@ -1477,8 +1496,8 @@ async function renderView(
               ? "No shared folders yet"
               : `No folders on ${machineLabel()} yet`,
             status.role === "hub"
-              ? "Share an existing or new folder. Other machines choose where to sync it."
-              : `Pick folders from your hub${status.hub && available.length ? ", or select one below" : ""}. Full copies are kept on disk and work offline.`,
+              ? "Share an existing or new folder. Other devices choose where to sync it."
+              : `Pick folders from your hub${status.hub && available.length ? ", or start syncing one below" : ""}. Full copies are kept on disk and work offline.`,
           ),
     );
     if (status.role !== "hub" && status.hub && available.length)
@@ -1663,7 +1682,7 @@ function fileHistorySummary() {
   if (current && !current.created)
     return `<div class="file-history-summary"><p class="hint">Local copy · ${bytes(current.size)} · hub history unavailable</p></div>`;
   const available = current && !current.deleted;
-  return `<div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest revision</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : historyOffline ? "No saved revisions" : "No retained revisions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
+  return `<div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest version</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : historyOffline ? "No saved versions" : "No retained versions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
 }
 
 function fileHistorySide() {
@@ -2660,7 +2679,7 @@ function deleteGalleryPhotos(items) {
   modal(
     modalHeader(
       `Delete ${items.length === 1 ? "this photo" : `${items.length} photos`}?`,
-      "Deletes from the shared gallery for everyone, including Live Photo resources. Originals stay in Photos. Recovery depends on this folder’s revision retention.",
+      "Deletes from the shared gallery for everyone, including Live Photo resources. Originals stay in Photos. Recovery depends on this folder’s version retention.",
       "trash-2",
     ),
     async () => {
@@ -3148,10 +3167,10 @@ async function folderBrowser(v, recent, pending = false) {
         ? `<div class="history-group">${recent.map((r) => revisionRow(r, true)).join("")}</div>`
         : recentSaved.get(v.id)
           ? empty(
-              "No saved revisions",
+              "No saved versions",
               "Offline. Connect to the hub to load its history.",
             )
-          : empty("No revisions yet", "History appears after the first sync."))
+          : empty("No versions yet", "History appears after the first sync."))
     );
   const parts = folderPrefix.split("/").filter(Boolean);
   const trail = `<nav class="folder-breadcrumb" aria-label="File location">${icon("folder")}${parts.length ? button(escape(v.name), "browse-directory", "", "text-button") : `<span aria-current="location">${escape(v.name)}</span>`}${parts.map((part, i) => `${icon("chevron-right")}${i === parts.length - 1 ? `<span aria-current="location">${escape(part)}</span>` : button(escape(part), "browse-directory", parts.slice(0, i + 1).join("/"), "text-button")}`).join("")}</nav>`;
@@ -3252,7 +3271,7 @@ async function renderDetail(pending = false) {
       : !recent
         ? scaffoldLine("short")
         : recentSaved.get(v.id)
-          ? "No saved revisions"
+          ? "No saved versions"
           : "Not yet";
   const browser = await folderBrowser(v, known, pending);
   if (!current()) return;
@@ -3261,7 +3280,7 @@ async function renderDetail(pending = false) {
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(v.gallery ? "images" : "folder")}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? (v.policyError ? "Resolve the exclusion policy error" : "Waiting for the first scan") : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${revisionCell(known)}</strong><p>Accepted by the hub</p></div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Revision history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(v.gallery ? "images" : "folder")}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? (v.policyError ? "Resolve the exclusion policy error" : "Waiting for the first scan") : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known version</span><strong class="mono">${revisionCell(known)}</strong><p>Accepted by the hub</p></div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
   if (!pending && folderTab === "gallery") mountGallery(v.id);
@@ -3330,7 +3349,7 @@ async function renderHistory(
         historyVersions = [];
         historyLocal = null;
         historyOffline = false;
-        list.innerHTML = section("File revisions", scaffoldRow("history"));
+        list.innerHTML = section("File versions", scaffoldRow("history"));
       }
       return;
     }
@@ -3343,9 +3362,9 @@ async function renderHistory(
     historyLocal = data.local || null;
     if (data.localOnly) {
       list.innerHTML = section(
-        "File revisions",
+        "File versions",
         empty(
-          "No saved revisions for this file",
+          "No saved versions for this file",
           `Offline. Connect to the hub to load its history.${historyVersions[0] ? " Your local file is still available." : ""}`,
         ),
       );
@@ -3353,19 +3372,19 @@ async function renderHistory(
     }
     list.innerHTML =
       (data.offline
-        ? `<p class="hint">${data.truncated ? "Showing saved history · recent entries only. Connect to the hub for updated retention and older revisions." : "Showing saved history. Connect to the hub for updated retention."}</p>`
+        ? `<p class="hint">${data.truncated ? "Showing saved history · recent entries only. Connect to the hub for updated retention and older versions." : "Showing saved history. Connect to the hub for updated retention."}</p>`
         : "") +
       section(
-        "File revisions",
+        "File versions",
         historyVersions.length
           ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
           : data.offline
             ? empty(
-                "No saved revisions for this file",
+                "No saved versions for this file",
                 "Offline. Connect to the hub to load its history.",
               )
             : empty(
-                "No retained revisions",
+                "No retained versions",
                 "This file has no history available on the hub.",
               ),
       ) +
@@ -3403,7 +3422,7 @@ async function renderHistory(
   }
   list.innerHTML =
     (data.offline
-      ? '<p class="hint">Showing saved history · recent entries only. Connect to the hub for updated retention and older revisions.</p>'
+      ? '<p class="hint">Showing saved history · recent entries only. Connect to the hub for updated retention and older versions.</p>'
       : "") +
     (historyRows.length
       ? [...groups]
@@ -3434,7 +3453,7 @@ const machineRow = (
   metadata = "",
   totals = "",
 ) =>
-  `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This machine</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
+  `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This device</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
 
 function selfPill() {
   if (!status.hub) return pill("Disconnected", "wa", "unlink");
@@ -3487,7 +3506,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     p ? escape(platformLabel(p.os || p.arca.platform)) : "";
   const row = machineRow;
   const summary = roster?.offline
-    ? '<p class="hint">Offline · showing saved machine information · last known</p>'
+    ? '<p class="hint">Offline · showing saved device information · last known</p>'
     : "";
   let machineRows = "";
   let html =
@@ -3554,7 +3573,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
   if (status.role !== "hub")
     machineRows += row(
       status.name,
-      `<span class="tag">${escape(status.role)}</span>${status.backup?.enabled ? '<span class="tag">Backs up hub</span>' : ""}`,
+      `${roleTag(status.role)}${status.backup?.enabled ? '<span class="tag">Backs up hub</span>' : ""}`,
       selfAddress ? `Tailscale · ${escape(selfAddress)}` : "",
       "",
       selfPill(),
@@ -3581,7 +3600,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
           : !d.last_seen
             ? pill("Invitation only", "wa", "clock")
             : pill("Linked", "id", "link");
-      const tags = `<span class="tag">${escape(d.role)}</span>${d.backup_enabled ? '<span class="tag">Backs up hub</span>' : ""}`;
+      const tags = `${roleTag(d.role)}${d.backup_enabled ? '<span class="tag">Backs up hub</span>' : ""}`;
       records += row(
         report?.name || d.name,
         tags,
@@ -3590,7 +3609,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         state,
         d.revoked
           ? ""
-          : `<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Disconnect", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
+          : `<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Remove device", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
         false,
         false,
         !d.last_seen,
@@ -3608,7 +3627,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
           .map((m) =>
             row(
               m.name,
-              `<span class="tag">${escape(m.role)}</span>`,
+              roleTag(m.role),
               [
                 connection(
                   peers.find(
@@ -3641,11 +3660,11 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         : !fetchData
           ? scaffoldRow()
           : empty(
-              "Machine list unavailable",
-              "Reconnect to the hub to see its machines.",
+              "Device list unavailable",
+              "Reconnect to the hub to see its devices.",
             );
   }
-  html += section("Machines", machineRows);
+  html += section("Devices", machineRows);
   if (!fetchData && !discovered)
     html += section("Discovery", scaffoldRow("card", true));
   const found = peers.filter(
@@ -3659,13 +3678,13 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
   if (found.length)
     html += section(
       status.role === "hub"
-        ? "Detected machines · not authorized"
+        ? "Detected devices · not authorized"
         : "Detected hubs",
       found
         .map((p) =>
           row(
             p.name,
-            `<span class="tag">${escape(p.arca.role || "Arca")}</span>`,
+            roleTag(p.arca.role) || '<span class="tag">Arca</span>',
             connection(p),
             "",
             p.arca.state === "incompatible"
@@ -3700,17 +3719,17 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     );
   if (found.length)
     html +=
-      '<p class="hint">Detection does not connect machines. A pairing code is required.</p>';
+      '<p class="hint">Detection does not connect devices. A pairing code is required.</p>';
   if (issue)
     html += `<p class="hint">Discovery unavailable: ${escape(issue)}</p>`;
   if (status.role === "hub" || status.hub)
     html += section("Hub backup", backupSummary());
   $("#content").innerHTML =
     title(
-      "Machines",
+      "Devices",
       summary,
       status.role === "hub"
-        ? button("Pair a machine", "invite", "", "primary", "key-round")
+        ? button("Pair a device", "invite", "", "primary", "key-round")
         : "",
     ) + `<div class="page" id="devices-list">${html}</div>`;
   icons();
@@ -3718,7 +3737,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
 function backupActivity() {
   const p = status.backup?.progress;
   return p
-    ? `Copying history${p.revisions ? ` · ${countLabel(p.revisions, "revision")}` : ""}`
+    ? `Copying history${p.revisions ? ` · ${countLabel(p.revisions, "version")}` : ""}`
     : "";
 }
 function backupCompletionSetting() {
@@ -3746,7 +3765,7 @@ function backupCompletionSetting() {
 }
 function backupSummary() {
   if (status.role !== "hub")
-    return `<div class="backup-card">${icon(status.backup?.enabled ? "shield-check" : "shield-off")}<div class="row-main"><strong>${status.backup?.enabled ? "On this machine" : "Off on this machine"}</strong><p>${status.backup?.enabled ? (status.backup.progress ? backupActivity() : status.backup.waiting ? "Waiting for the hub to continue." : status.backup.error ? `Needs attention: ${escape(status.backup.error)}` : status.backup.lastSync ? `${status.backup.folders || 0} folders · ${Number(status.backup.revisions || 0).toLocaleString()} revisions · Last completed ${relative(status.backup.lastSync)}` : "Waiting for the first completed backup") : "Keep a full copy of the hub and its history."}</p></div>${button("Backup settings", "backup-settings", "", "secondary small-button")}</div>`;
+    return `<div class="backup-card">${icon(status.backup?.enabled ? "shield-check" : "shield-off")}<div class="row-main"><strong>${status.backup?.enabled ? "On this device" : "Off on this device"}</strong><p>${status.backup?.enabled ? (status.backup.progress ? backupActivity() : status.backup.waiting ? "Waiting for the hub to continue." : status.backup.error ? `Needs attention: ${escape(status.backup.error)}` : status.backup.lastSync ? `${status.backup.folders || 0} folders · ${Number(status.backup.revisions || 0).toLocaleString()} versions · Last completed ${relative(status.backup.lastSync)}` : "Waiting for the first completed backup") : "Keep a full copy of the hub and its history."}</p></div>${button("Backup settings", "backup-settings", "", "secondary small-button")}</div>`;
   const a = status.devices.filter((d) => !d.revoked && d.backup_enabled);
   return a.length
     ? a
@@ -3755,7 +3774,7 @@ function backupSummary() {
             `<div class="backup-card">${icon("shield-check")}<div class="row-main"><strong>${escape(d.name)} backs up this hub</strong><p>${d.backup_updated ? `Last report ${date(d.backup_updated)} · history rev ${d.backup_revision || 0}` : "Waiting for the first backup report."}</p></div>${pill(d.backup_updated ? "Reported" : "Pending", "id", "clock")}</div>`,
         )
         .join("")
-    : `<div class="backup-card">${icon("shield-alert")}<div class="row-main"><strong>No hub backup recorded</strong><p>Enable backup in a linked machine’s Settings.</p></div></div>`;
+    : `<div class="backup-card">${icon("shield-alert")}<div class="row-main"><strong>No hub backup recorded</strong><p>Enable backup in a linked device’s Settings.</p></div></div>`;
 }
 function hubConnection() {
   const connected = Boolean(status.hub);
@@ -3824,22 +3843,22 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   let html = title("Settings", "") + '<div class="page">';
   if (status.role !== "hub") html += section("Hub connection", hubConnection());
   html += section(
-    "This machine",
-    `<div class="settings-card">${setting("Machine name", "Shown to other machines and in history.", `<input id="machine-name" aria-label="Machine name" maxlength="100" value="${escape(status.name)}">`)}${setting("Default folder location", `<span class="path">${escape(status.root)}</span>`, button("Copy path", "copy", status.root, "secondary small-button", "copy"))}</div>`,
+    "This device",
+    `<div class="settings-card">${setting("Device name", "Shown to other devices and in history.", `<input id="machine-name" aria-label="Device name" maxlength="100" value="${escape(status.name)}">`)}${setting("Default folder location", `<span class="path">${escape(status.root)}</span>`, button("Copy path", "copy", status.root, "secondary small-button", "copy"))}</div>`,
   );
   html += section(
     status.role === "hub" ? "Hub synchronization" : "Local synchronization",
-    `<div class="settings-card">${setting(status.role !== "hub" && !status.hub ? "Disconnected" : status.phase === "paused" ? "Paused" : "Enabled", status.role === "hub" ? "Synchronizes this hub’s working folders with connected replicas." : "Synchronizes the folders selected on this machine.", "")}</div>`,
+    `<div class="settings-card">${setting(status.role !== "hub" && !status.hub ? "Disconnected" : status.phase === "paused" ? "Paused" : "Enabled", status.role === "hub" ? "Synchronizes this hub’s working folders with connected devices." : "Synchronizes the folders selected on this device.", "")}</div>`,
   );
   if (status.role === "hub")
     html += section(
       "Access to this hub",
-      `<div class="settings-card">${setting("Authorized machines", "Issue pairing codes and remove machines from this hub.", button("Manage machines", "machines", "", "secondary small-button", "monitor-smartphone"))}</div>`,
+      `<div class="settings-card">${setting("Authorized devices", "Issue pairing codes and remove devices from this hub.", button("Manage devices", "machines", "", "secondary small-button", "monitor-smartphone"))}</div>`,
     );
   if (!native)
     html += section(
       "Browser session",
-      `<div class="settings-card">${setting("This browser", `Signed in to ${escape(status.name)}. Signing out does not stop synchronization.`, button("Sign out", "logout", "", "secondary small-button", "log-out"))}${setting("Other browser sessions", `Sign out every browser managing ${escape(status.name)}. Machine connections are kept.`, button("Sign out all browsers…", "logout-all", "", "secondary small-button danger", "log-out"))}</div>`,
+      `<div class="settings-card">${setting("This browser", `Signed in to ${escape(status.name)}. Signing out does not stop synchronization.`, button("Sign out", "logout", "", "secondary small-button", "log-out"))}${setting("Other browser sessions", `Sign out every browser managing ${escape(status.name)}. Device connections are kept.`, button("Sign out all browsers…", "logout-all", "", "secondary small-button danger", "log-out"))}</div>`,
     );
   if (native)
     html += section(
@@ -3847,7 +3866,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
       `<div class="settings-card">${status.platform === "darwin" ? setting("Launch at login", "Start synchronization when you sign in to this Mac.", '<div id="service-control"><span class="hint">Checking service…</span></div>') : ""}${setting("System notifications", "Show system notifications for conflicts, hub errors and stopped backups.", toggleControl("notifications-enabled", "Enable system notifications"))}</div>`,
     );
   html += section(
-    status.role === "hub" ? "Hub backup" : "Full backup on this machine",
+    status.role === "hub" ? "Hub backup" : "Full backup on this device",
     status.role === "hub"
       ? backupSummary()
       : !status.hub
@@ -3857,7 +3876,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   if (status.role === "hub")
     html += section(
       "History",
-      `<div class="settings-card">${setting("Older revisions", `${Number(status.historyRevisions || 0).toLocaleString("en")} kept across your folders. Each folder decides how long it keeps them.`, button("Clean up…", "retention", "", "secondary small-button", "trash-2"))}</div><p class="hint">Cleanup shows what it would remove before anything is deleted. Current files, pending changes and history not yet backed up are never removed.</p>`,
+      `<div class="settings-card">${setting("Older versions", `${Number(status.historyRevisions || 0).toLocaleString("en")} kept across your folders. Each folder decides how long it keeps them.`, button("Clean up…", "retention", "", "secondary small-button", "trash-2"))}</div><p class="hint">Cleanup shows what it would remove before anything is deleted. Current files, pending changes and history not yet backed up are never removed.</p>`,
     );
   if (status.role === "hub")
     html += section(
@@ -3892,8 +3911,8 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
       `<div class="settings-card">${setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Files and credentials are not encrypted.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))}</div>`,
     );
   html += section(
-    "Machine discovery",
-    `<div class="settings-card">${setting("Find machines on Tailscale", "Look for Arca on connected machines. Finding a machine does not link it.", button("Refresh", "network-refresh", "", "secondary small-button", "refresh-cw"))}</div>`,
+    "Device discovery",
+    `<div class="settings-card">${setting("Find devices on Tailscale", "Look for Arca on connected devices. Finding a device does not link it.", button("Refresh", "network-refresh", "", "secondary small-button", "refresh-cw"))}</div>`,
   );
   html += section(
     "Service",
@@ -3924,7 +3943,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   const destroyRole = status.role === "hub" ? "hub" : "replica";
   html += section(
     "Danger zone",
-    `<div class="settings-card replica-danger">${setting(`Destroy this ${destroyRole}`, destroyRole === "hub" ? "Deletes this hub’s folders, history and configuration. Files on replicas are kept." : "Deletes all local folders and resets Arca on this device. Hub files and other machines are kept.", button(`Destroy ${destroyRole}…`, `destroy-${destroyRole}`, "", "primary danger", "trash-2"))}</div>`,
+    `<div class="settings-card replica-danger">${setting(destroyRole === "hub" ? "Erase this hub" : "Erase this device", destroyRole === "hub" ? "Deletes this hub’s shared folders, files, version history and configuration, then returns to setup. Other devices keep their own copies." : "Deletes all local folders and resets Arca on this device. Hub files and other devices are kept.", button(destroyRole === "hub" ? "Erase this hub…" : "Erase this device…", `destroy-${destroyRole}`, "", "primary danger", "trash-2"))}</div>`,
   );
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
@@ -4328,7 +4347,7 @@ function connectModal(endpoint = "", recovery = false) {
         : status.disconnectedHub
           ? "Reconnect to your hub"
           : "Connect to your hub",
-      "Detection does not link a machine. Enter the code issued by the hub administrator.",
+      "Detection does not link a device. Enter the code issued by the hub administrator.",
       "key-round",
     ) +
       `<label for="hub-address">Hub address</label><input id="hub-address" name="url" class="mono" value="${escape(endpoint)}" placeholder="https://arca.your-network" required><label>Pairing code</label>${codeFields("pair")}<p class="hint">Six digits, leading zeroes included. Works once; expires ten minutes after the hub generated it. Generating a new code invalidates the previous one.</p><p class="hint">Use HTTPS, verified Tailscale, or a private IPv4 address when the hub allows local network HTTP.</p>${recovery ? '<p class="hint">Replacing the hub reconnects existing folders, keeps local files and preserves differences as conflicts.</p>' : ""}`,
@@ -4388,11 +4407,11 @@ async function pairModal(name = "") {
   const addresses = pairingAddresses(info);
   const addressPanel = addresses.length
     ? `<div class="settings-card">${addresses.map((address, index) => setting(index ? "Alternative address" : "Hub address", `<span class="path">${escape(address)}</span>`, button("Copy address", "copy", address, "secondary small-button", "copy"))).join("")}</div>`
-    : '<p class="hint">Use this hub’s reachable hostname or IP with its API port. A localhost address only works on this machine.</p>';
+    : '<p class="hint">Use this hub’s reachable hostname or IP with its API port. A localhost address only works on this device.</p>';
   let invitation;
   const create = async () => {
     invitation = await api("/v1/pairing", {
-      name: name || "New machine",
+      name: name || "New device",
       role: "replica",
     });
     const code = String(invitation.code);
@@ -4405,12 +4424,12 @@ async function pairModal(name = "") {
   };
   modal(
     modalHeader(
-      "Pair a machine",
-      "On the new desktop, open Machines → Connect to hub. Enter the address and pairing code below.",
+      "Pair a device",
+      "On the new desktop, open Devices → Connect to hub. Enter the address and pairing code below.",
       "key-round",
     ) +
       addressPanel +
-      `<p class="hint">Include the full address, with http:// or https:// and its port. A hostname works when the new machine can resolve it; otherwise use the IP address. For HTTP, use Tailscale on both machines or enable local network HTTP in the hub’s Settings and use its private IPv4 address.</p><div class="section-label">Pairing code</div><div class="code-display" id="pair-code">··· — ···</div><div class="code-toolbar"><p class="code-expiry" id="pair-validity">Generating code…</p><div class="form-actions">${button("Copy code", "copy-pair", "", "secondary small-button", "copy")}${button("New code", "new-pair", "", "secondary small-button", "refresh-cw")}</div></div><p>After connecting, choose the folders to sync and their local destinations.</p><div class="callout">${icon("info")}<p>Issuing a code does not mean a machine has connected. This code never grants web administration.</p></div>`,
+      `<p class="hint">Include the full address, with http:// or https:// and its port. A hostname works when the new device can resolve it; otherwise use the IP address. For HTTP, use Tailscale on both devices or enable local network HTTP in the hub’s Settings and use its private IPv4 address.</p><div class="section-label">Pairing code</div><div class="code-display" id="pair-code">··· — ···</div><div class="code-toolbar"><p class="code-expiry" id="pair-validity">Generating code…</p><div class="form-actions">${button("Copy code", "copy-pair", "", "secondary small-button", "copy")}${button("New code", "new-pair", "", "secondary small-button", "refresh-cw")}</div></div><p>After connecting, choose the folders to sync and their local destinations.</p><div class="callout">${icon("info")}<p>Issuing a code does not mean a device has connected. This code never grants web administration.</p></div>`,
     async () => {},
     "Done",
   );
@@ -4492,7 +4511,7 @@ function authorName(id) {
   if (id === status.hubId) return hubName();
   return (
     status.devices.find((d) => d.id === id)?.name ||
-    `Machine ${String(id).slice(0, 8)}`
+    `Device ${String(id).slice(0, 8)}`
   );
 }
 async function reviewConflict(item) {
@@ -4501,7 +4520,7 @@ async function reviewConflict(item) {
     !status.volumes.find((v) => v.id === item.volume)?.selected
   )
     throw new Error(
-      "Select this folder for synchronization before resolving conflicts.",
+      "Start syncing this folder before resolving conflicts.",
     );
   const conflictPath = item.path,
     originalPath = conflictPath.slice(
@@ -4575,7 +4594,7 @@ async function reviewConflict(item) {
         { action: "folder-history", actionLabel: "Show", volume: item.volume },
       );
     },
-    "Restore selected as new revision",
+    "Restore selected as new version",
     true,
   );
   $("#dialog").classList.add("conflict-dialog");
@@ -4584,7 +4603,7 @@ async function reviewConflict(item) {
   $("#dialog-form > .dialog-actions").prepend(extra);
   $("#cancel-dialog").hidden = false;
   $("#submit-dialog").innerHTML =
-    icon("undo-2") + "Restore selected as new revision";
+    icon("undo-2") + "Restore selected as new version";
   icons();
 }
 async function handle(name, id, control) {
@@ -4607,8 +4626,8 @@ async function handle(name, id, control) {
       modalHeader(
         enabled ? "Allow web approval?" : "Disable web approval?",
         enabled
-          ? "This machine will be able to approve administrator access to this hub’s web interface."
-          : "This machine will no longer approve web access.",
+          ? "This device will be able to approve administrator access to this hub’s web interface."
+          : "This device will no longer approve web access.",
         "shield-check",
       ),
       () => api("/v1/web-approvers", { id, enabled }),
@@ -4626,7 +4645,7 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         "Rename",
-        "Updates the name on every machine. Folder locations stay the same.",
+        "Updates the name on every device. Folder locations stay the same.",
         "pencil",
       ) + textField("Name", "name", v.name),
       async (f) => {
@@ -4652,7 +4671,7 @@ async function handle(name, id, control) {
           version: policy.version,
         });
         notice(
-          "Exclusion rules saved. They will propagate when machines sync.",
+          "Exclusion rules saved. They will propagate when devices sync.",
         );
       },
       "Save rules",
@@ -4938,7 +4957,7 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         `Restore ${escape(historyPath)} to rev ${id}?`,
-        `This creates a new revision with the contents of rev ${id}. Existing revisions stay in history.`,
+        `This creates a new version with the contents of rev ${id}. Existing versions stay in history.`,
         "undo-2",
       ) +
         `<div class="restore-versions">${[version, current]
@@ -4965,9 +4984,9 @@ async function handle(name, id, control) {
           },
         );
       },
-      "Restore as new revision",
+      "Restore as new version",
     );
-    $("#submit-dialog").innerHTML = icon("undo-2") + "Restore as new revision";
+    $("#submit-dialog").innerHTML = icon("undo-2") + "Restore as new version";
     icons();
     return;
   }
@@ -5012,7 +5031,7 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         "Sign out all web sessions?",
-        "Every browser managing this daemon will need a new access code. Machine synchronization credentials stay linked.",
+        "Every browser managing this daemon will need a new access code. Device synchronization credentials stay linked.",
         "log-out",
       ),
       async () => {
@@ -5058,13 +5077,13 @@ async function handle(name, id, control) {
     ];
     modal(
       modalHeader(
-        destroyingHub ? "Destroy this hub?" : "Destroy this replica?",
+        destroyingHub ? "Erase this hub?" : "Erase this device?",
         destroyingHub
-          ? "Permanently deletes this hub’s shared folders, files, revision history and configuration. Replicas keep their local files and lose access to this hub. Arca returns to setup, where you can choose hub or replica."
-          : "Permanently deletes local folders, including unsynced changes, and resets Arca on this machine. Hub files, hub history and other machines are kept.",
+          ? "Permanently deletes this hub’s shared folders, files, version history and configuration. Other devices keep their local files and lose access to this hub. Arca returns to setup, where you can set up a hub or connect to one."
+          : "Permanently deletes local folders, including unsynced changes, and resets Arca on this device. Hub files, hub history and other devices are kept.",
         "trash-2",
       ) +
-        `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to replicas." : "Works offline. If the hub cannot be reached, remove this machine from its Machines list separately."} An interrupted cleanup can be retried.</p>`,
+        `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to other devices." : "Works offline. If the hub cannot be reached, remove this device from its Devices list separately."} An interrupted cleanup can be retried.</p>`,
       async () => {
         await api(destroyingHub ? "/v1/destroy-hub" : "/v1/destroy-replica", {
           confirmed: true,
@@ -5077,10 +5096,10 @@ async function handle(name, id, control) {
         if (native) await boot();
         else
           await showLogin(
-            `${destroyingHub ? "Hub" : "Replica"} destroyed. Generate a new local web access code to begin setup.`,
+            `${destroyingHub ? "Hub" : "Device"} erased. Generate a new local web access code to begin setup.`,
           );
       },
-      destroyingHub ? "Destroy hub" : "Destroy replica",
+      destroyingHub ? "Erase this hub" : "Erase this device",
       true,
     );
     $("#submit-dialog").classList.add("danger");
@@ -5090,10 +5109,10 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         `Disconnect from hub?`,
-        "Stops synchronization and any full backup on this machine. Local files, saved destinations and hub history are kept. Reconnecting requires a new pairing code.",
+        "Stops synchronization and any full backup on this device. Local files, saved destinations and hub history are kept. Reconnecting requires a new pairing code.",
         "unplug",
       ) +
-        '<p class="hint">Disconnects this machine on both sides. The hub must be reachable to complete this action.</p>',
+        '<p class="hint">Disconnects this device on both sides. The hub must be reachable to complete this action.</p>',
       async () => {
         await api("/v1/disconnect", { confirmed: true });
         catalog = [];
@@ -5161,15 +5180,15 @@ async function handle(name, id, control) {
     const d = status.devices.find((d) => d.id === id);
     modal(
       modalHeader(
-        `Disconnect ${escape(d?.name || "this machine")}?`,
-        "Disconnects this machine and removes its access and connection reports. The machine updates when it next contacts the hub. Files and revision history are kept. Connecting again requires a new pairing code.",
+        `Remove ${escape(d?.name || "this device")}?`,
+        "Removes this device’s access and connection reports from the hub. The device updates when it next contacts the hub. Files and version history are kept. Connecting again requires a new pairing code.",
         "unplug",
       ),
       async () => {
         await api("/v1/revoke", { id });
-        notice("Machine disconnected.");
+        notice("Device removed.");
       },
-      "Disconnect",
+      "Remove device",
     );
     $("#submit-dialog").classList.add("danger");
     return;
@@ -5179,7 +5198,7 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         `Delete “${escape(v.name)}”?`,
-        "Permanently removes this shared folder’s catalog and history from the hub. Connected replicas stop syncing when they refresh. Files on disk and existing backups are kept.",
+        "Permanently removes this shared folder’s catalog and history from the hub. Connected devices stop syncing when they refresh. Files on disk and existing backups are kept.",
         "trash-2",
       ) +
         `<label for="confirm-folder-name">Type the shared folder name to confirm</label><input id="confirm-folder-name" name="confirmedName" autocomplete="off" required>`,
@@ -5212,12 +5231,12 @@ async function handle(name, id, control) {
     modal(
       status.role === "hub"
         ? modalHeader(
-            "Disable the hub’s local sync?",
+            "Stop syncing on this hub?",
             "Stops this hub’s local copy. The shared folder and history remain available.",
             "unlink",
           )
         : modalHeader(
-            `Unlink “${escape(folder.name)}”?`,
+            `Stop syncing “${escape(folder.name)}”?`,
             `Stops syncing it on ${machineLabel()}. The hub keeps the shared folder, its files and history.`,
             "unlink",
           ) +
@@ -5231,21 +5250,21 @@ async function handle(name, id, control) {
         detailId = null;
         notice(
           status.role === "hub"
-            ? "Local sync disabled. The shared folder remains available."
+            ? "Stopped syncing on this hub. The shared folder remains available."
             : deleteFiles
-              ? `Folder unlinked. ${countLabel(result.deleted, "file")} (${bytes(result.deletedBytes)}) deleted from ${machineLabel()}${result.kept ? `; ${countLabel(result.kept, "file")} not on the hub stay on disk` : ""}.`
-              : "Folder unlinked. Your files remain on disk.",
+              ? `Stopped syncing. ${countLabel(result.deleted, "file")} (${bytes(result.deletedBytes)}) deleted from ${machineLabel()}${result.kept ? `; ${countLabel(result.kept, "file")} not on the hub stay on disk` : ""}.`
+              : "Stopped syncing. Your files remain on disk.",
         );
       },
-      status.role === "hub" ? "Disable local sync" : "Unlink folder",
+      status.role === "hub" ? "Stop syncing here" : "Stop syncing",
     );
     $("#submit-dialog").classList.add("danger");
     const option = $('#dialog [name="deleteFiles"]');
     if (option) {
       option.onchange = () => {
         $("#submit-dialog").textContent = option.checked
-          ? "Unlink and delete"
-          : "Unlink folder";
+          ? "Stop syncing and delete"
+          : "Stop syncing";
       };
       option.onchange();
     }
@@ -5294,11 +5313,11 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         `Create a shared folder on hub ${escape(status.name)}`,
-        "Only the hub creates shared folders. Machines then select it and choose their own destination.",
+        "Only the hub creates shared folders. Devices then start syncing it and choose their own destination.",
         "folder-plus",
       ) +
         textField("Name", "name") +
-        '<p class="hint">Shown to every machine. Portable name: no slashes, no reserved words, no case collisions.</p>' +
+        '<p class="hint">Shown to every device. Portable name: no slashes, no reserved words, no case collisions.</p>' +
         pathInput(
           `Path on ${escape(status.name)}`,
           "path",
@@ -5342,7 +5361,7 @@ async function handle(name, id, control) {
       modal(
         modalHeader(
           "Choose folders",
-          "Keep complete copies on this machine.",
+          "Keep complete copies on this device.",
           "folder",
         ),
         async () => {},
@@ -5352,7 +5371,7 @@ async function handle(name, id, control) {
         "beforeend",
         '<div class="empty">' +
           icon("folder-check") +
-          "<h3>All folders are selected</h3><p>New shared folders will appear here when the hub creates them.</p></div>",
+          "<h3>All folders are syncing here</h3><p>New shared folders will appear here when the hub creates them.</p></div>",
       );
       icons();
       return;
@@ -5364,7 +5383,7 @@ async function handle(name, id, control) {
       modal(
         modalHeader(
           "Choose folder",
-          "Select a shared folder to keep on this machine.",
+          "Choose a shared folder to start syncing on this device.",
           "download",
         ) +
           '<div class="selection-list">' +
@@ -5401,7 +5420,7 @@ async function handle(name, id, control) {
         (local?.path
           ? '<p class="selection-hint">Change this location from folder details.</p>'
           : "") +
-        `<div class="callout">${icon("info")}<p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between machines.</p></div></div>`,
+        `<div class="callout">${icon("info")}<p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</p></div></div>`,
       async (f) => {
         await api("/v1/select", { id: remote.id, path: f.get("path") });
         await api("/v1/sync", { background: true });
@@ -5417,7 +5436,7 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         "Enable hub backup",
-        "Keep every shared folder and retained revision in a separate location while working-folder sync continues.",
+        "Keep every shared folder and retained version in a separate location while working-folder sync continues.",
         "shield-check",
       ) +
         pathInput("Backup location", "path", status.backup?.path || "") +
@@ -5457,11 +5476,11 @@ async function handle(name, id, control) {
     let preview = null;
     modal(
       modalHeader(
-        "Clean up older revisions",
+        "Clean up older versions",
         "Nothing is removed until you apply. See the count first.",
         "trash-2",
       ) +
-        `<label for="retention-days">Remove revisions older than (days)</label><input id="retention-days" name="days" type="number" min="0" value="${status.retention.days || 0}" required><label for="retention-versions">But always keep the last (versions per file)</label><input id="retention-versions" name="versions" type="number" min="0" value="${status.retention.versions || 0}" required><p class="hint">Leave a field at 0 to skip that rule.</p><div id="retention-preview" role="status"></div>`,
+        `<label for="retention-days">Remove versions older than (days)</label><input id="retention-days" name="days" type="number" min="0" value="${status.retention.days || 0}" required><label for="retention-versions">But always keep the last (versions per file)</label><input id="retention-versions" name="versions" type="number" min="0" value="${status.retention.versions || 0}" required><p class="hint">Leave a field at 0 to skip that rule.</p><div id="retention-preview" role="status"></div>`,
       async (f) => {
         const values = {
           days: Number(f.get("days")),
@@ -5475,7 +5494,7 @@ async function handle(name, id, control) {
           preview = { ...values, ...(await api("/v1/retention", values)) };
           const count = (n) => Number(n).toLocaleString("en");
           $("#retention-preview").innerHTML =
-            `<div class="retention-stats"><div class="panel"><span class="hint">Would remove</span><strong>${count(preview.remove)}</strong></div><div class="panel"><span class="hint">Keeps</span><strong>${count(preview.retained)}</strong></div><div class="panel"><span class="hint">Protected</span><strong>${count(preview.protected)}</strong><p>current · pending · unbacked</p></div></div><div class="settings-card">${(preview.folders || []).map((v) => setting(escape(v.name), `${count(v.remove)} revisions would be removed`, `${count(v.retained)} kept`)).join("")}</div><div class="callout warning">${icon("triangle-alert")}<p>Cleanup cannot be undone on this hub. Retained counts include protected revisions. No cleanup is scheduled.</p></div>`;
+            `<div class="retention-stats"><div class="panel"><span class="hint">Would remove</span><strong>${count(preview.remove)}</strong></div><div class="panel"><span class="hint">Keeps</span><strong>${count(preview.retained)}</strong></div><div class="panel"><span class="hint">Protected</span><strong>${count(preview.protected)}</strong><p>current · pending · unbacked</p></div></div><div class="settings-card">${(preview.folders || []).map((v) => setting(escape(v.name), `${count(v.remove)} versions would be removed`, `${count(v.retained)} kept`)).join("")}</div><div class="callout warning">${icon("triangle-alert")}<p>Cleanup cannot be undone on this hub. Retained counts include protected versions. No cleanup is scheduled.</p></div>`;
           $("#submit-dialog").innerHTML = icon("trash-2") + "Apply cleanup";
           icons();
           $("#submit-dialog").classList.add("danger");
@@ -5508,7 +5527,7 @@ async function handle(name, id, control) {
         `Use the local copies on ${escape(status.name)} when the old hub is permanently unavailable. Changes it never sent here cannot be recovered.`,
         "server",
       ) +
-        `${!plan.catalog.length ? '<div class="callout warning">' + icon("triangle-alert") + "<p>No shared folders are available for recovery on this machine.</p></div>" : ""}<div class="settings-card">${plan.catalog
+        `${!plan.catalog.length ? '<div class="callout warning">' + icon("triangle-alert") + "<p>No shared folders are available for recovery on this device.</p></div>" : ""}<div class="settings-card">${plan.catalog
           .map((v) => {
             const missing = plan.missing.some((m) => m.id === v.id);
             return setting(
@@ -5525,11 +5544,11 @@ async function handle(name, id, control) {
           })
           .join(
             "",
-          )}${setting("Full hub backup", plan.backupEnabled ? "Turn off full backup in Settings before replacing the hub." : "Off on this machine.", pill(plan.backupEnabled ? "Enabled" : "Off", plan.backupEnabled ? "wa" : "id", "shield"))}</div><p>${escape(plan.warning || "Unseen changes and old history cannot be reconstructed from working copies.")}</p><label class="inline-check"><input name="confirmed" type="checkbox" required>I confirm the old hub is stopped and will not return as the active hub.</label>`,
+          )}${setting("Full hub backup", plan.backupEnabled ? "Turn off full backup in Settings before replacing the hub." : "Off on this device.", pill(plan.backupEnabled ? "Enabled" : "Off", plan.backupEnabled ? "wa" : "id", "shield"))}</div><p>${escape(plan.warning || "Unseen changes and old history cannot be reconstructed from working copies.")}</p><label class="inline-check"><input name="confirmed" type="checkbox" required>I confirm the old hub is stopped and will not return as the active hub.</label>`,
       async (f) => {
         await api("/v1/promote", { confirmed: f.has("confirmed") });
       },
-      "Make this machine the hub",
+      "Make this device the hub",
     );
     const confirmation = $('#dialog [name="confirmed"]');
     const updatePromotion = () => {
@@ -5826,7 +5845,7 @@ async function showLogin(message = "") {
       "Sign-in method",
       [
         { label: "Enter a code", action: "login-code", active: true },
-        { label: "Approve on a machine", action: "login-approval" },
+        { label: "Approve on a device", action: "login-approval" },
       ],
       "access-tabs",
     )}</div>
@@ -5885,9 +5904,9 @@ async function showLogin(message = "") {
         requestReference(
           request.reference,
           "REQUEST",
-          "Approve only if the machine shows this same number.",
+          "Approve only if the device shows this same number.",
         ) +
-        `<p class="approval-instructions">Open Arca on an authorized machine or your phone.</p><p class="approval-countdown">${busyIcon()}<span id="request-countdown"></span></p><button type="button" class="secondary">Cancel request</button>`;
+        `<p class="approval-instructions">Open Arca on an authorized device or your phone.</p><p class="approval-countdown">${busyIcon()}<span id="request-countdown"></span></p><button type="button" class="secondary">Cancel request</button>`;
       const tick = () => {
         const el = wait.querySelector("#request-countdown");
         if (el)
@@ -5962,13 +5981,13 @@ function renderOnboarding() {
   document.body.classList.add("onboarding-mode");
   const o = onboarding;
   const activeStep = { 0: 0, access: 0, 2: 1, 3: 2 }[o.step] ?? o.step;
-  const steps = ["This machine", "Connect", "Folders"];
+  const steps = ["This device", "Connect", "Folders"];
   const connectSkipped = o.role === "hub" && o.step !== 0 && o.step !== -1;
   const webCodeCommand =
     "docker exec <container> node packages/cli/arca.js web-code";
   let body = "";
   if (o.step === -1)
-    body = `<p>Your personal drive, on your own machines.</p><h1>Many devices.<br><em class="accent-text">One space.</em></h1><p>Arca keeps the folders you choose in sync across your laptop, tablet and phone, with complete local copies and a hub you run yourself.</p>${[
+    body = `<p>Your personal drive, on your own devices.</p><h1>Many devices.<br><em class="accent-text">One space.</em></h1><p>Arca keeps the folders you choose in sync across your laptop, tablet and phone, with complete local copies and a hub you run yourself.</p>${[
       [
         "hard-drive",
         "Complete local copies",
@@ -5982,7 +6001,7 @@ function renderOnboarding() {
       [
         "server",
         "A hub you control",
-        "Your storage, your machines. No cloud account, no telemetry.",
+        "Your storage, your devices. No cloud account, no telemetry.",
       ],
     ]
       .map(
@@ -5991,18 +6010,18 @@ function renderOnboarding() {
       )
       .join("")}`;
   if (o.step === 0)
-    body = `<h1>Set up this machine</h1><p>Shown to other machines and in history.</p>${textField("Machine name", "name", o.name, "monitor")}${o.platform ? `<p class="hint">${escape(platformLabel(o.platform))}${o.arch ? ` · ${escape(o.arch)}` : ""}</p>` : ""}${[
+    body = `<h1>Set up this device</h1><p>Shown to other devices and in history.</p>${textField("Device name", "name", o.name, "monitor")}${o.platform ? `<p class="hint">${escape(platformLabel(o.platform))}${o.arch ? ` · ${escape(o.arch)}` : ""}</p>` : ""}${[
       [
         "hub",
         "server",
         "The hub",
-        "Keeps the folders and their history. Choose this for the machine that stays on: a server, a NAS or a computer that is rarely off.",
+        "Keeps the folders and their history. Choose this for the device that stays on: a server, a NAS or a computer that is rarely off.",
       ],
       [
         "replica",
         "monitor-smartphone",
-        "A replica",
-        "Keeps the folders you select. Needs a pairing code from the hub.",
+        "Another device",
+        "Keeps the folders you choose. Needs a pairing code from your hub.",
       ],
     ]
       .map(

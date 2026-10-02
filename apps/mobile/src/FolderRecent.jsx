@@ -55,7 +55,7 @@ export function FolderRecent({
   if (!connected && !page)
     return (
       <Text style={s.text}>
-        Connect to view recent revisions. Local files remain in Files.
+        Connect to view recent versions. Local files remain in Files.
       </Text>
     );
   if (error && !page)
@@ -66,8 +66,8 @@ export function FolderRecent({
     return (
       <OfflineEmpty
         icon="history"
-        title="No saved revisions"
-        text="You are offline. Revisions appear here once the hub is reachable."
+        title="No saved versions"
+        text="You are offline. Versions appear here once the hub is reachable."
         retry={() => {
           reconnect?.();
           retry((n) => n + 1);
@@ -78,7 +78,7 @@ export function FolderRecent({
     <View style={s.section}>
       {error && <ErrorNotice error={error} retry={() => retry((n) => n + 1)} />}
       {(!connected || page.offline) && (
-        <Text style={s.caption}>Offline · last known revisions</Text>
+        <Text style={s.caption}>Offline · last known versions</Text>
       )}
       {!!page.versions.length && (
         <View style={s.group}>
@@ -133,7 +133,7 @@ export function FolderRecent({
       {!page.versions.length && (
         <EmptyState
           icon="history"
-          title="No revisions yet"
+          title="No versions yet"
           text="Recent changes appear here after the first sync."
         />
       )}

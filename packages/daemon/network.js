@@ -26,7 +26,7 @@ export async function verifiedLanURL(remote, fetcher = fetch) {
 export async function verifiedTailnetURL(remote, state, resolveHost = lookup) {
   if (state.state !== "connected")
     fail(
-      "Connect Tailscale on both machines, or use an HTTPS hub address.",
+      "Connect Tailscale on both devices, or use an HTTPS hub address.",
       400,
     );
   const host = remote.hostname.replace(/^\[|\]$/g, "");
@@ -89,7 +89,7 @@ export class Network {
       service: "arca",
       discoveryVersion: 1,
       protocol: 1,
-      version: "0.6.69",
+      version: "0.6.70",
       id: c.id,
       name: c.name,
       role: c.role,

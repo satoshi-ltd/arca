@@ -188,7 +188,7 @@ export async function start(home, options = {}) {
         return { ...JSON.parse(cached.value), offline: true };
       if (prepared) return { ...prepared, offline: true };
       throw new Error(
-        "Hub unavailable. This information is not saved on this machine.",
+        "Hub unavailable. This information is not saved on this device.",
       );
     }
   }
@@ -330,7 +330,7 @@ export async function start(home, options = {}) {
             !b.name.trim() ||
             b.name.trim().length > 100)
         )
-          fail("Choose a machine name of up to 100 characters");
+          fail("Choose a device name of up to 100 characters");
         return send(
           201,
           await engine.exclusive(() => {
@@ -448,7 +448,7 @@ export async function start(home, options = {}) {
           "/v1/setup-info",
         ].includes(route)
       )
-        fail("Replica reset requires setup or a destruction retry", 409);
+        fail("Resetting this device requires setup or retrying the erase", 409);
       const jsonBody = async () => {
         try {
           const value = JSON.parse((await body(req)).toString());
@@ -502,7 +502,7 @@ export async function start(home, options = {}) {
         return engine.exclusive(() => {
           checkCredential();
           if (engine.destroying || config.destroyPending || config.needsSetup)
-            fail("Replica destruction is pending; retry Destroy replica", 409);
+            fail("Erasing this device is pending; retry Erase this device", 409);
           return work();
         });
       };
@@ -1245,7 +1245,7 @@ export async function start(home, options = {}) {
               .prepare("SELECT id FROM devices WHERE id=? AND revoked=0")
               .get(b.id)
           )
-            fail("Invalid machine", 400);
+            fail("Invalid device", 400);
           config.webApprovers = [
             ...new Set([
               ...(config.webApprovers || []).filter((id) => id !== b.id),
@@ -1261,7 +1261,7 @@ export async function start(home, options = {}) {
             return send(200, await engine.hubAction(route, b));
           }
           if (!web || (!admin && !canApprove(device.id)))
-            fail("Web approval is not allowed on this machine", 403);
+            fail("Web approval is not allowed on this device", 403);
           return send(200, web.decide(b.id, b.decision, device.id));
         }
         if (route === "/v1/settings") {
@@ -1272,7 +1272,7 @@ export async function start(home, options = {}) {
             b.name.length > 100 ||
             /[\x00-\x1f]/.test(b.name)
           )
-            fail("Machine name must contain 1–100 printable characters");
+            fail("Device name must contain 1–100 printable characters");
           config.name = b.name.trim();
           s.saveConfig();
           engine.lastReport = null;
@@ -1286,13 +1286,13 @@ export async function start(home, options = {}) {
         }
         if (route === "/v1/leave") {
           requireHub();
-          if (admin) fail("Use a linked machine credential to disconnect", 403);
+          if (admin) fail("Use a linked device credential to disconnect", 403);
           await authorizedWork(() => s.forgetDevice(device.id));
           return send(200, { disconnected: true });
         }
         if (route === "/v1/machine-report") {
           requireHub();
-          if (admin) fail("Use a linked machine credential to report", 403);
+          if (admin) fail("Use a linked device credential to report", 403);
           return send(200, acceptReport(s, device, b));
         }
         if (route === "/v1/snapshot-release") {
@@ -1759,7 +1759,7 @@ export async function start(home, options = {}) {
         if (route === "/v1/pairing") {
           requireHub();
           if (typeof b.name !== "string" || !b.name.trim())
-            fail("Machine name is required");
+            fail("Device name is required");
           const previous = new Set(
             s.db
               .prepare("SELECT code_hash FROM pairing")
@@ -1805,7 +1805,7 @@ export async function start(home, options = {}) {
             typeof b.name !== "string" ||
             !b.name.trim()
           )
-            fail("Invalid machine");
+            fail("Invalid device");
           const id = crypto.randomUUID();
           const secret = token();
           s.db
@@ -1826,7 +1826,7 @@ export async function start(home, options = {}) {
         if (route === "/v1/destroy-replica" || route === "/v1/destroy-hub") {
           requireAdmin();
           if (b.confirmed !== true)
-            fail("Confirm permanent destruction first", 400);
+            fail("Confirm erasing first", 400);
           images.cancel();
           await images.task;
           const result = await (route === "/v1/destroy-hub"
@@ -1842,17 +1842,17 @@ export async function start(home, options = {}) {
             config.destroyPending ||
             engine.destroying
           )
-            fail("This machine is not ready for first-run setup", 409);
+            fail("This device is not ready for first-run setup", 409);
           if (
             !["hub", "replica"].includes(b.role) ||
             typeof b.name !== "string" ||
             !b.name.trim()
           )
-            fail("Choose a machine name and role");
+            fail("Choose a device name and role");
           if (s.volumes().length)
             fail("Setup cannot replace existing folders", 409);
           if (config.hub && b.role !== "replica")
-            fail("A paired machine must remain a replica", 409);
+            fail("A paired device cannot switch to being a hub", 409);
           const { root } =
             b.onboarding === true
               ? { root: s.resolveLocation(b.root) }
@@ -1880,7 +1880,7 @@ export async function start(home, options = {}) {
         if (route === "/v1/connect") {
           requireAdmin();
           if (config.role === "hub")
-            fail("A hub cannot connect as a replica", 409);
+            fail("A hub cannot connect to another hub", 409);
           if (
             config.hub &&
             (s.volumes().length || config.backup?.path) &&
@@ -1947,7 +1947,7 @@ export async function start(home, options = {}) {
             }
           }
           if (!/^[a-f0-9]{64}$/.test(b.token || ""))
-            fail("Invalid machine token");
+            fail("Invalid device token");
           const response = await fetch(`${remote.origin}/v1/catalog`, {
             redirect: "error",
             headers: { Authorization: `Bearer ${b.token}` },

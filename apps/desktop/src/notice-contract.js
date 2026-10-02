@@ -178,7 +178,7 @@ export function conditionNotices(status = {}) {
         kind: "warning",
         icon: "git-branch",
         title: `Conflict in ${folder.name}`,
-        body: "Files were edited on two machines. Both files were kept.",
+        body: "Files were edited on two devices. Both files were kept.",
         action: "review",
         actionLabel: "Review",
         volume: folder.id,

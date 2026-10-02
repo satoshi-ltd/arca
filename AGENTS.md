@@ -70,12 +70,12 @@ Rules of the loop:
 
 ## Product decisions (non-negotiable)
 
-- The hub alone creates shares, identified by ID. Every machine chooses its own local destinations. Replica selections edit both ways with complete local files, never placeholders.
-- Mobile linked albums add photo-library uploads to a complete two-way Arca working copy: every selected participant downloads the whole shared folder, including other machines' media, into app-owned storage. Never import hub files into Photos, never propagate deletions made in Photos, never remove originals from the system library. Participants may explicitly delete from a shared gallery; that affects synchronized Arca copies only. Linking an album preserves the existing working copy. Any future object-only gallery conversion verifies retained content and asks before removing working files.
-- Pause, replica unlink, hub local-copy unselection and hub Delete share are different operations with the file and history consequences SPEC documents.
+- The hub alone creates shares, identified by ID. Every device chooses its own local destinations. Device selections edit both ways with complete local files, never placeholders.
+- Mobile linked albums add photo-library uploads to a complete two-way Arca working copy: every selected participant downloads the whole shared folder, including other devices' media, into app-owned storage. Never import hub files into Photos, never propagate deletions made in Photos, never remove originals from the system library. Participants may explicitly delete from a shared gallery; that affects synchronized Arca copies only. Linking an album preserves the existing working copy. Any future object-only gallery conversion verifies retained content and asks before removing working files.
+- Pause, Stop syncing, hub Stop syncing here and hub Delete share are different operations with the file and history consequences SPEC documents.
 - Full backup is optional and only for desktop/server replicas. Phones are replicas only: no hub, no backup. Quit leaves the daemon running.
 - No backward-compatibility branches, legacy modes or unused code before release; keep current error recovery and platform support.
-- Discovery never links machines. Web access and pairing use separate six-digit, single-use, ten-minute codes with persistent failure budgets; credentials stay long-lived and revocable.
+- Discovery never links devices. Web access and pairing use separate six-digit, single-use, ten-minute codes with persistent failure budgets; credentials stay long-lived and revocable.
 - Web is the primary server administration; Tauri manages its local daemon; the CLI is auxiliary, without interactive menus. A replica credential never implies hub administration.
 - New hub folders get a rule-free `.arcaignore`; replicas never seed one and a missing one is fine. A fixed list of OS metadata, temporaries, caches, `.git` and `.obsidian` always applies and cannot be re-included; names that may be content (`cache/`, `build/`, `logs/`, `*.lock`, `.env`) never join it.
 - The maintainer's `~/.alpi` policy follows `.gitignore` except that `.env` and secrets are intentionally included. Never log secret contents; read the actual policy before editing it, since older exclusion notes are superseded.

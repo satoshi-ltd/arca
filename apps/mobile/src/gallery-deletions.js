@@ -19,7 +19,7 @@ export class GalleryDeletions {
       const folder = (await r.store.folders(r.scope)).find(
         (f) => f.id === volume && f.selected,
       );
-      if (!folder) throw new Error("Select this folder first.");
+      if (!folder) throw new Error("Start syncing this folder first.");
       const items = Array.isArray(item) ? item : [item];
       if (
         !items.length ||
