@@ -1389,6 +1389,34 @@ test("Settings offers Clean up…, and the dialog shows the count before Apply c
   submit();
   await until(() => w.document.querySelector("#retention-preview .retention-stats"));
   assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "Apply cleanup");
+  for (const id of ["#dialog-days", "#dialog-versions"]) {
+    const field = w.document.querySelector(id);
+    const value = field.value;
+    field.value = String(Number(value) + 1);
+    field.dispatchEvent(new w.Event("input", { bubbles: true }));
+    assert.equal(w.document.querySelector("#retention-preview").innerHTML, "", `editing ${id} clears the counts`);
+    assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "See the count");
+    assert.equal(w.document.querySelector("#submit-dialog").classList.contains("danger"), false);
+    field.value = value;
+    submit();
+    await until(() => w.document.querySelector("#retention-preview .retention-stats"));
+    assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "Apply cleanup");
+  }
+  assert.equal(revisions(), changed, "recounting removes nothing");
+  const days = w.document.querySelector("#dialog-days");
+  const original = days.value;
+  days.value = "1";
+  days.dispatchEvent(new w.Event("input", { bubbles: true }));
+  submit();
+  days.value = "2";
+  days.dispatchEvent(new w.Event("input", { bubbles: true }));
+  await drainRequests(requests);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(w.document.querySelector("#retention-preview").innerHTML, "", "a count for edited fields is not shown");
+  assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "See the count");
+  days.value = original;
+  submit();
+  await until(() => w.document.querySelector("#retention-preview .retention-stats"));
   submit();
   await until(() => revisions() < changed);
   assert.equal(revisions(), changed - 3, "only the superseded revisions go; the current file stays");

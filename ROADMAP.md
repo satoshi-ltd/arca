@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-CLEANUP-RECOUNT** — Editing a cleanup field after the count goes back to counting
-  `feature · agent · low`
-  accept: in the Clean up older versions dialog, editing either field after See the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen; a JSDOM test.
 - **NAT-REVEAL-FILE** — Show a file in its own folder on Windows and Linux
   `feature · agent · low`
   accept: `open_file` with `reveal` works on every platform (Windows `explorer /select,<path>`, Linux the file's parent directory) and the file detail's Show in folder, and the photo viewer's, open the file's own folder instead of the shared folder's root; a Rust test next to the existing `open_file` code; native change, so a desktop build and a maintainer `verify` on real Windows and Linux follow.

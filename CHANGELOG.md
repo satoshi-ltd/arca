@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.75 — 2026-10-02
+
+- In Clean up older versions, changing either number after See the count clears the counts and goes back to counting, so Apply cleanup only removes what the screen showed.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.74 — 2026-10-02
 
 - Settings → History counts only older versions: a hub with a hundred untouched files no longer reads "100 kept", because each file's current version and current deletions are left out.

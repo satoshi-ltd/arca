@@ -87,7 +87,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.74";
+const APP_VERSION = "0.6.75";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5485,6 +5485,13 @@ async function handle(name, id, control) {
   }
   if (name === "retention") {
     let preview = null;
+    const recount = () => {
+      if (!preview) return;
+      preview = null;
+      $("#retention-preview").innerHTML = "";
+      $("#submit-dialog").textContent = "See the count";
+      $("#submit-dialog").classList.remove("danger");
+    };
     modal(
       modalHeader(
         "Clean up older versions",
@@ -5502,7 +5509,15 @@ async function handle(name, id, control) {
           preview.days !== values.days ||
           preview.versions !== values.versions
         ) {
-          preview = { ...values, ...(await api("/v1/retention", values)) };
+          const counted = { ...values, ...(await api("/v1/retention", values)) };
+          const field = (name) =>
+            document.querySelector(`#dialog-form [name="${name}"]`)?.value;
+          if (
+            Number(field("days")) !== values.days ||
+            Number(field("versions")) !== values.versions
+          )
+            return false;
+          preview = counted;
           const count = (n) => Number(n).toLocaleString("en");
           $("#retention-preview").innerHTML =
             `<div class="retention-stats"><div class="panel"><span class="hint">Would remove</span><strong>${count(preview.remove)}</strong></div><div class="panel"><span class="hint">Keeps</span><strong>${count(preview.retained)}</strong></div><div class="panel"><span class="hint">Protected</span><strong>${count(preview.protected)}</strong><p>current · pending · unbacked</p></div></div><div class="settings-card">${(preview.folders || []).map((v) => setting(escape(v.name), `${count(v.remove)} versions would be removed`, `${count(v.retained)} kept`)).join("")}</div><div class="callout warning">${icon("triangle-alert")}<p>Cleanup cannot be undone on this hub. Retained counts include protected versions. No cleanup is scheduled.</p></div>`;
@@ -5518,16 +5533,17 @@ async function handle(name, id, control) {
             confirmation: preview.confirmation,
           });
         } catch (error) {
-          preview = null;
-          $("#retention-preview").innerHTML = "";
-          $("#submit-dialog").textContent = "See the count";
-          $("#submit-dialog").classList.remove("danger");
+          recount();
           throw error;
         }
         notice("Cleanup applied.");
       },
       "See the count",
     );
+    for (const field of document.querySelectorAll(
+      '#dialog-form [name="days"], #dialog-form [name="versions"]',
+    ))
+      field.addEventListener("input", recount);
     return;
   }
   if (name === "promote") {
