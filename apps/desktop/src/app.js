@@ -87,7 +87,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.75";
+const APP_VERSION = "0.6.76";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2906,13 +2906,11 @@ async function openGalleryPhoto(index) {
   updateInfoActions();
   infoPanel.querySelector(".photo-reveal")?.addEventListener("click", () =>
     action(() =>
-      status.platform === "darwin"
-        ? invoke("open_file", {
-            volume: state.volume,
-            path: item.path,
-            reveal: true,
-          })
-        : invoke("open_folder", { id: state.volume }),
+      invoke("open_file", {
+        volume: state.volume,
+        path: item.path,
+        reveal: true,
+      }),
     ),
   );
   let infoLoading = false;
@@ -4861,10 +4859,6 @@ async function handle(name, id, control) {
   }
   if (name === "history-page") {
     await renderHistory(id, true);
-    return;
-  }
-  if (name === "history-reveal-file" && status.platform !== "darwin") {
-    await invoke("open_folder", { id: historyVolume });
     return;
   }
   if (name === "history-open-file" || name === "history-reveal-file") {

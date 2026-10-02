@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.76 — 2026-10-02
+
+- Show in folder now works on Windows and Linux: from a file's detail or the photo viewer it opens the file's own folder (Explorer selects the file on Windows) instead of the shared folder's root.
+
+Needs: desktop build
+
 ## 0.6.75 — 2026-10-02
 
 - In Clean up older versions, changing either number after See the count clears the counts and goes back to counting, so Apply cleanup only removes what the screen showed.

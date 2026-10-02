@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **NAT-REVEAL-FILE** — Show a file in its own folder on Windows and Linux
-  `feature · agent · low`
-  accept: `open_file` with `reveal` works on every platform (Windows `explorer /select,<path>`, Linux the file's parent directory) and the file detail's Show in folder, and the photo viewer's, open the file's own folder instead of the shared folder's root; a Rust test next to the existing `open_file` code; native change, so a desktop build and a maintainer `verify` on real Windows and Linux follow.
 - **NAT-F29-SHARE-CACHE** — Safe cache names for incoming shares (security)
   `bug · agent · high`
   accept: Android shared files land under generated cache names, never `cacheDir/<sender display name>`; native change, device evidence follows in a `verify`.
@@ -83,6 +80,9 @@ _None._
 - **OFFLINE-DEVICE** — Offline replicas on real machines
   `verify · maintainer · high · depends: BUILD-MOBILE, BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
+- **VERIFY-REVEAL-FILE** — Show in folder on real Windows and Linux
+  `verify · maintainer · normal · depends: BUILD-DESKTOP`
+  accept: on a Windows and a Linux desktop build, a file detail's Show in folder and the photo viewer's open the file's own folder (Explorer with the file selected on Windows, a file manager on the file's folder on Linux), including a file in a nested folder, a path with spaces and, on Windows, a path longer than 260 characters (the verbatim prefix is stripped for Explorer).
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
   accept: after the first sync, Android's storage figure for Arca drops to about the synchronized folders' size (from about 55 GB to about 26 GB for `photos`).

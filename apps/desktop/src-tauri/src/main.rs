@@ -324,14 +324,28 @@ async fn open_file(volume: String, path: String, reveal: Option<bool>) -> Result
     let root=fs::canonicalize(root).map_err(|e|e.to_string())?;
     let file=fs::canonicalize(root.join(path)).map_err(|e|e.to_string())?;
     if !file.starts_with(&root)||!file.is_file(){return Err("File is outside the selected folder".into());}
-    #[cfg(target_os="macos")] let mut command=Command::new("open");
-    #[cfg(target_os="windows")] let mut command=Command::new("explorer");
-    #[cfg(target_os="linux")] let mut command=Command::new("xdg-open");
-    if reveal.unwrap_or(false) {
-        #[cfg(target_os="macos")] command.arg("-R");
-        #[cfg(not(target_os="macos"))] return Err("Reveal in Finder is only available on macOS".into());
-    }
-    command.arg(file).spawn().map_err(|e|e.to_string())?;Ok(())
+    let reveal=reveal.unwrap_or(false);
+    #[cfg(target_os="macos")] let mut command={let mut c=Command::new("open");if reveal{c.arg("-R");}c.arg(&file);c};
+    #[cfg(target_os="windows")] let mut command={
+        use std::os::windows::process::CommandExt;
+        let mut c=Command::new("explorer");
+        if reveal{c.raw_arg(select_argument(&file.to_string_lossy()));}else{c.arg(strip_verbatim(&file.to_string_lossy()));}
+        c
+    };
+    #[cfg(target_os="linux")] let mut command={let mut c=Command::new("xdg-open");c.arg(reveal_target(&file,reveal));c};
+    command.spawn().map_err(|e|e.to_string())?;Ok(())
+}
+#[cfg_attr(not(windows),allow(dead_code))]
+fn strip_verbatim(path:&str)->String{
+    if let Some(rest)=path.strip_prefix(r"\\?\UNC\"){format!(r"\\{}",rest)}
+    else if let Some(rest)=path.strip_prefix(r"\\?\"){rest.to_string()}
+    else{path.to_string()}
+}
+#[cfg_attr(not(windows),allow(dead_code))]
+fn select_argument(path:&str)->String{format!("/select,\"{}\"",strip_verbatim(path))}
+#[cfg_attr(not(target_os="linux"),allow(dead_code))]
+fn reveal_target(file:&Path,reveal:bool)->PathBuf{
+    if reveal{file.parent().unwrap_or(file).to_path_buf()}else{file.to_path_buf()}
 }
 #[tauri::command]
 async fn save_file(volume: String, path: String) -> Result<bool, String> {
@@ -783,6 +797,26 @@ mod tray_tests {
         s["volumes"][0]["conflicts"] = json!(0);
         s["lastSync"] = json!(null);
         assert_eq!(tray_state(&s), "default");
+    }
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::*;
+    #[test]
+    fn explorer_selects_the_file_and_never_sees_the_verbatim_prefix() {
+        assert_eq!(select_argument(r"\\?\C:\Users\a b\Photos\trip.jpg"), "/select,\"C:\\Users\\a b\\Photos\\trip.jpg\"");
+        assert_eq!(select_argument(r"\\?\UNC\server\share\a.txt"), "/select,\"\\\\server\\share\\a.txt\"");
+        assert_eq!(select_argument(r"C:\plain\a.txt"), "/select,\"C:\\plain\\a.txt\"");
+        assert_eq!(strip_verbatim(r"\\?\C:\a.txt"), r"C:\a.txt");
+        assert_eq!(strip_verbatim("/home/a/b.txt"), "/home/a/b.txt");
+    }
+    #[test]
+    fn linux_reveals_the_files_own_folder_and_opens_the_file_itself() {
+        let file = Path::new("/data/shared/trips/2026/photo.jpg");
+        assert_eq!(reveal_target(file, true), PathBuf::from("/data/shared/trips/2026"));
+        assert_eq!(reveal_target(file, false), file.to_path_buf());
+        assert_eq!(reveal_target(Path::new("/"), true), PathBuf::from("/"));
     }
 }
 

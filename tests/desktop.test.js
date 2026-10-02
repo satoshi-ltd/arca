@@ -1210,7 +1210,7 @@ test("an empty Folders shows its one action in the header and the empty state on
   assert.equal(offline.querySelector(".page .empty button"), null);
 });
 
-test("the file detail reveals with the platform's own word while the folder header keeps opening the folder", async (t) => {
+test("the file detail reveals the file on every platform with the platform's own word while the folder header keeps opening the folder", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-reveal-words-"));
   init(home, { port: 0, name: "Test hub" });
   const daemon = await start(home, { timer: false });
@@ -1280,8 +1280,20 @@ test("the file detail reveals with the platform's own word while the folder head
     assert.equal(other.folderOpen, "Open folder", `${platform}: the folder header keeps its word`);
     control.click();
     await until(() => other.native.length === 1);
-    assert.deepEqual(other.native[0], ["open_folder", { id: volume.id }], `${platform}: no reveal exists, so it opens the shared folder`);
+    assert.deepEqual(other.native[0], ["open_file", { volume: volume.id, path: "brief.md", reveal: true }], `${platform}: it reveals the file's own folder`);
   }
+});
+
+test("the photo viewer and the native command reveal the file's own folder on every platform", () => {
+  const app = fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8");
+  const viewer = app.slice(app.indexOf('infoPanel.querySelector(".photo-reveal")?.addEventListener'));
+  assert.match(viewer.slice(0, 300), /invoke\("open_file", \{\s+volume: state\.volume,\s+path: item\.path,\s+reveal: true,/);
+  assert.doesNotMatch(viewer.slice(0, 300), /open_folder|darwin/);
+  assert.doesNotMatch(app, /name === "history-reveal-file" && status\.platform/);
+  const main = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
+  assert.doesNotMatch(main, /only available on macOS/);
+  assert.match(main, /raw_arg\(select_argument\(/);
+  assert.match(main, /fn reveal_target\(/);
 });
 
 test("Settings offers Clean up…, and the dialog shows the count before Apply cleanup removes anything", async (t) => {
