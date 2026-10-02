@@ -26,12 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-FULLSCAN-FAILING** — Full verification while one folder keeps failing
-  `bug · agent · low`
-  accept: a folder that fails every cycle no longer keeps `lastFullScan` from advancing, so healthy folders are not fully re-hashed on every sync after the first hour; a replica test with one permanently failing folder shows scheduled cycles stop forcing full verification once the healthy folders complete it.
-- **MOB-PICKED-RETRY** — Retry on the offline notice reopens the photo picker
-  `bug · agent · low`
-  accept: after an offline Add photos… failure, the notice's retry starts a sync instead of reopening the picker; a replica or layout test.
 - **MOB-GALLERY-IGNORE-POLICY** — Photos the folder's `.arcaignore` excludes still show as phone-only in the online gallery
   `bug · agent · low`
   accept: online, local photos and videos the folder's `.arcaignore` ignores never appear in the phone gallery (today only the fixed exclusion list filters them); a pure-helper test with a policy and a replica test reading the real `.arcaignore`.

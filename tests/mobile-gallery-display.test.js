@@ -154,3 +154,11 @@ test("the pending uploads strip offers to dismiss photos whose app copy is gone"
     /dismissLost: \(\) =>\s+run\(\(\) => engine\.current\.gallery\.dismissLost\(folder\.id\)\)/,
   );
 });
+
+test("a failed Add photos whose picks are journaled retries by syncing, not by reopening the picker", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  assert.match(
+    app,
+    /retryAction\.current = e\.journaled\s+\? \(\) => \{\s+if \(engine\.current\?\.paused\) return;\s+setError\(""\);\s+startSync\(\);\s+\}\s+: \(\) => run\(work, options\);/,
+  );
+});

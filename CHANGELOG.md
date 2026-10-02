@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.80 — 2026-10-02
+
+- On the phone, one folder that keeps failing no longer makes every sync re-check all the other folders' files from scratch: the hourly full check now counts as done once the healthy folders have finished it.
+- After an Add photos… failure while offline, Retry on the notice now starts a sync of the photos already queued instead of reopening the photo picker.
+
+Needs: native build
+
 ## 0.6.79 — 2026-10-02
 
 - A damaged record in the phone's photo upload list no longer stops Arca from starting or blocks other photos: it is set aside, and the photo it described is found again on the next scan (or, for a picked photo, from its saved copy) without deleting anything on the hub.

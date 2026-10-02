@@ -1078,6 +1078,7 @@ export class Replica {
           "Update the hub to synchronize directories and path changes safely.",
         );
       const errors = [];
+      const settled = new Set();
       let deferred = false;
       const folders = (await this.store.folders(this.scope))
         .filter((f) => f.selected)
@@ -1088,9 +1089,12 @@ export class Replica {
       }
       for (const folder of folders) {
         this.check();
-        if (await this.store.get(`removing:${this.scope}:${folder.id}`, false))
+        if (await this.store.get(`removing:${this.scope}:${folder.id}`, false)) {
+          settled.add(folder.id);
           continue;
+        }
         if (!catalog.volumes.some((v) => v.id === folder.id)) {
+          settled.add(folder.id);
           await this.store.issue(
             this.scope,
             folder.id,
@@ -1181,6 +1185,7 @@ export class Replica {
           if (e.code !== "SYNC_INTERRUPTED")
             await this.store.issue(this.scope, folder.id, e.message);
           if (e.code === "SYNC_INTERRUPTED") throw e;
+          settled.add(folder.id);
           errors.push(`${folder.name}: ${e.message}`);
         } finally {
           this.turnDeadline = null;
@@ -1189,15 +1194,18 @@ export class Replica {
         }
       }
       await this.cleanTransferObjects(this.scope).catch(() => {});
+      if (
+        this.fullScanRequested &&
+        [...this.fullScanPending].every((id) => settled.has(id))
+      ) {
+        this.lastFullScan = Date.now();
+        await this.store.set(`fullScan:${this.scope}`, this.lastFullScan);
+        this.fullScanRequested = false;
+      }
       if (errors.length) {
         this.error = errors.join("; ");
         await this.report();
         throw new Error(this.error);
-      }
-      if (this.fullScanRequested && !this.fullScanPending.size) {
-        this.lastFullScan = Date.now();
-        await this.store.set(`fullScan:${this.scope}`, this.lastFullScan);
-        this.fullScanRequested = false;
       }
       if (this.moreFolderWork || deferred) return;
       await warmViews(this, folders);

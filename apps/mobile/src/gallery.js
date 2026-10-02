@@ -169,13 +169,13 @@ export class Gallery {
     if (r.paused) throw new Error("Resume syncing before adding photos.");
     r.importing = r.busy = true;
     r.stopped = false;
+    const queued = [];
     try {
       r.check();
       const folder = await r.store.folder(r.scope, volume);
       const source = galleryConfig(folder);
       if (!source || source.mode !== "source")
         throw new Error("Photo uploads are unavailable for this folder.");
-      const queued = [];
       // Journal the entire selection before transferring any photo. A failed
       // first transfer must not discard the remaining selections.
       let journalFailure;
@@ -219,6 +219,18 @@ export class Gallery {
         }
       }
       if (failure) throw failure;
+    } catch (error) {
+      if (
+        queued.length &&
+        error &&
+        typeof error === "object" &&
+        (["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
+          isHubUnreachable(error))
+      )
+        try {
+          error.journaled = true;
+        } catch {}
+      throw error;
     } finally {
       try {
         const source = await r.store.gallery(r.scope, volume);

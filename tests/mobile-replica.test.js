@@ -2069,6 +2069,48 @@ test("a pick whose app copy is gone can be dismissed instead of staying failed, 
   assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, failed.id)).state, "pending");
 });
 
+test("an Add photos failure after the picks were journaled says so, so Retry can sync instead of reopening the picker", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "journaled.jpg");
+  fs.writeFileSync(uri, "journaled bytes");
+  f.offline();
+  const error = await r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "journaled.jpg" }]).catch((e) => e);
+  assert.equal(error.journaled, true);
+  const none = await r.gallery.addPhotos(f.volume.id, [{ uri: path.join(f.root, "nothing.jpg"), fileName: "nothing.jpg" }]).catch((e) => e);
+  assert.ok(none instanceof Error);
+  assert.equal(none.journaled, undefined, "nothing was journaled, so picking again is the right retry");
+  f.online();
+  await r.sync();
+  const accepted = await f.store.galleryPreview(r.scope, f.volume.id, true, 10);
+  assert.ok(accepted.some((item) => item.name === "journaled.jpg"), "a sync uploads the journaled pick");
+});
+
+test("Add photos failures a sync cannot recover do not offer a sync as the retry", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const good = path.join(f.root, "good.jpg");
+  fs.writeFileSync(good, "good bytes");
+  const upload = r.upload.bind(r);
+  r.upload = async () => {
+    throw new Error("Upload refused");
+  };
+  const refused = await r.gallery.addPhotos(f.volume.id, [{ uri: good, fileName: "good.jpg" }]).catch((e) => e);
+  assert.match(refused.message, /Upload refused/);
+  assert.equal(refused.journaled, undefined, "a refused upload waits for its retry time, so a plain sync would do nothing");
+  r.upload = upload;
+  const unreadable = await r.gallery
+    .addPhotos(f.volume.id, [
+      { uri: path.join(f.root, "gone.jpg"), fileName: "gone.jpg" },
+      { uri: good, fileName: "good.jpg" },
+    ])
+    .catch((e) => e);
+  assert.ok(unreadable instanceof Error);
+  assert.equal(unreadable.journaled, undefined, "an unreadable pick can only be recovered by picking it again");
+});
+
 test("a pick that still has its app copy is never dismissed", async (t) => {
   const f = await galleryFixture(t);
   const r = f.replica;
@@ -3025,6 +3067,41 @@ test("forced verification survives a yielded folder with a recent inventory and 
   assert.ok(rehashed > 0, "continuation must bypass the verified hash cache");
   assert.equal(r.fullScanPending.size, 0);
   assert.equal(await f.store.get(`fullScan:${r.scope}`), r.lastFullScan);
+});
+
+test("a folder that fails every cycle does not keep scheduled cycles forcing full verification", async (t) => {
+  const f = await fixture(t);
+  const r = f.replica;
+  const healthy = f.volume;
+  const broken = f.daemon.engine.store.addVolume("Broken");
+  fs.writeFileSync(path.join(healthy.path, "ok.txt"), "healthy bytes");
+  await f.daemon.engine.cycle();
+  await f.client.refresh();
+  for (const volume of f.client.state().catalog.volumes) await r.select(volume);
+  await sync(f);
+  const scan = r.scan.bind(r);
+  const scans = [];
+  r.scan = async (folder) => {
+    scans.push(folder.id);
+    if (folder.id === broken.id) throw new Error("Disk error");
+    return scan(folder);
+  };
+  const before = r.lastFullScan;
+  await r.sync(true);
+  assert.match((await f.store.folder(r.scope, broken.id)).issue, /Disk error/);
+  assert.ok(scans.includes(healthy.id), "Sync now verifies the healthy folder");
+  assert.ok(r.lastFullScan > before, "the failing folder does not hold the verification time back");
+  assert.equal(await f.store.get(`fullScan:${r.scope}`), r.lastFullScan);
+  r.lastFullScan = Date.now() - 2 * 3600000;
+  scans.length = 0;
+  r.lastInventory.set(healthy.id, Date.now());
+  await r.sync(false, { scheduled: true });
+  assert.ok(scans.includes(healthy.id), "an hour later a scheduled cycle verifies the healthy folder once");
+  assert.ok(Date.now() - r.lastFullScan < 60000, "and the failing folder does not hold that back");
+  scans.length = 0;
+  r.lastInventory.set(healthy.id, Date.now());
+  await r.sync(false, { scheduled: true });
+  assert.equal(scans.includes(healthy.id), false, "the next scheduled cycle no longer re-verifies the healthy folder");
 });
 
 test("gallery connection loss stops the batch without failing every photo and resumes online", async (t) => {

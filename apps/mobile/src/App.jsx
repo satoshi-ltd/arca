@@ -409,7 +409,13 @@ export default function App() {
       if (options.success) setSuccess(options.success);
     } catch (e) {
       if (isPickerCancelled(e)) return;
-      retryAction.current = () => run(work, options);
+      retryAction.current = e.journaled
+        ? () => {
+            if (engine.current?.paused) return;
+            setError("");
+            startSync();
+          }
+        : () => run(work, options);
       const message = e.message || "Could not complete this action.";
       retryAction.current.message = message;
       errorCode.current = { message, code: e.code, hubOnly: !!options.hubOnly };
