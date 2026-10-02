@@ -86,7 +86,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.66";
+const APP_VERSION = "0.6.67";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1112,40 +1112,53 @@ async function refresh(renderView = true) {
   }
   return signature;
 }
-function folderRetentionSummary(volume) {
-  const mode =
+const retainedFor = (span) =>
+  `Older revisions of every file in this folder stay restorable for ${span} after a change or deletion; after that, only the current files remain.`;
+const folderRetentionChoices = [
+  {
+    id: "off",
+    label: "Off",
+    summary: "Off",
+    effect:
+      "Only the current files are kept: older revisions of every file in this folder are removed.",
+  },
+  { id: "1d", label: "1 day", summary: "On · 1 day", effect: retainedFor("a day") },
+  { id: "1w", label: "1 week", summary: "On · 1 week", effect: retainedFor("a week") },
+  { id: "1m", label: "30 days", summary: "On · 30 days", effect: retainedFor("30 days") },
+  {
+    id: "forever",
+    label: "Forever",
+    summary: "Forever",
+    effect: "Every older revision of every file in this folder is kept from now on.",
+  },
+];
+function folderRetentionMode(volume) {
+  return (
     (status.role === "hub"
       ? status.folderRetention?.[volume.id]
       : (catalog.find((row) => row.id === volume.id)?.historyRetention ??
-        volume.historyRetention)) || "1m";
-  const label =
-    {
-      off: "Off",
-      "1d": "On · 1 day",
-      "1w": "On · 1 week",
-      "1m": "On · 30 days",
-      forever: "Forever",
-    }[mode] || "Unknown";
-  return `<div class="stat folder-history-status"><span>Revision history</span>${status.role === "hub" ? folderRetentionControl(volume.id) : `<strong>${escape(label)}</strong>`}<p>${mode === "off" ? "Current files only" : "Older revisions kept"}</p></div>`;
+        volume.historyRetention)) || "1m"
+  );
 }
-function folderRetentionControl(id) {
-  const mode = status.folderRetention?.[id] || "1m";
-  return `<div id="folder-retention" data-volume="${escape(id)}">${segmented(
+function folderRetentionSummary(volume) {
+  const mode = folderRetentionMode(volume);
+  const label =
+    folderRetentionChoices.find((choice) => choice.id === mode)?.summary ||
+    "Unknown";
+  return `<div class="stat folder-history-status"><span>Revision history</span><strong>${escape(label)}</strong><p>${mode === "off" ? "Current files only" : "Older revisions kept"}</p></div>`;
+}
+function folderRetentionPanel(volume) {
+  const mode = folderRetentionMode(volume);
+  const effect = folderRetentionChoices.find((choice) => choice.id === mode)?.effect;
+  return `<div class="panel"><h3>Keep older revisions for</h3><div id="folder-retention" data-volume="${escape(volume.id)}">${segmented(
     "Revision history retention",
-    [
-      ["off", "Off"],
-      ["1d", "1d"],
-      ["1w", "1w"],
-      ["1m", "30d"],
-      ["forever", "Forever"],
-    ].map(([value, label]) => ({
-      label,
+    folderRetentionChoices.map((choice) => ({
+      label: choice.label,
       action: "folder-retention",
-      id: value,
-      active: mode === value,
+      id: choice.id,
+      active: mode === choice.id,
     })),
-    "segmented-compact",
-  )}</div>`;
+  )}</div>${effect ? `<p>${effect}</p>` : ""}</div>`;
 }
 async function changeFolderRetention(mode, control) {
   const group = control.closest("#folder-retention");
@@ -3248,7 +3261,7 @@ async function renderDetail(pending = false) {
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(v.gallery ? "images" : "folder")}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? (v.policyError ? "Resolve the exclusion policy error" : "Waiting for the first scan") : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${revisionCell(known)}</strong><p>Accepted by the hub</p></div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(v.gallery ? "images" : "folder")}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat"><span>Files</span><strong>${unscanned ? "Not counted" : v.files.toLocaleString("en")}</strong><p>${unscanned ? (v.policyError ? "Resolve the exclusion policy error" : "Waiting for the first scan") : `${bytes(v.bytes)} indexed`}</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">${revisionCell(known)}</strong><p>Accepted by the hub</p></div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Revision history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Disabling it keeps the shared folder and history available to replicas; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Disable local sync…" : "Unlink…") : "Select…", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "download")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all machines and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
   if (!pending && folderTab === "gallery") mountGallery(v.id);

@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.66 · proposals</span>
+      <span class="kit-version">v0.6.67 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -83,25 +83,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>Files, History and a file's history on desktop and web end in one Show more button (Show more files, Show more, Show more revisions) that appends the next rows and keeps scroll and typed search, as DESK-FILES-PAGING describes; the phone's buttons use the same words; placeholder rows carry no Loading label; JSDOM tests cover the three lists and <code>design/desktop.html</code> shows a list ending in Show more.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-DESK-RETENTION-PANEL">
-          <header><code>UI-DESK-RETENTION-PANEL</code><h3>The retention control leaves the summary</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> On the hub, the Revision history cell of a folder's summary holds a compact segmented control (Off, 1d, 1w, 30d, Forever) among three read-only cells, with abbreviations the replica never shows and no room to say what the choice does. The proposal makes the summary read-only for both roles and gives the hub a Revision history panel in the side column, next to Path, Copies and Hub working copy, with the full labels and one sentence on the consequence. The alternative keeps the control in the cell and only lengthens its labels, which does not fit four cells.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Hub · a control inside the summary, among read-only cells</p>
-<div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ok"><span data-icon="circle-check"></span>Up to date</strong><p>Completed just now</p></div><div class="stat"><span>Files</span><strong>20</strong><p>14.2 MB indexed</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">rev 165764</strong><p>Accepted by the hub</p></div><div class="stat folder-history-status"><span>Revision history</span><div class="segmented segmented-compact" role="group"><button type="button">Off</button><button type="button">1d</button><button type="button" class="active">1w</button><button type="button">30d</button><button type="button">Forever</button></div><p>Older revisions kept</p></div></div>
-              <p class="kit-caption">Replica · the same cell, read-only</p>
-<div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ok"><span data-icon="circle-check"></span>Up to date</strong><p>Completed just now</p></div><div class="stat"><span>Files</span><strong>20</strong><p>14.2 MB indexed</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">rev 165764</strong><p>Accepted by the hub</p></div><div class="stat"><span>Revision history</span><strong>On · 1 week</strong><p>Older revisions kept</p></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">Both roles · the summary only reads</p>
-<div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ok"><span data-icon="circle-check"></span>Up to date</strong><p>Completed just now</p></div><div class="stat"><span>Files</span><strong>20</strong><p>14.2 MB indexed</p></div><div class="stat"><span>Latest known revision</span><strong class="mono">rev 165764</strong><p>Accepted by the hub</p></div><div class="stat"><span>Revision history</span><strong>On · 1 week</strong><p>Older revisions kept</p></div></div>
-              <p class="kit-caption">Hub · the control gets a panel in the side column, with its consequence spelled out</p>
-<div class="section-label">Revision history</div><div class="panel"><h3>Keep older revisions for</h3><div class="segmented " role="group"><button type="button">Off</button><button type="button">1 day</button><button type="button" class="active">1 week</button><button type="button">30 days</button><button type="button">Forever</button></div><p>Older revisions of every file in this folder stay restorable for a week; after that, only the current files remain. Changes apply at the next cleanup.</p></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>The folder summary's Revision history cell is read-only on every role; on the hub the side column adds a Revision history panel with the segmented control (Off, 1 day, 1 week, 30 days, Forever), the same action and confirmation as today and a sentence stating the consequence; a JSDOM test covers both roles and <code>design/desktop.html</code> shows the hub's panel.</p></div></div>
         </article>
         <article class="kit-board" data-board="UI-DESK-CLEANUP-WORDS">
           <header><code>UI-DESK-CLEANUP-WORDS</code><h3>Cleanup says what it removes</h3><span>Desktop</span></header>

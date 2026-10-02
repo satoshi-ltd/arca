@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.67 — 2026-10-02
+
+- On the hub, a folder's revision history choice moves from the summary into a Revision history panel in the side column, with full labels (Off, 1 day, 1 week, 30 days, Forever) and a sentence on what it keeps; the summary now only reads, on every role.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.66 — 2026-10-02
 
 - A file's ⋯ menu reveals it as Show in Finder on macOS and Show in folder on Windows and Linux, where the item is new and opens the shared folder because only macOS can reveal a single file; the folder header still says Open in Finder or Open folder.

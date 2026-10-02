@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-DESK-RETENTION-PANEL** — The retention control leaves the summary
-  `ui · agent · normal`
-  accept: the board.
 - **UI-DESK-CLEANUP-WORDS** — Cleanup says what it removes
   `ui · agent · normal`
   accept: the board.

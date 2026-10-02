@@ -1113,6 +1113,13 @@ test("a replica's folder header offers Open in Finder alone: no Enable gallery a
   assert.match(actions.textContent, /Open in Finder/);
   assert.equal(actions.querySelector("details"), null, "only the hub decides that a folder is a gallery");
   assert.equal(w.document.querySelector('[data-action="enable-gallery"]'), null);
+  assert.equal(w.document.querySelector("#folder-retention"), null, "a replica never edits retention");
+  assert.equal(w.document.querySelector(".folder-history-status strong").textContent, "On · 30 days");
+  assert.deepEqual(
+    [...w.document.querySelectorAll(".detail-side .section-label")].map((label) => label.textContent),
+    ["Local destination", "Copies"],
+    "a replica's side column has no Revision history panel",
+  );
 });
 
 test("an empty Folders shows its one action in the header and the empty state only explains", async (t) => {
@@ -3484,18 +3491,36 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   await until(() => w.document.querySelector(".browser-file-row"));
   assert.ok(w.document.querySelector('[data-action="open"]'));
   await until(() => w.document.body.getAttribute("aria-busy") !== "true");
-  assert.ok(
+  assert.equal(
     w.document.querySelector(".folder-history-status #folder-retention"),
+    null,
+    "the summary only reads, on the hub too",
   );
   assert.equal(
     w.document.querySelector(".heading-actions #folder-retention"),
     null,
   );
+  assert.equal(
+    w.document.querySelector(".folder-history-status strong").textContent,
+    "On · 30 days",
+  );
   assert.doesNotMatch(
     w.document.querySelector(".folder-history-status").textContent,
     /on hub/,
   );
-  const retention = w.document.querySelector("#folder-retention");
+  const retention = w.document.querySelector(".detail-side .panel #folder-retention");
+  assert.ok(retention, "the hub's control lives in a Revision history panel of the side column");
+  assert.match(retention.closest("section").querySelector(".section-label").textContent, /^Revision history$/);
+  assert.equal(retention.closest(".panel").querySelector("h3").textContent, "Keep older revisions for");
+  assert.deepEqual(
+    [...retention.querySelectorAll("button")].map((option) => option.textContent),
+    ["Off", "1 day", "1 week", "30 days", "Forever"],
+  );
+  assert.equal(retention.querySelector(".segmented-compact"), null);
+  assert.match(
+    retention.closest(".panel").querySelector("p").textContent,
+    /Older revisions of every file in this folder stay restorable for 30 days after a change or deletion; after that, only the current files remain\./,
+  );
   assert.equal(
     retention.querySelector('[aria-pressed="true"]').dataset.id,
     "1m",
@@ -3507,9 +3532,12 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     ["off", "1d", "1w", "1m", "forever"],
   );
   assert.ok(
-    retention.compareDocumentPosition(
-      w.document.querySelector('[data-action="rename-share"]'),
-    ) & w.Node.DOCUMENT_POSITION_PRECEDING,
+    retention.compareDocumentPosition(w.document.querySelector("#folder-copies")) & w.Node.DOCUMENT_POSITION_PRECEDING,
+    "the panel follows Copies",
+  );
+  assert.ok(
+    retention.compareDocumentPosition(w.document.querySelector('[data-action="unselect"]')) & w.Node.DOCUMENT_POSITION_FOLLOWING,
+    "and comes before the Hub working copy panel",
   );
   retention.querySelector('[data-id="off"]').click();
   await until(
