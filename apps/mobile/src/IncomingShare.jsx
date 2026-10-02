@@ -4,7 +4,7 @@ import { galleryConfig } from "./gallery.js";
 import { Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useRef, useState } from "react";
-import { AppState, Linking, Text, View } from "react-native";
+import { AppState, Linking, Platform, Text, View } from "react-native";
 import * as Sharing from "expo-sharing";
 import {
   Button,
@@ -21,7 +21,9 @@ import {
   IncomingSession,
   incomingDestination,
   incomingFilenameError,
+  resolveShared,
 } from "./incoming-files";
+import { native } from "./private-network";
 
 // One share operation; cancellation discards the app-owned temporary copies.
 export function IncomingShare({ connection, catalog, locals, onSaved }) {
@@ -64,21 +66,26 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
             setDirectory("");
             setOpen(true);
           }
-          pending = await session.current.receive(
-            async () => {
-              if (
-                raw.some(
-                  (p) =>
-                    !["file", "image", "audio", "video"].includes(p.shareType),
-                )
+          const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          pending = await session.current.receive(async () => {
+            if (Platform.OS === "android")
+              return resolveShared(
+                r,
+                (uri, destination) => native.receiveShared(uri, destination),
+                raw,
+                id,
+              );
+            if (
+              raw.some(
+                (p) =>
+                  !["file", "image", "audio", "video"].includes(p.shareType),
               )
-                throw new Error(
-                  "Share the exported file, rather than a link or text.",
-                );
-              return Sharing.getResolvedSharedPayloadsAsync();
-            },
-            `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          );
+            )
+              throw new Error(
+                "Share the exported file, rather than a link or text.",
+              );
+            return Sharing.getResolvedSharedPayloadsAsync();
+          }, id);
           if (superseded()) return;
           Sharing.clearSharedPayloads();
         }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.77 — 2026-10-02
+
+- Files shared into Arca on Android are now copied to generated names inside Arca's own inbox, so another app's file name can never decide where a shared file is written or overwrite one.
+
+Needs: native build
+
 ## 0.6.76 — 2026-10-02
 
 - Show in folder now works on Windows and Linux: from a file's detail or the photo viewer it opens the file's own folder (Explorer selects the file on Windows) instead of the shared folder's root.

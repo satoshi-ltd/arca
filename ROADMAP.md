@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **NAT-F29-SHARE-CACHE** — Safe cache names for incoming shares (security)
-  `bug · agent · high`
-  accept: Android shared files land under generated cache names, never `cacheDir/<sender display name>`; native change, device evidence follows in a `verify`.
 - **MOB-PICKED-DURABLE** — Picked photos outlive a long offline stretch
   `bug · agent · low`
   accept: a photo picked with Add photos… is copied into app-owned storage when it is journaled, so the OS clearing the picker cache or an iOS container path change cannot lose it, and picks still upload when library permission is revoked or the linked album is gone (today the cycle's permission and album checks run first); a picked photo whose file is gone can be dismissed instead of staying failed until picked again, and Sync now makes failed manual picks retry at once while automatic uploads are off; replica tests for each.
@@ -83,6 +80,9 @@ _None._
 - **VERIFY-REVEAL-FILE** — Show in folder on real Windows and Linux
   `verify · maintainer · normal · depends: BUILD-DESKTOP`
   accept: on a Windows and a Linux desktop build, a file detail's Show in folder and the photo viewer's open the file's own folder (Explorer with the file selected on Windows, a file manager on the file's folder on Linux), including a file in a nested folder, a path with spaces and, on Windows, a path longer than 260 characters (the verbatim prefix is stripped for Explorer).
+- **VERIFY-SHARE-CACHE** — Incoming shares on the Fold
+  `verify · maintainer · high · depends: BUILD-MOBILE`
+  accept: sharing one and several files, a large file and a file named like a path from another app into Arca on the Fold lists them in the Save sheet with their real names, saves them, and leaves nothing under the app's cache except generated names (`arca-incoming/<id>-<n>`) while the sheet is open and nothing after Save or Cancel.
 - **FOLD-STORAGE** — Storage after the object-store fix
   `verify · maintainer · high · depends: BUILD-MOBILE`
   accept: after the first sync, Android's storage figure for Arca drops to about the synchronized folders' size (from about 55 GB to about 26 GB for `photos`).

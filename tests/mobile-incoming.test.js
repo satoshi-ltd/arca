@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   IncomingSession,
   clearIncoming,
+  resolveShared,
 } from "../apps/mobile/src/incoming-files.js";
 
 async function fixture(t) {
@@ -148,4 +149,100 @@ test("unsupported sender names can be corrected without losing the staged file",
   await f.session.cancel();
   await missing(item.uri);
   assert.equal(await fs.readFile(f.source, "utf8"), "workout");
+});
+
+test("Android shares are copied to generated inbox names and never use the sender's file name", async (t) => {
+  const f = await fixture(t);
+  const calls = [];
+  const receive = async (uri, destination) => {
+    calls.push({ uri, destination });
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(destination, "workout");
+    return { name: "../../files/evil.fit", size: 7 };
+  };
+  const raw = [{ shareType: "file", value: "content://other.app/files/1" }];
+  const resolved = await resolveShared(f.runtime, receive, raw, "share-1");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].destination, path.join(f.temporary, "share-1-0"));
+  assert.equal(calls[0].destination.includes("evil"), false);
+  assert.equal(resolved[0].staged, true);
+  await assert.rejects(f.session.receive(resolved, "share-1"), /contains a path/);
+  await missing(calls[0].destination);
+});
+
+test("staged shares are verified and kept without a second copy, and a failure removes every staged file", async (t) => {
+  const f = await fixture(t);
+  let copies = 0;
+  f.runtime.files.copy = async () => {
+    copies++;
+  };
+  f.runtime.files.stat = (p) => fs.stat(p.startsWith("file:") ? fileURLToPath(p) : p);
+  const receive = async (uri, destination) => {
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(destination, "workout");
+    return { name: "run.fit", size: 7 };
+  };
+  const raw = [
+    { shareType: "file", value: "content://other.app/files/1" },
+    { shareType: "file", value: "content://other.app/files/2" },
+  ];
+  const resolved = await resolveShared(f.runtime, receive, raw, "share-2");
+  const items = await f.session.receive(resolved, "share-2");
+  assert.equal(copies, 0);
+  assert.deepEqual(items.map((item) => item.name), ["run.fit", "run.fit"]);
+  assert.equal(await fs.readFile(items[0].uri, "utf8"), "workout");
+  await f.session.cancel();
+  await missing(items[0].uri);
+
+  let calls = 0;
+  const failing = async (uri, destination) => {
+    if (calls++ === 1) throw new Error("The shared file is incomplete.");
+    return receive(uri, destination);
+  };
+  await assert.rejects(resolveShared(f.runtime, failing, raw, "share-3"), /incomplete/);
+  await missing(path.join(f.temporary, "share-3-0"));
+
+  await assert.rejects(
+    resolveShared(f.runtime, receive, [{ shareType: "text", value: "hello" }], "share-4"),
+    /rather than a link or text/,
+  );
+  await assert.rejects(resolveShared(f.runtime, receive, [], "share-5"), /between 1 and 20/);
+});
+
+test("the Android share path never lets the library resolve files into the cache", async () => {
+  const read = (file) => fs.readFile(new URL(`../apps/mobile/${file}`, import.meta.url), "utf8");
+  const screen = await read("src/IncomingShare.jsx");
+  const android = screen.slice(screen.indexOf('Platform.OS === "android"'));
+  assert.match(android.slice(0, 260), /resolveShared\(/);
+  assert.ok(android.indexOf("resolveShared(") < android.indexOf("Sharing.getResolvedSharedPayloadsAsync"));
+  const kotlin = await read("modules/arca-network/android/src/main/java/expo/modules/arcanetwork/SharedFiles.kt");
+  assert.match(kotlin, /check\(uri\.scheme == "content"\)/);
+  assert.match(kotlin, /uri\.host\?\.lowercase\(\)/);
+  assert.match(kotlin, /resolveContentProvider\(authority, 0\)\?\.packageName != context\.packageName/);
+  assert.doesNotMatch(kotlin, /uri\.authority/);
+  assert.match(kotlin, /check\(target\.path\.startsWith\(inbox\.path \+ "\/"\)\)/);
+  assert.doesNotMatch(kotlin, /File\(context\.cacheDir, (name|fileName|displayName)/);
+  assert.match(await read("modules/arca-network/android/src/main/java/expo/modules/arcanetwork/ArcaNetworkModule.kt"), /AsyncFunction\("receiveShared"\)/);
+});
+
+test("cancelling while the share is still being resolved removes the staged files", async (t) => {
+  const f = await fixture(t);
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  const receive = async (uri, destination) => {
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(destination, "workout");
+    await gate;
+    return { name: "run.fit", size: 7 };
+  };
+  const raw = [{ shareType: "file", value: "content://other.app/files/1" }];
+  const receiving = f.session.receive(
+    () => resolveShared(f.runtime, receive, raw, "late-1"),
+    "late-1",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await f.session.cancel();
+  release();
+  assert.equal(await receiving, null);
+  await missing(path.join(f.temporary, "late-1-0"));
 });

@@ -30,32 +30,65 @@ export function incomingDestination(directory, name) {
   if (error) throw new Error(error);
   return validPath((prefix ? `${prefix}/${name}` : name).normalize("NFC"));
 }
-export async function stageIncoming(r, payloads, id) {
-  if (!payloads.length || payloads.length > 20)
+export async function resolveShared(r, receive, raw, id) {
+  if (!raw.length || raw.length > 20)
     throw new Error("Share between 1 and 20 files at a time.");
-  const items = payloads.map((p, index) => {
-    if (
-      !["file", "image", "audio", "video"].includes(p.shareType) ||
-      !/^(file:\/|content:\/\/)/.test(p.contentUri || "")
-    )
-      throw new Error("Share the exported file, rather than a link or text.");
-    const key = `${id}-${index}`;
-    return {
-      id: key,
-      name: incomingName(p, index),
-      source: new URL(p.contentUri).href,
-      expectedSize: p.contentSize,
-      uri: r.files.incoming(key),
-    };
-  });
-  if (new Set(items.map((item) => item.source)).size !== items.length)
-    throw new Error(
-      "These shared files use the same temporary name. Share them one at a time.",
-    );
-  const copied = [];
+  if (
+    raw.some((p) => !["file", "image", "audio", "video"].includes(p.shareType))
+  )
+    throw new Error("Share the exported file, rather than a link or text.");
+  const staged = [];
   try {
+    const payloads = [];
+    for (const [index, p] of raw.entries()) {
+      const destination = r.files.incoming(`${id}-${index}`);
+      staged.push(destination);
+      const received = await receive(p.value, destination);
+      await r.space(0);
+      payloads.push({
+        shareType: p.shareType,
+        staged: true,
+        contentUri: destination,
+        originalName: received.name,
+        contentSize: received.size,
+      });
+    }
+    return payloads;
+  } catch (error) {
+    for (const uri of staged) await r.files.remove(uri);
+    throw error;
+  }
+}
+export async function stageIncoming(r, payloads, id) {
+  const copied = payloads.filter((p) => p.staged).map((p) => p.contentUri);
+  try {
+    if (!payloads.length || payloads.length > 20)
+      throw new Error("Share between 1 and 20 files at a time.");
+    const items = payloads.map((p, index) => {
+      if (
+        !["file", "image", "audio", "video"].includes(p.shareType) ||
+        (!p.staged && !/^(file:\/|content:\/\/)/.test(p.contentUri || ""))
+      )
+        throw new Error("Share the exported file, rather than a link or text.");
+      const key = `${id}-${index}`;
+      return {
+        id: key,
+        name: incomingName(p, index),
+        staged: !!p.staged,
+        source: p.staged ? null : new URL(p.contentUri).href,
+        expectedSize: p.contentSize,
+        uri: p.staged ? p.contentUri : r.files.incoming(key),
+      };
+    });
+    const sources = items
+      .filter((item) => item.source)
+      .map((item) => item.source);
+    if (new Set(sources).size !== sources.length)
+      throw new Error(
+        "These shared files use the same temporary name. Share them one at a time.",
+      );
     for (const item of items) {
-      const stat = await r.files.stat(item.source);
+      const stat = await r.files.stat(item.staged ? item.uri : item.source);
       if (!stat || stat.directory)
         throw new Error(
           "The shared file is no longer available. Share it again.",
@@ -68,12 +101,15 @@ export async function stageIncoming(r, payloads, id) {
         throw new Error(
           "The shared file is incomplete. Export and share it again.",
         );
-      await r.space(stat.size);
-      await r.files.mkdir(r.files.parent(item.uri));
-      copied.push(item.uri);
-      await r.files.copy(item.source, item.uri);
+      if (!item.staged) {
+        await r.space(stat.size);
+        await r.files.mkdir(r.files.parent(item.uri));
+        copied.push(item.uri);
+        await r.files.copy(item.source, item.uri);
+      }
       item.size = stat.size;
       item.renameRequired = !!incomingFilenameError(item.name);
+      delete item.staged;
       delete item.source;
       delete item.expectedSize;
     }
@@ -99,7 +135,14 @@ export class IncomingSession {
     try {
       const resolved =
         typeof payloads === "function" ? await payloads() : payloads;
-      if (generation !== this.generation) return null;
+      if (generation !== this.generation) {
+        await Promise.all(
+          resolved
+            .filter((p) => p.staged)
+            .map((p) => this.runtime.files.remove(p.contentUri)),
+        );
+        return null;
+      }
       const items = await stageIncoming(this.runtime, resolved, id);
       if (generation !== this.generation) {
         await Promise.all(
