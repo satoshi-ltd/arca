@@ -86,7 +86,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.67";
+const APP_VERSION = "0.6.68";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -3856,8 +3856,8 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   if (status.role === "hub")
     html += section(
-      "History retention",
-      `<div class="settings-card">${setting("Kept", `${status.historyRevisions} accepted revisions. Automatic retention is configured in each folder.`, button("Preview cleanup…", "retention", "", "secondary small-button", "history"))}${setting("Limits", "Preview always precedes applying. Current versions, pending writes and history not yet received by backups are protected.", `<span class="mono">${status.retention.days || 0} days · ${status.retention.versions || 0} versions</span>`)}</div>`,
+      "History",
+      `<div class="settings-card">${setting("Older revisions", `${Number(status.historyRevisions || 0).toLocaleString("en")} kept across your folders. Each folder decides how long it keeps them.`, button("Clean up…", "retention", "", "secondary small-button", "trash-2"))}</div><p class="hint">Cleanup shows what it would remove before anything is deleted. Current files, pending changes and history not yet backed up are never removed.</p>`,
     );
   if (status.role === "hub")
     html += section(
@@ -5457,11 +5457,11 @@ async function handle(name, id, control) {
     let preview = null;
     modal(
       modalHeader(
-        "History retention",
-        "Preview always precedes applying. Current versions, pending writes and history not received by enabled backups are protected.",
-        "history",
+        "Clean up older revisions",
+        "Nothing is removed until you apply. See the count first.",
+        "trash-2",
       ) +
-        `<label for="retention-days">Older than (days; 0 disables)</label><input id="retention-days" name="days" type="number" min="0" value="${status.retention.days || 0}" required><label for="retention-versions">Keep last versions per file (0 disables)</label><input id="retention-versions" name="versions" type="number" min="0" value="${status.retention.versions || 0}" required><div id="retention-preview" role="status"></div>`,
+        `<label for="retention-days">Remove revisions older than (days)</label><input id="retention-days" name="days" type="number" min="0" value="${status.retention.days || 0}" required><label for="retention-versions">But always keep the last (versions per file)</label><input id="retention-versions" name="versions" type="number" min="0" value="${status.retention.versions || 0}" required><p class="hint">Leave a field at 0 to skip that rule.</p><div id="retention-preview" role="status"></div>`,
       async (f) => {
         const values = {
           days: Number(f.get("days")),
@@ -5473,21 +5473,30 @@ async function handle(name, id, control) {
           preview.versions !== values.versions
         ) {
           preview = { ...values, ...(await api("/v1/retention", values)) };
+          const count = (n) => Number(n).toLocaleString("en");
           $("#retention-preview").innerHTML =
-            `<div class="retention-stats"><div class="panel"><span class="hint">Would remove</span><strong>${preview.remove}</strong></div><div class="panel"><span class="hint">Keeps</span><strong>${preview.retained}</strong></div><div class="panel"><span class="hint">Protected</span><strong>${preview.protected}</strong><p>current · pending · unbacked</p></div></div><div class="settings-card">${(preview.folders || []).map((v) => setting(escape(v.name), `${v.remove} revisions would be removed`, `${v.retained} kept`)).join("")}</div><div class="callout warning">${icon("triangle-alert")}<p>Cleanup cannot be undone on this hub. Retained counts include protected revisions. No cleanup is scheduled.</p></div>`;
+            `<div class="retention-stats"><div class="panel"><span class="hint">Would remove</span><strong>${count(preview.remove)}</strong></div><div class="panel"><span class="hint">Keeps</span><strong>${count(preview.retained)}</strong></div><div class="panel"><span class="hint">Protected</span><strong>${count(preview.protected)}</strong><p>current · pending · unbacked</p></div></div><div class="settings-card">${(preview.folders || []).map((v) => setting(escape(v.name), `${count(v.remove)} revisions would be removed`, `${count(v.retained)} kept`)).join("")}</div><div class="callout warning">${icon("triangle-alert")}<p>Cleanup cannot be undone on this hub. Retained counts include protected revisions. No cleanup is scheduled.</p></div>`;
           $("#submit-dialog").innerHTML = icon("trash-2") + "Apply cleanup";
           icons();
           $("#submit-dialog").classList.add("danger");
           return false;
         }
-        await api("/v1/retention", {
-          ...values,
-          apply: true,
-          confirmation: preview.confirmation,
-        });
-        notice("Retention cleanup applied.");
+        try {
+          await api("/v1/retention", {
+            ...values,
+            apply: true,
+            confirmation: preview.confirmation,
+          });
+        } catch (error) {
+          preview = null;
+          $("#retention-preview").innerHTML = "";
+          $("#submit-dialog").textContent = "See the count";
+          $("#submit-dialog").classList.remove("danger");
+          throw error;
+        }
+        notice("Cleanup applied.");
       },
-      "Preview cleanup",
+      "See the count",
     );
     return;
   }

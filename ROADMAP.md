@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-DESK-CLEANUP-WORDS** — Cleanup says what it removes
-  `ui · agent · normal`
-  accept: the board.
 - **UPD-NSIS-WATCHER** — Restore the daemon after a failed Windows update
   `feature · agent · normal`
   accept: when the NSIS installer fails after Arca exits and Arca is not relaunched, a detached watcher restores the daemon; covered by a Rust or script test with a simulated installer failure. Real-Windows evidence is a follow-up `verify`.
@@ -193,6 +190,12 @@ Older notes listed these as open while later evidence suggests they are resolved
 ## Proposed
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
+- **SET-OLDER-REVISIONS-COUNT** — Settings' Older revisions counts only older revisions
+  `bug · agent · low`
+  accept: the number in Settings → History excludes each file's current revision and current deletions (today `status.historyRevisions` counts every revision, so a hub with 100 untouched files reads "100 kept" under Older revisions); a daemon test with current and superseded revisions, and SPEC's wording follows.
+- **DESK-CLEANUP-RECOUNT** — Editing a cleanup field after the count goes back to counting
+  `feature · agent · low`
+  accept: in the Clean up older revisions dialog, editing either field after See the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen; a JSDOM test.
 - **NAT-REVEAL-FILE** — Show a file in its own folder on Windows and Linux
   `feature · agent · low`
   accept: `open_file` with `reveal` works on every platform (Windows `explorer /select,<path>`, Linux the file's parent directory) and the file detail's Show in folder, and the photo viewer's, open the file's own folder instead of the shared folder's root; a Rust test next to the existing `open_file` code; native change, so a desktop build and a maintainer `verify` on real Windows and Linux follow.

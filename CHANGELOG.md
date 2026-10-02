@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.68 — 2026-10-02
+
+- Settings → History now has one row, Older revisions, with Clean up… and a line saying cleanup shows what it would remove first and never touches current files, pending changes or history not yet backed up. The dialog is titled Clean up older revisions, phrases its two fields as a sentence and shows the count before Apply cleanup; nothing is removed until then.
+- If the hub's history changes between the count and Apply cleanup, the refused apply now takes the dialog back to counting instead of retrying the stale figures, and its message says "Count again before applying."
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.67 — 2026-10-02
 
 - On the hub, a folder's revision history choice moves from the summary into a Revision history panel in the side column, with full labels (Off, 1 day, 1 week, 30 days, Forever) and a sentence on what it keeps; the summary now only reads, on every role.

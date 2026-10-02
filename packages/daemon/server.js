@@ -1578,7 +1578,7 @@ export async function start(home, options = {}) {
                 };
               if (b.confirmation !== confirmation)
                 fail(
-                  "History changed. Preview retention again before applying.",
+                  "History changed. Count again before applying.",
                   409,
                 );
               const result = applyRetention(s, b, false, plan);

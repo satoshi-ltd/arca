@@ -653,7 +653,7 @@ The target must not exist. Recovery verifies stored objects and rebuilds receive
 - **Settings → Hub backup → Enable backup** on a desktop or server replica, choosing a new dedicated directory such as `~/ArcaBackup` outside synchronized folders. Disabling keeps it. It is never enabled automatically, and not on the pilot Mac.
 - **Machines → Pair a machine** issues the pairing code; the replica enters the hub address and code.
 - **Folder detail → Change location…** relocates a local copy (see [Unlink, relink and unselection](#unlink-relink-and-unselection)).
-- **Settings → History retention** previews global limits; per-folder retention sits in the hub's folder detail, in its Revision history panel.
+- **Settings → History** has one row, Older revisions (the kept count), with Clean up… and a hint stating that cleanup shows what it would remove first and never removes current files, pending changes or history not yet backed up. The Clean up older revisions dialog asks "Remove revisions older than (days)" and "But always keep the last (versions per file)" (0 skips a rule), shows Would remove, Keeps and Protected after See the count, and removes nothing until Apply cleanup. Per-folder retention sits in the hub's folder detail, in its Revision history panel.
 - **Settings → Hub recovery** promotes a replica holding every last-known share after the old hub is stopped for good; other replicas use **Reconnect to replacement hub**.
 
 ### Android builds

@@ -1247,6 +1247,113 @@ test("the file detail reveals with the platform's own word while the folder head
   }
 });
 
+test("Settings offers Clean up…, and the dialog shows the count before Apply cleanup removes anything", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-cleanup-words-"));
+  init(home, { port: 0, name: "Test hub" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Documents");
+  const file = path.join(volume.path, "note.txt");
+  for (const text of ["one", "two", "three"]) {
+    fs.writeFileSync(file, text);
+    await daemon.engine.cycle();
+  }
+  const revisions = () => daemon.engine.store.db.prepare("SELECT COUNT(*) AS n FROM revisions").get().n;
+  const before = revisions();
+  assert.ok(before >= 3);
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+        if (command !== "api") throw new Error("Unexpected native command");
+        const response = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          method: args.method,
+          headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+          ...(args.method === "POST" ? { body: JSON.stringify(args.body) } : {}),
+        });
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error);
+        return value;
+      },
+    },
+  };
+  const invoke = w.__TAURI__.core.invoke;
+  w.__TAURI__.core.invoke = (...args) => {
+    const request = invoke(...args);
+    requests.add(request);
+    request.then(() => requests.delete(request), () => requests.delete(request));
+    return request;
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  w.document.querySelector('[data-view="settings"]').click();
+  await until(() => w.document.querySelector('[data-action="retention"]') && w.document.body.getAttribute("aria-busy") === "false");
+  const control = w.document.querySelector('[data-action="retention"]');
+  const section = control.closest("section");
+  assert.equal(section.querySelector(".section-label").textContent, "History");
+  assert.equal(control.textContent.trim(), "Clean up…");
+  assert.equal(section.querySelector(".setting-row strong").textContent, "Older revisions");
+  assert.match(section.querySelector(".setting-row p").textContent, new RegExp(`^${before} kept across your folders\\. Each folder decides how long it keeps them\\.$`));
+  assert.equal(
+    section.querySelector("p.hint").textContent,
+    "Cleanup shows what it would remove before anything is deleted. Current files, pending changes and history not yet backed up are never removed.",
+  );
+  assert.doesNotMatch(section.textContent, /Limits|Preview cleanup|Kept\b/);
+
+  control.click();
+  await until(() => w.document.querySelector("#dialog").open && w.document.querySelector("#dialog-days"));
+  const dialog = w.document.querySelector("#dialog");
+  assert.equal(dialog.querySelector("h2").textContent, "Clean up older revisions");
+  assert.equal(dialog.querySelector(".modal-title p").textContent, "Nothing is removed until you apply. See the count first.");
+  assert.equal(dialog.querySelector('label[for="dialog-days"]').textContent, "Remove revisions older than (days)");
+  assert.equal(dialog.querySelector('label[for="dialog-versions"]').textContent, "But always keep the last (versions per file)");
+  assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "See the count");
+  w.document.querySelector("#dialog-days").value = "0";
+  w.document.querySelector("#dialog-versions").value = "1";
+  const submit = () => w.document.querySelector("#dialog-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  submit();
+  await until(() => w.document.querySelector("#retention-preview .retention-stats"));
+  const labels = [...w.document.querySelectorAll("#retention-preview .retention-stats .hint")].map((el) => el.textContent);
+  assert.deepEqual(labels, ["Would remove", "Keeps", "Protected"]);
+  assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "Apply cleanup");
+  assert.ok(w.document.querySelector("#submit-dialog").classList.contains("danger"));
+  assert.equal(revisions(), before, "counting removes nothing");
+
+  fs.writeFileSync(file, "four");
+  await daemon.engine.cycle();
+  const changed = revisions();
+  assert.equal(changed, before + 1);
+  submit();
+  await until(() => !w.document.querySelector("#dialog-error").hidden);
+  assert.match(w.document.querySelector("#dialog-error").textContent, /History changed\. Count again before applying\./);
+  assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "See the count", "a refused apply goes back to counting");
+  assert.equal(w.document.querySelector("#retention-preview").innerHTML, "");
+  assert.equal(revisions(), changed, "a refused apply removes nothing");
+
+  submit();
+  await until(() => w.document.querySelector("#retention-preview .retention-stats"));
+  assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "Apply cleanup");
+  submit();
+  await until(() => revisions() < changed);
+  assert.equal(revisions(), changed - 3, "only the superseded revisions go; the current file stays");
+  await until(() => /Cleanup applied\./.test(w.document.querySelector("#notice").textContent));
+});
+
 test("offline labels: this machine reads Offline, saved machines say last known and nothing-saved screens say so", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-offline-labels-"));
   init(home, { port: 0, name: "Local Mac" });
