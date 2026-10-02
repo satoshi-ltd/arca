@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-DESK-EMPTY-ONE-CTA** — One call to action on an empty Folders
-  `ui · agent · normal`
-  accept: the board.
 - **UI-DESK-FINDER-WORDS** — Open and show in the Finder say different things
   `ui · agent · normal`
   accept: the board.

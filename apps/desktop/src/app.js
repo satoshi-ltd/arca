@@ -86,7 +86,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.64";
+const APP_VERSION = "0.6.65";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1465,18 +1465,7 @@ async function renderView(
               : `No folders on ${machineLabel()} yet`,
             status.role === "hub"
               ? "Share an existing or new folder. Other machines choose where to sync it."
-              : "Pick folders from your hub. Full copies are kept on disk and work offline.",
-            button(
-              status.role === "hub"
-                ? "Create shared folder"
-                : !status.hub
-                  ? "Connect to hub…"
-                  : "Choose folders",
-              status.role === "hub" ? "share" : !status.hub ? "connect" : "add",
-              "",
-              "primary",
-              "folder-plus",
-            ),
+              : `Pick folders from your hub${status.hub && available.length ? ", or select one below" : ""}. Full copies are kept on disk and work offline.`,
           ),
     );
     if (status.role !== "hub" && status.hub && available.length)

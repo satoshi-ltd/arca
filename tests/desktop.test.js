@@ -1114,6 +1114,62 @@ test("a replica's folder header offers Open in Finder alone: no Enable gallery a
   assert.equal(w.document.querySelector('[data-action="enable-gallery"]'), null);
 });
 
+test("an empty Folders shows its one action in the header and the empty state only explains", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-folders-empty-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const available = { ...daemon.engine.store.addVolume("Docs"), selected: 0, gallery: false };
+  t.after(async () => {
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const open = async (state, remote) => {
+    const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+    t.after(() => dom.window.close());
+    const w = dom.window;
+    w.setInterval = () => 0;
+    w.__TAURI__ = {
+      core: {
+        invoke: async (command, args) => {
+          if (command === "bootstrap") return { setup: false };
+          if (args.route === "/v1/status") return { ...daemon.engine.status(), platform: "darwin", volumes: [], hubUnavailable: false, ...state };
+          if (args.route === "/v1/remote") return { name: "Casa", volumes: remote };
+          if (args.route === "/v1/machines") return { machines: [] };
+          return {};
+        },
+      },
+    };
+    w.eval(`(async()=>{${script}\n})()`);
+    await until(() => w.document.querySelector(".page .empty"));
+    return w.document;
+  };
+  const header = (document) => [...document.querySelectorAll("#content > .heading .heading-actions [data-action]")].map((el) => el.dataset.action);
+
+  const replica = { role: "replica", hub: "http://127.0.0.1:49999", hubName: "Casa" };
+  const withRows = await open(replica, [available]);
+  await until(() => withRows.querySelector(".folder-card.unselected") && /or select one below/.test(withRows.querySelector(".empty").textContent));
+  assert.deepEqual(header(withRows), ["add"], "Choose folders once, in the header");
+  assert.equal(withRows.querySelector(".empty button"), null, "the empty state has no button of its own");
+  assert.match(withRows.querySelector(".empty").textContent, /Pick folders from your hub, or select one below\. Full copies/);
+  assert.ok(withRows.querySelector('.folder-card.unselected [data-action="add"]'), "the available row keeps its Select");
+
+  const bare = await open(replica, []);
+  await until(() => !bare.querySelector(".scaffold-row"));
+  assert.deepEqual(header(bare), ["add"]);
+  assert.equal(bare.querySelector(".empty button"), null);
+  assert.match(bare.querySelector(".empty").textContent, /Pick folders from your hub\. Full copies/);
+  assert.doesNotMatch(bare.querySelector(".empty").textContent, /select one below/);
+
+  const hub = await open({ role: "hub", hub: "", hubName: "" }, []);
+  assert.deepEqual(header(hub), ["share"], "Create shared folder once, in the header");
+  assert.equal(hub.querySelector(".empty button"), null);
+  assert.match(hub.querySelector(".empty").textContent, /No shared folders yet/);
+
+  const offline = await open({ role: "replica", hub: "", hubName: "" }, []);
+  assert.deepEqual(header(offline), ["connect"], "Connect to hub… once, in the header");
+  assert.equal(offline.querySelector(".page .empty button"), null);
+});
+
 test("offline labels: this machine reads Offline, saved machines say last known and nothing-saved screens say so", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-offline-labels-"));
   init(home, { port: 0, name: "Local Mac" });

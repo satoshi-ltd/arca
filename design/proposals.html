@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.64 · proposals</span>
+      <span class="kit-version">v0.6.65 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -83,27 +83,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>Files, History and a file's history on desktop and web end in one Show more button (Show more files, Show more, Show more revisions) that appends the next rows and keeps scroll and typed search, as DESK-FILES-PAGING describes; the phone's buttons use the same words; placeholder rows carry no Loading label; JSDOM tests cover the three lists and <code>design/desktop.html</code> shows a list ending in Show more.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-DESK-EMPTY-ONE-CTA">
-          <header><code>UI-DESK-EMPTY-ONE-CTA</code><h3>One call to action on an empty Folders</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> When a machine has no folders yet, Folders shows the same primary button twice, Choose folders in the header and again inside the empty state, and on a replica every available row below offers Select as well, so one action is on screen three times. The proposal keeps one rule: the header owns the action and the empty state only explains, naming the rows below when there are any; an empty state carries its own action only on views whose header has none, as History does with Connect to hub…. The alternative drops the header button while the list is empty, which moves the action around between states.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Replica · Choose folders twice, and Select on every row below</p>
-<div class="heading"><div><h1>Folders</h1></div><div class="heading-actions"><button type="button" class="primary"><span data-icon="folder-plus"></span>Choose folders</button></div></div>
-<div class="section-label">Selected on this machine</div><div class="empty"><span data-icon="folder-open" data-size="24"></span><h2>No folders on this machine yet</h2><p>Pick folders from your hub. Full copies are kept on disk and work offline.</p><button type="button" class="primary"><span data-icon="folder-plus"></span>Choose folders</button></div>
-<div class="section-label">On hub · not selected</div><div class="folder-list"><article class="folder-card unselected"><div class="tile"><span data-icon="folder"></span></div><div class="row-main"><strong>documents</strong><p class="meta">20 files · 14.2 MB</p></div><button type="button" class="secondary small-button"><span data-icon="download"></span>Select</button></article></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">Replica · the header keeps the action, the empty state explains</p>
-<div class="heading"><div><h1>Folders</h1></div><div class="heading-actions"><button type="button" class="primary"><span data-icon="folder-plus"></span>Choose folders</button></div></div>
-<div class="section-label">Selected on this machine</div><div class="empty"><span data-icon="folder-open" data-size="24"></span><h2>No folders on this machine yet</h2><p>Pick folders from your hub, or select one below. Full copies are kept on disk and work offline.</p></div>
-<div class="section-label">On hub · not selected</div><div class="folder-list"><article class="folder-card unselected"><div class="tile"><span data-icon="folder"></span></div><div class="row-main"><strong>documents</strong><p class="meta">20 files · 14.2 MB</p></div><button type="button" class="secondary small-button"><span data-icon="download"></span>Select</button></article></div>
-              <p class="kit-caption">A view with no header action keeps its own, as History does</p>
-<div class="empty"><span data-icon="history" data-size="24"></span><h2>Connect to view history</h2><p>History is kept on your hub. Your local files are still available.</p><button type="button" class="primary"><span data-icon="link"></span>Connect to hub…</button></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>On desktop and web, Folders shows Choose folders (replica) or Create shared folder (hub) once, in the header, and its empty state has no button; empty states keep an action only where the header offers none; a JSDOM test covers hub, replica with available folders and replica without, and <code>design/desktop.html</code> and the System page's empty-state example follow.</p></div></div>
         </article>
         <article class="kit-board" data-board="UI-DESK-FINDER-WORDS">
           <header><code>UI-DESK-FINDER-WORDS</code><h3>Open and show in the Finder say different things</h3><span>Desktop</span></header>

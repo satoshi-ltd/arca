@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.65 — 2026-10-02
+
+- An empty Folders shows Choose folders (replica) or Create shared folder (hub) once, in the header, instead of repeating it inside the empty state; on a replica the empty text points to the available folders below when there are any.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.64 — 2026-10-02
 
 - Every empty list on the phone and Fold (Folders, Files, Recent, History, a file's history, Machines and the photo grid) now looks the same: a dashed frame with an icon, a heading and one line, and the offline cases keep Retry inside it.

@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.64 · production</span>
+      <span class="kit-version">v0.6.65 · production</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -275,8 +275,9 @@
           </div>
           <div class="kit-card">
             <h3>Empty and loading</h3>
-            <div class="empty"><span data-icon="folder-open" data-size="24"></span><h2>No folders on this machine yet</h2><p>Pick folders from hub casa. Full copies are kept on disk and work offline.</p><button type="button" class="primary">Choose folders</button></div>
+            <div class="empty"><span data-icon="folder-open" data-size="24"></span><h2>No folders on this machine yet</h2><p>Pick folders from hub casa. Full copies are kept on disk and work offline.</p></div>
             <div class="scaffold-row" role="status" aria-label="Loading content"><span class="scaffold-mark" aria-hidden="true"></span><div class="scaffold-copy"><span class="scaffold-line scaffold-medium" aria-hidden="true"></span><span class="scaffold-line scaffold-long" aria-hidden="true"></span></div><span class="scaffold-line scaffold-short" aria-hidden="true"></span></div>
+            <p class="kit-note">An empty state explains and keeps no button when its view header owns the action; it carries one only where the header has none, as History does with Connect to hub….</p>
             <p class="kit-note">Known chrome renders for real; each loading section shows exactly one row sized like a real one. Unknown is never zero.</p>
           </div>
         </div>
