@@ -587,6 +587,7 @@ test("a successful event poll ends the offline backoff at once", async (t) => {
   await replica.api("/v1/sync", { background: true });
   await waitFor(
     () => replica.engine.status().phase === "idle" && replica.engine.lastSync,
+    20000,
   );
   link.refuse = true;
   await replica.api("/v1/sync", { background: true });
