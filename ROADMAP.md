@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **LICENSE-METADATA** — State the license in every manifest and image
-  `chore · agent · low`
-  accept: `apps/desktop/package.json`, `apps/mobile/package.json`, the Rust `Cargo.toml`, the Docker image label and `deploy/umbrel/arca/umbrel-app.yml` name the PolyForm Strict License (or point to `LICENSE`) without breaking `npm ci`, `cargo` or the Umbrel lint; a test lists every manifest.
 - **COPY-APP-VOICE** — Plain wording in the cold dialogs and Settings
   `chore · agent · low`
   accept: the strings a copy review flagged are rewritten in plain English with tests: "Erase this hub?", "The reply is JSON: enter the value of code", the web sign-in hint that names `arca web-code` (it needs the Docker form in a container), "The daemon must support file browsing", the local-network "Files and credentials are not encrypted", and the pair dialog that mentions only the desktop; the vocabulary stays the one SPEC sets.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.72 — 2026-10-02
+
+- Every package manifest, the desktop crate, the iOS module (which said MIT), the Docker image and the Umbrel listing now state the PolyForm Strict License 1.0.0, so a copy of Arca always says what it may be used for.
+
 ## 0.6.71 — 2026-10-02
 
 - A folder's summary on desktop, web and phone now shows three cells that add to its title: Status with when the last sync completed, Last change (when, which file and which device, or No changes yet) and Version history; the Files cell and the internal revision counter are gone.

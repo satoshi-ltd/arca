@@ -1,5 +1,5 @@
 FROM node:24.14.0-bookworm-slim
-LABEL org.opencontainers.image.source="https://github.com/satoshi-ltd/arca"
+LABEL org.opencontainers.image.source="https://github.com/satoshi-ltd/arca" org.opencontainers.image.licenses="LicenseRef-PolyForm-Strict-1.0.0"
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./

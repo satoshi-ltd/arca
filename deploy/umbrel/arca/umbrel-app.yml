@@ -25,6 +25,10 @@ description: >-
   enable Settings → Local network → Allow HTTP connections in Arca, then use
   this app's address and a separate pairing code from Devices. Local HTTP
   traffic is unencrypted. Never expose this installation directly to the Internet.
+
+
+  Arca is free for personal and non-commercial use under the PolyForm Strict
+  License 1.0.0. The license text is in the project repository.
 releaseNotes: ""
 
 developer: Satoshi Ltd

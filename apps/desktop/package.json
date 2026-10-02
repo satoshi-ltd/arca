@@ -1,6 +1,7 @@
 {
   "name": "arca-desktop",
   "private": true,
+  "license": "SEE LICENSE IN ../../LICENSE",
   "type": "module",
   "scripts": {
     "start": "node ../../scripts/desktop-dev.js",
