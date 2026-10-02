@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bump, targets } from "../scripts/bump-version.js";
-import { cleanCopy } from "../scripts/validate-local.js";
+import { cleanCopy, gitFreeEnv } from "../scripts/validate-local.js";
 import { manifests } from "../scripts/release-manifests.js";
 import { execFileSync, spawnSync } from "node:child_process";
 
@@ -98,7 +98,7 @@ test("validation copies the working tree exactly, including case-only renames, d
   const destination = path.join(root, "destination");
   fs.mkdirSync(source);
   fs.mkdirSync(destination);
-  const git = (...args) => execFileSync("git", args, { cwd: source, stdio: "pipe" });
+  const git = (...args) => execFileSync("git", args, { cwd: source, stdio: "pipe", env: gitFreeEnv() });
   git("init", "-q");
   git("config", "user.email", "test@example.com");
   git("config", "user.name", "Test");
@@ -165,4 +165,30 @@ test("every workflow uses the same checkout and setup-node majors and closes its
   }
   assert.equal(versions.checkout.size, 1, `one actions/checkout major, found ${[...versions.checkout]}`);
   assert.equal(versions["setup-node"].size, 1, `one actions/setup-node major, found ${[...versions["setup-node"]]}`);
+});
+
+test("the clean copy ignores git variables exported by hooks and never touches the caller's repository", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-hook-env-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const source = path.join(root, "source");
+  const destination = path.join(root, "destination");
+  const foreign = path.join(root, "foreign.git");
+  fs.mkdirSync(source);
+  fs.mkdirSync(destination);
+  fs.mkdirSync(foreign);
+  fs.writeFileSync(path.join(source, "file.txt"), "content");
+  execFileSync("git", ["init", "-q"], { cwd: source, stdio: "pipe", env: gitFreeEnv() });
+  const saved = { GIT_DIR: process.env.GIT_DIR, GIT_WORK_TREE: process.env.GIT_WORK_TREE };
+  process.env.GIT_DIR = foreign;
+  process.env.GIT_WORK_TREE = foreign;
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  cleanCopy(source, destination);
+  assert.equal(fs.readFileSync(path.join(destination, "file.txt"), "utf8"), "content");
+  assert.deepEqual(fs.readdirSync(foreign), []);
+  assert.equal(fs.existsSync(path.join(destination, ".git")), true);
 });

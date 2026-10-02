@@ -55,6 +55,19 @@ async function until(check) {
   throw new Error("UI did not reach expected state");
 }
 
+function trackInvoke(w, requests) {
+  const invoke = w.__TAURI__.core.invoke;
+  w.__TAURI__.core.invoke = (...args) => {
+    const request = Promise.resolve(invoke(...args));
+    requests.add(request);
+    request.then(
+      () => requests.delete(request),
+      () => requests.delete(request),
+    );
+    return request;
+  };
+}
+
 async function drainRequests(requests) {
   do {
     await Promise.allSettled([...requests]);
@@ -1083,7 +1096,9 @@ test("a replica's folder header offers Open in Finder alone: no Enable gallery a
   const daemon = await start(home, { timer: false });
   const volume = daemon.engine.store.addVolume("Docs");
   const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const requests = new Set();
   t.after(async () => {
+    await drainRequests(requests);
     dom.window.close();
     await daemon.close();
     fs.rmSync(home, { recursive: true, force: true });
@@ -1104,6 +1119,7 @@ test("a replica's folder header offers Open in Finder alone: no Enable gallery a
       },
     },
   };
+  trackInvoke(w, requests);
   w.eval(`(async()=>{${script}\n})()`);
   await until(() => w.document.querySelector('.folder-card[data-action="folder-detail"]'));
   w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
@@ -1127,13 +1143,17 @@ test("an empty Folders shows its one action in the header and the empty state on
   init(home, { port: 0, name: "Local Mac" });
   const daemon = await start(home, { timer: false });
   const available = { ...daemon.engine.store.addVolume("Docs"), selected: 0, gallery: false };
+  const requests = new Set();
+  const windows = [];
   t.after(async () => {
+    await drainRequests(requests);
+    for (const window of windows) window.close();
     await daemon.close();
     fs.rmSync(home, { recursive: true, force: true });
   });
   const open = async (state, remote) => {
     const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
-    t.after(() => dom.window.close());
+    windows.push(dom.window);
     const w = dom.window;
     w.setInterval = () => 0;
     w.__TAURI__ = {
@@ -1147,6 +1167,7 @@ test("an empty Folders shows its one action in the header and the empty state on
         },
       },
     };
+    trackInvoke(w, requests);
     w.eval(`(async()=>{${script}\n})()`);
     await until(() => w.document.querySelector(".page .empty"));
     return w.document;
@@ -1185,13 +1206,17 @@ test("the file detail reveals with the platform's own word while the folder head
   const volume = daemon.engine.store.addVolume("Documents");
   fs.writeFileSync(path.join(volume.path, "brief.md"), "text");
   await daemon.engine.cycle();
+  const requests = new Set();
+  const windows = [];
   t.after(async () => {
+    await drainRequests(requests);
+    for (const window of windows) window.close();
     await daemon.close();
     fs.rmSync(home, { recursive: true, force: true });
   });
   const open = async (platform) => {
     const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
-    t.after(() => dom.window.close());
+    windows.push(dom.window);
     const w = dom.window;
     w.setInterval = () => 0;
     const native = [];
@@ -1215,6 +1240,7 @@ test("the file detail reveals with the platform's own word while the folder head
         },
       },
     };
+    trackInvoke(w, requests);
     w.eval(`(async()=>{${script}\n})()`);
     await until(() => w.document.querySelector('.folder-card[data-action="folder-detail"]'));
     w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
@@ -2298,7 +2324,7 @@ test("unlink can also delete the replica files the hub already has", async (t) =
   option.checked = false;
   option.dispatchEvent(new w.Event("change"));
   assert.equal(q("#submit-dialog").textContent, "Stop syncing");
-  assert.match(q('#dialog label[for="unlink-delete"]').textContent, /^Delete the files on this (Mac|machine)$/);
+  assert.match(q('#dialog label[for="unlink-delete"]').textContent, /^Delete the files on this (Mac|device)$/);
   assert.ok(q("#dialog").classList.contains("confirmation-dialog"), "an option keeps the compact confirmation");
   assert.equal(q("#cancel-dialog").autofocus, true, "a destructive confirmation opens on Cancel");
   assert.match(q("#dialog").textContent, /The hub keeps the shared folder, its files and history/);
@@ -2308,7 +2334,7 @@ test("unlink can also delete the replica files the hub already has", async (t) =
   q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
   await until(() => !q("#dialog").open && bodies.length);
   assert.deepEqual(JSON.parse(JSON.stringify(bodies)), [{ id: folder.id, deleteFiles: true }]);
-  await until(() => /2 files .* deleted from this Mac|2 files .* deleted from this machine/.test(w.document.body.textContent));
+  await until(() => /2 files .* deleted from this (Mac|device)/.test(w.document.body.textContent));
   assert.equal(fs.existsSync(path.join(local.path, "synced.jpg")), false);
   assert.equal(fs.existsSync(path.join(local.path, ".arcaignore")), false);
   assert.equal(fs.readFileSync(path.join(local.path, "draft.jpg"), "utf8"), "only here");

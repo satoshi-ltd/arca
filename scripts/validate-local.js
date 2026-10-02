@@ -6,10 +6,15 @@ import { fileURLToPath } from "node:url";
 
 const repository = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+export const gitFreeEnv = () =>
+  Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+
 export function cleanCopy(source, destination) {
-  execFileSync("git", ["init", "-q"], { cwd: destination });
+  const env = gitFreeEnv();
+  execFileSync("git", ["init", "-q"], { cwd: destination, env });
   const listed = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
     cwd: source,
+    env,
     maxBuffer: 1 << 30,
   });
   for (const file of new Set(listed.toString().split("\0").filter(Boolean))) {
@@ -33,7 +38,7 @@ function main() {
   cleanCopy(repository, clean);
   const shell = process.platform === "win32";
   const run = (command, args) => {
-    const result = spawnSync(command, args, { cwd: clean, encoding: "utf8", shell, maxBuffer: 1 << 30 });
+    const result = spawnSync(command, args, { cwd: clean, encoding: "utf8", shell, maxBuffer: 1 << 30, env: gitFreeEnv() });
     return { ok: result.status === 0, output: `${result.stdout}${result.stderr}` };
   };
   const step = (label, command, args) => {
