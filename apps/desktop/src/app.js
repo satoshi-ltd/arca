@@ -87,7 +87,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.72";
+const APP_VERSION = "0.6.73";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -3214,7 +3214,7 @@ async function folderBrowser(v, recent, pending = false) {
       `<div class="history-group folder-explorer">${trail}` +
       empty(
         "Files unavailable",
-        "The daemon must support file browsing. Update it and try again.",
+        "Arca could not list this folder’s files. If it keeps happening, update Arca, then try again.",
         button("Retry", "browse-page", folderAfter, "secondary"),
       ) +
       "</div>"
@@ -3919,7 +3919,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   if (status.role === "hub")
     html += section(
       "Local network",
-      `<div class="settings-card">${setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Files and credentials are not encrypted.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))}</div>`,
+      `<div class="settings-card">${setting("Allow HTTP connections", "Pair and sync over your local network without Tailscale. Anyone on that network could read your files and sign-in details, so use it only on a network you trust.", toggleControl("allow-lan-http", "Allow HTTP on local network", network?.allowLanHttp === true, network ? "" : "disabled"))}</div>`,
     );
   html += section(
     "Device discovery",
@@ -4436,7 +4436,7 @@ async function pairModal(name = "") {
   modal(
     modalHeader(
       "Pair a device",
-      "On the new desktop, open Devices → Connect to hub. Enter the address and pairing code below.",
+      "On the new device, open Arca and choose Pair with your hub. A computer picks Another device first; one already set up uses Connect to hub. Enter the address and pairing code below.",
       "key-round",
     ) +
       addressPanel +
@@ -5088,7 +5088,7 @@ async function handle(name, id, control) {
     ];
     modal(
       modalHeader(
-        destroyingHub ? "Erase this hub?" : "Erase this device?",
+        destroyingHub ? "Erase this hub and all its folders?" : "Erase this device?",
         destroyingHub
           ? "Permanently deletes this hub’s shared folders, files, version history and configuration. Other devices keep their local files and lose access to this hub. Arca returns to setup, where you can set up a hub or connect to one."
           : "Permanently deletes local folders, including unsynced changes, and resets Arca on this device. Hub files, hub history and other devices are kept.",
@@ -5861,7 +5861,7 @@ async function showLogin(message = "") {
       ],
       "access-tabs",
     )}</div>
-    <div id="access-code"><form id="web-login"><label>Web access code</label>${codeFields("web")}<p class="hint">${icon("clock")} Single use · valid ten minutes from generation</p><p id="login-error" role="alert">${escape(message)}</p><button class="primary" type="submit">${icon("log-in")}Open Arca</button></form><div class="access-help"><h3>Get a code</h3><p>On the server run <code>arca web-code</code></p><p>and copy the code value from the reply.</p></div></div>
+    <div id="access-code"><form id="web-login"><label>Web access code</label>${codeFields("web")}<p class="hint">${icon("clock")} Single use · valid ten minutes from generation</p><p id="login-error" role="alert">${escape(message)}</p><button class="primary" type="submit">${icon("log-in")}Open Arca</button></form><div class="access-help"><h3>Get a code</h3><p>On the server, run <code>docker exec &lt;container&gt; node packages/cli/arca.js web-code</code> if Arca runs in Docker, or <code>arca web-code</code> if it is installed directly.</p><p>The command prints a result that includes a six-digit code. Enter that code above.</p></div></div>
     <div id="access-approval" hidden><div id="web-approval-wait"></div><button type="button" id="request-web-approval" class="secondary">Try again</button></div>
     <p class="session-note">Signed in for up to 24 hours, until sign-out or a server restart.<br>No username or password.</p></div></div>`;
   icons();
@@ -6042,7 +6042,7 @@ function renderOnboarding() {
       )
       .join("")}`;
   if (o.step === "access")
-    body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p>${o.setupCodePath ? '<p><a href="/umbrel" target="_blank" rel="noopener">Get a code from Umbrel</a>, then return here.</p>' : `<p>On the server, run:</p><div class="settings-card">${setting("Command", `<span class="mono">${escape(webCodeCommand)}</span>`, button("Copy", "copy", webCodeCommand, "secondary small-button", "copy"))}</div><p class="hint">The reply is JSON: enter the value of <code>code</code>.</p>`}<label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
+    body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p>${o.setupCodePath ? '<p><a href="/umbrel" target="_blank" rel="noopener">Get a code from Umbrel</a>, then return here.</p>' : `<p>On the server, run:</p><div class="settings-card">${setting("Command", `<span class="mono">${escape(webCodeCommand)}</span>`, button("Copy", "copy", webCodeCommand, "secondary small-button", "copy"))}</div><p class="hint">The command prints a result that includes a six-digit code. Enter that code below.</p>`}<label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
   if (o.step === 2 && !o.paired)
     body = `<h1>Pair with your hub</h1><p>Connect with a single-use code from your hub.</p>${textField("Hub address", "url", o.url, "server", "https://arca.your-network", "mono")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">${icon("clock")}Single use · valid ten minutes.</p>`;
   if (o.step === 2 && o.paired)

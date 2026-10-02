@@ -367,6 +367,10 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
     );
     const lanToggle = w.document.querySelector("#allow-lan-http");
     assert.equal(lanToggle.checked, false);
+    assert.match(
+      w.document.querySelector("#content").textContent,
+      /Anyone on that network could read your files and sign-in details/,
+    );
     lanToggle.checked = true;
     lanToggle.dispatchEvent(new w.Event("change", { bubbles: true }));
     await until(
@@ -747,6 +751,13 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
   });
   assert.equal((await pending.json()).requests.length, 0);
 
+  const help = w.document.querySelector(".access-help");
+  assert.equal(
+    help.querySelector("code").textContent,
+    "docker exec <container> node packages/cli/arca.js web-code",
+  );
+  assert.match(help.textContent, /if it is installed directly/);
+  assert.match(help.textContent, /six-digit code\. Enter that code above\./);
   const submit = () =>
     w.document
       .querySelector("#web-login")
@@ -4391,6 +4402,10 @@ test("hub danger zone cancels safely and returns to onboarding after local destr
     w.document.querySelector("#dialog").textContent,
     /Other devices keep their local files/,
   );
+  assert.match(
+    w.document.querySelector("#dialog").textContent,
+    /Erase this hub and all its folders\?/,
+  );
   assert.ok(
     w.document.querySelector("#submit-dialog").classList.contains("danger"),
   );
@@ -6193,7 +6208,7 @@ for (const umbrel of [false, true]) {
     assert.equal(page.querySelector('a[href="/umbrel"]'), null);
     assert.match(page.textContent, /On the server, run:/);
     assert.ok(page.textContent.includes(command));
-    assert.match(page.textContent, /The reply is JSON: enter the value of code\./);
+    assert.match(page.textContent, /The command prints a result that includes a six-digit code\. Enter that code below\./);
     assert.doesNotMatch(page.textContent, /run arca web-code/);
     const copy = page.querySelector('[data-action="copy"]');
     assert.equal(copy.dataset.id, command);

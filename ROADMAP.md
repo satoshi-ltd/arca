@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **COPY-APP-VOICE** — Plain wording in the cold dialogs and Settings
-  `chore · agent · low`
-  accept: the strings a copy review flagged are rewritten in plain English with tests: "Erase this hub?", "The reply is JSON: enter the value of code", the web sign-in hint that names `arca web-code` (it needs the Docker form in a container), "The daemon must support file browsing", the local-network "Files and credentials are not encrypted", and the pair dialog that mentions only the desktop; the vocabulary stays the one SPEC sets.
 - **SET-OLDER-REVISIONS-COUNT** — Settings' Older versions counts only older revisions
   `bug · agent · low`
   accept: the number in Settings → History excludes each file's current revision and current deletions (today `status.historyRevisions` counts every revision, so a hub with 100 untouched files reads "100 kept" under Older versions); a daemon test with current and superseded revisions, and SPEC's wording follows.

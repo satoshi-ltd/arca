@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.73 — 2026-10-02
+
+- Plainer wording where people meet Arca cold: the erase-hub dialog says what it erases, the server sign-in help gives the Docker command and says to enter the six-digit code, the pair dialog covers phones as well as computers, and the local-network and file-listing messages say what is happening in everyday words.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.72 — 2026-10-02
 
 - Every package manifest, the desktop crate, the iOS module (which said MIT), the Docker image and the Umbrel listing now state the PolyForm Strict License 1.0.0, so a copy of Arca always says what it may be used for.

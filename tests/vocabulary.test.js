@@ -95,3 +95,35 @@ test("the phone confirmation keeps its destructive style for Erase this device",
     assert.equal(destructive.test(label), true, label);
   assert.equal(destructive.test("Restore"), false);
 });
+
+test("cold dialogs and Settings use plain wording the copy review asked for", () => {
+  const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+  const app = read("apps/desktop/src/app.js");
+  const design = read("design/desktop.html");
+  for (const phrase of [
+    '"Erase this hub?"',
+    "The reply is JSON",
+    "and copy the code value from the reply",
+    "The daemon must support file browsing",
+    "Files and credentials are not encrypted",
+    "On the new desktop, open Devices",
+  ]) {
+    assert.equal(app.includes(phrase), false, `app still says ${phrase}`);
+    assert.equal(design.includes(phrase), false, `design still says ${phrase}`);
+  }
+  for (const phrase of [
+    "Erase this hub and all its folders?",
+    "The command prints a result that includes a six-digit code. Enter that code below.",
+    "Arca could not list this folder’s files.",
+    "Anyone on that network could read your files and sign-in details",
+    "On the new device, open Arca and choose Pair with your hub. A computer picks Another device first; one already set up uses Connect to hub.",
+  ])
+    assert.equal(app.includes(phrase), true, `app lacks ${phrase}`);
+  assert.match(
+    app,
+    /On the server, run <code>docker exec &lt;container&gt; node packages\/cli\/arca\.js web-code<\/code> if Arca runs in Docker, or <code>arca web-code<\/code> if it is installed directly\./,
+  );
+  assert.ok(design.includes("On the new device, open Arca and choose Pair with your hub. A computer picks Another device first"));
+  assert.equal(design.includes("On the new device, open Devices"), false);
+  assert.ok(design.includes("The command prints a result that includes a six-digit code. Enter that code below."));
+});
