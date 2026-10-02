@@ -1297,6 +1297,9 @@ test("Settings offers Clean up…, and the dialog shows the count before Apply c
   const revisions = () => daemon.engine.store.db.prepare("SELECT COUNT(*) AS n FROM revisions").get().n;
   const before = revisions();
   assert.ok(before >= 3);
+  const older = daemon.engine.store.db
+    .prepare("SELECT COUNT(*) AS n FROM revisions WHERE rev NOT IN (SELECT rev FROM files)")
+    .get().n;
   const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
   const requests = new Set();
   t.after(async () => {
@@ -1305,6 +1308,7 @@ test("Settings offers Clean up…, and the dialog shows the count before Apply c
     await daemon.close();
     fs.rmSync(home, { recursive: true, force: true });
   });
+  assert.equal(older, before - 1, "note.txt keeps one current revision");
   const w = dom.window;
   w.setInterval = () => 0;
   w.HTMLDialogElement.prototype.showModal = function () {
@@ -1345,7 +1349,7 @@ test("Settings offers Clean up…, and the dialog shows the count before Apply c
   assert.equal(section.querySelector(".section-label").textContent, "History");
   assert.equal(control.textContent.trim(), "Clean up…");
   assert.equal(section.querySelector(".setting-row strong").textContent, "Older versions");
-  assert.match(section.querySelector(".setting-row p").textContent, new RegExp(`^${before} kept across your folders\\. Each folder decides how long it keeps them\\.$`));
+  assert.match(section.querySelector(".setting-row p").textContent, new RegExp(`^${older} kept across your folders\\. Each folder decides how long it keeps them\\.$`));
   assert.equal(
     section.querySelector("p.hint").textContent,
     "Cleanup shows what it would remove before anything is deleted. Current files, pending changes and history not yet backed up are never removed.",

@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SET-OLDER-REVISIONS-COUNT** — Settings' Older versions counts only older revisions
-  `bug · agent · low`
-  accept: the number in Settings → History excludes each file's current revision and current deletions (today `status.historyRevisions` counts every revision, so a hub with 100 untouched files reads "100 kept" under Older versions); a daemon test with current and superseded revisions, and SPEC's wording follows.
 - **DESK-CLEANUP-RECOUNT** — Editing a cleanup field after the count goes back to counting
   `feature · agent · low`
   accept: in the Clean up older versions dialog, editing either field after See the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen; a JSDOM test.
@@ -227,6 +224,12 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.
+- **DESK-CLEANUP-KEEPS** — The cleanup dialog's kept counts follow Settings' older-versions count
+  `chore · agent · low`
+  accept: in Clean up older versions the per-folder and total kept figures count older versions only, like Settings → History, so the two numbers never disagree; a JSDOM or daemon test with current and superseded revisions.
+- **DEV-TEST-CONCURRENCY** — Cap test parallelism so a full run does not saturate the maintainer's machine
+  `chore · agent · low`
+  accept: `scripts/validate-local.js` and `.githooks/pre-push` run `node --test` with a bounded `--test-concurrency` (for example half the cores) and the suite still passes within CI's time budget; the maintainer's local deploy scripts are not touched.
 - **MOB-HUB-LIVENESS** — Hub-busy liveness probe on mobile
   `feature · agent · low`
   accept: a busy hub is told apart from an unreachable one before the phone marks itself offline; client tests cover both, including a hub that needs more than the 10-second catalog deadline (it is now marked offline on every cycle); a deadline that grows on consecutive timeouts while no cycle has connected is one option.

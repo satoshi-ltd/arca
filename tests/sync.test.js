@@ -167,6 +167,26 @@ test("full files, edits in both directions, deletion and historical restore", as
   assert.equal(read(mac, volume, "nested/note.txt"), "one");
 });
 
+test("the older-versions count leaves out every file's current revision and current deletions", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("mac");
+  for (const name of ["untouched-a.txt", "untouched-b.txt", "edited.txt", "removed.txt"])
+    write(hub, volume, name, "one");
+  await hub.sync();
+  await mac.sync();
+  assert.equal(hub.engine.status().historyRevisions, 0, "untouched files have no older versions");
+  write(hub, volume, "edited.txt", "two");
+  await hub.sync();
+  assert.equal(hub.engine.status().historyRevisions, 1);
+  write(hub, volume, "edited.txt", "three");
+  fs.unlinkSync(path.join(hub.engine.store.volume(volume.id).path, "removed.txt"));
+  await hub.sync();
+  assert.equal(hub.engine.store.current(volume.id, "removed.txt").deleted, 1);
+  assert.equal(hub.engine.status().historyRevisions, 3, "two older edits and the version before the deletion");
+  await mac.sync();
+  assert.equal(mac.engine.status().historyRevisions, 0, "a device keeps no hub history of its own");
+});
+
 test("concurrent offline edits preserve both versions and stale deletion preserves edit", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const a = await connect("a");

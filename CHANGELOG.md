@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.74 — 2026-10-02
+
+- Settings → History counts only older versions: a hub with a hundred untouched files no longer reads "100 kept", because each file's current version and current deletions are left out.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.73 — 2026-10-02
 
 - Plainer wording where people meet Arca cold: the erase-hub dialog says what it erases, the server sign-in help gives the Docker command and says to enter the six-digit code, the pair dialog covers phones as well as computers, and the local-network and file-listing messages say what is happening in everyday words.

@@ -231,7 +231,11 @@ export class Engine {
         )
         .all(),
       historyRevisions: Number(
-        s.db.prepare("SELECT COUNT(*) AS count FROM revisions").get().count,
+        s.db
+          .prepare(
+            "SELECT (SELECT COUNT(*) FROM revisions) - (SELECT COUNT(*) FROM files f JOIN revisions r ON r.rev=f.rev AND r.volume=f.volume AND r.path=f.path) AS count",
+          )
+          .get().count,
       ),
       backupRevisions: Number(
         s.db.prepare("SELECT COUNT(*) AS count FROM backup_history").get()
