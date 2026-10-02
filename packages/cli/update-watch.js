@@ -53,21 +53,47 @@ export const imageRows = (output) =>
     .filter((line) => line.startsWith('"'))
     .map((line) => line.split('","')[0].replace(/^"/, "").toLowerCase());
 
-export function processRunning(name, platform = process.platform) {
+export function matchImage(images, pattern) {
+  const wanted = pattern.toLowerCase();
+  if (!wanted.includes("*")) return images.includes(wanted);
+  const expression = new RegExp(
+    `^${wanted
+      .split("*")
+      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*")}$`,
+  );
+  return images.some((image) => expression.test(image));
+}
+
+export function runningImages(platform = process.platform) {
   if (platform === "win32") {
-    const listing = spawnSync(
-      "tasklist",
-      ["/FI", `IMAGENAME eq ${name}`, "/FO", "CSV", "/NH"],
-      { encoding: "utf8", windowsHide: true },
-    );
-    return listing.status === 0 && imageRows(listing.stdout).length > 0;
+    const listing = spawnSync("tasklist", ["/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    if (listing.error || listing.status !== 0)
+      throw new Error("Could not list the running processes");
+    return imageRows(listing.stdout);
   }
-  const listing = spawnSync("ps", ["-A", "-o", "comm="], { encoding: "utf8" });
-  if (listing.status !== 0) return false;
-  const wanted = name.toLowerCase();
-  return listing.stdout
-    .split("\n")
-    .some((line) => path.basename(line.trim()).toLowerCase() === wanted);
+  const lines = [];
+  for (const column of ["comm=", "args="]) {
+    const listing = spawnSync("ps", ["-A", "-o", column], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    if (listing.error || listing.status !== 0)
+      throw new Error("Could not list the running processes");
+    for (const line of listing.stdout.split("\n")) {
+      const first = column === "args=" ? line.trim().split(/\s+/)[0] : line.trim();
+      if (first) lines.push(path.basename(first).toLowerCase());
+    }
+  }
+  return lines;
+}
+
+export function processRunning(name, platform = process.platform) {
+  return matchImage(runningImages(platform), name);
 }
 
 export function pidAlive(pid) {
@@ -104,8 +130,21 @@ export function realDeps({ home, node, cli, appExe, installerNames }) {
     alive: pidAlive,
     markerExists: () => fs.existsSync(marker),
     clearMarker: () => fs.rmSync(marker, { force: true }),
-    appRunning: () => Boolean(appExe) && processRunning(appExe),
-    installerBusy: () => installerNames.some((name) => processRunning(name)),
+    appRunning: () => {
+      if (!appExe) return false;
+      try {
+        return processRunning(appExe);
+      } catch {
+        return false;
+      }
+    },
+    installerBusy: () => {
+      try {
+        return installerNames.some((name) => processRunning(name));
+      } catch {
+        return true;
+      }
+    },
     daemonAnswers: async () => {
       try {
         const port = JSON.parse(

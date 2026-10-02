@@ -10,8 +10,10 @@ import { fileURLToPath } from "node:url";
 import {
   answers,
   imageRows,
+  matchImage,
   pidAlive,
   processRunning,
+  runningImages,
   watchUpdate,
 } from "../packages/cli/update-watch.js";
 
@@ -127,28 +129,38 @@ test("tasklist rows are read from CSV and localized notices are ignored", () => 
   assert.deepEqual(imageRows("INFO: No tasks are running which match the specified criteria.\r\n"), []);
 });
 
-test("the installer the Tauri updater writes is found by the default pattern on Windows", async (t) => {
-  if (process.platform !== "win32") return;
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-installer-name-"));
-  const installer = path.join(root, "Arca-0.0.0-installer.exe");
-  fs.copyFileSync(process.execPath, installer);
-  const child = spawn(installer, ["-e", "setTimeout(()=>{},15000)"], { stdio: "ignore" });
-  t.after(async () => {
-    const exited = new Promise((resolve) => child.on("exit", resolve));
-    child.kill();
-    await exited;
-    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-  });
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  assert.equal(processRunning("Arca*installer*"), true);
-  assert.equal(processRunning("Arca*no-such*"), false);
+test("image patterns match the installer name the updater writes and nothing unrelated", () => {
+  const images = ["explorer.exe", "arca-0.6.69-installer.exe", "node.exe"];
+  assert.equal(matchImage(images, "Arca*installer*"), true);
+  assert.equal(matchImage(images, "Arca-*-installer.exe"), true);
+  assert.equal(matchImage(images, "NODE.EXE"), true);
+  assert.equal(matchImage(images, "Arca*setup*"), false);
+  assert.equal(matchImage(images, "arca"), false);
+  assert.equal(matchImage(["a.b"], "a.b"), true);
+  assert.equal(matchImage(["axb"], "a.b"), false);
+});
+
+test("the real process listing finds this runner by exact name and by wildcard", () => {
+  const image = path.basename(process.execPath);
+  const stem = image.replace(/\.exe$/i, "");
+  assert.equal(processRunning(image), true, `images seen: ${runningImages().slice(0, 60).join(", ")}`);
+  assert.equal(processRunning(`${stem.slice(0, 2)}*`), true);
+  assert.equal(processRunning(`*${stem.slice(-2)}*`), true);
+  assert.equal(processRunning("arca*installer*"), false);
 });
 
 test("process helpers see real processes and answers means any HTTP reply", async (t) => {
   assert.equal(pidAlive(process.pid), true);
   assert.equal(pidAlive(2 ** 22 + 12345), false);
-  assert.equal(processRunning(path.basename(process.execPath)), true);
+  assert.equal(processRunning(path.basename(process.argv0)), true);
   assert.equal(processRunning("arca-no-such-process.exe"), false);
+  if (process.platform !== "win32") {
+    const sleeper = spawn("sleep", ["5"], { stdio: "ignore" });
+    t.after(() => sleeper.kill());
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(processRunning("sleep"), true);
+    assert.equal(processRunning("sle*"), true);
+  }
   const server = http.createServer((request, response) => {
     response.statusCode = 401;
     response.end();
