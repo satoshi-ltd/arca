@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.65 · proposals</span>
+      <span class="kit-version">v0.6.66 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -83,25 +83,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>Files, History and a file's history on desktop and web end in one Show more button (Show more files, Show more, Show more revisions) that appends the next rows and keeps scroll and typed search, as DESK-FILES-PAGING describes; the phone's buttons use the same words; placeholder rows carry no Loading label; JSDOM tests cover the three lists and <code>design/desktop.html</code> shows a list ending in Show more.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-DESK-FINDER-WORDS">
-          <header><code>UI-DESK-FINDER-WORDS</code><h3>Open and show in the Finder say different things</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> Open in Finder appears twice with two meanings and two placements: in a folder's header it opens the folder, in a file's detail it reveals the file and sits inside the ellipsis menu next to Rename… and Delete file…, while the header's own button is Open file. The proposal keeps the placements, which follow one rule (the header opens the content, the menu holds the rest), and uses the Finder's own word for revealing: Show in Finder on macOS, Show in folder elsewhere. The alternative surfaces the reveal action in the file header, which crowds it with a third button for something used far less than Open file.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">File · Open in Finder means reveal, and sits in the menu</p>
-<div class="detail-head file-detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folder</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="file-text"></span></div><div><h1>brief.md</h1></div></div><div class="file-header-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open file</button><details class="details-menu file-actions-menu" open><summary class="icon-button" aria-label="File actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="folder-search"></span>Open in Finder</button><button type="button" class="secondary"><span data-icon="pencil"></span>Rename…</button><button type="button" class="secondary danger menu-item-separated"><span data-icon="trash-2"></span>Delete file…</button></div></details></div></div></div>
-              <p class="kit-caption">Folder · Open in Finder means open, and sits in the header</p>
-<div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="folder"></span></div><div><h1>documents</h1><p>20 files · 14.2 MB local</p></div></div><div class="heading-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open in Finder</button></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">File · the header opens the content; the menu reveals it, with the Finder's own word</p>
-<div class="detail-head file-detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folder</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="file-text"></span></div><div><h1>brief.md</h1></div></div><div class="file-header-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open file</button><details class="details-menu file-actions-menu" open><summary class="icon-button" aria-label="File actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="folder-search"></span>Show in Finder</button><button type="button" class="secondary"><span data-icon="pencil"></span>Rename…</button><button type="button" class="secondary danger menu-item-separated"><span data-icon="trash-2"></span>Delete file…</button></div></details></div></div></div>
-              <p class="kit-caption">Folder · unchanged: Open in Finder opens the folder itself</p>
-<div class="detail-head"><button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button><div class="heading"><div class="detail-title"><div class="tile large"><span data-icon="folder"></span></div><div><h1>documents</h1><p>20 files · 14.2 MB local</p></div></div><div class="heading-actions"><button type="button" class="secondary"><span data-icon="external-link"></span>Open in Finder</button></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>The file detail's menu reads Show in Finder on macOS and Show in folder on Windows and Linux, the folder header keeps Open in Finder / Open folder, and no other wording changes; a JSDOM test covers both labels and <code>design/desktop.html</code> shows the file detail.</p></div></div>
         </article>
         <article class="kit-board" data-board="UI-DESK-RETENTION-PANEL">
           <header><code>UI-DESK-RETENTION-PANEL</code><h3>The retention control leaves the summary</h3><span>Desktop</span></header>

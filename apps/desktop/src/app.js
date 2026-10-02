@@ -86,7 +86,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.65";
+const APP_VERSION = "0.6.66";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1614,9 +1614,9 @@ function fileHistoryHeader() {
         )
       : "";
   const finder =
-    available && native && volume?.path && status.platform === "darwin"
+    available && native && volume?.path
       ? button(
-          "Open in Finder",
+          status.platform === "darwin" ? "Show in Finder" : "Show in folder",
           "history-reveal-file",
           "",
           "secondary",
@@ -4818,6 +4818,10 @@ async function handle(name, id, control) {
   }
   if (name === "history-page") {
     await renderHistory(id, true);
+    return;
+  }
+  if (name === "history-reveal-file" && status.platform !== "darwin") {
+    await invoke("open_folder", { id: historyVolume });
     return;
   }
   if (name === "history-open-file" || name === "history-reveal-file") {

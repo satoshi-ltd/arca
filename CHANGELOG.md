@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.66 — 2026-10-02
+
+- A file's ⋯ menu reveals it as Show in Finder on macOS and Show in folder on Windows and Linux, where the item is new and opens the shared folder because only macOS can reveal a single file; the folder header still says Open in Finder or Open folder.
+
+Needs: desktop build
+
 ## 0.6.65 — 2026-10-02
 
 - An empty Folders shows Choose folders (replica) or Create shared folder (hub) once, in the header, instead of repeating it inside the empty state; on a replica the empty text points to the available folders below when there are any.

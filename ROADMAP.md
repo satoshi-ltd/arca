@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-DESK-FINDER-WORDS** — Open and show in the Finder say different things
-  `ui · agent · normal`
-  accept: the board.
 - **UI-DESK-RETENTION-PANEL** — The retention control leaves the summary
   `ui · agent · normal`
   accept: the board.
@@ -199,6 +196,9 @@ Older notes listed these as open while later evidence suggests they are resolved
 ## Proposed
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
+- **NAT-REVEAL-FILE** — Show a file in its own folder on Windows and Linux
+  `feature · agent · low`
+  accept: `open_file` with `reveal` works on every platform (Windows `explorer /select,<path>`, Linux the file's parent directory) and the file detail's Show in folder, and the photo viewer's, open the file's own folder instead of the shared folder's root; a Rust test next to the existing `open_file` code; native change, so a desktop build and a maintainer `verify` on real Windows and Linux follow.
 - **FOLDER-LAST-CHANGE** — The phone's folder summary knows its newest accepted revision
   `feature · agent · low`
   accept: the folder detail reads the newest activity row of the folder (`/v1/activity?volume=…&limit=1`, the saved view offline) and exposes its time, path and author to the summary, reusing the Recent cache when it has it; a replica test covers online, offline and a folder with no revisions. The interface follows board UI-FOLDER-STATS.

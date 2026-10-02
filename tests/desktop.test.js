@@ -268,20 +268,23 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
     const finder = w.document.querySelector(
       '[data-action="history-reveal-file"]',
     );
+    assert.ok(finder.closest(".file-actions-menu"));
+    assert.equal(
+      finder.textContent.trim(),
+      process.platform === "darwin" ? "Show in Finder" : "Show in folder",
+    );
+    assert.equal(
+      w.document
+        .querySelector('[data-action="history-open-file"]')
+        .closest(".file-actions-menu"),
+      null,
+    );
+    assert.ok(
+      w.document
+        .querySelector('.file-actions-menu [data-action="delete-file"]')
+        .classList.contains("menu-item-separated"),
+    );
     if (process.platform === "darwin") {
-      assert.ok(finder);
-      assert.ok(finder.closest(".file-actions-menu"));
-      assert.equal(
-        w.document
-          .querySelector('[data-action="history-open-file"]')
-          .closest(".file-actions-menu"),
-        null,
-      );
-      assert.ok(
-        w.document
-          .querySelector('.file-actions-menu [data-action="delete-file"]')
-          .classList.contains("menu-item-separated"),
-      );
       finder.closest("details").open = true;
       finder.click();
       await until(
@@ -293,8 +296,6 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
         { ...openedFiles[1] },
         { ...openedFiles[0], reveal: true },
       );
-    } else {
-      assert.equal(finder, null);
     }
     assert.equal(
       openedFiles[0].volume,
@@ -1168,6 +1169,75 @@ test("an empty Folders shows its one action in the header and the empty state on
   const offline = await open({ role: "replica", hub: "", hubName: "" }, []);
   assert.deepEqual(header(offline), ["connect"], "Connect to hub… once, in the header");
   assert.equal(offline.querySelector(".page .empty button"), null);
+});
+
+test("the file detail reveals with the platform's own word while the folder header keeps opening the folder", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-reveal-words-"));
+  init(home, { port: 0, name: "Test hub" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Documents");
+  fs.writeFileSync(path.join(volume.path, "brief.md"), "text");
+  await daemon.engine.cycle();
+  t.after(async () => {
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const open = async (platform) => {
+    const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+    t.after(() => dom.window.close());
+    const w = dom.window;
+    w.setInterval = () => 0;
+    const native = [];
+    w.__TAURI__ = {
+      core: {
+        invoke: async (command, args) => {
+          if (command === "bootstrap") return { setup: false, status: { ...daemon.engine.status(), platform } };
+          if (command === "open_file" || command === "open_folder") {
+            native.push([command, { ...args }]);
+            return;
+          }
+          if (command !== "api") throw new Error("Unexpected native command");
+          const response = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method,
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.method === "POST" ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const value = await response.json();
+          if (!response.ok) throw new Error(value.error);
+          return args.route === "/v1/status" ? { ...value, platform } : value;
+        },
+      },
+    };
+    w.eval(`(async()=>{${script}\n})()`);
+    await until(() => w.document.querySelector('.folder-card[data-action="folder-detail"]'));
+    w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
+    await until(() => w.document.querySelector(".browser-file-row") && w.document.body.getAttribute("aria-busy") === "false");
+    const folderOpen = w.document.querySelector('.heading-actions [data-action="open"]').textContent.trim();
+    w.document.querySelector(".browser-file-row").click();
+    await until(() => w.document.querySelector('[data-action="history-reveal-file"]') && w.document.body.getAttribute("aria-busy") === "false");
+    return { w, native, folderOpen };
+  };
+
+  const mac = await open("darwin");
+  const reveal = mac.w.document.querySelector('[data-action="history-reveal-file"]');
+  assert.equal(reveal.textContent.trim(), "Show in Finder");
+  assert.ok(reveal.closest(".file-actions-menu"), "the reveal action stays in the menu");
+  assert.equal(mac.folderOpen, "Open in Finder", "the folder header still opens the folder");
+  assert.equal(mac.w.document.querySelector('[data-action="history-open-file"]').textContent.trim(), "Open file");
+  reveal.click();
+  await until(() => mac.native.length === 1);
+  assert.deepEqual(mac.native[0], ["open_file", { volume: volume.id, path: "brief.md", reveal: true }]);
+
+  for (const platform of ["win32", "linux"]) {
+    const other = await open(platform);
+    const control = other.w.document.querySelector('[data-action="history-reveal-file"]');
+    assert.equal(control.textContent.trim(), "Show in folder", platform);
+    assert.ok(control.closest(".file-actions-menu"));
+    assert.equal(other.folderOpen, "Open folder", `${platform}: the folder header keeps its word`);
+    control.click();
+    await until(() => other.native.length === 1);
+    assert.deepEqual(other.native[0], ["open_folder", { id: volume.id }], `${platform}: no reveal exists, so it opens the shared folder`);
+  }
 });
 
 test("offline labels: this machine reads Offline, saved machines say last known and nothing-saved screens say so", async (t) => {
