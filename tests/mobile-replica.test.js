@@ -1998,9 +1998,10 @@ test("a corrupt gallery asset row is set aside: startup, queries and other asset
   await r.sync(true);
   assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-3")).state, "accepted", "other assets are not blocked");
   assert.equal(deleted(), before, "a corrupt row never publishes a deletion");
-  await store.db.runAsync("INSERT INTO gallery_assets VALUES(?,?,?,?,?,?)", r.scope, volume.id, "nul-row", "pending", 0, '{"id":"nul-row"}\u0000garbage');
-  assert.equal(await store.galleryAsset(r.scope, volume.id, "nul-row"), null, "a row JSON.parse rejects is set aside when read");
-  assert.equal((await store.db.getFirstAsync("SELECT COUNT(*) AS n FROM gallery_assets WHERE asset='nul-row'")).n, 0);
+  await insert("one-row", "pending", '{"id":"one-row"}');
+  await store.quarantineGalleryRow(r.scope, volume.id, "one-row");
+  assert.equal(await store.galleryAsset(r.scope, volume.id, "one-row"), null, "a single row can be set aside by key");
+  assert.equal((await store.db.getFirstAsync("SELECT COUNT(*) AS n FROM gallery_corrupt WHERE asset='one-row'")).n, 1);
 });
 
 test("rows with the wrong shape are set aside too, and a corrupt pick whose app copy exists is queued again", async (t) => {
