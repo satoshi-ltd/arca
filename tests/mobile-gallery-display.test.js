@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   galleryDisplay,
   nativeGallerySources,
@@ -137,5 +138,19 @@ test("a downloaded image opens offline without consulting the native library or 
       },
     ),
     "file:///arca/other-phone.jpg",
+  );
+});
+
+test("the pending uploads strip offers to dismiss photos whose app copy is gone", () => {
+  const read = (file) =>
+    fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
+  const gallery = read("FolderGallery.jsx");
+  assert.match(
+    gallery,
+    /uploads\?\.dismissLost && pendingItems\.some\(\(item\) => item\.lost\)[\s\S]{0,200}label="Dismiss unavailable photos"[\s\S]{0,80}onPress=\{uploads\.dismissLost\}/,
+  );
+  assert.match(
+    read("App.jsx"),
+    /dismissLost: \(\) =>\s+run\(\(\) => engine\.current\.gallery\.dismissLost\(folder\.id\)\)/,
   );
 });

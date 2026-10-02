@@ -1149,6 +1149,8 @@ export default function App() {
                 media: engine.current.gallery.media,
                 summary: source.summary,
                 scannedAt: source.scannedAt,
+                dismissLost: () =>
+                  run(() => engine.current.gallery.dismissLost(folder.id)),
               }
             : null
         }

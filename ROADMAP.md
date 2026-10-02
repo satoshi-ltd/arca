@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-PICKED-DURABLE** — Picked photos outlive a long offline stretch
-  `bug · agent · low`
-  accept: a photo picked with Add photos… is copied into app-owned storage when it is journaled, so the OS clearing the picker cache or an iOS container path change cannot lose it, and picks still upload when library permission is revoked or the linked album is gone (today the cycle's permission and album checks run first); a picked photo whose file is gone can be dismissed instead of staying failed until picked again, and Sync now makes failed manual picks retry at once while automatic uploads are off; replica tests for each.
 - **MOB-GALLERY-ASSET-ROWS** — Tolerate a corrupt gallery asset row
   `bug · agent · low`
   accept: a malformed `gallery_assets` row no longer stops the app from starting (`clearInterrupted` and the SQLite `json_extract` queries) or blocks other assets, and never publishes deletions; a replica test with a corrupt asset row.

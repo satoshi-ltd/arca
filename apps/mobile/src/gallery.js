@@ -122,6 +122,45 @@ export class Gallery {
       r.changed();
     }
   }
+  async journal(source, volume, asset) {
+    const r = this.r;
+    const id = asset.assetId || `picked-${await r.files.hash(asset.uri)}`;
+    let item = await r.store.galleryAsset(r.scope, volume, id);
+    if (item?.state === "accepted") return null;
+    item ||= {
+      id,
+      name: asset.fileName || "photo.jpg",
+      prefix: source.prefix,
+      state: "pending",
+    };
+    if (!asset.assetId) {
+      const stat = await r.files.stat(asset.uri);
+      if (!stat || stat.directory)
+        throw new Error(
+          "The picked photo is no longer available. Pick it again.",
+        );
+      const durable = r.files.picked(r.scope, volume, id);
+      const kept = await r.files.stat(durable);
+      if (!kept || kept.size !== stat.size) {
+        try {
+          await r.space(stat.size);
+          await r.files.mkdir(r.files.parent(durable));
+          await r.files.copy(asset.uri, durable);
+        } catch (error) {
+          await r.files.remove(durable).catch(() => {});
+          throw error;
+        }
+      }
+      item.picked = { name: item.name, key: "original" };
+      delete item.lost;
+    }
+    item.manual = true;
+    if (item.state === "unavailable") item.state = "pending";
+    item.retryAt = 0;
+    await r.store.putGalleryAsset(r.scope, volume, item);
+    if (!asset.assetId) await r.files.discardPicked(asset.uri).catch(() => {});
+    return item;
+  }
   async addPhotos(volume, assets) {
     const r = this.r;
     await r.requireActiveReplica();
@@ -139,30 +178,27 @@ export class Gallery {
       const queued = [];
       // Journal the entire selection before transferring any photo. A failed
       // first transfer must not discard the remaining selections.
+      let journalFailure;
       for (const asset of assets) {
         r.check();
-        const id = asset.assetId || `picked-${await r.files.hash(asset.uri)}`;
-        let item = await r.store.galleryAsset(r.scope, volume, id);
-        if (item?.state === "accepted") continue;
-        item ||= {
-          id,
-          name: asset.fileName || "photo.jpg",
-          prefix: source.prefix,
-          state: "pending",
-        };
-        if (!asset.assetId)
-          item.picked = { uri: asset.uri, name: item.name, key: "original" };
-        item.manual = true;
-        if (item.state === "unavailable") item.state = "pending";
-        item.retryAt = 0;
-        await r.store.putGalleryAsset(r.scope, volume, item);
-        if (!queued.some((previous) => previous.id === item.id))
-          queued.push(item);
+        try {
+          const item = await this.journal(source, volume, asset);
+          if (item && !queued.some((previous) => previous.id === item.id))
+            queued.push(item);
+        } catch (error) {
+          if (
+            ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
+            r.syncAbort?.signal.aborted
+          )
+            throw error;
+          journalFailure ||= error;
+        }
       }
+      if (journalFailure && !queued.length) throw journalFailure;
       await r.client.refresh();
       r.check();
       const policy = await this.policy(volume);
-      let failure;
+      let failure = journalFailure;
       for (const item of queued) {
         r.check();
         try {
@@ -177,6 +213,7 @@ export class Gallery {
           item.state = "failed";
           item.issue = error.message;
           item.retryAt = Date.now() + 60000;
+          if (error.code === "PICKED_LOST") item.lost = true;
           await r.store.putGalleryAsset(r.scope, volume, item);
           failure ||= error;
         }
@@ -363,6 +400,38 @@ export class Gallery {
     item.retryAt = 0;
     await this.r.store.putGalleryAsset(this.r.scope, folder.id, item);
   }
+  async dropPicked(volume, item) {
+    if (item.picked)
+      await this.r.files
+        .remove(this.r.files.picked(this.r.scope, volume, item.id))
+        .catch(() => {});
+    delete item.picked;
+    delete item.lost;
+  }
+  async dismissLost(volume) {
+    const r = this.r;
+    await r.requireActiveReplica();
+    if (r.importing || r.picking)
+      throw new Error("Wait for synchronization to finish.");
+    for (const item of await r.store.galleryLost(r.scope, volume)) {
+      if (await r.files.stat(r.files.picked(r.scope, volume, item.id)))
+        continue;
+      await this.dropPicked(volume, item);
+      item.state = "unavailable";
+      item.issue = null;
+      item.retryAt = 0;
+      await r.store.putGalleryAsset(r.scope, volume, item);
+    }
+    const source = await r.store.gallery(r.scope, volume);
+    if (source && source.mode !== "damaged") {
+      source.summary = await r.store.gallerySummary(r.scope, volume);
+      source.issue = source.summary.failed
+        ? "Some photos could not be uploaded. Retry to continue."
+        : null;
+      await r.store.setGallery(r.scope, volume, source);
+    }
+    r.changed();
+  }
   async send(folder, item, policy) {
     const r = this.r;
     const save = () => r.store.putGalleryAsset(r.scope, folder.id, item);
@@ -384,7 +453,7 @@ export class Gallery {
       item.state = "accepted";
       if (item.previousResources) item.acceptedAt = Date.now();
       delete item.previousResources;
-      delete item.picked;
+      await this.dropPicked(folder.id, item);
       item.issue = null;
       await save();
       return;
@@ -396,7 +465,12 @@ export class Gallery {
     try {
       r.check();
       const exported = item.picked
-        ? [item.picked]
+        ? [
+            {
+              ...item.picked,
+              uri: r.files.picked(r.scope, folder.id, item.id),
+            },
+          ]
         : await this.media.export(item.id, stage).catch((error) => {
             throw Object.assign(new Error(error.message, { cause: error }), {
               code: "SOURCE_UNAVAILABLE",
@@ -409,7 +483,12 @@ export class Gallery {
         r.check();
         const stat = await r.files.stat(resource.uri);
         if (!stat && item.picked)
-          throw new Error("The picked photo is no longer available. Pick it again.");
+          throw Object.assign(
+            new Error(
+              "The picked photo is no longer available. Pick it again or dismiss it.",
+            ),
+            { code: "PICKED_LOST" },
+          );
         if (!stat || stat.directory || stat.size > 100 * 1024 ** 3)
           throw new Error("Unsupported gallery resource size");
         const prepared = {
@@ -519,7 +598,7 @@ export class Gallery {
       item.state = "accepted";
       if (item.previousResources) item.acceptedAt = Date.now();
       delete item.previousResources;
-      delete item.picked;
+      await this.dropPicked(folder.id, item);
       item.issue = null;
       item.retryAt = 0;
       await save();
@@ -554,6 +633,7 @@ export class Gallery {
         item.state = "failed";
         item.issue = error.message;
         item.retryAt = Date.now() + 60000;
+        if (error.code === "PICKED_LOST") item.lost = true;
         await r.store.putGalleryAsset(r.scope, folder.id, item);
       }
     }
@@ -595,11 +675,13 @@ export class Gallery {
       r.moreGalleryWork ||= registration.length === 24;
       await r.galleryDeletions.receive(folder.id);
     }
+    if (r.force) await r.store.retryGalleryManual(r.scope, folder.id);
     if (!source.enabled) {
       await this.sendManual(folder, source);
       return;
     }
     try {
+      await this.sendManual(folder, source);
       const permission = await this.permission(source.videos);
       source.limited = permission.accessPrivileges === "limited";
       if (
@@ -704,6 +786,7 @@ export class Gallery {
           item.state = "failed";
           item.issue = error.message;
           item.retryAt = Date.now() + 60000;
+          if (error.code === "PICKED_LOST") item.lost = true;
           await r.store.putGalleryAsset(r.scope, folder.id, item);
           failure = `${item.name || "Photo"}: ${error.message}`;
           if (

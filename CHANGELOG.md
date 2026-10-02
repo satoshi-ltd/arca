@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.78 — 2026-10-02
+
+- Photos picked with Add photos… are now kept in Arca's own storage until the hub has them, so a cleared cache or a long offline stretch no longer loses them; they also upload when photo access is revoked or the album is gone, and Sync now retries failed picks at once even with automatic uploads off.
+- A picked photo whose copy is gone can be dismissed from the Pending uploads strip instead of staying failed.
+
+Needs: native build
+
 ## 0.6.77 — 2026-10-02
 
 - Files shared into Arca on Android are now copied to generated names inside Arca's own inbox, so another app's file name can never decide where a shared file is written or overwrite one.

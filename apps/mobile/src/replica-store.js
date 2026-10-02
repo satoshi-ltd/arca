@@ -307,6 +307,22 @@ export class ReplicaStore {
       volume,
     );
   }
+  async retryGalleryManual(scope, volume) {
+    await this.db.runAsync(
+      "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable') AND json_extract(row,'$.manual')=1",
+      scope,
+      volume,
+    );
+  }
+  async galleryLost(scope, volume) {
+    return (
+      await this.db.getAllAsync(
+        "SELECT row FROM gallery_assets WHERE scope=? AND volume=? AND state='failed' AND json_extract(row,'$.lost')=1",
+        scope,
+        volume,
+      )
+    ).map((r) => JSON.parse(r.row));
+  }
   async retryGallery(scope, volume) {
     await this.db.runAsync(
       "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable')",

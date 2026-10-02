@@ -26,6 +26,8 @@ export const files = {
     const directory = new Directory(this.galleryStage(scope, volume));
     if (directory.exists) directory.delete();
   },
+  picked: (scope, volume, key) =>
+    new File(root, id(scope), "picked", id(volume), id(key)).uri,
   incoming: (key) => new File(Paths.cache, "arca-incoming", id(key)).uri,
   async clearIncoming() {
     const directory = new Directory(Paths.cache, "arca-incoming");
@@ -66,6 +68,8 @@ export const files = {
     this.clearGalleryCache();
     const directory = new Directory(this.folder(scope, volume));
     if (directory.exists) directory.delete();
+    const picked = new Directory(root, id(scope), "picked", id(volume));
+    if (picked.exists) picked.delete();
   },
   async removeDirectory(uri) {
     native.removeEmptyDirectory(uri);

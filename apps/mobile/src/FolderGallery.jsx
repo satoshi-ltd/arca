@@ -1143,6 +1143,13 @@ export function FolderGallery({
               {pendingUploadLabel(pendingItems, uploads?.summary)}
             </Text>
           </View>
+          {!!uploads?.dismissLost && pendingItems.some((item) => item.lost) && (
+            <Button
+              label="Dismiss unavailable photos"
+              icon="close"
+              onPress={uploads.dismissLost}
+            />
+          )}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}

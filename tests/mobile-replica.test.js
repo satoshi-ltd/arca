@@ -1100,6 +1100,8 @@ async function galleryFixture(
     path.join(f.root, "mobile", s, "gallery-stage", v);
   files.clearGalleryStage = async (s, v) =>
     fs.rmSync(files.galleryStage(s, v), { recursive: true, force: true });
+  files.picked = (s, v, k) => path.join(f.root, "mobile", s, "picked", v, k);
+  files.discardPicked = async () => {};
   const data = new Map(
     assets.map((a) => [a.id, Buffer.from(`original ${a.id}`)]),
   );
@@ -1906,7 +1908,7 @@ test("with automatic uploads off, manual picks upload past a backlog of library 
   assert.equal((await f.store.gallery(r.scope, f.volume.id)).issue, null);
 });
 
-test("a pick whose temporary file disappeared while offline reports that it must be picked again", async (t) => {
+test("a pick is copied into app storage when journaled, so the picker's temporary file can vanish and it still uploads", async (t) => {
   const f = await galleryFixture(t);
   const r = f.replica;
   await f.enable();
@@ -1914,11 +1916,152 @@ test("a pick whose temporary file disappeared while offline reports that it must
   fs.writeFileSync(uri, "soon gone");
   f.offline();
   await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "vanishing.jpg" }]));
+  const [pending] = await f.store.galleryPreview(r.scope, f.volume.id, false, 24);
+  const copy = f.files.picked(r.scope, f.volume.id, pending.id);
+  assert.ok(copy.startsWith(path.join(f.root, "mobile", r.scope, "picked")), "the copy lives in app-owned storage");
+  assert.equal(pending.picked.uri, undefined, "the journal keeps the key, never an absolute path");
+  assert.equal(fs.readFileSync(copy, "utf8"), "soon gone");
   fs.rmSync(uri);
   f.online();
   await r.sync();
-  assert.match((await f.store.gallery(r.scope, f.volume.id)).issue, /Pick it again/);
-  assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).failed, 1);
+  const summary = await f.store.gallerySummary(r.scope, f.volume.id);
+  assert.equal(summary.failed, 0);
+  assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, pending.id)).state, "accepted");
+  assert.equal(fs.existsSync(copy), false, "the copy goes once the hub has the photo");
+});
+
+test("picks upload even when library permission is revoked or the linked album is gone", async (t) => {
+  for (const loss of ["permission", "album"]) {
+    const f = await galleryFixture(t);
+    const r = f.replica;
+    await f.enable();
+    const uri = path.join(f.root, `${loss}.jpg`);
+    fs.writeFileSync(uri, `picked while ${loss} is lost`);
+    f.offline();
+    await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: `${loss}.jpg` }]));
+    if (loss === "permission") f.media.permission = async () => ({ granted: false, accessPrivileges: "none" });
+    else f.media.albums = async () => [];
+    f.online();
+    await r.sync(true).catch(() => {});
+    const accepted = await f.store.galleryPreview(r.scope, f.volume.id, true, 10);
+    assert.ok(accepted.some((item) => item.name === `${loss}.jpg`), `${loss}: the pick was uploaded`);
+  }
+});
+
+test("Sync now retries failed manual picks at once while automatic uploads are off", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  await r.gallery.setEnabled(f.volume.id, false);
+  const uri = path.join(f.root, "retry-now.jpg");
+  fs.writeFileSync(uri, "retry me");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "retry-now.jpg" }]));
+  const [pending] = await f.store.galleryPreview(r.scope, f.volume.id, false, 24);
+  await f.store.putGalleryAsset(r.scope, f.volume.id, { ...pending, state: "failed", issue: "Temporary failure", retryAt: Date.now() + 3600000 });
+  f.online();
+  await sync(f);
+  assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, pending.id)).state, "failed", "a scheduled sync waits for the retry time");
+  await r.sync(true);
+  assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, pending.id)).state, "accepted", "Sync now retries it");
+});
+
+test("a pick whose app copy is gone can be dismissed instead of staying failed, and picking it again queues it", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "lost.jpg");
+  fs.writeFileSync(uri, "lost soon");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "lost.jpg" }]));
+  const [pending] = await f.store.galleryPreview(r.scope, f.volume.id, false, 24);
+  fs.rmSync(f.files.picked(r.scope, f.volume.id, pending.id));
+  f.online();
+  await r.sync();
+  const [failed] = await f.store.galleryPreview(r.scope, f.volume.id, false, 24);
+  assert.equal(failed.state, "failed");
+  assert.equal(failed.lost, true);
+  assert.match(failed.issue, /Pick it again or dismiss it/);
+  assert.match((await f.store.gallery(r.scope, f.volume.id)).issue, /Pick it again or dismiss it/);
+  await r.gallery.dismissLost(f.volume.id);
+  const dismissed = await f.store.galleryAsset(r.scope, f.volume.id, failed.id);
+  assert.equal(dismissed.state, "unavailable");
+  assert.equal(dismissed.picked, undefined);
+  assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).failed, 0);
+  assert.equal((await f.store.gallery(r.scope, f.volume.id)).issue, null);
+  await r.sync(true);
+  assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, failed.id)).state, "unavailable", "a retry does not revive it");
+  fs.writeFileSync(uri, "lost soon");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "lost.jpg" }]));
+  assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, failed.id)).state, "pending");
+});
+
+test("a pick that still has its app copy is never dismissed", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "kept.jpg");
+  fs.writeFileSync(uri, "kept");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "kept.jpg" }]));
+  const [pending] = await f.store.galleryPreview(r.scope, f.volume.id, false, 24);
+  await f.store.putGalleryAsset(r.scope, f.volume.id, { ...pending, state: "failed", lost: true });
+  await r.gallery.dismissLost(f.volume.id);
+  assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, pending.id)).state, "failed");
+  assert.equal(fs.existsSync(f.files.picked(r.scope, f.volume.id, pending.id)), true);
+});
+
+test("a pick survives a change of the app container path because only its key is journaled", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "moved.jpg");
+  fs.writeFileSync(uri, "container moves");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "moved.jpg" }]));
+  const [pending] = await f.store.galleryPreview(r.scope, f.volume.id, false, 24);
+  const before = f.files.picked(r.scope, f.volume.id, pending.id);
+  const moved = path.join(f.root, "new-container", path.basename(before));
+  fs.mkdirSync(path.dirname(moved), { recursive: true });
+  fs.renameSync(before, moved);
+  f.files.picked = () => moved;
+  f.online();
+  await r.sync();
+  assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, pending.id)).state, "accepted");
+});
+
+test("picking the same photo again keeps its copy, and one unreadable pick does not stop the others being journaled", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "twice.jpg");
+  fs.writeFileSync(uri, "same bytes");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "twice.jpg" }]));
+  const [pending] = await f.store.galleryPreview(r.scope, f.volume.id, false, 24);
+  const copy = f.files.picked(r.scope, f.volume.id, pending.id);
+  const copies = [];
+  const copyFile = f.files.copy;
+  f.files.copy = async (a, b) => {
+    copies.push(b);
+    if (copies.length > 1) throw new Error("No space left on device");
+    return copyFile(a, b);
+  };
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "twice.jpg" }]));
+  assert.deepEqual(copies, [], "an existing identical copy is not copied again");
+  assert.equal(fs.readFileSync(copy, "utf8"), "same bytes");
+  const missing = path.join(f.root, "missing.jpg");
+  const second = path.join(f.root, "second.jpg");
+  fs.writeFileSync(second, "second pick");
+  await assert.rejects(
+    r.gallery.addPhotos(f.volume.id, [
+      { uri: missing, fileName: "missing.jpg" },
+      { uri: second, fileName: "second.jpg" },
+    ]),
+  );
+  const names = (await f.store.galleryPreview(r.scope, f.volume.id, false, 24)).map((item) => item.name).sort();
+  assert.deepEqual(names, ["second.jpg", "twice.jpg"], "the readable pick was journaled despite the unreadable one");
 });
 
 test("picker-only photos upload without asking for library access", async (t) => {
@@ -4438,7 +4581,9 @@ test("a pick that fails stays failed, an unavailable id picked again leaves the 
   fs.writeFileSync(uri, "soon gone");
   f.offline();
   await assert.rejects(r.gallery.addPhotos(volume.id, [{ uri, fileName: "vanishing.jpg" }]));
+  const durable = f.files.picked(r.scope, volume.id, (await store.galleryPreview(r.scope, volume.id, false, 24)).find((item) => item.picked).id);
   fs.rmSync(uri);
+  fs.rmSync(durable);
   f.online();
   f.data.delete("photo-1");
   await r.sync(true);
