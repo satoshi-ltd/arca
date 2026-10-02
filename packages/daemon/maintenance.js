@@ -76,12 +76,13 @@ export function retentionPlan(
           "SELECT rev,volume,path,created FROM revisions ORDER BY rev DESC",
         )
         .all();
-  const pinned = new Set(
+  const current = new Set(
     (volume
       ? store.db.prepare("SELECT rev FROM files WHERE volume=?").all(volume)
       : store.db.prepare("SELECT rev FROM files").all()
     ).map((r) => r.rev),
   );
+  const pinned = new Set(current);
   for (const p of store.db.prepare("SELECT row FROM pending").all()) {
     const row = JSON.parse(p.row);
     if (!volume || row.volume === volume) pinned.add(row.rev);
@@ -94,6 +95,7 @@ export function retentionPlan(
   const counts = new Map(),
     newerDates = new Map(),
     remove = [];
+  let retained = 0;
   // A forgotten path ages out like a deletion made when it was forgotten.
   for (const row of store.db
     .prepare(
@@ -133,13 +135,17 @@ export function retentionPlan(
       (!versions || count > versions);
     if (removable) remove.push(r.rev);
     const folder = byFolder.get(r.volume);
-    if (folder) folder[removable ? "remove" : "retained"]++;
+    if (folder && removable) folder.remove++;
+    else if (!removable && !current.has(r.rev)) {
+      retained++;
+      if (folder) folder.retained++;
+    }
   }
   return {
     days,
     versions,
     remove,
-    retained: revisions.length - remove.length,
+    retained,
     protected: protectedCount,
     folders,
     hasBackup: floor !== null,

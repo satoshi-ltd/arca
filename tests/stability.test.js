@@ -78,6 +78,36 @@ test("retention preserves current revisions and versions not yet acknowledged by
   assert.equal(s.history(v.id, "a").length, 1);
   assert.equal(s.current(v.id, "a").rev, 3);
 });
+test("cleanup counts kept versions like Settings: older versions only, never a file's current version", (t) => {
+  const { s, v } = fixture(t);
+  for (const text of ["one", "two", "three"]) {
+    fs.writeFileSync(path.join(v.path, "a"), text);
+    s.scanHub();
+  }
+  fs.writeFileSync(path.join(v.path, "untouched"), "alone");
+  fs.writeFileSync(path.join(v.path, "gone"), "soon deleted");
+  s.scanHub();
+  fs.unlinkSync(path.join(v.path, "gone"));
+  s.scanHub();
+  const older = () =>
+    s.db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM revisions r WHERE NOT EXISTS (SELECT 1 FROM files f WHERE f.volume=r.volume AND f.path=r.path AND f.rev=r.rev)",
+      )
+      .get().n;
+  assert.equal(older(), 3, "two older edits of a and the version of gone before its deletion");
+  const all = retentionPlan(s, {});
+  assert.equal(all.remove.length, 0);
+  assert.equal(all.retained, older(), "with no limits every older version is kept, and nothing else is counted");
+  assert.equal(all.folders.find((folder) => folder.id === v.id).retained, older());
+  const plan = retentionPlan(s, { versions: 1 });
+  assert.equal(plan.remove.length, 3);
+  assert.equal(plan.retained, older() - plan.remove.length);
+  assert.equal(plan.folders[0].retained, plan.retained);
+  assert.equal(plan.folders[0].remove, plan.remove.length);
+  assert.equal(applyRetention(s, { versions: 1 }).retained, plan.retained);
+  assert.equal(retentionPlan(s, {}).retained, older());
+});
 test("ENOSPC during materialization keeps journal and preserves the original", (t) => {
   const { s, v } = fixture(t);
   const file = path.join(v.path, "a");

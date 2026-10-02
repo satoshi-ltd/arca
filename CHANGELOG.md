@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.84 — 2026-10-02
+
+- In Clean up older versions, the numbers that say how many versions are kept now count older versions only, the same as Settings → History, so the two never disagree.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.83 — 2026-10-02
 
 - The local pre-push check and `validate-local` now run the test suite on half of the machine's cores instead of all but one, so a full run no longer saturates the computer; set `ARCA_TEST_CONCURRENCY` to change it.

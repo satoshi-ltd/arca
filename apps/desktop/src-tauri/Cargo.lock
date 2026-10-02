@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "arca-desktop"
-version = "0.6.83"
+version = "0.6.84"
 dependencies = [
  "arboard",
  "block2",

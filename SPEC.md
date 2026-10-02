@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.83 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.6.84 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -656,7 +656,7 @@ The target must not exist. Recovery verifies stored objects and rebuilds receive
 - **Settings → Hub backup → Enable backup** on a desktop or server replica, choosing a new dedicated directory such as `~/ArcaBackup` outside synchronized folders. Disabling keeps it. It is never enabled automatically, and not on the pilot Mac.
 - **Devices → Pair a device** issues the pairing code; the replica enters the hub address and code.
 - **Folder detail → Change location…** relocates a local copy (see [Stop syncing, relink and unselection](#stop-syncing-relink-and-unselection)).
-- **Settings → History** has one row, Older versions (the number of kept older versions: each file's current version and current deletions are not counted, so untouched files add nothing; superseded folder entries are included), with Clean up… and a hint stating that cleanup shows what it would remove first and never removes current files, pending changes or history not yet backed up. The Clean up older versions dialog asks "Remove versions older than (days)" and "But always keep the last (versions per file)" (0 skips a rule), shows Would remove, Keeps and Protected after See the count, and removes nothing until Apply cleanup; editing either field after the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen. Per-folder retention sits in the hub's folder detail, in its Version history panel.
+- **Settings → History** has one row, Older versions (the number of kept older versions: each file's current version and current deletions are not counted, so untouched files add nothing; superseded folder entries are included), with Clean up… and a hint stating that cleanup shows what it would remove first and never removes current files, pending changes or history not yet backed up. The Clean up older versions dialog asks "Remove versions older than (days)" and "But always keep the last (versions per file)" (0 skips a rule), shows Would remove, Keeps and Protected after See the count (Keeps and each folder's kept figure count older versions only, like the Older versions row, so the two numbers agree; Protected still counts current, pending and unbacked versions), and removes nothing until Apply cleanup; editing either field after the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen. Per-folder retention sits in the hub's folder detail, in its Version history panel.
 - **Settings → Hub recovery** promotes a replica holding every last-known share after the old hub is stopped for good; other replicas use **Reconnect to replacement hub**.
 
 ### Android builds

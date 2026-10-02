@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-CLEANUP-KEEPS** — The cleanup dialog's kept counts follow Settings' older-versions count
-  `chore · agent · low`
-  accept: in Clean up older versions the per-folder and total kept figures count older versions only, like Settings → History, so the two numbers never disagree; a JSDOM or daemon test with current and superseded revisions.
 - **DOCKER-RELEASE-REF** — Build the Docker image from the released commit
   `bug · agent · normal`
   accept: `publish-docker.yml` checks out `workflow_run.head_sha` on automatic runs, as `publish-site.yml` does, so rapid pushes can never publish a newer image or record its `docker-v` tag before that version's release exists; a workflow contract test covers it.
