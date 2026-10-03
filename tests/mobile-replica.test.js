@@ -11,6 +11,7 @@ import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
 import {
   gallerySettingsChanged,
   parseGallery,
+  sourceAlbums,
 } from "../apps/mobile/src/validation.js";
 import { galleryConfig } from "../apps/mobile/src/gallery.js";
 import { offlineFileHistory } from "../apps/mobile/src/file-history.js";
@@ -1141,7 +1142,7 @@ async function galleryFixture(
   const enable = () =>
     r.gallery.configure(
       f.volume.id,
-      { albumId: "camera", albumName: "Camera", videos: true },
+      { albums: [{ id: "camera", title: "Camera" }], videos: true },
       true,
     );
   const uploaded = async () =>
@@ -1341,9 +1342,21 @@ test("gallery records that are not valid settings read as damaged", () => {
   );
   assert.equal(gallerySettingsChanged(parseGallery("{"), null, false), true);
   assert.equal(
-    gallerySettingsChanged({ mode: "source", albumId: null, videos: false }, null, false),
+    gallerySettingsChanged({ mode: "source", albums: [], videos: false }, [], false),
     false,
   );
+  const two = { mode: "source", albums: [{ id: "b", title: "B" }, { id: "a", title: "A" }], videos: false };
+  assert.equal(gallerySettingsChanged(two, ["a", "b"], false), false, "the order of the albums is not a change");
+  assert.equal(gallerySettingsChanged(two, ["a"], false), true);
+  assert.equal(gallerySettingsChanged(two, ["a", "b", "c"], false), true);
+  assert.equal(gallerySettingsChanged(two, [], false), true, "all photos is not the same as two albums");
+  assert.equal(
+    gallerySettingsChanged({ mode: "source", albumId: "a", albumName: "A", videos: false }, ["a"], false),
+    false,
+    "a source saved with one album keeps its selection",
+  );
+  assert.deepEqual(sourceAlbums({ albumId: "a", albumName: "A" }), [{ id: "a", title: "A" }]);
+  assert.deepEqual(sourceAlbums({ albumId: null }), []);
 });
 
 test("a damaged album record blocks its folder without publishing deletions until the album is linked again", async (t) => {
@@ -1403,7 +1416,7 @@ test("a damaged album record blocks its folder without publishing deletions unti
   await sync(f);
   const repaired = await store.gallery(r.scope, volume.id);
   assert.equal(repaired.mode, "source");
-  assert.equal(repaired.albumId, null);
+  assert.deepEqual(repaired.albums, []);
   assert.equal((await store.folder(r.scope, volume.id)).issue, null);
   assert.equal(
     fs.readFileSync(files.work(r.scope, volume.id, "keep.jpg"), "utf8"),
@@ -1526,7 +1539,7 @@ test("gallery excludes ignored paths, retries them after policy removal and hand
   assert.equal((await f.store.folder(r.scope, volume.id)).issue, null);
   const after = await f.store.gallery(r.scope, volume.id);
   assert.equal(after.issue, source.issue);
-  assert.equal(after.albumId, source.albumId);
+  assert.deepEqual(after.albums, source.albums);
   fs.writeFileSync(
     path.join(volume.path, "from-another-device.jpg"),
     "shared photo",
@@ -1615,7 +1628,7 @@ test("gallery pagination remains bounded, counts only accepted items and survive
   assert.equal(summary.discovered, 1103);
   assert.equal(summary.accepted, 9);
   assert.equal(new Set(f.exports).size, 9);
-  assert.equal((await store.gallery(r.scope, volume.id)).after, null);
+  assert.deepEqual((await store.gallery(r.scope, volume.id)).cursors, {}, "a finished scan keeps no cursor");
 });
 
 test("gallery preserves all resources of a Live Photo and resumes without reuploading accepted resources", async (t) => {
@@ -1965,6 +1978,104 @@ test("Sync now retries failed manual picks at once while automatic uploads are o
   assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, pending.id)).state, "failed", "a scheduled sync waits for the retry time");
   await r.sync(true);
   assert.equal((await f.store.galleryAsset(r.scope, f.volume.id, pending.id)).state, "accepted", "Sync now retries it");
+});
+
+test("several selected albums are scanned one by one, a photo in two albums counts once, and an album that disappears is named while the others keep uploading", async (t) => {
+  const photos = [
+    { id: "a-1", filename: "A1.jpg", creationTime: 1750000000000 },
+    { id: "shared", filename: "S.jpg", creationTime: 1750000001000 },
+    { id: "b-1", filename: "B1.jpg", creationTime: 1750000002000 },
+    { id: "other-1", filename: "O1.jpg", creationTime: 1750000003000 },
+  ];
+  const membership = { a: ["a-1", "shared"], b: ["b-1", "shared"], other: ["other-1"] };
+  const f = await galleryFixture(t, photos);
+  const { replica: r, store, volume } = f;
+  const pages = [];
+  f.media.albums = async () => [
+    { id: "a", title: "Family" },
+    { id: "b", title: "Trips" },
+    { id: "other", title: "Screenshots" },
+  ];
+  f.media.page = async (source) => {
+    pages.push(source.albumId ?? "all");
+    const ids = source.albumId ? membership[source.albumId] : photos.map((p) => p.id);
+    return { assets: photos.filter((p) => ids.includes(p.id)), hasNextPage: false, endCursor: "0" };
+  };
+  await r.gallery.configure(
+    volume.id,
+    { albums: [{ id: "a", title: "Family" }, { id: "b", title: "Trips" }], videos: false },
+    true,
+  );
+  const saved = await store.gallery(r.scope, volume.id);
+  assert.deepEqual(saved.albums.map((album) => album.id), ["a", "b"]);
+  assert.equal(saved.albumId, undefined, "the single-album fields are gone");
+  await r.sync(true);
+  assert.deepEqual([...new Set(pages)].sort(), ["a", "b"], "each selected album is scanned and no other");
+  assert.equal(pages.includes("other"), false);
+  assert.equal(pages.includes("all"), false);
+  const state = async (id) => (await store.galleryAsset(r.scope, volume.id, id))?.state;
+  assert.equal(await state("a-1"), "accepted");
+  assert.equal(await state("b-1"), "accepted");
+  assert.equal(await state("shared"), "accepted");
+  assert.equal(await state("other-1"), undefined, "a photo only in an unselected album is never discovered");
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).discovered, 3, "the shared photo counts once");
+  assert.deepEqual((await store.gallery(r.scope, volume.id)).cursors, {}, "a finished pass leaves no cursor behind");
+
+  pages.length = 0;
+  f.media.albums = async () => [{ id: "a", title: "Family" }];
+  f.assets.push({ id: "a-2", filename: "A2.jpg", creationTime: 1750000004000 });
+  membership.a.push("a-2");
+  f.data.set("a-2", Buffer.from("original a-2"));
+  photos.push({ id: "a-2", filename: "A2.jpg", creationTime: 1750000004000 });
+  await r.sync(true).catch(() => {});
+  assert.deepEqual([...new Set(pages)], ["a"], "only the album that is still there is scanned");
+  assert.equal(await state("a-2"), "accepted", "the other album keeps uploading");
+  assert.match((await store.gallery(r.scope, volume.id)).issue, /Trips is unavailable/);
+
+  f.media.albums = async () => [];
+  await r.sync(true).catch(() => {});
+  assert.match((await store.gallery(r.scope, volume.id)).issue, /The selected albums are unavailable/);
+});
+
+test("a multi-album pass interrupted mid-album finishes after another album disappears", async (t) => {
+  const small = [{ id: "s-1", filename: "S1.jpg", creationTime: 1750000000000 }];
+  const big = Array.from({ length: 501 }, (_, i) => ({ id: `big-${i}`, filename: `B${i}.jpg`, creationTime: 1750000001000 + i }));
+  const f = await galleryFixture(t, [...small, ...big]);
+  const { replica: r, store, volume } = f;
+  const albums = { small, big };
+  f.media.albums = async () => [{ id: "small", title: "Small" }, { id: "big", title: "Big" }];
+  f.media.page = async (source) => {
+    const list = albums[source.albumId];
+    const after = Number(source.after || 0);
+    return { assets: list.slice(after, after + 100), hasNextPage: after + 100 < list.length, endCursor: String(after + 100) };
+  };
+  await r.gallery.configure(volume.id, { albums: [{ id: "small", title: "Small" }, { id: "big", title: "Big" }], videos: false }, true);
+  await r.sync(true).catch(() => {});
+  const mid = await store.gallery(r.scope, volume.id);
+  assert.equal(mid.cursors.small, null, "the small album finished");
+  assert.ok(mid.cursors.big, "the big album is mid-pass");
+  f.media.albums = async () => [{ id: "small", title: "Small" }];
+  await r.sync(true).catch(() => {});
+  const after = await store.gallery(r.scope, volume.id);
+  assert.deepEqual(after.cursors, {}, "a stale cursor of a disappeared album never keeps the pass open");
+  assert.ok(after.scannedAt, "the pass is complete");
+});
+
+test("a source saved with one album keeps scanning that album after the upgrade", async (t) => {
+  const f = await galleryFixture(t);
+  const { replica: r, store, volume } = f;
+  await f.enable();
+  const source = await store.gallery(r.scope, volume.id);
+  const { albums, ...legacy } = source;
+  await store.setGallery(r.scope, volume.id, { ...legacy, albumId: "camera", albumName: "Camera", albums: undefined, cursors: undefined });
+  const pages = [];
+  const page = f.media.page;
+  f.media.page = async (arg) => {
+    pages.push(arg.albumId ?? "all");
+    return page(arg);
+  };
+  await r.sync(true);
+  assert.deepEqual([...new Set(pages)], ["camera"]);
 });
 
 test("a corrupt gallery asset row is set aside: startup, queries and other assets carry on and nothing is deleted", async (t) => {
@@ -2371,7 +2482,7 @@ test("changing gallery settings preserves disabled uploads", async (t) => {
   await f.replica.gallery.setEnabled(f.volume.id, false);
   await f.replica.gallery.configure(
     f.volume.id,
-    { albumId: null, videos: false },
+    { albums: [], videos: false },
     true,
   );
   assert.equal(
@@ -3692,11 +3803,11 @@ test("changing the album of an existing gallery source works while the hub is of
   f.offline();
   await f.replica.gallery.configure(
     f.volume.id,
-    { albumId: null, albumName: "All accessible photos", videos: true },
+    { albums: [], videos: true },
     true,
   );
   const source = await f.store.gallery(f.replica.scope, f.volume.id);
-  assert.equal(source.albumId, null);
+  assert.deepEqual(source.albums, []);
   assert.equal(source.mode, "source");
 });
 

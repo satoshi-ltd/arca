@@ -188,9 +188,6 @@ Older notes listed these as open while later evidence suggests they are resolved
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
 
-- **MOB-GALLERY-ALBUMS** — Photo uploads takes the albums the user selects, not all or one
-  `feature · agent · normal`
-  accept: the source keeps a list of albums (`albumIds`; empty means all accessible photos) instead of one `albumId`; discovery pages each selected album with its own cursor and counts a photo that sits in several albums once; deselecting an album stops discovering it, keeps every uploaded file and releases its pending uploads unless another selected album holds them; an album that disappears is reported by name while the others keep uploading; `gallerySettingsChanged` and the album-availability checks follow the list; a replica test with two albums and a pure-helper test cover it, and SPEC's Photo uploads section is rewritten. The interface follows board UI-MOB-GALLERY-ALBUMS.
 - **DEV-PREPUSH-CACHE** — The pre-push hook does not repeat a suite that already passed on the same files
   `chore · agent · normal`
   accept: `scripts/validate-local.js` writes a stamp keyed by a hash of the files it validated (tracked plus untracked, ignoring ignored ones) and the Node version; `.githooks/pre-push` still runs `check-release` but skips `node --test` when the stamp matches the files about to be pushed, and says so; a changed file, a missing stamp or another Node version always runs the full suite; a contract test covers the stamp logic. Today every version runs the full suite twice (validate-local, then the hook).
@@ -218,6 +215,9 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
   `bug · agent · low`
   accept: `publish-docker.yml` publishes `latest` only when the run's commit is the current `main` tip (a re-run or a late run of an older version still pushes its version tag but never `latest`); a workflow contract test covers the condition.
+- **MOB-GALLERY-ALBUM-RELEASE** — Changing the selected albums releases pending uploads instead of refusing
+  `feature · agent · low`
+  accept: changing the albums or the videos setting while uploads are pending no longer fails with "Finish pending uploads…"; the pending and failed library photos (not manual picks, not picked files) are released to unavailable and the next scan re-adds those that belong to the new selection; uploaded files are never touched; a replica test covers adding and removing an album with pending uploads.
 - **MOB-HUB-LIVENESS** — Hub-busy liveness probe on mobile
   `feature · agent · low`
   accept: a busy hub is told apart from an unreachable one before the phone marks itself offline; client tests cover both, including a hub that needs more than the 10-second catalog deadline (it is now marked offline on every cycle); a deadline that grows on consecutive timeouts while no cycle has connected is one option.

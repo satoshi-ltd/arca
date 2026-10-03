@@ -2123,7 +2123,10 @@ export default function App() {
                                                       ?.pending ||
                                                       !galleryConfig(f)
                                                         .scannedAt ||
-                                                      galleryConfig(f).after))
+                                                      Object.keys(
+                                                        galleryConfig(f)
+                                                          .cursors || {},
+                                                      ).length))
                                                 ? "Incomplete"
                                                 : "Up to date"
                                     }

@@ -2,7 +2,13 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
-import { parseGallery, validPath, validRow } from "./validation.js";
+import {
+  gallerySettingsChanged,
+  parseGallery,
+  sourceAlbums,
+  validPath,
+  validRow,
+} from "./validation.js";
 import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 
 const digest = (value) => bytesToHex(sha256(new TextEncoder().encode(value)));
@@ -78,20 +84,31 @@ export class Gallery {
       if (!folder?.selected)
         throw new Error("Start syncing this folder first.");
       const permission = await this.permission(!!options.videos);
-      if (
-        options.albumId &&
-        !(await this.media.albums()).some((a) => a.id === options.albumId)
-      )
-        throw new Error(
-          "This album is unavailable. Choose an accessible album.",
-        );
+      const albums = [
+        ...new Map(
+          (options.albums || []).map((album) => [album.id, album]),
+        ).values(),
+      ];
+      if (albums.length) {
+        const available = new Set((await this.media.albums()).map((a) => a.id));
+        const missing = albums.filter((album) => !available.has(album.id));
+        if (missing.length)
+          throw new Error(
+            missing.length === 1
+              ? "This album is unavailable. Choose an accessible album."
+              : "These albums are unavailable. Choose accessible albums.",
+          );
+      }
       const old = await r.store.gallery(r.scope, volume);
       const damaged = old?.mode === "damaged";
       if (
         old &&
         !damaged &&
-        (old.albumId !== (options.albumId || null) ||
-          old.videos !== !!options.videos) &&
+        gallerySettingsChanged(
+          old,
+          albums.map((album) => album.id),
+          !!options.videos,
+        ) &&
         (await r.store.gallerySummary(r.scope, volume)).pending
       )
         throw new Error(
@@ -102,13 +119,15 @@ export class Gallery {
         // A lost record may have been mid-conversion: recover missing files before any scan.
         mode: damaged ? "converting" : "source",
         enabled: old?.mode === "source" ? old.enabled : true,
-        albumId: options.albumId || null,
-        albumName: options.albumName || "All accessible photos",
+        albums,
+        albumId: undefined,
+        albumName: undefined,
         videos: !!options.videos,
         prefix:
           old?.prefix?.replace(/^Phone-/, "Machine-") ||
           `Machine-${digest(r.scope + ":" + r.client.state().connection.id).slice(0, 12)}`,
-        after: null,
+        cursors: {},
+        after: undefined,
         scannedAt: null,
         issue: null,
         limited: permission.accessPrivileges === "limited",
@@ -711,32 +730,64 @@ export class Gallery {
       await this.sendManual(folder, source);
       const permission = await this.permission(source.videos);
       source.limited = permission.accessPrivileges === "limited";
-      if (
-        source.albumId &&
-        !(await this.media.albums()).some((a) => a.id === source.albumId)
-      )
-        throw Object.assign(
-          new Error(
-            "The selected album is unavailable. Choose an accessible album in Photo uploads.",
-          ),
-          { code: "SOURCE_UNAVAILABLE" },
-        );
+      const selected = sourceAlbums(source);
+      let targets = [null];
+      let missingNotice = null;
+      if (selected.length) {
+        const available = new Set((await this.media.albums()).map((a) => a.id));
+        const gone = selected.filter((album) => !available.has(album.id));
+        if (gone.length === selected.length)
+          throw Object.assign(
+            new Error(
+              selected.length === 1
+                ? "The selected album is unavailable. Choose an accessible album in Photo uploads."
+                : "The selected albums are unavailable. Choose accessible albums in Photo uploads.",
+            ),
+            { code: "SOURCE_UNAVAILABLE" },
+          );
+        targets = selected
+          .filter((album) => available.has(album.id))
+          .map((album) => album.id);
+        if (gone.length)
+          missingNotice = `${gone.map((album) => album.title || "An album").join(", ")} ${gone.length === 1 ? "is" : "are"} unavailable. Choose accessible albums in Photo uploads.`;
+      }
+      const cursorKey = (id) => id ?? "all";
+      source.cursors = Object.fromEntries(
+        Object.entries(source.cursors || {}).filter(([key]) =>
+          targets.some((id) => cursorKey(id) === key),
+        ),
+      );
+      const scanning = () => Object.keys(source.cursors).length > 0;
       const policy = await this.policy(folder.id);
       if (r.force) await r.store.retryGallery(r.scope, folder.id);
       // Persist the cursor only after the entire page is durable. A fresh pass
       // after completion catches moved/older photos and changing OS inventories.
       const scanDue =
-        source.after ||
+        scanning() ||
         !source.scannedAt ||
         r.force ||
         Date.now() - Date.parse(source.scannedAt) >= 60000;
       for (let pageIndex = 0; scanDue && pageIndex < 4; pageIndex++) {
         r.check();
+        const target = targets.find(
+          (id) => source.cursors?.[cursorKey(id)] !== null,
+        );
+        if (target === undefined) {
+          source.cursors = {};
+          source.scannedAt = new Date().toISOString();
+          await r.store.setGallery(r.scope, folder.id, source);
+          break;
+        }
+        const cursor = source.cursors?.[cursorKey(target)] || null;
         let page;
         try {
-          page = await this.media.page(source);
+          page = await this.media.page({
+            ...source,
+            albumId: target,
+            after: cursor,
+          });
         } catch (error) {
-          source.after = null;
+          source.cursors = {};
           throw error;
         }
         for (const asset of page.assets) {
@@ -779,20 +830,26 @@ export class Gallery {
             });
           }
         }
-        if (
-          page.hasNextPage &&
-          (!page.endCursor || page.endCursor === source.after)
-        )
+        if (page.hasNextPage && (!page.endCursor || page.endCursor === cursor))
           throw new Error("The photo library returned an invalid page cursor.");
-        source.after = page.hasNextPage ? page.endCursor : null;
-        if (!source.after) source.scannedAt = new Date().toISOString();
+        source.cursors = {
+          ...source.cursors,
+          [cursorKey(target)]: page.hasNextPage ? page.endCursor : null,
+        };
+        const finished = targets.every(
+          (id) => source.cursors[cursorKey(id)] === null,
+        );
+        if (finished) {
+          source.cursors = {};
+          source.scannedAt = new Date().toISOString();
+        }
         await r.store.setGallery(r.scope, folder.id, source);
-        if (!source.after) break;
+        if (finished) break;
       }
       let failure = null;
       let storageBlocked = false;
       const previousMoreWork = r.moreGalleryWork;
-      r.moreGalleryWork ||= !!source.after;
+      r.moreGalleryWork ||= scanning();
       for (const item of await r.store.galleryWork(
         r.scope,
         folder.id,
@@ -838,12 +895,13 @@ export class Gallery {
           : null;
       source.issue =
         failure ||
+        missingNotice ||
         (latest?.issue
           ? `${latest.name || "Photo"}: ${latest.issue}`
           : source.summary.failed
             ? "Some gallery items need attention. Retry to review the next error."
             : null);
-      if (!source.after && !source.summary.pending)
+      if (!scanning() && !source.summary.pending)
         source.completed = new Date().toISOString();
       await r.store.setGallery(r.scope, folder.id, source);
       if (source.issue)

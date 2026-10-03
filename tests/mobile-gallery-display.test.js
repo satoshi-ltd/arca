@@ -169,3 +169,19 @@ test("a failed Add photos whose picks are journaled retries by syncing, not by r
     /retryAction\.current = e\.journaled\s+\? \(\) => \{\s+if \(engine\.current\?\.paused\) return;\s+setError\(""\);\s+startSync\(\);\s+\}\s+: \(\) => run\(work, options\);/,
   );
 });
+
+test("Photo uploads lets the user tick any number of albums and summarizes the choice", () => {
+  const read = (file) =>
+    fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
+  const setup = read("GallerySource.jsx");
+  assert.match(setup, /const \[albums, setAlbums\] = useState\(sourceAlbums\(source\)\)/);
+  assert.match(setup, /Choose albums/);
+  assert.match(setup, /selected=\{albums\.some\(\(held\) => held\.id === a\.id\)\}/);
+  assert.match(setup, /onPress=\{\(\) => toggle\(\{ id: a\.id, title: a\.title \}\)\}/, "an album is ticked or cleared without leaving the list");
+  assert.match(setup, /selected=\{!albums\.length\}[\s\S]{0,160}onPress=\{\(\) => setAlbums\(\[\]\)\}/, "All photos clears the selection");
+  assert.match(setup, /`\$\{albums\.length\} albums`/);
+  assert.match(setup, /onPress=\{\(\) => enable\(\{ albums, videos \}\)\}/);
+  assert.doesNotMatch(setup, /albumId: album\?\.id/, "the single-album save is gone");
+  assert.match(setup, /description="Unavailable"[\s\S]{0,120}onPress=\{\(\) => toggle\(held\)\}/, "a selected album that is gone can be unticked");
+  assert.match(read("App.jsx"), /Object\.keys\(\s+galleryConfig\(f\)\s+\.cursors \|\| \{\},\s+\)\.length/, "the folder status reads the per-album cursors");
+});

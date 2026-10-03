@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.92 — 2026-10-03
+
+- On the phone, Photo uploads now lets you tick any number of albums instead of choosing all photos or a single album, and the row shows the choice ("Camera" or "2 albums"); an album that disappears is named while the others keep uploading, and a source saved with one album keeps it.
+
+Needs: native build
+
 ## 0.6.91 — 2026-10-03
 
 - On the phone, photos you deleted from your gallery before they were uploaded now leave Pending uploads by themselves instead of staying as "needs attention", even when Android cannot confirm the deletion any other way.

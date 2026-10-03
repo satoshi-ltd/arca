@@ -48,11 +48,19 @@ export function parseGallery(value) {
     ? config
     : { mode: "damaged", issue: DAMAGED_GALLERY };
 }
-export function gallerySettingsChanged(source, albumId, videos) {
+export function sourceAlbums(source) {
+  if (Array.isArray(source?.albums)) return source.albums;
+  return source?.albumId
+    ? [{ id: source.albumId, title: source.albumName }]
+    : [];
+}
+const albumKey = (ids) => [...new Set(ids)].sort().join("\n");
+export function gallerySettingsChanged(source, albumIds, videos) {
   return (
     !source ||
     source.mode === "damaged" ||
-    (source.albumId || null) !== (albumId || null) ||
+    albumKey(sourceAlbums(source).map((album) => album.id)) !==
+      albumKey(albumIds || []) ||
     !!source.videos !== videos
   );
 }

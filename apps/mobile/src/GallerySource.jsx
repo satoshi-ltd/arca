@@ -13,7 +13,7 @@ import {
   useDesign,
 } from "./components";
 import { ErrorNotice } from "./Notice";
-import { gallerySettingsChanged } from "./validation.js";
+import { gallerySettingsChanged, sourceAlbums } from "./validation.js";
 
 function GalleryDetails({ children }) {
   const { s } = useDesign();
@@ -69,9 +69,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
   const { s } = useDesign();
   const [options, setOptions] = useState(null);
   const [videos, setVideos] = useState(source?.videos || false);
-  const [album, setAlbum] = useState(
-    source?.albumId ? { id: source.albumId, title: source.albumName } : null,
-  );
+  const [albums, setAlbums] = useState(sourceAlbums(source));
   const [loading, setLoading] = useState(true);
   const [choosing, setChoosing] = useState(false);
   const [preview, setPreview] = useState([]);
@@ -96,7 +94,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
     let active = true;
     setPreview([]);
     gallery.media
-      .page({ albumId: album?.id, videos })
+      .page({ albumId: albums[0]?.id, videos })
       .then(async (page) => {
         const items = await Promise.all(
           page.assets.slice(0, 4).map(async (item) => {
@@ -117,12 +115,27 @@ export function GallerySetup({ gallery, source, locked, enable }) {
     return () => {
       active = false;
     };
-  }, [gallery, options, album?.id, videos]);
+  }, [gallery, options, albums[0]?.id, videos]);
   const allLabel =
     options?.permission.accessPrivileges === "limited"
       ? "Allowed photos"
       : "All photos";
-  const changed = gallerySettingsChanged(source, album?.id, videos);
+  const changed = gallerySettingsChanged(
+    source,
+    albums.map((album) => album.id),
+    videos,
+  );
+  const toggle = (album) =>
+    setAlbums((held) =>
+      held.some((a) => a.id === album.id)
+        ? held.filter((a) => a.id !== album.id)
+        : [...held, album],
+    );
+  const summary = !albums.length
+    ? allLabel
+    : albums.length === 1
+      ? albums[0].title
+      : `${albums.length} albums`;
   if (choosing && options)
     return (
       <>
@@ -133,7 +146,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
             quiet
             onPress={() => setChoosing(false)}
           />
-          <Text style={[s.heading, s.flex]}>Choose album</Text>
+          <Text style={[s.heading, s.flex]}>Choose albums</Text>
           <Button
             label="Refresh albums"
             icon="refresh"
@@ -150,14 +163,27 @@ export function GallerySetup({ gallery, source, locked, enable }) {
             icon="gallery"
             grouped
             selectable
-            selected={!album}
+            selected={!albums.length}
             name={allLabel}
             disabled={locked || loading}
-            onPress={() => {
-              setAlbum(null);
-              setChoosing(false);
-            }}
+            onPress={() => setAlbums([])}
           />
+          {albums
+            .filter((held) => !options.albums.some((a) => a.id === held.id))
+            .map((held) => (
+              <FolderRow
+                key={held.id}
+                icon="gallery"
+                grouped
+                divider
+                selectable
+                selected
+                name={held.title}
+                description="Unavailable"
+                disabled={locked || loading}
+                onPress={() => toggle(held)}
+              />
+            ))}
           {options.albums.map((a) => (
             <FolderRow
               key={a.id}
@@ -165,16 +191,13 @@ export function GallerySetup({ gallery, source, locked, enable }) {
               grouped
               divider
               selectable
-              selected={album?.id === a.id}
+              selected={albums.some((held) => held.id === a.id)}
               name={a.title}
               description={
                 a.assetCount == null ? undefined : `${a.assetCount} items`
               }
               disabled={locked || loading}
-              onPress={() => {
-                setAlbum(a);
-                setChoosing(false);
-              }}
+              onPress={() => toggle({ id: a.id, title: a.title })}
             />
           ))}
         </View>
@@ -216,8 +239,12 @@ export function GallerySetup({ gallery, source, locked, enable }) {
             <FolderRow
               icon="gallery"
               grouped
-              name={album?.title || allLabel}
-              description="Album"
+              name={summary}
+              description={
+                albums.length > 1
+                  ? albums.map((a) => a.title).join(", ")
+                  : "Album"
+              }
               disabled={locked || loading}
               onPress={() => setChoosing(true)}
             />
@@ -240,15 +267,9 @@ export function GallerySetup({ gallery, source, locked, enable }) {
               locked ||
               loading ||
               !changed ||
-              (!!album && !options.albums.some((a) => a.id === album.id))
+              albums.some((a) => !options.albums.some((o) => o.id === a.id))
             }
-            onPress={() =>
-              enable({
-                albumId: album?.id || null,
-                albumName: album?.title || "All accessible photos",
-                videos,
-              })
-            }
+            onPress={() => enable({ albums, videos })}
           />
           <GalleryDetails>
             <Text style={s.caption}>
