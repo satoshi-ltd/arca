@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.107 — 2026-10-04
+
+- On iPhone, replacing a synced file now reports a failed flush or an unopenable file instead of claiming success, so the phone keeps its recovery record and retries instead of treating the file as written.
+
+Needs: native build
+
 ## 0.6.106 — 2026-10-04
 
 - Adding a file on the phone can no longer destroy data: a copy that fails (for example for lack of space) leaves the existing file untouched, and importing the same source again never overwrites an edited conflict copy; it uses the next free `.conflict-import` name instead.

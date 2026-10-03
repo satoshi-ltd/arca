@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **NAT-IOS-REPLACE-DURABILITY** — Do not acknowledge a replacement after a failed flush
-  `bug · agent · high`
-  accept: iOS `replaceFile` reports source open/fsync and parent-directory open/fsync failures instead of returning success, and the caller keeps recovery state until replacement is durably complete. Source-contract and injected-error tests cover pre-rename and post-rename failure; a pre-rename failure preserves the destination. Native compilation and physical interruption evidence follow under BUILD-IOS and P1-RECOVERY.
 - **UNLINK-DIRECTORY-SYMLINK** — Cleanup must not follow a directory replaced with a symlink
   `bug · agent · high`
   accept: after preparing a Stop syncing deletion plan, replace a planned directory or an ancestor with a symlink to an external directory containing disposable OS metadata. Cleanup leaves that external directory and its files untouched, preserves ambiguous paths and still removes verified empty directories normally. Cross-platform tests cover supported symlink/junction behavior and use isolated temporary trees.
@@ -116,7 +113,7 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   accept: a 24-hour run on a disposable dataset of at least 100,000 entries with concurrent replicas, edits, reconnects and large transfers; record CPU/RSS/disk growth, HTTP and mutation latency, pause/unlink responsiveness and snapshot-lease cleanup. After activity settles, content hashes agree, queues drain and resource use returns to a bounded idle level. Workloads containing application state use safe test copies.
 - **P1-RECOVERY** — Recovery drill
   `verify · maintainer · high`
-  accept: on disposable state, interrupt a transfer and an acknowledged replacement with process termination and physical power loss, then restart and reconcile. Independently restore a full backup into a fresh isolated hub after the original hub is unavailable; compare current file hashes, retained history and deletions against the expected dataset, including after retention/GC. Record any lost acknowledgement or bytes; never reset the live pilot or enable its backup incidentally.
+  accept: on disposable state, interrupt a transfer and an acknowledged replacement with process termination and physical power loss, then restart and reconcile. Independently restore a full backup into a fresh isolated hub after the original hub is unavailable; compare current file hashes, retained history and deletions against the expected dataset, including after retention/GC. Record any lost acknowledgement or bytes; never reset the live pilot or enable its backup incidentally. A directory flush that fails after the rename is reported but not repeated on recovery (the file already matches, so `replaceFile` is not called again), and iOS `fsync` is not `F_FULLFSYNC`; decide whether the drill needs either.
 - **P1-RELEASE** — Installer acceptance
   `verify · maintainer · high`
   accept: the candidate's exact SHA has successful hosted `publish`, `publish-docker` and `publish-site` runs; its installers install and launch on each supported platform. Published assets, updater signatures and image tags identify that candidate; Docker amd64/arm64 smoke checks and the macOS installer retry pass. Record hosted evidence separately from `validate-local`.

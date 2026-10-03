@@ -129,10 +129,18 @@ public class ArcaNetworkModule: Module {
         let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
         from.resolvingSymlinksInPath().path.hasPrefix(root.path + "/"), to.resolvingSymlinksInPath().path.hasPrefix(root.path + "/") else { throw NetworkUnavailable() }
       let fd = open(from.path, O_RDONLY)
-      if fd >= 0 { fsync(fd); close(fd) }
+      guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+      let flushed = fsync(fd)
+      let flushError = errno
+      close(fd)
+      guard flushed == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(flushError)) }
       guard rename(from.path, to.path) == 0 else { throw NetworkUnavailable() }
       let directory = open(to.deletingLastPathComponent().path, O_RDONLY)
-      if directory >= 0 { fsync(directory); close(directory) }
+      guard directory >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+      let committed = fsync(directory)
+      let commitError = errno
+      close(directory)
+      guard committed == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(commitError)) }
     }
     AsyncFunction("resolveLanHost") { (host: String) -> String in
       guard self.isLanAddress(host) else { throw NetworkUnavailable() }

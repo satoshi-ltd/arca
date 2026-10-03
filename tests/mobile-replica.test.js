@@ -5337,3 +5337,66 @@ test("importing stops with a clear error when every candidate name is taken, and
   assert.equal(fs.readFileSync(work(`${conflict}-99`), "utf8"), "incoming");
   assert.equal(fs.existsSync(path.join(path.dirname(work("full.txt")), ".arca-copy-left-behind")), false, "an orphaned staging file is removed before the next import");
 });
+
+test("iOS replaceFile reports every failed flush and a pre-rename failure never reaches the destination", () => {
+  const swift = fs.readFileSync(new URL("../apps/mobile/modules/arca-network/ios/ArcaNetworkModule.swift", import.meta.url), "utf8");
+  const start = swift.indexOf('Function("replaceFile")');
+  const block = swift.slice(start, swift.indexOf('AsyncFunction("resolveLanHost")', start));
+  assert.doesNotMatch(block, /if fd >= 0 \{ fsync/, "a failed open of the source is no longer ignored");
+  assert.doesNotMatch(block, /if directory >= 0 \{ fsync/, "nor a failed open of the parent directory");
+  const order = ["let fd = open(from.path, O_RDONLY)", "guard fd >= 0 else { throw NSError", "let flushed = fsync(fd)", "guard flushed == 0 else { throw NSError", "guard rename(from.path, to.path) == 0", "let directory = open(to.deletingLastPathComponent().path, O_RDONLY)", "guard directory >= 0 else { throw NSError", "let committed = fsync(directory)", "guard committed == 0 else { throw NSError"];
+  let cursor = -1;
+  for (const part of order) {
+    const at = block.indexOf(part);
+    assert.ok(at > cursor, `${part} comes in this order`);
+    cursor = at;
+  }
+  assert.ok(block.indexOf("close(fd)") < block.indexOf("rename(from.path, to.path)"), "the source is closed before it is renamed");
+  assert.ok(block.indexOf("guard flushed == 0") < block.indexOf("rename(from.path"), "every source failure is raised before the rename touches the destination");
+});
+
+test("a replacement that fails to flush keeps its recovery record and the old file, then completes on the next cycle", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.volume.path, "doc.txt"), "version one");
+  await f.daemon.engine.scanHub();
+  await f.replica.select(f.volume);
+  await sync(f);
+  const local = f.files.work(f.replica.scope, f.volume.id, "doc.txt");
+  assert.equal(fs.readFileSync(local, "utf8"), "version one");
+  fs.writeFileSync(path.join(f.volume.path, "doc.txt"), "version two");
+  await f.daemon.engine.scanHub();
+  const replace = f.files.replace;
+  f.files.replace = async () => {
+    throw new Error("fsync failed");
+  };
+  await f.replica.sync(true).catch(() => {});
+  assert.equal(fs.readFileSync(local, "utf8"), "version one", "the destination is untouched");
+  assert.ok((await f.store.applying(f.replica.scope, f.volume.id)).length > 0, "the recovery record stays until the replacement is complete");
+  f.files.replace = replace;
+  await sync(f);
+  assert.equal(fs.readFileSync(local, "utf8"), "version two");
+  assert.deepEqual(await f.store.applying(f.replica.scope, f.volume.id), []);
+});
+
+test("a replacement whose directory flush fails after the rename is reported, keeps its record and completes on the next cycle", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.volume.path, "doc.txt"), "version one");
+  await f.daemon.engine.scanHub();
+  await f.replica.select(f.volume);
+  await sync(f);
+  const local = f.files.work(f.replica.scope, f.volume.id, "doc.txt");
+  fs.writeFileSync(path.join(f.volume.path, "doc.txt"), "version two");
+  await f.daemon.engine.scanHub();
+  const replace = f.files.replace;
+  f.files.replace = async (from, to) => {
+    await replace(from, to);
+    throw new Error("directory fsync failed");
+  };
+  await f.replica.sync(true).catch(() => {});
+  assert.equal(fs.readFileSync(local, "utf8"), "version two", "the rename already happened");
+  assert.ok((await f.store.applying(f.replica.scope, f.volume.id)).length > 0, "the failure is not acknowledged: the recovery record stays");
+  f.files.replace = replace;
+  await sync(f);
+  assert.equal(fs.readFileSync(local, "utf8"), "version two");
+  assert.deepEqual(await f.store.applying(f.replica.scope, f.volume.id), []);
+});
