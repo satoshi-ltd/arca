@@ -23,7 +23,15 @@ export const galleryMonth = (item) =>
 const rank = (month) => (month === "undated" ? "~" : month);
 const cursorOf = (item) => `${item.date || ""}|${item.path}`;
 const CACHE_ITEMS = 600;
-const empty = () => ({ timeline: [], total: 0, months: {}, indexing: false });
+const empty = () => ({ timeline: [], undated: 0, total: 0, months: {}, indexing: false });
+const totalOf = (timeline, undated) =>
+  timeline.reduce((sum, row) => sum + row.count, undated);
+const restored = (value) => {
+  if (!value?.months) return null;
+  const undated = Number.isFinite(value.undated) ? value.undated : 0;
+  const timeline = value.timeline || [];
+  return { ...empty(), ...value, timeline, undated, total: totalOf(timeline, undated) };
+};
 
 const monthOfCursor = (cursor) =>
   cursor.startsWith("|") ? "undated" : cursor.slice(0, 7);
@@ -41,6 +49,7 @@ const sameItems = (a, b) =>
 // A changed month keeps showing its rows until a fresh read replaces them.
 function withTimeline(state, data) {
   const timeline = data.timeline || [];
+  const undated = data.undated?.count || 0;
   const before = new Map(state.timeline.map((row) => [row.month, signature(row)]));
   const after = new Map(timeline.map((row) => [row.month, signature(row)]));
   const changed = new Set(
@@ -48,7 +57,16 @@ function withTimeline(state, data) {
       (month) => before.get(month) !== after.get(month),
     ),
   );
-  if (!changed.size) return { changed, state };
+  if (!changed.size) {
+    const total = totalOf(timeline, undated);
+    return {
+      changed,
+      state:
+        undated === state.undated && total === state.total
+          ? state
+          : { ...state, undated, total },
+    };
+  }
   const months = { ...state.months };
   for (const month of changed) {
     if (!after.has(month)) delete months[month];
@@ -60,7 +78,8 @@ function withTimeline(state, data) {
     state: {
       ...state,
       timeline,
-      total: timeline.reduce((sum, row) => sum + row.count, 0),
+      undated,
+      total: totalOf(timeline, undated),
       months,
     },
   };
@@ -125,6 +144,7 @@ function absorb(state, rows, next, upper) {
 export const NO_LOCAL_GALLERY = {
   local: true,
   timeline: [],
+  undated: 0,
   total: 0,
   months: {},
   indexing: false,
@@ -162,10 +182,12 @@ export function localGallery(entries, { cached, rows } = {}) {
   const timeline = [...counts]
     .map(([month, count]) => ({ month, count }))
     .sort((a, b) => b.month.localeCompare(a.month));
+  const undated = months.undated?.items.length || 0;
   return {
     local: true,
     timeline,
-    total: timeline.reduce((sum, row) => sum + row.count, 0),
+    undated,
+    total: totalOf(timeline, undated),
     months,
     indexing: false,
   };
@@ -188,6 +210,7 @@ export function withLocalOnly(state, entries, known, ignored = null) {
   if (!extra.length) return state;
   const months = { ...state.months };
   const counts = new Map(state.timeline.map((row) => [row.month, row.count]));
+  let undated = state.undated || 0;
   for (const entry of extra) {
     const row = {
       path: entry.path,
@@ -207,7 +230,8 @@ export function withLocalOnly(state, entries, known, ignored = null) {
     const at = items.findIndex((item) => before(row, item));
     items.splice(at < 0 ? items.length : at, 0, row);
     months[month] = { ...held, items };
-    if (month !== "undated") counts.set(month, (counts.get(month) || 0) + 1);
+    if (month === "undated") undated += 1;
+    else counts.set(month, (counts.get(month) || 0) + 1);
   }
   const timeline = [...counts]
     .map(([month, count]) => ({ month, count }))
@@ -215,7 +239,8 @@ export function withLocalOnly(state, entries, known, ignored = null) {
   return {
     ...state,
     timeline,
-    total: timeline.reduce((sum, row) => sum + row.count, 0),
+    undated,
+    total: totalOf(timeline, undated),
     months,
   };
 }
@@ -261,7 +286,12 @@ export function hubGallery({ api, store, scope, volume }) {
         budget = 0;
       }
     }
-    const snapshot = { timeline: state.timeline, total: state.total, months };
+    const snapshot = {
+      timeline: state.timeline,
+      undated: state.undated,
+      total: state.total,
+      months,
+    };
     const text = JSON.stringify(snapshot);
     if (text === saved) return;
     saved = text;
@@ -280,10 +310,8 @@ export function hubGallery({ api, store, scope, volume }) {
       serial(async () => {
         if (!state) {
           const value = await store.get(key, null).catch(() => null);
-          if (value?.months) {
-            state = { ...empty(), ...value };
-            saved = JSON.stringify(value);
-          }
+          state = restored(value);
+          if (state) saved = JSON.stringify(value);
         }
         return state;
       }),
@@ -317,8 +345,8 @@ export function hubGallery({ api, store, scope, volume }) {
       }),
     forget: (path) =>
       serial(async () => {
-        if (!state) state = await store.get(key, null).catch(() => null);
-        if (!state?.months) return state;
+        if (!state) state = restored(await store.get(key, null).catch(() => null));
+        if (!state) return state;
         const month = Object.keys(state.months).find((name) =>
           state.months[name].items.some((item) => item.path === path),
         );
@@ -333,6 +361,7 @@ export function hubGallery({ api, store, scope, volume }) {
         return finish({
           ...state,
           timeline,
+          undated: month === "undated" ? Math.max(0, state.undated - 1) : state.undated,
           total: Math.max(0, state.total - 1),
           months: {
             ...state.months,

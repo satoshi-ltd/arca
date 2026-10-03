@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.95 — 2026-10-03
+
+- The phone gallery total now counts photos and videos that have no date, like the desktop header; they were listed but left out of the number.
+
 ## 0.6.94 — 2026-10-03
 
 - A published Docker image now always gets its version tag: the release retries recording it, a re-run of a version already on Docker Hub only records the missing tag instead of publishing again, and a final failure says which command to run by hand.

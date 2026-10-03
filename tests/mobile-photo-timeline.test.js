@@ -202,6 +202,7 @@ function fakeHub(rows, size = 3) {
       }
     return {
       items: page.map((row) => ({ kind: "image", size: 1, ...row })),
+      undated: { count: rows.filter((row) => !row.date).length, videos: 0 },
       next: list.length > size ? cursor(page[page.length - 1]) : null,
       timeline: [...months]
         .map(([month, value]) => ({ month, ...value }))
@@ -236,7 +237,8 @@ test("the first page fills the newest months and a month continues from its own 
   assert.equal(await gallery.cached(), null);
   const first = await gallery.refresh();
   assert.deepEqual(calls[0], { volume: "v" });
-  assert.equal(first.total, 4);
+  assert.equal(first.total, 5, "the undated photo counts in the total");
+  assert.equal(first.undated, 1);
   assert.deepEqual(paths(first.months.undated), ["u.jpg"]);
   assert.equal(first.months.undated.complete, true);
   assert.deepEqual(paths(first.months["2026-09"]), ["a.jpg", "b.jpg"]);
@@ -252,7 +254,56 @@ test("the first page fills the newest months and a month continues from its own 
   assert.equal(await gallery.load("2026-09"), more);
   assert.equal(calls.length, 2);
   const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
-  assert.deepEqual(paths((await reopened.cached()).months["2026-08"]), ["d.jpg"]);
+  const cached = await reopened.cached();
+  assert.deepEqual(paths(cached.months["2026-08"]), ["d.jpg"]);
+  assert.equal(cached.total, 5, "the saved gallery keeps the undated count");
+  const forgotten = await reopened.forget("u.jpg");
+  assert.equal(forgotten.undated, 0);
+  assert.equal(forgotten.total, 4);
+});
+
+test("a gallery saved before undated photos were counted loads, forgets and refreshes to the right total", async () => {
+  const rows = [
+    { path: "a.jpg", date: "2026-09-03" },
+    { path: "u.jpg", date: null },
+  ];
+  const old = {
+    timeline: [{ month: "2026-09", count: 1 }],
+    total: 1,
+    months: { undated: { items: [{ path: "u.jpg", date: null }], fresh: 1, complete: true, next: null } },
+  };
+  const { api } = fakeHub(rows);
+  const loaded = hubGallery({ api, store: { get: async () => old, set: async () => {} }, scope: "s", volume: "v" });
+  assert.equal((await loaded.cached()).undated, 0);
+  assert.equal((await loaded.refresh()).total, 2, "refresh repairs the total");
+  const early = hubGallery({ api, store: { get: async () => old, set: async () => {} }, scope: "s", volume: "v" });
+  const forgotten = await early.forget("u.jpg");
+  assert.equal(forgotten.undated, 0);
+  assert.equal(forgotten.total, 0);
+  assert.equal((await early.forget("u.jpg")).total, 0, "forgetting twice changes nothing");
+  const bare = { items: [], next: null, timeline: [{ month: "2026-09", count: 1 }] };
+  const silent = hubGallery({ api: async () => bare, store: memoryStore(), scope: "s", volume: "v" });
+  const state = await silent.refresh();
+  assert.equal(state.undated, 0);
+  assert.equal(state.total, 1, "a hub that omits undated adds nothing");
+});
+
+test("a hub that gains an undated photo raises the total without a month changing", async () => {
+  const rows = [{ path: "a.jpg", date: "2026-09-03" }];
+  const { api } = fakeHub(rows);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  assert.equal((await gallery.refresh()).total, 1);
+  rows.push({ path: "u.jpg", date: null });
+  const after = await gallery.refresh();
+  assert.equal(after.undated, 1);
+  assert.equal(after.total, 2);
+});
+
+test("photos only on the phone without a date count in the local total", () => {
+  const hub = { timeline: [], undated: 1, total: 1, months: {}, indexing: false };
+  const merged = withLocalOnly(hub, [{ path: "x.jpg", size: 1 }], new Set());
+  assert.equal(merged.undated, 2);
+  assert.equal(merged.total, 2);
 });
 
 test("an old month loads from its own top without claiming the newer months", async () => {
@@ -442,6 +493,10 @@ test("without a hub index the phone's own files form a complete local gallery", 
   assert.equal(state.months["2026-09"].complete, true);
   assert.equal(state.months["2026-09"].items[0].uri, "file:a");
   assert.equal(state.total, 2);
+  assert.equal(state.undated, 0);
+  const loose = localGallery([{ path: "untitled.jpg", uri: "file:u", size: 1 }]);
+  assert.equal(loose.undated, 1);
+  assert.equal(loose.total, 1);
 });
 
 test("the gallery layout places every month by its count and windows only nearby rows", () => {
@@ -1247,7 +1302,8 @@ test("phone-only photos skip excluded and system files, sit in order inside thei
   assert.equal(merged.total, 3, "excluded names never count as photos");
   const undated = withLocalOnly(hub, [{ path: "untitled.jpg", uri: "file:///u.jpg", size: 1 }], new Set());
   assert.deepEqual(undated.months.undated.items.map((item) => item.path), ["untitled.jpg"]);
-  assert.equal(undated.total, 0, "undated photos are listed but not counted in a month");
+  assert.deepEqual(undated.timeline, [], "an undated photo belongs to no month");
+  assert.equal(undated.total, 1, "but it counts in the total");
 });
 
 test("offline, downloaded photos keep the cached index's date and order and the phone index's revision and hash", async () => {

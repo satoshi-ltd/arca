@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-GALLERY-UNDATED-COUNT** — The phone gallery counts photos that have no date
-  `bug · agent · low`
-  accept: first check whether the phone's gallery total and month counts leave out photos without a date (`hubGallery` sums only the dated timeline, while the desktop header counts them since 0.6.86); if they do, the counts include them and a hub-gallery test with undated rows proves it.
+_None._
 
 ## In progress
 
