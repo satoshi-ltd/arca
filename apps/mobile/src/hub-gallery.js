@@ -23,7 +23,7 @@ export const galleryMonth = (item) =>
 const rank = (month) => (month === "undated" ? "~" : month);
 const cursorOf = (item) => `${item.date || ""}|${item.path}`;
 const CACHE_ITEMS = 600;
-const empty = () => ({ timeline: [], undated: 0, total: 0, months: {}, indexing: false });
+const empty = () => ({ timeline: [], undated: 0, undatedRev: 0, total: 0, months: {}, indexing: false });
 const totalOf = (timeline, undated) =>
   timeline.reduce((sum, row) => sum + row.count, undated);
 const restored = (value) => {
@@ -50,6 +50,7 @@ const sameItems = (a, b) =>
 function withTimeline(state, data) {
   const timeline = data.timeline || [];
   const undated = data.undated?.count || 0;
+  const undatedRev = data.undated?.rev || 0;
   const before = new Map(state.timeline.map((row) => [row.month, signature(row)]));
   const after = new Map(timeline.map((row) => [row.month, signature(row)]));
   const changed = new Set(
@@ -58,7 +59,8 @@ function withTimeline(state, data) {
     ),
   );
   const months = { ...state.months };
-  const undatedChanged = undated !== state.undated;
+  const undatedChanged =
+    undated !== state.undated || undatedRev !== (state.undatedRev || 0);
   if (undatedChanged && months.undated)
     months.undated = {
       ...months.undated,
@@ -73,7 +75,7 @@ function withTimeline(state, data) {
       state:
         !undatedChanged && total === state.total
           ? state
-          : { ...state, undated, total, months },
+          : { ...state, undated, undatedRev, total, months },
     };
   }
   if (undatedChanged) changed.add("undated");
@@ -89,6 +91,7 @@ function withTimeline(state, data) {
       ...state,
       timeline,
       undated,
+      undatedRev,
       total: totalOf(timeline, undated),
       months,
     },
@@ -299,6 +302,7 @@ export function hubGallery({ api, store, scope, volume }) {
     const snapshot = {
       timeline: state.timeline,
       undated: state.undated,
+      undatedRev: state.undatedRev,
       total: state.total,
       months,
     };

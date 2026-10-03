@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-GALLERY-UNDATED-REV** — Invalidate Undated pages when content changes at the same count
-  `bug · agent · normal`
-  accept: the hub supplies a usable change signature for Undated and the phone uses it to invalidate loaded pages, including persisted caches. With more than 60 undated items, edit an item beyond the first page or replace one with another while keeping the count unchanged: refresh followed by pagination shows the new hash/path and removes stale rows. Dated-month pagination remains covered.
 
 ## In progress
 

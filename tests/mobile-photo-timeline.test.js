@@ -202,7 +202,11 @@ function fakeHub(rows, size = 3) {
       }
     return {
       items: page.map((row) => ({ kind: "image", size: 1, ...row })),
-      undated: { count: rows.filter((row) => !row.date).length, videos: 0 },
+      undated: {
+        count: rows.filter((row) => !row.date).length,
+        videos: 0,
+        rev: Math.max(0, ...rows.filter((row) => !row.date).map((row) => row.rev || 0)),
+      },
       next: list.length > size ? cursor(page[page.length - 1]) : null,
       timeline: [...months]
         .map(([month, value]) => ({ month, ...value }))
@@ -1398,4 +1402,28 @@ test("a hub that gains an undated photo beyond the first page makes the undated 
   assert.ok(calls.length > before, "loading it asks the hub again");
   assert.equal(again.months.undated.items.length, 6);
   assert.ok(again.months.undated.items.some((item) => item.path === "u0.jpg"), "the new photo appears");
+});
+
+test("replacing an undated photo beyond the first page with the count unchanged makes the undated group reload", async () => {
+  const rows = Array.from({ length: 65 }, (_, n) => ({ path: `u${String(n).padStart(2, "0")}.jpg`, hash: `h${n}`, date: null, rev: n + 1 }));
+  const store = memoryStore();
+  const { api, calls } = fakeHub(rows, 60);
+  const gallery = hubGallery({ api, store, scope: "s", volume: "v" });
+  await gallery.refresh();
+  const loaded = await gallery.load("undated");
+  assert.equal(loaded.months.undated.items.length, 65);
+  const stale = loaded.months.undated.items.find((item) => item.path === "u00.jpg");
+  assert.equal(stale.hash, "h0");
+  const index = rows.findIndex((row) => row.path === "u00.jpg");
+  rows[index] = { path: "u00.jpg", hash: "replaced", date: null, rev: 66 };
+  const refreshed = await gallery.refresh();
+  assert.equal(refreshed.undated, 65, "the count is the same");
+  assert.equal(refreshed.months.undated.complete, false, "the group is no longer trusted");
+  const before = calls.length;
+  const again = await gallery.load("undated");
+  assert.ok(calls.length > before);
+  assert.equal(again.months.undated.items.find((item) => item.path === "u00.jpg").hash, "replaced", "the replaced photo shows its new content");
+  const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
+  const cached = await reopened.cached();
+  assert.equal(cached.undatedRev, 66, "the revision survives a restart");
 });

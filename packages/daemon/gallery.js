@@ -322,7 +322,11 @@ export class Gallery {
     return {
       indexing,
       timeline,
-      undated: { count: undated?.count || 0, videos: undated?.videos || 0 },
+      undated: {
+        count: undated?.count || 0,
+        videos: undated?.videos || 0,
+        rev: undated?.rev || 0,
+      },
       items: rows.map((row) => ({
         ...row,
         dateSource: galleryDate(row.path, row.captured, row.added, row.modified)

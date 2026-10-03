@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.110 — 2026-10-04
+
+- The phone's Undated group now reloads when a photo without a date is replaced by another one even though the count stays the same, so it never shows stale photos after the hub changes.
+
+Needs: native build · Casa redeploy
+
 ## 0.6.109 — 2026-10-04
 
 - On Linux, a folder watcher that fails after it started no longer silently stops detecting changes: the folder is rescanned within a second and the watcher is recreated after a short pause, instead of waiting for the six-hour safety scan.

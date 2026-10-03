@@ -201,7 +201,7 @@ test("photos without any date still page through the whole gallery", async (t) =
   );
   assert.equal(second.items.length, 2);
   assert.deepEqual(first.timeline, [], "no dated month exists");
-  assert.deepEqual(first.undated, { count: 62, videos: 0 }, "the undated photos are counted for the header");
+  assert.deepEqual(first.undated, { count: 62, videos: 0, rev: 62 }, "the undated photos are counted for the header and carry the newest revision");
 });
 
 test("gallery is explicit, chronological, scoped and respects exclusions even for cached previews", async (t) => {
@@ -1492,4 +1492,18 @@ test("list thumbnails identify the exact retained revision and never substitute 
     browsing.entries.find((row) => row.path === "versions.jpg").hash,
     second.hash,
   );
+});
+
+test("the undated summary changes revision when one undated photo is replaced with the count unchanged", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  for (let i = 0; i < 3; i++) await f.photo(`undated-${i}.jpg`, null, `rgb(${i},0,0)`);
+  await f.daemon.engine.gallery.background;
+  f.s.db.prepare("DELETE FROM revisions").run();
+  const before = (await f.api(f.route)).undated;
+  assert.equal(before.count, 3);
+  f.s.db.prepare("UPDATE files SET rev=rev+100 WHERE volume=? AND path=?").run(f.v.id, "undated-0.jpg");
+  const after = (await f.api(f.route)).undated;
+  assert.equal(after.count, 3, "the count did not change");
+  assert.ok(after.rev > before.rev, "the newest undated revision tells the phone something moved");
 });
