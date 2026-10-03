@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.94 — 2026-10-03
+
+- A published Docker image now always gets its version tag: the release retries recording it, a re-run of a version already on Docker Hub only records the missing tag instead of publishing again, and a final failure says which command to run by hand.
+
 ## 0.6.93 — 2026-10-03
 
 - The local pre-push check no longer runs the whole test suite a second time when validate-local has just passed on exactly the same files; any edit, new file or change of the pinned Node version makes it run the suite again.

@@ -238,10 +238,10 @@ test("the Docker workflow builds and tags the commit of the release that trigger
   const docker = read(".github/workflows/publish-docker.yml");
   const ref = "ref: ${{ github.event.workflow_run.head_sha || github.sha }}";
   const checkouts = [...docker.matchAll(/- uses: actions\/checkout@v5\n((?: {8}.+\n)+)/g)];
-  assert.equal(checkouts.length, 2, "the gate and the build both check out the repository");
+  assert.equal(checkouts.length, 3, "the gate, the build and the tag job check out the repository");
   for (const [, options] of checkouts) assert.ok(options.includes(ref), `a checkout lacks ${ref}`);
   assert.match(docker, /RELEASE_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/);
-  assert.match(docker, /-f sha="\$RELEASE_SHA"/);
+  assert.match(read("scripts/record-docker-tag.sh"), /-f sha="\$RELEASE_SHA"/, "the tag records the released commit");
   assert.doesNotMatch(docker, /GITHUB_SHA|github\.sha(?! \}\}\n)/, "the tag never records the branch head");
   const gate = docker.slice(docker.indexOf("  gate:"), docker.indexOf("    runs-on:", docker.indexOf("  gate:")));
   for (const condition of [
@@ -335,4 +335,60 @@ test("the check command exits 0 only for a stamp that matches the files", (t) =>
   assert.equal(check().status, 1, "a changed file means the suite runs");
   const unreadable = spawnSync(process.execPath, [path.join(repository, "scripts", "validated-stamp.js"), "check", path.join(root, "missing")], { encoding: "utf8", env });
   assert.equal(unreadable.status, 1, "anything unreadable means the suite runs");
+});
+
+test("the Docker workflow records its tag with retries, and a version already on Docker Hub only needs the tag", () => {
+  const read = (file) => fs.readFileSync(path.join(repository, file), "utf8").replace(/\r\n/g, "\n");
+  const docker = read(".github/workflows/publish-docker.yml");
+  assert.equal(docker.match(/bash scripts\/record-docker-tag\.sh/g).length, 1, "one job records the tag");
+  assert.doesNotMatch(docker, /gh api/, "no step calls the refs API without the retry");
+  assert.match(docker, /https:\/\/hub\.docker\.com\/v2\/repositories\/satoshiltd\/arca\/tags\/\$version/);
+  assert.match(docker, /echo 'record=true' >> "\$GITHUB_OUTPUT"/);
+  assert.match(docker, /\n  record:\n    needs: \[gate, docker\]\n    if: >-\n      always\(\) &&\n      \(needs\.gate\.outputs\.record == 'true' \|\|\n       \(needs\.gate\.outputs\.publish == 'true' && needs\.docker\.result == 'success'\)\)\n/, "a failed tag step re-runs alone, after a successful publish");
+  const record = docker.slice(docker.indexOf("\n  record:\n"));
+  assert.match(record, /permissions:\n      contents: write/);
+  const buildJob = docker.slice(docker.indexOf("\n  docker:\n"), docker.indexOf("\n  record:\n"));
+  assert.doesNotMatch(buildJob, /record-docker-tag/, "the tag step is not part of the job that publishes");
+  const hubCheck = docker.indexOf("hub.docker.com");
+  assert.ok(hubCheck > docker.indexOf("git ls-remote") && hubCheck < docker.indexOf("Publishing satoshiltd/arca"), "the Hub check sits between the tag check and the publish decision");
+  assert.ok(docker.indexOf('"$FORCE" != true') < docker.indexOf("git ls-remote"), "a forced run skips both checks and still republishes");
+  assert.match(docker, /-m 20 --retry 3/, "the Hub check is bounded");
+  assert.match(docker, /\[\[ "\$hub" == 200 \|\| "\$hub" == 404 \]\] \|\| \{[^}]*exit 1; \}/, "any other Hub answer stops the run instead of publishing");
+  const script = read("scripts/record-docker-tag.sh");
+  assert.match(script, /for attempt in 1 2 3 4/);
+  assert.match(script, /Reference already exists/);
+  assert.match(script, /Run: gh api repos\/\$GITHUB_REPOSITORY\/git\/refs -f ref=refs\/tags\/\$TAG -f sha=\$RELEASE_SHA/);
+});
+
+test("the tag script retries, treats an existing tag as done and names the manual command when it gives up", { skip: process.platform === "win32" }, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-tag-script-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, "bin");
+  fs.mkdirSync(bin);
+  const log = path.join(root, "calls");
+  const fake = (body) => {
+    fs.writeFileSync(path.join(bin, "gh"), `#!/usr/bin/env bash\necho call >> "${log}"\n${body}\n`, { mode: 0o755 });
+    fs.rmSync(log, { force: true });
+  };
+  const run = () =>
+    spawnSync("bash", [path.join(repository, "scripts", "record-docker-tag.sh")], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, TAG: "docker-v9.9.9", RELEASE_SHA: "abc123", GITHUB_REPOSITORY: "owner/repo", RECORD_RETRY_DELAY: "0" },
+    });
+  const calls = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n").length : 0);
+  fake("exit 0");
+  assert.equal(run().status, 0);
+  assert.equal(calls(), 1, "a first success makes one call");
+  fake(`count=$(wc -l < "${log}"); if [ "$count" -lt 3 ]; then echo "Resource not accessible by integration (HTTP 403)" >&2; exit 1; fi`);
+  const retried = run();
+  assert.equal(retried.status, 0, retried.stdout);
+  assert.equal(calls(), 3, "two 403 answers are retried");
+  fake('echo "Reference already exists (HTTP 422)" >&2; exit 1');
+  assert.equal(run().status, 0, "an existing tag counts as recorded");
+  assert.equal(calls(), 1);
+  fake('echo "Resource not accessible by integration (HTTP 403)" >&2; exit 1');
+  const failed = run();
+  assert.equal(failed.status, 1);
+  assert.equal(calls(), 4, "it gives up after four attempts");
+  assert.match(failed.stdout, /Run: gh api repos\/owner\/repo\/git\/refs -f ref=refs\/tags\/docker-v9\.9\.9 -f sha=abc123/);
 });

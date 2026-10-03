@@ -40,6 +40,7 @@ jobs:
     outputs:
       build: ${{ steps.gate.outputs.build }}
       publish: ${{ steps.gate.outputs.publish }}
+      record: ${{ steps.gate.outputs.record }}
       version: ${{ steps.gate.outputs.version }}
     steps:
       - uses: actions/checkout@v5
@@ -66,10 +67,26 @@ jobs:
           for key in DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
             test -n "${!key}" || { echo "Missing secret: $key"; exit 1; }
           done
-          if [[ "$FORCE" != true ]] && git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
+          echo 'record=false' >> "$GITHUB_OUTPUT"
+          shipped=false
+          hub=404
+          if [[ "$FORCE" != true ]]; then
+            if git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
+              shipped=true
+            else
+              hub=$(curl -sS -m 20 --retry 3 -o /dev/null -w '%{http_code}' "https://hub.docker.com/v2/repositories/satoshiltd/arca/tags/$version" || true)
+              [[ "$hub" == 200 || "$hub" == 404 ]] || { echo "Docker Hub answered $hub for $version; run again later, or force it"; exit 1; }
+            fi
+          fi
+          if [[ "$shipped" == true ]]; then
             echo "$tag already exists; this version already shipped"
             echo 'build=false' >> "$GITHUB_OUTPUT"
             echo 'publish=false' >> "$GITHUB_OUTPUT"
+          elif [[ "$hub" == 200 ]]; then
+            echo "satoshiltd/arca:$version is already on Docker Hub without $tag; recording the tag only"
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            echo 'record=true' >> "$GITHUB_OUTPUT"
           else
             echo "Publishing satoshiltd/arca:$version"
             echo 'build=true' >> "$GITHUB_OUTPUT"
@@ -128,10 +145,22 @@ jobs:
             satoshiltd/arca:${{ needs.gate.outputs.version }}
             satoshiltd/arca:latest
           provenance: false
+  record:
+    needs: [gate, docker]
+    if: >-
+      always() &&
+      (needs.gate.outputs.record == 'true' ||
+       (needs.gate.outputs.publish == 'true' && needs.docker.result == 'success'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Record the published version
-        if: needs.gate.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: docker-v${{ needs.gate.outputs.version }}
           RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$RELEASE_SHA"
+        run: bash scripts/record-docker-tag.sh

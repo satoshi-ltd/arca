@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DOCKER-TAG-RETRY** — A published Docker image always gets its `docker-v` tag
-  `bug · agent · normal`
-  accept: the "Record the published version" step retries the tag creation and, if it still fails, ends with a message that names the exact command to run by hand; the gate also treats a version already on Docker Hub as shipped so a re-run never republishes it; a workflow contract test covers the retry and the check. v0.6.84 was published without its tag after two 403 answers from the refs API, and re-running it would have moved `latest` back.
 - **MOB-GALLERY-UNDATED-COUNT** — The phone gallery counts photos that have no date
   `bug · agent · low`
   accept: first check whether the phone's gallery total and month counts leave out photos without a date (`hubGallery` sums only the dated timeline, while the desktop header counts them since 0.6.86); if they do, the counts include them and a hub-gallery test with undated rows proves it.
