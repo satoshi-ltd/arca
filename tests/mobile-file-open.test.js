@@ -96,3 +96,17 @@ test("APK authorization explains the next step and opens settings only on reques
   await prompt[2][1].onPress();
   assert.deepEqual(calls, [["settings"]]);
 });
+
+test("Android opens a file with its type, then as plain text for text files, then as a generic file", () => {
+  const kotlin = fs.readFileSync(
+    new URL("../apps/mobile/modules/arca-network/android/src/main/java/expo/modules/arcanetwork/ArcaNetworkModule.kt", import.meta.url),
+    "utf8",
+  );
+  const open = kotlin.slice(kotlin.indexOf('AsyncFunction("openFile")'), kotlin.indexOf('AsyncFunction("openInstallSettings")'));
+  assert.match(open, /"md", "markdown", "json", "jsonl", "yaml", "yml"/, "markdown and structured text count as text");
+  assert.match(open, /listOfNotNull\(mime\.takeIf \{ it != "application\/octet-stream" \}, if \(textual\) "text\/plain" else null, "application\/octet-stream"\)/);
+  assert.match(open, /if \(apk\) listOf\(mime\)/, "an APK never falls back to another type");
+  assert.match(open, /for \(type in types\) \{[\s\S]*startActivity\(intent\); opened = true; break[\s\S]*ActivityNotFoundException\) \{\}/, "each type is tried until one app answers");
+  assert.match(open, /if \(!opened\) error\("No installed app can open this file\. Try Share from the file menu\."\)/);
+  assert.match(open, /SecurityException\) \{ error\("Android blocked opening this file\./, "a blocked file stops at once");
+});

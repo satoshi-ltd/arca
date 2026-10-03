@@ -156,3 +156,21 @@ test("the UX review's wording and tones hold across desktop, phone and site", ()
   assert.match(mobile, /\/stop syncing\/i\.test\(shownConfirmation\.label\)\s+\? "unlink"/, "Stop syncing and delete keeps the unlink icon");
   assert.match(site, /<title>Arca — Your files\. Your devices\.<\/title>/);
 });
+
+test("every phone tab has its own icon", () => {
+  const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+  const icons = read("apps/mobile/src/icons.js");
+  const tabs = read("apps/mobile/src/App.jsx").match(/const tabs = \[([^\]]+)\];/)[1].match(/"(\w+)"/g).map((name) => name.slice(1, -1).toLowerCase());
+  for (const tab of tabs) {
+    assert.match(icons, new RegExp(`\\n  ${tab}: "`), `${tab} has a Lucide name`);
+    assert.match(icons, new RegExp(`\\n  ${tab}: \\[`), `${tab} has its drawing`);
+  }
+});
+
+test("every literal icon name used by the phone screens resolves", () => {
+  const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+  const icons = read("apps/mobile/src/icons.js");
+  for (const file of ["apps/mobile/src/App.jsx", "apps/mobile/src/components.jsx"])
+    for (const [, name] of read(file).matchAll(/\bicon="([\w-]+)"/g))
+      assert.match(icons, new RegExp(`\\n  (?:"${name}"|${name}): "`), `${file} uses icon "${name}" with no Lucide name`);
+});

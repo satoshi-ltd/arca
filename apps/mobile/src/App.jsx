@@ -2447,7 +2447,7 @@ export default function App() {
                               ) : (
                                 machinesLoaded && (
                                   <EmptyState
-                                    icon="machines"
+                                    icon="devices"
                                     title="No saved devices"
                                     text="Sync online to save device information."
                                   />

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.97 — 2026-10-03
+
+- Open file on Android now also tries the file as plain text and then as a generic file, so a Markdown, JSON or other text file opens in a text editor when no app claims its own type; when nothing can open it, the message says so and points to Share.
+- Errors from the phone's native layer show their own message ("No installed app can open this file…") instead of the module's internal wrapper, which stays in Details.
+- The phone's Devices tab, its empty state and the Copy diagnostics button show their own icons instead of the Folders one, and Proposals gains five polish boards (touch feedback, segmented controls, dark-mode depth, History days, empty states).
+
+Needs: native build
+
 ## 0.6.96 — 2026-10-03
 
 - The phone's Stop syncing confirmation now names the folder and says Stop syncing and delete, because it removes the phone's copy.

@@ -811,7 +811,7 @@ test("every empty list on the phone uses the one EmptyState: icon, heading, one 
   const kit = fs.readFileSync(new URL("../design/mobile.html", import.meta.url), "utf8");
   assert.match(kit, /<h2>Empty states /);
   for (const title of Object.values(sites).flat()) assert.ok(kit.includes(`>${title}<`), `design/mobile.html draws "${title}"`);
-  assert.match(read("App.jsx"), /<EmptyState\s+icon="machines"\s+title="No saved devices"/);
+  assert.match(read("App.jsx"), /<EmptyState\s+icon="devices"\s+title="No saved devices"/);
   assert.doesNotMatch(read("App.jsx"), /<Card title="No folders yet">|No saved device information/);
   assert.doesNotMatch(read("FolderRecent.jsx"), /No versions yet\./);
   const styles = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");

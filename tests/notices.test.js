@@ -326,3 +326,23 @@ test("info notices use the primary green and its ink in both themes, on desktop 
     assert.equal(palettes[theme].noticeInfoLink, tokens[theme]["notice-info-link"], `${theme}: mobile link`);
   }
 });
+
+test("a native module rejection shows its own message and keeps the wrapper in the details", async () => {
+  const { errorNotice } = await import("../apps/desktop/src/notice-contract.js");
+  const raw =
+    "Call to function 'ArcaNetwork.openFile' has been rejected.\n→ Caused by: java.lang.IllegalStateException: No installed app can open this file. Try Share from the file menu.";
+  const notice = errorNotice(new Error(raw));
+  assert.equal(notice.body, "No installed app can open this file. Try Share from the file menu.");
+  assert.equal(notice.details, raw);
+  const plain = errorNotice(new Error("This file is not available locally yet."));
+  assert.equal(plain.body, "This file is not available locally yet.");
+  assert.equal(plain.details, "");
+});
+
+test("a bare native rejection is not repeated in the details", async () => {
+  const { errorNotice } = await import("../apps/desktop/src/notice-contract.js");
+  const raw = "Call to function 'ArcaNetwork.openFile' has been rejected.";
+  const notice = errorNotice(new Error(raw));
+  assert.equal(notice.body, raw);
+  assert.equal(notice.details, "");
+});

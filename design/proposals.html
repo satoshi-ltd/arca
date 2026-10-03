@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.96 · proposals</span>
+      <span class="kit-version">v0.6.97 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -112,6 +112,88 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>At 760 px and narrower every ghost and icon button measures at least <code>--touch-target-min</code>; wider layouts are unchanged; a stylesheet contract test covers the media query.</p></div></div>
+        </article>
+
+        <article class="kit-board" data-board="UI-SYS-PRESSED">
+          <header><code>UI-SYS-PRESSED</code><h3>Every touch answers</h3><span>System</span></header>
+          <p class="kit-note"><strong>Why.</strong> Mobile rows and buttons show no pressed state, and on desktop the secondary and icon buttons hover to the same surface colour they rest on, with no active rule. A press or hover gives no sign that the control heard it. The proposal gives every control one visible response, applied instantly.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <p class="kit-caption">Controls while pressed or hovered · no change</p>
+<div class="heading-actions"><button type="button" class="primary"><span data-icon="refresh-cw"></span>Sync now</button><button type="button" class="secondary"><span data-icon="folder"></span>Open</button><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button></div><button type="button" class="nav-item"><span data-icon="folder"></span>Folders</button>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-pressed">
+              <p class="kit-caption">The same controls while pressed or hovered</p>
+<div class="heading-actions"><button type="button" class="primary"><span data-icon="refresh-cw"></span>Sync now</button><button type="button" class="secondary"><span data-icon="folder"></span>Open</button><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button></div><button type="button" class="nav-item"><span data-icon="folder"></span>Folders</button>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>Every button, row, tab and photo tile changes background or opacity while pressed or hovered in both themes (hover fill for rows and secondary buttons, 85% opacity for primary buttons and tiles); a stylesheet contract test checks the rules and the phone Pressable styles.</p></div></div>
+        </article>
+
+        <article class="kit-board" data-board="UI-SYS-SEGMENTED-DEPTH">
+          <header><code>UI-SYS-SEGMENTED-DEPTH</code><h3>Segmented controls show their choice</h3><span>System</span></header>
+          <p class="kit-note"><strong>Why.</strong> The desktop track is the same surface colour as the selected segment, so in light only a one-pixel shadow marks the choice, and on the phone in dark the selected segment is darker than its track. In the 320 px side column, Forever wraps to a second line.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw kit-column">
+              <p class="kit-caption">Version history · 320 px column</p>
+              <div class="segmented" role="group" aria-label="Version history"><button type="button" class="active">1 week</button><button type="button">30 days</button><button type="button">Forever</button></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-segments">
+              <p class="kit-caption">Version history · the selection stands out, one line</p>
+              <div class="segmented" role="group" aria-label="Version history"><button type="button" class="active">1 week</button><button type="button">30 days</button><button type="button">Forever</button></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>The selected segment is visibly distinct from its track in light and dark on desktop and phone, using two new tokens mirrored in the phone palette, and Version history fits on one row at 320 px; a contrast test covers both themes.</p></div></div>
+        </article>
+
+        <article class="kit-board" data-board="UI-SYS-DARK-ELEVATION">
+          <header><code>UI-SYS-DARK-ELEVATION</code><h3>Menus and dialogs lift off the page in dark</h3><span>System</span></header>
+          <p class="kit-note"><strong>Why.</strong> Dark keeps the light theme's shadows, so a menu opened over a card has no visible edge against it. The proposal gives floating surfaces their own raised colour and a one-pixel ring in dark, and leaves light as it is.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <p class="kit-caption">A menu over a card · dark theme</p>
+              <div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>4.2 MB</p></div></div></div>
+              <details class="details-menu" open><summary class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="folder-search"></span>Show in Finder</button><button type="button" class="secondary danger"><span data-icon="trash-2"></span>Delete file</button></div></details>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-elevated">
+              <p class="kit-caption">The same menu with an edge and a raised surface</p>
+              <div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>4.2 MB</p></div></div></div>
+              <details class="details-menu" open><summary class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="folder-search"></span>Show in Finder</button><button type="button" class="secondary danger"><span data-icon="trash-2"></span>Delete file</button></div></details>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>In dark, a menu, a dialog and a phone sheet over a card show a visible edge and a raised surface on desktop and phone; light is unchanged; a contrast test compares floating and card surfaces.</p></div></div>
+        </article>
+
+        <article class="kit-board" data-board="UI-SYS-HISTORY-DAYS">
+          <header><code>UI-SYS-HISTORY-DAYS</code><h3>The day heads the group, the row tells the time</h3><span>System</span></header>
+          <p class="kit-note"><strong>Why.</strong> History repeats the day in every row ("2 min ago" under a header that already names the day), the string does not fit the time column, and the group headers read "Oct 3, 2026" while the kit draws "Today". The proposal makes the header carry the day and the row carry the clock time.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <p class="kit-caption">A day group today</p>
+<div class="section-label">Oct 3, 2026</div><div class="history-group"><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0042.jpg</strong><p>4.2 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165764</span><span class="row-time">2 min ago</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0041.jpg</strong><p>3.9 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165702</span><span class="row-time">1 hr ago</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <p class="kit-caption">The header names the day, rows show HH:mm</p>
+<div class="section-label">Today</div><div class="history-group"><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0042.jpg</strong><p>4.2 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165764</span><span class="row-time">14:27</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0041.jpg</strong><p>3.9 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165702</span><span class="row-time">13:05</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>Group headers read Today, Yesterday or a short date (the year only when it is not the current one); every row time is HH:mm in tabular figures; the revision column aligns across rows; desktop and phone match; JSDOM and phone tests cover the labels.</p></div></div>
+        </article>
+
+        <article class="kit-board" data-board="UI-SYS-EMPTY-NEXT-STEP">
+          <header><code>UI-SYS-EMPTY-NEXT-STEP</code><h3>Empty states say what to do</h3><span>System</span></header>
+          <p class="kit-note"><strong>Why.</strong> History with a filter active still says "Every change has a history" under a folder icon, and the phone uses one line for three different empty states. The proposal gives each state its own next step and an icon that matches the view.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <p class="kit-caption">History with the Conflicts filter and no conflicts</p>
+<div class="empty"><span data-icon="folder-open" data-size="24"></span><h2>Every change has a history</h2><p>Pick a folder to see its changes.</p></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <p class="kit-caption">The filter is named, with the way out</p>
+<div class="empty"><span data-icon="git-branch" data-size="24"></span><h2>No conflicts</h2><p>Clear Conflicts to see every change.</p></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>No two empty states share a line; the filtered state names the active filter and how to clear it; the offline state says to connect to the hub; each icon matches its view; JSDOM and phone tests cover the three states.</p></div></div>
         </article>
 
       </section>

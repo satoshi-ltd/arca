@@ -188,6 +188,19 @@ Older notes listed these as open while later evidence suggests they are resolved
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
 
+- **DESK-INFO-PANEL-MOTION** — The photo Info panel animates only opacity and transform
+  `bug · agent · low`
+  accept: the Info panel in the photo viewer opens and closes with opacity and transform only, as SPEC's motion rule says, instead of transitioning `width` and `right`; the viewer image does not jump; reduced motion makes it instant; a stylesheet contract test checks the rule.
+- **MOTION-GALLERY-SETTLE** — Thumbnails fade in and the selection scale eases
+  `chore · agent · low`
+  accept: gallery thumbnails fade in over `--motion-fast` on desktop and phone (no fade under reduced motion, and the Android `Image` default fade no longer ignores the tokens) and the 94% selection scale transitions over the same duration; `tests/motion.test.js` covers both.
+- **SITE-HERO-TRUE-UI** — The site hero draws the real app
+  `chore · agent · low`
+  accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), and a site test lists them.
+- **MOB-VIEWER-CHROME-TAP** — A tap hides the photo viewer's chrome
+  `chore · agent · low`
+  accept: a single tap on the photo viewer fades its top bar over `--motion-enter`, Back still works, the video surface uses the safe-area insets instead of fixed margins and reduced motion makes the change instant; this adds a gesture, so it needs the maintainer's validation before it enters Queue.
+
 - **DEV-FLAKY-MOBILE** — Find the mobile test that failed twice under load
   `chore · agent · low`
   accept: `tests/mobile-*.test.js` run repeatedly at full concurrency on a loaded machine; the test that failed once in `validate-local` for v0.6.79 and once for v0.6.80 (green when rerun alone) is named and its timing made deterministic, or the finding is recorded here as not reproducible.

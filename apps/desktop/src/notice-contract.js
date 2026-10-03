@@ -86,6 +86,10 @@ export function errorNotice(
   { id = "action", hubName = "your hub", action = "retry", hubOnly = false } = {},
 ) {
   const details = safeDetails(error?.message || error);
+  const message = details.replace(
+    /^(?:[^\n]*?: )?Call to function '[^']+' has been rejected\.?\s*(?:→\s*)?(?:Caused by:\s*)?(?:[\w.$]+(?:Exception|Error):\s*)?/,
+    "",
+  );
   const offline = isHubUnreachable(error);
   const revoked = /\b401\b|revoked|unauthorized|hub refused credential/i.test(
     details,
@@ -124,7 +128,7 @@ export function errorNotice(
             ? "This action requires permission on the hub. Ask its administrator to review your access."
             : technical
               ? "The operation stopped. Review the details and try again."
-              : details,
+              : message || details,
     details:
       storage ||
       offline ||
@@ -132,7 +136,9 @@ export function errorNotice(
       forbidden ||
       /Error:|E_[A-Z_]+|\bGET |\bPOST |\bat /m.test(details)
         ? details
-        : "",
+        : message && message !== details
+          ? details
+          : "",
     action: revoked ? "pair" : forbidden ? null : action,
     cause: offline ? "connection" : revoked ? "access" : "",
     actionLabel: revoked ? "Pair again" : "Retry now",

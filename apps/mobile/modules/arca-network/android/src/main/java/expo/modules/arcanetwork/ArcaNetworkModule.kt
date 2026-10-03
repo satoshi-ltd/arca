@@ -37,14 +37,20 @@ class ArcaNetworkModule : Module() {
         if (apk && android.os.Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls())
           return@withContext "install-permission"
         val mime = if (apk) "application/vnd.android.package-archive" else android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-          setDataAndType(content, mime)
-          addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-          clipData = android.content.ClipData.newRawUri(file.name, content)
+        val textual = mime.startsWith("text/") || extension in setOf("md", "markdown", "json", "jsonl", "yaml", "yml", "toml", "csv", "log", "ini", "conf", "xml")
+        val types = if (apk) listOf(mime) else listOfNotNull(mime.takeIf { it != "application/octet-stream" }, if (textual) "text/plain" else null, "application/octet-stream")
+        var opened = false
+        for (type in types) {
+          val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(content, type)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = android.content.ClipData.newRawUri(file.name, content)
+          }
+          try { activity.startActivity(intent); opened = true; break }
+          catch (_: android.content.ActivityNotFoundException) {}
+          catch (_: SecurityException) { error("Android blocked opening this file. Check the app permissions and try again.") }
         }
-        try { activity.startActivity(intent) }
-        catch (_: android.content.ActivityNotFoundException) { error("No installed app can open this file. Try Share from the file menu.") }
-        catch (_: SecurityException) { error("Android blocked opening this file. Check the app permissions and try again.") }
+        if (!opened) error("No installed app can open this file. Try Share from the file menu.")
         "opened"
       }
     }

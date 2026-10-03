@@ -431,3 +431,34 @@ body.kit {
   min-width: var(--touch-target-min);
   min-height: var(--touch-target-min);
 }
+.kit-pressed .secondary,
+.kit-pressed .icon-button,
+.kit-pressed .nav-item {
+  background: var(--hover);
+}
+.kit-pressed .primary {
+  opacity: 0.85;
+}
+.kit-segments .segmented {
+  max-width: 320px;
+  display: flex;
+  flex-wrap: nowrap;
+  background: var(--hover);
+  border: 1px solid var(--div);
+}
+.kit-segments .segmented button {
+  flex: 1;
+  white-space: nowrap;
+}
+:root[data-theme="dark"] .kit-segments .segmented .active {
+  background: var(--track);
+}
+:root[data-theme="dark"] .kit-elevated .menu-items {
+  background: var(--notice-surface);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow-dialog);
+}
+.kit-column {
+  max-width: 320px;
+}
