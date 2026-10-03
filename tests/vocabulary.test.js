@@ -127,3 +127,32 @@ test("cold dialogs and Settings use plain wording the copy review asked for", ()
   assert.equal(design.includes("On the new device, open Devices"), false);
   assert.ok(design.includes("The command prints a result that includes a six-digit code. Enter that code below."));
 });
+
+test("the UX review's wording and tones hold across desktop, phone and site", () => {
+  const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+  const desktop = read("apps/desktop/src/app.js");
+  const mobile = read("apps/mobile/src/App.jsx");
+  const components = read("apps/mobile/src/components.jsx");
+  const gallery = read("apps/mobile/src/FolderGallery.jsx");
+  const site = read("site/index.html");
+  for (const phrase of ["Daemon stopped", "Start the local daemon", "managing this daemon", "Daemon is still starting", "No visible copy selected", "in catalog`", 'pill("Revoked"', '"Paused", "id"', '"unlink")', "Cancel selection"])
+    assert.equal(desktop.includes(phrase) || mobile.includes(phrase) || gallery.includes(phrase), false, `still says ${phrase}`);
+  assert.match(desktop, /\["Paused", "wa", "pause"\]/);
+  assert.match(desktop, /pill\("Disconnected", "wa", "unplug"\)/);
+  assert.match(desktop, /pill\("Removed", "er", "unplug"\)/);
+  assert.match(mobile, /`Stop syncing “\$\{target\.name\}”\?`/, "the phone names the folder it stops syncing");
+  assert.match(mobile, /"Stop syncing and delete",\n\s+\);/, "the phone button says the copy is deleted");
+  assert.doesNotMatch(mobile, /credentials, selections, index, queues and caches/);
+  assert.match(mobile, /state=\{m\.revoked \? "Removed" : "Linked"\}/);
+  assert.match(components, /\["Needs attention", "Removed"\]/);
+  assert.match(gallery, /label="Clear selection"/);
+  assert.match(gallery, /accessibilityActions=\{\s*onLongPress\s*\?\s*\[\{ name: "longpress", label: selected \? "Deselect" : "Select" \}\]/, "a screen reader can select a tile");
+  assert.match(gallery, /item\.kind === "video" \? "Video" : "Photo"/, "a tile announces its kind");
+  assert.equal(site.includes("Your machines"), false);
+  assert.equal(/daemon/i.test(read("apps/desktop/src/index.html")), false, "the first paint never says daemon");
+  const theme = read("apps/mobile/src/theme.js");
+  for (const style of ["inputShell", "codeCell", "button", "input"])
+    assert.match(theme, new RegExp(`\\n    ${style}: \\{[^}]*borderColor: c\\.control,`), `${style} draws the control border`);
+  assert.match(mobile, /\/stop syncing\/i\.test\(shownConfirmation\.label\)\s+\? "unlink"/, "Stop syncing and delete keeps the unlink icon");
+  assert.match(site, /<title>Arca — Your files\. Your devices\.<\/title>/);
+});

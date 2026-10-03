@@ -199,7 +199,7 @@
   min-height: var(--m-touch-control-height);
   padding: 8px 12px;
   border-radius: var(--m-control-radius);
-  border: 1px solid var(--m-line);
+  border: 1px solid var(--m-control);
   background: var(--m-surface);
   color: var(--m-ink);
   font-size: var(--m-touch-control-font);
@@ -509,7 +509,7 @@
   gap: 12px;
   min-height: var(--m-touch-control-height);
   padding: 0 12px;
-  border: 1px solid var(--m-line);
+  border: 1px solid var(--m-control);
   border-radius: var(--m-control-radius);
   background: var(--m-surface);
   color: var(--m-mute);
@@ -527,7 +527,7 @@
 .m-cell {
   width: 40px;
   height: 48px;
-  border: 1px solid var(--m-line);
+  border: 1px solid var(--m-control);
   border-radius: var(--m-control-radius);
   background: var(--m-surface);
 }

@@ -122,7 +122,8 @@
   --track: #ecf0ec; /* progress track */
   --desk: #e3e8e2; /* only behind the window in the prototype */
   /* lines */
-  --line: #c6cfc9; /* control borders */
+  --line: #c6cfc9; /* dashed rows and soft frames */
+  --control: #7f8f86; /* button and field borders, 3:1 on paper and surface */
   --div: #dee4e0; /* card borders, dividers */
   /* ink */
   --ink: #121a16;
@@ -183,6 +184,7 @@
   --track: #26332c;
   --desk: #080b09;
   --line: #2e3b34;
+  --control: #5f7167;
   --div: #26332c;
   --ink: #e8ede7;
   --soft: #a3afa8;

@@ -540,7 +540,7 @@ export function Tag({ children, variant }) {
 
 export function Badge({ children, iconOnly = false }) {
   const { s, c } = useDesign();
-  const error = ["Needs attention", "Revoked"].includes(children);
+  const error = ["Needs attention", "Removed"].includes(children);
   const warning = ["Incomplete", "Paused", "Not yet synced"].includes(children);
   const success = children === "Up to date";
   return (

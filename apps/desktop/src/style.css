@@ -340,7 +340,7 @@ main {
   flex: none;
   padding: 7px 13px;
   border-radius: var(--r-control);
-  border: 1px solid var(--line);
+  border: 1px solid var(--control);
   background: var(--surface);
   color: var(--ink);
   font-size: var(--text-control);
@@ -398,7 +398,7 @@ main {
 }
 .primary.danger {
   background: var(--er);
-  color: white;
+  color: var(--onGreen);
 }
 .folder-list {
   display: flex;
@@ -924,7 +924,7 @@ main {
   width: 36px;
   height: 22px;
   border-radius: 20px;
-  background: var(--line);
+  background: var(--control);
   pointer-events: none;
 }
 .toggle span:after {
@@ -945,7 +945,8 @@ main {
   left: 16px;
 }
 .toggle input:focus-visible + span {
-  box-shadow: var(--focus-ring);
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
 }
 label {
   display: block;
@@ -958,7 +959,7 @@ select,
 textarea {
   width: 100%;
   min-width: 0;
-  border: 1px solid var(--line);
+  border: 1px solid var(--control);
   background: var(--surface);
   color: var(--ink);
   border-radius: var(--r-control);
@@ -1434,7 +1435,7 @@ dialog:has(:where(#submit-dialog.danger)) .modal-title .tile {
 .busy-grid i {
   background: currentColor;
   border-radius: 50%;
-  animation: arca-busy 1.3s ease-in-out infinite;
+  animation: arca-busy var(--motion-loop) ease-in-out infinite;
 }
 .busy-grid i:nth-child(2n) {
   animation-duration: 1.7s;
@@ -1801,9 +1802,11 @@ html:has(.tray-body) {
 .tray-tone-synced > svg {
   color: var(--green);
 }
-.tray-tone-pending > svg,
-.tray-tone-paused > svg {
+.tray-tone-pending > svg {
   color: var(--mute);
+}
+.tray-tone-paused > svg {
+  color: var(--wa);
 }
 .tray-tone-disconnected > svg,
 .tray-tone-conflict > svg {
@@ -1891,7 +1894,7 @@ html:has(.tray-body) {
   align-items: center;
   gap: 10px;
   padding: 0 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--control);
   border-radius: var(--r-control);
   background: var(--surface);
 }
@@ -1954,7 +1957,7 @@ html:has(.tray-body) {
   align-items: center;
   gap: var(--space-3);
   padding: 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--control);
   border-radius: var(--r-card);
   background: var(--surface);
 }
@@ -2480,7 +2483,7 @@ progress::-webkit-progress-value {
   padding: var(--space-2) var(--space-3);
   background: var(--surface);
   color: var(--ink);
-  border: 1px solid var(--line);
+  border: 1px solid var(--control);
   border-radius: var(--r-control);
   font: 600 var(--text-control) var(--font-ui);
 }
@@ -3547,7 +3550,7 @@ dialog.photo-viewer {
 }
 .photo-viewer .photo-info-footer button {
   border-radius: var(--r-control);
-  border: 1px solid var(--line);
+  border: 1px solid var(--control);
 }
 .photo-viewer-image > .busy-grid {
   color: #fff;

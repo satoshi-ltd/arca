@@ -1071,7 +1071,7 @@ export default function App() {
       ? "Stops photo uploads and removes this folder’s Arca copy and album link. Originals in Photos, hub files and history are kept. Unsynced local changes will be lost; export the folder first to keep them."
       : "Removes this folder’s Arca copy from this phone. Hub files and history are kept. Unsynced local changes will be lost; use Export folder first to keep them.";
     confirm(
-      "Stop syncing?",
+      `Stop syncing “${target.name}”?`,
       message,
       () =>
         run(
@@ -1083,13 +1083,13 @@ export default function App() {
           },
           { label: "Stopping sync…" },
         ),
-      "Stop syncing",
+      "Stop syncing and delete",
     );
   }
   function destroy() {
     confirm(
       "Erase this device?",
-      "Permanently deletes all downloaded folders and unsynced changes, credentials, selections, index, queues and caches. Arca returns to first-run setup. Hub files and history and other devices are kept. This cannot be undone. Works offline. If the hub cannot be reached, remove this device from its Devices list separately.",
+      "Permanently deletes every downloaded folder, any unsynced changes and this phone’s pairing and saved settings. Arca returns to first-run setup. Hub files and history and other devices are kept. This cannot be undone. Works offline. If the hub cannot be reached, remove this device from its Devices list separately.",
       () =>
         run(
           async () => {
@@ -2441,7 +2441,7 @@ export default function App() {
                                       name={m.name}
                                       description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[m.platform] || m.platform || "Platform not reported"}${m.lastAddress ? ` · ${m.lastAddress}` : ""}`}
                                       role={m.role || "Replica"}
-                                      state={m.revoked ? "Revoked" : "Linked"}
+                                      state={m.revoked ? "Removed" : "Linked"}
                                     />
                                   ))
                               ) : (
@@ -2916,11 +2916,13 @@ export default function App() {
               label={shownConfirmation.label}
               icon={
                 shownConfirmation.icon ||
-                (/delete/i.test(shownConfirmation.label)
-                  ? "trash"
-                  : /stop syncing|unlink|remove/i.test(shownConfirmation.label)
-                    ? "unlink"
-                    : "alert")
+                (/stop syncing/i.test(shownConfirmation.label)
+                  ? "unlink"
+                  : /delete/i.test(shownConfirmation.label)
+                    ? "trash"
+                    : /unlink|remove/i.test(shownConfirmation.label)
+                      ? "unlink"
+                      : "alert")
               }
               destructive={/erase|delete|stop syncing|remove/i.test(
                 shownConfirmation.label,

@@ -11,7 +11,7 @@
     const theme = choice || (system.matches ? 'dark' : 'light');
     root.dataset.theme = theme;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'light' ? '#f4f6ef' : '#0f1512');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#f4f6f1' : '#0f1512');
     const button = document.querySelector('.theme-btn');
     if (button) button.setAttribute('aria-label', theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme');
   }

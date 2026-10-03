@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.96 — 2026-10-03
+
+- The phone's Stop syncing confirmation now names the folder and says Stop syncing and delete, because it removes the phone's copy.
+- Buttons, fields and toggles have a clearer border, a toggle shows a visible focus outline and the dark destructive button is legible.
+- A phone screen reader hears each photo's kind, name and date and can select it; the selection is cleared with Clear selection.
+- Paused is a warning everywhere, including the tray; a removed device reads Removed; the Arca service is no longer called the daemon; the site says "Your devices" and uses the app's colours.
+
+Needs: native build · desktop build
+
 ## 0.6.95 — 2026-10-03
 
 - The phone gallery total now counts photos and videos that have no date, like the desktop header; they were listed but left out of the number.

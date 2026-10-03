@@ -87,7 +87,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.95";
+const APP_VERSION = "0.6.96";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -876,7 +876,7 @@ function stateFor(v) {
   if (status.role !== "hub" && !status.hub)
     return ["Disconnected", "id", "unplug"];
   if (!v.selected) return ["Catalog only", "id", "circle-dashed"];
-  if (status.phase === "paused") return ["Paused", "id", "pause"];
+  if (status.phase === "paused") return ["Paused", "wa", "pause"];
   if (v.sync?.state === "error")
     return [
       /ENOENT|missing/i.test(v.sync.error || "")
@@ -923,12 +923,12 @@ function updateShell() {
   $("#managed-name").textContent = status.name;
   const states = {
     idle: ["Up to date", "ok", "circle-check"],
-    paused: ["Paused", "id", "pause"],
+    paused: ["Paused", "wa", "pause"],
     syncing: ["Syncing", "sy", "busy"],
     error: ["Needs attention", "er", "circle-alert"],
     unlinked: status.hub
       ? ["Connected", "id", "link"]
-      : ["Disconnected", "wa", "link"],
+      : ["Disconnected", "wa", "unplug"],
     "needs-folder": ["No shared folders", "id", "folder"],
   };
   const conflicts = status.volumes.reduce((n, v) => n + v.conflicts, 0);
@@ -1090,7 +1090,7 @@ async function refresh(renderView = true) {
         volume.policyError ||
         (p
           ? progressLabel(p)
-          : `${countLabel(volume.files || 0, "file")} · ${bytes(volume.bytes)} · ${volume.path || "No visible copy selected"}`);
+          : `${countLabel(volume.files || 0, "file")} · ${bytes(volume.bytes)} · ${volume.path || "Not on this device"}`);
       let progress = row.querySelector("progress");
       if (!p) {
         progress?.remove();
@@ -1301,7 +1301,7 @@ function folderRow(v, available = false) {
     ? Number.isFinite(v.files)
       ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`
       : "Not counted yet"
-    : `${countLabel(v.files, "file")} · ${bytes(v.bytes)} · ${escape(v.path || "No visible copy selected")}`;
+    : `${countLabel(v.files, "file")} · ${bytes(v.bytes)} · ${escape(v.path || "Not on this device")}`;
   if (p) meta = escape(progressLabel(p));
   if (v.sync?.error || v.policyError)
     meta = escape(v.sync?.error || v.policyError);
@@ -3304,7 +3304,7 @@ async function renderDetail(pending = false) {
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(v.gallery ? "images" : "folder")}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "No visible copy selected")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(v.gallery ? "images" : "folder")}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
   if (!pending && folderTab === "gallery") mountGallery(v.id);
@@ -3480,12 +3480,12 @@ const machineRow = (
   `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This device</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
 
 function selfPill() {
-  if (!status.hub) return pill("Disconnected", "wa", "unlink");
+  if (!status.hub) return pill("Disconnected", "wa", "unplug");
   if (status.hubUnavailable && status.phase !== "paused")
     return pill("Offline", "wa", "wifi-off");
   const [label, tone, symbol] = {
     idle: ["Up to date", "ok", "circle-check"],
-    paused: ["Paused", "id", "pause"],
+    paused: ["Paused", "wa", "pause"],
     error: ["Needs attention", "er", "circle-alert"],
   }[status.phase] || ["Syncing", "sy", "busy"];
   return pill(label, tone, symbol);
@@ -3552,7 +3552,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
       true,
       false,
       escape(platformLabel(status.platform)),
-      `${status.volumes.length} shared folders · ${bytes(status.volumes.reduce((n, v) => n + v.bytes, 0))} in catalog`,
+      `${status.volumes.length} shared folders · ${bytes(status.volumes.reduce((n, v) => n + v.bytes, 0))} on the hub`,
     );
   else if (status.hub && status.role !== "replica") {
     const hubError =
@@ -3583,7 +3583,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
       true,
       false,
       platform(p),
-      `${countLabel(catalog.length, "shared folder")} in catalog`,
+      `${countLabel(catalog.length, "shared folder")} on the hub`,
     );
   } else if (status.role !== "replica")
     html += section(
@@ -3618,7 +3618,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
           (Boolean(report?.machineId) && p.arca.id === report.machineId),
       );
       const state = d.revoked
-        ? pill("Revoked", "er", "unlink")
+        ? pill("Removed", "er", "unplug")
         : p?.online === false
           ? pill("Offline", "id", "circle-dashed")
           : !d.last_seen
@@ -3667,7 +3667,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
                 .join(" · "),
               "",
               m.revoked
-                ? pill("Revoked", "er", "unlink")
+                ? pill("Removed", "er", "unplug")
                 : roster.offline && status.hubUnavailable
                   ? pill("Offline", "id", "circle-dashed")
                   : pill("Linked", "id", "link"),
@@ -5052,7 +5052,7 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         "Sign out all web sessions?",
-        "Every browser managing this daemon will need a new access code. Device synchronization credentials stay linked.",
+        "Every browser managing this Arca service will need a new access code. Device synchronization credentials stay linked.",
         "log-out",
       ),
       async () => {
@@ -6166,7 +6166,7 @@ function renderOnboarding() {
             await new Promise((r) => setTimeout(r, 200));
           }
         }
-        if (!current) throw new Error("Daemon is still starting. Try again.");
+        if (!current) throw new Error("Arca is still starting. Try again.");
         if (o.step === 2) {
           o.url = String(f.get("url") || o.url).trim();
           const code = readCode("onboarding");
@@ -6252,8 +6252,8 @@ function showDaemonStopped(error) {
 }
 function renderDaemonStopped() {
   $("#content").innerHTML =
-    title("Daemon stopped") +
-    `<div class="page">${empty("Your files remain on disk", daemonStopped.error ? escape(daemonStopped.error) : "Start the local daemon to check your folders.", button("Start service", "start", "", "primary", "power"))}</div>`;
+    title("Service stopped") +
+    `<div class="page">${empty("Your files remain on disk", daemonStopped.error ? escape(daemonStopped.error) : "Start the Arca service to check your folders.", button("Start service", "start", "", "primary", "power"))}</div>`;
   icons();
 }
 function daemonRecovered() {

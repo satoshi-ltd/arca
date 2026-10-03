@@ -96,8 +96,16 @@ const Tile = memo(function Tile({
       accessibilityLabel={
         item.upload
           ? `${item.name || "Photo"} · ${{ failed: "Needs attention", lost: "No longer on this phone" }[item.upload] || "Uploading"}`
-          : `Open ${item.path}`
+          : `${item.kind === "video" ? "Video" : "Photo"} ${item.path.split("/").pop()}${item.date ? `, ${item.date.slice(0, 10)}` : ""}`
       }
+      accessibilityActions={
+        onLongPress
+          ? [{ name: "longpress", label: selected ? "Deselect" : "Select" }]
+          : undefined
+      }
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "longpress") onLongPress?.(item);
+      }}
       style={[
         s.photoTile,
         top !== undefined && s.galleryCell,
@@ -1140,7 +1148,7 @@ export function FolderGallery({
                 await deleteItems(selection);
               }}
             />
-            <Button label="Cancel selection" onPress={() => setSelection([])} />
+            <Button label="Clear selection" onPress={() => setSelection([])} />
           </View>
           {!linked && <Text style={s.caption}>{HUB_ONLY_REASON}</Text>}
         </View>

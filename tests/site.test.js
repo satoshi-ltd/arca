@@ -398,3 +398,23 @@ test("site keeps a sticky header with the version and a download link to a real 
   assert.doesNotMatch(header, /<ul/);
   assert.match(header, /\{\{VERSION\}\}/);
 });
+
+test("the site's light palette is the app's palette", async () => {
+  const read = (file) => readFile(new URL(file, import.meta.url), "utf8");
+  const [tokens, styles] = await Promise.all([
+    read("../apps/desktop/src/tokens.css"),
+    read("../site/styles.css"),
+  ]);
+  const light = (source) => source.split(/^(?::root)?\[data-theme="dark"\]/m)[0];
+  const value = (source, name) =>
+    light(source).match(new RegExp(`--${name}:\\s*(#[\\da-f]{6})`))?.[1];
+  for (const [site, app] of [
+    ["paper", "paper"],
+    ["ink", "ink"],
+    ["green", "green"],
+    ["green-hover", "deep"],
+    ["muted", "mute"],
+  ])
+    assert.equal(value(styles, site), value(tokens, app), `--${site}`);
+  assert.match(await read("../site/index.html"), /name="theme-color" content="#f4f6f1"/);
+});

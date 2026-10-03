@@ -451,3 +451,40 @@ test("the timeline date chip uses the accent like primary buttons", () => {
   assert.match(chip, /color: var\(--onGreen\);/);
   assert.match(css.match(/\n\.primary \{([^}]*)\}/)[1], /background: var\(--green\);/);
 });
+
+test("control borders, destructive buttons, toggles and busy dots meet the accessibility contract", () => {
+  const read = (file) =>
+    fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
+  const css = read("style.css");
+  const tokens = read("tokens.css");
+  const rule = (selector) =>
+    css.match(new RegExp(`\\n${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`))[1];
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((at) => {
+      const value = parseInt(hex.slice(at, at + 2), 16) / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (high + 0.05) / (low + 0.05);
+  };
+  const [light, dark] = tokens.split(/^\[data-theme="dark"\] \{/m);
+  const color = (source, name) => source.match(new RegExp(`--${name}:\\s*(#[\\da-f]{6})`))[1];
+  for (const [theme, source, base] of [["light", light, light], ["dark", dark, light]]) {
+    const pick = (name) => (source.includes(`--${name}:`) ? color(source, name) : color(base, name));
+    for (const ground of ["paper", "surface"])
+      assert.ok(ratio(pick("control"), pick(ground)) >= 3, `${theme} --control on ${ground}`);
+    assert.ok(ratio(pick("onGreen"), pick("er")) >= 4.5, `${theme} danger label`);
+  }
+  assert.match(css, /border: 1px solid var\(--control\);\n  background: var\(--surface\);\n  color: var\(--ink\);\n  font-size: var\(--text-control\);/, "buttons draw the control border");
+  assert.match(css, /width: 100%;\n  min-width: 0;\n  border: 1px solid var\(--control\);/, "fields draw the control border");
+  assert.match(rule(".toggle span"), /background: var\(--control\);/);
+  for (const selector of [".dropdown-trigger", ".field-with-icon", ".root-selection", ".photo-viewer .photo-info-footer button"])
+    assert.match(rule(selector), /border: 1(\.5)?px solid var\(--control\);/, `${selector} draws the control border`);
+  assert.match(rule(".tray-tone-paused > svg"), /color: var\(--wa\);/, "the tray draws Paused as a warning");
+  assert.match(rule(".primary.danger"), /color: var\(--onGreen\);/);
+  assert.match(rule(".toggle input:focus-visible + span"), /outline: 2px solid var\(--green\);/);
+  assert.match(rule(".busy-grid i"), /animation: arca-busy var\(--motion-loop\)/);
+});

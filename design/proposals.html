@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.95 · proposals</span>
+      <span class="kit-version">v0.6.96 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -62,6 +62,56 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>Files, History and a file's history on desktop and web end in one Show more button (Show more files, Show more, Show more versions) that appends the next rows and keeps scroll and typed search, as DESK-FILES-PAGING describes; the phone's buttons use the same words; placeholder rows carry no Loading label; JSDOM tests cover the three lists and <code>design/desktop.html</code> shows a list ending in Show more.</p></div></div>
+        </article>
+
+        <article class="kit-board" data-board="UI-MOB-GALLERY-ALL-PHOTOS">
+          <header><code>UI-MOB-GALLERY-ALL-PHOTOS</code><h3>All photos says what it uploads</h3><span>Mobile</span></header>
+          <p class="kit-note"><strong>Why.</strong> Unticking the last album silently turns the choice into All photos, and saving then uploads the whole library without a word about it. The picker also offers Open settings for any error, not only a permission error. The proposal states what All photos uploads and how many items that is, and shows Open settings only when the phone refused access.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <p class="kit-caption">Choose albums · nothing ticked</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-section"><div class="m-title-row"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Back</span><span class="m-heading m-grow">Choose albums</span></div><div class="m-list"><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">All photos</span></div><div class="m-row-action"><span data-icon="check" data-size="20"></span></div></div><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">Camera</span><span class="m-caption">1,240 items</span></div></div></div><span class="m-button m-primary">Save changes</span></div></div></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <p class="kit-caption">Choose albums · All photos explains itself</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-section"><div class="m-title-row"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Back</span><span class="m-heading m-grow">Choose albums</span></div><div class="m-list"><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">All photos</span><span class="m-caption">Uploads every photo and video on this phone · 5,412 items</span></div><div class="m-row-action"><span data-icon="check" data-size="20"></span></div></div><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">Camera</span><span class="m-caption">1,240 items</span></div></div></div><span class="m-button m-primary">Save changes</span></div></div></div>
+              <p class="kit-caption">Photos refused · the only case that offers Open settings</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-section"><span class="m-caption">Arca cannot read your photos. Allow access in Settings.</span><span class="m-button">Open settings</span></div></div></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>With no album ticked the All photos row carries the caption and the item count; Open settings appears only when the error is a permission refusal; the photo-uploads SPEC section and a mobile test cover both.</p></div></div>
+        </article>
+
+        <article class="kit-board" data-board="UI-SITE-PHONE-CTA">
+          <header><code>UI-SITE-PHONE-CTA</code><h3>A phone visitor can reach the phone apps</h3><span>Site</span></header>
+          <p class="kit-note"><strong>Why.</strong> At phone width the site's hero offers one primary action, Download for macOS, which a phone visitor cannot use, and the hero illustration's floating card can cover text. The proposal adds a plain link to the mobile section under the primary action at narrow widths and moves the card so no text is covered.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <p class="kit-caption">Hero actions at 390 px</p>
+<div class="heading-actions"><button type="button" class="primary"><span data-icon="download"></span>Download for macOS</button></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
+              <p class="kit-caption">Hero actions at 390 px · a second, quiet way in</p>
+<div class="heading-actions"><button type="button" class="primary"><span data-icon="download"></span>Download for macOS</button><button type="button" class="text-button"><span data-icon="smartphone"></span>Get Arca for your phone</button></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>At 390 px the hero shows the text link to the Arca for mobile section under the primary action and its illustration card covers no text; a site test checks the link and its target anchor.</p></div></div>
+        </article>
+
+        <article class="kit-board" data-board="UI-DESK-TOUCH-TARGETS">
+          <header><code>UI-DESK-TOUCH-TARGETS</code><h3>Web admin on a phone has touchable buttons</h3><span>Desktop and web</span></header>
+          <p class="kit-note"><strong>Why.</strong> The web interface opened on a phone keeps 28 to 32 px ghost and icon buttons, under the 44 px the phone app guarantees. The proposal raises them to the shared minimum touch target at 760 px and narrower, and only there.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw">
+              <p class="kit-caption">Row actions at 760 px and narrower</p>
+<div class="heading-actions"><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button><button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button><button type="button" class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></button></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-touch">
+              <p class="kit-caption">The same actions with a 44 px target</p>
+<div class="heading-actions"><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button><button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button><button type="button" class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></button></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>At 760 px and narrower every ghost and icon button measures at least <code>--touch-target-min</code>; wider layouts are unchanged; a stylesheet contract test covers the media query.</p></div></div>
         </article>
 
       </section>

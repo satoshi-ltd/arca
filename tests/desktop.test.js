@@ -411,6 +411,7 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
     await until(() =>
       w.document.querySelector("#connection").textContent.includes("Paused"),
     );
+    assert.equal(w.document.querySelector("#connection").className, "wa", "Paused is a warning tone");
     assert.equal(daemon.engine.paused, true);
     assert.equal(w.document.querySelector(".sync-actions-menu"), null);
     assert.equal(
@@ -1652,6 +1653,7 @@ test("a paused replica stays Paused and a live list while the hub is unavailable
   await until(() => w.document.querySelectorAll(".device-row").length >= 3);
   const rows = [...w.document.querySelectorAll(".device-row")];
   assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").textContent.trim(), "Paused", "pausing is a choice that outranks Offline");
+  assert.ok(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").classList.contains("wa"), "Paused is a warning on the Devices row too");
   const other = rows.find((row) => /phone-fold/.test(row.textContent));
   assert.equal(other.querySelector(".pill").textContent.trim(), "Linked", "a live list is never marked Offline just because the hub is");
   assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
@@ -5415,7 +5417,7 @@ test("a daemon that failed to restart after an update explains why on the stoppe
   try {
     await w.eval(`(async()=>{${script}\n})()`);
     const content = w.document.querySelector("#content");
-    await until(() => /Daemon stopped/.test(content.textContent));
+    await until(() => /Service stopped/.test(content.textContent));
     assert.match(
       content.textContent,
       /The local daemon did not start <after> the update\./,
@@ -5661,7 +5663,8 @@ test("Tauri replaces the stale view with Start service when the daemon stops and
   const [poll] = intervals;
   down = true;
   await poll();
-  assert.match(q("#content").textContent, /Daemon stopped/);
+  assert.match(q("#content").textContent, /Service stopped/);
+  assert.doesNotMatch(q("#content").textContent, /daemon/i, "the page never says daemon to a person");
   assert.ok(q('#content [data-action="start"]'));
   assert.equal(q("#connection").textContent, "Service stopped");
   assert.equal(q("#sync-controls").hidden, true);
@@ -5670,12 +5673,12 @@ test("Tauri replaces the stale view with Start service when the daemon stops and
     new w.KeyboardEvent("keydown", { key: "r", metaKey: true, bubbles: true }),
   );
   await until(idle);
-  assert.match(q("#content").textContent, /Daemon stopped/);
+  assert.match(q("#content").textContent, /Service stopped/);
   assert.doesNotMatch(q("#notice").textContent, /daemon is unavailable/);
   const probe = intervals.at(-1);
   assert.notEqual(probe, poll);
   await probe();
-  assert.match(q("#content").textContent, /Daemon stopped/);
+  assert.match(q("#content").textContent, /Service stopped/);
   down = false;
   await probe();
   await until(() => q(".folder-card") && idle());

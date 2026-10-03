@@ -10,12 +10,12 @@
   font-display: swap;
 }
 :root {
-  --paper: #f4f6ef;
-  --ink: #182a23;
-  --green: #245c47;
-  --green-hover: #193f32;
+  --paper: #f4f6f1;
+  --ink: #121a16;
+  --green: #2e6350;
+  --green-hover: #244d3e;
   --on-green: #ffffff;
-  --muted: #64746a;
+  --muted: #627168;
   --line: #dce2d7;
   --rule: #ccd8bf;
   --lime: #dcebbe;
@@ -32,7 +32,7 @@
   --device-a: #ffffff;
   --device-b: #e3e9dc;
   --folder-line: #88a46c;
-  --nav-bg: #f4f6efb8;
+  --nav-bg: #f4f6f1b8;
   --radius: 22px;
   --space: clamp(24px, 5vw, 80px);
 }

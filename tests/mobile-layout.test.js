@@ -58,6 +58,7 @@ test("mobile surface and text colors match the desktop light and dark tokens", a
     soft: "soft",
     mute: "mute",
     line: "line",
+    control: "control",
     divider: "div",
     accent: "green",
     onAccent: "onGreen",

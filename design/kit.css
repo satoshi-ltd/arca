@@ -426,3 +426,8 @@ body.kit {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.kit-touch .icon-button,
+.kit-touch .ghost {
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}

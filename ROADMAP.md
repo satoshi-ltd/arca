@@ -66,6 +66,9 @@ _None._
 - **FOLD-GALLERY-UX** — Gallery gestures and playback
   `verify · maintainer · normal`
   accept: infinite scroll both ways, the fast-scroll thumb follows the finger with sparse year chips, pinch density levels (also on iOS), videos autoplay when opened, and Info pauses and resumes a video.
+- **VERIFY-A11Y-CONTROLS** — Contrast, focus and screen-reader actions after the UX review
+  `verify · maintainer · normal · depends: BUILD-DESKTOP`
+  accept: on the desktop build and a phone build, button and field borders read clearly in light and dark, a toggle shows its green focus outline with the keyboard, the dark destructive button is legible, a TalkBack and a VoiceOver gallery tile announces kind, filename and date and offers Select, and the phone Stop syncing confirmation names the folder.
 - **P2-VIDEO** — Video on physical devices
   `verify · maintainer · normal`
   accept: playback with audio, seeking and rotation on Android and iOS; local posters on iOS.
@@ -161,9 +164,6 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
   accept: a yes or no. `replica.js`, `App.jsx` and a test still recover a folder interrupted mid-way through the former upload-only-to-working-copy transition (`converting` mode, restoring missing indexed files before switching to `source`); AGENTS.md forbids legacy modes, yet a phone could still hold that state.
 - **DEC-LAST-CHANGE-SCOPE** — Should Last change count deletions and conflict copies, or be named "Last saved version"?
   `decision · maintainer · low`
-- **DEC-SITE-PALETTE** — Should the site share the app's tokens?
-  `decision · maintainer · low`
-  accept: `site/styles.css` keeps its own palette (paper `#f4f6ef` versus the app's `#F4F6F1`) or adopts the app tokens with a guard test.
 - **LOCAL-CLEANUP** — Old pre-SPEC documents
   `decision · maintainer · low`
   accept: keep, archive or delete `.cache/docs-before-consolidation` (PLAN, PROTOCOL, STATUS and the legacy Syncthing spec from before SPEC existed). APKs and the Cargo cache now prune themselves.
@@ -188,9 +188,6 @@ Older notes listed these as open while later evidence suggests they are resolved
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
 
-- **DESK-SELECT-CATALOG-RACE** — A catalog refresh never drops a folder that was just selected
-  `bug · agent · low`
-  accept: a refresh answered before the hub listed a folder the user selected moments earlier keeps that folder in the saved catalog and does not forget its volume; a daemon test with a delayed refresh.
 - **DEV-FLAKY-MOBILE** — Find the mobile test that failed twice under load
   `chore · agent · low`
   accept: `tests/mobile-*.test.js` run repeatedly at full concurrency on a loaded machine; the test that failed once in `validate-local` for v0.6.79 and once for v0.6.80 (green when rerun alone) is named and its timing made deterministic, or the finding is recorded here as not reproducible.

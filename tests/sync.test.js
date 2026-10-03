@@ -57,6 +57,38 @@ async function setup(t, options = { timer: false }) {
   };
   return { root, hub, volume, connect, node };
 }
+test("selecting a folder waits for a catalog refresh in flight, so the refresh cannot drop it", async (t) => {
+  const { hub, connect } = await setup(t);
+  const replica = await connect("replica");
+  const engine = replica.engine;
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  const metadata = engine.metadata.bind(engine);
+  let held = false;
+  engine.metadata = async (route, ...rest) => {
+    const answer = await metadata(route, ...rest);
+    if (route === "/v1/catalog") {
+      held = true;
+      await gate;
+    }
+    return answer;
+  };
+  const cycle = replica.sync();
+  while (!held) await new Promise((resolve) => setTimeout(resolve, 5));
+  const photos = await hub.api("/v1/volumes", { name: "Photos" });
+  const selection = replica.api("/v1/select", { id: photos.id });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const waiting = !engine.store.volumes().some((row) => row.id === photos.id);
+  release();
+  await cycle;
+  await selection;
+  engine.metadata = metadata;
+  assert.ok(waiting, "the selection waits behind the refresh");
+  assert.ok(engine.config.catalog.some((row) => row.id === photos.id), "the saved catalog keeps the folder");
+  assert.equal(engine.store.volume(photos.id).selected, 1);
+  await replica.sync();
+  assert.ok(engine.store.volumes().some((row) => row.id === photos.id), "the next refresh does not forget its volume");
+});
 const write = (n, v, name, content) => {
   const file = path.join(n.engine.store.volume(v.id).path, name);
   fs.mkdirSync(path.dirname(file), { recursive: true });
