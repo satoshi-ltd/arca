@@ -34,6 +34,33 @@ export function galleryPath(prefix, asset, resource) {
   );
 }
 
+export function recoveredPick(text) {
+  try {
+    const row = JSON.parse(text);
+    if (!row || typeof row !== "object" || Array.isArray(row)) return {};
+    return typeof row.name === "string" && row.name ? { name: row.name } : {};
+  } catch {
+    return {};
+  }
+}
+
+const ascii = (bytes, from, to) =>
+  String.fromCharCode(...bytes.slice(from, to));
+export function pickedExtension(bytes) {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return ".jpg";
+  if (ascii(bytes, 0, 8) === "\x89PNG\r\n\x1a\n") return ".png";
+  if (ascii(bytes, 0, 4) === "GIF8") return ".gif";
+  if (ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 12) === "WEBP") return ".webp";
+  if (ascii(bytes, 4, 8) === "ftyp") {
+    const brand = ascii(bytes, 8, 12);
+    if (["heic", "heix", "hevc", "hevx", "mif1", "msf1"].includes(brand)) return ".heic";
+    if (brand === "avif") return ".avif";
+    if (brand === "qt  ") return ".mov";
+    return ".mp4";
+  }
+  return "";
+}
+
 // Album uploads supplement the ordinary shared-folder working copy.
 // Removing an asset from Photos never proposes a shared deletion.
 export class Gallery {
@@ -683,17 +710,23 @@ export class Gallery {
     const r = this.r;
     let source = await r.store.gallery(r.scope, folder.id);
     source.prefix = source.prefix.replace(/^Phone-/, "Machine-");
-    for (const id of await r.store.corruptPicks(r.scope, folder.id)) {
-      if (await r.files.stat(r.files.picked(r.scope, folder.id, id)))
+    for (const { id, row } of await r.store.corruptPicks(r.scope, folder.id)) {
+      const kept = r.files.picked(r.scope, folder.id, id);
+      if (await r.files.stat(kept)) {
+        const saved = recoveredPick(row);
+        const name =
+          saved.name ||
+          `photo${pickedExtension(await r.files.read(kept, 0, 16).catch(() => []))}`;
         await r.store.putGalleryAsset(r.scope, folder.id, {
           id,
-          name: "photo.jpg",
+          name,
           prefix: source.prefix,
           state: "pending",
           manual: true,
-          picked: { name: "photo.jpg", key: "original" },
+          picked: { name, key: "original" },
           retryAt: 0,
         });
+      }
       await r.store.forgetCorruptPick(r.scope, folder.id, id);
     }
     await r.files.clearGalleryStage(r.scope, folder.id);

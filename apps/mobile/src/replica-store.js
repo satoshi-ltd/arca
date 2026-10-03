@@ -72,11 +72,11 @@ export class ReplicaStore {
   async corruptPicks(scope, volume) {
     return (
       await this.db.getAllAsync(
-        "SELECT asset FROM gallery_corrupt WHERE scope=? AND volume=? AND asset GLOB 'picked-*'",
+        "SELECT asset,row FROM gallery_corrupt WHERE scope=? AND volume=? AND asset GLOB 'picked-*'",
         scope,
         volume,
       )
-    ).map((row) => row.asset);
+    ).map((row) => ({ id: row.asset, row: row.row }));
   }
   async forgetCorruptPick(scope, volume, asset) {
     await this.db.runAsync(

@@ -280,3 +280,50 @@ test("the desktop update flow starts the watcher before the installer, names the
   assert.match(main, /fn sweep_update_watchers/);
   assert.match(main.slice(main.indexOf("async fn bootstrap")), /^[\s\S]{0,200}sweep_update_watchers\(\);/);
 });
+
+test("a daemon whose executable is missing is reported as start-failed and the watcher still cleans up", async (t) => {
+  const { root, home, cli } = await fixture(t);
+  const app = spawn(process.execPath, ["-e", "setTimeout(()=>{},300)"], {
+    stdio: "ignore",
+  });
+  const cleanup = path.join(root, "copy");
+  fs.mkdirSync(cleanup);
+  const code = await run({
+    appPid: app.pid,
+    home,
+    node: path.join(root, "no-such-node"),
+    cli,
+    installerNames: ["arca-no-such-installer*"],
+    pollMs: 50,
+    settleMs: 300,
+    startWaitMs: 20000,
+    cleanupDir: process.platform === "win32" ? undefined : cleanup,
+  });
+  assert.equal(code, 0, "the watcher exits normally instead of crashing on the spawn error");
+  assert.match(fs.readFileSync(path.join(home, "update-watch.log"), "utf8"), / start-failed\n$/);
+  assert.equal(fs.existsSync(path.join(home, "restart-daemon")), true, "the marker stays so the next launch can retry");
+  if (process.platform !== "win32") assert.equal(fs.existsSync(cleanup), false, "the temporary copy is removed");
+});
+
+test("the watcher stops waiting as soon as the daemon cannot be spawned", async () => {
+  let polls = 0;
+  const outcome = await watchUpdate(
+    {
+      now: () => Date.now(),
+      sleep: () => new Promise((resolve) => setTimeout(resolve, 5)),
+      alive: () => false,
+      appRunning: () => false,
+      markerExists: () => true,
+      installerBusy: () => false,
+      daemonAnswers: async () => {
+        polls += 1;
+        return false;
+      },
+      startDaemon: () => {},
+      startFailed: () => true,
+    },
+    { appPid: 1, pollMs: 1, settleMs: 0, startWaitMs: 60000 },
+  );
+  assert.equal(outcome, "start-failed");
+  assert.equal(polls, 1, "only the first check before starting asked the daemon");
+});

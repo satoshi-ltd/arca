@@ -38,6 +38,7 @@ export async function watchUpdate(deps, options) {
   }
   const started = deps.now();
   while (deps.now() - started < startWaitMs) {
+    if (deps.startFailed?.()) return "start-failed";
     await deps.sleep(pollMs);
     if (await deps.daemonAnswers()) {
       deps.clearMarker();
@@ -124,6 +125,7 @@ export function answers(port, timeoutMs = 1500) {
 
 export function realDeps({ home, node, cli, appExe, installerNames }) {
   const marker = path.join(home, "restart-daemon");
+  let spawnFailed = false;
   return {
     now: () => Date.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -155,13 +157,18 @@ export function realDeps({ home, node, cli, appExe, installerNames }) {
         return false;
       }
     },
+    startFailed: () => spawnFailed,
     startDaemon: () => {
       const log = fs.openSync(path.join(home, "daemon.log"), "a");
-      spawn(node, [cli, "daemon", "--home", home], {
+      const child = spawn(node, [cli, "daemon", "--home", home], {
         detached: true,
         stdio: ["ignore", log, log],
         windowsHide: true,
-      }).unref();
+      });
+      child.on("error", () => {
+        spawnFailed = true;
+      });
+      child.unref();
     },
   };
 }

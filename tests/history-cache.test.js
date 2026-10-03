@@ -88,3 +88,40 @@ test("an offline page respects the before cursor so loading more never repeats r
   assert.deepEqual(cachedFileHistory(store(windows), "hub", "v1", "a.txt", 20).versions.map((r) => r.rev), [10]);
   assert.deepEqual(cachedFileHistory(store(windows), "hub", "v1", "a.txt").versions.map((r) => r.rev), [30, 20, 10]);
 });
+
+test("a folder whose saved history is fresh never stops the next folders from refreshing", async () => {
+  const { warmHistory } = await import("../packages/daemon/history-cache.js");
+  const catalog = [
+    { id: "fresh", historyRetention: "1w", conflictRevision: 1 },
+    { id: "stale", historyRetention: "1w", conflictRevision: 2 },
+  ];
+  const requested = [];
+  const written = [];
+  const version = (remote) => JSON.stringify([0, remote.historyRetention, remote.conflictRevision]);
+  const db = {
+    prepare: (sql) => ({
+      run: (...args) => {
+        if (sql.startsWith("INSERT OR REPLACE")) written.push(args[1]);
+      },
+      get: (...args) => {
+        if (sql.includes("file_generations")) return { generation: 0 };
+        if (sql.includes("FROM history_views") && args[1] === "fresh")
+          return { version: version(catalog[0]), updated: Date.now() };
+        return undefined;
+      },
+    }),
+    exec: () => {},
+  };
+  const engine = {
+    config: { role: "replica", hub: { id: "hub" }, catalog },
+    store: { volumes: () => catalog.map((remote) => ({ id: remote.id, selected: 1 })), db },
+    syncAbort: new AbortController(),
+    request: async (route) => {
+      requested.push(new URL(route, "http://x").searchParams.get("volume"));
+      return { json: async () => ({ versions: [], next: null }) };
+    },
+  };
+  await warmHistory(engine);
+  assert.deepEqual(requested, ["stale", "stale", "stale"], "the stale folder is refreshed in its three windows");
+  assert.deepEqual(written, ["stale", "stale", "stale"]);
+});

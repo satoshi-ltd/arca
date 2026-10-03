@@ -5048,3 +5048,40 @@ test("refused photo library access carries a code the screen can tell from other
   };
   await assert.rejects(f.replica.gallery.options(false), (error) => error.code === undefined);
 });
+
+test("a corrupt pick keeps its saved name, or takes its type from its bytes, never a blind photo.jpg", async (t) => {
+  const heic = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftypheic"), Buffer.alloc(32)]);
+  for (const [saved, bytes, expected] of [
+    ['{"id":"x","name":"IMG_9.HEIC","resources":"abc"}', Buffer.from("pick bytes"), "IMG_9.HEIC"],
+    ["{broken", heic, "photo.heic"],
+    ["{broken", Buffer.from("plain bytes"), "photo"],
+  ]) {
+    const f = await galleryFixture(t);
+    const { replica: r, store, volume } = f;
+    await f.enable();
+    const uri = path.join(f.root, "pick.bin");
+    fs.writeFileSync(uri, bytes);
+    f.offline();
+    await assert.rejects(r.gallery.addPhotos(volume.id, [{ uri, fileName: "pick.bin" }]));
+    const pending = (await store.galleryPreview(r.scope, volume.id, false, 24)).find((item) => item.picked);
+    await store.db.runAsync("UPDATE gallery_assets SET row=? WHERE asset=?", saved, pending.id);
+    await store.clearInterrupted(r.scope);
+    f.online();
+    await r.sync(true);
+    const recovered = await store.galleryAsset(r.scope, volume.id, pending.id);
+    assert.ok(recovered, `${saved} is recovered`);
+    assert.equal(recovered.name, expected);
+    assert.equal(recovered.state, "accepted");
+  }
+  const { pickedExtension, recoveredPick } = await import("../apps/mobile/src/gallery.js");
+  assert.equal(pickedExtension(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0])), ".jpg");
+  assert.equal(pickedExtension(Buffer.concat([Buffer.from([0x89]), Buffer.from("PNG\r\n\x1a\n")])), ".png");
+  assert.equal(pickedExtension(Buffer.from("GIF89a")), ".gif");
+  assert.equal(pickedExtension(Buffer.from("RIFF\0\0\0\0WEBPVP8 ")), ".webp");
+  assert.equal(pickedExtension(Buffer.concat([Buffer.alloc(4), Buffer.from("ftypqt  ")])), ".mov");
+  assert.equal(pickedExtension(Buffer.concat([Buffer.alloc(4), Buffer.from("ftypisom")])), ".mp4");
+  assert.equal(pickedExtension(Buffer.from("text")), "");
+  assert.deepEqual(recoveredPick('{"name":"a.jpg","prefix":"P","creationTime":5,"x":1}'), { name: "a.jpg" });
+  assert.deepEqual(recoveredPick("[1]"), {});
+  assert.deepEqual(recoveredPick("{broken"), {});
+});

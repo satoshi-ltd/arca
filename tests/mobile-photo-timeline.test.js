@@ -1380,3 +1380,22 @@ test("the All photos note says what uploads and how many", async () => {
   assert.equal(allPhotosNote({ videos: false, limited: false, count: null }), "Uploads every photo on this phone");
   assert.equal(allPhotosNote({ videos: false, limited: false }), "Uploads every photo on this phone");
 });
+
+test("a hub that gains an undated photo beyond the first page makes the undated group load again", async () => {
+  const rows = ["u5", "u4", "u3", "u2", "u1"].map((name) => ({ path: `${name}.jpg`, date: null }));
+  const { api, calls } = fakeHub(rows);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  await gallery.refresh();
+  const loaded = await gallery.load("undated");
+  assert.equal(loaded.months.undated.complete, true);
+  assert.equal(loaded.months.undated.items.length, 5);
+  rows.push({ path: "u0.jpg", date: null });
+  const refreshed = await gallery.refresh();
+  assert.equal(refreshed.undated, 6);
+  assert.equal(refreshed.months.undated.complete, false, "the grown group is no longer treated as complete");
+  const before = calls.length;
+  const again = await gallery.load("undated");
+  assert.ok(calls.length > before, "loading it asks the hub again");
+  assert.equal(again.months.undated.items.length, 6);
+  assert.ok(again.months.undated.items.some((item) => item.path === "u0.jpg"), "the new photo appears");
+});

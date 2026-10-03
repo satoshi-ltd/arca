@@ -88,7 +88,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.102";
+const APP_VERSION = "0.6.103";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -564,7 +564,7 @@ let status,
   folderPrefix = "",
   folderSearch = "",
   folderSearchOpen = false,
-  folderCursors = [""],
+  folderPageCount = 1,
   historyRows = [],
   historyNext = null,
   historyVersions = [],
@@ -3203,22 +3203,25 @@ async function folderBrowser(v, recent, pending = false) {
     ? `<div class="folder-browser-search"><input id="folder-search-input" type="search" aria-label="Search files" placeholder="Search files" value="${escape(folderSearch)}" maxlength="256">${button("Search", "folder-search-apply", "", "secondary")}</div>`
     : "";
   try {
-    const pages = await Promise.all(
-      folderCursors.map((after) =>
-        readFolderPage(
-          "/v1/browse?" +
-            new URLSearchParams({
-              volume: v.id,
-              prefix: folderPrefix,
-              search: folderSearch,
-              after,
-              limit: "100",
-            }),
-          pending,
-        ),
-      ),
-    );
-    if (pages.some((page) => !page)) return tools + scaffoldRow("history");
+    const pages = [];
+    let after = "";
+    for (let loaded = 0; loaded < folderPageCount; loaded++) {
+      const page = await readFolderPage(
+        "/v1/browse?" +
+          new URLSearchParams({
+            volume: v.id,
+            prefix: folderPrefix,
+            search: folderSearch,
+            after,
+            limit: "100",
+          }),
+        pending,
+      );
+      if (!page) return tools + scaffoldRow("history");
+      pages.push(page);
+      if (!page.next) break;
+      after = page.next;
+    }
     const data = {
       entries: [
         ...new Map(
@@ -3227,7 +3230,7 @@ async function folderBrowser(v, recent, pending = false) {
       ],
       next: pages[pages.length - 1].next,
     };
-    const capped = Boolean(data.next) && folderCursors.length >= MAX_FOLDER_PAGES;
+    const capped = Boolean(data.next) && pages.length >= MAX_FOLDER_PAGES;
     return (
       tools +
       search +
@@ -3244,7 +3247,7 @@ async function folderBrowser(v, recent, pending = false) {
       (data.next
         ? capped
           ? `<p class="hint">Showing the first ${(MAX_FOLDER_PAGES * 100).toLocaleString("en")} files. Search to narrow the list.</p>`
-          : `<div class="pagination">${button("Show more files", "browse-more", data.next, "secondary")}</div>`
+          : `<div class="pagination">${button("Show more files", "browse-more", String(pages.length), "secondary")}</div>`
         : "")
     );
   } catch (error) {
@@ -3275,7 +3278,7 @@ async function renderDetail(pending = false) {
     folderPrefix = "";
     folderSearch = "";
     folderSearchOpen = false;
-    folderCursors = [""];
+    folderPageCount = 1;
     folderReturn = { tab: "files", scroll: 0 };
   }
   if (folderTab === "gallery") {
@@ -4838,8 +4841,8 @@ async function handle(name, id, control) {
     const keepScroll = name === "browse-more" || name === "browse-retry";
     const scroll = keepScroll ? $(".page")?.scrollTop || 0 : 0;
     if (name === "browse-more") {
-      if (!folderCursors.includes(id)) folderCursors = [...folderCursors, id];
-    } else if (name !== "browse-retry") folderCursors = [""];
+      if (folderPageCount === Number(id)) folderPageCount += 1;
+    } else if (name !== "browse-retry") folderPageCount = 1;
     await render();
     if (keepScroll && $(".page")) $(".page").scrollTop = scroll;
     if (name === "folder-search-toggle" && folderSearchOpen)
@@ -4880,7 +4883,7 @@ async function handle(name, id, control) {
       folderPrefix = "";
       folderSearch = "";
       folderSearchOpen = false;
-      folderCursors = [""];
+      folderPageCount = 1;
     }
     detailId = id;
     await render();

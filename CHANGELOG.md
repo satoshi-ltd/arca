@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.103 — 2026-10-03
+
+- The desktop Files list no longer loses a file when the folder changes while you press Show more.
+- A folder whose saved history is up to date no longer stops the next folders from refreshing theirs.
+- A recovered pending photo keeps its own name instead of becoming `photo.jpg`, and the phone's Undated group loads again when its count grows.
+- After a failed update, the watcher reports a daemon that cannot be started instead of closing without a trace.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.102 — 2026-10-03
 
 - The desktop tray no longer says "needs attention" with an alert icon when only the hub is unreachable: it keeps its plain icon and reads "Arca · offline", and real problems (conflicts, folder or backup errors) still raise the alert.

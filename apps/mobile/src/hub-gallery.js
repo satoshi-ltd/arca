@@ -57,18 +57,28 @@ function withTimeline(state, data) {
       (month) => before.get(month) !== after.get(month),
     ),
   );
+  const months = { ...state.months };
+  const undatedChanged = undated !== state.undated;
+  if (undatedChanged && months.undated)
+    months.undated = {
+      ...months.undated,
+      fresh: 0,
+      complete: false,
+      next: null,
+    };
   if (!changed.size) {
     const total = totalOf(timeline, undated);
     return {
-      changed,
+      changed: undatedChanged ? new Set(["undated"]) : changed,
       state:
-        undated === state.undated && total === state.total
+        !undatedChanged && total === state.total
           ? state
-          : { ...state, undated, total },
+          : { ...state, undated, total, months },
     };
   }
-  const months = { ...state.months };
+  if (undatedChanged) changed.add("undated");
   for (const month of changed) {
+    if (month === "undated") continue;
     if (!after.has(month)) delete months[month];
     else if (months[month])
       months[month] = { ...months[month], fresh: 0, complete: false, next: null };

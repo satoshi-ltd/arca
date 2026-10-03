@@ -6643,3 +6643,51 @@ test("the Files list appends pages under one Show more files button, keeps the a
   await until(() => rows() === 200 && w.document.body.getAttribute("aria-busy") === "false");
   assert.deepEqual(browsed.at(-1), { after: "p1", search: "f1" }, "Show more keeps the applied search");
 });
+
+test("Show more still lists every file when the folder gained one at the top meanwhile", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-files-shift-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const names = Array.from({ length: 130 }, (_, n) => `f${String(n).padStart(3, "0")}.txt`);
+  const page = (after) => {
+    const rest = names.filter((name) => !after || name > after);
+    const entries = rest.slice(0, 100).map((name) => ({ path: name, name, size: 10, rev: 1, directory: false }));
+    return { entries, next: rest.length > 100 ? entries.at(-1).name : null };
+  };
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), platform: "darwin", role: "replica", hubUnavailable: false, hubName: "Casa", hub: "http://127.0.0.1:49999" };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [{ ...volume, selected: 1, gallery: false }] };
+        if (args.route === "/v1/machines") return { machines: [] };
+        if (args.route.startsWith("/v1/browse")) return page(new URL(args.route, "http://x").searchParams.get("after"));
+        if (args.route.startsWith("/v1/activity") || args.route.startsWith("/v1/history")) return { versions: [], next: null };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector('.folder-card[data-action="folder-detail"]'));
+  w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
+  const rows = () => w.document.querySelectorAll(".browser-file-row").length;
+  await until(() => rows() === 100 && w.document.body.getAttribute("aria-busy") === "false");
+  names.unshift("a000.txt");
+  w.document.querySelector('[data-action="browse-more"]').click();
+  await until(() => rows() === 131 && w.document.body.getAttribute("aria-busy") === "false");
+  assert.ok(w.document.querySelector('.browser-file-row[aria-label="Open f099.txt"]'), "the file that moved past the first page is still listed");
+  assert.equal(w.document.querySelector('[data-action="browse-more"]'), null);
+});

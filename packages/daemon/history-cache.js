@@ -110,7 +110,8 @@ export async function warmHistory(engine) {
         return;
       } // Optional history must not fail a completed file sync.
     }
-    if (!pages.length || signal.aborted || config.hub?.id !== hub) return;
+    if (signal.aborted || config.hub?.id !== hub) return;
+    if (!pages.length) continue;
     const write = store.db.prepare(
       "INSERT OR REPLACE INTO history_views VALUES(?,?,?,?,?,?)",
     );
