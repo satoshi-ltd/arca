@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.97 · proposals</span>
+      <span class="kit-version">v0.6.98 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -46,17 +46,17 @@
 <div class="folder-browser-pages"><button type="button" class="secondary"><span data-icon="chevron-left"></span>First files</button><button type="button" class="secondary"><span data-icon="chevron-right"></span>Next files</button></div>
               <p class="kit-caption">History · pages append</p>
 <div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>rev 189886 · 2 h ago</p></div></div></div>
-<div class="pagination"><button type="button">Load more</button></div>
+<div class="pagination"><button type="button" class="secondary">Load more</button></div>
               <p class="kit-caption">History with nothing cached · a Loading label</p>
 <div class="section-label">Loading</div><div class="history-group"><div class="history-row"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><div><strong>&nbsp;</strong></div></div></div>
             </div></figure>
             <figure><figcaption>Proposed</figcaption><div class="kit-draw">
               <p class="kit-caption">Files · rows append, like the phone</p>
 <div class="history-group folder-explorer"><div class="browser-file-row" role="button" tabindex="0"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>12 KB</p></div><span data-icon="chevron-right"></span></div><div class="browser-file-row" role="button" tabindex="0"><span data-icon="file-text"></span><div><strong>notes.md</strong><p>9 KB</p></div><span data-icon="chevron-right"></span></div></div>
-<div class="pagination"><button type="button">Show more files</button></div>
+<div class="pagination"><button type="button" class="secondary">Show more files</button></div>
               <p class="kit-caption">History · the same word</p>
 <div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>rev 189886 · 2 h ago</p></div></div></div>
-<div class="pagination"><button type="button">Show more</button></div>
+<div class="pagination"><button type="button" class="secondary">Show more</button></div>
               <p class="kit-caption">Placeholder rows need no label</p>
 <div class="history-group"><div class="history-row"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><div><strong>&nbsp;</strong></div></div></div>
             </div></figure>
@@ -64,104 +64,42 @@
           <div class="kit-rules"><div><strong>Accept</strong><p>Files, History and a file's history on desktop and web end in one Show more button (Show more files, Show more, Show more versions) that appends the next rows and keeps scroll and typed search, as DESK-FILES-PAGING describes; the phone's buttons use the same words; placeholder rows carry no Loading label; JSDOM tests cover the three lists and <code>design/desktop.html</code> shows a list ending in Show more.</p></div></div>
         </article>
 
-        <article class="kit-board" data-board="UI-MOB-GALLERY-ALL-PHOTOS">
-          <header><code>UI-MOB-GALLERY-ALL-PHOTOS</code><h3>All photos says what it uploads</h3><span>Mobile</span></header>
-          <p class="kit-note"><strong>Why.</strong> Unticking the last album silently turns the choice into All photos, and saving then uploads the whole library without a word about it. The picker also offers Open settings for any error, not only a permission error. The proposal states what All photos uploads and how many items that is, and shows Open settings only when the phone refused access.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Choose albums · nothing ticked</p>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-section"><div class="m-title-row"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Back</span><span class="m-heading m-grow">Choose albums</span></div><div class="m-list"><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">All photos</span></div><div class="m-row-action"><span data-icon="check" data-size="20"></span></div></div><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">Camera</span><span class="m-caption">1,240 items</span></div></div></div><span class="m-button m-primary">Save changes</span></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">Choose albums · All photos explains itself</p>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-section"><div class="m-title-row"><span class="m-back"><span data-icon="chevron-left" data-size="20"></span>Back</span><span class="m-heading m-grow">Choose albums</span></div><div class="m-list"><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">All photos</span><span class="m-caption">Uploads every photo and video on this phone · 5,412 items</span></div><div class="m-row-action"><span data-icon="check" data-size="20"></span></div></div><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">Camera</span><span class="m-caption">1,240 items</span></div></div></div><span class="m-button m-primary">Save changes</span></div></div></div>
-              <p class="kit-caption">Photos refused · the only case that offers Open settings</p>
-<div class="m-screen m-fragment"><div class="m-body"><div class="m-section"><span class="m-caption">Arca cannot read your photos. Allow access in Settings.</span><span class="m-button">Open settings</span></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>With no album ticked the All photos row carries the caption and the item count; Open settings appears only when the error is a permission refusal; the photo-uploads SPEC section and a mobile test cover both.</p></div></div>
-        </article>
 
-        <article class="kit-board" data-board="UI-SITE-PHONE-CTA">
-          <header><code>UI-SITE-PHONE-CTA</code><h3>A phone visitor can reach the phone apps</h3><span>Site</span></header>
-          <p class="kit-note"><strong>Why.</strong> At phone width the site's hero offers one primary action, Download for macOS, which a phone visitor cannot use, and the hero illustration's floating card can cover text. The proposal adds a plain link to the mobile section under the primary action at narrow widths and moves the card so no text is covered.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Hero actions at 390 px</p>
-<div class="heading-actions"><button type="button" class="primary"><span data-icon="download"></span>Download for macOS</button></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">Hero actions at 390 px · a second, quiet way in</p>
-<div class="heading-actions"><button type="button" class="primary"><span data-icon="download"></span>Download for macOS</button><button type="button" class="text-button"><span data-icon="smartphone"></span>Get Arca for your phone</button></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>At 390 px the hero shows the text link to the Arca for mobile section under the primary action and its illustration card covers no text; a site test checks the link and its target anchor.</p></div></div>
-        </article>
 
-        <article class="kit-board" data-board="UI-DESK-TOUCH-TARGETS">
-          <header><code>UI-DESK-TOUCH-TARGETS</code><h3>Web admin on a phone has touchable buttons</h3><span>Desktop and web</span></header>
-          <p class="kit-note"><strong>Why.</strong> The web interface opened on a phone keeps 28 to 32 px ghost and icon buttons, under the 44 px the phone app guarantees. The proposal raises them to the shared minimum touch target at 760 px and narrower, and only there.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Row actions at 760 px and narrower</p>
-<div class="heading-actions"><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button><button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button><button type="button" class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></button></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-touch">
-              <p class="kit-caption">The same actions with a 44 px target</p>
-<div class="heading-actions"><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button><button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button><button type="button" class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></button></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>At 760 px and narrower every ghost and icon button measures at least <code>--touch-target-min</code>; wider layouts are unchanged; a stylesheet contract test covers the media query.</p></div></div>
-        </article>
 
         <article class="kit-board" data-board="UI-SYS-PRESSED">
-          <header><code>UI-SYS-PRESSED</code><h3>Every touch answers</h3><span>System</span></header>
+          <header><code>UI-SYS-PRESSED</code><h3>Every touch answers, and every target is big enough</h3><span>System</span></header>
           <p class="kit-note"><strong>Why.</strong> Mobile rows and buttons show no pressed state, and on desktop the secondary and icon buttons hover to the same surface colour they rest on, with no active rule. A press or hover gives no sign that the control heard it. The proposal gives every control one visible response, applied instantly.</p>
           <div class="kit-board-pair">
             <figure><figcaption>Now</figcaption><div class="kit-draw">
               <p class="kit-caption">Controls while pressed or hovered · no change</p>
-<div class="heading-actions"><button type="button" class="primary"><span data-icon="refresh-cw"></span>Sync now</button><button type="button" class="secondary"><span data-icon="folder"></span>Open</button><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button></div><button type="button" class="nav-item"><span data-icon="folder"></span>Folders</button>
+<div class="heading-actions"><button type="button" class="secondary"><span data-icon="folder"></span>Open</button><button type="button" class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></button><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button></div><button type="button" class="nav-item"><span data-icon="folder"></span>Folders</button>
             </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-pressed">
-              <p class="kit-caption">The same controls while pressed or hovered</p>
-<div class="heading-actions"><button type="button" class="primary"><span data-icon="refresh-cw"></span>Sync now</button><button type="button" class="secondary"><span data-icon="folder"></span>Open</button><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button></div><button type="button" class="nav-item"><span data-icon="folder"></span>Folders</button>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-pressed kit-touch">
+              <p class="kit-caption">The same controls while pressed or hovered, with a 44 px target</p>
+<div class="heading-actions"><button type="button" class="secondary"><span data-icon="folder"></span>Open</button><button type="button" class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></button><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button></div><button type="button" class="nav-item"><span data-icon="folder"></span>Folders</button>
             </div></figure>
           </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>Every button, row, tab and photo tile changes background or opacity while pressed or hovered in both themes (hover fill for rows and secondary buttons, 85% opacity for primary buttons and tiles); a stylesheet contract test checks the rules and the phone Pressable styles.</p></div></div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>Every secondary and icon button, row, tab and photo tile changes background or opacity while pressed, in both themes, on desktop (hover limited to <code>(hover: hover)</code>, without clashing with the primary button's existing brightness change) and in the phone Pressables; on coarse pointers (the web admin on a phone) ghost and icon buttons measure at least <code>--touch-target-min</code> instead of 28 to 32 px; stylesheet contract tests check both.</p></div></div>
         </article>
 
-        <article class="kit-board" data-board="UI-SYS-SEGMENTED-DEPTH">
-          <header><code>UI-SYS-SEGMENTED-DEPTH</code><h3>Segmented controls show their choice</h3><span>System</span></header>
-          <p class="kit-note"><strong>Why.</strong> The desktop track is the same surface colour as the selected segment, so in light only a one-pixel shadow marks the choice, and on the phone in dark the selected segment is darker than its track. In the 320 px side column, Forever wraps to a second line.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw kit-column">
-              <p class="kit-caption">Version history · 320 px column</p>
-              <div class="segmented" role="group" aria-label="Version history"><button type="button" class="active">1 week</button><button type="button">30 days</button><button type="button">Forever</button></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-segments">
-              <p class="kit-caption">Version history · the selection stands out, one line</p>
-              <div class="segmented" role="group" aria-label="Version history"><button type="button" class="active">1 week</button><button type="button">30 days</button><button type="button">Forever</button></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>The selected segment is visibly distinct from its track in light and dark on desktop and phone, using two new tokens mirrored in the phone palette, and Version history fits on one row at 320 px; a contrast test covers both themes.</p></div></div>
-        </article>
 
         <article class="kit-board" data-board="UI-SYS-DARK-ELEVATION">
-          <header><code>UI-SYS-DARK-ELEVATION</code><h3>Menus and dialogs lift off the page in dark</h3><span>System</span></header>
-          <p class="kit-note"><strong>Why.</strong> Dark keeps the light theme's shadows, so a menu opened over a card has no visible edge against it. The proposal gives floating surfaces their own raised colour and a one-pixel ring in dark, and leaves light as it is.</p>
+          <header><code>UI-SYS-DARK-ELEVATION</code><h3>Dark surfaces lift off the page and show their selection</h3><span>System</span></header>
+          <p class="kit-note"><strong>Why.</strong> Dark keeps the light theme's shadows, so a menu opened over a card has no visible edge against it, and the menu's buttons look like boxes inside it. The selected segment of a segmented control is the same colour as its track on desktop, and darker than its track on the phone in dark. The proposal gives floating surfaces a raised colour and a one-pixel ring in dark, and gives the selected segment a visible fill in both themes.</p>
           <div class="kit-board-pair">
             <figure><figcaption>Now</figcaption><div class="kit-draw">
               <p class="kit-caption">A menu over a card · dark theme</p>
-              <div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>4.2 MB</p></div></div></div>
+              <div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>4.2 MB</p></div></div></div><div class="segmented" role="group" aria-label="Version history"><button type="button" class="active">1 week</button><button type="button">30 days</button><button type="button">Forever</button></div>
               <details class="details-menu" open><summary class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="folder-search"></span>Show in Finder</button><button type="button" class="secondary danger"><span data-icon="trash-2"></span>Delete file</button></div></details>
             </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-elevated">
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-elevated kit-segments">
               <p class="kit-caption">The same menu with an edge and a raised surface</p>
-              <div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>4.2 MB</p></div></div></div>
+              <div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>4.2 MB</p></div></div></div><div class="segmented" role="group" aria-label="Version history"><button type="button" class="active">1 week</button><button type="button">30 days</button><button type="button">Forever</button></div>
               <details class="details-menu" open><summary class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="folder-search"></span>Show in Finder</button><button type="button" class="secondary danger"><span data-icon="trash-2"></span>Delete file</button></div></details>
             </div></figure>
           </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>In dark, a menu, a dialog and a phone sheet over a card show a visible edge and a raised surface on desktop and phone; light is unchanged; a contrast test compares floating and card surfaces.</p></div></div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>In dark, a menu, a dialog and a phone sheet over a card show a visible edge and a raised surface, and menu buttons are transparent inside the menu; the selected segment is distinct from its track in light and dark on desktop and phone (two new tokens mirrored in the phone palette); light floating surfaces are unchanged; a contrast test covers both.</p></div></div>
         </article>
 
         <article class="kit-board" data-board="UI-SYS-HISTORY-DAYS">
@@ -170,14 +108,14 @@
           <div class="kit-board-pair">
             <figure><figcaption>Now</figcaption><div class="kit-draw">
               <p class="kit-caption">A day group today</p>
-<div class="section-label">Oct 3, 2026</div><div class="history-group"><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0042.jpg</strong><p>4.2 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165764</span><span class="row-time">2 min ago</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0041.jpg</strong><p>3.9 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165702</span><span class="row-time">1 hr ago</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div></div>
+<div class="section-label">Oct 3, 2026</div><div class="history-group"><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0042.jpg</strong><p>4.2 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165764</span><span class="row-time">2 min ago</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0041.jpg</strong><p>3.9 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165702</span><span class="row-time">1 h ago</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div></div>
             </div></figure>
             <figure><figcaption>Proposed</figcaption><div class="kit-draw">
               <p class="kit-caption">The header names the day, rows show HH:mm</p>
 <div class="section-label">Today</div><div class="history-group"><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0042.jpg</strong><p>4.2 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165764</span><span class="row-time">14:27</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div><div class="history-row"><span data-icon="git-commit-horizontal"></span><div><strong>IMG_0041.jpg</strong><p>3.9 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165702</span><span class="row-time">13:05</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div></div>
             </div></figure>
           </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>Group headers read Today, Yesterday or a short date (the year only when it is not the current one); every row time is HH:mm in tabular figures; the revision column aligns across rows; desktop and phone match; JSDOM and phone tests cover the labels.</p></div></div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>Group headers read Today, Yesterday or a short date (rows older than a day show "Oct 1, 14:00" under "Oct 1, 2026" today) (the year only when it is not the current one); every row time is HH:mm in tabular figures; the revision column aligns across rows; desktop and phone match; JSDOM and phone tests cover the labels.</p></div></div>
         </article>
 
         <article class="kit-board" data-board="UI-SYS-EMPTY-NEXT-STEP">
@@ -186,14 +124,14 @@
           <div class="kit-board-pair">
             <figure><figcaption>Now</figcaption><div class="kit-draw">
               <p class="kit-caption">History with the Conflicts filter and no conflicts</p>
-<div class="empty"><span data-icon="folder-open" data-size="24"></span><h2>Every change has a history</h2><p>Pick a folder to see its changes.</p></div>
+<div class="empty"><span data-icon="folder-open" data-size="24"></span><h2>Every change has a history</h2><p>Changes to your files appear here.</p></div>
             </div></figure>
             <figure><figcaption>Proposed</figcaption><div class="kit-draw">
               <p class="kit-caption">The filter is named, with the way out</p>
 <div class="empty"><span data-icon="git-branch" data-size="24"></span><h2>No conflicts</h2><p>Clear Conflicts to see every change.</p></div>
             </div></figure>
           </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>No two empty states share a line; the filtered state names the active filter and how to clear it; the offline state says to connect to the hub; each icon matches its view; JSDOM and phone tests cover the three states.</p></div></div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>History with a filter active names the filter and how to clear it instead of "Every change has a history", the three phone History states (nothing yet, filtered, offline) each have their own title and next step, and each icon matches its view; JSDOM and phone tests cover them.</p></div></div>
         </article>
 
       </section>

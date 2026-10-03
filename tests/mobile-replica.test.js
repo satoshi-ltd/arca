@@ -5033,3 +5033,18 @@ for (const access of ["limited", "denied", "unavailable"]) {
     assert.equal(lookups, 0, "restricted access never proves a deletion");
   });
 }
+
+test("refused photo library access carries a code the screen can tell from other errors", async (t) => {
+  const f = await galleryFixture(t);
+  f.media.permission = async () => ({ granted: false, accessPrivileges: "none" });
+  await assert.rejects(f.replica.gallery.options(false), (error) => {
+    assert.equal(error.code, "PHOTO_PERMISSION");
+    assert.match(error.message, /photo library access/);
+    return true;
+  });
+  f.media.permission = async () => ({ granted: true, accessPrivileges: "limited" });
+  f.media.albums = async () => {
+    throw new Error("The library is busy");
+  };
+  await assert.rejects(f.replica.gallery.options(false), (error) => error.code === undefined);
+});

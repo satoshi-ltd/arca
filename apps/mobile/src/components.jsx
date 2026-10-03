@@ -967,7 +967,7 @@ export function FolderRow({
   ) : (
     <Pressable
       accessibilityRole={selectable ? "checkbox" : "button"}
-      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${status ? `, ${status}` : ""}`}
+      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${description ? `, ${description}` : ""}${status ? `, ${status}` : ""}`}
       accessibilityState={{
         disabled: !!disabled,
         ...(selectable ? { checked: selected } : {}),

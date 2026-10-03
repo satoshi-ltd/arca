@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.97 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.6.98 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -875,7 +875,7 @@ The menu-bar icon keeps the original arca mark on a fixed 48×36px Retina canvas
 - **Devices:** Hub connection (server icon, name, HUB tag, platform and address, with an icon-only Disconnect on phones and a labelled one on the Fold), then Devices rows (40 dp tiles on the Fold with monitor or phone icons). No backup section.
 - **Settings:** Hub connection, This device (the Device name input saves on Done or blur), local synchronization, background scheduling and system notifications, storage, text size and theme (Light/Dark/System), then Service with app version and build, OS, runtime limits and allowlisted diagnostics, and a centered quiet version label at the end. Phones stack descriptions above controls; the Fold places descriptions left and controls right.
 - **Incoming share sheet:** a grouped file summary, the chosen path in a folder card, contiguous folder rows with local counts ("15 files · 1.0 KB local"), Save here as the only primary action and X or Cancel as the same discard.
-- **Photo uploads** copy: Link album… opens configuration directly (loading albums and asking for missing permission, with Retry and Open settings); the form groups Album and Include videos, album selection replaces the sheet content with a checklist (every album can be ticked or cleared, All photos clears the list, the row on the Photo uploads screen summarizes it as the album's name or "N albums") and Back, Save changes stays disabled until something changes, and How it works is a collapsed disclosure. Gallery rows show accepted photo count and uploaded bytes, never local storage.
+- **Photo uploads** copy: Link album… opens configuration directly (loading albums and asking for missing permission, with Retry, and Open settings only when access is refused); the form groups Album and Include videos, album selection replaces the sheet content with a checklist (every album can be ticked or cleared, All photos clears the list and says what it uploads and how many, "Uploads every photo and video on this phone · 5,412 items" ("allowed" under limited access); the row on the Photo uploads screen summarizes the choice as the album's name, "N albums" or that same note) and Back, saving a switch from albums to All photos asks first, naming what will upload and that it uses mobile data, Save changes stays disabled until something changes, and How it works is a collapsed disclosure. Gallery rows show accepted photo count and uploaded bytes, never local storage.
 
 ### Gallery on mobile
 

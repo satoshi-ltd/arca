@@ -26,7 +26,21 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **UI-SYS-PRESSED** — Every touch answers, and every target is big enough
+  `ui · agent · normal`
+  accept: the board.
+- **UI-SYS-EMPTY-NEXT-STEP** — Empty states say what to do
+  `ui · agent · normal`
+  accept: the board.
+- **DESK-FILES-PAGING** — Files, History and a file's history grow by appending
+  `chore · agent · low`
+  accept: the desktop folder browser keeps the rows it has and appends the next cursor page instead of replacing them, up to a bounded number of rows, and typed search and scroll survive; History and a file's history keep appending; JSDOM tests cover the three lists. The interface follows board UI-DESK-FILES-PAGING.
+- **UI-DESK-FILES-PAGING** — One way to show more
+  `ui · agent · low`
+  accept: the board.
+- **DESK-NATIVE-TRAY-OFFLINE** — The native tray says "needs attention" while only the hub is unreachable
+  `bug · agent · low`
+  accept: when the daemon's phase is `offline` and the only error is the hub's, the tray shows the plain icon and the text "Arca · offline" instead of the alert icon and "Arca · needs attention" (`tray_state` and the tooltip in `apps/desktop/src-tauri/src/main.rs`); conflicts, folder errors and backup errors still raise the alert; a Rust test next to the existing `tray_state` test. Needs a desktop build.
 
 ## In progress
 
@@ -66,9 +80,6 @@ _None._
 - **FOLD-GALLERY-UX** — Gallery gestures and playback
   `verify · maintainer · normal`
   accept: infinite scroll both ways, the fast-scroll thumb follows the finger with sparse year chips, pinch density levels (also on iOS), videos autoplay when opened, and Info pauses and resumes a video.
-- **VERIFY-A11Y-CONTROLS** — Contrast, focus and screen-reader actions after the UX review
-  `verify · maintainer · normal · depends: BUILD-DESKTOP`
-  accept: on the desktop build and a phone build, button and field borders read clearly in light and dark, a toggle shows its green focus outline with the keyboard, the dark destructive button is legible, a TalkBack and a VoiceOver gallery tile announces kind, filename and date and offers Select, and the phone Stop syncing confirmation names the folder.
 - **P2-VIDEO** — Video on physical devices
   `verify · maintainer · normal`
   accept: playback with audio, seeking and rotation on Android and iOS; local posters on iOS.
@@ -188,103 +199,56 @@ Older notes listed these as open while later evidence suggests they are resolved
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
 
-- **DESK-INFO-PANEL-MOTION** — The photo Info panel animates only opacity and transform
+- **DESK-INFO-PANEL-MOTION** — The photo Info panel slides with opacity and transform only
   `bug · agent · low`
-  accept: the Info panel in the photo viewer opens and closes with opacity and transform only, as SPEC's motion rule says, instead of transitioning `width` and `right`; the viewer image does not jump; reduced motion makes it instant; a stylesheet contract test checks the rule.
-- **MOTION-GALLERY-SETTLE** — Thumbnails fade in and the selection scale eases
+  accept: the Info panel in the photo viewer slides in and out with transform and opacity, and the image area resizes at once, as SPEC's motion rule requires, instead of transitioning `width` and `right`; reduced motion makes it instant; `tests/motion.test.js` bans transitions on `width`, `left` and `right` and decides what to do with the progress bar at `style.css:2397`, which breaks the same rule.
+- **SITE-HERO-TRUE-UI** — The site hero draws the real app and covers no text on a phone
   `chore · agent · low`
-  accept: gallery thumbnails fade in over `--motion-fast` on desktop and phone (no fade under reduced motion, and the Android `Image` default fade no longer ignores the tokens) and the 94% selection scale transitions over the same duration; `tests/motion.test.js` covers both.
-- **SITE-HERO-TRUE-UI** — The site hero draws the real app
-  `chore · agent · low`
-  accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), and a site test lists them.
+  accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), at 390 px its floating "Phone & tablet" card covers no text, and a site test lists the elements.
+- **MOB-VIDEO-SAFE-AREA** — The photo viewer's video surface uses safe-area insets
+  `bug · agent · low`
+  accept: the video surface in the phone viewer uses the safe-area insets instead of the fixed 90 and 110 margins in `theme.js`; a layout test covers a device with a cutout.
 - **MOB-VIEWER-CHROME-TAP** — A tap hides the photo viewer's chrome
-  `chore · agent · low`
-  accept: a single tap on the photo viewer fades its top bar over `--motion-enter`, Back still works, the video surface uses the safe-area insets instead of fixed margins and reduced motion makes the change instant; this adds a gesture, so it needs the maintainer's validation before it enters Queue.
+  `feature · agent · low · depends: maintainer validation`
+  accept: a single tap on the photo viewer fades its top bar over `--motion-enter` (a single tap waits 300 ms to be told from the double tap), Back still works and reduced motion makes the change instant; this adds a gesture, so the maintainer validates it before it enters Queue.
 
-- **DEV-FLAKY-MOBILE** — Find the mobile test that failed twice under load
+- **DESIGN-COVERAGE** — Draw the few shipped views the design kit still lacks
   `chore · agent · low`
-  accept: `tests/mobile-*.test.js` run repeatedly at full concurrency on a loaded machine; the test that failed once in `validate-local` for v0.6.79 and once for v0.6.80 (green when rerun alone) is named and its timing made deterministic, or the finding is recorded here as not reproducible.
-- **DESK-FILES-PAGING** — Files, History and a file's history grow by appending
-  `chore · agent · low`
-  accept: the desktop folder browser keeps the rows it has and appends the next cursor page instead of replacing them, up to a bounded number of rows, and typed search and scroll survive; History and a file's history keep appending; JSDOM tests cover the three lists. The interface follows board UI-DESK-FILES-PAGING.
-- **DESIGN-COVERAGE** — Draw the shipped views the design kit still lacks
-  `chore · agent · low`
-  accept: `design/mobile.html` draws Files and Recent of an ordinary folder, the file detail, History, Devices (connected and unpaired), Settings, the incoming share sheet, the viewer and the approval sheet as the app renders them; `design/desktop.html` draws the file detail, the gallery viewer with Info, the Daemon stopped page, web access (with its sign-in help), the approval dialog, Settings → Network and Allow HTTP connections, the Erase this hub dialog, the file-list error and the danger zone; the design tests keep passing and no board is added.
+  accept: `design/desktop.html` draws the gallery viewer with Info and the Daemon stopped page, and `design/mobile.html` draws History, Devices and Settings as the app renders them (the viewer is the "Now" that open motion tasks need); the design tests keep passing and no board is added.
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
-  accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.
+  accept: README keeps only its one-line status banner; the dated or status passages (about 16, for example "September 10 checkout", "implemented locally", "prepared locally, not deployed") and feature narration that SPEC already owns become short descriptions or pointers into SPEC; the three orphan sections after Public website are folded in or removed, the documents list names the five documents, line 152's "No commit or push without explicit authorization" no longer contradicts AGENTS' loop, and Casa's LAN IP no longer appears in the public README.
 - **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
   `bug · agent · low`
-  accept: `publish-docker.yml` publishes `latest` only when the run's commit is the current `main` tip (a re-run or a late run of an older version still pushes its version tag but never `latest`); a workflow contract test covers the condition.
-- **MOB-GALLERY-ALBUM-RELEASE** — Changing the selected albums releases pending uploads instead of refusing
-  `feature · agent · low`
-  accept: changing the albums or the videos setting while uploads are pending no longer fails with "Finish pending uploads…"; the pending and failed library photos (not manual picks, not picked files) are released to unavailable and the next scan re-adds those that belong to the new selection; uploaded files are never touched; a replica test covers adding and removing an album with pending uploads.
-- **MOB-HUB-LIVENESS** — Hub-busy liveness probe on mobile
-  `feature · agent · low`
-  accept: a busy hub is told apart from an unreachable one before the phone marks itself offline; client tests cover both, including a hub that needs more than the 10-second catalog deadline (it is now marked offline on every cycle); a deadline that grows on consecutive timeouts while no cycle has connected is one option.
-- **MOB-ADAPTIVE-CHUNKS** — Adaptive mobile download blocks
-  `feature · agent · low · depends: a Fold throughput measurement`
-  accept: block size grows toward desktop's 8 MiB on fast links and shrinks on slow ones, measured on the Fold before and after.
-- **MOB-401-IDENTITY** (F73) — Credential identity check on 401
-  `feature · agent · low`
-  accept: a 401 from a different hub identity is told apart from a revoked credential, while a hub destroyed and set up again at the same address still unpairs replicas.
-- **P2-MEDIA-LIBRARY** — Migrate to the new media library API
-  `chore · agent · low`
-  accept: the gallery uses `expo-media-library`'s `Query`/`Asset`/`Album` model instead of `expo-media-library/legacy`, with tests; device evidence is a follow-up `verify`.
+  accept: `publish-docker.yml` pushes `latest` only when the run's version equals the `package.json` version on the current `main`; a re-run or late run of an older version still pushes its own version tag; a workflow contract test covers the condition.
+- **MOB-GALLERY-ALBUM-RELEASE** — Changing the selected albums while photos are pending is allowed
+  `feature · agent · normal · depends: a maintainer choice`
+  accept: changing the albums or the videos setting while uploads are pending or failed no longer fails with "Finish pending uploads…" (`gallery.js:102-116`); after the maintainer chooses whether queued photos of an unticked album keep uploading (simplest, no new state) or are dropped, a replica test covers adding and removing an album with pending uploads; uploaded files are never touched.
 
-- **NAT-F01-F10-COPIES** — Android picker/share copies off the UI thread
+- **NAT-F01-F10-COPIES** — Importing a large file from Files on Android no longer freezes the app
   `bug · agent · normal`
-  accept: picker and share copies (F01, F10 native half, F35) run off the UI and module threads with verified completion; device evidence follows.
-- **NAT-F12-F32-ERRORS** — Native error codes and write watchdog
-  `feature · agent · normal`
-  accept: native requests return error codes, Android cancels before connect, and a write watchdog bounds stalled writes; device evidence follows.
+  accept: on Android, Import files picks with `copyToCacheDirectory: false` and copies each file through the existing `receiveShared` into `arca-incoming`, off the UI thread, instead of expo-document-picker copying in the main-thread result handler; iOS stays as it is; a JS test covers it; device evidence follows.
 - **NAT-F03-IOS-CANCEL** — iOS cancel/session race
-  `bug · agent · normal`
-  accept: cancelling during session setup never leaves a request running; device evidence follows.
+  `bug · agent · normal · depends: BUILD-IOS`
+  accept: a per-request cancelled flag, set under the lock and checked before the URL session task is created, so cancelling during session setup throws a cancellation instead of creating a task on an invalidated session; device evidence follows.
 - **NAT-IOS-HASH** — Native hashing on iOS
-  `feature · agent · low`
-- **NAT-ICLOUD-PICKER** — Per-item iCloud photo picker
-  `feature · agent · low`
-- **NAT-SHARE-FEEDBACK** — Share-extension failure feedback
-  `feature · agent · low`
-- **ORG-DESKTOP-SCRIPTS** — Move desktop tooling into `apps/desktop/scripts`
+  `feature · agent · low · depends: BUILD-IOS`
+  accept: a Swift `hashFile` using CryptoKit reads 1 MiB at a time off the main thread with the same storage check as Android's, and a JS test shows the native path is used instead of the JavaScript SHA-256 fallback in `files.js`; device evidence follows.
+- **ORG-FORMAT** — Remove the `npm run format` script
   `chore · agent · low`
-  accept: `desktop-dev`, `stage-runtime`, `sign-local`, `build-release`, `collect-release`, `updater-manifest` and `verify-bundle` live under `apps/desktop/scripts`; the workflows, `apps/desktop/package.json`, tests and SPEC references follow; a CI run passes.
-- **ORG-TAILSCALE-EXPORT** — Move the Casa Tailscale exporter to `deploy/`
-  `chore · agent · low · depends: a maintainer check of Casa's cron path`
-  accept: `scripts/export-tailscale.py` lives under `deploy/` with SPEC updated, and Casa's cron keeps working.
-- **ORG-FORMAT** — Decide what `npm run format` covers
-  `chore · agent · low`
-  accept: the `format` script covers every hand-written source (mobile, design, site, deploy) or is removed; running it changes nothing unexpected.
-- **UI-LUCIDE-TRIM** — Ship only the Lucide icons in use
-  `chore · agent · low`
-  accept: `apps/desktop/src/vendor/lucide.js` (356 KB) holds only the icons the desktop and mobile registries use, and the mobile geometry test still passes.
-- **P2-PERFORMANCE** — Mobile and desktop performance measurements
-  `verify · maintainer · low`
-  accept: native first paint, cold load and large-directory listing latency measured; follow-up agent tasks only where the numbers justify them (native asynchronous inventory, narrower desktop DOM updates).
-- **P2-WEB-TRUST** — Web trust and pairing features (product proposals)
-  `decision · maintainer · low`
-  accept: a decision on console-free initial trust, passkeys, background push for web approval, QR pairing, replica-to-replica pairing, remote hub-admin switching and one-click bidirectional pairing; each approved one becomes its own agent task.
+  accept: the `format` script and the Prettier devDependency are removed and the lockfile updated, because running it would rewrite about 70 files (34,600 diff lines) and nothing uses it; formatting new code can still use `npx prettier`.
 
-- **DESK-UPDATER-TESTS** — Rust tests for the update install flow and Windows
+- **DESK-UPDATER-TESTS** — The Rust updater tests also run on Windows
   `chore · agent · low`
-  accept: `install_update`, daemon stop and the restore marker (`with_recovery`, resume on next launch) are covered by Rust unit tests with the process and plugin boundaries stubbed, and `rust-tests` also runs on `windows-2022` so the PowerShell listing and non-Unix exit handling execute; both pass in CI.
+  accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
 
 - **WEB-REPLICA-CONFLICT-LINKS** — Conflict download links on a replica's web view
   `bug · agent · low`
-  accept: the conflict dialog's download links on a server replica's web view use a route the replica serves (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409); DOM and API tests.
-- **DESK-NATIVE-TRAY-OFFLINE** — The native tray still says "needs attention" while the hub is unavailable
-  `bug · agent · normal`
-  accept: on macOS and Windows the tray icon, tooltip and status menu item read Offline (not the alert icon or "Arca · needs attention") while the hub is unavailable and the replica is not paused; today `tray_state` in `apps/desktop/src-tauri/src/main.rs` returns the alert state whenever `status.error` is set and any unknown phase, including "offline", falls to "needs attention"; a Rust test next to the existing `tray_state` test. Needs a desktop build.
+  accept: the conflict dialog's download links on a server replica's web view use a route the replica serves and its local hash (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409), and the link is hidden when there is no local copy; DOM and API tests.
 
-- **MOB-PAIR-QR** — Pair a phone by scanning a code from the hub
-  `feature · agent · low`
-  accept: the hub's Pair a machine dialog also shows a QR code carrying the hub address and the single-use code, and the phone's pairing step can scan it with the camera and fill both fields; the code stays single use, ten minutes and under the same failure budgets, and a pure parser test covers a valid payload, a malformed one and an expired code. Needs a camera module, so a native build and a maintainer `verify`; the dialog and the scan screen need a board before approval.
 
 ## Later phases
 
 - **P3-I18N** — Localization
   `feature · agent · planned for phase 3`
   accept: strings in catalogs for Tauri, Expo and the shared web frontend; language selection; localized dates, numbers and sizes; dialogs, errors, tray menus and notifications; user content is never translated. English-only through phases 1 and 2.
-- **P3-AUTO-LINK** — Automatic machine linking under a same-Tailscale-owner policy
-  `feature · maintainer · paused, not in target`

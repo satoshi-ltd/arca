@@ -180,7 +180,7 @@ test("Photo uploads lets the user tick any number of albums and summarizes the c
   assert.match(setup, /onPress=\{\(\) => toggle\(\{ id: a\.id, title: a\.title \}\)\}/, "an album is ticked or cleared without leaving the list");
   assert.match(setup, /selected=\{!albums\.length\}[\s\S]{0,160}onPress=\{\(\) => setAlbums\(\[\]\)\}/, "All photos clears the selection");
   assert.match(setup, /`\$\{albums\.length\} albums`/);
-  assert.match(setup, /onPress=\{\(\) => enable\(\{ albums, videos \}\)\}/);
+  assert.match(setup, /onPress=\{\(\) => enable\(\{ albums, videos \}, \{ count: libraryCount, limited \}\)\}/);
   assert.doesNotMatch(setup, /albumId: album\?\.id/, "the single-album save is gone");
   assert.match(setup, /description="Unavailable"[\s\S]{0,120}onPress=\{\(\) => toggle\(held\)\}/, "a selected album that is gone can be unticked");
   assert.match(read("App.jsx"), /Object\.keys\(\s+galleryConfig\(f\)\s+\.cursors \|\| \{\},\s+\)\.length/, "the folder status reads the per-album cursors");

@@ -459,6 +459,3 @@ body.kit {
     0 0 0 1px var(--line),
     var(--shadow-dialog);
 }
-.kit-column {
-  max-width: 320px;
-}

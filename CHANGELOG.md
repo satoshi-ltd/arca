@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.98 — 2026-10-03
+
+- Photo uploads now says what All photos uploads and how many items that is, on its row, on the summary row and in a confirmation before saving a switch from albums to All photos, since that uses mobile data; Open settings appears only when the phone refused photo access.
+
+Needs: native build
+
 ## 0.6.97 — 2026-10-03
 
 - Open file on Android now also tries the file as plain text and then as a generic file, so a Markdown, JSON or other text file opens in a text editor when no app claims its own type; when nothing can open it, the message says so and points to Share.

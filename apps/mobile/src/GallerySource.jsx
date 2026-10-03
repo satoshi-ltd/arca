@@ -13,7 +13,11 @@ import {
   useDesign,
 } from "./components";
 import { ErrorNotice } from "./Notice";
-import { gallerySettingsChanged, sourceAlbums } from "./validation.js";
+import {
+  allPhotosNote,
+  gallerySettingsChanged,
+  sourceAlbums,
+} from "./validation.js";
 
 function GalleryDetails({ children }) {
   const { s } = useDesign();
@@ -74,14 +78,18 @@ export function GallerySetup({ gallery, source, locked, enable }) {
   const [choosing, setChoosing] = useState(false);
   const [preview, setPreview] = useState([]);
   const [error, setError] = useState("");
+  const [denied, setDenied] = useState(false);
+  const [library, setLibrary] = useState(null);
   async function load(includeVideos = videos) {
     setLoading(true);
     setError("");
+    setDenied(false);
     try {
       setOptions(await gallery.options(includeVideos));
       setVideos(includeVideos);
     } catch (error) {
       setError(error.message);
+      setDenied(error.code === "PHOTO_PERMISSION");
     } finally {
       setLoading(false);
     }
@@ -93,9 +101,12 @@ export function GallerySetup({ gallery, source, locked, enable }) {
     if (!options) return;
     let active = true;
     setPreview([]);
+    setLibrary(null);
     gallery.media
       .page({ albumId: albums[0]?.id, videos })
       .then(async (page) => {
+        if (active && !albums.length)
+          setLibrary({ count: page.totalCount ?? null, videos });
         const items = await Promise.all(
           page.assets.slice(0, 4).map(async (item) => {
             try {
@@ -116,10 +127,10 @@ export function GallerySetup({ gallery, source, locked, enable }) {
       active = false;
     };
   }, [gallery, options, albums[0]?.id, videos]);
-  const allLabel =
-    options?.permission.accessPrivileges === "limited"
-      ? "Allowed photos"
-      : "All photos";
+  const limited = options?.permission.accessPrivileges === "limited";
+  const allLabel = limited ? "Allowed photos" : "All photos";
+  const libraryCount = library?.videos === videos ? library.count : null;
+  const allNote = allPhotosNote({ videos, limited, count: libraryCount });
   const changed = gallerySettingsChanged(
     source,
     albums.map((album) => album.id),
@@ -165,6 +176,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
             selectable
             selected={!albums.length}
             name={allLabel}
+            description={allNote}
             disabled={locked || loading}
             onPress={() => setAlbums([])}
           />
@@ -194,7 +206,9 @@ export function GallerySetup({ gallery, source, locked, enable }) {
               selected={albums.some((held) => held.id === a.id)}
               name={a.title}
               description={
-                a.assetCount == null ? undefined : `${a.assetCount} items`
+                a.assetCount == null
+                  ? undefined
+                  : `${a.assetCount.toLocaleString("en")} ${a.assetCount === 1 ? "item" : "items"}`
               }
               disabled={locked || loading}
               onPress={() => toggle({ id: a.id, title: a.title })}
@@ -214,7 +228,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
         Photos.
       </Text>
       <ErrorNotice error={error} retry={() => load()} />
-      {!!error && (
+      {denied && (
         <Button label="Open settings" onPress={() => Linking.openSettings()} />
       )}
       {!options && loading && <Scaffold label="Loading albums" />}
@@ -241,9 +255,11 @@ export function GallerySetup({ gallery, source, locked, enable }) {
               grouped
               name={summary}
               description={
-                albums.length > 1
-                  ? albums.map((a) => a.title).join(", ")
-                  : "Album"
+                !albums.length
+                  ? allNote
+                  : albums.length > 1
+                    ? albums.map((a) => a.title).join(", ")
+                    : "Album"
               }
               disabled={locked || loading}
               onPress={() => setChoosing(true)}
@@ -269,7 +285,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
               !changed ||
               albums.some((a) => !options.albums.some((o) => o.id === a.id))
             }
-            onPress={() => enable({ albums, videos })}
+            onPress={() => enable({ albums, videos }, { count: libraryCount, limited })}
           />
           <GalleryDetails>
             <Text style={s.caption}>

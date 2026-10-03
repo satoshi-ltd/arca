@@ -1371,3 +1371,12 @@ test("offline, downloaded photos keep the cached index's date and order and the 
   const old = tomb.months["2020-01"].items[0];
   assert.deepEqual([old.rev, old.hash], [7, "hub"], "a tombstone row never lends its revision to the cached hash");
 });
+
+test("the All photos note says what uploads and how many", async () => {
+  const { allPhotosNote } = await import("../apps/mobile/src/validation.js");
+  assert.equal(allPhotosNote({ videos: false, limited: false, count: 5412 }), "Uploads every photo on this phone · 5,412 items");
+  assert.equal(allPhotosNote({ videos: true, limited: false, count: 1 }), "Uploads every photo and video on this phone · 1 item");
+  assert.equal(allPhotosNote({ videos: true, limited: true, count: 12 }), "Uploads every allowed photo and video · 12 items");
+  assert.equal(allPhotosNote({ videos: false, limited: false, count: null }), "Uploads every photo on this phone");
+  assert.equal(allPhotosNote({ videos: false, limited: false }), "Uploads every photo on this phone");
+});

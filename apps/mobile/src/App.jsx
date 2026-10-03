@@ -9,6 +9,7 @@ import { canContinueInBackground } from "./runtime";
 import { BrandActivity, Busy, Scaffold } from "./components";
 import { GallerySetup } from "./GallerySource";
 import { galleryConfig } from "./gallery.js";
+import { allPhotosNote, sourceAlbums } from "./validation.js";
 import { Section } from "./components";
 import { ConfirmDialog } from "./components";
 import { useRetained } from "./motion";
@@ -1038,7 +1039,9 @@ export default function App() {
   function choose(v) {
     setSheet({ kind: "select", volume: v });
   }
-  function configureGallery(options) {
+  function configureGallery(options, info = {}) {
+    const all = !options.albums?.length;
+    const switchedToAll = all && !!source && sourceAlbums(source).length > 0;
     const save = () =>
       run(
         async () => {
@@ -1052,15 +1055,25 @@ export default function App() {
           hubOnly: true,
         },
       );
-    if (source && source.mode !== "damaged") {
+    if (source && source.mode !== "damaged" && !switchedToAll) {
       save();
       return;
     }
+    const what = all
+      ? allPhotosNote({
+          videos: options.videos,
+          limited: info.limited,
+          count: info.count,
+        })
+      : options.albums.length === 1
+        ? "Uploads this album"
+        : "Uploads these albums";
+    const upgrade = all && !!source;
     confirm(
-      "Enable photo uploads?",
-      "Uploads this album and keeps a complete local Arca copy of the shared folder, including photos from other devices. Uses storage on this phone. Originals stay in Photos.",
+      upgrade ? "Upload every photo?" : "Enable photo uploads?",
+      `${what}. ${all ? "This uses your current network, including mobile data. " : ""}Arca keeps a complete local copy of the shared folder, including photos from other devices. Uses storage on this phone. Originals stay in Photos.`,
       save,
-      "Enable uploads",
+      upgrade ? "Upload everything" : "Enable uploads",
     );
   }
   function unlink() {

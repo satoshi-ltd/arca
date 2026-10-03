@@ -46,8 +46,11 @@ export class Gallery {
       throw new Error("Install the updated mobile app to use Photo uploads.");
     const permission = await this.media.permission(videos, request);
     if (!permission.granted && permission.accessPrivileges !== "limited")
-      throw new Error(
-        "Allow photo library access in system settings to use Photo uploads.",
+      throw Object.assign(
+        new Error(
+          "Allow photo library access in system settings to use Photo uploads.",
+        ),
+        { code: "PHOTO_PERMISSION" },
       );
     return permission;
   }

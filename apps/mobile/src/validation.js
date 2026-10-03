@@ -64,3 +64,12 @@ export function gallerySettingsChanged(source, albumIds, videos) {
     !!source.videos !== videos
   );
 }
+export function allPhotosNote({ videos, limited, count }) {
+  const what = videos ? "photo and video" : "photo";
+  const base = limited
+    ? `Uploads every allowed ${what}`
+    : `Uploads every ${what} on this phone`;
+  return Number.isFinite(count)
+    ? `${base} · ${count.toLocaleString("en")} ${count === 1 ? "item" : "items"}`
+    : base;
+}
