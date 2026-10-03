@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.101 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.6.102 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -839,7 +839,7 @@ Conflict review, reachable from conflict rows and file details, shows Original f
 
 The macOS tray popover is a content-sized 320px panel: the static Arca icon beside the state and "Last completed HH:mm" (24-hour) or Not yet verified, without the device name; the role badge; boxed folder rows (every selected share, gallery icon, nine dots while syncing, indexed size when synced) in a 320px scrollable viewport that keeps its scroll on refresh; compact actions including device-wide Pause for 1 hour; and Quit Arca, which leaves the daemon running. Open Arca appears only while the main window is hidden. Choosing a row opens that folder in the main window; choosing an item closes the popover like a menu, while a failed Sync now or Pause keeps it open with the error. A click outside closes it through a global AppKit mouse-down monitor, and focusing the main window closes it too. Disconnected state keeps the logo and folder icons with explicit Disconnected text and warning tone.
 
-The menu-bar icon keeps the original arca mark on a fixed 48×36px Retina canvas rendered at 24×18pt as monochrome templates. Four badges share a 20px diameter and center: syncing (circular arrows), synced (check, only with no pending folders, errors or conflicts), paused (full contrast, mark at 45% opacity, taking precedence over completion) and alert (exclamation for sync or backup errors and conflicts). The unbadged logo means startup or unverified. Icon image and template flag change in one operation from the same status the tray menu uses.
+While only the hub is unreachable the native tray keeps its plain icon and says "Arca · offline" (the alert icon and "needs attention" stay for a failing daemon, conflicts, folder errors and backup errors). The menu-bar icon keeps the original arca mark on a fixed 48×36px Retina canvas rendered at 24×18pt as monochrome templates. Four badges share a 20px diameter and center: syncing (circular arrows), synced (check, only with no pending folders, errors or conflicts), paused (full contrast, mark at 45% opacity, taking precedence over completion) and alert (exclamation for sync or backup errors and conflicts). The unbadged logo means startup or unverified. Icon image and template flag change in one operation from the same status the tray menu uses.
 
 ### Desktop gallery
 

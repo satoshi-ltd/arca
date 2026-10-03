@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-NATIVE-TRAY-OFFLINE** — The native tray says "needs attention" while only the hub is unreachable
-  `bug · agent · low`
-  accept: when the daemon's phase is `offline` and the only error is the hub's, the tray shows the plain icon and the text "Arca · offline" instead of the alert icon and "Arca · needs attention" (`tray_state` and the tooltip in `apps/desktop/src-tauri/src/main.rs`); conflicts, folder errors and backup errors still raise the alert; a Rust test next to the existing `tray_state` test. Needs a desktop build.
+_None._
 
 ## In progress
 

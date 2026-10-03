@@ -452,8 +452,9 @@ fn resize_tray(app: tauri::AppHandle, height: f64) -> Result<(), String> {
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {app.exit(0);}
 fn tray_state(status: &serde_json::Value) -> &str {
+    let offline = status["phase"] == "offline";
     if status["phase"] != "paused" && (
-        status["phase"] == "error" || status["error"].as_str().is_some()
+        status["phase"] == "error" || (!offline && status["error"].as_str().is_some())
         || status["backup"]["error"].as_str().is_some()
         || status["volumes"].as_array().map(|v| v.iter().any(|f|
             f["conflicts"].as_u64().unwrap_or(0) > 0 || f["sync"]["error"].as_str().is_some()
@@ -474,6 +475,20 @@ fn tray_state(status: &serde_json::Value) -> &str {
                 })
             }).unwrap_or(false) => "synced",
         _ => "default",
+    }
+}
+
+fn tray_text(status: &serde_json::Value) -> &'static str {
+    match status["phase"].as_str().unwrap_or("") {
+        "idle" if tray_state(status) == "synced" => "Arca · up to date",
+        "idle" => "Arca · not yet verified",
+        "unlinked" => "Arca · no hub",
+        "needs-folder" => "Arca · choose a shared folder",
+        "syncing" => "Arca · syncing",
+        "paused" => "Arca · paused",
+        "offline" if tray_state(status) == "alert" => "Arca · needs attention",
+        "offline" => "Arca · offline",
+        _ => "Arca · needs attention",
     }
 }
 
@@ -713,15 +728,7 @@ fn main() {
                     let _ = request("/v1/client", "POST", Some(json!({"kind":"desktop"}))).await;
                     let status = request("/v1/status", "GET", None).await;
                     let text = match &status {
-                        Ok(s) => match s["phase"].as_str().unwrap_or("") {
-                            "idle" if tray_state(s) == "synced" => "Arca · up to date",
-                            "idle" => "Arca · not yet verified",
-                            "unlinked" => "Arca · no hub",
-                            "needs-folder" => "Arca · choose a shared folder",
-                            "syncing" => "Arca · syncing",
-                            "paused" => "Arca · paused",
-                            _ => "Arca · needs attention",
-                        },
+                        Ok(s) => tray_text(s),
                         Err(_) => "Arca · service stopped",
                     };
                     if let Ok(s) = &status {
@@ -797,6 +804,26 @@ mod tray_tests {
         s["volumes"][0]["conflicts"] = json!(0);
         s["lastSync"] = json!(null);
         assert_eq!(tray_state(&s), "default");
+    }
+    #[test]
+    fn an_unreachable_hub_reads_offline_but_other_problems_still_raise_the_alert() {
+        let mut s = json!({"phase":"offline", "error":"Hub unavailable", "lastSync":"2026-09-07", "volumes":[{"selected":true,"conflicts":0,"sync":{"state":"offline"}}]});
+        assert_eq!(tray_state(&s), "default");
+        assert_eq!(tray_text(&s), "Arca · offline");
+        s["volumes"][0]["conflicts"] = json!(1);
+        assert_eq!(tray_state(&s), "alert");
+        assert_eq!(tray_text(&s), "Arca · needs attention");
+        s["volumes"][0]["conflicts"] = json!(0);
+        s["volumes"][0]["sync"]["error"] = json!("disk full");
+        assert_eq!(tray_state(&s), "alert");
+        s["volumes"][0]["sync"]["error"] = json!(null);
+        s["backup"] = json!({"error":"backup stalled"});
+        assert_eq!(tray_state(&s), "alert");
+        let failing = json!({"phase":"error", "error":"boom"});
+        assert_eq!(tray_state(&failing), "alert");
+        assert_eq!(tray_text(&failing), "Arca · needs attention");
+        let idle_error = json!({"phase":"idle", "error":"boom"});
+        assert_eq!(tray_state(&idle_error), "alert");
     }
 }
 

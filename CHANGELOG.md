@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.102 — 2026-10-03
+
+- The desktop tray no longer says "needs attention" with an alert icon when only the hub is unreachable: it keeps its plain icon and reads "Arca · offline", and real problems (conflicts, folder or backup errors) still raise the alert.
+
+Needs: desktop build
+
 ## 0.6.101 — 2026-10-03
 
 - The desktop Files list now grows with a Show more files button that appends the next rows, like History and the phone, instead of replacing the page, and keeps your scroll and search; History's and a file's list say Show more and Show more versions on desktop and phone.

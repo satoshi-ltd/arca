@@ -313,3 +313,12 @@ test("tray heading reads Offline while the hub is unavailable, except when pause
   assert.deepEqual(await run({ phase: "paused", hubUnavailable: true }), { text: "Paused", tone: "tray-tone-paused" });
   assert.deepEqual(await run({ phase: "unlinked", hubUnavailable: true }), { text: "Disconnected", tone: "tray-tone-conflict" });
 });
+
+test("the native tray reads offline while only the hub is unreachable", () => {
+  const source = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
+  assert.match(source, /let offline = status\["phase"\] == "offline";/);
+  assert.match(source, /\(!offline && status\["error"\]\.as_str\(\)\.is_some\(\)\)/, "the hub's own error no longer raises the alert");
+  assert.match(source, /"offline" if tray_state\(status\) == "alert" => "Arca · needs attention",\s+"offline" => "Arca · offline",/);
+  assert.match(source, /Ok\(s\) => tray_text\(s\),/, "the tooltip comes from tray_text");
+  assert.match(source, /fn an_unreachable_hub_reads_offline_but_other_problems_still_raise_the_alert\(\)/, "the Rust test exists");
+});
