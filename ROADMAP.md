@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-SYS-EMPTY-NEXT-STEP** — Empty states say what to do
-  `ui · agent · normal`
-  accept: the board.
 - **DESK-FILES-PAGING** — Files, History and a file's history grow by appending
   `chore · agent · low`
   accept: the desktop folder browser keeps the rows it has and appends the next cursor page instead of replacing them, up to a bounded number of rows, and typed search and scroll survive; History and a file's history keep appending; JSDOM tests cover the three lists. The interface follows board UI-DESK-FILES-PAGING.

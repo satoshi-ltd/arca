@@ -10,6 +10,7 @@ import { BrandActivity, Busy, Scaffold } from "./components";
 import { GallerySetup } from "./GallerySource";
 import { galleryConfig } from "./gallery.js";
 import { allPhotosNote, sourceAlbums } from "./validation.js";
+import { historyEmpty } from "./history-empty.js";
 import { Section } from "./components";
 import { ConfirmDialog } from "./components";
 import { useRetained } from "./motion";
@@ -2501,15 +2502,11 @@ export default function App() {
                         !historyError &&
                         !history.versions.length && (
                           <EmptyState
-                            icon="history"
-                            title={
-                              history.offline
-                                ? "No saved history"
-                                : historyFilter !== "revisions" || historyVolume
-                                  ? "No matching versions"
-                                  : "No history yet"
-                            }
-                            text="Try another filter or sync online to save recent history."
+                            {...historyEmpty({
+                              offline: history.offline,
+                              filter: historyFilter,
+                              hasFolder: !!historyVolume,
+                            })}
                           />
                         )}
                       {!!history.versions.length && (

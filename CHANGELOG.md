@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.100 — 2026-10-03
+
+- History now says why it is empty: with the Conflicts or Deleted filter it names the filter and how to clear it, a folder filter says so, and the phone's offline, filtered and empty cases each have their own message and next step.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.99 — 2026-10-03
 
 - Buttons, rows, tabs and photo tiles now react when pressed, on the desktop interface and on the phone, so a tap no longer looks ignored; the web interface on a phone gets 44 px icon buttons.

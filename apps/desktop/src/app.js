@@ -87,7 +87,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.99";
+const APP_VERSION = "0.6.100";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -350,6 +350,15 @@ function openDropdown(root, last = false) {
 }
 function title(heading, description = "", actions = "") {
   return `<div class="heading"><div><h1>${heading}</h1>${description ? `<p>${description}</p>` : ""}</div><div class="heading-actions">${actions}</div></div>`;
+}
+function historyEmpty() {
+  if (historyFilter === "conflicts")
+    return empty("No conflicts", "Clear Conflicts to see every change.", "", "git-branch");
+  if (historyFilter === "deleted")
+    return empty("No deleted files", "Clear Deleted to see every change.", "", "trash-2");
+  if (historyVolume)
+    return empty("No changes in this folder", "Set Shared folder to All to see every change.", "", "history");
+  return empty("Every change has a history", "Changes to your files appear here.", "", "history");
 }
 function empty(heading, text, control = "", symbol = "folder-open") {
   return `<div class="empty">${icon(symbol)}<h2>${heading}</h2>${text ? `<p>${text}</p>` : ""}${control}</div>`;
@@ -3458,10 +3467,7 @@ async function renderHistory(
           )
           .join("") +
         `${historyNext ? `<div class="pagination">${button("Load more", "history-page", historyNext)}</div>` : ""}`
-      : empty(
-          "Every change has a history",
-          "Changes to your files appear here.",
-        ));
+      : historyEmpty());
   icons();
 }
 const machineRow = (

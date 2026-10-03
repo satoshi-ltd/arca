@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.99 · proposals</span>
+      <span class="kit-version">v0.6.100 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -67,8 +67,6 @@
 
 
 
-
-
         <article class="kit-board" data-board="UI-SYS-DARK-ELEVATION">
           <header><code>UI-SYS-DARK-ELEVATION</code><h3>Dark surfaces lift off the page and show their selection</h3><span>System</span></header>
           <p class="kit-note"><strong>Why.</strong> Dark keeps the light theme's shadows, so a menu opened over a card has no visible edge against it, and the menu's buttons look like boxes inside it. The selected segment of a segmented control is the same colour as its track on desktop, and darker than its track on the phone in dark. The proposal gives floating surfaces a raised colour and a one-pixel ring in dark, and gives the selected segment a visible fill in both themes.</p>
@@ -101,22 +99,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>Group headers read Today, Yesterday or a short date (rows older than a day show "Oct 1, 14:00" under "Oct 1, 2026" today) (the year only when it is not the current one); every row time is HH:mm in tabular figures; the revision column aligns across rows; desktop and phone match; JSDOM and phone tests cover the labels.</p></div></div>
-        </article>
-
-        <article class="kit-board" data-board="UI-SYS-EMPTY-NEXT-STEP">
-          <header><code>UI-SYS-EMPTY-NEXT-STEP</code><h3>Empty states say what to do</h3><span>System</span></header>
-          <p class="kit-note"><strong>Why.</strong> History with a filter active still says "Every change has a history" under a folder icon, and the phone uses one line for three different empty states. The proposal gives each state its own next step and an icon that matches the view.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">History with the Conflicts filter and no conflicts</p>
-<div class="empty"><span data-icon="folder-open" data-size="24"></span><h2>Every change has a history</h2><p>Changes to your files appear here.</p></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">The filter is named, with the way out</p>
-<div class="empty"><span data-icon="git-branch" data-size="24"></span><h2>No conflicts</h2><p>Clear Conflicts to see every change.</p></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>History with a filter active names the filter and how to clear it instead of "Every change has a history", the three phone History states (nothing yet, filtered, offline) each have their own title and next step, and each icon matches its view; JSDOM and phone tests cover them.</p></div></div>
         </article>
 
       </section>

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import vm from "node:vm";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -173,4 +174,32 @@ test("every literal icon name used by the phone screens resolves", () => {
   for (const file of ["apps/mobile/src/App.jsx", "apps/mobile/src/components.jsx"])
     for (const [, name] of read(file).matchAll(/\bicon="([\w-]+)"/g))
       assert.match(icons, new RegExp(`\\n  (?:"${name}"|${name}): "`), `${file} uses icon "${name}" with no Lucide name`);
+});
+
+test("History explains why it is empty, on desktop and on the phone", async () => {
+  const source = fs.readFileSync(path.join(root, "apps/desktop/src/app.js"), "utf8");
+  assert.match(source, /\n      : historyEmpty\(\)\);/, "renderHistory draws it when there are no rows");
+  const code = source.slice(source.indexOf("function historyEmpty()"), source.indexOf("function empty("));
+  const run = (historyFilter, historyVolume) =>
+    vm.runInNewContext(`${code}\nhistoryEmpty()`, {
+      historyFilter,
+      historyVolume,
+      empty: (heading, text, control, symbol) => ({ heading, text, symbol }),
+    });
+  assert.deepEqual(run("conflicts", ""), { heading: "No conflicts", text: "Clear Conflicts to see every change.", symbol: "git-branch" });
+  assert.deepEqual(run("deleted", "docs"), { heading: "No deleted files", text: "Clear Deleted to see every change.", symbol: "trash-2" });
+  assert.deepEqual(run("revisions", "docs"), { heading: "No changes in this folder", text: "Set Shared folder to All to see every change.", symbol: "history" });
+  assert.deepEqual(run("revisions", ""), { heading: "Every change has a history", text: "Changes to your files appear here.", symbol: "history" });
+  const { historyEmpty } = await import("../apps/mobile/src/history-empty.js");
+  const titles = [
+    historyEmpty({ offline: true, filter: "revisions", hasFolder: false }),
+    historyEmpty({ offline: false, filter: "conflicts", hasFolder: false }),
+    historyEmpty({ offline: false, filter: "deleted", hasFolder: true }),
+    historyEmpty({ offline: false, filter: "revisions", hasFolder: true }),
+    historyEmpty({ offline: false, filter: "revisions", hasFolder: false }),
+  ];
+  assert.equal(new Set(titles.map((state) => state.text)).size, titles.length, "no two phone states share a line");
+  assert.deepEqual(titles.map((state) => state.icon), ["wifi-off", "conflict", "trash", "history", "history"]);
+  assert.equal(titles[1].title, "No conflicts");
+  assert.equal(titles[0].text, "Connect to the hub to load history.");
 });

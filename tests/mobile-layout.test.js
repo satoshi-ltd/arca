@@ -789,7 +789,7 @@ test("every empty list on the phone uses the one EmptyState: icon, heading, one 
   assert.match(state[0], /<Icon name=\{icon\} size=\{24\} color=\{c\.mute\} \/>/);
   assert.match(state[0], /\{action\}/);
   const sites = {
-    "App.jsx": ["No folders yet", "No matching files", "This folder is empty", "No local files yet", "No saved devices", "No saved history", "No matching versions", "No history yet"],
+    "App.jsx": ["No folders yet", "No matching files", "This folder is empty", "No local files yet", "No saved devices"],
     "FolderRecent.jsx": ["No versions yet", "No saved versions"],
     "FileHistory.jsx": ["No retained versions", "No saved versions for this file"],
     "FolderGallery.jsx": ["No photos yet", "Nothing saved on this phone"],
@@ -802,7 +802,7 @@ test("every empty list on the phone uses the one EmptyState: icon, heading, one 
   const app = read("App.jsx");
   assert.match(app, /<EmptyState\s+icon="folder-open"\s+title="No folders yet"/);
   assert.match(app, /<\/View>\s+\{!filesLoading &&\s+!visibleEntries\.length && \(\s+<EmptyState\s+icon="folders"\s+title=\{/, "Files draws its frame under the bordered breadcrumb group, never inside it");
-  assert.match(app, /<EmptyState\s+icon="history"\s+title=\{\s+history\.offline\s+\? "No saved history"/);
+  assert.match(app, /<EmptyState\s+\{\.\.\.historyEmpty\(\{\s+offline: history\.offline,\s+filter: historyFilter,\s+hasFolder: !!historyVolume,/);
   assert.match(app, /machinesLoaded && \(\s+<EmptyState/, "Machines waits for its answer before saying nothing is saved");
   assert.match(read("FolderRecent.jsx"), /\{!!page\.versions\.length && \(\s+<View style=\{s\.group\}>/, "no bordered box without rows");
   assert.match(state[0], /<Text style=\{\[s\.heading, s\.centerText\]\}>\{title\}<\/Text>/);
