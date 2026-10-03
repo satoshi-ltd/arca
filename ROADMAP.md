@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UNLINK-DIRECTORY-SYMLINK** — Cleanup must not follow a directory replaced with a symlink
-  `bug · agent · high`
-  accept: after preparing a Stop syncing deletion plan, replace a planned directory or an ancestor with a symlink to an external directory containing disposable OS metadata. Cleanup leaves that external directory and its files untouched, preserves ambiguous paths and still removes verified empty directories normally. Cross-platform tests cover supported symlink/junction behavior and use isolated temporary trees.
 - **SYNC-WATCHER-ERROR** — Recover when an existing Linux directory watcher fails
   `bug · agent · high`
   accept: an asynchronous `fs.watch` error reaches the daemon's watcher-error handler, marks the folder for a full scan and permits bounded watcher recreation. Inject an error after successful root and nested watcher creation; subsequent edits synchronize without waiting for the six-hour reconciliation, no stale watcher suppresses retries, and persistent failures do not create a hot loop.

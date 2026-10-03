@@ -3478,3 +3478,30 @@ test("a failed saved-history write never fails the file sync", async (t) => {
   await replica.sync();
   assert.equal(count(), 3, "the next pass saves the windows once writes succeed again");
 });
+
+test("Stop syncing cleanup never follows a planned directory or an ancestor replaced by a link", async (t) => {
+  const { deleteSyncedCopy } = await import("../packages/daemon/storage.js");
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "arca-unlink-")));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, "root");
+  const outside = path.join(base, "outside");
+  fs.mkdirSync(path.join(root, "plain"), { recursive: true });
+  fs.mkdirSync(path.join(root, "swapped"), { recursive: true });
+  fs.mkdirSync(path.join(root, "ancestor", "child"), { recursive: true });
+  fs.mkdirSync(path.join(outside, "child"), { recursive: true });
+  for (const directory of [path.join(root, "plain"), path.join(root, "swapped"), path.join(root, "ancestor", "child"), outside, path.join(outside, "child")])
+    fs.writeFileSync(path.join(directory, ".DS_Store"), "metadata");
+  const plan = {
+    root,
+    files: [],
+    directories: [path.join(root, "plain"), path.join(root, "swapped"), path.join(root, "ancestor", "child"), path.join(root, "ancestor")],
+  };
+  fs.rmSync(path.join(root, "swapped"), { recursive: true });
+  fs.symlinkSync(outside, path.join(root, "swapped"), "junction");
+  fs.rmSync(path.join(root, "ancestor"), { recursive: true });
+  fs.symlinkSync(outside, path.join(root, "ancestor"), "junction");
+  await deleteSyncedCopy(plan);
+  assert.equal(fs.existsSync(path.join(outside, ".DS_Store")), true, "the directory behind the link keeps its files");
+  assert.equal(fs.existsSync(path.join(outside, "child", ".DS_Store")), true, "so does a directory reached through a linked ancestor");
+  assert.equal(fs.existsSync(path.join(root, "plain")), false, "a verified directory holding only disposable metadata is still removed");
+});

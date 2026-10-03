@@ -144,8 +144,12 @@ export async function deleteSyncedCopy({ root, files, directories }) {
       /* A file that cannot be verified or removed stays on disk. */
     }
   }
+  const inPlace = (directory) =>
+    fs.lstatSync(directory).isDirectory() &&
+    fs.realpathSync(directory) === directory;
   for (const directory of [...directories].sort((a, b) => b.length - a.length))
     try {
+      if (!inPlace(directory)) continue;
       const entries = fs.readdirSync(directory, { withFileTypes: true });
       if (
         !entries.every(
@@ -153,6 +157,7 @@ export async function deleteSyncedCopy({ root, files, directories }) {
         )
       )
         continue;
+      if (!inPlace(directory)) continue;
       for (const entry of entries)
         fs.unlinkSync(path.join(directory, entry.name));
       fs.rmdirSync(directory);

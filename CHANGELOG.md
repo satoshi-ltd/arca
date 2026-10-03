@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.108 — 2026-10-04
+
+- Stop syncing can no longer delete OS-metadata files outside the folder when a directory in its cleanup plan is replaced by a link: the cleanup skips anything that is not a real directory at its own path.
+
+Needs: Casa redeploy · desktop build
+
 ## 0.6.107 — 2026-10-04
 
 - On iPhone, replacing a synced file now reports a failed flush or an unopenable file instead of claiming success, so the phone keeps its recovery record and retries instead of treating the file as written.
