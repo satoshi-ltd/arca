@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { bump, targets } from "../scripts/bump-version.js";
 import { cleanCopy, gitFreeEnv } from "../scripts/validate-local.js";
 import { testConcurrency } from "../scripts/test-concurrency.js";
+import { fingerprint, stampMatches, stampPath, writeStamp } from "../scripts/validated-stamp.js";
 import { manifests } from "../scripts/release-manifests.js";
 import { execFileSync, spawnSync } from "node:child_process";
 
@@ -251,4 +252,87 @@ test("the Docker workflow builds and tags the commit of the release that trigger
   ])
     assert.ok(gate.includes(condition), `the gate lacks ${condition}: fork code must never reach the publish path`);
   assert.ok(read(".github/workflows/publish-site.yml").includes(ref), "publish-site pins the same commit");
+});
+
+test("a validation stamp matches only the exact files it was written for", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-stamp-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe", env: gitFreeEnv() });
+  git("init", "-q");
+  fs.writeFileSync(path.join(root, ".gitignore"), "ignored.txt\nnode_modules\n");
+  fs.writeFileSync(path.join(root, ".node-version"), "24.21.0\n");
+  fs.writeFileSync(path.join(root, "tracked.txt"), "one");
+  git("add", "-A");
+  const run = (fn) => {
+    const saved = Object.fromEntries(Object.keys(process.env).filter((key) => key.startsWith("GIT_")).map((key) => [key, process.env[key]]));
+    for (const key of Object.keys(saved)) delete process.env[key];
+    try {
+      return fn();
+    } finally {
+      Object.assign(process.env, saved);
+    }
+  };
+  run(() => {
+    assert.equal(stampMatches(root), false, "no stamp yet");
+    const first = fingerprint(root);
+    writeStamp(root, first);
+    assert.equal(stampMatches(root), true);
+    assert.ok(stampPath(root).includes(".git"), "the stamp lives in the git directory, never in the tree");
+    assert.equal(git("status", "--porcelain").toString().includes("arca-validated"), false);
+    fs.writeFileSync(path.join(root, "ignored.txt"), "never counted");
+    fs.mkdirSync(path.join(root, "node_modules"));
+    fs.writeFileSync(path.join(root, "node_modules", "dependency.js"), "ignored");
+    assert.equal(stampMatches(root), true, "ignored files do not matter");
+    git("-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "-qm", "init", "--no-verify");
+    assert.equal(stampMatches(root), true, "committing the same files keeps the stamp");
+    fs.writeFileSync(path.join(root, "tracked.txt"), "two");
+    assert.equal(stampMatches(root), false, "a changed file invalidates it");
+    fs.writeFileSync(path.join(root, "tracked.txt"), "one");
+    assert.equal(stampMatches(root), true, "restoring the content restores the match");
+    fs.writeFileSync(path.join(root, "new-untracked.txt"), "x");
+    assert.equal(stampMatches(root), false, "a new untracked file invalidates it");
+    fs.rmSync(path.join(root, "new-untracked.txt"));
+    fs.writeFileSync(path.join(root, ".node-version"), "24.22.0\n");
+    assert.equal(stampMatches(root), false, "a different Node pin invalidates it");
+    fs.rmSync(path.join(root, "tracked.txt"));
+    assert.equal(stampMatches(root), false, "a deleted file invalidates it");
+  });
+});
+
+test("the pre-push hook still checks the release and skips the suite only on a matching stamp", () => {
+  const read = (file) => fs.readFileSync(path.join(repository, file), "utf8").replace(/\r\n/g, "\n");
+  const hook = read(".githooks/pre-push");
+  assert.ok(hook.indexOf("node scripts/check-release.js") < hook.indexOf("validated-stamp.js check"), "the version check always runs first");
+  assert.match(hook, /if node scripts\/validated-stamp\.js check; then exit 0; fi\n/);
+  assert.ok(hook.indexOf("validated-stamp.js check") < hook.indexOf("node --test"), "the suite runs when there is no stamp");
+  const validate = read("scripts/validate-local.js");
+  assert.match(validate, /const validated = fingerprint\(repository\);/);
+  assert.match(validate, /if \(copied && fingerprint\(repository\) === validated\) writeStamp\(repository, validated\);/, "files edited while validating never get a stamp");
+  assert.match(validate, /const copied = fingerprint\(clean\) === validated;/, "the stamp covers what was copied and tested");
+});
+
+test("the check command exits 0 only for a stamp that matches the files", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-stamp-cli-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const env = gitFreeEnv();
+  const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe", env });
+  git("init", "-q");
+  fs.writeFileSync(path.join(root, "file.txt"), "content");
+  const check = () =>
+    spawnSync(process.execPath, [path.join(repository, "scripts", "validated-stamp.js"), "check", root], { encoding: "utf8", env });
+  assert.equal(check().status, 1, "no stamp means the suite runs");
+  const saved = process.env;
+  process.env = env;
+  try {
+    writeStamp(root, fingerprint(root));
+  } finally {
+    process.env = saved;
+  }
+  const match = check();
+  assert.equal(match.status, 0);
+  assert.match(match.stdout, /skipping the suite/);
+  fs.writeFileSync(path.join(root, "file.txt"), "changed");
+  assert.equal(check().status, 1, "a changed file means the suite runs");
+  const unreadable = spawnSync(process.execPath, [path.join(repository, "scripts", "validated-stamp.js"), "check", path.join(root, "missing")], { encoding: "utf8", env });
+  assert.equal(unreadable.status, 1, "anything unreadable means the suite runs");
 });

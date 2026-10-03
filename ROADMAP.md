@@ -26,7 +26,12 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **DOCKER-TAG-RETRY** — A published Docker image always gets its `docker-v` tag
+  `bug · agent · normal`
+  accept: the "Record the published version" step retries the tag creation and, if it still fails, ends with a message that names the exact command to run by hand; the gate also treats a version already on Docker Hub as shipped so a re-run never republishes it; a workflow contract test covers the retry and the check. v0.6.84 was published without its tag after two 403 answers from the refs API, and re-running it would have moved `latest` back.
+- **MOB-GALLERY-UNDATED-COUNT** — The phone gallery counts photos that have no date
+  `bug · agent · low`
+  accept: first check whether the phone's gallery total and month counts leave out photos without a date (`hubGallery` sums only the dated timeline, while the desktop header counts them since 0.6.86); if they do, the counts include them and a hub-gallery test with undated rows proves it.
 
 ## In progress
 
@@ -188,18 +193,9 @@ Older notes listed these as open while later evidence suggests they are resolved
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
 
-- **DEV-PREPUSH-CACHE** — The pre-push hook does not repeat a suite that already passed on the same files
-  `chore · agent · normal`
-  accept: `scripts/validate-local.js` writes a stamp keyed by a hash of the files it validated (tracked plus untracked, ignoring ignored ones) and the Node version; `.githooks/pre-push` still runs `check-release` but skips `node --test` when the stamp matches the files about to be pushed, and says so; a changed file, a missing stamp or another Node version always runs the full suite; a contract test covers the stamp logic. Today every version runs the full suite twice (validate-local, then the hook).
-- **DOCKER-TAG-RETRY** — A published Docker image always gets its `docker-v` tag
-  `bug · agent · normal`
-  accept: the "Record the published version" step retries the tag creation and, if it still fails, ends with a message that names the exact command to run by hand; the gate also treats a version already on Docker Hub as shipped so a re-run never republishes it; a workflow contract test covers the retry and the check. v0.6.84 was published without its tag after two 403 answers from the refs API, and re-running it would have moved `latest` back.
 - **DESK-SELECT-CATALOG-RACE** — A catalog refresh never drops a folder that was just selected
   `bug · agent · low`
   accept: a refresh answered before the hub listed a folder the user selected moments earlier keeps that folder in the saved catalog and does not forget its volume; a daemon test with a delayed refresh.
-- **MOB-GALLERY-UNDATED-COUNT** — The phone gallery counts photos that have no date
-  `bug · agent · low`
-  accept: first check whether the phone's gallery total and month counts leave out photos without a date (`hubGallery` sums only the dated timeline, while the desktop header counts them since 0.6.86); if they do, the counts include them and a hub-gallery test with undated rows proves it.
 - **DEV-FLAKY-MOBILE** — Find the mobile test that failed twice under load
   `chore · agent · low`
   accept: `tests/mobile-*.test.js` run repeatedly at full concurrency on a loaded machine; the test that failed once in `validate-local` for v0.6.79 and once for v0.6.80 (green when rerun alone) is named and its timing made deterministic, or the finding is recorded here as not reproducible.

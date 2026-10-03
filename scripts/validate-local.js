@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { testConcurrency } from "./test-concurrency.js";
+import { fingerprint, writeStamp } from "./validated-stamp.js";
 
 const repository = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -35,8 +36,10 @@ function main() {
     console.error(`CI runs Node ${required}; this is ${process.version}. Run: npx -y node@${required} scripts/validate-local.js`);
     process.exit(1);
   }
+  const validated = fingerprint(repository);
   const clean = fs.mkdtempSync(path.join(os.tmpdir(), "arca-validate-"));
   cleanCopy(repository, clean);
+  const copied = fingerprint(clean) === validated;
   const shell = process.platform === "win32";
   const run = (command, args) => {
     const result = spawnSync(command, args, { cwd: clean, encoding: "utf8", shell, maxBuffer: 1 << 30, env: gitFreeEnv() });
@@ -80,6 +83,8 @@ function main() {
     process.exit(1);
   }
   fs.rmSync(clean, { recursive: true, force: true });
+  if (copied && fingerprint(repository) === validated) writeStamp(repository, validated);
+  else console.error("Files changed while validating, so no stamp was written; the next push runs the suite.");
 }
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) main();

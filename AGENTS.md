@@ -64,7 +64,7 @@ Rules of the loop:
   view that still draws the old look, fails the adversarial review before the commit.
 - App-owned text is English until the i18n phase; preserve user names, paths and content. Conversation with the maintainer is Spanish.
 - The desktop updater signs payloads with `TAURI_SIGNING_PRIVATE_KEY` (public half in `tauri.conf.json`). Never commit the private key; `apps/desktop/src/app.js` reports its version only through `APP_VERSION`.
-- Enable the hooks once per clone: `git config core.hooksPath .githooks` (`pre-push` repeats the version check and the CI suite). Remote: `git@github.com:satoshi-ltd/arca.git`.
+- Enable the hooks once per clone: `git config core.hooksPath .githooks` (`pre-push` repeats the version check and the CI suite, skipping the suite when `validate-local` already passed on the identical files). Remote: `git@github.com:satoshi-ltd/arca.git`.
 - A build or an API response is not workflow validation; keep implemented, deployed and verified apart in ROADMAP and in reports.
 - Create a separate Codex task only when asked, using ROADMAP IDs and acceptance evidence.
 
