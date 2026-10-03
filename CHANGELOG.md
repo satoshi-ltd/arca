@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.105 — 2026-10-03
+
+- Choosing a photo that is already waiting to upload can no longer delete its saved copy when writing its name file fails, for example because the phone is out of space.
+
+Needs: native build
+
 ## 0.6.104 — 2026-10-03
 
 - A pending phone photo whose record is damaged is now sent again under its original name and to the same path, so the hub never ends up with a second copy of it.

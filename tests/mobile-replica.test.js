@@ -5134,3 +5134,38 @@ test("the real picked-file helper accepts the name key a pick is stored under", 
   assert.match(files.picked("scope-1", "volume-1", `${id}-name`), /picked-a+-name$/);
   assert.throws(() => files.picked("scope-1", "volume-1", `${id}.name`), /Invalid folder identity/, "a dotted key can never name a picked file");
 });
+
+test("a failed write of the kept name never deletes the copy a pending pick already has", async (t) => {
+  const f = await galleryFixture(t);
+  const { replica: r, store, volume } = f;
+  await f.enable();
+  const uri = path.join(f.root, "again.jpg");
+  fs.writeFileSync(uri, "pick bytes");
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(volume.id, [{ uri, fileName: "again.jpg" }]));
+  const pending = (await store.galleryPreview(r.scope, volume.id, false, 24)).find((item) => item.picked);
+  const copy = r.files.picked(r.scope, volume.id, pending.id);
+  const named = r.files.picked(r.scope, volume.id, `${pending.id}-name`);
+  assert.ok(await r.files.stat(copy));
+  const write = r.files.write;
+  r.files.write = async () => {
+    throw new Error("No space left on device");
+  };
+  await r.gallery.addPhotos(volume.id, [{ uri, fileName: "again.jpg" }]).catch(() => {});
+  assert.ok(await r.files.stat(copy), "a same-name pick writes nothing and keeps its copy");
+  assert.equal((await r.files.text(named)).trim(), "again.jpg");
+  await r.files.remove(named);
+  await r.gallery.addPhotos(volume.id, [{ uri, fileName: "again.jpg" }]).catch(() => {});
+  assert.ok(await r.files.stat(copy), "a failed name write leaves the existing copy alone");
+  assert.equal(await r.files.stat(named), null, "and no half-written name file");
+  assert.equal((await store.galleryAsset(r.scope, volume.id, pending.id)).state, "pending");
+  r.files.write = write;
+  await r.files.write(named, new TextEncoder().encode("old.jpg"));
+  r.files.write = async (uri, data, offset) => {
+    if (uri === named && new TextDecoder().decode(data) !== "old.jpg") throw new Error("No space left on device");
+    return write(uri, data, offset);
+  };
+  await r.gallery.addPhotos(volume.id, [{ uri, fileName: "again.jpg" }]).catch(() => {});
+  assert.equal((await r.files.text(named)).trim(), "old.jpg", "a name file that could not be replaced keeps its previous content");
+  r.files.write = write;
+});

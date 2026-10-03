@@ -191,17 +191,32 @@ export class Gallery {
       const durable = r.files.picked(r.scope, volume, id);
       const named = r.files.picked(r.scope, volume, `${id}-name`);
       const kept = await r.files.stat(durable);
+      const before = (await r.files.stat(named))
+        ? (await r.files.text(named).catch(() => "")).trim()
+        : null;
+      let copied = false;
+      let renamed = false;
       try {
         if (!kept || kept.size !== stat.size) {
           await r.space(stat.size);
           await r.files.mkdir(r.files.parent(durable));
+          copied = true;
           await r.files.copy(asset.uri, durable);
         }
-        await r.files.remove(named);
-        await r.files.write(named, new TextEncoder().encode(item.name));
+        if (before !== item.name.trim()) {
+          renamed = true;
+          await r.files.remove(named);
+          await r.files.write(named, new TextEncoder().encode(item.name));
+        }
       } catch (error) {
-        await r.files.remove(durable).catch(() => {});
-        await r.files.remove(named).catch(() => {});
+        if (copied) await r.files.remove(durable).catch(() => {});
+        if (renamed) {
+          await r.files.remove(named).catch(() => {});
+          if (before)
+            await r.files
+              .write(named, new TextEncoder().encode(before))
+              .catch(() => {});
+        }
         throw error;
       }
       item.picked = { name: item.name, key: "original" };
