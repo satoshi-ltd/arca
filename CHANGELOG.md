@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.89 — 2026-10-03
+
+- On the phone, a photo you picked whose saved copy is gone now shows a plain placeholder in Pending uploads, with a line saying so and a small Dismiss action next to the remaining count, instead of a wide button under the strip.
+
+Needs: native build
+
 ## 0.6.88 — 2026-10-03
 
 - A slow hub that cannot prepare the preview of an older photo version in time now answers that it took too long, instead of claiming to be unreachable, and large previews wait up to 15 seconds instead of 3.

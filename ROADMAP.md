@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-02 · Phase 1 functional, not release-qualified.
+Updated 2026-10-03 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -26,7 +26,9 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **UI-DESK-PREVIEW-ERROR-VISIBLE** — Say why a version preview is missing
+  `ui · agent · low`
+  accept: the board UI-DESK-PREVIEW-ERROR-VISIBLE, which carries the behaviour DESK-PREVIEW-ERROR-VISIBLE describes; shipping it closes that task too.
 
 ## In progress
 
@@ -168,6 +170,8 @@ Phase 1 acceptance: a real hub and replica demonstrate creation, initial full sy
 - **DEC-CONVERTING-LEGACY** — Remove the legacy `converting` mode on phones?
   `decision · maintainer · normal`
   accept: a yes or no. `replica.js`, `App.jsx` and a test still recover a folder interrupted mid-way through the former upload-only-to-working-copy transition (`converting` mode, restoring missing indexed files before switching to `source`); AGENTS.md forbids legacy modes, yet a phone could still hold that state.
+- **DEC-LAST-CHANGE-SCOPE** — Should Last change count deletions and conflict copies, or be named "Last saved version"?
+  `decision · maintainer · low`
 - **DEC-SITE-PALETTE** — Should the site share the app's tokens?
   `decision · maintainer · low`
   accept: `site/styles.css` keeps its own palette (paper `#f4f6ef` versus the app's `#F4F6F1`) or adopts the app tokens with a guard test.
@@ -195,12 +199,30 @@ Older notes listed these as open while later evidence suggests they are resolved
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
 
+- **DEV-PREPUSH-CACHE** — The pre-push hook does not repeat a suite that already passed on the same files
+  `chore · agent · normal`
+  accept: `scripts/validate-local.js` writes a stamp keyed by a hash of the files it validated (tracked plus untracked, ignoring ignored ones) and the Node version; `.githooks/pre-push` still runs `check-release` but skips `node --test` when the stamp matches the files about to be pushed, and says so; a changed file, a missing stamp or another Node version always runs the full suite; a contract test covers the stamp logic. Today every version runs the full suite twice (validate-local, then the hook).
+- **DOCKER-TAG-RETRY** — A published Docker image always gets its `docker-v` tag
+  `bug · agent · normal`
+  accept: the "Record the published version" step retries the tag creation and, if it still fails, ends with a message that names the exact command to run by hand; the gate also treats a version already on Docker Hub as shipped so a re-run never republishes it; a workflow contract test covers the retry and the check. v0.6.84 was published without its tag after two 403 answers from the refs API, and re-running it would have moved `latest` back.
+- **DESK-PREVIEW-ERROR-VISIBLE** — Say why a retained-version preview failed
+  `bug · agent · low`
+  accept: when the hub answers that it took too long (or is unavailable) for the preview of an older version, the row keeps its placeholder and carries the answer instead of swallowing it; a JSDOM test with a slow hub. The interface follows board UI-DESK-PREVIEW-ERROR-VISIBLE.
+- **DESK-SELECT-CATALOG-RACE** — A catalog refresh never drops a folder that was just selected
+  `bug · agent · low`
+  accept: a refresh answered before the hub listed a folder the user selected moments earlier keeps that folder in the saved catalog and does not forget its volume; a daemon test with a delayed refresh.
+- **MOB-GALLERY-UNDATED-COUNT** — The phone gallery counts photos that have no date
+  `bug · agent · low`
+  accept: first check whether the phone's gallery total and month counts leave out photos without a date (`hubGallery` sums only the dated timeline, while the desktop header counts them since 0.6.86); if they do, the counts include them and a hub-gallery test with undated rows proves it.
+- **DEV-FLAKY-MOBILE** — Find the mobile test that failed twice under load
+  `chore · agent · low`
+  accept: `tests/mobile-*.test.js` run repeatedly at full concurrency on a loaded machine; the test that failed once in `validate-local` for v0.6.79 and once for v0.6.80 (green when rerun alone) is named and its timing made deterministic, or the finding is recorded here as not reproducible.
 - **DESK-FILES-PAGING** — Files, History and a file's history grow by appending
   `chore · agent · low`
   accept: the desktop folder browser keeps the rows it has and appends the next cursor page instead of replacing them, up to a bounded number of rows, and typed search and scroll survive; History and a file's history keep appending; JSDOM tests cover the three lists. The interface follows board UI-DESK-FILES-PAGING.
 - **DESIGN-COVERAGE** — Draw the shipped views the design kit still lacks
   `chore · agent · low`
-  accept: `design/mobile.html` draws Files and Recent of an ordinary folder, the file detail, History, Devices (connected and unpaired), Settings, the incoming share sheet, the viewer and the approval sheet as the app renders them; `design/desktop.html` draws the file detail, the gallery viewer with Info, the Daemon stopped page, web access, the approval dialog, Settings → Network and the danger zone; the design tests keep passing and no board is added.
+  accept: `design/mobile.html` draws Files and Recent of an ordinary folder, the file detail, History, Devices (connected and unpaired), Settings, the incoming share sheet, the viewer and the approval sheet as the app renders them; `design/desktop.html` draws the file detail, the gallery viewer with Info, the Daemon stopped page, web access (with its sign-in help), the approval dialog, Settings → Network and Allow HTTP connections, the Erase this hub dialog, the file-list error and the danger zone; the design tests keep passing and no board is added.
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; dated or status sentences ("September 10 checkout", "implemented locally", "prepared locally, not deployed", the site's pending-verification note) and feature narration that SPEC already owns become short descriptions or pointers into SPEC.

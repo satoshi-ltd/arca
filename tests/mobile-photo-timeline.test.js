@@ -984,6 +984,30 @@ test("pending uploads separate waiting photos from failed ones", async () => {
     pendingUploadLabel([{ upload: "pending" }, { upload: "failed" }], { pending: 5, failed: 2 }),
     "3 remaining · 2 need attention",
   );
+  assert.equal(
+    pendingUploadLabel([{ upload: "uploading" }, { upload: "lost" }, { upload: "lost" }], { pending: 3, failed: 2 }),
+    "1 remaining",
+    "lost photos are dismissed, not counted as waiting or as needing attention",
+  );
+  assert.equal(
+    pendingUploadLabel([{ upload: "lost" }, { upload: "failed" }], { pending: 2, failed: 2 }),
+    "1 needs attention",
+  );
+});
+
+test("a pending upload whose saved copy is gone is marked lost for the strip", async () => {
+  const { mergeTimeline } = await import("../apps/mobile/src/gallery-timeline.js");
+  const items = mergeTimeline({
+    uploads: [
+      { id: "a", state: "failed", lost: true, filename: "lost.jpg" },
+      { id: "b", state: "failed", filename: "refused.jpg" },
+      { id: "c", state: "uploading", filename: "going.jpg" },
+    ],
+  });
+  assert.deepEqual(
+    Object.fromEntries(items.map((item) => [item.name, item.upload])),
+    { "lost.jpg": "lost", "refused.jpg": "failed", "going.jpg": "uploading" },
+  );
 });
 
 test("the rail labels undated photos instead of an invalid date", async () => {
@@ -1069,7 +1093,7 @@ test("the gallery grid never decodes originals and keeps preparing thumbnails wh
   const viewer = fs.readFileSync(new URL("../apps/mobile/src/PhotoViewer.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(gallery, /if \(loading\) return;/);
   assert.match(gallery, /\}, \[visibleKey, store, scope, volume, io, density\]\);/);
-  assert.match(gallery, /savedThumbnail\(thumbnails, item\) \|\|\s+\(item\.upload \? item\.uri : null\)/, "without a derivative a tile stays a placeholder");
+  assert.match(gallery, /savedThumbnail\(thumbnails, item\) \|\|\s+\(item\.upload && item\.upload !== "lost" \? item\.uri : null\)/, "without a derivative a tile stays a placeholder");
   assert.match(gallery, /displayRef\.current\(item\),\s*\),\s*\}\),\s*\[withHub\],/, "sync status changes never restart thumbnail preparation");
   assert.match(gallery, /\],\s*3,\s*undefined,\s*true,\s*\);/);
   assert.match(app, /\}, \[\s*folder\?\.id,\s*listedFolder\?\.files,\s*listedFolder\?\.bytes,\s*listedFolder\?\.changes,\s*\]\);/, "remote renames and same-size edits refresh the listing");

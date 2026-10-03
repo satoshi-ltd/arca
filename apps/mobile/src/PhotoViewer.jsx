@@ -552,9 +552,10 @@ export function PhotoViewer({
             </Pressable>
             <Text style={[s.viewerTitle, s.flex]} numberOfLines={1}>
               {item.upload
-                ? item.upload === "failed"
-                  ? "Needs attention"
-                  : "Uploading"
+                ? {
+                    failed: "Needs attention",
+                    lost: "No longer on this phone",
+                  }[item.upload] || "Uploading"
                 : dateLabel(item.date) || item.path.split("/").pop()}
             </Text>
             <Pressable

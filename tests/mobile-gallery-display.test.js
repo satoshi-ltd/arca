@@ -141,14 +141,21 @@ test("a downloaded image opens offline without consulting the native library or 
   );
 });
 
-test("the pending uploads strip offers to dismiss photos whose app copy is gone", () => {
+test("the pending uploads header carries one Dismiss action for photos whose app copy is gone", () => {
   const read = (file) =>
     fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
   const gallery = read("FolderGallery.jsx");
   assert.match(
     gallery,
-    /uploads\?\.dismissLost && pendingItems\.some\(\(item\) => item\.lost\)[\s\S]{0,200}label="Dismiss unavailable photos"[\s\S]{0,80}onPress=\{uploads\.dismissLost\}/,
+    /<Text style=\{s\.caption\}>\s+\{pendingUploadLabel\(pendingItems, uploads\?\.summary\)\}\s+<\/Text>\s+\{!!uploads\?\.dismissLost && !!lostCount && \(\s+<Pressable[\s\S]{0,260}onPress=\{uploads\.dismissLost\}[\s\S]{0,220}Dismiss \{lostCount\}/,
+    "the action sits in the section header, after the progress label",
   );
+  assert.doesNotMatch(gallery, /label="Dismiss unavailable photos"/, "the full-width button is gone");
+  assert.match(gallery, /no longer on this phone/);
+  assert.match(gallery, /hitSlop=\{\{ top: 11, bottom: 11, left: 8, right: 8 \}\}/, "the link keeps a 44 dp target");
+  assert.match(gallery, /item\.upload && item\.upload !== "lost" \? item\.uri : null/, "a lost tile never loads its missing file");
+  assert.match(read("PhotoViewer.jsx"), /lost: "No longer on this phone"/, "the viewer names a lost photo instead of calling it Uploading");
+  assert.match(gallery, /item\.upload !== "lost"/, "a lost tile shows the placeholder, not an alert badge");
   assert.match(
     read("App.jsx"),
     /dismissLost: \(\) =>\s+run\(\(\) => engine\.current\.gallery\.dismissLost\(folder\.id\)\)/,

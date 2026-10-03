@@ -95,7 +95,7 @@ const Tile = memo(function Tile({
       accessibilityRole="button"
       accessibilityLabel={
         item.upload
-          ? `${item.name || "Photo"} · ${item.upload === "failed" ? "Needs attention" : "Uploading"}`
+          ? `${item.name || "Photo"} · ${{ failed: "Needs attention", lost: "No longer on this phone" }[item.upload] || "Uploading"}`
           : `Open ${item.path}`
       }
       style={[
@@ -128,7 +128,10 @@ const Tile = memo(function Tile({
           <Icon name="check" size={14} color="#fff" />
         </View>
       )}
-      {!selected && size >= 40 && (item.kind === "video" || !!item.upload) && (
+      {!selected &&
+        size >= 40 &&
+        item.upload !== "lost" &&
+        (item.kind === "video" || !!item.upload) && (
         <View style={s.photoBadge}>
           <Icon
             size={14}
@@ -1045,8 +1048,10 @@ export function FolderGallery({
     () => mergeTimeline({ uploads: pending }),
     [pending],
   );
+  const lostCount = pendingItems.filter((item) => item.upload === "lost").length;
   const thumb = (item) =>
-    savedThumbnail(thumbnails, item) || (item.upload ? item.uri : null);
+    savedThumbnail(thumbnails, item) ||
+    (item.upload && item.upload !== "lost" ? item.uri : null);
   const photos = useMemo(
     () =>
       [...pendingItems, ...loaded].map((item) => {
@@ -1144,19 +1149,22 @@ export function FolderGallery({
 
       {!!pendingItems.length && (
         <View style={s.pendingUploads}>
-          <View style={s.timelineStatus}>
-            <Text style={[s.timelineMonth, s.flex]}>Pending uploads</Text>
+          <View style={[s.timelineStatus, s.pendingHeader]}>
+            <Text style={[s.timelineMonth, s.pendingTitle]}>Pending uploads</Text>
             <Text style={s.caption}>
               {pendingUploadLabel(pendingItems, uploads?.summary)}
             </Text>
+            {!!uploads?.dismissLost && !!lostCount && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Dismiss ${lostCount} unavailable ${lostCount === 1 ? "photo" : "photos"}`}
+                onPress={uploads.dismissLost}
+                hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
+              >
+                <Text style={s.infoLink}>Dismiss {lostCount}</Text>
+              </Pressable>
+            )}
           </View>
-          {!!uploads?.dismissLost && pendingItems.some((item) => item.lost) && (
-            <Button
-              label="Dismiss unavailable photos"
-              icon="close"
-              onPress={uploads.dismissLost}
-            />
-          )}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -1172,6 +1180,15 @@ export function FolderGallery({
               />
             ))}
           </ScrollView>
+          {!!lostCount && (
+            <Text style={s.caption}>
+              {lostCount === 1
+                ? "1 photo is no longer on this phone."
+                : `${lostCount} photos are no longer on this phone.`}{" "}
+              Pick {lostCount === 1 ? "it" : "them"} again to upload, or
+              dismiss {lostCount === 1 ? "it" : "them"}.
+            </Text>
+          )}
         </View>
       )}
       {!!candidates.length &&

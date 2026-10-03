@@ -64,7 +64,7 @@ export function mergeTimeline({ index = [], entries = [], uploads = [] }) {
       date: null,
       uri: upload.uri || null,
       size: 0,
-      upload: upload.state,
+      upload: upload.lost ? "lost" : upload.state,
       name: upload.filename,
     }));
   return pending.concat(photos);
@@ -85,12 +85,13 @@ export function monthLabel(month) {
   });
 }
 export function pendingUploadLabel(items, summary = {}) {
+  const lost = items.filter((item) => item.upload === "lost").length;
   const failed = Math.max(
     items.filter((item) => item.upload === "failed").length,
-    summary.failed || 0,
+    (summary.failed || 0) - lost,
   );
   const waiting = Math.max(
-    items.filter((item) => item.upload !== "failed").length,
+    items.filter((item) => !["failed", "lost"].includes(item.upload)).length,
     (summary.pending || 0) - (summary.failed || 0),
   );
   return [

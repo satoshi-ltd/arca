@@ -135,6 +135,8 @@ export function styles(
       borderRadius: g.cardRadius,
       backgroundColor: c.surface,
     },
+    pendingHeader: { flexWrap: "wrap", rowGap: 4 },
+    pendingTitle: { flexGrow: 1 },
     pendingUploadStrip: { gap: 8 },
     timelineGroup: { gap: 8 },
     galleryCanvas: { position: "relative" },

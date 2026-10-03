@@ -610,3 +610,9 @@
   text-align: center;
   color: var(--m-mute);
 }
+.m-link {
+  color: var(--m-accent);
+  font-size: var(--m-touch-body-font);
+  line-height: var(--m-touch-body-line);
+  font-weight: 600;
+}
