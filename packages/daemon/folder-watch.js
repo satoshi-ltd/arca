@@ -34,7 +34,10 @@ class TreeWatcher extends EventEmitter {
         this.failure ||= error;
       return;
     }
-    watcher.on("error", () => this.remove(relative));
+    watcher.on("error", (error) => {
+      this.remove(relative);
+      if (!this.closed && this.listenerCount("error")) this.emit("error", error);
+    });
     this.dirs.set(relative, watcher);
     let entries = [];
     try {

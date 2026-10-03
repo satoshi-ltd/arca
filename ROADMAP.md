@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SYNC-WATCHER-ERROR** — Recover when an existing Linux directory watcher fails
-  `bug · agent · high`
-  accept: an asynchronous `fs.watch` error reaches the daemon's watcher-error handler, marks the folder for a full scan and permits bounded watcher recreation. Inject an error after successful root and nested watcher creation; subsequent edits synchronize without waiting for the six-hour reconciliation, no stale watcher suppresses retries, and persistent failures do not create a hot loop.
 - **MOB-GALLERY-UNDATED-REV** — Invalidate Undated pages when content changes at the same count
   `bug · agent · normal`
   accept: the hub supplies a usable change signature for Undated and the phone uses it to invalidate loaded pages, including persisted caches. With more than 60 undated items, edit an item beyond the first page or replace one with another while keeping the count unchanged: refresh followed by pagination shows the new hash/path and removes stale rows. Dated-month pagination remains covered.

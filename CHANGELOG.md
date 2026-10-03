@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.109 — 2026-10-04
+
+- On Linux, a folder watcher that fails after it started no longer silently stops detecting changes: the folder is rescanned within a second and the watcher is recreated after a short pause, instead of waiting for the six-hour safety scan.
+
+Needs: Casa redeploy · desktop build
+
 ## 0.6.108 — 2026-10-04
 
 - Stop syncing can no longer delete OS-metadata files outside the folder when a directory in its cleanup plan is replaced by a link: the cleanup skips anything that is not a real directory at its own path.
