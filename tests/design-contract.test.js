@@ -488,3 +488,21 @@ test("control borders, destructive buttons, toggles and busy dots meet the acces
   assert.match(rule(".toggle input:focus-visible + span"), /outline: 2px solid var\(--green\);/);
   assert.match(rule(".busy-grid i"), /animation: arca-busy var\(--motion-loop\)/);
 });
+
+test("every control answers a press, the viewer keeps its own fills and icon buttons grow on coarse pointers", () => {
+  const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  const tail = css.slice(css.indexOf("@media (hover: hover) {\n  .secondary:hover:not(:disabled)"));
+  assert.ok(css.indexOf("@media (hover: hover) {\n  .secondary:hover:not(:disabled)") > css.indexOf(".dropdown-trigger:hover"), "the pressed block comes after every hover rule so it wins");
+  assert.match(tail, /\.secondary:hover:not\(:disabled\),\s+\.icon-button:hover:not\(:disabled\) \{\s+background: var\(--hover\);/, "hover fills with --hover, only where hover exists");
+  assert.doesNotMatch(css, /\n\.secondary:hover,\n\.icon-button:hover \{\n  background: var\(--surface\);/, "no hover that equals the resting colour");
+  const active = tail.match(/\.secondary:active:not\(:disabled\),[^{]*\{([^}]*)\}/)[0];
+  for (const selector of [".icon-button:active", ".nav-item:active:not(.active)", ".folder-card:active", ".history-row[role=\"button\"]:active", ".browser-file-row:active", ".dropdown-trigger:active"])
+    assert.ok(active.includes(selector), `${selector} fills while pressed`);
+  assert.match(active, /background: var\(--hover\);/);
+  assert.match(tail, /\.primary:active:not\(:disabled\),\s+\.photo-thumb \.photo-open:active \{\s+opacity: 0\.85;/);
+  assert.match(tail, /\.photo-viewer button:hover:not\(:disabled\),\s+\.photo-viewer button:active:not\(:disabled\) \{\s+background: #ffffff26;/, "viewer buttons keep their translucent fill");
+  assert.match(tail, /\.photo-viewer \.photo-info button:hover:not\(:disabled\),\s+\.photo-viewer \.photo-info button:active:not\(:disabled\) \{\s+background: var\(--tint\);/, "the Info panel keeps its tint");
+  const coarse = tail.slice(tail.indexOf("@media (pointer: coarse) {"));
+  assert.match(coarse, /@media \(pointer: coarse\) \{\s+\.icon-button,\s+\.ghost\.icon-button \{\s+width: var\(--touch-target-min\);/);
+  assert.match(coarse, /@media \(pointer: coarse\) and \(min-width: 481px\) \{\s+#sync-controls \.ghost\.icon-button,\s+#sync-controls button \{/, "the collapsed 64 px sidebar keeps its small controls");
+});

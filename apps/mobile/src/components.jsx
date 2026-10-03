@@ -294,7 +294,7 @@ export function Button({
       disabled={disabled || busy}
       onPress={onPress}
       hitSlop={size === "small" ? 6 : undefined}
-      style={[
+      style={({ pressed }) => [
         s.button,
         iconOnly && s.iconButton,
         size === "small" && s.smallButton,
@@ -303,6 +303,7 @@ export function Button({
         quiet && s.quietButton,
         danger && s.dangerButton,
         danger && primary && s.destructivePrimary,
+        pressed && !disabled && !busy && (primary ? s.pressedFade : s.pressed),
         (disabled || busy) && s.disabled,
       ]}
     >
@@ -864,7 +865,12 @@ export function ActionRow({
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[s.actionRow, divider && s.separator, disabled && s.disabled]}
+      style={({ pressed }) => [
+        s.actionRow,
+        divider && s.separator,
+        pressed && !disabled && s.pressed,
+        disabled && s.disabled,
+      ]}
     >
       <Icon name={icon} size={20} color={danger ? c.danger : c.soft} />
       {note ? (
@@ -974,12 +980,13 @@ export function FolderRow({
       }}
       disabled={disabled}
       onPress={onPress}
-      style={[
+      style={({ pressed }) => [
         !grouped && s.card,
         s.folderRow,
         grouped && s.groupedFolderRow,
         selectable && selected && s.selectedCard,
         divider && s.separator,
+        pressed && !disabled && s.pressed,
       ]}
     >
       {contents}
@@ -1017,14 +1024,15 @@ export function Navigation({ wide, compact, view, onSelect, name, hub }) {
           accessibilityLabel={tab}
           accessibilityState={{ selected: view === tab }}
           onPress={() => onSelect(tab)}
-          style={
+          style={({ pressed }) =>
             wide
               ? [
                   s.navItem,
                   compact && s.compactNav,
+                  pressed && s.pressed,
                   view === tab && s.navSelected,
                 ]
-              : [s.tab, view === tab && s.navSelected]
+              : [s.tab, pressed && s.pressed, view === tab && s.navSelected]
           }
         >
           <Icon

@@ -355,10 +355,6 @@ main {
 .primary:hover {
   filter: brightness(0.92);
 }
-.secondary:hover,
-.icon-button:hover {
-  background: var(--surface);
-}
 .small-button {
   min-height: var(--button-small-height);
   font-size: var(--text-body);
@@ -4037,3 +4033,46 @@ dialog.photo-viewer {
 
 .history-group:has(.row-preview) { --list-media-width: 44px; }
 .history-row > .icon:first-child, .browser-file-row > .icon:first-child { justify-self: center; }
+@media (hover: hover) {
+  .secondary:hover:not(:disabled),
+  .icon-button:hover:not(:disabled) {
+    background: var(--hover);
+  }
+}
+.secondary:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.nav-item:active:not(.active),
+.folder-card:active,
+.history-row[role="button"]:active,
+.browser-file-row:active,
+.dropdown-trigger:active {
+  background: var(--hover);
+}
+.primary:active:not(:disabled),
+.photo-thumb .photo-open:active {
+  opacity: 0.85;
+}
+.photo-viewer button:hover:not(:disabled),
+.photo-viewer button:active:not(:disabled) {
+  background: #ffffff26;
+}
+.photo-viewer .photo-info button:hover:not(:disabled),
+.photo-viewer .photo-info button:active:not(:disabled) {
+  background: var(--tint);
+}
+@media (pointer: coarse) {
+  .icon-button,
+  .ghost.icon-button {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+  }
+}
+@media (pointer: coarse) and (min-width: 481px) {
+  #sync-controls .ghost.icon-button,
+  #sync-controls button {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+  }
+}

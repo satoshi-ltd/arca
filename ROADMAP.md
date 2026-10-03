@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-SYS-PRESSED** — Every touch answers, and every target is big enough
-  `ui · agent · normal`
-  accept: the board.
 - **UI-SYS-EMPTY-NEXT-STEP** — Empty states say what to do
   `ui · agent · normal`
   accept: the board.

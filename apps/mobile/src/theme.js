@@ -823,6 +823,8 @@ export function styles(
       borderRadius: 14,
       overflow: "hidden",
     },
+    pressed: { backgroundColor: c.hover },
+    pressedFade: { opacity: 0.85 },
     dangerCard: { borderColor: c.danger },
     destructivePrimary: { backgroundColor: c.danger, borderColor: c.danger },
     dangerButton: { borderColor: c.danger },

@@ -106,9 +106,10 @@ const Tile = memo(function Tile({
       onAccessibilityAction={(event) => {
         if (event.nativeEvent.actionName === "longpress") onLongPress?.(item);
       }}
-      style={[
+      style={({ pressed }) => [
         s.photoTile,
         top !== undefined && s.galleryCell,
+        pressed && s.pressedFade,
         {
           width: size,
           height: size,

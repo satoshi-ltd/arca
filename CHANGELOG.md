@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.99 — 2026-10-03
+
+- Buttons, rows, tabs and photo tiles now react when pressed, on the desktop interface and on the phone, so a tap no longer looks ignored; the web interface on a phone gets 44 px icon buttons.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.98 — 2026-10-03
 
 - Photo uploads now says what All photos uploads and how many items that is, on its row, on the summary row and in a confirmation before saving a switch from albums to All photos, since that uses mobile data; Open settings appears only when the phone refused photo access.

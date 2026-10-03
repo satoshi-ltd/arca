@@ -426,19 +426,6 @@ body.kit {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.kit-touch .icon-button,
-.kit-touch .ghost {
-  min-width: var(--touch-target-min);
-  min-height: var(--touch-target-min);
-}
-.kit-pressed .secondary,
-.kit-pressed .icon-button,
-.kit-pressed .nav-item {
-  background: var(--hover);
-}
-.kit-pressed .primary {
-  opacity: 0.85;
-}
 .kit-segments .segmented {
   max-width: 320px;
   display: flex;
@@ -458,4 +445,11 @@ body.kit {
   box-shadow:
     0 0 0 1px var(--line),
     var(--shadow-dialog);
+}
+.kit-pressed-state .secondary,
+.kit-pressed-state .icon-button {
+  background: var(--hover);
+}
+.kit-pressed-state .primary {
+  opacity: 0.85;
 }

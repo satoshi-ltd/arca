@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.98 · production</span>
+      <span class="kit-version">v0.6.99 · production</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -193,7 +193,12 @@
               <button type="button" class="secondary" disabled>Disabled</button>
               <button type="button" class="primary" aria-busy="true"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing…</button>
             </div>
-            <p class="kit-note">One primary per screen, 32 px controls. Destructive actions are red, name the action and always say what stays.</p>
+            <div class="kit-row kit-pressed-state">
+              <button type="button" class="secondary">Pressed</button>
+              <button type="button" class="icon-button" aria-label="Copy"><span data-icon="copy"></span></button>
+              <button type="button" class="primary">Pressed</button>
+            </div>
+            <p class="kit-note">One primary per screen, 32 px controls. Pressed: secondary and icon buttons fill with the hover tone, primary drops to 85% opacity; on a touch screen icon buttons grow to 44 px. Destructive actions are red, name the action and always say what stays.</p>
           </div>
           <div class="kit-card">
             <h3>Role tags · inputs</h3>

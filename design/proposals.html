@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.98 · proposals</span>
+      <span class="kit-version">v0.6.99 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -67,21 +67,6 @@
 
 
 
-        <article class="kit-board" data-board="UI-SYS-PRESSED">
-          <header><code>UI-SYS-PRESSED</code><h3>Every touch answers, and every target is big enough</h3><span>System</span></header>
-          <p class="kit-note"><strong>Why.</strong> Mobile rows and buttons show no pressed state, and on desktop the secondary and icon buttons hover to the same surface colour they rest on, with no active rule. A press or hover gives no sign that the control heard it. The proposal gives every control one visible response, applied instantly.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Controls while pressed or hovered · no change</p>
-<div class="heading-actions"><button type="button" class="secondary"><span data-icon="folder"></span>Open</button><button type="button" class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></button><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button></div><button type="button" class="nav-item"><span data-icon="folder"></span>Folders</button>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-pressed kit-touch">
-              <p class="kit-caption">The same controls while pressed or hovered, with a 44 px target</p>
-<div class="heading-actions"><button type="button" class="secondary"><span data-icon="folder"></span>Open</button><button type="button" class="icon-button" aria-label="Actions"><span data-icon="ellipsis"></span></button><button type="button" class="ghost icon-button" aria-label="Pause sync"><span data-icon="pause"></span></button></div><button type="button" class="nav-item"><span data-icon="folder"></span>Folders</button>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>Every secondary and icon button, row, tab and photo tile changes background or opacity while pressed, in both themes, on desktop (hover limited to <code>(hover: hover)</code>, without clashing with the primary button's existing brightness change) and in the phone Pressables; on coarse pointers (the web admin on a phone) ghost and icon buttons measure at least <code>--touch-target-min</code> instead of 28 to 32 px; stylesheet contract tests check both.</p></div></div>
-        </article>
 
 
         <article class="kit-board" data-board="UI-SYS-DARK-ELEVATION">
