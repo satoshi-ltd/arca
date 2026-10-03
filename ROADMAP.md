@@ -26,12 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-FILES-PAGING** — Files, History and a file's history grow by appending
-  `chore · agent · low`
-  accept: the desktop folder browser keeps the rows it has and appends the next cursor page instead of replacing them, up to a bounded number of rows, and typed search and scroll survive; History and a file's history keep appending; JSDOM tests cover the three lists. The interface follows board UI-DESK-FILES-PAGING.
-- **UI-DESK-FILES-PAGING** — One way to show more
-  `ui · agent · low`
-  accept: the board.
 - **DESK-NATIVE-TRAY-OFFLINE** — The native tray says "needs attention" while only the hub is unreachable
   `bug · agent · low`
   accept: when the daemon's phase is `offline` and the only error is the hub's, the tray shows the plain icon and the text "Arca · offline" instead of the alert icon and "Arca · needs attention" (`tray_state` and the tooltip in `apps/desktop/src-tauri/src/main.rs`); conflicts, folder errors and backup errors still raise the alert; a Rust test next to the existing `tray_state` test. Needs a desktop build.

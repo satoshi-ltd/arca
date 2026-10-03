@@ -6534,6 +6534,7 @@ test("offline file history shows only the saved rows, says they are recent entri
   const content = w.document.querySelector("#content");
   assert.match(content.querySelector("#history-list .hint").textContent, /^Showing saved history · recent entries only\. Connect to the hub for updated retention and older versions\.$/);
   assert.doesNotMatch(content.textContent, /Offline · showing saved history/);
+  assert.equal(content.querySelector('.pagination button[data-action="history-page"]').textContent.trim(), "Show more versions");
   content.querySelector('.pagination button[data-action="history-page"]').click();
   await until(() => !content.querySelector(".pagination") && w.document.body.getAttribute("aria-busy") === "false");
   assert.equal(content.querySelectorAll(".file-version-row").length, 3, "an empty continuation keeps the rows already shown");
@@ -6562,4 +6563,83 @@ test("offline file history shows only the saved rows, says they are recent entri
   quiet.click();
   await until(() => w.document.querySelector("#history-list .hint")?.textContent.startsWith("Showing saved history. ") && w.document.body.getAttribute("aria-busy") === "false");
   assert.equal(w.document.querySelector("#history-list .hint").textContent, "Showing saved history. Connect to the hub for updated retention.", "a complete saved history does not claim to be recent entries only");
+});
+
+test("the Files list appends pages under one Show more files button, keeps the applied search and stops at 500 rows", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-files-more-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const requests = new Set();
+  const browsed = [];
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const page = (after) => {
+    const index = after ? Number(after.slice(1)) : 0;
+    return {
+      entries: Array.from({ length: 100 }, (_, n) => {
+        const name = `f${String(index * 100 + n).padStart(3, "0")}.txt`;
+        return { path: name, name, size: 10, rev: 1, directory: false };
+      }),
+      next: index < 5 ? `p${index + 1}` : null,
+    };
+  };
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), platform: "darwin", role: "replica", hubUnavailable: false, hubName: "Casa", hub: "http://127.0.0.1:49999" };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [{ ...volume, selected: 1, gallery: false }] };
+        if (args.route === "/v1/machines") return { machines: [] };
+        if (args.route.startsWith("/v1/browse")) {
+          const query = new URL(args.route, "http://x").searchParams;
+          browsed.push({ after: query.get("after"), search: query.get("search") });
+          return page(query.get("after"));
+        }
+        if (args.route.startsWith("/v1/activity") || args.route.startsWith("/v1/history")) return { versions: [], next: null };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector('.folder-card[data-action="folder-detail"]'));
+  w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
+  const rows = () => w.document.querySelectorAll(".browser-file-row").length;
+  const more = () => w.document.querySelector('[data-action="browse-more"]');
+  await until(() => rows() === 100 && w.document.body.getAttribute("aria-busy") === "false");
+  assert.equal(more().textContent.trim(), "Show more files");
+  assert.doesNotMatch(w.document.body.textContent, /First files|Next files/);
+  w.document.querySelector(".page").scrollTop = 123;
+  const button = more();
+  button.click();
+  button.click();
+  await until(() => rows() === 200 && w.document.body.getAttribute("aria-busy") === "false");
+  assert.equal(new Set([...w.document.querySelectorAll(".browser-file-row")].map((row) => row.getAttribute("aria-label"))).size, 200, "a double click appends the page once");
+  assert.equal(w.document.querySelector(".page").scrollTop, 123, "Show more keeps the scroll position");
+  assert.ok(w.document.querySelector('.browser-file-row[aria-label="Open f000.txt"]'), "the first rows stay");
+  assert.ok(w.document.querySelector('.browser-file-row[aria-label="Open f199.txt"]'), "the next page is appended");
+  for (const rowsAfter of [300, 400, 500]) {
+    more().click();
+    await until(() => rows() === rowsAfter && w.document.body.getAttribute("aria-busy") === "false");
+  }
+  assert.equal(more(), null, "the list stops growing at 500 rows");
+  assert.match(w.document.querySelector(".hint").textContent, /Showing the first 500 files\. Search to narrow the list\./);
+  w.document.querySelector('[data-action="folder-search-toggle"]').click();
+  await until(() => w.document.querySelector("#folder-search-input"));
+  w.document.querySelector("#folder-search-input").value = "f1";
+  w.document.querySelector('[data-action="folder-search-apply"]').click();
+  await until(() => rows() === 100 && w.document.body.getAttribute("aria-busy") === "false");
+  assert.equal(browsed.at(-1).search, "f1");
+  more().click();
+  await until(() => rows() === 200 && w.document.body.getAttribute("aria-busy") === "false");
+  assert.deepEqual(browsed.at(-1), { after: "p1", search: "f1" }, "Show more keeps the applied search");
 });

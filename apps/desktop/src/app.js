@@ -11,6 +11,7 @@ const folderPages = new Map();
 let folderCacheEpoch = 0;
 const folderPageKey = (route) =>
   `${status?.id}:${status?.hubId || status?.id}:${route}`;
+const MAX_FOLDER_PAGES = 5;
 function knownFolderPage(route) {
   return folderPages.get(folderPageKey(route));
 }
@@ -87,7 +88,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.100";
+const APP_VERSION = "0.6.101";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -563,7 +564,7 @@ let status,
   folderPrefix = "",
   folderSearch = "",
   folderSearchOpen = false,
-  folderAfter = "",
+  folderCursors = [""],
   historyRows = [],
   historyNext = null,
   historyVersions = [],
@@ -3202,18 +3203,31 @@ async function folderBrowser(v, recent, pending = false) {
     ? `<div class="folder-browser-search"><input id="folder-search-input" type="search" aria-label="Search files" placeholder="Search files" value="${escape(folderSearch)}" maxlength="256">${button("Search", "folder-search-apply", "", "secondary")}</div>`
     : "";
   try {
-    const data = await readFolderPage(
-      "/v1/browse?" +
-        new URLSearchParams({
-          volume: v.id,
-          prefix: folderPrefix,
-          search: folderSearch,
-          after: folderAfter,
-          limit: "100",
-        }),
-      pending,
+    const pages = await Promise.all(
+      folderCursors.map((after) =>
+        readFolderPage(
+          "/v1/browse?" +
+            new URLSearchParams({
+              volume: v.id,
+              prefix: folderPrefix,
+              search: folderSearch,
+              after,
+              limit: "100",
+            }),
+          pending,
+        ),
+      ),
     );
-    if (!data) return tools + scaffoldRow("history");
+    if (pages.some((page) => !page)) return tools + scaffoldRow("history");
+    const data = {
+      entries: [
+        ...new Map(
+          pages.flatMap((page) => page.entries).map((row) => [row.path, row]),
+        ).values(),
+      ],
+      next: pages[pages.length - 1].next,
+    };
+    const capped = Boolean(data.next) && folderCursors.length >= MAX_FOLDER_PAGES;
     return (
       tools +
       search +
@@ -3227,7 +3241,11 @@ async function folderBrowser(v, recent, pending = false) {
             "folder",
           )) +
       "</div>" +
-      `<div class="folder-browser-pages">${folderAfter ? button("First files", "browse-page", "", "secondary") : ""}${data.next ? button("Next files", "browse-page", data.next, "secondary") : ""}</div>`
+      (data.next
+        ? capped
+          ? `<p class="hint">Showing the first ${(MAX_FOLDER_PAGES * 100).toLocaleString("en")} files. Search to narrow the list.</p>`
+          : `<div class="pagination">${button("Show more files", "browse-more", data.next, "secondary")}</div>`
+        : "")
     );
   } catch (error) {
     return (
@@ -3237,7 +3255,7 @@ async function folderBrowser(v, recent, pending = false) {
       empty(
         "Files unavailable",
         "Arca could not list this folder’s files. If it keeps happening, update Arca, then try again.",
-        button("Retry", "browse-page", folderAfter, "secondary"),
+        button("Retry", "browse-retry", "", "secondary"),
       ) +
       "</div>"
     );
@@ -3254,6 +3272,10 @@ async function renderDetail(pending = false) {
   if (folderViewId !== v.id) {
     folderViewId = v.id;
     folderTab = v.gallery ? "gallery" : "files";
+    folderPrefix = "";
+    folderSearch = "";
+    folderSearchOpen = false;
+    folderCursors = [""];
     folderReturn = { tab: "files", scroll: 0 };
   }
   if (folderTab === "gallery") {
@@ -3421,7 +3443,7 @@ async function renderHistory(
                 "This file has no history available on the hub.",
               ),
       ) +
-      `${data.next ? `<div class="pagination">${button("Load more", "history-page", data.next)}</div>` : ""}`;
+      `${data.next ? `<div class="pagination">${button("Show more versions", "history-page", data.next, "secondary")}</div>` : ""}`;
     icons();
     return;
   }
@@ -3429,7 +3451,7 @@ async function renderHistory(
     `/v1/activity?limit=50&filter=${historyFilter}${historyVolume ? `&volume=${encodeURIComponent(historyVolume)}` : ""}${cursor ? `&before=${cursor}` : ""}`,
   );
   if (!data) {
-    if (cached) list.innerHTML = section("Loading", scaffoldRow("history"));
+    if (cached) list.innerHTML = scaffoldRow("history");
     return;
   }
   if (!target) list = $("#history-list");
@@ -3466,7 +3488,7 @@ async function renderHistory(
             ),
           )
           .join("") +
-        `${historyNext ? `<div class="pagination">${button("Load more", "history-page", historyNext)}</div>` : ""}`
+        `${historyNext ? `<div class="pagination">${button("Show more", "history-page", historyNext, "secondary")}</div>` : ""}`
       : historyEmpty());
   icons();
 }
@@ -4797,7 +4819,8 @@ async function handle(name, id, control) {
   if (
     name === "folder-tab" ||
     name === "browse-directory" ||
-    name === "browse-page" ||
+    name === "browse-more" ||
+    name === "browse-retry" ||
     name === "folder-search-toggle" ||
     name === "folder-search-apply"
   ) {
@@ -4812,8 +4835,13 @@ async function handle(name, id, control) {
     }
     if (name === "folder-search-apply")
       folderSearch = $("#folder-search-input").value.trim();
-    folderAfter = name === "browse-page" ? id : "";
+    const keepScroll = name === "browse-more" || name === "browse-retry";
+    const scroll = keepScroll ? $(".page")?.scrollTop || 0 : 0;
+    if (name === "browse-more") {
+      if (!folderCursors.includes(id)) folderCursors = [...folderCursors, id];
+    } else if (name !== "browse-retry") folderCursors = [""];
     await render();
+    if (keepScroll && $(".page")) $(".page").scrollTop = scroll;
     if (name === "folder-search-toggle" && folderSearchOpen)
       $("#folder-search-input")?.focus();
     return;
@@ -4852,7 +4880,7 @@ async function handle(name, id, control) {
       folderPrefix = "";
       folderSearch = "";
       folderSearchOpen = false;
-      folderAfter = "";
+      folderCursors = [""];
     }
     detailId = id;
     await render();
@@ -5616,7 +5644,8 @@ const navigationActions = new Set([
   "gallery-mode",
   "folder-tab",
   "browse-directory",
-  "browse-page",
+  "browse-more",
+  "browse-retry",
   "folder-search-toggle",
   "folder-search-apply",
   "back-folders",

@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.100 · proposals</span>
+      <span class="kit-version">v0.6.101 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -36,33 +36,6 @@
 
       <section class="kit-section" id="boards">
         <h2>Boards <span>01</span></h2>
-        <article class="kit-board" data-board="UI-DESK-FILES-PAGING">
-          <header><code>UI-DESK-FILES-PAGING</code><h3>One way to show more</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> Lists grow three different ways: the Files tab replaces its rows with First files and Next files, History appends with Load more, and the phone appends with Show more files and Load older versions; History also labels its placeholder rows Loading when nothing is cached yet. The proposal makes every list grow the same way, with one Show more button that appends the next rows (Show more files, Show more, Show more versions) and placeholder rows without a label. The alternative keeps page-by-page navigation on desktop and only renames the buttons.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Files · pages replace each other</p>
-<div class="history-group folder-explorer"><div class="browser-file-row" role="button" tabindex="0"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>12 KB</p></div><span data-icon="chevron-right"></span></div><div class="browser-file-row" role="button" tabindex="0"><span data-icon="file-text"></span><div><strong>notes.md</strong><p>9 KB</p></div><span data-icon="chevron-right"></span></div></div>
-<div class="folder-browser-pages"><button type="button" class="secondary"><span data-icon="chevron-left"></span>First files</button><button type="button" class="secondary"><span data-icon="chevron-right"></span>Next files</button></div>
-              <p class="kit-caption">History · pages append</p>
-<div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>rev 189886 · 2 h ago</p></div></div></div>
-<div class="pagination"><button type="button" class="secondary">Load more</button></div>
-              <p class="kit-caption">History with nothing cached · a Loading label</p>
-<div class="section-label">Loading</div><div class="history-group"><div class="history-row"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><div><strong>&nbsp;</strong></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">Files · rows append, like the phone</p>
-<div class="history-group folder-explorer"><div class="browser-file-row" role="button" tabindex="0"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>12 KB</p></div><span data-icon="chevron-right"></span></div><div class="browser-file-row" role="button" tabindex="0"><span data-icon="file-text"></span><div><strong>notes.md</strong><p>9 KB</p></div><span data-icon="chevron-right"></span></div></div>
-<div class="pagination"><button type="button" class="secondary">Show more files</button></div>
-              <p class="kit-caption">History · the same word</p>
-<div class="history-group"><div class="history-row"><span data-icon="file-text"></span><div><strong>brief.md</strong><p>rev 189886 · 2 h ago</p></div></div></div>
-<div class="pagination"><button type="button" class="secondary">Show more</button></div>
-              <p class="kit-caption">Placeholder rows need no label</p>
-<div class="history-group"><div class="history-row"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><div><strong>&nbsp;</strong></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>Files, History and a file's history on desktop and web end in one Show more button (Show more files, Show more, Show more versions) that appends the next rows and keeps scroll and typed search, as DESK-FILES-PAGING describes; the phone's buttons use the same words; placeholder rows carry no Loading label; JSDOM tests cover the three lists and <code>design/desktop.html</code> shows a list ending in Show more.</p></div></div>
-        </article>
 
 
 

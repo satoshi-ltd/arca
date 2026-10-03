@@ -174,7 +174,7 @@ export function FileHistory({
             ))}
           {history.next && (
             <Button
-              label="Load older versions"
+              label="Show more versions"
               busy={locked}
               onPress={loadMore}
             />

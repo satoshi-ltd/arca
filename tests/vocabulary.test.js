@@ -203,3 +203,18 @@ test("History explains why it is empty, on desktop and on the phone", async () =
   assert.equal(titles[1].title, "No conflicts");
   assert.equal(titles[0].text, "Connect to the hub to load history.");
 });
+
+test("every list that grows says Show more", () => {
+  const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+  const desktop = read("apps/desktop/src/app.js");
+  assert.ok(desktop.includes('button("Show more", "history-page", historyNext, "secondary")'));
+  assert.ok(desktop.includes('button("Show more versions", "history-page", data.next, "secondary")'));
+  assert.ok(desktop.includes('button("Show more files", "browse-more", data.next, "secondary")'));
+  assert.equal(desktop.includes("Load more"), false);
+  assert.equal(/section\("Loading", scaffoldRow/.test(desktop), false, "a placeholder row carries no Loading label");
+  for (const file of ["apps/mobile/src/App.jsx", "apps/mobile/src/FileHistory.jsx"]) {
+    const source = read(file);
+    assert.equal(source.includes("Load older versions"), false, `${file} still says Load older versions`);
+    assert.ok(source.includes('label="Show more versions"'), `${file} says Show more versions`);
+  }
+});

@@ -2691,8 +2691,7 @@ progress::-webkit-progress-value {
 
 .folder-browser-tools,
 .folder-browser-search,
-.folder-breadcrumb,
-.folder-browser-pages {
+.folder-breadcrumb {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2740,10 +2739,6 @@ progress::-webkit-progress-value {
   font-size: inherit;
   line-height: inherit;
   font-weight: 400;
-}
-.folder-browser-pages {
-  justify-content: flex-end;
-  margin-top: 12px;
 }
 .browser-file-row {
   display: grid;
@@ -4033,6 +4028,9 @@ dialog.photo-viewer {
 
 .history-group:has(.row-preview) { --list-media-width: 44px; }
 .history-row > .icon:first-child, .browser-file-row > .icon:first-child { justify-self: center; }
+.detail-revisions > .hint {
+  margin-top: var(--space-3);
+}
 @media (hover: hover) {
   .secondary:hover:not(:disabled),
   .icon-button:hover:not(:disabled) {

@@ -2614,7 +2614,7 @@ export default function App() {
                       )}
                       {history.next && (
                         <Button
-                          label="Load older versions"
+                          label="Show more versions"
                           busy={historyLoading}
                           onPress={() =>
                             getHistory(null, true).catch((e) =>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.101 — 2026-10-03
+
+- The desktop Files list now grows with a Show more files button that appends the next rows, like History and the phone, instead of replacing the page, and keeps your scroll and search; History's and a file's list say Show more and Show more versions on desktop and phone.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.100 — 2026-10-03
 
 - History now says why it is empty: with the Conflicts or Deleted filter it names the filter and how to clear it, a folder filter says so, and the phone's offline, filtered and empty cases each have their own message and next step.
