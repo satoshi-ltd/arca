@@ -11,4 +11,4 @@ export function testConcurrency(env = process.env, cores = os.availableParalleli
 }
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)))
-  console.log(testConcurrency());
+  console.log(String(testConcurrency()));

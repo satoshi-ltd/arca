@@ -207,6 +207,11 @@ test("local full runs cap test parallelism while CI keeps the default", () => {
     env: { ...process.env, ARCA_TEST_CONCURRENCY: "2" },
   });
   assert.equal(printed.trim(), "2", "the hook reads the number from this script");
+  const colored = execFileSync(process.execPath, [path.join(repository, "scripts", "test-concurrency.js")], {
+    encoding: "utf8",
+    env: { ...process.env, ARCA_TEST_CONCURRENCY: "2", FORCE_COLOR: "1" },
+  });
+  assert.equal(colored.trim(), "2", "a colour-forcing environment never wraps the number in escape codes");
   if (process.platform !== "win32") {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-concurrency-link-"));
     try {
