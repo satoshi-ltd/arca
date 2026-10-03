@@ -2039,6 +2039,77 @@ test("rows with the wrong shape are set aside too, and a corrupt pick whose app 
   assert.deepEqual(await store.corruptPicks(r.scope, volume.id), []);
 });
 
+test("a library photo deleted from the phone leaves the upload queue even when the existence lookup cannot say so", async (t) => {
+  const nativeError = () =>
+    new Error(
+      "Call to function 'ArcaNetwork.exportGalleryAsset' has been rejected.\n→ Caused by: java.lang.IllegalStateException: Photo is no longer accessible. Check photo permissions.",
+    );
+  for (const lookup of ["throws", "says it exists"]) {
+    const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+    const { replica: r, store, volume } = f;
+    await f.enable();
+    f.media.export = async () => {
+      throw nativeError();
+    };
+    f.media.exists = async () => {
+      if (lookup === "throws") throw new Error("Could not get asset");
+      return true;
+    };
+    await r.sync(true);
+    for (const id of ["photo-1", "photo-2"]) {
+      const row = await store.galleryAsset(r.scope, volume.id, id);
+      assert.equal(row.state, "unavailable", `${lookup}: ${id} is released, not left failed`);
+    }
+    assert.equal((await store.gallerySummary(r.scope, volume.id)).failed, 0);
+    assert.equal((await store.gallery(r.scope, volume.id)).issue, null);
+  }
+});
+
+test("a manual pick of a library photo deleted from the phone is released too, and a null-cursor answer is not proof", async (t) => {
+  const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+  const { replica: r, store, volume } = f;
+  await f.enable();
+  await r.gallery.setEnabled(volume.id, false);
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(volume.id, [{ assetId: "photo-1", fileName: "IMG_1234.HEIC" }]));
+  f.media.exists = async () => {
+    throw new Error("Could not get asset");
+  };
+  f.media.export = async () => {
+    throw new Error("Photo is no longer accessible");
+  };
+  f.online();
+  await r.sync(true).catch(() => {});
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "failed", "the provider-unreachable answer is not a deletion");
+  f.media.export = async () => {
+    throw new Error("Call to function 'ArcaNetwork.exportGalleryAsset' has been rejected.\n→ Caused by: java.lang.IllegalStateException: Photo is no longer accessible. Check photo permissions.");
+  };
+  await store.retryGallery(r.scope, volume.id);
+  await r.sync(true).catch(() => {});
+  const released = await store.galleryAsset(r.scope, volume.id, "photo-1");
+  assert.equal(released.state, "unavailable");
+  assert.equal((await store.gallerySummary(r.scope, volume.id)).failed, 0);
+});
+
+test("a different export failure keeps the photo failed, and restricted access never releases it", async (t) => {
+  const f = await galleryFixture(t, twoPhotos.map((a) => ({ ...a })));
+  const { replica: r, store, volume } = f;
+  await f.enable();
+  f.media.export = async () => {
+    throw new Error("Only photos and videos can be uploaded");
+  };
+  f.media.exists = async () => true;
+  await r.sync(true).catch(() => {});
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "failed");
+  f.media.export = async () => {
+    throw new Error("Photo is no longer accessible. Check photo permissions.");
+  };
+  f.media.permission = async () => ({ granted: true, accessPrivileges: "limited" });
+  await store.retryGallery(r.scope, volume.id);
+  await r.sync(true).catch(() => {});
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "photo-1")).state, "failed", "limited access cannot tell deleted from not shared");
+});
+
 test("a pick whose app copy is gone can be dismissed instead of staying failed, and picking it again queues it", async (t) => {
   const f = await galleryFixture(t);
   const r = f.replica;

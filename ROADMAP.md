@@ -36,65 +36,56 @@ _None._
 
 ### Builds and deployments
 
-- **BUILD-MOBILE** — Native mobile build from the current source
-  `deploy · maintainer · high`
-  accept: an Android production build of v0.6.20 or later installed on the Fold. It carries the v0.6.13 `ArcaNetwork.thumbnail` module, the Android screen-off TransferSession fix, the v0.6.18 damaged-album-record handling and the v0.6.20 conflict-recovery lease fix, and drops the obsolete exports and permission text of the removed deletion review.
 - **BUILD-DESKTOP** — Desktop build from the current source
   `deploy · maintainer · high`
   accept: the running desktop app and daemon report v0.6.15 or later (unlink deletes by default, local-only previews, photo/video header counts, relink with the hub as the source of truth, 30 s keep-alive).
 - **BUILD-IOS** — First iOS device build on SDK 57
   `deploy · maintainer · normal`
   accept: an iOS build installed on a physical device (only a simulator `xcodebuild` has passed, at v0.6.1).
-- **CASA-VERSION** — Record Casa's running version
-  `verify · maintainer · high`
-  accept: Casa's running version is reported to the maintainer and recorded in P1-CASA-DEPLOY, which depends on it.
-- **P1-CASA-DEPLOY** — Redeploy Casa
-  `deploy · maintainer · high · depends: CASA-VERSION`
-  accept: Casa runs v0.6.15 or later. Pending hub-side changes: v0.6.11 per-month video counts; v0.6.7 per-month newest revision; v0.6.6 lease renewal on page reads; removal of obsolete gallery endpoints; the v0.6.0 hub audit changes (503/412 gating, error codes, lease replacement, stored-part upload verification, lost-reply fast-forward). Order: Casa first, then desktop; from 0.6.2 on, replicas and phones go before or together with the hub.
 - **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on Casa
-  `deploy · maintainer · normal · depends: BUILD-DESKTOP, P1-CASA-DEPLOY`
+  `deploy · maintainer · normal · depends: BUILD-DESKTOP`
   accept: shipped installers and Casa carry the production dependencies (Sharp, exifr) and the gallery opens on both.
 
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: BUILD-MOBILE, BUILD-DESKTOP`
+  `verify · maintainer · high · depends: BUILD-DESKTOP`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **VERIFY-REVEAL-FILE** — Show in folder on real Windows and Linux
   `verify · maintainer · normal · depends: BUILD-DESKTOP`
   accept: on a Windows and a Linux desktop build, a file detail's Show in folder and the photo viewer's open the file's own folder (Explorer with the file selected on Windows, a file manager on the file's folder on Linux), including a file in a nested folder, a path with spaces and, on Windows, a path longer than 260 characters (the verbatim prefix is stripped for Explorer).
 - **VERIFY-SHARE-CACHE** — Incoming shares on the Fold
-  `verify · maintainer · high · depends: BUILD-MOBILE`
+  `verify · maintainer · high`
   accept: sharing one and several files, a large file and a file named like a path from another app into Arca on the Fold lists them in the Save sheet with their real names, saves them, and leaves nothing under the app's cache except generated names (`arca-incoming/<id>-<n>`) while the sheet is open and nothing after Save or Cancel.
 - **FOLD-STORAGE** — Storage after the object-store fix
-  `verify · maintainer · high · depends: BUILD-MOBILE`
+  `verify · maintainer · high`
   accept: after the first sync, Android's storage figure for Arca drops to about the synchronized folders' size (from about 55 GB to about 26 GB for `photos`).
 - **FOLD-THUMBNAILS** — Gallery thumbnails, posters and viewer
-  `verify · maintainer · high · depends: BUILD-MOBILE`
+  `verify · maintainer · high`
   accept: grid thumbnails and video posters fill in within seconds while folders sync; HEIC photos open quickly; the viewer shows the thumbnail at once; offline, every downloaded photo appears and the rest stay placeholders. Reported on the v0.6.44 build: grey tiles with every photo downloaded and a gallery crash (`Cannot read property 'uri' of undefined`, fixed in v0.6.46); if tiles stay grey on v0.6.46, connect the Fold by adb and capture the gallery's native errors so the cause can be found.
 - **FOLD-GALLERY-UX** — Gallery gestures and playback
-  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  `verify · maintainer · normal`
   accept: infinite scroll both ways, the fast-scroll thumb follows the finger with sparse year chips, pinch density levels (also on iOS), videos autoplay when opened, and Info pauses and resumes a video.
 - **P2-VIDEO** — Video on physical devices
-  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  `verify · maintainer · normal`
   accept: playback with audio, seeking and rotation on Android and iOS; local posters on iOS.
 - **WIN-UPDATE-WATCHER** — A failed Windows update gets the daemon back
   `verify · maintainer · normal · depends: BUILD-DESKTOP`
   accept: on a real Windows machine, with an update that fails after Arca closes (for example a locked installation file), the daemon is running again within about a minute without opening Arca, `update-watch.log` in the state directory says `restored` and `%TEMP%\arca-update-watch-*` is gone; a successful update logs `relaunched` and starts no second daemon.
 - **P2-GALLERY** — Album uploads on physical devices
-  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  `verify · maintainer · normal`
   accept: original cloud access and EXIF/RAW/HEIC/Live Photo fidelity (limited access and editor workflows included), and a Samsung run with a library over 10 GiB covering screen-off/background continuity, battery restrictions, interruption and resumed completion. Verify the historical archive and real-phone uploads before removing Immich or claiming a migration.
 - **P2-GALLERY-DELETE-DEVICE** — Shared gallery deletion on devices
-  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  `verify · maintainer · normal`
   accept: with disposable photos on Android and iOS: direct shared deletion, Live Photo groups, connection failure, partial selection failure and unchanged Photos originals; deletions persist across remounts; non-recursive directory deletion works (Android `Files.delete`, iOS `rmdir`).
 - **P2-MOBILE** — Mobile replica acceptance
-  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  `verify · maintainer · normal`
   accept: complete persistent copies, honest incomplete-work reporting, imports reaching the hub, resumable transfers without corruption, no data loss on suspension; low storage, interrupted downloads, revoked credentials and offline access; keyboard handling on phone, Fold and iOS; text scaling; launcher and splash in a standalone build; rename; APK opening on Samsung; Fold sticky scroll; settings visuals; iOS LAN pairing; name propagation; Fold throughput.
 - **P2-SHARING** — Incoming sharing
-  `verify · maintainer · low · depends: BUILD-MOBILE`
+  `verify · maintainer · low`
   accept: the iOS Share Extension works; cold-start, foreground and multiple-file shares work. Known gaps stay documented: text/plain streams, links and text are not imported, and duplicate temporary filenames must be shared separately.
 - **P2-FOLD-SCALING** — Fold scaling
-  `verify · maintainer · low · depends: BUILD-MOBILE`
+  `verify · maintainer · low`
   accept: the original Fold scaling issue no longer reproduces with the text-size setting, or a new bug is filed.
 
 ### Phase 1 qualification
@@ -197,6 +188,9 @@ Older notes listed these as open while later evidence suggests they are resolved
 
 Claude's suggested order for approval comes first. Each entry is ready to move to Queue as written.
 
+- **MOB-GALLERY-ALBUMS** — Photo uploads takes the albums the user selects, not all or one
+  `feature · agent · normal`
+  accept: the source keeps a list of albums (`albumIds`; empty means all accessible photos) instead of one `albumId`; discovery pages each selected album with its own cursor and counts a photo that sits in several albums once; deselecting an album stops discovering it, keeps every uploaded file and releases its pending uploads unless another selected album holds them; an album that disappears is reported by name while the others keep uploading; `gallerySettingsChanged` and the album-availability checks follow the list; a replica test with two albums and a pure-helper test cover it, and SPEC's Photo uploads section is rewritten. The interface follows board UI-MOB-GALLERY-ALBUMS.
 - **DEV-PREPUSH-CACHE** — The pre-push hook does not repeat a suite that already passed on the same files
   `chore · agent · normal`
   accept: `scripts/validate-local.js` writes a stamp keyed by a hash of the files it validated (tracked plus untracked, ignoring ignored ones) and the Node version; `.githooks/pre-push` still runs `check-release` but skips `node --test` when the stamp matches the files about to be pushed, and says so; a changed file, a missing stamp or another Node version always runs the full suite; a contract test covers the stamp logic. Today every version runs the full suite twice (validate-local, then the hook).

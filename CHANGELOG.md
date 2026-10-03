@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.91 — 2026-10-03
+
+- On the phone, photos you deleted from your gallery before they were uploaded now leave Pending uploads by themselves instead of staying as "needs attention", even when Android cannot confirm the deletion any other way.
+
+Needs: native build
+
 ## 0.6.90 — 2026-10-03
 
 - In the desktop app, when the hub is slow or unavailable while preparing the preview of an older version of a photo, the row now shows a clock whose tooltip says why, instead of a plain grey tile; the browser version keeps the plain tile.

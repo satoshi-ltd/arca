@@ -374,7 +374,9 @@ export class Gallery {
     await r.store.putGalleryAsset(r.scope, folder.id, item);
     return result.removed;
   }
-  async gone(id) {
+  async gone(id, error = null) {
+    if (/Photo is no longer accessible\. Check photo permissions\./.test(error?.message || ""))
+      return true;
     if (!this.media.exists) return false;
     try {
       return !(await this.media.exists(id));
@@ -388,7 +390,7 @@ export class Gallery {
     if (
       !permission?.granted ||
       permission.accessPrivileges === "limited" ||
-      !(await this.gone(item.id))
+      !(await this.gone(item.id, error))
     )
       return false;
     await this.release(folder, item);

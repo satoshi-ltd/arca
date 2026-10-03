@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.90 · proposals</span>
+      <span class="kit-version">v0.6.91 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -62,6 +62,23 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>Files, History and a file's history on desktop and web end in one Show more button (Show more files, Show more, Show more versions) that appends the next rows and keeps scroll and typed search, as DESK-FILES-PAGING describes; the phone's buttons use the same words; placeholder rows carry no Loading label; JSDOM tests cover the three lists and <code>design/desktop.html</code> shows a list ending in Show more.</p></div></div>
+        </article>
+
+        <article class="kit-board" data-board="UI-MOB-GALLERY-ALBUMS">
+          <header><code>UI-MOB-GALLERY-ALBUMS</code><h3>Choose the albums to upload, not all or one</h3><span>Mobile</span></header>
+          <p class="kit-note"><strong>Why.</strong> Photo uploads takes either every accessible photo or a single album. Someone who wants Camera and Family but not Screenshots or WhatsApp Images has to link one album and lose the other, or take everything. The proposal turns the album row into a checklist: any number of albums can be ticked, All accessible photos stays as the shortcut for everything, and the row on the Photo uploads screen summarizes the choice.</p>
+          <div class="kit-board-pair">
+            <figure><figcaption>Now</figcaption><div class="kit-draw kit-fragments">
+              <p class="kit-caption">Photo uploads · one album or all photos</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-section"><div class="m-list"><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">All accessible photos</span><span class="m-caption">Album</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div><div class="m-row"><div class="m-stack"><span class="m-row-title">Include videos</span></div></div></div><span class="m-caption">Uses your current network, including mobile data.</span><span class="m-button m-primary">Save changes</span></div></div></div>
+            </div></figure>
+            <figure><figcaption>Proposed</figcaption><div class="kit-draw kit-fragments">
+              <p class="kit-caption">Photo uploads · the row summarizes the albums, the chooser is a checklist</p>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-section"><div class="m-list"><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">2 albums</span><span class="m-caption">Camera, Family</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div><div class="m-row"><div class="m-stack"><span class="m-row-title">Include videos</span></div></div></div><span class="m-button m-primary">Save changes</span></div></div></div>
+<div class="m-screen m-fragment"><div class="m-body"><div class="m-section"><span class="m-eyebrow">Albums to upload</span><div class="m-list"><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">All accessible photos</span></div></div><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">Camera</span><span class="m-caption">1,240 items</span></div><div class="m-row-action"><span data-icon="check" data-size="20"></span></div></div><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">Family</span><span class="m-caption">86 items</span></div><div class="m-row-action"><span data-icon="check" data-size="20"></span></div></div><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">Screenshots</span><span class="m-caption">412 items</span></div></div><div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">WhatsApp Images</span><span class="m-caption">3,010 items</span></div></div></div><span class="m-caption">2 albums selected. Photos already uploaded stay on the hub.</span></div></div></div>
+            </div></figure>
+          </div>
+          <div class="kit-rules"><div><strong>Accept</strong><p>The Photo uploads album row reads All accessible photos, the album's name or "N albums" with their names; tapping it opens a checklist where every album can be ticked or cleared and All accessible photos selects everything; Save changes stays disabled until the choice differs from the saved one and at least one album or All is chosen; the interface follows MOB-GALLERY-ALBUMS; design/mobile.html draws both screens and a layout test covers the checklist.</p></div></div>
         </article>
       </section>
 
