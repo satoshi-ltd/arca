@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import vm from "node:vm";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
@@ -1102,7 +1103,11 @@ async function galleryFixture(
     path.join(f.root, "mobile", s, "gallery-stage", v);
   files.clearGalleryStage = async (s, v) =>
     fs.rmSync(files.galleryStage(s, v), { recursive: true, force: true });
-  files.picked = (s, v, k) => path.join(f.root, "mobile", s, "picked", v, k);
+  files.picked = (s, v, k) => {
+    for (const part of [s, v, k])
+      if (typeof part !== "string" || !/^[a-zA-Z0-9-]+$/.test(part)) throw new Error("Invalid folder identity");
+    return path.join(f.root, "mobile", s, "picked", v, k);
+  };
   files.discardPicked = async () => {};
   const data = new Map(
     assets.map((a) => [a.id, Buffer.from(`original ${a.id}`)]),
@@ -5049,7 +5054,7 @@ test("refused photo library access carries a code the screen can tell from other
   await assert.rejects(f.replica.gallery.options(false), (error) => error.code === undefined);
 });
 
-test("a corrupt pick keeps its saved name, or takes its type from its bytes, never a blind photo.jpg", async (t) => {
+test("a pick from before the name was kept beside its copy keeps the name its row carries, or takes its type from its bytes, never a blind photo.jpg", async (t) => {
   const heic = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftypheic"), Buffer.alloc(32)]);
   for (const [saved, bytes, expected] of [
     ['{"id":"x","name":"IMG_9.HEIC","resources":"abc"}', Buffer.from("pick bytes"), "IMG_9.HEIC"],
@@ -5064,6 +5069,7 @@ test("a corrupt pick keeps its saved name, or takes its type from its bytes, nev
     f.offline();
     await assert.rejects(r.gallery.addPhotos(volume.id, [{ uri, fileName: "pick.bin" }]));
     const pending = (await store.galleryPreview(r.scope, volume.id, false, 24)).find((item) => item.picked);
+    await r.files.remove(r.files.picked(r.scope, volume.id, `${pending.id}-name`));
     await store.db.runAsync("UPDATE gallery_assets SET row=? WHERE asset=?", saved, pending.id);
     await store.clearInterrupted(r.scope);
     f.online();
@@ -5084,4 +5090,47 @@ test("a corrupt pick keeps its saved name, or takes its type from its bytes, nev
   assert.deepEqual(recoveredPick('{"name":"a.jpg","prefix":"P","creationTime":5,"x":1}'), { name: "a.jpg" });
   assert.deepEqual(recoveredPick("[1]"), {});
   assert.deepEqual(recoveredPick("{broken"), {});
+});
+
+test("a corrupt pick is sent again to the very path it was first given, so the hub never gets a second copy", async (t) => {
+  const { galleryPath } = await import("../apps/mobile/src/gallery.js");
+  const f = await galleryFixture(t);
+  const { replica: r, store, volume } = f;
+  await f.enable();
+  const uri = path.join(f.root, "original.HEIC");
+  fs.writeFileSync(uri, Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftypheic"), Buffer.alloc(32)]));
+  f.offline();
+  await assert.rejects(r.gallery.addPhotos(volume.id, [{ uri, fileName: "original.HEIC" }]));
+  const pending = (await store.galleryPreview(r.scope, volume.id, false, 24)).find((item) => item.picked);
+  const expected = galleryPath(pending.prefix, pending, { name: pending.name, key: "original" });
+  await store.db.runAsync("UPDATE gallery_assets SET row=? WHERE asset=?", "{broken", pending.id);
+  await store.clearInterrupted(r.scope);
+  f.online();
+  await r.sync(true);
+  const recovered = await store.galleryAsset(r.scope, volume.id, pending.id);
+  assert.equal(recovered.name, "original.HEIC");
+  assert.equal(recovered.resources[0].path, expected, "the path does not change");
+  assert.equal(
+    await r.files.stat(r.files.picked(r.scope, volume.id, `${pending.id}-name`)),
+    null,
+    "the kept name goes with the kept copy once the photo is accepted",
+  );
+});
+
+test("the real picked-file helper accepts the name key a pick is stored under", () => {
+  const source = fs
+    .readFileSync(new URL("../apps/mobile/src/files.js", import.meta.url), "utf8")
+    .replace(/^import .*;\r?$/gm, "")
+    .replace("export const files", "const files");
+  class Directory {
+    constructor(parent, ...parts) {
+      this.uri = [parent?.uri ?? parent, ...parts].join("/");
+    }
+  }
+  class File extends Directory {}
+  const files = vm.runInNewContext(`${source}\nfiles;`, { Directory, File, Paths: { document: "root", join: (...parts) => parts.join("/") } });
+  const id = `picked-${"a".repeat(64)}`;
+  assert.match(files.picked("scope-1", "volume-1", id), /picked\/volume-1\/picked-a+$/);
+  assert.match(files.picked("scope-1", "volume-1", `${id}-name`), /picked-a+-name$/);
+  assert.throws(() => files.picked("scope-1", "volume-1", `${id}.name`), /Invalid folder identity/, "a dotted key can never name a picked file");
 });

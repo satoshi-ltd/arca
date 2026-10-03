@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.104 — 2026-10-03
+
+- A pending phone photo whose record is damaged is now sent again under its original name and to the same path, so the hub never ends up with a second copy of it.
+
+Needs: native build
+
 ## 0.6.103 — 2026-10-03
 
 - The desktop Files list no longer loses a file when the folder changes while you press Show more.

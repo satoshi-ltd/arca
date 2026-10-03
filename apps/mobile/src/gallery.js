@@ -189,16 +189,20 @@ export class Gallery {
           "The picked photo is no longer available. Pick it again.",
         );
       const durable = r.files.picked(r.scope, volume, id);
+      const named = r.files.picked(r.scope, volume, `${id}-name`);
       const kept = await r.files.stat(durable);
-      if (!kept || kept.size !== stat.size) {
-        try {
+      try {
+        if (!kept || kept.size !== stat.size) {
           await r.space(stat.size);
           await r.files.mkdir(r.files.parent(durable));
           await r.files.copy(asset.uri, durable);
-        } catch (error) {
-          await r.files.remove(durable).catch(() => {});
-          throw error;
         }
+        await r.files.remove(named);
+        await r.files.write(named, new TextEncoder().encode(item.name));
+      } catch (error) {
+        await r.files.remove(durable).catch(() => {});
+        await r.files.remove(named).catch(() => {});
+        throw error;
       }
       item.picked = { name: item.name, key: "original" };
       delete item.lost;
@@ -465,9 +469,10 @@ export class Gallery {
   }
   async dropPicked(volume, item) {
     if (item.picked)
-      await this.r.files
-        .remove(this.r.files.picked(this.r.scope, volume, item.id))
-        .catch(() => {});
+      for (const key of [item.id, `${item.id}-name`])
+        await this.r.files
+          .remove(this.r.files.picked(this.r.scope, volume, key))
+          .catch(() => {});
     delete item.picked;
     delete item.lost;
   }
@@ -713,9 +718,13 @@ export class Gallery {
     for (const { id, row } of await r.store.corruptPicks(r.scope, folder.id)) {
       const kept = r.files.picked(r.scope, folder.id, id);
       if (await r.files.stat(kept)) {
-        const saved = recoveredPick(row);
+        const named = r.files.picked(r.scope, folder.id, `${id}-name`);
+        const savedName = (await r.files.stat(named))
+          ? (await r.files.text(named).catch(() => "")).trim()
+          : "";
         const name =
-          saved.name ||
+          savedName ||
+          recoveredPick(row).name ||
           `photo${pickedExtension(await r.files.read(kept, 0, 16).catch(() => []))}`;
         await r.store.putGalleryAsset(r.scope, folder.id, {
           id,
