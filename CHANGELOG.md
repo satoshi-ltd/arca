@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.106 — 2026-10-04
+
+- Adding a file on the phone can no longer destroy data: a copy that fails (for example for lack of space) leaves the existing file untouched, and importing the same source again never overwrites an edited conflict copy; it uses the next free `.conflict-import` name instead.
+
+Needs: native build
+
 ## 0.6.105 — 2026-10-03
 
 - Choosing a photo that is already waiting to upload can no longer delete its saved copy when writing its name file fails, for example because the phone is out of space.

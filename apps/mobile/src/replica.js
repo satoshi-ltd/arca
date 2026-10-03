@@ -1257,15 +1257,33 @@ export class Replica {
     }
     const folder = await this.store.folder(this.scope, volume);
     if (!folder?.selected) throw new Error("Start syncing this folder first");
-    const target = this.files.work(this.scope, volume, name);
-    await this.space((await this.files.stat(source)).size * 2);
-    if (await this.files.exists(target)) {
-      const old = await this.files.hash(target),
-        incoming = await this.files.hash(source);
-      if (old !== incoming)
-        name = `${name}.conflict-import-${incoming.slice(0, 12)}`;
+    const size = (await this.files.stat(source)).size;
+    await this.space(size * 2);
+    const incoming = await this.files.hash(source);
+    const conflict = `${name}.conflict-import-${incoming.slice(0, 12)}`;
+    const candidates = [
+      name,
+      conflict,
+      ...Array.from({ length: 98 }, (_, n) => `${conflict}-${n + 2}`),
+    ];
+    let destination = null;
+    for (const candidate of candidates) {
+      const target = this.files.work(this.scope, volume, candidate);
+      const present = await this.files.stat(target);
+      if (!present) {
+        destination = target;
+        break;
+      }
+      if (
+        !present.directory &&
+        present.size === size &&
+        (await this.files.hash(target)) === incoming
+      )
+        return;
     }
-    const destination = this.files.work(this.scope, volume, name);
+    if (!destination)
+      throw new Error("Too many conflicting copies of this file already exist.");
+    await this.files.clearStaged(this.files.parent(destination));
     await this.files.mkdir(this.files.parent(destination));
     await this.files.copy(source, destination);
     this.changed();

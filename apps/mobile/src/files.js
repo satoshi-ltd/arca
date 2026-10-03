@@ -87,9 +87,30 @@ export const files = {
     )
       new File(uri).delete();
   },
+  async clearStaged(uri) {
+    const directory = new Directory(uri);
+    if (!directory.exists) return;
+    for (const entry of directory.list())
+      if (entry.name.startsWith(".arca-copy-")) entry.delete();
+  },
   async copy(from, to) {
-    if (new File(to).exists) new File(to).delete();
-    await new File(from).copy(new File(to));
+    const staged = new File(
+      Paths.join(
+        Paths.dirname(to),
+        `.arca-copy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+      ),
+    );
+    try {
+      await new File(from).copy(staged);
+      if (to.startsWith(root.uri)) native.replaceFile(staged.uri, to);
+      else {
+        if (new File(to).exists) new File(to).delete();
+        await staged.move(new File(to));
+      }
+    } catch (error) {
+      if (staged.exists) staged.delete();
+      throw error;
+    }
   },
   async move(from, to) {
     if (Paths.info(from).isDirectory)

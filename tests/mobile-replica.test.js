@@ -115,6 +115,11 @@ async function fixture(t, { timeout } = {}) {
         force: true,
       }),
     copy: async (a, b) => fs.copyFileSync(a, b),
+    clearStaged: async (p) => {
+      if (fs.existsSync(p))
+        for (const name of fs.readdirSync(p))
+          if (name.startsWith(".arca-copy-")) fs.rmSync(path.join(p, name), { force: true });
+    },
     move: async (a, b) => fs.renameSync(a, b),
     replace: async (a, b) => fs.renameSync(a, b),
     text: async (p) => fs.readFileSync(p, "utf8"),
@@ -5168,4 +5173,167 @@ test("a failed write of the kept name never deletes the copy a pending pick alre
   await r.gallery.addPhotos(volume.id, [{ uri, fileName: "again.jpg" }]).catch(() => {});
   assert.equal((await r.files.text(named)).trim(), "old.jpg", "a name file that could not be replaced keeps its previous content");
   r.files.write = write;
+});
+
+test("importing keeps every byte: edited conflict copies survive a reimport and an identical import changes nothing", async (t) => {
+  const f = await fixture(t);
+  const { replica: r, volume } = f;
+  await f.client.refresh();
+  await r.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  await r.pause(true);
+  const work = (name) => f.files.work(r.scope, volume.id, name);
+  const source = path.join(f.root, "incoming.bin");
+  const incoming = Buffer.from("incoming bytes");
+  fs.writeFileSync(source, incoming);
+  fs.mkdirSync(path.dirname(work("report.txt")), { recursive: true });
+  fs.writeFileSync(work("report.txt"), "existing original");
+  await r.importFile(volume.id, "report.txt", source);
+  const hash = crypto.createHash("sha256").update(incoming).digest("hex").slice(0, 12);
+  const conflict = `report.txt.conflict-import-${hash}`;
+  assert.equal(fs.readFileSync(work("report.txt"), "utf8"), "existing original", "the original stays");
+  assert.deepEqual(fs.readFileSync(work(conflict)), incoming);
+  fs.writeFileSync(work(conflict), "my edits to the conflict copy");
+  await r.importFile(volume.id, "report.txt", source);
+  assert.equal(fs.readFileSync(work(conflict), "utf8"), "my edits to the conflict copy", "the edited conflict copy is never overwritten");
+  assert.deepEqual(fs.readFileSync(work(`${conflict}-2`)), incoming, "the incoming bytes get an unused path");
+  await r.importFile(volume.id, "report.txt", source);
+  assert.deepEqual(
+    fs.readdirSync(path.dirname(work("report.txt"))).filter((name) => name.startsWith("report.txt")).sort(),
+    ["report.txt", conflict, `${conflict}-2`].sort(),
+    "importing the same bytes again adds nothing",
+  );
+  fs.writeFileSync(work("same.txt"), incoming);
+  const before = fs.statSync(work("same.txt")).mtimeMs;
+  const copied = [];
+  const copy = f.files.copy;
+  f.files.copy = async (...args) => {
+    copied.push(args[1]);
+    return copy(...args);
+  };
+  await r.importFile(volume.id, "same.txt", source);
+  assert.deepEqual(copied, [], "identical bytes are never copied again");
+  assert.equal(fs.statSync(work("same.txt")).mtimeMs, before);
+});
+
+test("a failed import leaves the existing working file byte-identical and nothing partial behind", async (t) => {
+  const f = await fixture(t);
+  const { replica: r, volume } = f;
+  await f.client.refresh();
+  await r.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  await r.pause(true);
+  const work = (name) => f.files.work(r.scope, volume.id, name);
+  const source = path.join(f.root, "incoming.bin");
+  fs.writeFileSync(source, "new bytes");
+  fs.mkdirSync(path.dirname(work("keep.txt")), { recursive: true });
+  fs.writeFileSync(work("keep.txt"), "precious");
+  const copy = f.files.copy;
+  f.files.copy = async () => {
+    throw new Error("No space left on device");
+  };
+  const conflict = `keep.txt.conflict-import-${crypto.createHash("sha256").update("new bytes").digest("hex").slice(0, 12)}`;
+  await assert.rejects(r.importFile(volume.id, "keep.txt", source), /No space left/);
+  assert.equal(fs.readFileSync(work("keep.txt"), "utf8"), "precious");
+  assert.equal(fs.existsSync(work(conflict)), false, "no truncated conflict copy appears");
+  f.files.copy = copy;
+  const low = f.files.free;
+  f.files.free = async () => 0;
+  await assert.rejects(r.importFile(volume.id, "keep.txt", source));
+  assert.equal(fs.readFileSync(work("keep.txt"), "utf8"), "precious", "low storage before copying changes nothing");
+  f.files.free = low;
+});
+
+test("the production copy stages beside the destination, publishes atomically and never deletes the target on failure", async () => {
+  const source = fs
+    .readFileSync(new URL("../apps/mobile/src/files.js", import.meta.url), "utf8")
+    .replace(/^import .*;\r?$/gm, "")
+    .replace("export const files", "const files");
+  const disk = new Map([["file:///app/arca/s/folders/v/keep.txt", "precious"], ["file:///cache/source.bin", "new bytes"]]);
+  const replaced = [];
+  let failCopy = false;
+  let failMove = false;
+  class File {
+    constructor(...parts) {
+      this.uri = parts.map((part) => part.uri ?? part).join("/");
+    }
+    get exists() {
+      return disk.has(this.uri);
+    }
+    delete() {
+      disk.delete(this.uri);
+    }
+    async copy(destination) {
+      if (failCopy) {
+        disk.set(destination.uri, "trunc");
+        throw new Error("No space left on device");
+      }
+      disk.set(destination.uri, disk.get(this.uri));
+    }
+    async move(destination) {
+      if (failMove) throw new Error("Move failed");
+      disk.set(destination.uri, disk.get(this.uri));
+      disk.delete(this.uri);
+    }
+  }
+  class Directory {
+    constructor(...parts) {
+      this.uri = parts.map((part) => part.uri ?? part).join("/");
+    }
+  }
+  const files = vm.runInNewContext(`${source}\nfiles;`, {
+    File,
+    Directory,
+    Paths: { document: "file:///app", dirname: (uri) => uri.slice(0, uri.lastIndexOf("/")), join: (...parts) => parts.join("/") },
+    native: {
+      replaceFile(from, to) {
+        replaced.push([from, to]);
+        disk.set(to, disk.get(from));
+        disk.delete(from);
+      },
+    },
+    Date,
+    Math,
+  });
+  const target = "file:///app/arca/s/folders/v/keep.txt";
+  failCopy = true;
+  await assert.rejects(files.copy("file:///cache/source.bin", target), /No space left/);
+  assert.equal(disk.get(target), "precious", "a failed copy leaves the target alone");
+  assert.deepEqual([...disk.keys()].sort(), [target, "file:///cache/source.bin"].sort(), "the half-written staging file is removed");
+  failCopy = false;
+  await files.copy("file:///cache/source.bin", target);
+  assert.equal(disk.get(target), "new bytes");
+  assert.equal(replaced.length, 1);
+  assert.match(replaced[0][0], /^file:\/\/\/app\/arca\/s\/folders\/v\/\.arca-copy-/, "staged under a name the scanner skips");
+  const outside = "file:///cache/arca-incoming/x";
+  await files.copy("file:///cache/source.bin", outside);
+  assert.equal(disk.get(outside), "new bytes", "a destination outside the app root is moved into place");
+  assert.equal(replaced.length, 1);
+  failMove = true;
+  await assert.rejects(files.copy("file:///cache/source.bin", outside), /Move failed/, "a failing move is awaited and reported");
+  assert.deepEqual([...disk.keys()].filter((uri) => uri.includes(".arca-copy-")), [], "and its staging file is removed");
+});
+
+test("importing stops with a clear error when every candidate name is taken, and a leftover staging file is swept", async (t) => {
+  const f = await fixture(t);
+  const { replica: r, volume } = f;
+  await f.client.refresh();
+  await r.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  await r.pause(true);
+  const work = (name) => f.files.work(r.scope, volume.id, name);
+  const source = path.join(f.root, "incoming.bin");
+  fs.writeFileSync(source, "incoming");
+  const hash = crypto.createHash("sha256").update("incoming").digest("hex").slice(0, 12);
+  const conflict = `full.txt.conflict-import-${hash}`;
+  fs.mkdirSync(path.dirname(work("full.txt")), { recursive: true });
+  fs.writeFileSync(work("full.txt"), "a");
+  fs.writeFileSync(work(conflict), "b");
+  for (let n = 2; n <= 99; n++) fs.writeFileSync(work(`${conflict}-${n}`), `c${n}`);
+  fs.writeFileSync(path.join(path.dirname(work("full.txt")), ".arca-copy-left-behind"), "half");
+  await assert.rejects(r.importFile(volume.id, "full.txt", source), /Too many conflicting copies/);
+  fs.rmSync(work(`${conflict}-99`));
+  await r.importFile(volume.id, "full.txt", source);
+  assert.equal(fs.readFileSync(work(`${conflict}-99`), "utf8"), "incoming");
+  assert.equal(fs.existsSync(path.join(path.dirname(work("full.txt")), ".arca-copy-left-behind")), false, "an orphaned staging file is removed before the next import");
 });
