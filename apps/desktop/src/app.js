@@ -87,7 +87,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.89";
+const APP_VERSION = "0.6.90";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -189,6 +189,7 @@ function rowPreview(row, fallback, historical = false) {
   });
   return `<span class="row-preview" data-row-preview="${escape(query.toString())}">${icon(fallback)}${historical ? `<span class="row-preview-status">${icon(fallback)}</span>` : ""}</span>`;
 }
+const HUB_PREVIEW_WAIT = /took too long|Hub unavailable/i;
 let rowPreviewObserver;
 const observedRowPreviews = new Set();
 let rowPreviewWorkers = 0;
@@ -214,7 +215,18 @@ function mountRowPreviews() {
           };
           img.src = value.data;
         })
-        .catch(() => {})
+        .catch((error) => {
+          const state = el.querySelector(".row-preview-status");
+          const message = error?.message || "";
+          if (!state || !el.isConnected || !HUB_PREVIEW_WAIT.test(message))
+            return;
+          state.innerHTML = icon("clock");
+          state.dataset.tooltip = message;
+          state.setAttribute("role", "img");
+          state.setAttribute("aria-label", message);
+          el.classList.add("is-failed");
+          icons();
+        })
         .finally(() => {
           rowPreviewWorkers--;
           drain();

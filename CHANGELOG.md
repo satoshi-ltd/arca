@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.90 — 2026-10-03
+
+- In the desktop app, when the hub is slow or unavailable while preparing the preview of an older version of a photo, the row now shows a clock whose tooltip says why, instead of a plain grey tile; the browser version keeps the plain tile.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.6.89 — 2026-10-03
 
 - On the phone, a photo you picked whose saved copy is gone now shows a plain placeholder in Pending uploads, with a line saying so and a small Dismiss action next to the remaining count, instead of a wide button under the strip.

@@ -3161,6 +3161,66 @@ test("numeric Lucide names render deletion and restore icons", () => {
   }
 });
 
+test("a version preview that waits on the hub shows a clock whose tooltip and label carry the hub's answer", async () => {
+  const dom = new JSDOM('<div id="host"></div>', { runScripts: "outside-only" });
+  const w = dom.window;
+  try {
+    w.eval(fs.readFileSync(new URL("../apps/desktop/src/vendor/lucide.js", import.meta.url), "utf8"));
+    const answers = {
+      slow: new Error("The hub took too long to prepare this preview. Try again."),
+      down: new Error("Hub unavailable. Try again when it is reachable."),
+      gone: new Error("This photo is no longer available"),
+    };
+    w.escape = (value) => String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    w.icon = (name) => `<span data-icon="${name}" aria-hidden="true"></span>`;
+    w.cachedPhoto = (route) => {
+      const hash = new URLSearchParams(route.split("?")[1]).get("hash");
+      return hash in answers
+        ? Promise.reject(answers[hash])
+        : Promise.resolve({ data: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" });
+    };
+    w.IntersectionObserver = class {
+      constructor(callback) {
+        this.callback = callback;
+      }
+      observe(target) {
+        this.callback([{ isIntersecting: true, target }]);
+      }
+      unobserve() {}
+      disconnect() {}
+    };
+    w.eval(
+      script.slice(script.indexOf("function rowPreview("), script.indexOf("function pill(")) +
+        "\nwindow.__mount = mountRowPreviews; window.__preview = rowPreview;",
+    );
+    const host = w.document.querySelector("#host");
+    host.innerHTML = ["slow", "down", "gone", "ok"]
+      .map((hash, rev) => `<div class="history-row">${w.__preview({ volume: "v", path: "a.jpg", hash, rev }, "git-commit-horizontal", true)}</div>`)
+      .join("");
+    w.__mount();
+    await until(() => host.querySelectorAll(".row-preview.is-failed").length === 2);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const states = [...host.querySelectorAll(".row-preview")].map((el) => ({
+      failed: el.classList.contains("is-failed"),
+      tooltip: el.querySelector(".row-preview-status").dataset.tooltip,
+      label: el.querySelector(".row-preview-status").getAttribute("aria-label"),
+      clock: /12 6 12 12 16 14/.test(el.querySelector(".row-preview-status").innerHTML),
+      role: el.querySelector(".row-preview-status").getAttribute("role"),
+    }));
+    assert.deepEqual(states.map((s) => s.failed), [true, true, false, false]);
+    assert.equal(states[0].tooltip, answers.slow.message);
+    assert.equal(states[0].label, answers.slow.message);
+    assert.equal(states[1].tooltip, answers.down.message);
+    assert.equal(states[0].clock && states[1].clock, true, "the status shows a clock");
+    assert.equal(states[0].role, "img", "the label is exposed to assistive technology");
+    assert.equal(states[2].clock, false);
+    assert.equal(states[2].tooltip, undefined, "an answer that is not about the hub keeps the plain placeholder");
+    assert.equal(states[3].tooltip, undefined, "a preview that loaded is untouched");
+  } finally {
+    w.close();
+  }
+});
+
 test("desktop destroy confirmation cancels safely and returns to first-run onboarding after deletion", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-destroy-ui-"));
   const nodes = [];

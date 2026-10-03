@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-DESK-PREVIEW-ERROR-VISIBLE** — Say why a version preview is missing
-  `ui · agent · low`
-  accept: the board UI-DESK-PREVIEW-ERROR-VISIBLE, which carries the behaviour DESK-PREVIEW-ERROR-VISIBLE describes; shipping it closes that task too.
+_None._
 
 ## In progress
 
@@ -205,9 +203,6 @@ Claude's suggested order for approval comes first. Each entry is ready to move t
 - **DOCKER-TAG-RETRY** — A published Docker image always gets its `docker-v` tag
   `bug · agent · normal`
   accept: the "Record the published version" step retries the tag creation and, if it still fails, ends with a message that names the exact command to run by hand; the gate also treats a version already on Docker Hub as shipped so a re-run never republishes it; a workflow contract test covers the retry and the check. v0.6.84 was published without its tag after two 403 answers from the refs API, and re-running it would have moved `latest` back.
-- **DESK-PREVIEW-ERROR-VISIBLE** — Say why a retained-version preview failed
-  `bug · agent · low`
-  accept: when the hub answers that it took too long (or is unavailable) for the preview of an older version, the row keeps its placeholder and carries the answer instead of swallowing it; a JSDOM test with a slow hub. The interface follows board UI-DESK-PREVIEW-ERROR-VISIBLE.
 - **DESK-SELECT-CATALOG-RACE** — A catalog refresh never drops a folder that was just selected
   `bug · agent · low`
   accept: a refresh answered before the hub listed a folder the user selected moments earlier keeps that folder in the saved catalog and does not forget its volume; a daemon test with a delayed refresh.

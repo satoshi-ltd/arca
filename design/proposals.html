@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.89 · proposals</span>
+      <span class="kit-version">v0.6.90 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -62,23 +62,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>Files, History and a file's history on desktop and web end in one Show more button (Show more files, Show more, Show more versions) that appends the next rows and keeps scroll and typed search, as DESK-FILES-PAGING describes; the phone's buttons use the same words; placeholder rows carry no Loading label; JSDOM tests cover the three lists and <code>design/desktop.html</code> shows a list ending in Show more.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-DESK-PREVIEW-ERROR-VISIBLE">
-          <header><code>UI-DESK-PREVIEW-ERROR-VISIBLE</code><h3>Say why a version preview is missing</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> When the hub cannot prepare the preview of an older version in time, the row keeps its grey placeholder and nothing says why, so a slow hub and a photo that has no preview look the same. The daemon already answers "The hub took too long to prepare this preview" (v0.6.88); the row throws that answer away. The proposal keeps the row exactly as it is and turns the placeholder's status icon into a clock that carries the answer as its tooltip and accessible label.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">File history · an older version of a photo, preview not available</p>
-<div class="history-group"><div class="history-row"><span class="row-preview"><span data-icon="image"></span><span class="row-preview-status"><span data-icon="image"></span></span></span><div><strong>IMG_4412.jpg</strong><p>version 12 · 3 days ago</p></div></div></div>
-              <p class="kit-caption">Nothing explains the grey tile</p>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">File history · the same row, the icon says it is waiting on the hub</p>
-<div class="history-group"><div class="history-row"><span class="row-preview"><span data-icon="image"></span><span class="row-preview-status" data-tooltip="The hub took too long to prepare this preview. Try again." aria-label="The hub took too long to prepare this preview. Try again."><span data-icon="clock"></span></span></span><div><strong>IMG_4412.jpg</strong><p>version 12 · 3 days ago</p></div></div></div>
-              <p class="kit-caption">Tooltip: The hub took too long to prepare this preview. Try again.</p>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>A version row whose preview failed keeps its placeholder, shows a clock in the status position and exposes the daemon's answer as the tooltip and accessible label, with no other layout change; a row whose hub is unavailable says "Hub unavailable" the same way; a JSDOM test covers both answers.</p></div></div>
         </article>
       </section>
 
