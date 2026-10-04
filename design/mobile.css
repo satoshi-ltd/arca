@@ -287,7 +287,8 @@
 }
 .m-sheet {
   width: 100%;
-  background: var(--m-paper);
+  background: var(--m-raised);
+  border: 1px solid var(--m-raised-edge);
   border-radius: 14px 14px 0 0;
   overflow: hidden;
 }

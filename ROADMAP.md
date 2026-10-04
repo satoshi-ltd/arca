@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-SYS-DARK-ELEVATION** — Dark surfaces lift off the page and show their selection
-  `ui · agent · normal`
-  accept: the board.
 - **UI-SYS-HISTORY-DAYS** — The day heads the group, the row tells the time
   `ui · agent · normal`
   accept: the board.
@@ -41,29 +38,20 @@ _None._
 
 ### Builds and deployments
 
-- **BUILD-DESKTOP** — Desktop build from the current source
-  `deploy · maintainer · high`
-  accept: installers come from the chosen stabilization candidate; record its version and SHA, install it, and verify that both the running desktop app and its daemon report that version. A built bundle or an older running daemon does not qualify the candidate.
 - **BUILD-MOBILE** — Android native build for stabilization
   `deploy · maintainer · high`
   accept: a standalone build of the chosen candidate is installed on the Fold; record its source SHA, displayed version and native build identifier. Native modules match the JavaScript bundle; cold start, pairing and one complete upload/download work before device qualification begins.
-- **CASA-VERSION** — Establish the running pilot versions and upgrade order
-  `verify · maintainer · high`
-  accept: record the actual running Casa image digest/version, desktop daemon versions and mobile native builds; check their advertised protocol capabilities and fixed exclusions against the candidate. Identify required client updates and the compatible rollout order before any deployment; inspect without restarting, unlinking or changing live state.
-- **P1-CASA-DEPLOY** — Deploy the qualified candidate to Casa
-  `deploy · maintainer · high · depends: CASA-VERSION`
-  accept: after the candidate's release/image checks and required client updates pass, the maintainer redeploys the pinned image and records its running digest/version. Disposable-folder upload, download, conflict and reconnect checks pass across desktop and mobile; existing user copies and selections remain intact. The prior image and a recoverable state backup are available before the change; do not assume an older binary can read newer state.
 - **BUILD-IOS** — First iOS device build on SDK 57
   `deploy · maintainer · normal`
   accept: a build of the chosen candidate is installed on a physical iPhone; record source SHA, version and native build identifier. Cold start, LAN pairing, upload/download, cancellation and file replacement work; the native module compiles against the installed Expo dependencies.
 - **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on Casa
-  `verify · maintainer · normal · depends: BUILD-DESKTOP, P1-CASA-DEPLOY`
+  `verify · maintainer · normal`
   accept: shipped installers and Casa carry the production dependencies (Sharp, exifr) and the gallery opens on both.
 
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: BUILD-DESKTOP, BUILD-MOBILE`
+  `verify · maintainer · high · depends: BUILD-MOBILE`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **VERIFY-SHARE-CACHE** — Incoming shares on the Fold
   `verify · maintainer · high · depends: BUILD-MOBILE`
@@ -75,7 +63,7 @@ _None._
   `verify · maintainer · high · depends: BUILD-MOBILE`
   accept: on the candidate, grid thumbnails and video posters fill in while folders sync; HEIC photos open and the viewer shows the thumbnail immediately. Offline, downloaded photos remain viewable, unavailable originals are identified and failed derivatives can recover. Record timings and native errors for persistent grey tiles or crashes, including after suspension and cold start.
 - **WIN-UPDATE-WATCHER** — A failed Windows update gets the daemon back
-  `verify · maintainer · high · depends: BUILD-DESKTOP`
+  `verify · maintainer · high`
   accept: on a real Windows machine, with an update that fails after Arca closes (for example a locked installation file), the daemon is running again within about a minute without opening Arca, `update-watch.log` in the state directory says `restored` and `%TEMP%\arca-update-watch-*` is gone; a successful update logs `relaunched` and starts no second daemon.
 - **P2-GALLERY** — Album uploads on physical devices
   `verify · maintainer · high · depends: BUILD-MOBILE, BUILD-IOS`
@@ -87,7 +75,7 @@ _None._
   `verify · maintainer · high · depends: BUILD-MOBILE, BUILD-IOS`
   accept: complete persistent copies, honest incomplete-work reporting, imports reaching the hub, resumable transfers without corruption, no data loss on suspension; low storage, interrupted downloads, revoked credentials and offline access. Reimporting a file preserves edited conflict copies; failed imports preserve existing files. Cached views remain usable during slow refreshes and back navigation. Check keyboard handling and text scaling on phone, Fold and iOS; launcher and splash in a standalone build; rename; APK opening on Samsung; Fold sticky scroll; settings visuals; iOS LAN pairing; name propagation; Fold throughput.
 - **VERIFY-REVEAL-FILE** — Show in folder on real Windows and Linux
-  `verify · maintainer · normal · depends: BUILD-DESKTOP`
+  `verify · maintainer · normal`
   accept: on a Windows and a Linux desktop build, a file detail's Show in folder and the photo viewer's open the file's own folder (Explorer with the file selected on Windows, a file manager on the file's folder on Linux), including a file in a nested folder, a path with spaces and, on Windows, a path longer than 260 characters (the verbatim prefix is stripped for Explorer).
 - **FOLD-GALLERY-UX** — Gallery gestures and playback
   `verify · maintainer · normal`
@@ -115,22 +103,22 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   `verify · maintainer · high`
   accept: the candidate's exact SHA has successful hosted `publish`, `publish-docker` and `publish-site` runs; its installers install and launch on each supported platform. Published assets, updater signatures and image tags identify that candidate; Docker amd64/arm64 smoke checks and the macOS installer retry pass. Record hosted evidence separately from `validate-local`.
 - **P1-UPDATER** — Real desktop update
-  `verify · maintainer · high · depends: BUILD-DESKTOP`
+  `verify · maintainer · high`
   accept: update to the candidate from a prior published version on macOS (with and without Launch at login), Windows NSIS and Linux AppImage/deb. Verify signatures, unchanged identity/selections/files, exactly one running daemon answering under the new version, and recovery after a failed install or spawn. Verify hosted `.deb.sig` generation; qualify Windows unattended recovery under WIN-UPDATE-WATCHER.
 - **P1-CASA-CPU** — Casa CPU stall
-  `verify · maintainer · high · depends: CASA-VERSION`
+  `verify · maintainer · high`
   accept: obtain a bounded capture of the CPU stall with HTTP/discovery timeouts, identify the triggering workload and create an isolated reproducer before a fix. Validate the fix against that workload and record responsiveness and CPU afterwards; a version upgrade alone does not close this task. Do not repeat live evaluator-based profiling.
 - **P1-SCHEDULER** — Scheduler measurements
   `verify · maintainer · normal`
   accept: idle wakeups, CPU, disk reads, traffic, battery and recovery correctness measured before any timing default changes.
 - **P1-UX** — Native binary acceptance
-  `verify · maintainer · normal · depends: BUILD-DESKTOP`
+  `verify · maintainer · normal`
   accept: tray transitions, light/dark menu bars, reduced motion, long paths, dialogs, offline startup and error recovery; real sleep/wake on macOS, Windows and Linux; OS notifications, activation and click routing on Windows and Linux; the native gallery Save dialog and Maps launch; the 320 px tray viewport, device identity and hub-only role labels in Tauri, and WebKit/Windows motion.
 - **P1-SERVER-ONBOARDING** — Server onboarding acceptance
   `verify · maintainer · normal`
   accept: real-device replica pairing and selection from the new wizard, ARM, image upgrades. See [Server onboarding](SPEC.md#server-onboarding).
 - **WIN-RECYCLE** — Recycle Bin on real Windows
-  `verify · maintainer · normal · depends: BUILD-DESKTOP`
+  `verify · maintainer · normal`
   accept: relinking a replica on a fixed Windows drive moves outdated files to the Recycle Bin, and a file larger than the bin or a disabled bin is refused rather than deleted (only a simulated PowerShell covers this today).
 
 ### Distribution
@@ -178,7 +166,7 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   `decision · maintainer · low`
   accept: keep, archive or delete `.cache/docs-before-consolidation` (PLAN, PROTOCOL, STATUS and the legacy Syncthing spec from before SPEC existed). APKs and the Cargo cache now prune themselves.
 - **P1-CASA-POLICIES** — Remove redundant Casa policy lines
-  `deploy · maintainer · low · depends: CASA-VERSION`
+  `deploy · maintainer · low`
   accept: after checking every running device's fixed exclusions and the current policy, remove only rules made redundant by that fixed list from Casa's `alpi-workspace`, `alpi-mirai-workspace` and `alpi-host` policies. Preserve intentional content rules; `cache/` is not a fixed exclusion. The `~/.alpi` policy continues to include `.env` and secrets as directed by the maintainer.
 
 ## Proposed

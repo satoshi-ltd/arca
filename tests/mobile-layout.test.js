@@ -59,6 +59,8 @@ test("mobile surface and text colors match the desktop light and dark tokens", a
     mute: "mute",
     line: "line",
     control: "control",
+    segmentTrack: "segmentTrack",
+    segmentSelected: "segmentSelected",
     divider: "div",
     accent: "green",
     onAccent: "onGreen",
@@ -910,4 +912,28 @@ test("phone buttons, rows, tabs and photo tiles show a pressed state", () => {
   assert.match(components, /divider && s\.separator,\s+pressed && !disabled && s\.pressed,/, "folder rows fill");
   assert.match(components, /pressed && s\.pressed,\s+view === tab && s\.navSelected/, "tabs fill without hiding the selection");
   assert.match(read("FolderGallery.jsx"), /pressed && s\.pressedFade,/, "photo tiles fade");
+});
+
+test("the phone's selected segment and floating panel follow the same dark depth as the desktop", async () => {
+  const { palettes } = await import("../apps/mobile/src/palette.js");
+  const theme = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
+  assert.match(theme, /segments: \{[^}]*backgroundColor: c\.segmentTrack,/);
+  assert.match(theme, /segmentSelected: \{\s+backgroundColor: c\.segmentSelected,/);
+  assert.match(theme, /modalPanel: \{[^}]*backgroundColor: c\.raised,\s+borderWidth: 1,\s+borderColor: c\.raisedEdge,/);
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((at) => {
+      const value = parseInt(hex.slice(at, at + 2), 16) / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  for (const name of ["light", "dark"])
+    assert.ok(luminance(palettes[name].segmentSelected) > luminance(palettes[name].segmentTrack), `${name}: the selected segment is lighter than its track`);
+  const tokens = fs.readFileSync(new URL("../apps/desktop/src/tokens.css", import.meta.url), "utf8");
+  const dark = tokens.split(/^\[data-theme="dark"\] \{/m)[1];
+  assert.equal(palettes.dark.raised, dark.match(/--notice-surface:\s*(#[\da-f]{6})/)[1], "the phone's dark sheet is the desktop's floating surface");
+  assert.equal(palettes.dark.raisedEdge, dark.match(/--line:\s*(#[\da-f]{6})/)[1], "and its edge is the desktop's line");
+  assert.equal(palettes.light.raised, palettes.light.paper, "light sheets are unchanged");
+  assert.equal(palettes.light.raisedEdge, "transparent");
+  assert.ok(luminance(palettes.dark.raised) > luminance(palettes.dark.paper), "a dark sheet is lighter than the page");
 });

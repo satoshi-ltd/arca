@@ -426,26 +426,6 @@ body.kit {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.kit-segments .segmented {
-  max-width: 320px;
-  display: flex;
-  flex-wrap: nowrap;
-  background: var(--hover);
-  border: 1px solid var(--div);
-}
-.kit-segments .segmented button {
-  flex: 1;
-  white-space: nowrap;
-}
-:root[data-theme="dark"] .kit-segments .segmented .active {
-  background: var(--track);
-}
-:root[data-theme="dark"] .kit-elevated .menu-items {
-  background: var(--notice-surface);
-  box-shadow:
-    0 0 0 1px var(--line),
-    var(--shadow-dialog);
-}
 .kit-pressed-state .secondary,
 .kit-pressed-state .icon-button {
   background: var(--hover);

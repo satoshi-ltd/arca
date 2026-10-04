@@ -711,7 +711,7 @@ main {
   display: flex;
   gap: 2px;
   padding: 3px;
-  background: var(--surface);
+  background: var(--segmentTrack);
   border-radius: var(--r-control);
   flex-wrap: wrap;
 }
@@ -728,7 +728,7 @@ main {
   align-items: center;
 }
 .segmented button.active {
-  background: var(--surface);
+  background: var(--segmentSelected);
   color: var(--ink);
   box-shadow: 0 1px 2px #00000014;
 }
@@ -1015,7 +1015,7 @@ dialog {
   overflow: auto;
   overscroll-behavior: contain;
   border-radius: var(--r-dialog);
-  background: var(--surface);
+  background: var(--notice-surface);
   color: var(--ink);
   box-shadow: var(--shadow-dialog);
 }
@@ -1490,7 +1490,7 @@ progress::-moz-progress-bar {
   min-width: 160px;
   padding: 6px;
   border-radius: var(--r-control);
-  background: var(--surface);
+  background: var(--notice-surface);
   box-shadow: var(--shadow-menu);
   display: flex;
   flex-direction: column;
@@ -1499,6 +1499,7 @@ progress::-moz-progress-bar {
   justify-content: flex-start;
   padding: 8px;
   border: 0;
+  background: transparent;
 }
 .wide-dialog {
   width: var(--dialog-wide-width);
@@ -2514,7 +2515,7 @@ progress::-webkit-progress-value {
   max-height: min(280px, 50vh);
   overflow-y: auto;
   padding: var(--space-1);
-  background: var(--surface);
+  background: var(--notice-surface);
   border: 1px solid var(--div);
   border-radius: var(--r-control);
   box-shadow: var(--shadow-menu);
@@ -4048,6 +4049,14 @@ dialog.photo-viewer {
 .browser-file-row:active,
 .dropdown-trigger:active {
   background: var(--hover);
+}
+@media (hover: hover) {
+  .menu-items button:hover:not(:disabled) {
+    background: var(--track);
+  }
+}
+.menu-items button:active:not(:disabled) {
+  background: var(--track);
 }
 .primary:active:not(:disabled),
 .photo-thumb .photo-open:active {

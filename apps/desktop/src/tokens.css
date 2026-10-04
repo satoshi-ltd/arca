@@ -125,6 +125,8 @@
   /* lines */
   --line: #c6cfc9; /* dashed rows and soft frames */
   --control: #7f8f86; /* button and field borders, 3:1 on paper and surface */
+  --segmentTrack: #ecf0ec;
+  --segmentSelected: #ffffff;
   --div: #dee4e0; /* card borders, dividers */
   /* ink */
   --ink: #121a16;
@@ -186,6 +188,12 @@
   --desk: #080b09;
   --line: #2e3b34;
   --control: #5f7167;
+  --segmentTrack: #1c2620;
+  --segmentSelected: #26332c;
+  --shadow-menu:
+    0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line);
+  --shadow-dialog:
+    0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--line);
   --div: #26332c;
   --ink: #e8ede7;
   --soft: #a3afa8;

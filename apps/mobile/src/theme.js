@@ -440,7 +440,7 @@ export function styles(
     segments: {
       alignSelf: wide ? "flex-start" : "stretch",
       flexDirection: "row",
-      backgroundColor: c.hover,
+      backgroundColor: c.segmentTrack,
       borderRadius: g.controlRadius,
       padding: 3,
       gap: 2,
@@ -456,7 +456,7 @@ export function styles(
     segmentText: { color: c.soft },
     segmentTextSelected: { color: c.ink },
     segmentSelected: {
-      backgroundColor: c.surface,
+      backgroundColor: c.segmentSelected,
       shadowColor: "#000000",
       shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.08,
@@ -819,7 +819,9 @@ export function styles(
       width: "100%",
       maxWidth: wide ? 600 : undefined,
       maxHeight: "95%",
-      backgroundColor: c.paper,
+      backgroundColor: c.raised,
+      borderWidth: 1,
+      borderColor: c.raisedEdge,
       borderRadius: 14,
       overflow: "hidden",
     },

@@ -516,3 +516,46 @@ test("the viewer's Back button moves clear of the macOS window controls only in 
   assert.match(css, /\n\.mac-native \.photo-viewer \.dialog-actions \{\s+left: var\(--window-controls-inset\);\s+\}/);
   assert.ok(css.indexOf(".mac-native .photo-viewer .dialog-actions") > css.indexOf("\n.photo-viewer .dialog-actions {"), "the native rule comes after the base rule");
 });
+
+test("floating surfaces lift off the page in dark and the selected segment shows its choice in both themes", () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
+  const tokens = read("tokens.css");
+  const css = read("style.css");
+  const [light, dark] = tokens.split(/^\[data-theme="dark"\] \{/m);
+  const color = (source, name) => source.match(new RegExp(`--${name}:\\s*(#[\\da-f]{6})`))?.[1];
+  const pick = (theme, name) => color(theme === "dark" ? dark : light, name) ?? color(light, name);
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((at) => {
+      const value = parseInt(hex.slice(at, at + 2), 16) / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (high + 0.05) / (low + 0.05);
+  };
+  for (const theme of ["light", "dark"]) {
+    const selected = pick(theme, "segmentSelected");
+    const track = pick(theme, "segmentTrack");
+    assert.ok(luminance(selected) > luminance(track), `${theme}: the selected segment is lighter than its track`);
+    assert.ok(ratio(selected, track) >= 1.1, `${theme}: and visibly different`);
+  }
+  assert.equal(pick("light", "notice-surface"), pick("light", "surface"), "light floating surfaces keep the card colour");
+  assert.ok(ratio(pick("dark", "notice-surface"), pick("dark", "surface")) >= 1.05, "in dark a floating surface is lighter than the card under it");
+  assert.ok(luminance(pick("dark", "notice-surface")) > luminance(pick("dark", "surface")));
+  assert.match(dark, /--shadow-menu:\s+0 8px 24px rgba\(0, 0, 0, 0\.55\), 0 0 0 1px var\(--line\);/, "dark menus carry a hairline ring");
+  assert.match(dark, /--shadow-dialog:\s+0 24px 64px rgba\(0, 0, 0, 0\.6\), 0 0 0 1px var\(--line\);/);
+  assert.match(css, /\n\.segmented \{[^}]*background: var\(--segmentTrack\);/);
+  assert.match(css, /\n\.segmented button\.active \{\s+background: var\(--segmentSelected\);/);
+  assert.match(css, /\ndialog \{[^}]*background: var\(--notice-surface\);/);
+  assert.match(css, /\n\.menu-items \{[^}]*background: var\(--notice-surface\);/);
+  assert.match(css, /\n\.menu-items button \{[^}]*background: transparent;/, "menu buttons are not boxes inside the menu");
+  for (const theme of ["light", "dark"])
+    assert.ok(ratio(pick(theme, "track"), pick(theme, "notice-surface")) >= 1.05, `${theme}: a menu row's hover fill reads on the menu`);
+  assert.match(css, /\.menu-items button:hover:not\(:disabled\) \{\s+background: var\(--track\);/);
+  assert.match(css, /\.menu-items button:active:not\(:disabled\) \{\s+background: var\(--track\);/);
+  assert.ok(ratio(pick("dark", "segmentTrack"), pick("dark", "paper")) >= 1.04, "the dark segmented track shows on the page");
+  const dropdown = css.match(/\n\.dropdown-menu \{([^}]*)\}/)[1];
+  assert.match(dropdown, /background: var\(--notice-surface\);/);
+});
