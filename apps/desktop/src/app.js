@@ -88,7 +88,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.110";
+const APP_VERSION = "0.6.111";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -706,6 +706,10 @@ window
   .matchMedia?.("(prefers-color-scheme: dark)")
   .addEventListener?.("change", () => theme());
 document.body.classList.toggle("native", native);
+document.body.classList.toggle(
+  "mac-native",
+  native && /Mac/i.test(navigator.platform || navigator.userAgent),
+);
 // The titlebar spans the window, including heading text, but never controls.
 if (native) {
   document.addEventListener("mousedown", (event) => {

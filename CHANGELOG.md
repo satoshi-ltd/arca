@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.111 — 2026-10-04
+
+- On the Mac, the photo and video viewer's Back button no longer hides under the window's red, yellow and green controls.
+
+Needs: desktop build
+
 ## 0.6.110 — 2026-10-04
 
 - The phone's Undated group now reloads when a photo without a date is replaced by another one even though the count stays the same, so it never shows stale photos after the hub changes.

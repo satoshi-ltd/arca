@@ -506,3 +506,13 @@ test("every control answers a press, the viewer keeps its own fills and icon but
   assert.match(coarse, /@media \(pointer: coarse\) \{\s+\.icon-button,\s+\.ghost\.icon-button \{\s+width: var\(--touch-target-min\);/);
   assert.match(coarse, /@media \(pointer: coarse\) and \(min-width: 481px\) \{\s+#sync-controls \.ghost\.icon-button,\s+#sync-controls button \{/, "the collapsed 64 px sidebar keeps its small controls");
 });
+
+test("the viewer's Back button moves clear of the macOS window controls only in the native Mac app", () => {
+  const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  const tokens = fs.readFileSync(new URL("../apps/desktop/src/tokens.css", import.meta.url), "utf8");
+  assert.match(tokens, /--window-controls-inset: 84px;/);
+  const base = css.match(/\n\.photo-viewer \.dialog-actions \{([^}]*)\}/)[1];
+  assert.match(base, /left: var\(--space-4\);/, "elsewhere the button keeps its place");
+  assert.match(css, /\n\.mac-native \.photo-viewer \.dialog-actions \{\s+left: var\(--window-controls-inset\);\s+\}/);
+  assert.ok(css.indexOf(".mac-native .photo-viewer .dialog-actions") > css.indexOf("\n.photo-viewer .dialog-actions {"), "the native rule comes after the base rule");
+});

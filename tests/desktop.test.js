@@ -6691,3 +6691,23 @@ test("Show more still lists every file when the folder gained one at the top mea
   assert.ok(w.document.querySelector('.browser-file-row[aria-label="Open f099.txt"]'), "the file that moved past the first page is still listed");
   assert.equal(w.document.querySelector('[data-action="browse-more"]'), null);
 });
+
+test("only the native macOS app marks the page so the viewer's Back button clears the window controls", async (t) => {
+  const open = async (native, platform) => {
+    const dom = new JSDOM(html, { runScripts: "outside-only", url: native ? "http://tauri.localhost" : "http://127.0.0.1:17831" });
+    t.after(() => dom.window.close());
+    const w = dom.window;
+    w.setInterval = () => 0;
+    Object.defineProperty(w.navigator, "platform", { value: platform, configurable: true });
+    if (platform === "") Object.defineProperty(w.navigator, "userAgent", { value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)", configurable: true });
+    if (native) w.__TAURI__ = { core: { invoke: async () => ({}) } };
+    w.eval(`(async()=>{${script}\n})()`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return [...w.document.body.classList];
+  };
+  assert.deepEqual((await open(true, "MacIntel")).filter((name) => name.endsWith("native")).sort(), ["mac-native", "native"]);
+  assert.deepEqual((await open(true, "")).filter((name) => name.endsWith("native")).sort(), ["mac-native", "native"], "a webview without a platform falls back to its user agent");
+  assert.deepEqual((await open(true, "Win32")).filter((name) => name.endsWith("native")), ["native"]);
+  assert.deepEqual((await open(true, "Linux x86_64")).filter((name) => name.endsWith("native")), ["native"]);
+  assert.deepEqual((await open(false, "MacIntel")).filter((name) => name.endsWith("native")), [], "the web interface on a Mac keeps its layout");
+});

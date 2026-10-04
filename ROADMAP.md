@@ -26,6 +26,12 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
+- **UI-SYS-DARK-ELEVATION** — Dark surfaces lift off the page and show their selection
+  `ui · agent · normal`
+  accept: the board.
+- **UI-SYS-HISTORY-DAYS** — The day heads the group, the row tells the time
+  `ui · agent · normal`
+  accept: the board.
 
 ## In progress
 
@@ -184,6 +190,12 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Release and native reliability
 
+- **DESK-ONBOARDING-TRAFFIC-LIGHTS** — The onboarding rail's brand sits under the macOS window controls
+  `bug · agent · low`
+  accept: in the native Mac app the onboarding screens (the sidebar is hidden there) keep the brand and rail clear of the red, yellow and green controls, reusing the `mac-native` class and `--window-controls-inset`; the web interface and other platforms keep their layout; a stylesheet contract test covers it. Found by the review of 0.6.111 from reading the CSS (`.onboarding-rail` starts at the top-left); check it on the Mac first. Needs a desktop build.
+- **DESK-VIEWER-DRAG** — The window cannot be dragged while the gallery viewer is open
+  `bug · agent · low`
+  accept: in the native app, pressing and dragging an empty strip of the full-window viewer moves the window, without starting a drag on the viewer's buttons, video controls or the Info panel; the existing titlebar drag rule (`app.js` mousedown handler returns whenever a dialog is open) is narrowed instead of removed; a JSDOM test covers it. Found by the review of 0.6.111. Needs a desktop build.
 - **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
   `bug · agent · high`
   accept: `publish-docker.yml` pushes `latest` only for the current eligible release at publication time; older, delayed or forced runs still publish their version tag without moving `latest` backwards. Tests cover out-of-order completion, reruns and a newer release arriving during a build; checking only at job start is insufficient.
