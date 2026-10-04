@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.115 — 2026-10-04
+
+- Empty History, folder-filter, Recent and photo states now use the same wording on desktop and phone ("No history yet", "Set Shared folder to All to see every change.", "Photos added to this folder appear here.").
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.114 — 2026-10-04
 
 - A conflict now shows the same triangle-alert icon on desktop and phone, in History rows, the empty state, the Resolve conflict dialog and the conflict notice, so it no longer looks like a branch in one place and a warning in another.

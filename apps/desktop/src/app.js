@@ -88,7 +88,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.114";
+const APP_VERSION = "0.6.115";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -377,7 +377,7 @@ function historyEmpty() {
     return empty("No deleted files", "Clear Deleted to see every change.", "", "trash-2");
   if (historyVolume)
     return empty("No changes in this folder", "Set Shared folder to All to see every change.", "", "history");
-  return empty("Every change has a history", "Changes to your files appear here.", "", "history");
+  return empty("No history yet", "Changes to your files appear here.", "", "history");
 }
 function empty(heading, text, control = "", symbol = "folder-open") {
   return `<div class="empty">${icon(symbol)}<h2>${heading}</h2>${text ? `<p>${text}</p>` : ""}${control}</div>`;
@@ -2098,7 +2098,7 @@ function mountGallery(volume) {
     if (!root.querySelector(".photo-thumb") && !state.next)
       root.querySelector(".photo-days").innerHTML = empty(
         "No photos yet",
-        "Photos uploaded to this folder will appear here.",
+        "Photos added to this folder appear here.",
         "",
         "images",
       );
@@ -2424,7 +2424,7 @@ function mountGallery(volume) {
       if (!state.items.length)
         root.querySelector(".photo-days").innerHTML = empty(
           "No photos yet",
-          "Photos uploaded to this folder will appear here.",
+          "Photos added to this folder appear here.",
           "",
           "images",
         );

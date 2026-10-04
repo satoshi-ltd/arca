@@ -131,7 +131,7 @@ export function FolderRecent({
         <EmptyState
           icon="history"
           title="No versions yet"
-          text="Recent changes appear here after the first sync."
+          text="History appears after the first sync."
         />
       )}
     </View>

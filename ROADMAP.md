@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-SYS-EMPTY-COPY** — The same empty state says the same words on desktop and phone
-  `ui · agent · normal`
-  accept: the board.
 - **UI-MOB-PAIR-ONE-FLOW** — One pairing screen on the phone
   `ui · agent · normal`
   accept: the board.

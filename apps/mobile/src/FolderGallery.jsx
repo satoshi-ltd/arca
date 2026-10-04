@@ -1356,7 +1356,7 @@ export function FolderGallery({
             text={
               uploads
                 ? "Photos from this phone appear here as they upload."
-                : "Photos appear here as they arrive from other devices."
+                : "Photos added to this folder appear here."
             }
           />
         ))}

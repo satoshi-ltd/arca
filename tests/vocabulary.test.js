@@ -189,7 +189,7 @@ test("History explains why it is empty, on desktop and on the phone", async () =
   assert.deepEqual(run("conflicts", ""), { heading: "No conflicts", text: "Clear Conflicts to see every change.", symbol: "triangle-alert" });
   assert.deepEqual(run("deleted", "docs"), { heading: "No deleted files", text: "Clear Deleted to see every change.", symbol: "trash-2" });
   assert.deepEqual(run("revisions", "docs"), { heading: "No changes in this folder", text: "Set Shared folder to All to see every change.", symbol: "history" });
-  assert.deepEqual(run("revisions", ""), { heading: "Every change has a history", text: "Changes to your files appear here.", symbol: "history" });
+  assert.deepEqual(run("revisions", ""), { heading: "No history yet", text: "Changes to your files appear here.", symbol: "history" });
   const { historyEmpty } = await import("../apps/mobile/src/history-empty.js");
   const titles = [
     historyEmpty({ offline: true, filter: "revisions", hasFolder: false }),
@@ -202,6 +202,17 @@ test("History explains why it is empty, on desktop and on the phone", async () =
   assert.deepEqual(titles.map((state) => state.icon), ["wifi-off", "conflict", "trash", "history", "history"]);
   assert.equal(titles[1].title, "No conflicts");
   assert.equal(titles[0].text, "Connect to the hub to load history.");
+  for (const [filter, volume, hasFolder] of [["conflicts", "", false], ["deleted", "docs", true], ["revisions", "docs", true], ["revisions", "", false]]) {
+    const desktopState = run(filter, volume);
+    const phoneState = historyEmpty({ offline: false, filter, hasFolder });
+    assert.equal(phoneState.title, desktopState.heading, `${filter}/${volume} title`);
+    assert.equal(phoneState.text, desktopState.text, `${filter}/${volume} text`);
+  }
+  const phoneSource = (file) => fs.readFileSync(path.join(root, "apps", "mobile", "src", file), "utf8");
+  assert.ok(phoneSource("FolderGallery.jsx").includes('"Photos added to this folder appear here."'));
+  assert.ok(source.split('"Photos added to this folder appear here."').length === 3, "desktop gallery empties use it twice");
+  assert.ok(phoneSource("FolderRecent.jsx").includes('text="History appears after the first sync."'));
+  assert.ok(source.includes('empty("No versions yet", "History appears after the first sync.")'));
 });
 
 test("every list that grows says Show more", () => {
