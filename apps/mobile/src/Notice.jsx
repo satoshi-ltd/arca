@@ -20,7 +20,7 @@ import {
 const iconNames = {
   "circle-check": "check-circle",
   "circle-alert": "alert",
-  "git-branch": "conflict",
+  "triangle-alert": "conflict",
 };
 export function Notice({ item, onDismiss, onAction, disabled }) {
   const { s, c } = useDesign();

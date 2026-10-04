@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.114 — 2026-10-04
+
+- A conflict now shows the same triangle-alert icon on desktop and phone, in History rows, the empty state, the Resolve conflict dialog and the conflict notice, so it no longer looks like a branch in one place and a warning in another.
+- The design kit matches the shipped app again: Settings, Devices, the phone tabs and the System page were redrawn from the real screens.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.113 — 2026-10-04
 
 - History now heads each day with Today, Yesterday or a short date and shows only the time on each row, on desktop and phone, so the day is no longer repeated in every row.

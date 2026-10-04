@@ -182,7 +182,7 @@ export function conditionNotices(status = {}) {
         id: `conflict:${folder.id}`,
         incident: folder.conflictRevision || folder.conflicts,
         kind: "warning",
-        icon: "git-branch",
+        icon: "triangle-alert",
         title: `Conflict in ${folder.name}`,
         body: "Files were edited on two devices. Both files were kept.",
         action: "review",

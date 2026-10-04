@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.113 · production</span>
+      <span class="kit-version">v0.6.114 · production</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -46,7 +46,7 @@
           <div class="kit-card">
             <h3>Lockup</h3>
             <div class="brand-lockup kit-row"><img src="../apps/desktop/src/assets/arca-icon.svg" width="44" height="44" alt="Arca" /><strong>arca</strong></div>
-            <p class="kit-note">Icon tile plus the lowercase wordmark in Instrument Sans 700, tracking −3.5%. The gap equals a quarter of the tile. On dark or green grounds the wordmark is Paper.</p>
+            <p class="kit-note">Icon tile plus the lowercase wordmark in Instrument Sans 700, tracking −3%; the sidebar sets them 10 px apart beside a 28 px tile. On dark or green grounds the wordmark is Paper.</p>
           </div>
           <div class="kit-card">
             <h3>Mark</h3>
@@ -78,23 +78,72 @@
             <div class="kit-swatch" data-token="paper"><i></i><div><strong>Paper · canvas</strong><code></code></div></div>
             <div class="kit-swatch" data-token="surface"><i></i><div><strong>Surface</strong><code></code></div></div>
             <div class="kit-swatch" data-token="side"><i></i><div><strong>Sidebar</strong><code></code></div></div>
-            <div class="kit-swatch" data-token="hover"><i></i><div><strong>Hover · track</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="hover"><i></i><div><strong>Hover</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="track"><i></i><div><strong>Track · menu hover</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="desk"><i></i><div><strong>Desk · behind the window</strong><code></code></div></div>
             <div class="kit-swatch" data-token="placeholder"><i></i><div><strong>Media placeholder</strong><code></code></div></div>
             <div class="kit-swatch" data-token="div"><i></i><div><strong>Divider</strong><code></code></div></div>
-            <div class="kit-swatch" data-token="line"><i></i><div><strong>Line</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="line"><i></i><div><strong>Line · dashed frames</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="control"><i></i><div><strong>Control · field borders</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="segmentTrack"><i></i><div><strong>Segment track</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="segmentSelected"><i></i><div><strong>Segment selected</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="notice-surface"><i></i><div><strong>Floating surface</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="backdrop"><i></i><div><strong>Backdrop</strong><code></code></div></div>
             <div class="kit-swatch" data-token="mute"><i></i><div><strong>Mute · captions</strong><code></code></div></div>
             <div class="kit-swatch" data-token="soft"><i></i><div><strong>Soft ink</strong><code></code></div></div>
             <div class="kit-swatch" data-token="ink"><i></i><div><strong>Ink</strong><code></code></div></div>
           </div>
         </div>
         <div class="kit-card">
+          <h3>State fills · fill, pill background, pill text</h3>
+          <div class="kit-swatches">
+            <div class="kit-swatch" data-token="ok"><i></i><div><strong>Ok</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="okBg"><i></i><div><strong>Ok background</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="okFg"><i></i><div><strong>Ok text</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="wa"><i></i><div><strong>Warning</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="waBg"><i></i><div><strong>Warning background</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="waFg"><i></i><div><strong>Warning text</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="er"><i></i><div><strong>Error</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="erBg"><i></i><div><strong>Error background</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="erFg"><i></i><div><strong>Error text</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="id"><i></i><div><strong>Neutral</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="idBg"><i></i><div><strong>Neutral background</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="idFg"><i></i><div><strong>Neutral text</strong><code></code></div></div>
+          </div>
+        </div>
+        <div class="kit-card">
+          <h3>Phone only</h3>
+          <div class="kit-swatches">
+            <div class="kit-swatch" data-token="m-raised"><i></i><div><strong>Raised · sheets, dialogs</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="m-raised-edge"><i></i><div><strong>Raised edge</strong><code></code></div></div>
+          </div>
+          <p class="kit-note">The phone's dialog panel is paper in light and the floating surface in dark; desktop dialogs and menus use the floating surface in both themes.</p>
+        </div>
+        <div class="kit-card">
+          <h3>Desktop to phone · token mapping</h3>
+          <div class="kit-stack">
+            <div class="kit-type-row"><span class="kit-mono">same key</span><span class="kit-mono">paper · surface · side · ink · soft · mute · line · control · hover · tint · placeholder · segmentTrack · segmentSelected</span></div>
+            <div class="kit-type-row"><span class="kit-mono">green · onGreen</span><span class="kit-mono">accent · onAccent</span></div>
+            <div class="kit-type-row"><span class="kit-mono">div</span><span class="kit-mono">divider</span></div>
+            <div class="kit-type-row"><span class="kit-mono">deep · okFg</span><span class="kit-mono">okFg</span></div>
+            <div class="kit-type-row"><span class="kit-mono">waFg · waBg</span><span class="kit-mono">warning · warningBg</span></div>
+            <div class="kit-type-row"><span class="kit-mono">erFg · erBg</span><span class="kit-mono">danger · dangerBg</span></div>
+            <div class="kit-type-row"><span class="kit-mono">notice-surface · notice-info-* · notice-link</span><span class="kit-mono">noticeSurface · noticeInfo* · noticeLink</span></div>
+            <div class="kit-type-row"><span class="kit-mono">idBg · idFg</span><span class="kit-mono">hover · soft (neutral badges)</span></div>
+            <div class="kit-type-row"><span class="kit-mono">mark-tile · mark-arch · mark-door</span><span class="kit-mono">brandMark.tile · arch · door</span></div>
+            <div class="kit-type-row"><span class="kit-mono">track · desk · ok · wa · er · id · backdrop · toast-*</span><span class="kit-mono">desktop only</span></div>
+            <div class="kit-type-row"><span class="kit-mono">raised · raisedEdge</span><span class="kit-mono">phone only</span></div>
+          </div>
+          <p class="kit-note">Phone keys are written <code class="kit-mono">palette.js</code> in camelCase and reach the kit as <code class="kit-mono">--m-*</code> custom properties. A filled destructive button is the error fill on desktop and the text-grade danger tone on the phone.</p>
+        </div>
+        <div class="kit-card">
           <h3>States · one meaning each</h3>
           <div class="kit-stack">
             <div class="kit-row"><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span><span class="kit-note">Done and verified. Only a completed, hash-checked state gets the green fill.</span></div>
-            <div class="kit-row"><span class="pill sy busy-status"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing 42/118</span><span class="kit-note">Working: green text with the busy grid, no fill, until the last byte is verified.</span></div>
-            <div class="kit-row"><span class="pill wa"><span data-icon="git-branch"></span>Conflict</span><span class="pill wa"><span data-icon="pause"></span>Paused</span><span class="kit-note">Attention: a decision is needed, or sync is waiting for you.</span></div>
-            <div class="kit-row"><span class="pill er"><span data-icon="circle-alert"></span>Needs attention</span><span class="pill wa"><span data-icon="wifi-off"></span>Offline</span><span class="kit-note">Error: something needs a fix. Offline is a warning: the hub is unreachable and local files stay available.</span></div>
-            <div class="kit-row"><span class="pill id"><span data-icon="circle-dashed"></span>Not selected</span><span class="kit-note">Idle: nothing to do.</span></div>
+            <div class="kit-row"><span class="pill sy busy-status"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing</span><span class="kit-note">Working: green text with the busy grid, no fill, until the last byte is verified.</span></div>
+            <div class="kit-row"><span class="pill wa"><span data-icon="triangle-alert"></span>Conflict</span><span class="pill wa"><span data-icon="pause"></span>Paused</span><span class="pill wa"><span data-icon="clock"></span>Pending</span><span class="pill wa"><span data-icon="unplug"></span>Disconnected</span><span class="kit-note">Attention: a decision is needed, or sync is waiting for you.</span></div>
+            <div class="kit-row"><span class="pill er"><span data-icon="circle-alert"></span>Needs attention</span><span class="pill wa"><span data-icon="wifi-off"></span>Offline</span><span class="kit-note">Error: something needs a fix. Offline is a warning on this device: the hub is unreachable and local files stay available.</span></div>
+            <div class="kit-row"><span class="pill id"><span data-icon="link"></span>Linked</span><span class="pill id"><span data-icon="circle-dashed"></span>Offline</span><span class="pill id"><span data-icon="clock"></span>Checking sync</span><span class="pill id"><span data-icon="folder"></span>No shared folders</span><span class="kit-note">Neutral: a fact without a verdict. Another device that is offline reads neutral; the current device's Offline is a warning.</span></div>
           </div>
         </div>
       </section>
@@ -130,7 +179,7 @@
         <p>Lucide, stroke 1.75, round caps. 16 px in rows and buttons, 20 px in navigation and dialogs, 24 px in empty states. Icons take the text colour next to them; only state icons carry colour.</p>
         <div class="kit-card">
           <div class="kit-row">
-            <span data-icon="folder" data-size="20"></span><span data-icon="images" data-size="20"></span><span data-icon="monitor-smartphone" data-size="20"></span><span data-icon="history" data-size="20"></span><span data-icon="settings" data-size="20"></span><span data-icon="server" data-size="20"></span><span data-icon="monitor" data-size="20"></span><span data-icon="smartphone" data-size="20"></span><span data-icon="refresh-cw" data-size="20"></span><span data-icon="download" data-size="20"></span><span data-icon="upload" data-size="20"></span><span data-icon="unlink" data-size="20"></span><span data-icon="trash-2" data-size="20"></span><span data-icon="git-branch" data-size="20"></span><span data-icon="git-commit-horizontal" data-size="20"></span><span data-icon="undo-2" data-size="20"></span><span data-icon="key-round" data-size="20"></span><span data-icon="shield-check" data-size="20"></span><span data-icon="wifi-off" data-size="20"></span><span data-icon="circle-check" data-size="20"></span><span data-icon="circle-alert" data-size="20"></span><span data-icon="copy" data-size="20"></span><span data-icon="search" data-size="20"></span><span data-icon="image" data-size="20"></span><span data-icon="play" data-size="20"></span><span data-icon="chevron-right" data-size="20"></span>
+            <span data-icon="folder" data-size="20"></span><span data-icon="images" data-size="20"></span><span data-icon="monitor-smartphone" data-size="20"></span><span data-icon="history" data-size="20"></span><span data-icon="settings" data-size="20"></span><span data-icon="server" data-size="20"></span><span data-icon="monitor" data-size="20"></span><span data-icon="smartphone" data-size="20"></span><span data-icon="refresh-cw" data-size="20"></span><span data-icon="download" data-size="20"></span><span data-icon="upload" data-size="20"></span><span data-icon="unlink" data-size="20"></span><span data-icon="trash-2" data-size="20"></span><span data-icon="git-commit-horizontal" data-size="20"></span><span data-icon="undo-2" data-size="20"></span><span data-icon="key-round" data-size="20"></span><span data-icon="shield-check" data-size="20"></span><span data-icon="wifi-off" data-size="20"></span><span data-icon="circle-check" data-size="20"></span><span data-icon="circle-alert" data-size="20"></span><span data-icon="copy" data-size="20"></span><span data-icon="search" data-size="20"></span><span data-icon="image" data-size="20"></span><span data-icon="play" data-size="20"></span><span data-icon="chevron-right" data-size="20"></span><span data-icon="unplug" data-size="20"></span><span data-icon="triangle-alert" data-size="20"></span><span data-icon="pause" data-size="20"></span><span data-icon="clock" data-size="20"></span><span data-icon="link" data-size="20"></span><span data-icon="circle-dashed" data-size="20"></span><span data-icon="ellipsis" data-size="20"></span><span data-icon="x" data-size="20"></span><span data-icon="info" data-size="20"></span><span data-icon="video" data-size="20"></span><span data-icon="folder-open" data-size="20"></span><span data-icon="folder-plus" data-size="20"></span><span data-icon="folder-check" data-size="20"></span><span data-icon="pencil" data-size="20"></span><span data-icon="arrow-left" data-size="20"></span><span data-icon="chevron-left" data-size="20"></span><span data-icon="chevron-down" data-size="20"></span><span data-icon="external-link" data-size="20"></span><span data-icon="log-in" data-size="20"></span><span data-icon="log-out" data-size="20"></span><span data-icon="shield-alert" data-size="20"></span><span data-icon="shield-off" data-size="20"></span><span data-icon="wifi" data-size="20"></span><span data-icon="power" data-size="20"></span><span data-icon="image-off" data-size="20"></span><span data-icon="hard-drive" data-size="20"></span><span data-icon="map-pin" data-size="20"></span><span data-icon="calendar" data-size="20"></span><span data-icon="camera" data-size="20"></span><span data-icon="share" data-size="20"></span><span data-icon="circle-dot" data-size="20"></span><span data-icon="sun" data-size="20"></span><span data-icon="moon" data-size="20"></span>
           </div>
         </div>
       </section>
@@ -159,7 +208,7 @@
               <div><b style="width: 48px; height: 32px; border-radius: var(--r-dialog)"></b>dialog 14</div>
               <div><b style="width: 48px; height: 32px; border-radius: var(--r-pill)"></b>pill</div>
             </div>
-            <p class="kit-note">Never mix radii in one row. Photo tiles use 4, or 2 when denser than 40 px.</p>
+            <p class="kit-note">Never mix radii in one row. Windows are 12 and segmented thumbs 6. Desktop photo tiles use 8; phone photo tiles use 4, or 2 when denser than 40 px.</p>
           </div>
           <div class="kit-card">
             <h3>Elevation</h3>
@@ -167,11 +216,11 @@
               <span class="panel" style="box-shadow: var(--shadow-menu)">Menu</span>
               <span class="panel" style="box-shadow: var(--shadow-dialog)">Dialog</span>
             </div>
-            <p class="kit-note">Flat with a border by default. Shadows only for things that float: menus, dialogs, the window (in dark they also sit on a raised fill with a hairline ring), the mobile scrub thumb.</p>
+            <p class="kit-note">Flat with a border by default. Shadows only for things that float: menus, dialogs, the window (<code class="kit-mono">--shadow-window</code>; in dark they also sit on a raised fill with a hairline ring), the mobile scrub thumb.</p>
           </div>
           <div class="kit-card">
             <h3>Motion</h3>
-            <p class="kit-note">Fast 120 ms, enter 200 ms, exit 140 ms, one ease. Desktop views switch instantly; mobile tabs fade, details push 30 dp, sheets slide from the edge, dialogs scale from 0.9. Only opacity and transform animate; reduced motion collapses to zero. The busy grid is the only loop.</p>
+            <p class="kit-note">Fast 120 ms, enter 200 ms, exit 140 ms, one ease. Desktop route changes fade and lift in over 200 ms and dialogs, menus and notices enter 8 px up (dialogs also from 0.985) and dismiss at once; mobile tabs fade, details push 30 dp, sheets slide from the edge, dialogs scale from 0.9. Only opacity and transform animate; reduced motion collapses to zero. The busy grid is the only loop.</p>
           </div>
         </div>
       </section>
@@ -198,11 +247,16 @@
               <button type="button" class="icon-button" aria-label="Copy"><span data-icon="copy"></span></button>
               <button type="button" class="primary">Pressed</button>
             </div>
-            <p class="kit-note">One primary per screen, 32 px controls. Pressed: secondary and icon buttons fill with the hover tone, primary drops to 85% opacity; on a touch screen icon buttons grow to 44 px. Destructive actions are red, name the action and always say what stays.</p>
+            <div class="kit-row">
+              <button type="button" class="back"><span data-icon="chevron-left"></span>Folders</button>
+              <button type="button" class="text-button"><span data-icon="undo-2"></span>Restore</button>
+              <button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button>
+            </div>
+            <p class="kit-note">One primary per screen, 32 px controls. Back, text and ghost buttons are borderless green actions. Pressed: secondary and icon buttons fill with the hover tone, primary drops to 85% opacity; on a touch screen icon buttons grow to 44 px. Destructive actions are red, name the action and always say what stays.</p>
           </div>
           <div class="kit-card">
             <h3>Role tags · inputs</h3>
-            <div class="kit-row"><span class="tag hub">Hub</span><span class="tag self">This device</span><span class="tag">Album source</span></div>
+            <div class="kit-row"><span class="tag hub">Hub</span><span class="tag self">This device</span><span class="tag">Album source</span><span class="tag">Backs up hub</span></div>
             <label for="kit-name">Device name</label>
             <input id="kit-name" value="macbook-pro" />
             <div class="kit-row">
@@ -221,6 +275,30 @@
             <p class="kit-note">Six digits in two groups, single use, ten minutes. Pairing and web access are separate codes. The issuing hub shows the expiry; the typing device shows “single use · valid ten minutes”.</p>
           </div>
           <div class="kit-card">
+            <h3>Fields · invalid and multi-line</h3>
+            <div class="field-with-icon selection-path"><span data-icon="folder"></span><input class="mono" aria-label="Local destination" aria-invalid="true" aria-describedby="kit-path-error" value="/Users/javi/Library/Application Support/Arca" /></div>
+            <div class="path-check selection-check path-check-error" id="kit-path-error" role="status"><span data-icon="circle-alert"></span><span>Choose a folder outside Arca’s application data.</span></div>
+            <label for="kit-rules">Exclusion rules</label>
+            <textarea id="kit-rules" class="ignore-editor mono" spellcheck="false" aria-describedby="kit-rules-hint">node_modules/
+*.tmp</textarea>
+            <p id="kit-rules-hint" class="hint">One gitignore pattern per line, added to the exclusions Arca always applies.</p>
+            <p class="kit-note">An invalid field gets the error border, an alert icon and the reason beside it, linked with <code class="kit-mono">aria-describedby</code>. Operational failures use notices instead.</p>
+          </div>
+          <div class="kit-card">
+            <h3>Select · menu · tooltip</h3>
+            <div class="kit-draw menu-open">
+              <div class="dropdown"><button type="button" class="dropdown-trigger" aria-label="Shared folder: photos" aria-haspopup="listbox" aria-expanded="true"><span>photos</span><span data-icon="chevron-down"></span></button><div class="dropdown-menu" role="listbox" aria-label="Shared folder"><button type="button" role="option" aria-selected="false"><span>All</span><span data-icon="check"></span></button><button type="button" role="option" aria-selected="true"><span>photos</span><span data-icon="check"></span></button><button type="button" role="option" aria-selected="false"><span>documents</span><span data-icon="check"></span></button></div></div>
+            </div>
+            <div class="kit-draw menu-open">
+              <div class="heading-actions"><details class="details-menu folder-actions-menu" open><summary class="icon-button" aria-label="Folder actions"><span data-icon="ellipsis"></span></summary><div class="menu-items"><button type="button" class="secondary"><span data-icon="images"></span>Enable gallery</button><button type="button" class="secondary"><span data-icon="pencil"></span>Rename</button><button type="button" class="secondary danger menu-item-separated"><span data-icon="trash-2"></span>Delete file…</button></div></details></div>
+            </div>
+            <div class="kit-draw menu-open">
+              <button type="button" class="ghost icon-button" data-tooltip="Sync now" aria-label="Sync now"><span data-icon="refresh-cw"></span></button>
+              <div class="tooltip" role="tooltip">Sync now</div>
+            </div>
+            <p class="kit-note">Menus and dropdowns float on the raised surface with the menu shadow; the selected option sits on the tint with a check, and menu rows fill with the track tone on hover. Tooltips are mono on ink and open after 200 ms.</p>
+          </div>
+          <div class="kit-card">
             <h3>Folder rows</h3>
             <div class="kit-stack">
               <article class="folder-card" role="button" tabindex="0"><div class="tile"><span data-icon="images"></span></div><div class="row-main"><strong>photos</strong><p class="meta">3,598 files · 26.0 GB · /Users/javi/Pictures</p></div><span data-icon="chevron-right" class="chevron"></span></article>
@@ -231,14 +309,14 @@
           </div>
           <div class="kit-card">
             <h3>Devices</h3>
-            <article class="device-row"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong><span class="tag hub">Hub</span></div><p class="connection-line">Linux · Docker · 100.99.29.84:17831</p></div><div class="row-end"><span class="pill ok"><span data-icon="circle-check"></span>Connected</span></div></article>
+            <article class="device-row"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong><span class="tag hub">Hub</span></div><p class="connection-line">Linux · Docker · 100.99.29.84:17831</p></div><div class="row-end"><span class="pill ok"><span data-icon="circle-check"></span>Running</span></div></article>
             <article class="device-row"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong></div><p class="connection-line">Android · 192.168.1.144</p></div><div class="row-end"><span class="pill id"><span data-icon="circle-dashed"></span>Offline</span></div></article>
           </div>
           <div class="kit-card">
             <h3>History</h3>
             <div class="history-group">
-              <div class="history-row" role="button" tabindex="0"><span data-icon="git-commit-horizontal"></span><div><strong>2026/09/IMG_0042.jpg</strong><p>4.2 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165764</span><span class="row-time">14:31</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div>
-              <div class="history-row conflict" role="button" tabindex="0"><span data-icon="git-branch"></span><div><strong>notes/brief.md</strong><p>Conflict copy retained</p></div><span class="history-folder">documents</span><span class="mono revision">rev 205</span><span class="row-time">14:27</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div>
+              <div class="history-row" role="button" tabindex="0"><span class="row-preview"><span data-icon="git-commit-horizontal"></span><span class="row-preview-status"><span data-icon="git-commit-horizontal"></span></span></span><div><strong>2026/09/IMG_0042.jpg</strong><p>4.2 MB</p></div><span class="history-folder">photos</span><span class="mono revision">rev 165764</span><span class="row-time">14:31</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div>
+              <div class="history-row conflict" role="button" tabindex="0"><span data-icon="triangle-alert"></span><div><strong>notes/brief.md</strong><p>Conflict copy retained</p></div><span class="history-folder">documents</span><span class="mono revision">rev 205</span><span class="row-time">14:27</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div>
               <div class="history-row deleted" role="button" tabindex="0"><span data-icon="trash-2"></span><div><strong>drafts/old-plan.md</strong><p>Deleted · recoverable</p></div><span class="history-folder">documents</span><span class="mono revision">rev 309</span><span class="row-time">09:12</span><div class="row-actions"><span data-icon="chevron-right"></span></div></div>
             </div>
           </div>
@@ -246,7 +324,7 @@
             <h3>Notices · one contract, desktop and mobile</h3>
             <div class="kit-notices">
               <article class="notice-card notice-info" role="status"><div class="notice-main"><span data-icon="circle-check"></span><div class="notice-content"><strong>Stopped syncing</strong><div class="notice-actions"><button class="notice-link">Show</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></article>
-              <article class="notice-card notice-warning" role="alert"><div class="notice-main"><span data-icon="git-branch"></span><div class="notice-content"><strong>Conflict in photos-yuri</strong><p>Files were edited on two devices. Both files were kept.</p><div class="notice-actions"><button class="notice-link">Review</button><button class="notice-link notice-muted">Dismiss</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></article>
+              <article class="notice-card notice-warning" role="alert"><div class="notice-main"><span data-icon="triangle-alert"></span><div class="notice-content"><strong>Conflict in photos-yuri</strong><p>Files were edited on two devices. Both files were kept.</p><div class="notice-actions"><button class="notice-link">Review</button><button class="notice-link notice-muted">Dismiss</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></article>
               <article class="notice-card notice-error" role="alert"><div class="notice-main"><span data-icon="wifi-off"></span><div class="notice-content"><strong>Hub casa unreachable</strong><p>Your edits are saved locally and sync when casa is back.</p><div class="notice-actions"><button class="notice-link">Retry now</button><button class="notice-link notice-muted">Dismiss</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div><details class="notice-details"><summary><span data-icon="chevron-right"></span><span>Details</span><button class="notice-copy notice-link">Copy</button></summary><pre>HUB_UNREACHABLE · GET http://100.99.29.84:17831/v1/catalog · connect ETIMEDOUT</pre></details></article>
             </div>
             <p class="kit-note">360 wide, three kinds. Info auto-dismisses after four seconds; warnings and errors stay until handled. One notice per condition, never per file.</p>
@@ -269,6 +347,17 @@
             <p class="kit-note">Icon tile, 16/22 title, 13/20 consequence, fields, then Cancel and an explicit verb. The tile turns red only for destructive actions.</p>
           </div>
           <div class="kit-card">
+            <h3>Dialog · destructive confirmation</h3>
+            <div class="kit-dialog-stage">
+              <dialog open class="confirmation-dialog" aria-labelledby="kit-danger-title">
+                <div class="modal-title"><div class="tile"><span data-icon="unlink"></span></div><div><h2 id="kit-danger-title">Stop syncing “photos-yuri”?</h2><p>Stops syncing it on this Mac. The hub keeps the shared folder, its files and history.</p></div></div>
+                <div class="confirmation-option"><label class="toggle"><input type="checkbox" id="kit-delete-files" checked /><span></span></label><label for="kit-delete-files">Delete the files on this Mac</label></div>
+                <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" id="submit-dialog" class="primary danger">Stop syncing and delete</button></div>
+              </dialog>
+            </div>
+            <p class="kit-note">Without fields a dialog is a confirmation: actions align with the text column, one inline option may appear and Cancel holds initial focus. The tile and the filled primary turn red; the text says what stays.</p>
+          </div>
+          <div class="kit-card">
             <h3>Gallery tiles · media placeholder</h3>
             <div class="photo-grid">
               <div class="photo-thumb"><button type="button" class="photo-open" aria-label="Open IMG_0001.jpg"><span data-icon="image"></span></button></div>
@@ -281,7 +370,7 @@
           <div class="kit-card">
             <h3>Empty and loading</h3>
             <div class="empty"><span data-icon="folder-open" data-size="24"></span><h2>No folders on this device yet</h2><p>Pick folders from hub casa. Full copies are kept on disk and work offline.</p></div>
-            <div class="empty"><span data-icon="git-branch" data-size="24"></span><h2>No conflicts</h2><p>Clear Conflicts to see every change.</p></div>
+            <div class="empty"><span data-icon="triangle-alert" data-size="24"></span><h2>No conflicts</h2><p>Clear Conflicts to see every change.</p></div>
             <div class="scaffold-row" role="status" aria-label="Loading content"><span class="scaffold-mark" aria-hidden="true"></span><div class="scaffold-copy"><span class="scaffold-line scaffold-medium" aria-hidden="true"></span><span class="scaffold-line scaffold-long" aria-hidden="true"></span></div><span class="scaffold-line scaffold-short" aria-hidden="true"></span></div>
             <p class="kit-note">An empty state explains and keeps no button when its view header owns the action; it carries one only where the header has none, as History does with Connect to hub….</p>
             <p class="kit-note">Known chrome renders for real; each loading section shows exactly one row sized like a real one. Unknown is never zero.</p>
@@ -379,7 +468,25 @@
             <div class="kit-stack">
               <article class="folder-card"><div class="tile"><span data-icon="images"></span></div><div class="row-main"><strong>photos</strong><p class="meta">3,598 files · 26.0 GB · /Users/javi/Pictures</p></div><span data-icon="chevron-right" class="chevron"></span></article>
               <article class="folder-card unselected"><div class="tile"><span data-icon="images"></span></div><div class="row-main"><strong>photos-yuri</strong><p class="meta">138 files · 1.6 GB</p></div><button type="button" class="secondary small-button"><span data-icon="refresh-cw"></span>Start syncing</button></article>
-              <div class="kit-row"><button type="button" class="primary">Choose folders</button><button type="button" class="secondary">Sync now</button><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span><span class="pill er"><span data-icon="wifi-off"></span>Hub unreachable</span><span class="tag hub">Hub</span></div>
+              <div class="kit-row"><button type="button" class="primary">Choose folders</button><button type="button" class="secondary">Sync now</button><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span><span class="pill wa"><span data-icon="wifi-off"></span>Offline</span><span class="tag hub">Hub</span></div>
+            </div>
+            <div class="kit-stack">
+              <div class="kit-dialog-stage">
+                <dialog open aria-labelledby="kit-dark-title">
+                  <div class="modal-title"><div class="tile"><span data-icon="refresh-cw"></span></div><div><h2 id="kit-dark-title">Sync “photos-yuri”</h2><p>Files sync both ways between this folder and the hub.</p></div></div>
+                  <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
+                </dialog>
+              </div>
+              <div class="kit-draw menu-open">
+                <div class="dropdown"><button type="button" class="dropdown-trigger" aria-label="Shared folder: photos" aria-haspopup="listbox" aria-expanded="true"><span>photos</span><span data-icon="chevron-down"></span></button><div class="dropdown-menu" role="listbox" aria-label="Shared folder"><button type="button" role="option" aria-selected="false"><span>All</span><span data-icon="check"></span></button><button type="button" role="option" aria-selected="true"><span>photos</span><span data-icon="check"></span></button></div></div>
+              </div>
+              <div class="kit-row">
+                <div class="segmented" role="group" aria-label="Version history"><button type="button">Off</button><button type="button" class="active">1 week</button><button type="button">Forever</button></div>
+                <label class="toggle"><input type="checkbox" checked aria-label="Launch at login" /><span></span></label>
+              </div>
+              <div class="kit-notices">
+                <article class="notice-card notice-warning" role="alert"><div class="notice-main"><span data-icon="triangle-alert"></span><div class="notice-content"><strong>Conflict in photos-yuri</strong><p>Files were edited on two devices. Both files were kept.</p><div class="notice-actions"><button class="notice-link">Review</button><button class="notice-link notice-muted">Dismiss</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></article>
+              </div>
             </div>
             <div class="m-screen" style="height: 250px; padding: 16px">
               <div class="m-list">

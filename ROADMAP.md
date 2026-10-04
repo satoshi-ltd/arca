@@ -26,7 +26,12 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **UI-SYS-EMPTY-COPY** — The same empty state says the same words on desktop and phone
+  `ui · agent · normal`
+  accept: the board.
+- **UI-MOB-PAIR-ONE-FLOW** — One pairing screen on the phone
+  `ui · agent · normal`
+  accept: the board.
 
 ## In progress
 
@@ -199,6 +204,13 @@ Suggested order for approval: preservation of user files, synchronization recove
   accept: the conflict dialog's download links on a server replica's web view use a route the replica serves and its local hash (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409), and the link is hidden when there is no local copy; DOM and API tests.
 
 ### Deferred usability and cleanup
+
+- **DESK-ONBOARDING-HUB-ADDRESS** — The onboarding Hub address field loses its placeholder and is forced to monospace
+  `bug · agent · low`
+  accept: the onboarding "Pair with your hub" step passes its placeholder `https://arca.your-network` in the placeholder position, as the Connect to hub dialog does, so the field shows it and only the typed value is monospace; a desktop test asserts the placeholder. Found by the design audit: `textField` takes no placeholder, so the sixth argument lands in `mono`.
+- **DESK-EMPTY-HEADING** — The "All folders are syncing here" empty state is the only one with an unstyled heading
+  `bug · agent · low`
+  accept: that empty state uses the `h2` every other `.empty` styles (or the stylesheet styles it), so its heading matches the others; a desktop test asserts the heading element.
 
 - **DESK-INFO-PANEL-MOTION** — The photo Info panel slides with opacity and transform only
   `bug · agent · low`

@@ -27,7 +27,7 @@ export const iconNames = {
   "chevron-down": "ChevronDown",
   "check-circle": "CircleCheck",
   trash: "Trash2",
-  conflict: "GitBranch",
+  conflict: "TriangleAlert",
   revision: "GitCommitHorizontal",
   alert: "CircleAlert",
   upload: "Upload",
@@ -338,36 +338,13 @@ export const icons = {
   ],
   conflict: [
     [
-      "line",
-      {
-        x1: "6",
-        x2: "6",
-        y1: "3",
-        y2: "15",
-      },
-    ],
-    [
-      "circle",
-      {
-        cx: "18",
-        cy: "6",
-        r: "3",
-      },
-    ],
-    [
-      "circle",
-      {
-        cx: "6",
-        cy: "18",
-        r: "3",
-      },
-    ],
-    [
       "path",
       {
-        d: "M18 9a9 9 0 0 1-9 9",
+        d: "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3",
       },
     ],
+    ["path", { d: "M12 9v4" }],
+    ["path", { d: "M12 17h.01" }],
   ],
   revision: [
     [

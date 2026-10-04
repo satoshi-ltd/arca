@@ -88,7 +88,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.113";
+const APP_VERSION = "0.6.114";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -372,7 +372,7 @@ function title(heading, description = "", actions = "") {
 }
 function historyEmpty() {
   if (historyFilter === "conflicts")
-    return empty("No conflicts", "Clear Conflicts to see every change.", "", "git-branch");
+    return empty("No conflicts", "Clear Conflicts to see every change.", "", "triangle-alert");
   if (historyFilter === "deleted")
     return empty("No deleted files", "Clear Deleted to see every change.", "", "trash-2");
   if (historyVolume)
@@ -1658,7 +1658,7 @@ function revisionRow(v, compact = false) {
       status.volumes.find((x) => x.id === v.volume)?.selected)
       ? "review-conflict"
       : "activity-file";
-  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" title="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal", true)}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${compact ? relative(v.created) : clockTime(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
+  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" title="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "triangle-alert" : "git-commit-horizontal", true)}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${compact ? relative(v.created) : clockTime(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
 }
 function fileHistoryHeader() {
   const volume = status.volumes.find((v) => v.id === historyVolume);
@@ -1689,7 +1689,7 @@ function fileHistoryHeader() {
           "review-conflict",
           JSON.stringify({ volume: historyVolume, path: historyPath }),
           "secondary",
-          "git-branch",
+          "triangle-alert",
         )
       : "";
   const finder =
@@ -4618,7 +4618,7 @@ async function reviewConflict(item) {
     modalHeader(
       "Resolve conflict",
       "Choose which version to keep. Both copies remain available in history.",
-      "git-branch",
+      "triangle-alert",
     ) +
       `<div class="conflict-options">${[
         ["original", originalPath, original],

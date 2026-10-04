@@ -186,7 +186,7 @@ test("History explains why it is empty, on desktop and on the phone", async () =
       historyVolume,
       empty: (heading, text, control, symbol) => ({ heading, text, symbol }),
     });
-  assert.deepEqual(run("conflicts", ""), { heading: "No conflicts", text: "Clear Conflicts to see every change.", symbol: "git-branch" });
+  assert.deepEqual(run("conflicts", ""), { heading: "No conflicts", text: "Clear Conflicts to see every change.", symbol: "triangle-alert" });
   assert.deepEqual(run("deleted", "docs"), { heading: "No deleted files", text: "Clear Deleted to see every change.", symbol: "trash-2" });
   assert.deepEqual(run("revisions", "docs"), { heading: "No changes in this folder", text: "Set Shared folder to All to see every change.", symbol: "history" });
   assert.deepEqual(run("revisions", ""), { heading: "Every change has a history", text: "Changes to your files appear here.", symbol: "history" });
@@ -256,4 +256,15 @@ test("History heads each day group and tells each row's clock time the same way 
   assert.ok(app.includes("style={s.tabularTime}"), "the narrow time carries that style");
   assert.ok(source.includes("const day = dayLabel(r.created);"), "the desktop groups by day label");
   assert.ok(source.includes("row-time\">${compact ? relative(v.created) : clockTime(v.created)}<"), "desktop History rows show the clock, Recent keeps relative times");
+});
+
+test("a conflict is a triangle-alert on desktop and phone, never a git-branch", async () => {
+  const read = (...file) => fs.readFileSync(path.join(root, ...file), "utf8");
+  for (const file of [["apps", "desktop", "src", "app.js"], ["apps", "desktop", "src", "notice-contract.js"], ["apps", "mobile", "src", "Notice.jsx"]])
+    assert.doesNotMatch(read(...file), /git-branch/, file.join("/"));
+  const { iconNames, icons } = await import("../apps/mobile/src/icons.js");
+  assert.equal(iconNames.conflict, "TriangleAlert");
+  assert.equal(icons.conflict.length, 3);
+  assert.match(read("apps", "mobile", "src", "Notice.jsx"), /"triangle-alert": "conflict"/);
+  assert.match(read("apps", "desktop", "src", "app.js"), /conflict \? "triangle-alert" : "git-commit-horizontal"/);
 });
