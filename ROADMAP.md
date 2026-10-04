@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-MOB-PAIR-ONE-FLOW** — One pairing screen on the phone
-  `ui · agent · normal`
-  accept: the board.
+_None._
 
 ## In progress
 

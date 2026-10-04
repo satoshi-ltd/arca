@@ -1032,12 +1032,6 @@ export function styles(
       fontSize: g.touchInputFont,
       lineHeight: g.touchInputLine,
     },
-    code: {
-      fontFamily: "FragmentMono_400Regular",
-      fontSize: 25,
-      letterSpacing: 8,
-      textAlign: "center",
-    },
     tabs: {
       flexDirection: "row",
       borderTopWidth: 1,
@@ -1061,7 +1055,6 @@ export function styles(
     active: { color: c.accent },
     error: { backgroundColor: c.dangerBg, borderColor: c.danger },
     errorText: { color: c.danger },
-    center: { alignItems: "center", gap: 16, paddingVertical: 26 },
     logo: { width: 76, height: 76 },
     folderList: { gap: g.listItemGap },
     badgeIcon: {

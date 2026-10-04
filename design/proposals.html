@@ -22,7 +22,7 @@
         <a href="mobile.html">Mobile</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.6.115 · proposals</span>
+      <span class="kit-version">v0.6.116 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -36,21 +36,7 @@
 
       <section class="kit-section" id="boards">
         <h2>Boards <span>01</span></h2>
-        <article class="kit-board" data-board="UI-MOB-PAIR-ONE-FLOW">
-          <header><code>UI-MOB-PAIR-ONE-FLOW</code><h3>One pairing screen on the phone</h3><span>Mobile</span></header>
-          <p class="kit-note"><strong>Why.</strong> The phone pairs through two different screens. Onboarding asks for the hub address, then the six-cell code, then the name, and says "Pair this phone". Devices, when the phone has no hub, asks for the name first, a plain monospace field for the code, a different address placeholder and says "Pair this device". Same task, two layouts, two wordings.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-              <p class="kit-caption">Devices without a hub: name first, plain code field</p>
-<div class="m-device"><div class="m-screen"><div class="m-body m-setup"><div class="m-section"><span class="m-heading">Pair with your hub</span><span class="m-text">Your hub keeps your folders. Choose the ones to keep on this device, with full copies available offline.</span></div><div class="m-section"><span class="m-heading">Name this device</span><div class="m-field m-filled">Android</div></div><div class="m-section"><span class="m-heading">Hub address</span><div class="m-field">http://192.168.1.10:17831</div><span class="m-caption">Use HTTPS or Tailscale. For local Wi-Fi, enable HTTP in the hub’s Settings and enter its private IPv4 address. Local HTTP traffic is not encrypted.</span></div><div class="m-section"><span class="m-heading">Pairing code</span><div class="m-field">1 2 3 4 5 6</div><span class="m-caption">Get a code from Devices on the hub. Six digits · single use · expires in ten minutes.</span></div><span class="m-button m-primary">Pair this device</span><span class="m-caption">No Arca account or password. Your connection credential is stored securely on this device.</span></div></div></div>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-              <p class="kit-caption">Devices reuses the onboarding screen</p>
-<div class="m-device"><div class="m-screen"><div class="m-body m-setup"><div class="m-section"><span class="m-title">Pair with your hub</span><span class="m-text">On the hub, open Devices → Pair a device. It shows the address and a single-use code.</span></div><div class="m-section"><span class="m-heading">Hub address</span><div class="m-field"><span data-icon="server" data-size="20"></span>https://arca.your-network</div></div><div class="m-section"><span class="m-heading">Pairing code</span><div class="m-code"><span class="m-cell m-focused"></span><span class="m-cell"></span><span class="m-cell"></span><span class="m-code-separator">–</span><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span></div></div><div class="m-section"><span class="m-heading">Name this phone</span><div class="m-field m-filled"><span data-icon="smartphone" data-size="20"></span>Android</div></div><span class="m-button m-primary"><span data-icon="key" data-size="20"></span>Pair this phone</span></div></div></div>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>Devices without a hub renders the onboarding pairing step (address, six-cell code with its separator, name, "Pair this phone", placeholder https://arca.your-network); one component serves both places; the phone test covers both entry points.</p></div></div>
-        </article>
+        <div class="kit-empty"><strong>No proposals</strong><p>Every drawn idea has shipped. A new board appears here only while it is a proposal.</p></div>
 
       </section>
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.116 — 2026-10-04
+
+- Pairing on the phone is one screen: Devices without a hub now shows the same address, six-cell code and name form as onboarding, with the same "Pair this phone" action and the note about HTTPS, Tailscale and local HTTP.
+
+Needs: native build
+
 ## 0.6.115 — 2026-10-04
 
 - Empty History, folder-filter, Recent and photo states now use the same wording on desktop and phone ("No history yet", "Set Shared folder to All to see every change.", "Photos added to this folder appear here.").

@@ -4,14 +4,13 @@ import {
   useDesign,
   Logo,
   Card,
-  Field,
   FeatureRow,
-  CodeInput,
   StepIndicator,
   Button,
   FolderRow,
   Icon,
 } from "./components";
+import { PairingForm } from "./PairingForm";
 import { bytes, folderSize } from "./format";
 export function Onboarding({
   step,
@@ -82,50 +81,15 @@ export function Onboarding({
   if (step === "pair")
     return (
       <>
-        <Text accessibilityRole="header" style={s.title}>
-          Pair with your hub
-        </Text>
-        <Text style={s.text}>
-          On the hub, open Devices → Pair a device. It shows the address and a
-          single-use code.
-        </Text>
-        <Field
-          label="Hub address"
-          icon="server"
-          value={address}
-          onChangeText={setAddress}
-          placeholder="https://arca.your-network"
-          keyboardType="url"
-          editable={!busy}
-        />
-        <View style={s.section}>
-          <CodeInput
-            label="Pairing code"
-            value={code}
-            onChangeText={setCode}
-            editable={!busy}
-          />
-          <View style={s.centeredRow}>
-            <Icon name="clock" size={16} />
-            <Text style={s.caption}>Single use · valid ten minutes</Text>
-          </View>
-        </View>
-        <Field
-          label={`Name this ${device}`}
-          icon="phone"
-          value={name}
-          onChangeText={setName}
-          maxLength={100}
-          editable={!busy}
-        />
-        <View style={s.flex} />
-        <Button
-          label={`Pair this ${device}`}
-          primary
-          icon="key"
+        <PairingForm
+          name={name}
+          setName={setName}
+          address={address}
+          setAddress={setAddress}
+          code={code}
+          setCode={setCode}
           busy={busy}
-          disabled={!name.trim() || !address.trim() || code.length !== 6}
-          onPress={pair}
+          pair={pair}
         />
         <StepIndicator step={1} />
       </>

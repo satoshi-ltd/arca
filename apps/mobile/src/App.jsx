@@ -27,6 +27,7 @@ import {
   HUB_ONLY_REASON,
 } from "../../desktop/src/notice-contract.js";
 import { Onboarding } from "./Onboarding";
+import { PairingForm } from "./PairingForm";
 import { selectFirstFolders } from "./onboarding";
 import {
   scopedActivity,
@@ -74,7 +75,6 @@ import {
   SettingsGroup,
   SegmentedControl,
   Icon,
-  Logo,
   Button,
   Field,
   Card,
@@ -2332,61 +2332,16 @@ export default function App() {
                           />
                         </Section>
                       ) : (
-                        <>
-                          <View style={s.center}>
-                            <Logo />
-                            <Text accessibilityRole="header" style={s.heading}>
-                              Pair with your hub
-                            </Text>
-                            <Text style={[s.text, s.centerText]}>
-                              Your hub keeps your folders. Choose the ones to
-                              keep on this device, with full copies available
-                              offline.
-                            </Text>
-                          </View>
-                          <Field
-                            label="Name this device"
-                            value={name}
-                            maxLength={100}
-                            onChangeText={setName}
-                          />
-                          <Field
-                            label="Hub address"
-                            value={address}
-                            onChangeText={setAddress}
-                            placeholder="http://192.168.1.10:17831"
-                            keyboardType="url"
-                          />
-                          <Text style={s.caption}>
-                            Use HTTPS or Tailscale. For local Wi-Fi, enable HTTP
-                            in the hub’s Settings and enter its private IPv4
-                            address. Local HTTP traffic is not encrypted.
-                          </Text>
-                          <Field
-                            label="Pairing code"
-                            value={code}
-                            onChangeText={(v) =>
-                              setCode(v.replace(/[^0-9]/g, "").slice(0, 6))
-                            }
-                            keyboardType="number-pad"
-                            textContentType="oneTimeCode"
-                            style={[s.input, s.code]}
-                          />
-                          <Text style={s.caption}>
-                            Get a code from Devices on the hub. Six digits ·
-                            single use · expires in ten minutes.
-                          </Text>
-                          <Button
-                            label="Pair this device"
-                            primary
-                            busy={busy}
-                            disabled={
-                              !engine.current ||
-                              code.length !== 6 ||
-                              !address ||
-                              !name.trim()
-                            }
-                            onPress={() =>
+                        <PairingForm
+                          name={name}
+                          setName={setName}
+                          address={address}
+                          setAddress={setAddress}
+                          code={code}
+                          setCode={setCode}
+                          busy={busy}
+                          blocked={!engine.current}
+                          pair={() =>
                               run(async () => {
                                 await engine.current.store.set(
                                   "name",
@@ -2401,8 +2356,7 @@ export default function App() {
                                 setView("Folders");
                               }, { hubOnly: true })
                             }
-                          />
-                        </>
+                        />
                       )}
                       {!connection && (
                         <Text style={[s.caption, s.centerText]}>

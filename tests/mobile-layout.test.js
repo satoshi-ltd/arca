@@ -835,17 +835,25 @@ test("the mobile welcome says where the hub comes from instead of a bare caption
   assert.match(welcome, /label="Get started"[\s\S]*onPress=\{start\}/, "Get started still starts pairing");
 });
 
-test("the mobile pairing step says where the hub shows its details and asks in the hub's order", () => {
-  const onboarding = fs.readFileSync(new URL("../apps/mobile/src/Onboarding.jsx", import.meta.url), "utf8");
-  const pair = onboarding.slice(onboarding.indexOf('if (step === "pair")'), onboarding.indexOf("const folders = catalog")).replace(/\s+/g, " ");
+test("the mobile pairing form says where the hub shows its details, asks in the hub's order and serves both entry points", () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
+  const pair = read("PairingForm.jsx").replace(/\s+/g, " ");
+  const onboarding = read("Onboarding.jsx");
+  const step = onboarding.slice(onboarding.indexOf('if (step === "pair")'), onboarding.indexOf("const folders = catalog")).replace(/\s+/g, " ");
+  const app = read("App.jsx").replace(/\s+/g, " ");
   assert.match(pair, /On the hub, open Devices → Pair a device\. It shows the address and a single-use code\./);
   assert.doesNotMatch(pair, /Connect with a single-use code from your hub/);
-  const order = ['label="Hub address"', 'label="Pairing code"', "Single use · valid ten minutes", "label={`Name this ${device}`}", "label={`Pair this ${device}`}", "<StepIndicator step={1} />"].map((marker) => pair.indexOf(marker));
-  assert.ok(order.every((at) => at > 0), "every element of the step is still there");
-  assert.deepEqual(order, [...order].sort((a, b) => a - b), "address, code and expiry hint, name, then the action and the progress dots");
+  const order = ['label="Hub address"', "Use HTTPS or Tailscale", 'label="Pairing code"', "Single use · valid ten minutes", "label={`Name this ${device}`}", "label={`Pair this ${device}`}"].map((marker) => pair.indexOf(marker));
+  assert.ok(order.every((at) => at > 0), "every element of the form is there");
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "address and its transport note, code and expiry hint, name, then the action");
+  assert.match(pair, /placeholder="https:\/\/arca\.your-network"/);
   assert.match(pair, /<Icon name="clock" size=\{16\} \/>/);
-  assert.match(pair, /disabled=\{!name\.trim\(\) \|\| !address\.trim\(\) \|\| code\.length !== 6\}/, "the same validation guards Pair");
+  assert.match(pair, /disabled=\{ blocked \|\| !name\.trim\(\) \|\| !address\.trim\(\) \|\| code\.length !== 6 \}/, "the same validation guards Pair");
   assert.match(pair, /label=\{`Name this \$\{device\}`\} icon="phone" value=\{name\} onChangeText=\{setName\}/, "the name keeps its state and its default");
+  assert.match(step, /<PairingForm [^>]*pair=\{pair\} \/> <StepIndicator step=\{1\} \/>/, "Onboarding draws the form then the progress dots");
+  assert.match(app, /<PairingForm [^>]*blocked=\{!engine\.current\}/, "Devices without a hub draws the same form");
+  for (const old of ["Pair this device", "Name this device", "http://192.168.1.10:17831", "Use HTTPS or Tailscale"])
+    assert.equal(app.includes(old), false, `Devices no longer carries its own ${old}`);
 });
 
 test("an open photo folder prepares every local preview in the background and says what it is doing", () => {
