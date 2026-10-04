@@ -88,7 +88,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.112";
+const APP_VERSION = "0.6.113";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -167,6 +167,24 @@ const relative = (value) => {
         ? `${Math.floor(n / 3600)} h ago`
         : date(value);
 };
+function dayLabel(value, now = new Date()) {
+  const day = new Date(value);
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (day.toDateString() === now.toDateString()) return "Today";
+  if (day.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return day.toLocaleDateString("en", {
+    month: "short",
+    day: "numeric",
+    ...(day.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+}
+const clockTime = (value) =>
+  new Date(value).toLocaleTimeString("en", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
 const icon = (name) => `<span data-icon="${name}" aria-hidden="true"></span>`;
 const busyIcon = () =>
   '<span class="busy-grid" aria-hidden="true">' +
@@ -1640,7 +1658,7 @@ function revisionRow(v, compact = false) {
       status.volumes.find((x) => x.id === v.volume)?.selected)
       ? "review-conflict"
       : "activity-file";
-  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" title="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal", true)}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${relative(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
+  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" title="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "git-branch" : "git-commit-horizontal", true)}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${compact ? relative(v.created) : clockTime(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
 }
 function fileHistoryHeader() {
   const volume = status.volumes.find((v) => v.id === historyVolume);
@@ -3474,11 +3492,7 @@ async function renderHistory(
   historyNext = data.next;
   const groups = new Map();
   for (const r of historyRows) {
-    const day = new Date(r.created).toLocaleDateString("en", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+    const day = dayLabel(r.created);
     if (!groups.has(day)) groups.set(day, []);
     groups.get(day).push(r);
   }

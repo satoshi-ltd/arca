@@ -2622,7 +2622,7 @@ progress::-webkit-progress-value {
   grid-template-columns: var(--list-media-width, 16px) minmax(0, 1fr) auto 72px auto;
 }
 .history-row.file-version-row {
-  grid-template-columns: var(--list-media-width, 20px) minmax(0, 1fr) auto auto;
+  grid-template-columns: var(--list-media-width, 20px) minmax(0, 1fr) 96px 88px;
 }
 .history-note {
   margin-top: var(--space-3);

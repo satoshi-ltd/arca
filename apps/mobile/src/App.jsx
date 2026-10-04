@@ -11,6 +11,7 @@ import { GallerySetup } from "./GallerySource";
 import { galleryConfig } from "./gallery.js";
 import { allPhotosNote, sourceAlbums } from "./validation.js";
 import { historyEmpty } from "./history-empty.js";
+import { clockTime, dayLabel } from "./history-days.js";
 import { Section } from "./components";
 import { ConfirmDialog } from "./components";
 import { useRetained } from "./motion";
@@ -2513,13 +2514,7 @@ export default function App() {
                         <View style={s.historyGroups}>
                           {Array.from(
                             history.versions.reduce((groups, row) => {
-                              const day = new Date(
-                                row.created,
-                              ).toLocaleDateString("en", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              });
+                              const day = dayLabel(row.created);
                               if (!groups.has(day)) groups.set(day, []);
                               groups.get(day).push(row);
                               return groups;
@@ -2581,7 +2576,11 @@ export default function App() {
                                               ? "Conflict resolved · copy kept"
                                               : "Conflict copy retained"
                                             : `${bytes(row.size)}`}
-                                        {!wide && ` · ${date(row.created)}`}
+                                        {!wide && (
+                                          <Text style={s.tabularTime}>
+                                            {` · ${clockTime(row.created)}`}
+                                          </Text>
+                                        )}
                                       </Text>
                                     </View>
                                     {wide && (
@@ -2600,7 +2599,7 @@ export default function App() {
                                         <Text
                                           style={[s.caption, s.historyDate]}
                                         >
-                                          {relative(row.created)}
+                                          {clockTime(row.created)}
                                         </Text>
                                       </>
                                     )}

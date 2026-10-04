@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-03 · Phase 1 functional, not release-qualified.
+Updated 2026-10-04 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-SYS-HISTORY-DAYS** — The day heads the group, the row tells the time
-  `ui · agent · normal`
-  accept: the board.
+_None._
 
 ## In progress
 

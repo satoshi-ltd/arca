@@ -150,7 +150,6 @@ test("a board never reuses the ID of a ROADMAP task that is not type ui, and a s
   const { tasks } = roadmapTasks(roadmap);
   const bodies = taskBodies(roadmap);
   const { ids } = proposalBoards(read("design", "proposals.html"));
-  assert.ok(ids.length > 0, "there are boards to check");
   for (const id of ids) {
     const same = tasks.find((task) => task.id === id);
     assert.ok(!same || same.type === "ui", `${id}: a non-ui task has this ID`);

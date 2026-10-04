@@ -218,3 +218,42 @@ test("every list that grows says Show more", () => {
     assert.ok(source.includes('label="Show more versions"'), `${file} says Show more versions`);
   }
 });
+
+test("History heads each day group and tells each row's clock time the same way on desktop and phone", async () => {
+  const source = fs.readFileSync(path.join(root, "apps/desktop/src/app.js"), "utf8");
+  const code = source.slice(source.indexOf("function dayLabel("), source.indexOf("const icon = (name)"));
+  const desktop = vm.runInNewContext(`${code}\n({ dayLabel, clockTime })`, {});
+  const phone = await import("../apps/mobile/src/history-days.js");
+  const now = new Date(2026, 9, 4, 15, 30);
+  const at = (year, month, day, hour = 9, minute = 5) => new Date(year, month, day, hour, minute);
+  for (const [value, expected] of [
+    [at(2026, 9, 4, 0, 1), "Today"],
+    [at(2026, 9, 4, 23, 59), "Today"],
+    [at(2026, 9, 3, 23, 59), "Yesterday"],
+    [at(2026, 9, 3, 0, 1), "Yesterday"],
+    [at(2026, 8, 27), "Sep 27"],
+    [at(2025, 11, 31), "Dec 31, 2025"],
+  ]) {
+    assert.equal(desktop.dayLabel(value, now), expected);
+    assert.equal(phone.dayLabel(value, now), expected);
+  }
+  const first = new Date(2026, 0, 1, 12, 0);
+  assert.equal(desktop.dayLabel(new Date(2025, 11, 31, 12, 0), first), "Yesterday", "a year boundary still says Yesterday");
+  assert.equal(phone.dayLabel(new Date(2025, 11, 31, 12, 0), first), "Yesterday");
+  for (const value of [at(2026, 9, 4, 9, 5), at(2026, 9, 4, 0, 0), at(2026, 9, 4, 23, 59)]) {
+    assert.match(desktop.clockTime(value), /^\d{2}:\d{2}$/);
+    assert.equal(desktop.clockTime(value), phone.clockTime(value));
+  }
+  assert.equal(phone.clockTime(at(2026, 9, 4, 9, 5)), "09:05");
+  assert.equal(phone.clockTime(at(2026, 9, 4, 0, 0)), "00:00");
+  const app = fs.readFileSync(path.join(root, "apps/mobile/src/App.jsx"), "utf8");
+  assert.ok(app.includes("const day = dayLabel(row.created);"), "the phone groups by day label");
+  assert.ok(app.includes("{clockTime(row.created)}"), "its wide rows show the clock time");
+  assert.ok(app.includes("{` · ${clockTime(row.created)}`}"), "and its narrow rows too");
+  const theme = fs.readFileSync(path.join(root, "apps", "mobile", "src", "theme.js"), "utf8");
+  assert.match(theme, /historyDate: \{ width: 90, fontVariant: \["tabular-nums"\] \}/, "wide times use tabular figures");
+  assert.match(theme, /tabularTime: \{ fontVariant: \["tabular-nums"\] \}/, "and so do narrow times");
+  assert.ok(app.includes("style={s.tabularTime}"), "the narrow time carries that style");
+  assert.ok(source.includes("const day = dayLabel(r.created);"), "the desktop groups by day label");
+  assert.ok(source.includes("row-time\">${compact ? relative(v.created) : clockTime(v.created)}<"), "desktop History rows show the clock, Recent keeps relative times");
+});

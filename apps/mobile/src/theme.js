@@ -761,7 +761,8 @@ export function styles(
     historyGroups: { gap: 24 },
     historyFolder: { width: 110 },
     historyRevision: { width: 64 },
-    historyDate: { width: 90 },
+    historyDate: { width: 90, fontVariant: ["tabular-nums"] },
+    tabularTime: { fontVariant: ["tabular-nums"] },
     fileMenuOverlay: {
       ...StyleSheet.absoluteFill,
       zIndex: 20,

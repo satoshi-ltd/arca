@@ -6711,3 +6711,51 @@ test("only the native macOS app marks the page so the viewer's Back button clear
   assert.deepEqual((await open(true, "Linux x86_64")).filter((name) => name.endsWith("native")), ["native"]);
   assert.deepEqual((await open(false, "MacIntel")).filter((name) => name.endsWith("native")), [], "the web interface on a Mac keeps its layout");
 });
+
+test("History groups rows under Today, Yesterday and a short date and shows each row's clock time", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-history-days-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const days = [0, 1, 400].map((back) => {
+    const day = new Date();
+    day.setDate(day.getDate() - back);
+    return day.toISOString();
+  });
+  const versions = days.map((created, n) => ({ rev: 10 - n, path: `file-${n}.txt`, volume: volume.id, folder: "Docs", created, size: 10, deleted: 0, author: "mac" }));
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), platform: "darwin", role: "replica", hubUnavailable: false, hubName: "Casa", hub: "http://127.0.0.1:49999" };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [{ ...volume, selected: 1, gallery: false }] };
+        if (args.route === "/v1/machines") return { machines: [] };
+        if (args.route.startsWith("/v1/browse")) return { entries: [], next: null };
+        if (args.route.startsWith("/v1/activity")) return { versions, next: null };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card") && w.document.body.getAttribute("aria-busy") === "false");
+  w.document.querySelector('[data-view="history"]').click();
+  await until(() => w.document.querySelectorAll("#history-list .history-row").length === 3);
+  const labels = [...w.document.querySelectorAll("#history-list .section-label")].map((label) => label.textContent.trim());
+  assert.equal(labels[0], "Today");
+  assert.equal(labels[1], "Yesterday");
+  assert.match(labels[2], /^[A-Z][a-z]{2} \d{1,2}, \d{4}$/, "an older year keeps its year");
+  for (const time of w.document.querySelectorAll("#history-list .history-row .row-time"))
+    assert.match(time.textContent.trim(), /^\d{2}:\d{2}$/);
+});

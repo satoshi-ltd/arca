@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.113 — 2026-10-04
+
+- History now heads each day with Today, Yesterday or a short date and shows only the time on each row, on desktop and phone, so the day is no longer repeated in every row.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.112 — 2026-10-04
 
 - In dark mode, menus, dropdowns and dialogs now stand out from the cards under them, and the selected option of a segmented control (such as Version history) is clearly visible in light and dark on desktop and phone.
