@@ -38,14 +38,14 @@ Project wiring for those tools:
 
 - **Task pool:** `ROADMAP.md`. Only `owner: agent` tasks in Queue are worked on; only the maintainer approves a task into Queue.
 - **Version:** `node scripts/bump-version.js` (patch by default), then the CHANGELOG entry. Every commit bumps the version; manifests, lockfiles, displayed versions and the changelog always agree (`scripts/check-release.js`). A commit that changes only `ROADMAP.md` or `design/` bumps nothing and adds no changelog entry.
-- **Validation:** `npx -y node@<CI version> scripts/validate-local.js` (it prints the exact command). It checks the working tree in a clean copy: root-only `npm ci`, the version check, the CI suite, off Linux the mobile source suite, and the mobile build-tooling tests. Report it separately from the real GitHub pipeline results.
+- **Validation:** keep the machine cool. While building, run only the test files of the area you touch (`taskpolicy -b nice -n 19 node --test <files>` on macOS), and check once per task that each new test fails without the change. Before a push the `pre-push` hook runs the CI suite once (it skips it when a `validate-local` stamp matches the same files), so run `taskpolicy -b nice -n 19 git push`. Run the full `npx -y node@<CI version> scripts/validate-local.js` (it prints the exact command: a clean copy, root-only `npm ci`, the version check, the CI suite, off Linux the mobile source suite and the mobile build-tooling tests) only when dependencies, lockfiles, release or build scripts change, and to close a long batch of tasks. Report it separately from the real GitHub pipeline results.
 - **CI:** `gh run list` for the commit's full SHA: `publish`, then `publish-docker` and `publish-site`. `prune-actions.yml` deletes runs beyond the newest 10 per workflow once they are a week old, so do not rely on older run logs. A red pipeline on `main` is the next task.
 - **Review checklist**, on top of the generic one: Windows paths (`path.join`/`path.sep`), temp directories and line endings; hub, desktop replica and mobile role differences; `.arcaignore` and the fixed exclusion list; conflict preservation and deletion safety; native Kotlin/Swift against `apps/mobile/node_modules`.
 
 Rules of the loop:
 
 - Invoking `/next-task` or `/loop /next-task` is the maintainer's explicit request to commit and push each finished task once review and validation pass. Outside the loop, commit only when asked. When the maintainer says not to commit, prepare and validate but leave changes uncommitted until told otherwise.
-- Adversarial review before every commit; a second pass on the deltas when fixes were substantive.
+- Adversarial review before every commit; a second pass on the deltas when fixes were substantive. The reviewer reads and reasons: it does not rerun the suites the author ran, only the single test file it needs to reproduce a claim.
 - Interruptions: triage before continuing, and say where each item went. A bug the maintainer reports goes to the top of Queue; a requested feature goes to Queue; ideas, including your own, go to Proposed; questions get answered.
 - Anything needing a native build, an installer, Casa, credentials, a physical device or a product choice becomes a `Needs maintainer` task.
 - Stop and report when Queue is empty or everything is blocked on the maintainer.
