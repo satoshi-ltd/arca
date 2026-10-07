@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-04 · Phase 1 functional, not release-qualified.
+Updated 2026-10-07 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -176,6 +176,9 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Release and native reliability
 
+- **DESK-TEST-NAVIGATION-FLAKE** — The navigation JSDOM test leaks asynchronous work after it ends
+  `bug · agent · normal`
+  accept: "navigation paints before slow reads, retains updating feedback and ignores responses from older tabs" (`tests/desktop.test.js`) waits for its released reads deterministically (track the pending `invoke` promises and await them in `t.after`) instead of a 50 ms sleep, so the file no longer fails with "generated asynchronous activity after the test ended" when the pre-push hook runs the suite with concurrency; seen twice on 2026-10-07 while pushing a docs-only commit, with the same suite green when run alone.
 - **DESK-ONBOARDING-TRAFFIC-LIGHTS** — The onboarding rail's brand sits under the macOS window controls
   `bug · agent · low`
   accept: in the native Mac app the onboarding screens (the sidebar is hidden there) keep the brand and rail clear of the red, yellow and green controls, reusing the `mac-native` class and `--window-controls-inset`; the web interface and other platforms keep their layout; a stylesheet contract test covers it. Found by the review of 0.6.111 from reading the CSS (`.onboarding-rail` starts at the top-left); check it on the Mac first. Needs a desktop build.
@@ -199,6 +202,10 @@ Suggested order for approval: preservation of user files, synchronization recove
   accept: the conflict dialog's download links on a server replica's web view use a route the replica serves and its local hash (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409), and the link is hidden when there is no local copy; DOM and API tests.
 
 ### Deferred usability and cleanup
+
+- **MOB-SHARE-DESTINATIONS** — The phone remembers where shared files were saved
+  `feature · agent · normal`
+  accept: each successful Save in the incoming share sheet records its destination (folder ID and relative subfolder) in the phone's own state for the current hub, with a use count and the last-used time; the sheet ranks them most used first, then most recent, and offers at most three; entries whose folder is no longer selected on this phone, or is gone from the catalog, are dropped, and the ledger never leaves the phone; a pure helper test covers recording, ranking, the cap and pruning, and a mobile source test covers the sheet. The interface follows board UI-MOB-SHARE-DESTINATIONS.
 
 - **DESK-ONBOARDING-HUB-ADDRESS** — The onboarding Hub address field loses its placeholder and is forced to monospace
   `bug · agent · low`
