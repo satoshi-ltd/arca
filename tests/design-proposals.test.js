@@ -11,6 +11,7 @@ const tabs = [
   ["index.html", "System"],
   ["desktop.html", "Desktop"],
   ["mobile.html", "Mobile"],
+  ["auto.html", "Auto"],
   ["proposals.html", "Proposals"],
 ];
 const taskTypes = new Set([

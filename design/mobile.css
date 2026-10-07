@@ -1092,3 +1092,44 @@
 .m-card.m-danger-card {
   border-color: var(--m-danger);
 }
+.m-cover-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.m-cover {
+  aspect-ratio: 1;
+  border-radius: var(--m-card-radius);
+  background: var(--m-placeholder);
+  display: grid;
+  place-items: center;
+  color: var(--m-mute);
+}
+.m-cover.m-art {
+  background: linear-gradient(135deg, var(--m-accent), var(--m-ink));
+  color: var(--m-on-accent);
+}
+.m-cover-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.m-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 12px 8px;
+  padding: 8px 12px;
+  border-radius: var(--m-card-radius);
+  background: var(--m-raised);
+  border: 1px solid var(--m-raised-edge);
+}
+.m-player .m-cover {
+  width: 40px;
+}
+.m-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}

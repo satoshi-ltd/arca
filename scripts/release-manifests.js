@@ -18,6 +18,7 @@ export const manifests = [
   ["design/index.html", 'class="kit-version">v{version} ·', 1],
   ["design/desktop.html", 'class="kit-version">v{version} ·', 1],
   ["design/mobile.html", 'class="kit-version">v{version} ·', 1],
+  ["design/auto.html", 'class="kit-version">v{version} ·', 1],
   ["design/proposals.html", 'class="kit-version">v{version} ·', 1],
 ];
 

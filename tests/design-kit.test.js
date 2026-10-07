@@ -8,8 +8,8 @@ import { mobileTokens } from "../design/build.js";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (...parts) =>
   fs.readFileSync(path.join(root, ...parts), "utf8").replace(/\r\n/g, "\n");
-const pages = ["index.html", "desktop.html", "mobile.html", "proposals.html"];
-const kitStyles = [read("design", "kit.css"), read("design", "mobile.css")];
+const pages = ["index.html", "desktop.html", "mobile.html", "auto.html", "proposals.html"];
+const kitStyles = [read("design", "kit.css"), read("design", "mobile.css"), read("design", "auto.css")];
 
 test("the design kit's mobile tokens are generated from the app palette and geometry", () => {
   assert.equal(
@@ -73,7 +73,7 @@ test("every design page links a favicon inside design/ that equals the project i
     .readdirSync(path.join(root, "design"))
     .filter((name) => name.endsWith(".html"));
   assert.deepEqual([...found].sort(), [...pages].sort());
-  assert.equal(found.length, 4);
+  assert.equal(found.length, 5);
   for (const page of found) {
     const href = read("design", page).match(
       /<link rel="icon" href="([^"]+)"/,
