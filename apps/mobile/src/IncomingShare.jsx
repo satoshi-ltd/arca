@@ -24,6 +24,12 @@ import {
   resolveShared,
 } from "./incoming-files";
 import { native } from "./private-network";
+import {
+  destinationLabel,
+  destinationUsage,
+  loadDestinations,
+  saveDestination,
+} from "./share-destinations";
 
 // One share operation; cancellation discards the app-owned temporary copies.
 export function IncomingShare({ connection, catalog, locals, onSaved }) {
@@ -37,6 +43,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [preparing, setPreparing] = useState(false);
+  const [recent, setRecent] = useState([]);
   const receiving = useRef(false),
     saving = useRef(false),
     session = useRef(null),
@@ -44,6 +51,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
   useEffect(() => {
     setVolume(null);
     setDirectory("");
+    setRecent([]);
   }, [connection?.hubId]);
   useEffect(() => {
     let active = true;
@@ -145,6 +153,22 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
       active = false;
     };
   }, [volume?.id, connection?.hubId]);
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    (async () => {
+      const r = await runtime();
+      const choices = locals.filter((f) => f.selected && !galleryConfig(f));
+      const entries =
+        r.scope && r.scope === connection?.hubId
+          ? await loadDestinations(r.store, r.scope, choices)
+          : [];
+      if (active) setRecent(entries);
+    })().catch(() => active && setRecent([]));
+    return () => {
+      active = false;
+    };
+  }, [open, connection?.hubId, locals]);
   async function save() {
     if (saving.current || !volume || !connection?.hubId) return;
     saving.current = true;
@@ -175,6 +199,13 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
       } finally {
         r.importing = false;
       }
+      await saveDestination(
+        r.store,
+        r.scope,
+        destinations,
+        volume.id,
+        directory,
+      ).catch(() => {});
       setOpen(false);
       setVolume(null);
       setDirectory("");
@@ -279,30 +310,55 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
                 Pair with your hub, then share the files again.
               </Text>
             ) : !volume ? (
-              <Section>
-                <Text style={s.eyebrow}>SELECTED FOLDERS</Text>
-                {!destinations.length && (
-                  <Text style={s.text}>
-                    Start syncing a folder in Folders, then share the files again.
-                  </Text>
+              <>
+                {!!recent.length && (
+                  <Section>
+                    <Text style={s.eyebrow}>RECENT DESTINATIONS</Text>
+                    <View style={s.group}>
+                      {recent.map((entry, index) => (
+                        <FolderRow
+                          grouped
+                          divider={index > 0}
+                          disabled={busy}
+                          key={`${entry.volume}:${entry.directory}`}
+                          icon="history"
+                          name={destinationLabel(entry)}
+                          description={destinationUsage(entry)}
+                          onPress={() => {
+                            setVolume(entry.folder);
+                            setDirectory(entry.directory);
+                          }}
+                        />
+                      ))}
+                    </View>
+                  </Section>
                 )}
-                <View style={s.group}>
-                  {destinations.map((v, index) => (
-                    <FolderRow
-                      grouped
-                      divider={index > 0}
-                      disabled={busy}
-                      key={v.id}
-                      name={v.name}
-                      description={`${v.files ?? 0} files · ${bytes(v.bytes)} local`}
-                      onPress={() => {
-                        setVolume(v);
-                        setDirectory("");
-                      }}
-                    />
-                  ))}
-                </View>
-              </Section>
+                <Section>
+                  <Text style={s.eyebrow}>SELECTED FOLDERS</Text>
+                  {!destinations.length && (
+                    <Text style={s.text}>
+                      Start syncing a folder in Folders, then share the files
+                      again.
+                    </Text>
+                  )}
+                  <View style={s.group}>
+                    {destinations.map((v, index) => (
+                      <FolderRow
+                        grouped
+                        divider={index > 0}
+                        disabled={busy}
+                        key={v.id}
+                        name={v.name}
+                        description={`${v.files ?? 0} files · ${bytes(v.bytes)} local`}
+                        onPress={() => {
+                          setVolume(v);
+                          setDirectory("");
+                        }}
+                      />
+                    ))}
+                  </View>
+                </Section>
+              </>
             ) : (
               <>
                 <Button

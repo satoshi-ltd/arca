@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.117 — 2026-10-07
+
+- The phone's Save file sheet now lists up to three recent destinations above the selected folders, most used first, so a file shared from another app lands in its usual subfolder with one tap; the list stays on the phone and forgets folders that stop syncing there.
+
+Needs: native build
+
 ## 0.6.116 — 2026-10-04
 
 - Pairing on the phone is one screen: Devices without a hub now shows the same address, six-cell code and name form as onboarding, with the same "Pair this phone" action and the note about HTTPS, Tailscale and local HTTP.

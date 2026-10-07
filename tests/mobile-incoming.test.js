@@ -246,3 +246,19 @@ test("cancelling while the share is still being resolved removes the staged file
   assert.equal(await receiving, null);
   await missing(path.join(f.temporary, "late-1-0"));
 });
+
+test("the share sheet offers recent destinations above the folder list and records every save", async () => {
+  const screen = await fs.readFile(new URL("../apps/mobile/src/IncomingShare.jsx", import.meta.url), "utf8");
+  const list = screen.slice(screen.indexOf(") : !volume ? ("), screen.indexOf('label="Shared folders"'));
+  assert.ok(list.indexOf("RECENT DESTINATIONS") > 0 && list.indexOf("RECENT DESTINATIONS") < list.indexOf("SELECTED FOLDERS"));
+  assert.match(list, /\{!!recent\.length && \(/, "no section without history");
+  assert.match(list, /icon="history"\s+name=\{destinationLabel\(entry\)\}\s+description=\{destinationUsage\(entry\)\}/);
+  assert.match(list, /setVolume\(entry\.folder\);\s+setDirectory\(entry\.directory\);/, "one tap lands on the destination");
+  const save = screen.slice(screen.indexOf("async function save()"), screen.indexOf("async function discard()"));
+  const remembered = save.search(/await saveDestination\(\s*r\.store,\s*r\.scope,\s*destinations,\s*volume\.id,\s*directory,?\s*\)\.catch\(\(\) => \{\}\);/);
+  assert.ok(remembered > save.indexOf("r.importing = false;"), "the destination is remembered only after every file is saved, and never blocks the sheet");
+  assert.ok(remembered < save.indexOf("setOpen(false);"));
+  const load = screen.slice(screen.indexOf("if (!open) return;"), screen.indexOf("}, [open, connection?.hubId, locals]);"));
+  assert.match(load, /r\.scope && r\.scope === connection\?\.hubId\s+\? await loadDestinations\(r\.store, r\.scope, choices\)/);
+  assert.match(screen, /setDirectory\(""\);\s+setRecent\(\[\]\);\s+\}, \[connection\?\.hubId\]\);/, "another hub starts without the old list");
+});

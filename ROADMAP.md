@@ -203,10 +203,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Deferred usability and cleanup
 
-- **MOB-SHARE-DESTINATIONS** — The phone remembers where shared files were saved
-  `feature · agent · normal`
-  accept: each successful Save in the incoming share sheet records its destination (folder ID and relative subfolder) in the phone's own state for the current hub, with a use count and the last-used time; the sheet ranks them most used first, then most recent, and offers at most three; entries whose folder is no longer selected on this phone, or is gone from the catalog, are dropped, and the ledger never leaves the phone; a pure helper test covers recording, ranking, the cap and pruning, and a mobile source test covers the sheet. The interface follows board UI-MOB-SHARE-DESTINATIONS.
-
 - **DESK-ONBOARDING-HUB-ADDRESS** — The onboarding Hub address field loses its placeholder and is forced to monospace
   `bug · agent · low`
   accept: the onboarding "Pair with your hub" step passes its placeholder `https://arca.your-network` in the placeholder position, as the Connect to hub dialog does, so the field shows it and only the typed value is monospace; a desktop test asserts the placeholder. Found by the design audit: `textField` takes no placeholder, so the sixth argument lands in `mono`.
