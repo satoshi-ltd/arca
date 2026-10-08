@@ -840,6 +840,63 @@ test("a silent hub and a case-only rename still behave offline, and a hub edit m
   assert.equal(replica.engine.store.db.prepare("SELECT count(*) AS n FROM local_files").get().n, 0);
 });
 
+test("the change feed wakes a waiting window the moment the hub is lost or returns", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "a.txt", "alpha");
+  await hub.sync();
+  const replica = await connect("feed");
+  await replica.sync();
+  const url = replica.engine.config.hub.url;
+  const cursor = async (after) => (await replica.api(`/v1/events${after ? `?after=${after}` : ""}`)).cursor;
+  const before = await cursor();
+  const waiting = within(8000, () => cursor(before));
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  await assert.rejects(replica.sync());
+  const lost = await waiting;
+  assert.notEqual(lost, before, "losing the hub changes the cursor, so the window re-reads its status at once");
+  const returning = within(8000, () => cursor(lost));
+  replica.engine.config.hub.url = url;
+  await replica.sync();
+  assert.notEqual(await returning, lost, "and so does its return");
+});
+
+test("a hub's own cycles never change the cursor its replicas and phones wait on", async (t) => {
+  const { hub, volume } = await setup(t);
+  write(hub, volume, "a.txt", "alpha");
+  await hub.sync();
+  const cursor = async (after) => (await hub.api(`/v1/events${after ? `?after=${after}` : ""}`)).cursor;
+  const before = await cursor();
+  const waiting = cursor(before);
+  for (let i = 0; i < 4; i++) {
+    await hub.engine.exclusive(() => hub.engine.cycle({ incremental: false }));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+  }
+  assert.equal(await waiting, before, "a cycle that changed nothing wakes nobody");
+  write(hub, volume, "b.txt", "beta");
+  await hub.sync();
+  assert.notEqual(await cursor(before), before, "a real change still does");
+});
+
+test("a cycle interrupted while the hub is away keeps its unreachable error", async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("interrupted");
+  await replica.sync();
+  const quiet = await silent(t);
+  replica.engine.config.hub.url = quiet.url;
+  await assert.rejects(replica.sync());
+  assert.equal(replica.engine.hubUnavailable, true);
+  const message = replica.engine.error;
+  assert.ok(message);
+  replica.engine.config.hub.url = quiet.url;
+  const running = replica.engine.exclusive(() => replica.engine.cycle());
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  replica.engine.interruptCycle();
+  await running.catch(() => {});
+  assert.equal(replica.engine.hubUnavailable, true);
+  assert.equal(replica.engine.error, message, "pausing and resuming with the hub away does not erase why it is offline");
+  assert.equal((await replica.api("/v1/status")).error, message);
+});
+
 test("a cycle that fails, and a paused replica, still show what changed locally", async (t) => {
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "a.txt", "alpha");

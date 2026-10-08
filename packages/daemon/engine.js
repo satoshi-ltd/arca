@@ -1338,7 +1338,7 @@ export class Engine {
           this.folderStates.set(this.progress.volume, { state: "pending" });
         this.progress = null;
         this.phase = "idle";
-        this.error = null;
+        if (!this.hubUnavailable) this.error = null;
         return;
       }
       await this.reconcileLocal();

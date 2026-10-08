@@ -153,6 +153,9 @@ export async function start(home, options = {}) {
         s.db.prepare("SELECT * FROM gallery_folders ORDER BY volume").all(),
         s.db.prepare("SELECT * FROM music_folders ORDER BY volume").all(),
         engine.music?.indexed || 0,
+        ...(config.role === "replica"
+          ? [engine.hubUnavailable, engine.phase, engine.error, engine.paused]
+          : []),
       ]),
     ),
   );

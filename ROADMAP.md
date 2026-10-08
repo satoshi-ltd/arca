@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-OFFLINE-STATUS-LAG** — The desktop window takes 20–25 seconds to show that the hub went away or came back
-  `bug · agent · normal`
-  accept: the daemon's local change signature (`server.js`) includes hub availability, phase and error so `/v1/events` wakes the window, which shows Offline, the hub-unreachable notice and the hub-only controls within five seconds of the daemon knowing, in both directions; the notice follows `hubUnavailable`, so a cycle interrupted while the hub is away (pause and resume) does not clear it; a JSDOM test with real timers covers loss and return. Reported by the maintainer on 2026-10-08.
 - **OFFLINE-SILENT-HUB** — A hub that accepts connections but never answers stalls replicas before they decide it is offline
   `bug · agent · normal`
   accept: on a desktop replica, a saved view that times out asks for an immediate availability check and later views serve saved data at once instead of 3 s each (eight reads cost 24 s today), also right after start; on the phone, saving the device name, Photo Info, the gallery index, Add photos… and Change album… (which today needs the hub even to repair a damaged record) never wait the 15 s default or ask the hub once it is known unreachable, and `refreshMusic` ends the cycle on a transport failure instead of carrying on and advancing the last sync; `POST /v1/sync` in the foreground answers in plain words without waiting two cycles. Tests use a hub that accepts and never answers. Reported by the maintainer on 2026-10-08.
@@ -225,6 +222,9 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Deferred usability and cleanup
 
+- **DESK-FORCED-POLL-DROPPED** — An event that arrives while a status poll is running can leave the window stale for 20–30 seconds
+  `bug · agent · low`
+  accept: `pollStatus(true)` (`apps/desktop/src/app.js`) no longer returns at once when a poll is already in flight; it runs once more right after that poll ends, so a connectivity event consumed during a slow `/v1/status` still updates the window within seconds; a JSDOM test holds one status read open, delivers an event cursor change and sees the second read follow. Suspected by the review of 0.7.5, not reproduced.
 - **DESK-REPLICA-AUTHOR** — A replica shows its own changes as "Device xxxxxxxx"
   `bug · agent · low`
   accept: History, Recent and file detail on a desktop or server replica name the replica's own changes with its device name, as the hub does, although the replica does not know its hub device id today (`authorName` in `app.js`, empty `status.devices`); a desktop test covers it. Found while investigating offline replicas on 2026-10-08.

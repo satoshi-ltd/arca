@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.5 — 2026-10-08
+
+- The desktop window now shows Offline and the way back within a few seconds of the daemon knowing, instead of 20–25 seconds later, and pausing and resuming while the hub is away no longer erases why the device is offline.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.4 — 2026-10-08
 
 - On the phone, with the hub away, a track you rename or delete follows at once in its album, Shuffle, search, playlists and Android Auto instead of staying listed as playable, and Delete file… and Delete playlist… work on anything you added or edited offline, after a confirmation that says such a change cannot be undone; a track that is not on the phone reads "Not on this phone yet" while offline rather than "Downloading".
