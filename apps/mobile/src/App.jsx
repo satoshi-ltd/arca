@@ -873,10 +873,15 @@ export default function App() {
       },
     );
   }
-  function deletePlaylist(playlist) {
+  async function deletePlaylist(playlist) {
+    const unsynced = await engine.current
+      .hasUnsyncedContent(folder.id, playlist.path)
+      .catch(() => true);
     confirm(
       "Delete this playlist?",
-      "Deletes it from all synced copies. Retained history can be restored." +
+      (unsynced
+        ? "Its latest changes have not reached the hub, so this cannot be undone."
+        : "Deletes it from all synced copies. Retained history can be restored.") +
         (!connected || status.paused
           ? " Deletion will sync when connected and resumed."
           : ""),
@@ -1634,10 +1639,14 @@ export default function App() {
         }
       : null;
   const deleteCurrentFile = sheet?.localEntry
-    ? () =>
+    ? async () =>
         confirm(
           "Delete this file?",
-          "Deletes from all synced copies. Retained history can be restored." +
+          ((await engine.current
+            .hasUnsyncedContent(sheet.volume, sheet.path)
+            .catch(() => true))
+            ? "Its latest changes have not reached the hub, so this cannot be undone."
+            : "Deletes from all synced copies. Retained history can be restored.") +
             (!connected || status.paused
               ? " Deletion will sync when connected and resumed."
               : ""),

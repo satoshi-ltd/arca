@@ -752,7 +752,7 @@ test("mobile renames its own device, persists offline edits and reports them on 
   assert.equal(f.client.state().connection.id, id);
 });
 
-test("mobile file deletion preserves unsynced content and propagates a restorable deletion", async (t) => {
+test("mobile file deletion works offline on an unsynced edit and propagates a deletion that restores the last synced version", async (t) => {
   const f = await fixture(t);
   const v = f.volume;
   fs.writeFileSync(
@@ -763,13 +763,13 @@ test("mobile file deletion preserves unsynced content and propagates a restorabl
   await f.replica.select(v);
   await sync(f);
   const file = f.files.work(f.replica.scope, v.id, "delete.txt");
-  await f.files.write(file, Buffer.from("unsynced"));
-  await assert.rejects(f.replica.removeFile(v.id, "delete.txt"), /changed/);
-  assert.equal(await f.files.text(file), "unsynced");
-  await sync(f);
   const previous = f.daemon.engine.store.current(v.id, "delete.txt");
+  assert.equal(await f.replica.hasUnsyncedContent(v.id, "delete.txt"), false);
+  await f.files.write(file, Buffer.from("unsynced"));
+  assert.equal(await f.replica.hasUnsyncedContent(v.id, "delete.txt"), true);
   f.offline();
   await f.replica.removeFile(v.id, "delete.txt");
+  assert.equal(fs.existsSync(file), false, "an edit that never synced is deleted offline");
   f.online();
   await sync(f);
   assert.equal(f.daemon.engine.store.current(v.id, "delete.txt").deleted, 1);
@@ -777,7 +777,8 @@ test("mobile file deletion preserves unsynced content and propagates a restorabl
     f.daemon.engine.restore(v.id, "delete.txt", previous.rev),
   );
   await sync(f);
-  assert.equal(await f.files.text(file), "unsynced");
+  assert.equal(await f.files.text(file), "retained", "the last version the hub holds still restores");
+  await assert.rejects(f.replica.removeFile(v.id, "nested/none.txt"), /not on this phone/);
 });
 
 test("mobile sync with no selected folders never downloads hub content or runs backup", async (t) => {
@@ -5402,6 +5403,79 @@ test("a replacement whose directory flush fails after the rename is reported, ke
   await sync(f);
   assert.equal(fs.readFileSync(local, "utf8"), "version two");
   assert.deepEqual(await f.store.applying(f.replica.scope, f.volume.id), []);
+});
+
+test("a phone without its hub drops a deleted track and follows a renamed one, deletes what never synced, then uploads exactly that", async (t) => {
+  const f = await fixture(t),
+    { volume, replica, files, daemon } = f;
+  const { default: ffmpeg } = await import("ffmpeg-static");
+  const { execFileSync } = await import("node:child_process");
+  const { folderLibrary } = await import("../apps/mobile/src/music-sync.js");
+  const local = path.join(f.root, "mobile");
+  Object.assign(files, {
+    musicLibrary: () => path.join(local, "music-library.json"),
+    musicHistory: () => path.join(local, "music-history.json"),
+    text: async (p) => fs.readFileSync(p, "utf8"),
+    musicCovers: (scope) => path.join(local, scope, "music-covers"),
+    musicCover: (scope, key, size) => path.join(local, scope, "music-covers", `${key}-${size}.jpg`),
+    writeBase64: async (p, data) => fs.writeFileSync(p, Buffer.from(data, "base64")),
+  });
+  replica.player = { reload: async () => {} };
+  const response = await fetch(`http://127.0.0.1:${daemon.port}/v1/music/mark`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ volume: volume.id }),
+  });
+  assert.equal(response.status, 200);
+  for (const [name, title] of [["One", "One"], ["Two", "Two"], ["Three", "Three"]]) {
+    const target = path.join(volume.path, "Ann", "First", `0${["One", "Two", "Three"].indexOf(name) + 1} ${name}.mp3`);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    execFileSync(ffmpeg, [
+      "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `sine=frequency=${400 + title.length * 50 + name.length}:duration=0.3`,
+      "-metadata", `title=${title}`, "-metadata", "artist=Ann", "-metadata", "album=First", "-id3v2_version", "3", target,
+    ]);
+  }
+  await daemon.engine.cycle();
+  daemon.engine.music.prepare(volume.id);
+  await daemon.engine.music.background;
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const names = async () => [...(await folderLibrary(replica, volume.id)).library.tracks.values()].map((track) => track.path.replace(/^.*:/, "")).sort();
+  assert.deepEqual(await names(), ["Ann/First/01 One.mp3", "Ann/First/02 Two.mp3", "Ann/First/03 Three.mp3"]);
+
+  f.offline();
+  const ticks = replica.musicTick || 0;
+  await replica.renameFile(volume.id, "Ann/First/01 One.mp3", "01 Uno.mp3");
+  await replica.removeFile(volume.id, "Ann/First/02 Two.mp3");
+  assert.deepEqual(await names(), ["Ann/First/01 Uno.mp3", "Ann/First/03 Three.mp3"], "a rename and a deletion made offline show at once, with no reload from the hub");
+  assert.ok(replica.musicTick > ticks, "and the open library is told to read again");
+  const car = JSON.parse(fs.readFileSync(files.musicLibrary(), "utf8"));
+  assert.ok(car.tracks.every((track) => fs.existsSync(track.uri)), "the car's file points only at files that exist");
+  assert.equal(car.tracks.length, 2);
+
+  const note = files.work(replica.scope, volume.id, "never-synced.txt");
+  fs.writeFileSync(note, "only here");
+  assert.equal(await replica.hasUnsyncedContent(volume.id, "never-synced.txt"), true);
+  assert.equal(await replica.hasUnsyncedContent(volume.id, "Ann/First/01 Uno.mp3"), false, "a renamed file keeps content the hub already holds, so nothing is lost by deleting it");
+  assert.equal(await replica.hasUnsyncedContent(volume.id, "Ann/First/03 Three.mp3"), false, "a synced file is not unsynced");
+  await replica.removeFile(volume.id, "never-synced.txt");
+  assert.equal(fs.existsSync(note), false, "a file the hub never received can be deleted");
+  const edited = files.work(replica.scope, volume.id, "Ann/First/03 Three.mp3");
+  fs.appendFileSync(edited, "edit");
+  assert.equal(await replica.hasUnsyncedContent(volume.id, "Ann/First/03 Three.mp3"), true, "an edit that never synced says so");
+  await replica.removeFile(volume.id, "Ann/First/03 Three.mp3");
+  assert.deepEqual(await names(), ["Ann/First/01 Uno.mp3"]);
+  assert.ok((await f.store.get(replica.journalKey(volume.id), [])).length >= 4);
+
+  f.online();
+  await sync(f);
+  assert.deepEqual(await f.store.get(replica.journalKey(volume.id), []), [], "the journal empties once the hub has the changes");
+  await daemon.engine.cycle();
+  assert.deepEqual(
+    fs.readdirSync(path.join(volume.path, "Ann", "First")).sort(),
+    ["01 Uno.mp3"],
+    "the hub received exactly the rename and the deletions",
+  );
 });
 
 test("a phone keeps the hub's music library, its covers and the car's library file in step with its local copy", async (t) => {

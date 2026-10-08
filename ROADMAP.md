@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-OFFLINE-LOCAL-CHANGES** — Without the hub, the phone's music library keeps tracks renamed or deleted on the phone, and Delete refuses files changed offline
-  `bug · agent · high`
-  accept: offline, a track renamed or deleted on the phone leaves (or moves in) its album, Shuffle, search, its playlists and the car's library file at once, judged from the working files rather than the synced rows (`source()` in `music-sync.js`); Delete file… and Delete playlist… work on a file or playlist added or edited offline instead of "Local file changed. Sync before deleting." or "Only synced files can be deleted here.", and an edit that never synced is deleted only after the confirmation says it was never synced; a track that is not on the phone reads "Not on this phone yet" offline rather than "Downloading". Replica tests cover both unreachable modes and the upload once the hub returns. Reported by the maintainer on 2026-10-08.
 - **DESK-OFFLINE-STATUS-LAG** — The desktop window takes 20–25 seconds to show that the hub went away or came back
   `bug · agent · normal`
   accept: the daemon's local change signature (`server.js`) includes hub availability, phase and error so `/v1/events` wakes the window, which shows Offline, the hub-unreachable notice and the hub-only controls within five seconds of the daemon knowing, in both directions; the notice follows `hubUnavailable`, so a cycle interrupted while the hub is away (pause and resume) does not clear it; a JSDOM test with real timers covers loss and return. Reported by the maintainer on 2026-10-08.
@@ -201,9 +198,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **HUB-TEST-SLOW-LINK-FLAKE** — The slow-link transfer test failed once on the Windows runner
   `bug · agent · normal`
   accept: "slow links upload in smaller blocks and download without a total deadline" (`tests/hub-availability.test.js`) no longer fails with an empty error on `windows-2022` (failed once on the v0.7.2 run, 14.6 s, and passed on a rerun of the same commit, with macOS and Ubuntu green): its throttled relays and 400–600 ms idle limits are given margins that do not depend on runner speed, and it reports the real error instead of an empty one.
-- **DESK-TEST-NAVIGATION-FLAKE** — The navigation JSDOM test leaks asynchronous work after it ends
-  `bug · agent · normal`
-  accept: "navigation paints before slow reads, retains updating feedback and ignores responses from older tabs" (`tests/desktop.test.js`) waits for its released reads deterministically (track the pending `invoke` promises and await them in `t.after`) instead of a 50 ms sleep, so the file no longer fails with "generated asynchronous activity after the test ended" when the pre-push hook runs the suite with concurrency; seen twice on 2026-10-07 while pushing a docs-only commit, with the same suite green when run alone.
 - **DESK-TEST-GALLERY-PAGES-FLAKE** — The gallery paging JSDOM test times out under load
   `bug · agent · normal`
   accept: "the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons" (`tests/desktop.test.js`) waits for its 66 thumbnails on the gallery requests it tracks instead of `until`'s fixed two-second budget, so it no longer fails with "UI did not reach expected state" when other suites or a browser run alongside; on 2026-10-08 it failed in a suite run and in one of nine single runs while other work loaded the machine, and passed every quiet run.

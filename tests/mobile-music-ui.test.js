@@ -83,7 +83,9 @@ test("the library opens on the Artists tab, Recent lists this phone's plays, and
 
 test("a track still downloading stays in its album, dimmed, labelled and not playable", () => {
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
-  assert.match(library, /const NOTES = \{ pending: "Downloading", missing: "Not in this folder" \};/);
+  assert.match(library, /const notes = \(offline\) => \(\{\s+pending: offline \? "Not on this phone yet" : "Downloading",\s+missing: "Not in this folder",\s+\}\);/, "offline nothing is downloading, so the note says the track is not here yet");
+  assert.match(list, /const NOTES = notes\(offline\);/);
+  assert.equal(library.match(/offline=\{offline\}/g).length, 3, "an album, a playlist and the list inside them pass it on");
   const waiting = list.slice(list.indexOf('if (row.state !== "ready")'), list.indexOf("const { track } = row;"));
   assert.match(waiting, /<View\s+key=\{key\}\s+accessible\s+accessibilityLabel=\{`\$\{row\.title\}, \$\{NOTES\[row\.state\]\.toLowerCase\(\)\}`\}/, "read as “title, downloading”");
   const menu = waiting.slice(waiting.indexOf("{removable && ("), waiting.indexOf("</Pressable>") + "</Pressable>".length);
@@ -133,6 +135,8 @@ test("playlists get their tab, screen, search group and Recent rows, and every t
   assert.match(change, /await renameMusicPlay\(r, value\.playlist\.id, playlistKey\(folder\.id, result\.path\)\)\.catch\(\(\) => \{\}\);\s+setHistoryTick\(\(tick\) => tick \+ 1\);/, "a history that cannot be renamed never strands the renamed file, and Recent reads the renamed entry");
   const remove = app.slice(app.indexOf("function deletePlaylist("), app.indexOf("useEffect(", app.indexOf("function deletePlaylist(")));
   assert.match(remove, /await engine\.current\.removeFile\(folder\.id, playlist\.path\);/, "Delete playlist… is the phone's file deletion, so history keeps it");
+  assert.match(remove, /hasUnsyncedContent\(folder\.id, playlist\.path\)[\s\S]*Its latest changes have not reached the hub, so this cannot be undone\./, "a playlist the hub never received says it cannot be undone");
+  assert.match(app, /hasUnsyncedContent\(sheet\.volume, sheet\.path\)[\s\S]*Its latest changes have not reached the hub, so this cannot be undone\./, "and so does a file");
   const changed = app.slice(app.indexOf("function musicChanged("), app.indexOf("function changePlaylist("));
   assert.match(changed, /setMusicEdits\(\(count\) => count \+ 1\);\s+publishMusic\(engine\.current\)\.catch\(\(\) => \{\}\);\s+if \(connected && !status\.paused\) startSync\(\);/, "an edit shows at once, reaches the car and syncs");
   assert.match(app, /\[musicFolder, folder\?\.id, replica, status\.last, status\.musicTick, musicEdits\]/);

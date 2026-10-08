@@ -3667,9 +3667,11 @@ test("navigation paints before slow reads, retains updating feedback and ignores
       },
     },
   };
+  const requests = new Set();
+  trackInvoke(w, requests);
   t.after(async () => {
     for (const gate of gates.values()) gate.release();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drainRequests(requests);
     dom.window.close();
     await daemon.close();
     fs.rmSync(home, { recursive: true, force: true });

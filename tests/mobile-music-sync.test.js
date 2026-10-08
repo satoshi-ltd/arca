@@ -178,6 +178,46 @@ test("a new library still refreshes the open screen when the cover pass stops", 
   assert.equal(replica.musicTick, 1);
 });
 
+test("the phone's own renames and deletions show in the library, its playlists and the car's file before the hub hears of them", async () => {
+  const { replica, disk } = phone({ cover: async () => ({}) });
+  const saved = await replica.store.musicLibrary();
+  saved.value.tracks = [
+    { path: "a.mp3", hash: "h1", title: "A" },
+    { path: "b.mp3", hash: "h2", title: "B" },
+    { path: "c.mp3", hash: "h3", title: "C" },
+  ];
+  saved.value.playlists = [
+    { path: "Playlists/Hub only.m3u8", name: "Hub only", hash: "p1", entries: ["a.mp3"] },
+    { path: "Playlists/Other.m3u8", name: "Other", hash: "p2", entries: ["b.mp3"] },
+  ];
+  replica.store.rows = async () => [
+    { path: "a.mp3", hash: "h1" },
+    { path: "b.mp3", hash: "h2" },
+    { path: "c.mp3", hash: "h3" },
+  ];
+  let journal = [];
+  replica.store.get = async (key) => (key === "journal:hub:v" ? journal : false);
+  const titles = async () => {
+    const { library } = await folderLibrary(replica, "v");
+    return [...library.tracks.values()].map((track) => track.path.replace(/^.*:/, "")).sort();
+  };
+  assert.deepEqual(await titles(), ["a.mp3", "b.mp3", "c.mp3"]);
+  journal = [
+    { kind: "rename", from: "a.mp3", to: "renamed.mp3", seq: 1 },
+    { kind: "remove", path: "b.mp3", seq: 2 },
+    { kind: "remove", path: "Playlists/Hub only.m3u8", seq: 3 },
+    { kind: "rename", from: "renamed.mp3", to: "again.mp3", seq: 4 },
+  ];
+  assert.deepEqual(await titles(), ["again.mp3", "c.mp3"], "a renamed track moves (again and again) and a deleted one leaves");
+  const { library } = await folderLibrary(replica, "v");
+  assert.deepEqual([...library.playlists.values()].map((list) => list.name).sort(), ["Other"], "a playlist deleted on the phone leaves the list the hub described");
+  await publishMusic(replica);
+  const car = JSON.parse(disk.get("/library.json"));
+  assert.deepEqual(car.tracks.map((track) => track.uri).sort(), ["/work/again.mp3", "/work/c.mp3"], "the car plays the renamed file and never the deleted one");
+  journal = [];
+  assert.deepEqual(await titles(), ["a.mp3", "b.mp3", "c.mp3"], "once the hub has the changes the journal is empty and its own answer rules");
+});
+
 test("an iPhone records what it opens in the same history file, one write at a time", async () => {
   const { replica, disk } = phone({ cover: async () => ({}) });
   assert.deepEqual(await readMusicHistory(replica), []);

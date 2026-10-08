@@ -73,6 +73,7 @@ export class Replica {
     this.active = null;
     this.forceNext = false;
     this.hashCache = new Map();
+    this.journalCut = new Map();
     this.verified = new Set();
     this.lastInventory = new Map();
     this.lastFullScan = 0;
@@ -124,6 +125,7 @@ export class Replica {
     for (const target of [this.files.musicLibrary?.(), this.files.musicHistory?.()])
       if (target) await this.files.remove(target).catch(() => {});
     this.publishedMusic = null;
+    this.journalCut = new Map();
     try {
       await this.player?.reload?.();
     } catch {}
@@ -235,6 +237,7 @@ export class Replica {
         await this.files.clearGalleryStage(scope, id);
       await this.files.removeFolder(scope, id);
       await this.store.forgetFolder(scope, id);
+      await this.store.set(`journal:${scope}:${id}`, []);
       await this.store.set(removalKey, false);
       this.hashCache.clear();
       await this.cleanTransferObjects(scope, removedHashes);
@@ -1153,6 +1156,8 @@ export class Replica {
           ).sort((a, b) => b.path.localeCompare(a.path)))
             await this.apply(row, true);
           await this.syncIgnore(folder);
+          const journal = (await this.store.get(this.journalKey(folder.id), [])) || [];
+          let scanned = false;
           if (
             !this.scheduled ||
             this.force ||
@@ -1161,6 +1166,7 @@ export class Replica {
             (await this.store.pending(this.scope, folder.id)).length
           ) {
             await this.scan(folder);
+            scanned = true;
             this.lastInventory.set(folder.id, Date.now());
             this.fullScanPending?.delete(folder.id);
           }
@@ -1185,6 +1191,10 @@ export class Replica {
           this.turnDeadline = Date.now() + 10000;
           this.turnTransferred = false;
           await this.pull(await this.store.folder(this.scope, folder.id));
+          if (scanned && journal.length)
+            if (isMusicFolder(catalog, folder.id))
+              this.journalCut.set(folder.id, journal.at(-1).seq);
+            else await this.forgetLocal(folder.id, journal.at(-1).seq);
           if (galleryError) throw galleryError;
         } catch (e) {
           if (e.code === "SYNC_YIELD") {
@@ -1311,16 +1321,21 @@ export class Replica {
     if (this.renaming || this.removing || this.importing || this.picking)
       throw new Error("Wait for the current operation to finish.");
     this.renaming = true;
+    let result;
     try {
       if (this.active) {
         this.stop();
         await this.active;
       }
       await this.requireActiveReplica();
-      return await this.moveFile(volume, name, newName, { rev });
+      result = await this.moveFile(volume, name, newName, { rev });
     } finally {
       this.renaming = false;
     }
+    await publishMusic(this).catch(() => {});
+    this.musicTick = (this.musicTick || 0) + 1;
+    this.changed();
+    return result;
   }
   async moveFile(volume, name, newName, { rev, rewrites = false } = {}) {
     validPath(name);
@@ -1369,6 +1384,7 @@ export class Replica {
       this.files.work(this.scope, volume, destination),
     );
     this.hashCache.delete(file);
+    await this.noteLocal(volume, { kind: "rename", from: name, to: destination }).catch(() => {});
     await this.retargetPlaylists(volume, name, destination);
     this.changed();
     return { path: destination };
@@ -1522,14 +1538,43 @@ export class Replica {
       const row = await this.store.current(this.scope, volume, name);
       const file = this.files.work(this.scope, volume, name);
       const info = await this.files.stat(file);
-      if (!info || info.directory || !row || row.deleted || row.directory)
-        throw new Error("Only synced files can be deleted here.");
-      if ((await this.files.hash(file)) !== row.hash)
-        throw new Error("Local file changed. Sync before deleting.");
+      if (!info || info.directory || row?.directory)
+        throw new Error("This file is not on this phone.");
       await this.files.remove(file);
+      await this.noteLocal(volume, { kind: "remove", path: name });
       this.changed();
     } finally {
       this.removing = false;
     }
+    await publishMusic(this).catch(() => {});
+    this.musicTick = (this.musicTick || 0) + 1;
+    this.changed();
+  }
+  async hasUnsyncedContent(volume, name) {
+    validPath(name);
+    const file = this.files.work(this.scope, volume, name);
+    const info = await this.files.stat(file);
+    if (!info || info.directory) return false;
+    const hash = await this.localHash(file);
+    return !(await this.store.rows(this.scope, volume)).some(
+      (row) => !row.deleted && !row.directory && row.hash === hash,
+    );
+  }
+  journalKey(volume) {
+    return `journal:${this.scope}:${volume}`;
+  }
+  async noteLocal(volume, op) {
+    const key = this.journalKey(volume);
+    const entries = (await this.store.get(key, [])) || [];
+    await this.store.set(key, [
+      ...entries,
+      { ...op, seq: Math.max(Date.now(), (entries.at(-1)?.seq || 0) + 1) },
+    ]);
+  }
+  async forgetLocal(volume, seq) {
+    const key = this.journalKey(volume);
+    const entries = (await this.store.get(key, [])) || [];
+    if (entries.some((entry) => entry.seq <= seq))
+      await this.store.set(key, entries.filter((entry) => entry.seq > seq));
   }
 }

@@ -79,13 +79,30 @@ async function localPlaylists(replica, id) {
   return texts;
 }
 
+function replay(library, present, journal) {
+  let tracks = Array.isArray(library.tracks) ? library.tracks : [];
+  let playlists = Array.isArray(library.playlists) ? library.playlists : undefined;
+  for (const op of journal) {
+    const from = op.kind === "remove" ? op.path : op.from;
+    tracks =
+      op.kind === "remove"
+        ? tracks.filter((track) => track.path !== from)
+        : tracks.map((track) => (track.path === from ? { ...track, path: op.to } : track));
+    playlists = playlists?.filter((list) => list.path !== from);
+    if (op.kind === "rename" && present.has(from)) present.set(op.to, present.get(from));
+    present.delete(from);
+  }
+  return { ...library, tracks, ...(playlists && { playlists }) };
+}
+
 async function source(replica, id, saved) {
   const present = new Map();
   for (const row of await replica.store.rows(replica.scope, id))
     if (!row.deleted && !row.directory && row.hash) present.set(row.path, row.hash);
+  const journal = await replica.store.get(`journal:${replica.scope}:${id}`, []);
   return {
     id,
-    library: saved.value,
+    library: Array.isArray(journal) && journal.length ? replay(saved.value, present, journal) : saved.value,
     present,
     playlists: await localPlaylists(replica, id),
     uri: (path) => replica.files.work(replica.scope, id, path),
@@ -112,6 +129,7 @@ export async function folderLibrary(replica, id) {
 
 async function fetchLibraries(replica, folders) {
   let changed = false;
+  const fresh = [];
   for (const folder of folders) {
     replica.check();
     const saved = await replica.store.musicVersion(replica.scope, folder.id);
@@ -124,15 +142,17 @@ async function fetchLibraries(replica, folders) {
           await replica.store.setMusicIndexing(replica.scope, folder.id, value.indexing);
           changed = true;
         }
+        fresh.push(folder.id);
       } else if (Array.isArray(value.tracks) && value.version) {
         await replica.store.saveMusicLibrary(replica.scope, folder.id, value);
         changed = true;
+        fresh.push(folder.id);
       }
     } catch (error) {
       if (stopped(error)) throw error;
     }
   }
-  return changed;
+  return { changed, fresh };
 }
 
 async function fetchCovers(replica, library) {
@@ -224,7 +244,13 @@ export async function refreshMusic(replica, { covers = true } = {}) {
   const folders = await musicFolders(replica);
   let changed = false;
   try {
-    changed = folders.length ? await fetchLibraries(replica, folders) : false;
+    const fetched = folders.length ? await fetchLibraries(replica, folders) : { changed: false, fresh: [] };
+    changed = fetched.changed;
+    for (const id of fetched.fresh)
+      if (replica.journalCut?.has(id)) {
+        await replica.forgetLocal(id, replica.journalCut.get(id));
+        replica.journalCut.delete(id);
+      }
     const library = await localLibrary(replica, folders);
     const ready = [...library.tracks.keys()].join("\u0000");
     if (replica.musicReady !== undefined && ready !== replica.musicReady) changed = true;

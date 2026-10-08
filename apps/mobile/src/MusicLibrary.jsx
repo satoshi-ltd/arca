@@ -134,7 +134,10 @@ function AlbumGrid({ albums, cover, open }) {
   );
 }
 
-const NOTES = { pending: "Downloading", missing: "Not in this folder" };
+const notes = (offline) => ({
+  pending: offline ? "Not on this phone yet" : "Downloading",
+  missing: "Not in this folder",
+});
 
 function TrackList({
   rows,
@@ -148,9 +151,11 @@ function TrackList({
   actions,
   removable,
   withAlbum,
+  offline,
 }) {
   const { s, c } = useDesign();
   const [shown, setShown] = useState(PAGE);
+  const NOTES = notes(offline);
   return (
     <>
       <View style={s.group}>
@@ -291,6 +296,7 @@ function Collection({
   actions,
   removable,
   withAlbum,
+  offline,
 }) {
   const { s, wide } = useDesign();
   const first = library.tracks.get(tracks[0]);
@@ -339,6 +345,7 @@ function Collection({
         actions={actions}
         removable={removable}
         withAlbum={withAlbum}
+        offline={offline}
       />
     </>
   );
@@ -730,6 +737,7 @@ export function MusicLibrary({
         isCurrent={playingRow}
         cover={cover}
         actions={(row) => trackActions({ track: row.track })}
+        offline={offline}
       />
     ) : null;
   } else if (shownPlaylist)
@@ -762,6 +770,7 @@ export function MusicLibrary({
         }
         removable={shownPlaylist.editable}
         withAlbum
+        offline={offline}
       />
     );
   return (

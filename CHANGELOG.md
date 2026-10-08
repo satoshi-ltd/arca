@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.4 — 2026-10-08
+
+- On the phone, with the hub away, a track you rename or delete follows at once in its album, Shuffle, search, playlists and Android Auto instead of staying listed as playable, and Delete file… and Delete playlist… work on anything you added or edited offline, after a confirmation that says such a change cannot be undone; a track that is not on the phone reads "Not on this phone yet" while offline rather than "Downloading".
+
+Needs: native build
+
 ## 0.7.3 — 2026-10-08
 
 - A desktop or server replica now shows what changed on its own disk while the hub is away or the replica is paused: files you rename, delete, add or edit appear in Files, the gallery and the music library with their real names and sizes, and Rename and Delete keep working on them, playlists made offline included; the next sync still uploads exactly those changes. A file the hub never received goes to the system Trash when you delete it, so nothing is lost.
