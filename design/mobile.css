@@ -1095,11 +1095,11 @@
 .m-cover-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 12px;
 }
 .m-cover {
   aspect-ratio: 1;
-  border-radius: var(--m-card-radius);
+  border-radius: var(--m-control-radius);
   background: var(--m-placeholder);
   display: grid;
   place-items: center;
@@ -1117,12 +1117,12 @@
 .m-player {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin: 0 12px 8px;
   padding: 8px 12px;
   border-radius: var(--m-card-radius);
-  background: var(--m-raised);
-  border: 1px solid var(--m-raised-edge);
+  background: var(--m-surface);
+  border: 1px solid var(--m-divider);
 }
 .m-player .m-cover {
   width: 40px;
@@ -1132,4 +1132,67 @@
   align-items: center;
   gap: 12px;
   margin-left: auto;
+}
+.m-now {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.m-now .m-cover {
+  width: 280px;
+}
+.m-progress {
+  align-self: stretch;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--m-line);
+  overflow: hidden;
+}
+.m-progress i {
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: var(--m-accent);
+}
+.m-times,
+.m-transport {
+  align-self: stretch;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.m-play {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--m-accent);
+  color: var(--m-on-accent);
+  display: grid;
+  place-items: center;
+}
+.m-album-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.m-album-head .m-cover {
+  width: 128px;
+  flex: none;
+}
+.m-track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 10px 12px;
+}
+.m-track-number {
+  width: 24px;
+  text-align: center;
+}
+.m-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
 }

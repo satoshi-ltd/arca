@@ -57,6 +57,7 @@ export function finishInstallationReset(store) {
         "objects",
         "uploads",
         "previews",
+        "music-covers",
         "web-code.json",
         "promotion.json",
       ].includes(name) ||

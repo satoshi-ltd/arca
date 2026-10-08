@@ -17,6 +17,7 @@ export class ReplicaStore {
       CREATE TABLE IF NOT EXISTS files (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
       CREATE TABLE IF NOT EXISTS pending (scope TEXT, volume TEXT, path TEXT, op TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
       CREATE TABLE IF NOT EXISTS applying (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
+      CREATE TABLE IF NOT EXISTS music_libraries (scope TEXT, volume TEXT, version TEXT NOT NULL, indexing INTEGER NOT NULL DEFAULT 0, value TEXT NOT NULL, PRIMARY KEY(scope,volume));
 `);
   }
   async reset() {
@@ -25,6 +26,7 @@ export class ReplicaStore {
       for (const table of [
         "view_cache",
         "scan_cache",
+        "music_libraries",
         "gallery_assets",
         "gallery_corrupt",
         "gallery_sources",
@@ -179,6 +181,7 @@ export class ReplicaStore {
         "gallery_assets",
         "gallery_corrupt",
         "gallery_sources",
+        "music_libraries",
       ])
         await this.db.runAsync(
           `DELETE FROM ${table} WHERE scope=? AND volume=?`,
@@ -452,6 +455,51 @@ export class ReplicaStore {
       throw error;
     }
     return paths.length;
+  }
+  async musicLibrary(scope, volume) {
+    const row = await this.db.getFirstAsync(
+      "SELECT version,indexing,value FROM music_libraries WHERE scope=? AND volume=?",
+      scope,
+      volume,
+    );
+    if (!row) return null;
+    try {
+      return {
+        version: row.version,
+        indexing: !!row.indexing,
+        value: JSON.parse(row.value),
+      };
+    } catch {
+      return null;
+    }
+  }
+  musicVersion(scope, volume) {
+    return this.db.getFirstAsync(
+      "SELECT version,indexing FROM music_libraries WHERE scope=? AND volume=?",
+      scope,
+      volume,
+    );
+  }
+  async saveMusicLibrary(scope, volume, value) {
+    await this.db.runAsync(
+      "INSERT OR REPLACE INTO music_libraries(scope,volume,version,indexing,value) VALUES(?,?,?,?,?)",
+      scope,
+      volume,
+      value.version,
+      value.indexing ? 1 : 0,
+      JSON.stringify({
+        tracks: value.tracks,
+        playlists: Array.isArray(value.playlists) ? value.playlists : [],
+      }),
+    );
+  }
+  async setMusicIndexing(scope, volume, indexing) {
+    await this.db.runAsync(
+      "UPDATE music_libraries SET indexing=? WHERE scope=? AND volume=?",
+      indexing ? 1 : 0,
+      scope,
+      volume,
+    );
   }
   async rows(scope, volume) {
     return (

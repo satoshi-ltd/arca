@@ -8,6 +8,7 @@ import { ChangeFeed } from "./change-feed.js";
 import { ImageMaintenance } from "./image-maintenance.js";
 import { galleryMedia, streamGalleryMedia } from "./gallery-media.js";
 import { Gallery, mediaKind } from "./gallery.js";
+import { Music } from "./music.js";
 import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
 import { inspectSetupRoot } from "./setup.js";
 import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
@@ -104,6 +105,8 @@ export async function start(home, options = {}) {
   const network = new Network(engine, options.network);
   engine.gallery = new Gallery(s);
   engine.gallery.resume();
+  const music = () => (engine.music ||= new Music(s));
+  music().resume();
   const images = new ImageMaintenance(engine);
   let web;
   try {
@@ -118,6 +121,7 @@ export async function start(home, options = {}) {
     throw error;
   }
   const playbackTickets = new Map();
+  const musicTickets = new Map();
   const snapshotReads = new Map();
   const readSnapshot = (volume) => {
     const generation =
@@ -147,6 +151,8 @@ export async function start(home, options = {}) {
         config.name,
         s.db.prepare("SELECT COUNT(*) n FROM pending").get().n,
         s.db.prepare("SELECT * FROM gallery_folders ORDER BY volume").all(),
+        s.db.prepare("SELECT * FROM music_folders ORDER BY volume").all(),
+        engine.music?.indexed || 0,
       ]),
     ),
   );
@@ -282,23 +288,28 @@ export async function start(home, options = {}) {
         return send(404, {
           error: "Web access is not available in the desktop installation",
         });
-      // Native media elements cannot attach the daemon bearer credential. A loopback-only
-      // ticket grants read access to one current preview or video, never other API routes.
+      // Media elements cannot send the bearer token, so a loopback ticket opens one current preview, video or track only.
       const playbackUrl = new URL(req.url, "http://localhost");
       if (
-        ["/v1/gallery/media", "/v1/gallery/preview-image"].includes(pathname) &&
+        [
+          "/v1/gallery/media",
+          "/v1/gallery/preview-image",
+          "/v1/music/media",
+        ].includes(pathname) &&
         playbackUrl.searchParams.has("ticket")
       ) {
-        const ticket = playbackTickets.get(
-          playbackUrl.searchParams.get("ticket"),
-        );
+        const ticket = (
+          pathname === "/v1/music/media" ? musicTickets : playbackTickets
+        ).get(playbackUrl.searchParams.get("ticket"));
         if (
           !["GET", "HEAD"].includes(req.method) ||
           !["127.0.0.1", "::1"].includes(remote) ||
           !ticket ||
           (ticket.preview
-            ? pathname !== "/v1/gallery/preview-image"
-            : pathname !== "/v1/gallery/media") ||
+            ? "/v1/gallery/preview-image"
+            : ticket.music
+              ? "/v1/music/media"
+              : "/v1/gallery/media") !== pathname ||
           ticket.expires < Date.now() ||
           ticket.owner !== config.adminToken ||
           (req.headers.origin &&
@@ -312,6 +323,12 @@ export async function start(home, options = {}) {
           fail("Playback access expired", 401);
         if (ticket.preview)
           return await sendPreview(ticket.volume, ticket.name, ticket.hash);
+        if (pathname === "/v1/music/media")
+          return streamGalleryMedia(
+            req,
+            res,
+            music().media(ticket.volume, ticket.name, ticket.hash),
+          );
         return streamGalleryMedia(
           req,
           res,
@@ -495,6 +512,8 @@ export async function start(home, options = {}) {
             "/v1/revoke",
             "/v1/leave",
             "/v1/gallery/link",
+            "/v1/music/mark",
+            "/v1/music/playlist",
             "/v1/locate-folder",
             "/v1/move-folder",
             "/v1/folder-retention",
@@ -802,6 +821,63 @@ export async function start(home, options = {}) {
               : await engine.gallery.page(volume, url.searchParams),
         );
       }
+      if (
+        req.method === "GET" &&
+        ["/v1/music/library", "/v1/music/cover"].includes(route)
+      ) {
+        const volume = url.searchParams.get("volume");
+        if (config.role !== "hub") {
+          requireAdmin();
+          if (!s.volume(volume).selected) fail("Select this folder first", 403);
+        }
+        if (route === "/v1/music/cover") {
+          const cover = await music().cover(
+            volume,
+            url.searchParams.get("key"),
+            url.searchParams.get("size") === "large" ? "large" : "small",
+          );
+          checkCredential();
+          return send(200, cover);
+        }
+        const library = music().library(
+          volume,
+          url.searchParams.get("version"),
+        );
+        checkCredential();
+        return send(200, library);
+      }
+      if (["/v1/music/playback", "/v1/music/media"].includes(route)) {
+        requireAdmin();
+        if (!["GET", "HEAD"].includes(req.method))
+          fail("Method not allowed", 405);
+        const volume = url.searchParams.get("volume"),
+          name = url.searchParams.get("path"),
+          hash = url.searchParams.get("hash");
+        const media = music().media(volume, name, hash);
+        if (route === "/v1/music/media")
+          return streamGalleryMedia(req, res, media);
+        const query = new URLSearchParams({ volume, path: name, hash });
+        if (browserSession)
+          return send(200, { url: "/v1/music/media?" + query });
+        if (!["127.0.0.1", "::1"].includes(remote))
+          fail("Use the local desktop application", 403);
+        for (const [key, ticket] of musicTickets)
+          if (ticket.expires < Date.now()) musicTickets.delete(key);
+        while (musicTickets.size >= 32)
+          musicTickets.delete(musicTickets.keys().next().value);
+        const ticket = token();
+        musicTickets.set(ticket, {
+          volume,
+          name,
+          hash,
+          music: true,
+          owner: config.adminToken,
+          expires: Date.now() + 2 * 3600000,
+        });
+        return send(200, {
+          url: `http://127.0.0.1:${server.address().port}/v1/music/media?ticket=${ticket}`,
+        });
+      }
       if (req.method === "GET" && route === "/v1/catalog") {
         requireHub();
         const totals = await s.allVisibleTotals();
@@ -810,6 +886,7 @@ export async function start(home, options = {}) {
           protocol: 1,
           gallery: true,
           galleryDeletion: true,
+          music: true,
           changes: true,
           retainedRevisions: true,
           changeEvents: true,
@@ -827,6 +904,7 @@ export async function start(home, options = {}) {
             gallery: !!s.db
               .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
               .get(v.id),
+            music: music().isMusic(v.id),
             conflicts: s.unresolvedConflicts(v.id),
             conflictRevision: s.conflictRevision(v.id),
             ...totals.get(v.id),
@@ -849,6 +927,7 @@ export async function start(home, options = {}) {
                     gallery: !!s.db
                       .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
                       .get(v.id),
+                    music: music().isMusic(v.id),
                     ...totals.get(v.id),
                   };
                 }),
@@ -1374,10 +1453,28 @@ export async function start(home, options = {}) {
         if (route === "/v1/gallery/link") {
           requireHub();
           await authorizedWork(() => {
+            if (music().isMusic(b.volume))
+              fail(
+                "This folder is a music library. A folder is a gallery or a music library, not both.",
+                409,
+              );
             engine.gallery ||= new Gallery(s);
             engine.gallery.mark(b.volume);
           });
           return send(200, { ok: true });
+        }
+        if (route === "/v1/music/mark") {
+          requireAdmin();
+          requireHub();
+          await authorizedWork(() => music().mark(b.volume));
+          return send(200, { ok: true });
+        }
+        if (route === "/v1/music/playlist") {
+          requireAdmin();
+          music();
+          const result = await authorizedWork(() => engine.editPlaylist(b));
+          if (!engine.paused) setImmediate(() => tick());
+          return send(200, result);
         }
         if (route === "/v1/propose") {
           requireHub();
@@ -1408,6 +1505,7 @@ export async function start(home, options = {}) {
                   result.conflictPath || b.path,
                   b.hash,
                 );
+                music().schedule(b.volume, result.conflictPath || b.path);
               }
               return result;
             }),
@@ -1727,6 +1825,7 @@ export async function start(home, options = {}) {
               await authorizedWork(() => {
                 const result = s.forgetVolume(b.id);
                 engine.folderStates.delete(b.id);
+                engine.music?.sweep(true);
                 return result;
               }),
             );

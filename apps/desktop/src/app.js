@@ -1,5 +1,16 @@
 import { timelineSegments } from "./gallery-timeline-layout.js";
 import {
+  artistGroups,
+  artistId,
+  buildLibrary,
+  formatDuration,
+  nextRepeat,
+  playedItems,
+  rememberPlayed,
+  searchText,
+  shuffleOrder,
+} from "./music-library.js";
+import {
   createNoticeStore,
   errorNotice,
   conditionNotices,
@@ -88,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.6.117";
+const APP_VERSION = "0.7.0";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1076,6 +1087,7 @@ async function refresh(renderView = true) {
   const next = await api("/v1/status");
   if (request !== statusRequestSerial) return lastSignature;
   status = next;
+  if (musicPlayer && !musicPlayable()) stopMusic();
   syncHubOnlyControls();
   if (daemonStopped) daemonRecovered();
   updateBrandActivity();
@@ -1337,7 +1349,7 @@ function folderRow(v, available = false) {
   if (p) meta = escape(progressLabel(p));
   if (v.sync?.error || v.policyError)
     meta = escape(v.sync?.error || v.policyError);
-  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}><div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(v.gallery ? "images" : "folder")}</div><div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p>${p ? `<progress aria-label="${p.stage === "upload" ? "Files sent" : "Files checked"}" ${p.filesTotal > 0 ? `value="${Number(p.filesDone) || 0}" max="${Number(p.filesTotal)}"` : ""}></progress>` : ""}</div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || ["Up to date", "Offline"].includes(state[0]) ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
+  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}><div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div><div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p>${p ? `<progress aria-label="${p.stage === "upload" ? "Files sent" : "Files checked"}" ${p.filesTotal > 0 ? `value="${Number(p.filesDone) || 0}" max="${Number(p.filesTotal)}"` : ""}></progress>` : ""}</div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || ["Up to date", "Offline"].includes(state[0]) ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
 }
 async function loadCatalog() {
   if (status.role !== "hub" && !status.hub) {
@@ -1416,6 +1428,7 @@ function motionDuration(token) {
 }
 async function render({ refreshStatus = false } = {}) {
   if (daemonStopped) return renderDaemonStopped();
+  placeMusic();
   if (
     folderTab === "gallery" &&
     galleryView?.root?.isConnected &&
@@ -3168,10 +3181,17 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+function folderSymbol(volume) {
+  return volume.gallery ? "images" : volume.music ? "music" : "folder";
+}
 function folderActionsMenu(volume) {
   if (status.role !== "hub") return "";
+  const ordinary = !volume.gallery && !volume.music;
   const items =
-    (volume.gallery ? "" : button("Enable gallery", "enable-gallery", volume.id, "secondary", "images")) +
+    (ordinary
+      ? button("Enable gallery", "enable-gallery", volume.id, "secondary", "images") +
+        button("Enable music library", "enable-music", volume.id, "secondary", "music")
+      : "") +
     button("Rename", "rename-share", volume.id, "secondary", "pencil") +
     button(".arcaignore…", "edit-ignore", volume.id, "secondary", "file-pen-line");
   return `<details class="details-menu folder-actions-menu"><summary class="icon-button" aria-label="Folder actions">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
@@ -3287,6 +3307,1137 @@ async function folderBrowser(v, recent, pending = false) {
   }
 }
 
+const MUSIC_GRID_PAGE = 60;
+const MUSIC_LIST_PAGE = 120;
+const MUSIC_TABS = { artists: "Artists", albums: "Albums", playlists: "Playlists", recent: "Recent" };
+const musicLibraries = new Map();
+const musicFailures = new Map();
+const musicLoading = new Map();
+const musicIndexTimers = new Map();
+const musicCovers = new Map();
+const observedMusicCovers = new Set();
+const musicCoverQueue = [];
+let musicCoverObserver,
+  musicCoverWorkers = 0,
+  musicShown = {},
+  musicPlayer = null,
+  musicElement = null,
+  musicSerial = 0,
+  musicSessionReady = false,
+  musicView = { tab: "artists", artist: null, album: null, playlist: null, pages: 1, trail: [] },
+  musicQuery = musicSearch(),
+  musicPicking = null;
+function musicSearch(open = false) {
+  return { open, text: "", songs: 1, albums: 1, artists: 1 };
+}
+const musicSearching = () => searchText(musicQuery.text).trim() !== "";
+const musicCount = (n, word) => `${n.toLocaleString("en")} ${word}${n === 1 ? "" : "s"}`;
+const musicClock = (seconds) => formatDuration(Math.floor(seconds || 0)) || "0:00";
+function musicAvailable(volume) {
+  return !!volume?.music && !volume.gallery && (status.role === "hub" || !!volume.selected);
+}
+function musicModeButton(volume) {
+  if (!musicAvailable(volume)) return "";
+  return button(
+    folderTab === "library" ? "View folder" : "Library",
+    "music-mode",
+    volume.id,
+    "primary",
+    folderTab === "library" ? "folder" : "music",
+  );
+}
+const musicKey = (volume) => `${status.id}:${volume}`;
+const musicHistoryKey = (volume) => `arca-music-recent:${status.hubId || status.id}:${volume}`;
+function musicHistory(volume) {
+  try {
+    const list = JSON.parse(localStorage.getItem(musicHistoryKey(volume)) || "[]");
+    return Array.isArray(list)
+      ? list.filter((entry) => ["album", "playlist"].includes(entry?.kind) && typeof entry.id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+function rememberMusic(volume, context) {
+  try {
+    localStorage.setItem(
+      musicHistoryKey(volume),
+      JSON.stringify(rememberPlayed(musicHistory(volume), { kind: context.kind, id: context.id })),
+    );
+  } catch {}
+}
+function renameMusicHistory(volume, from, to) {
+  try {
+    localStorage.setItem(
+      musicHistoryKey(volume),
+      JSON.stringify(
+        musicHistory(volume).map((entry) =>
+          entry.kind === "playlist" && entry.id === from ? { ...entry, id: to } : entry,
+        ),
+      ),
+    );
+  } catch {}
+}
+async function loadMusicLibrary(volume) {
+  const key = musicKey(volume);
+  const known = musicLibraries.get(key);
+  const query = new URLSearchParams({ volume });
+  if (known) query.set("version", known.version);
+  const data = await api("/v1/music/library?" + query);
+  if (data.unchanged && known) {
+    known.indexing = !!data.indexing;
+    known.checked = Date.now();
+    return known;
+  }
+  const entry = {
+    version: data.version,
+    indexing: !!data.indexing,
+    checked: Date.now(),
+    library: buildLibrary(data),
+  };
+  musicLibraries.delete(key);
+  musicLibraries.set(key, entry);
+  while (musicLibraries.size > 8) musicLibraries.delete(musicLibraries.keys().next().value);
+  musicRequeue(volume, entry.library);
+  return entry;
+}
+const musicShowing = (volume) =>
+  view === "folders" && detailId === volume && folderTab === "library";
+function armMusicIndex(volume) {
+  clearTimeout(musicIndexTimers.get(volume));
+  musicIndexTimers.set(
+    volume,
+    setTimeout(() => {
+      musicIndexTimers.delete(volume);
+      if (musicShowing(volume)) void refreshMusic(volume, true);
+    }, 5000),
+  );
+}
+function refreshMusic(volume, force = false) {
+  const key = musicKey(volume);
+  const known = musicLibraries.get(key);
+  if (musicLoading.has(key)) return musicLoading.get(key);
+  if (!force && known && Date.now() - known.checked < 10000) return Promise.resolve();
+  const job = readMusic(volume, key, known);
+  musicLoading.set(key, job);
+  return job;
+}
+async function readMusic(volume, key, known) {
+  const indexing = known?.indexing;
+  try {
+    const entry = await loadMusicLibrary(volume);
+    musicFailures.delete(key);
+    if (entry.indexing) armMusicIndex(volume);
+    if ((entry !== known || entry.indexing !== indexing) && musicShowing(volume))
+      renderMusic(status.volumes.find((v) => v.id === volume));
+  } catch (error) {
+    if (known) return void (known.indexing && armMusicIndex(volume));
+    musicFailures.set(key, error.message);
+    if (musicShowing(volume)) renderMusic(status.volumes.find((v) => v.id === volume));
+  } finally {
+    musicLoading.delete(key);
+  }
+}
+function musicCover(volume, key, symbol = "disc-3", cls = "") {
+  const query = key ? new URLSearchParams({ volume, key }).toString() : "";
+  return `<span class="music-cover${cls}"${query ? ` data-music-cover="${escape(query)}"` : ""}>${symbol ? icon(symbol) : ""}</span>`;
+}
+function musicCard(volume, action, id, cover, title, subtitle, symbol = "disc-3") {
+  return `<button type="button" class="music-card" data-action="${action}" data-id="${escape(id)}">${musicCover(volume, cover, symbol)}<strong>${escape(title)}</strong><span>${escape(subtitle)}</span></button>`;
+}
+const albumCard = (volume, album, subtitle = album.artist) =>
+  musicCard(volume, "music-album", album.id, album.cover, album.title, subtitle);
+const playlistCard = (volume, list) =>
+  musicCard(volume, "music-playlist", list.id, list.cover, list.name, musicCount(list.entries.length, "track"), "list-music");
+const musicEditable = (v) => !!v.selected;
+const musicMenu = (items, label = "Track actions") =>
+  `<details class="details-menu file-actions-menu music-track-menu"><summary class="ghost icon-button" aria-label="${label}">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
+const musicHeadRow = (album = false) =>
+  `<div class="music-track music-track-head" aria-hidden="true"><div class="music-track-play"><span>#</span><span>Title</span><span>Artist</span>${album ? "<span>Album</span>" : ""}${icon("clock")}</div><span></span></div>`;
+function musicGrid(cards, size = Infinity, more = "") {
+  const shown = cards.slice(0, size);
+  return `<div class="music-grid">${shown.join("")}</div>${cards.length > shown.length ? `<div class="pagination">${button("Show more", more ? "music-search-more" : "music-more", more, "secondary")}</div>` : ""}`;
+}
+const musicMore = (label, more) => `<div class="pagination">${button(label, "music-search-more", more, "secondary")}</div>`;
+const musicShuffleAll = () =>
+  musicView.album || musicView.playlist || musicView.artist || musicSearching()
+    ? ""
+    : button("Shuffle", "music-shuffle-all", "", "secondary", "shuffle");
+function musicTabs(library) {
+  return `<div class="folder-browser-tools"><div class="music-tools">${segmented(
+    "Library",
+    [
+      { id: "artists", symbol: "mic-vocal" },
+      { id: "albums", symbol: "disc-3" },
+      ...(library.playlists.length ? [{ id: "playlists", symbol: "list-music" }] : []),
+      { id: "recent", symbol: "clock" },
+    ].map((item) => ({
+      ...item,
+      label: MUSIC_TABS[item.id],
+      action: "music-tab",
+      active: musicView.tab === item.id,
+    })),
+  )}${musicShuffleAll()}</div><div><button class="icon-button" data-action="music-search-toggle" aria-label="${musicQuery.open ? "Close search" : "Search music"}">${icon(musicQuery.open ? "x" : "search")}</button></div></div>${
+    musicQuery.open
+      ? `<div class="folder-browser-search"><input id="music-search-input" type="search" aria-label="Search music" placeholder="Search music" value="${escape(musicQuery.text)}" maxlength="256">${button("Search", "music-search-apply", "", "secondary")}</div>`
+      : ""
+  }`;
+}
+const musicBackLabel = () => (musicSearching() ? "Results" : MUSIC_TABS[musicView.tab]);
+function musicRows(v, rows, action, { head = "", songs = false, playlist = "", album = false } = {}) {
+  const editable = musicEditable(v);
+  return `<div class="history-group music-tracks${songs ? " music-songs" : ""}${album ? " music-with-album" : ""}" data-volume="${escape(v.id)}"${playlist ? ` data-playlist="${escape(playlist)}"` : ""}>${head}${rows
+    .map((row, index) => {
+      const number = `<span class="music-track-number mono">${index + 1}</span><span class="music-track-playing">${icon("music")}</span>`;
+      const position = row.position === undefined ? "" : ` data-position="${row.position}"`;
+      const remove = row.remove ? button("Remove from playlist", "music-remove", String(row.position), "secondary", "list-minus") : "";
+      if (!row.track)
+        return `<div class="music-track music-track-missing"${position}><div class="music-track-play">${number}<strong>${escape(row.title)}</strong><span>${escape(row.note)}</span>${album ? "<span></span>" : ""}<span class="mono"></span></div>${remove ? musicMenu(remove) : "<span></span>"}</div>`;
+      const items = (editable ? button("Add to playlist…", "music-add", row.track.path, "secondary", "list-plus") : "") + remove;
+      return `<div class="music-track" data-path="${escape(row.track.path)}"${position}><button type="button" class="music-track-play" data-action="${action}" data-id="${escape(row.id)}" aria-label="${escape(`Play ${row.track.title}`)}">${number}<strong>${escape(row.track.title)}</strong><span>${escape(row.subtitle)}</span>${album ? `<span>${escape(row.track.album)}</span>` : ""}<span class="mono">${formatDuration(row.track.duration)}</span></button>${items ? musicMenu(items) : "<span></span>"}</div>`;
+    })
+    .join("")}</div>`;
+}
+function musicRow(v, action, id, cover, title, subtitle, symbol) {
+  return `<button type="button" class="music-row" data-action="${action}" data-id="${escape(id)}">${musicCover(v.id, cover, symbol)}<span><strong>${escape(title)}</strong><span>${escape(subtitle)}</span></span>${icon("chevron-right")}</button>`;
+}
+function musicResults(v, library) {
+  const text = musicQuery.text.trim();
+  const query = searchText(text).trim();
+  const has = (...values) => values.some((value) => searchText(value).includes(query));
+  const songs = library.albumList
+    .flatMap((album) => album.tracks)
+    .filter((track) => has(track.title, track.artist, track.albumArtist, track.album));
+  const albums = library.albumList.filter((album) => has(album.title, album.artist));
+  const artists = library.artists.filter((artist) => has(artist.name));
+  const playlists = library.playlists.filter((list) => has(list.name));
+  if (!songs.length && !albums.length && !artists.length && !playlists.length)
+    return empty(`No results for “${escape(text)}”`, "", "", "search");
+  const shown = songs.slice(0, musicQuery.songs * MUSIC_LIST_PAGE);
+  const listed = artists.slice(0, musicQuery.artists * MUSIC_LIST_PAGE);
+  return [
+    songs.length &&
+      section(
+        "Songs",
+        musicRows(
+          v,
+          shown.map((track) => ({ track, id: track.path, subtitle: `${track.artist} · ${track.album}` })),
+          "music-song",
+          { songs: true },
+        ) + (songs.length > shown.length ? musicMore("Show more songs", "songs") : ""),
+      ),
+    albums.length &&
+      section("Albums", musicGrid(albums.map((album) => albumCard(v.id, album)), musicQuery.albums * MUSIC_GRID_PAGE, "albums")),
+    artists.length &&
+      section(
+        "Artists",
+        `<div class="history-group">${listed.map((artist) => musicRow(v, "music-artist", artist.id, artist.cover, artist.name, musicCount(artist.albums.length, "album"), "mic-vocal")).join("")}</div>` +
+          (artists.length > listed.length ? musicMore("Show more artists", "artists") : ""),
+      ),
+    playlists.length &&
+      section(
+        "Playlists",
+        `<div class="history-group">${playlists.map((list) => musicRow(v, "music-playlist", list.id, list.cover, list.name, musicCount(list.entries.length, "track"), "list-music")).join("")}</div>`,
+      ),
+  ]
+    .filter(Boolean)
+    .join("");
+}
+function musicArtists(v, library) {
+  const shown = library.artists.slice(0, musicView.pages * MUSIC_LIST_PAGE);
+  return `${artistGroups(shown)
+    .map((group) =>
+      section(
+        group.letter,
+        `<div class="history-group">${group.artists
+          .map((artist) => {
+            const tracks = artist.albums.reduce((total, album) => total + album.tracks.length, 0);
+            return `<button type="button" class="music-row music-artist-row" data-action="music-artist" data-id="${escape(artist.id)}">${musicCover(v.id, artist.cover, "mic-vocal")}<span><strong>${escape(artist.name)}</strong><span>${musicCount(artist.albums.length, "album")} · ${musicCount(tracks, "track")}</span></span><span class="music-artist-albums" aria-hidden="true">${artist.covers
+              .slice(1, 6)
+              .map((key) => musicCover(v.id, key, null))
+              .join("")}</span>${icon("chevron-right")}</button>`;
+          })
+          .join("")}</div>`,
+      ),
+    )
+    .join("")}${library.artists.length > shown.length ? `<div class="pagination">${button("Show more", "music-more", "", "secondary")}</div>` : ""}`;
+}
+function musicArtist(v, artist) {
+  const tracks = artist.albums.reduce((total, album) => total + album.tracks.length, 0);
+  return `<div class="music-head">${musicCover(v.id, artist.cover, "mic-vocal", " large")}<div class="music-head-info">${button(escape(musicSearching() ? "Results" : "Artists"), "music-back", "", "back", "chevron-left")}<div><h2>${escape(artist.name)}</h2><p>${musicCount(artist.albums.length, "album")} · ${musicCount(tracks, "track")}</p><div class="heading-actions">${button("Shuffle", "music-shuffle-artist", "", "secondary", "shuffle")}</div></div></div></div>${musicGrid(
+    artist.albums.map((item) => albumCard(v.id, item, item.year ? String(item.year) : musicCount(item.tracks.length, "track"))),
+    musicView.pages * MUSIC_GRID_PAGE,
+  )}`;
+}
+function musicTracks(v, album) {
+  const back = musicView.artist ? album.artist : musicBackLabel();
+  const summary = [
+    album.artist,
+    album.year,
+    musicCount(album.tracks.length, "track"),
+    formatDuration(album.duration),
+  ].filter(Boolean);
+  const shown = album.tracks.slice(0, musicView.pages * MUSIC_LIST_PAGE);
+  return `<div class="music-head">${musicCover(v.id, album.cover, "disc-3", " large")}<div class="music-head-info">${button(escape(back), "music-back", "", "back", "chevron-left")}<div><h2>${escape(album.title)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${button("Play", "music-play", "", "primary", "play")}${button("Shuffle", "music-shuffle", "", "secondary", "shuffle")}</div></div></div></div>${musicRows(
+    v,
+    shown.map((track, index) => ({ track, id: index, subtitle: track.artist })),
+    "music-track",
+    { head: musicHeadRow() },
+  )}${album.tracks.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
+}
+function musicPlaylist(v, list) {
+  const pending = status.role !== "hub" && v.sync?.state !== "synced";
+  const editable = list.editable && musicEditable(v);
+  const menu = editable
+    ? musicMenu(
+        button("Rename…", "music-playlist-rename", list.id, "secondary", "pencil") +
+          button("Delete playlist…", "music-playlist-delete", list.id, "secondary danger menu-item-separated", "trash-2"),
+        "Playlist actions",
+      )
+    : "";
+  const shown = list.entries.slice(0, musicView.pages * MUSIC_LIST_PAGE);
+  const summary = [musicCount(list.entries.length, "track"), formatDuration(list.duration)].filter(Boolean);
+  const rows = shown.map((entry) =>
+    entry.track
+      ? { track: entry.track, id: list.positions.indexOf(entry.position), subtitle: entry.track.artist, position: entry.position, remove: editable }
+      : {
+          title: entry.path ? entry.path.slice(entry.path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "") : "Unknown entry",
+          note: entry.path && pending ? "Not on this device yet" : "Not in this folder",
+          position: entry.position,
+          remove: editable,
+        },
+  );
+  return `<div class="music-head">${musicCover(v.id, list.cover, "list-music", " large")}<div class="music-head-info">${button(escape(musicBackLabel()), "music-back", "", "back", "chevron-left")}<div><h2>${escape(list.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${list.tracks.length ? button("Play", "music-play", "", "primary", "play") + button("Shuffle", "music-shuffle", "", "secondary", "shuffle") : ""}${menu}</div></div></div></div>${musicRows(v, rows, "music-track", { head: musicHeadRow(true), playlist: list.id, album: true })}${list.entries.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
+}
+function musicRecent(v, library) {
+  const played = playedItems(library, musicHistory(v.id));
+  if (played.length)
+    return musicGrid(played.map(({ kind, item }) => (kind === "album" ? albumCard(v.id, item) : playlistCard(v.id, item))));
+  if (library.recent.length)
+    return `<p class="music-caption">Recently added · Albums and playlists you play on this device appear here.</p>${musicGrid(library.recent.map((album) => albumCard(v.id, album)))}`;
+  return empty("Nothing played yet", "Albums and playlists you play on this device appear here.", "", "clock");
+}
+function musicBody(v, entry) {
+  const library = entry.library;
+  if (!library.tracks.size)
+    return entry.indexing
+      ? empty("Reading this library", "Albums appear as Arca reads the tags.", "", "music")
+      : empty("No music yet", "Audio files added to this folder appear here.", "", "music");
+  if (musicView.tab === "playlists" && !library.playlists.length)
+    musicView = { tab: "artists", artist: null, album: null, playlist: null, pages: 1, trail: [] };
+  const content = musicContent(v, library);
+  return `${musicTabs(library)}<div class="music-view">${content}</div>`;
+}
+function musicContent(v, library) {
+  const album = musicView.album && library.albums.get(musicView.album);
+  if (album) return musicTracks(v, album);
+  const list = musicView.playlist && library.playlists.find((item) => item.id === musicView.playlist);
+  if (list) return musicPlaylist(v, list);
+  musicView.album = musicView.playlist = null;
+  const artist = musicView.artist && library.artists.find((item) => item.id === musicView.artist);
+  if (artist) return musicArtist(v, artist);
+  musicView.artist = null;
+  if (musicSearching()) return musicResults(v, library);
+  const size = musicView.pages * MUSIC_GRID_PAGE;
+  if (musicView.tab === "artists") return musicArtists(v, library);
+  if (musicView.tab === "recent") return musicRecent(v, library);
+  if (musicView.tab === "playlists") return musicGrid(library.playlists.map((item) => playlistCard(v.id, item)), size);
+  return musicGrid(library.albumList.map((item) => albumCard(v.id, item)), size);
+}
+function musicSearchInput(value) {
+  const v = status.volumes.find((item) => item.id === detailId);
+  const entry = v && musicLibraries.get(musicKey(v.id));
+  const region = $("#content .music-view");
+  if (!entry || !region) return;
+  musicQuery = { ...musicSearch(true), text: value };
+  if (musicView.album || musicView.playlist || musicView.artist)
+    musicView = { ...musicView, album: null, playlist: null, artist: null, pages: 1, trail: [] };
+  region.innerHTML = musicContent(v, entry.library);
+  const tools = $("#content .music-tools");
+  tools?.querySelector('[data-action="music-shuffle-all"]')?.remove();
+  tools?.insertAdjacentHTML("beforeend", musicShuffleAll());
+  musicShown.place = musicPlace(v);
+  musicShown.state = musicState(v, entry, musicFailures.get(musicKey(v.id)));
+  icons();
+  mountMusicCovers();
+  markMusicPlaying();
+}
+const musicPlace = (v) => JSON.stringify([v.id, musicView.tab, musicView.artist, musicView.album, musicView.playlist]);
+const musicState = (v, entry, failure) =>
+  JSON.stringify([musicPlace(v), musicView.pages, entry?.version, entry?.indexing, failure, musicQuery]);
+function musicHeading(v, entry) {
+  const library = entry?.library;
+  const summary = library
+    ? `${musicCount(library.tracks.size, "track")} · ${musicCount(library.albumList.length, "album")} · ${bytes(v.bytes || 0)}`
+    : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)}`;
+  return `<div class="heading"><div class="detail-title"><div class="tile large">${icon("music")}</div><div><h1>${escape(v.name)}</h1><p>${summary}</p></div></div><div class="heading-actions">${musicModeButton(v)}${folderActionsMenu(v)}</div></div>`;
+}
+function renderMusic(v, scroll = null) {
+  if (!v) return;
+  const key = musicKey(v.id);
+  const entry = musicLibraries.get(key);
+  const failure = musicFailures.get(key);
+  const content = $("#content");
+  const page = content.querySelector(".music-page");
+  const typing = document.activeElement?.id === "music-search-input";
+  const place = () => musicPlace(v);
+  const state = () => musicState(v, entry, failure);
+  const head = button("Folders", "back-folders", "", "back", "chevron-left") + musicHeading(v, entry);
+  if (scroll === null && page && content.dataset.detail === v.id && musicShown.state === state()) {
+    if (musicShown.head !== head) {
+      content.querySelector(".detail-head").innerHTML = head;
+      musicShown.head = head;
+      icons();
+    }
+    return;
+  }
+  const keep = scroll ?? (musicShown.place === place() && page ? page.scrollTop : 0);
+  const body = entry
+    ? musicBody(v, entry)
+    : failure
+      ? empty("Library unavailable", "Arca could not read this music library. Try again.", button("Retry", "music-retry", "", "secondary"), "music")
+      : scaffoldRow("card");
+  content.innerHTML = `<div class="detail-head">${head}</div><div class="page music-page">${body}</div>`;
+  content.dataset.detail = v.id;
+  musicShown = { place: place(), state: state(), head };
+  icons();
+  mountMusicCovers();
+  markMusicPlaying();
+  if (keep) $("#content .music-page").scrollTop = keep;
+  const field = typing && $("#music-search-input");
+  if (field) {
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  }
+}
+function paintMusicCover(el, data) {
+  if (!data || !el.isConnected || el.querySelector("img")) return;
+  const img = new Image();
+  img.alt = "";
+  img.onload = () => el.classList.add("has-cover");
+  img.src = data;
+  el.append(img);
+}
+function rememberCover(query, data) {
+  musicCovers.delete(query);
+  musicCovers.set(query, data);
+  while (musicCovers.size > 400) musicCovers.delete(musicCovers.keys().next().value);
+}
+function mountMusicCovers() {
+  for (const el of observedMusicCovers)
+    if (!el.isConnected) {
+      musicCoverObserver?.unobserve(el);
+      observedMusicCovers.delete(el);
+    }
+  const drain = () => {
+    while (musicCoverWorkers < 4 && musicCoverQueue.length) {
+      const el = musicCoverQueue.shift();
+      const query = el.dataset.musicCover;
+      if (!el.isConnected) continue;
+      if (musicCovers.has(query)) {
+        paintMusicCover(el, musicCovers.get(query));
+        continue;
+      }
+      musicCoverWorkers++;
+      api(`/v1/music/cover?${query}&size=small`)
+        .then((value) => {
+          if (value.retry) return;
+          rememberCover(query, value.data || null);
+          paintMusicCover(el, value.data);
+          const track = musicCurrent();
+          if (value.data && track?.cover && query === new URLSearchParams({ volume: musicPlayer.volume, key: track.cover }).toString())
+            musicSession();
+        })
+        .catch(() => {})
+        .finally(() => {
+          musicCoverWorkers--;
+          drain();
+        });
+    }
+  };
+  if (!musicCoverObserver && typeof IntersectionObserver !== "undefined")
+    musicCoverObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries)
+          if (entry.isIntersecting) {
+            musicCoverObserver.unobserve(entry.target);
+            observedMusicCovers.delete(entry.target);
+            musicCoverQueue.push(entry.target);
+          }
+        drain();
+      },
+      { rootMargin: "200px" },
+    );
+  for (const el of document.querySelectorAll("[data-music-cover]:not([data-observed])")) {
+    el.dataset.observed = "true";
+    if (musicCovers.has(el.dataset.musicCover)) paintMusicCover(el, musicCovers.get(el.dataset.musicCover));
+    else if (musicCoverObserver) {
+      observedMusicCovers.add(el);
+      musicCoverObserver.observe(el);
+    }
+  }
+}
+const musicCurrent = () => musicPlayer && musicPlayer.tracks[musicPlayer.order[musicPlayer.position]];
+function musicAudio() {
+  if (musicElement) return musicElement;
+  musicElement = document.createElement("audio");
+  musicElement.preload = "auto";
+  musicElement.hidden = true;
+  try {
+    const level = localStorage.getItem("arca-music-volume");
+    if (level !== null && Number(level) >= 0 && Number(level) <= 1) musicElement.volume = Number(level);
+  } catch {}
+  musicElement.addEventListener("timeupdate", musicProgress);
+  musicElement.addEventListener("durationchange", musicProgress);
+  musicElement.addEventListener("play", musicControls);
+  musicElement.addEventListener("pause", musicControls);
+  musicElement.addEventListener("ended", musicEnded);
+  musicElement.addEventListener("error", musicFailed);
+  document.body.append(musicElement);
+  return musicElement;
+}
+function musicResume() {
+  const audio = musicAudio();
+  if (!musicPlayer || musicPlayer.loading) return;
+  if (musicPlayer.failed || !audio.getAttribute("src"))
+    return void musicLoad(musicPlayer.failed ? musicPlayer.at || 0 : 0);
+  try {
+    audio.play()?.catch?.(() => musicControls());
+  } catch {
+    musicControls();
+  }
+}
+function musicStart(volume, context, tracks, start, shuffle, positions = null) {
+  musicPlayer = {
+    volume,
+    context,
+    tracks,
+    positions,
+    shuffle,
+    repeat: musicPlayer?.repeat || "off",
+    order: shuffle ? shuffleOrder(tracks.length, start) : tracks.map((_, index) => index),
+    position: shuffle ? 0 : start,
+    failed: false,
+    scope: musicScope(),
+  };
+  if (["album", "playlist"].includes(context.kind)) rememberMusic(volume, context);
+  return musicLoad();
+}
+function musicSeekOnLoad(at) {
+  if (!at) return;
+  const serial = musicSerial;
+  const src = musicElement.getAttribute("src");
+  musicElement.addEventListener(
+    "loadedmetadata",
+    () => {
+      if (serial === musicSerial && musicElement.getAttribute("src") === src) musicElement.currentTime = at;
+    },
+    { once: true },
+  );
+}
+function musicLoad(at = 0) {
+  const state = musicPlayer;
+  const track = musicCurrent();
+  const serial = ++musicSerial;
+  const audio = musicAudio();
+  state.failed = false;
+  state.renewed = false;
+  state.at = at;
+  state.loading = native;
+  const query = new URLSearchParams({ volume: state.volume, path: track.path, hash: track.hash });
+  const begin = (url) => {
+    state.loading = false;
+    audio.src = url;
+    musicSeekOnLoad(at);
+    musicResume();
+  };
+  renderPlayer();
+  markMusicPlaying();
+  musicSession();
+  if (!native) return begin("/v1/music/media?" + query);
+  audio.pause?.();
+  return api("/v1/music/playback?" + query).then(
+    ({ url }) => serial === musicSerial && begin(url),
+    (error) => {
+      if (serial !== musicSerial) return;
+      state.loading = false;
+      state.failed = true;
+      musicControls();
+      notice(error.message, true, { id: "music" });
+    },
+  );
+}
+function musicFailed() {
+  const state = musicPlayer;
+  const track = musicCurrent();
+  if (!state || state.loading || !track || !musicElement.getAttribute("src")) return;
+  const serial = musicSerial;
+  const code = musicElement.error?.code;
+  const playing = !musicElement.paused;
+  state.failed = true;
+  if (musicElement.readyState >= musicElement.HAVE_METADATA) state.at = musicElement.currentTime || 0;
+  musicControls();
+  api("/v1/music/playback?" + new URLSearchParams({ volume: state.volume, path: track.path, hash: track.hash })).then(
+    ({ url }) => {
+      if (serial !== musicSerial) return;
+      if (native && !state.renewed) {
+        state.renewed = true;
+        state.failed = false;
+        musicElement.src = url;
+        musicSeekOnLoad(state.at);
+        if (playing) musicResume();
+        return musicControls();
+      }
+      notice(
+        code === 3 || code === 4
+          ? "This track cannot play here. Its format may not be supported."
+          : "Playback was interrupted. Press Play to continue.",
+        true,
+        { id: "music" },
+      );
+    },
+    (error) => serial === musicSerial && notice(error.message, true, { id: "music" }),
+  );
+}
+const musicScope = () => `${status?.id}:${status?.hubId || ""}`;
+function musicPlayable() {
+  return (
+    musicPlayer.scope === musicScope() &&
+    musicAvailable(status?.volumes?.find((item) => item.id === musicPlayer.volume))
+  );
+}
+function stopMusic() {
+  musicSerial++;
+  if (musicElement) {
+    musicElement.pause();
+    musicElement.removeAttribute("src");
+    musicElement.load();
+  }
+  musicPlayer = null;
+  renderPlayer();
+  try {
+    if (navigator.mediaSession) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = "none";
+    }
+  } catch {}
+  musicLibraries.clear();
+  musicCovers.clear();
+  musicFailures.clear();
+}
+function musicRequeue(volume, library) {
+  const state = musicPlayer;
+  if (state?.volume !== volume) return;
+  const playing = state.order[state.position];
+  const moved = new Map();
+  const tracks = [];
+  state.tracks.forEach((track, index) => {
+    const fresh = library.tracks.get(track.path) || (index === playing ? track : null);
+    if (!fresh) return;
+    moved.set(index, tracks.length);
+    tracks.push(fresh);
+  });
+  const before = state.tracks[playing];
+  if (state.positions) state.positions = state.positions.filter((_, index) => moved.has(index));
+  state.tracks = tracks;
+  state.order = state.order.filter((index) => moved.has(index)).map((index) => moved.get(index));
+  state.position = state.order.indexOf(moved.get(playing));
+  const after = musicCurrent();
+  if (["title", "artist", "album", "cover"].some((name) => before[name] !== after[name])) {
+    renderPlayer();
+    musicSession();
+  } else musicControls();
+}
+function musicStep(direction, ended = false) {
+  const state = musicPlayer;
+  if (!state) return;
+  let next = state.position + direction;
+  if (next >= state.order.length) {
+    if (state.repeat !== "all") return void (ended && musicControls());
+    next = 0;
+  }
+  if (next < 0) next = state.repeat === "all" ? state.order.length - 1 : 0;
+  state.position = next;
+  void musicLoad();
+}
+function musicEnded() {
+  if (musicPlayer?.repeat !== "one") return musicStep(1, true);
+  musicElement.currentTime = 0;
+  musicResume();
+}
+function musicPrevious() {
+  if (!musicPlayer) return;
+  if ((musicElement?.currentTime || 0) > 3) musicElement.currentTime = 0;
+  else musicStep(-1);
+}
+function musicPlayerButton(action, label, symbol, pressed = null, disabled = false, cls = "ghost") {
+  return `<button type="button" class="${cls} icon-button" data-player="${action}" data-symbol="${symbol}" data-tooltip="${label}" aria-label="${label}"${pressed === null ? "" : ` aria-pressed="${pressed}"`}${disabled ? " disabled" : ""}>${icon(symbol)}</button>`;
+}
+function patchPlayerButtons(markup) {
+  const fresh = document.createElement("div");
+  fresh.innerHTML = markup;
+  for (const next of fresh.children)
+    for (const old of document.querySelectorAll(`#music-player [data-player="${next.dataset.player}"], #music-mini [data-player="${next.dataset.player}"]`)) {
+      for (const name of ["aria-label", "aria-pressed", "data-tooltip"])
+        if (next.hasAttribute(name)) old.setAttribute(name, next.getAttribute(name));
+      old.disabled = next.disabled;
+      if (old.dataset.symbol !== next.dataset.symbol) {
+        old.dataset.symbol = next.dataset.symbol;
+        old.innerHTML = icon(next.dataset.symbol);
+      }
+    }
+  icons();
+}
+function musicToggleButton(cls) {
+  const playing = !musicAudio().paused && !musicPlayer.failed;
+  return musicPlayerButton("toggle", playing ? "Pause" : "Play", playing ? "pause" : "play", null, false, cls);
+}
+function musicNextButton() {
+  const last = musicPlayer.position >= musicPlayer.order.length - 1 && musicPlayer.repeat !== "all";
+  return musicPlayerButton("next", "Next", "skip-forward", null, last);
+}
+function musicControlButtons() {
+  const state = musicPlayer;
+  return (
+    musicPlayerButton("shuffle", "Shuffle", "shuffle", state.shuffle) +
+    musicPlayerButton("previous", "Previous", "skip-back") +
+    musicToggleButton("primary music-play") +
+    musicNextButton() +
+    musicPlayerButton(
+      "repeat",
+      { off: "Repeat", all: "Repeat all", one: "Repeat one" }[state.repeat],
+      state.repeat === "one" ? "repeat-1" : "repeat",
+      state.repeat !== "off",
+    )
+  );
+}
+function musicControls() {
+  if (!musicPlayer) return;
+  patchPlayerButtons(musicControlButtons());
+  musicBroadcast();
+  if (navigator.mediaSession)
+    try {
+      navigator.mediaSession.playbackState = musicAudio().paused ? "paused" : "playing";
+    } catch {}
+}
+function musicProgress() {
+  const root = $("#music-player");
+  const track = musicCurrent();
+  if (!root || !track) return;
+  const audio = musicAudio();
+  const total = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : track.duration || 0;
+  const elapsed = Math.min(audio.currentTime || 0, total || Infinity);
+  const seek = root.querySelector('[data-player="seek"]');
+  if (!seek) return;
+  seek.max = String(total || 1);
+  seek.value = String(elapsed);
+  seek.setAttribute("aria-valuetext", `${musicClock(elapsed)} of ${musicClock(total)}`);
+  seek.style.setProperty("--music-fill", `${total ? (elapsed / total) * 100 : 0}%`);
+  root.querySelector('[data-music-time="elapsed"]').textContent = musicClock(elapsed);
+  root.querySelector('[data-music-time="total"]').textContent = musicClock(total);
+}
+function musicLevel() {
+  const root = $("#music-player");
+  const audio = musicAudio();
+  const level = audio.muted ? 0 : audio.volume;
+  const input = root?.querySelector('[data-player="volume"]');
+  if (!input) return;
+  input.value = String(level);
+  input.style.setProperty("--music-fill", `${level * 100}%`);
+  patchPlayerButtons(musicMuteButton(level));
+}
+const musicMuteButton = (level) =>
+  musicPlayerButton("mute", level ? "Mute" : "Unmute", level ? (level < 0.5 ? "volume-1" : "volume-2") : "volume-x");
+function renderMini(track) {
+  const card = $("#music-mini");
+  if (!card) return;
+  if (!track) return void (card.innerHTML = "");
+  const cover = musicCover(musicPlayer.volume, track.cover, "music");
+  if (card.querySelector(".music-mini-track")) {
+    card.querySelector(".music-mini-track > .music-cover").outerHTML = cover;
+    patchPlayerButtons(musicToggleButton() + musicNextButton());
+  } else
+    card.innerHTML = `<button type="button" class="music-mini-track" data-player="show">${cover}<span class="music-mini-text"><strong></strong><span></span></span></button>${musicToggleButton("primary music-mini-play")}${musicNextButton()}`;
+  const open = card.querySelector(".music-mini-track");
+  open.setAttribute("aria-label", `${track.title} by ${track.artist}, open ${track.album}`);
+  open.dataset.tooltip = `Open ${track.album}`;
+  open.querySelector("strong").textContent = track.title;
+  open.querySelector(".music-mini-text > span").textContent = track.artist;
+  icons();
+}
+const musicInLibrary = () =>
+  view === "folders" && folderTab === "library" && musicAvailable(status?.volumes?.find((item) => item.id === detailId));
+function placeMusic() {
+  const loaded = !!musicCurrent();
+  const library = loaded && musicInLibrary();
+  $("#music-player")?.classList.toggle("music-elsewhere", loaded && !library);
+  const card = $("#music-mini");
+  if (card) card.hidden = !loaded || library;
+}
+let musicBroadcastKey = "";
+function musicBroadcast(force = false) {
+  if (!native || !window.__TAURI__?.event) return;
+  const track = musicCurrent();
+  if (track && musicPlayer.loading) return;
+  const payload = track
+    ? {
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        folder: musicPlayer.volume,
+        cover: track.cover,
+        playing: !musicAudio().paused && !musicPlayer.failed,
+        next: musicPlayer.position < musicPlayer.order.length - 1 || musicPlayer.repeat === "all",
+      }
+    : null;
+  const key = JSON.stringify(payload);
+  if (!force && key === musicBroadcastKey) return;
+  musicBroadcastKey = key;
+  window.__TAURI__.event.emit("music-state", payload)?.catch?.(() => {});
+}
+function musicPlayPause() {
+  if (!musicPlayer) return;
+  const audio = musicAudio();
+  if (audio.paused || musicPlayer.failed) musicResume();
+  else audio.pause();
+}
+async function musicShowAlbum() {
+  const track = musicCurrent();
+  if (track) await musicReveal({ tab: "albums", artist: null, album: track.albumId, playlist: null, pages: 1, trail: [] });
+}
+async function musicShowArtist() {
+  const track = musicCurrent();
+  if (!track) return;
+  const library = musicLibraries.get(musicKey(musicPlayer.volume))?.library;
+  const named = artistId(track.artist);
+  const artist =
+    library?.artists.find((item) => item.id === named) ||
+    library?.artists.find((item) => item.albums.some((album) => album.id === track.albumId));
+  await musicReveal({ tab: "artists", artist: artist?.id || named, album: null, playlist: null, pages: 1, trail: [] });
+}
+async function musicReveal(next) {
+  view = "folders";
+  detailId = folderViewId = musicPlayer.volume;
+  folderTab = "library";
+  folderPrefix = "";
+  folderSearch = "";
+  folderSearchOpen = false;
+  folderPageCount = 1;
+  folderReturn = { tab: "files", scroll: 0 };
+  musicView = next;
+  musicQuery = musicSearch();
+  await render();
+  updateShell();
+  $('#music-player [data-player="toggle"]')?.focus();
+}
+function renderPlayer() {
+  const root = $("#music-player");
+  if (!root) return;
+  const track = musicCurrent();
+  root.hidden = !track;
+  renderMini(track);
+  placeMusic();
+  musicBroadcast();
+  if (!track) return void (root.innerHTML = "");
+  const cover = musicCover(musicPlayer.volume, track.cover, "music");
+  const fresh = !root.querySelector(".music-player-track");
+  if (fresh)
+    root.innerHTML = `<div class="music-player-track"><button type="button" class="music-player-cover" data-player="show" tabindex="-1" aria-hidden="true">${cover}</button><div><button type="button" class="music-player-title" data-player="show"><strong></strong></button><p><button type="button" class="music-player-link" data-player="artist"></button> · <button type="button" class="music-player-link" data-player="show"></button></p></div></div><div class="music-player-center"><div class="music-player-controls">${musicControlButtons()}</div><div class="music-seek"><span class="mono" data-music-time="elapsed">0:00</span><input type="range" class="music-range" data-player="seek" aria-label="Seek" min="0" max="1" step="any" value="0"><span class="mono" data-music-time="total">0:00</span></div></div><div class="music-player-volume">${musicMuteButton(1)}<input type="range" class="music-range" data-player="volume" aria-label="Volume" min="0" max="1" step="0.01" value="1"></div>`;
+  else {
+    root.querySelector(".music-player-cover > .music-cover").outerHTML = cover;
+    patchPlayerButtons(musicControlButtons());
+  }
+  const title = root.querySelector(".music-player-title");
+  title.querySelector("strong").textContent = track.title;
+  title.setAttribute("aria-label", `${track.title}, open ${track.album}`);
+  title.dataset.tooltip = `Open ${track.album}`;
+  const [artist, album] = root.querySelectorAll(".music-player-link");
+  artist.textContent = track.artist;
+  artist.dataset.tooltip = `Open ${track.artist}`;
+  album.textContent = track.album;
+  album.dataset.tooltip = `Open ${track.album}`;
+  if (fresh) icons();
+  mountMusicCovers();
+  musicProgress();
+  if (fresh) musicLevel();
+}
+function markMusicPlaying() {
+  const track = musicCurrent();
+  const position = track && musicPlayer.context.kind === "playlist" ? musicPlayer.positions?.[musicPlayer.order[musicPlayer.position]] : null;
+  for (const list of document.querySelectorAll(".music-tracks")) {
+    const here = !!track && list.dataset.volume === musicPlayer.volume;
+    const ordered = here && position != null && list.dataset.playlist === musicPlayer.context.id;
+    for (const row of list.querySelectorAll(".music-track[data-path]")) {
+      const playing = here && (ordered ? row.dataset.position === String(position) : row.dataset.path === track.path);
+      row.classList.toggle("playing", playing);
+      if (playing) row.setAttribute("aria-current", "true");
+      else row.removeAttribute("aria-current");
+    }
+  }
+}
+function musicSession() {
+  const session = navigator.mediaSession;
+  const track = musicCurrent();
+  if (!session || !track) return;
+  try {
+    if (typeof MediaMetadata === "function") {
+      const cover = track.cover && musicCovers.get(new URLSearchParams({ volume: musicPlayer.volume, key: track.cover }).toString());
+      session.metadata = new MediaMetadata({
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        artwork: cover ? [{ src: cover, sizes: "360x360", type: "image/jpeg" }] : [],
+      });
+    }
+  } catch {}
+  if (musicSessionReady) return;
+  musicSessionReady = true;
+  for (const [name, run] of [
+    ["play", () => musicResume()],
+    ["pause", () => musicElement?.pause()],
+    ["previoustrack", () => musicPrevious()],
+    ["nexttrack", () => musicStep(1)],
+  ])
+    try {
+      session.setActionHandler(name, run);
+    } catch {}
+}
+document.addEventListener("click", (event) => {
+  const control = event.target.closest?.("#music-player [data-player], #music-mini [data-player]");
+  if (!control || control.disabled || !musicPlayer) return;
+  const audio = musicAudio();
+  const name = control.dataset.player;
+  if (name === "toggle") musicPlayPause();
+  else if (name === "show") void navigate(musicShowAlbum);
+  else if (name === "artist") void navigate(musicShowArtist);
+  else if (name === "previous") musicPrevious();
+  else if (name === "next") musicStep(1);
+  else if (name === "shuffle") {
+    const current = musicPlayer.order[musicPlayer.position];
+    musicPlayer.shuffle = !musicPlayer.shuffle;
+    musicPlayer.order = musicPlayer.shuffle
+      ? shuffleOrder(musicPlayer.tracks.length, current)
+      : musicPlayer.tracks.map((_, index) => index);
+    musicPlayer.position = musicPlayer.shuffle ? 0 : current;
+    musicControls();
+  } else if (name === "repeat") {
+    musicPlayer.repeat = nextRepeat(musicPlayer.repeat);
+    musicControls();
+  } else if (name === "mute") {
+    audio.muted = !audio.muted && audio.volume > 0;
+    if (!audio.muted && !audio.volume) audio.volume = 1;
+    musicLevel();
+  }
+});
+document.addEventListener("input", (event) => {
+  const control = event.target;
+  if (control.id === "music-search-input") return void musicSearchInput(control.value);
+  if (!control.matches?.("#music-player [data-player]") || !musicPlayer) return;
+  const audio = musicAudio();
+  if (control.dataset.player === "seek") {
+    audio.currentTime = Number(control.value);
+    musicProgress();
+  }
+  if (control.dataset.player === "volume") {
+    audio.volume = Number(control.value);
+    audio.muted = false;
+    try {
+      localStorage.setItem("arca-music-volume", String(audio.volume));
+    } catch {}
+    musicLevel();
+  }
+});
+async function handleMusic(name, id) {
+  const v = status.volumes.find((item) => item.id === detailId);
+  if (!musicAvailable(v)) return;
+  const page = () => $("#content .music-page");
+  if (name === "music-mode") {
+    if (folderTab === "library") folderTab = folderReturn.tab;
+    else {
+      folderReturn = { tab: folderTab, scroll: $(".page")?.scrollTop || 0 };
+      folderTab = "library";
+    }
+    await render();
+    if (folderTab !== "library" && $(".page")) $(".page").scrollTop = folderReturn.scroll;
+    return;
+  }
+  if (name === "music-retry") {
+    musicFailures.delete(musicKey(v.id));
+    await render();
+    return;
+  }
+  let library = musicLibraries.get(musicKey(v.id))?.library;
+  if (!library) {
+    await refreshMusic(v.id, true);
+    library = musicLibraries.get(musicKey(v.id))?.library;
+  }
+  if (!library) return;
+  const random = (length) => Math.floor(Math.random() * length);
+  if (name === "music-song") {
+    const track = library.tracks.get(id);
+    const album = track && library.albums.get(track.albumId);
+    if (!album) return;
+    return musicStart(
+      v.id,
+      { kind: "album", id: album.id, name: album.title },
+      album.tracks,
+      album.tracks.indexOf(track),
+      !!musicPlayer?.shuffle,
+    );
+  }
+  if (name === "music-shuffle-all") {
+    const tracks = library.albumList.flatMap((album) => album.tracks);
+    return musicStart(v.id, { kind: "library", id: v.id, name: v.name }, tracks, random(tracks.length), true);
+  }
+  if (name === "music-shuffle-artist") {
+    const artist = library.artists.find((item) => item.id === musicView.artist);
+    if (!artist) return;
+    const tracks = artist.albums.flatMap((album) => album.tracks);
+    return musicStart(v.id, { kind: "artist", id: artist.id, name: artist.name }, tracks, random(tracks.length), true);
+  }
+  if (name === "music-search-toggle") {
+    const opening = !musicQuery.open;
+    musicQuery = musicSearch(opening);
+    renderMusic(v, page()?.scrollTop || 0);
+    $(opening ? "#music-search-input" : '[data-action="music-search-toggle"]')?.focus();
+    return;
+  }
+  if (name === "music-search-apply") return musicSearchInput($("#music-search-input")?.value || "");
+  if (name === "music-search-more") {
+    if (["songs", "albums", "artists"].includes(id)) musicQuery = { ...musicQuery, [id]: musicQuery[id] + 1 };
+    renderMusic(v, page()?.scrollTop || 0);
+    return;
+  }
+  if (["music-track", "music-play", "music-shuffle"].includes(name)) {
+    const album = musicView.album && library.albums.get(musicView.album);
+    const list = !album && musicView.playlist && library.playlists.find((item) => item.id === musicView.playlist);
+    const item = album || list;
+    if (!item?.tracks.length) return;
+    const start =
+      name === "music-track"
+        ? Math.min(Math.max(Number(id) || 0, 0), item.tracks.length - 1)
+        : name === "music-shuffle"
+          ? random(item.tracks.length)
+          : 0;
+    const shuffle = name === "music-shuffle" || (name === "music-track" && !!musicPlayer?.shuffle);
+    return musicStart(
+      v.id,
+      album ? { kind: "album", id: album.id, name: album.title } : { kind: "playlist", id: list.id, name: list.name },
+      item.tracks,
+      start,
+      shuffle,
+      list ? list.positions : null,
+    );
+  }
+  const playlist = (path) => library.playlists.find((item) => item.id === path);
+  const edit = (body) => api("/v1/music/playlist", { volume: v.id, ...body });
+  if (name === "music-add") {
+    const track = library.tracks.get(id);
+    if (!track) return;
+    musicPicking = track.path;
+    modal(
+      modalHeader("Add to playlist", escape(`${track.title} · ${track.artist}`), "list-plus") +
+        `<div class="history-group music-picker">${library.playlists
+          .filter((list) => list.editable)
+          .map((list) => musicRow(v, "music-pick", list.id, list.cover, list.name, musicCount(list.entries.length, "track"), "list-music"))
+          .join("")}${musicRow(v, "music-pick-new", track.path, null, "New playlist…", "Saved as a file in Playlists/", "plus")}</div>`,
+      async () => {},
+      "Add",
+    );
+    $("#submit-dialog").hidden = true;
+    return;
+  }
+  if (name === "music-pick") {
+    const list = playlist(id);
+    if (!list || !musicPicking) return;
+    $("#dialog").close();
+    await edit({ action: "add", path: list.id, hash: list.hash, track: musicPicking });
+    notice(`Added to ${list.name}`);
+    await refreshMusic(v.id, true);
+    return;
+  }
+  if (name === "music-pick-new") {
+    const track = id;
+    modal(
+      modalHeader("New playlist", "Saved as a file in Playlists/ and synced to every device.", "list-plus") +
+        textField("Name", "name", "", "list-music"),
+      async (form) => {
+        const created = await edit({ action: "create", name: form.get("name"), track });
+        notice(`Added to ${created.path.slice(created.path.indexOf("/") + 1).replace(/\.m3u8$/i, "")}`);
+        await refreshMusic(v.id, true);
+        armMusicIndex(v.id);
+      },
+      "Create playlist",
+    );
+    return;
+  }
+  if (name === "music-remove") {
+    const list = playlist(musicView.playlist);
+    const entry = list?.entries[Number(id)];
+    if (!entry) return;
+    await edit({ action: "remove", path: list.id, hash: list.hash, position: entry.position, track: entry.path });
+    await refreshMusic(v.id, true);
+    return;
+  }
+  if (name === "music-playlist-rename") {
+    const list = playlist(id);
+    if (!list) return;
+    modal(
+      modalHeader("Rename playlist", "Changes its name and its file in Playlists/ on every device.", "pencil") +
+        textField("Name", "name", list.name, "list-music"),
+      async (form) => {
+        const renamed = await edit({ action: "rename", path: list.id, hash: list.hash, name: form.get("name") });
+        renameMusicHistory(v.id, list.id, renamed.path);
+        musicView = { ...musicView, playlist: renamed.path };
+        await refreshMusic(v.id, true);
+      },
+      "Rename",
+    );
+    return;
+  }
+  if (name === "music-playlist-delete") {
+    const list = playlist(id);
+    if (!list) return;
+    modal(
+      modalHeader("Delete playlist?", escape(`Deletes ${list.id} on every device. You can restore it from History.`), "trash-2"),
+      async () => {
+        await edit({ action: "delete", path: list.id, hash: list.hash });
+        const previous = musicView.trail.at(-1) || { pages: 1 };
+        musicView = { ...musicView, playlist: null, pages: previous.pages, trail: musicView.trail.slice(0, -1) };
+        await refreshMusic(v.id, true);
+      },
+      "Delete playlist",
+    );
+    $("#submit-dialog").classList.add("danger");
+    return;
+  }
+  let scroll = 0;
+  if (name === "music-tab") {
+    musicView = { tab: MUSIC_TABS[id] ? id : "artists", artist: null, album: null, playlist: null, pages: 1, trail: [] };
+    musicQuery = musicSearch();
+  }
+  else if (name === "music-more") {
+    musicView.pages++;
+    scroll = page()?.scrollTop || 0;
+  } else if (name === "music-back") {
+    const previous = musicView.trail.at(-1) || { pages: 1, scroll: 0 };
+    musicView = {
+      ...musicView,
+      ...(musicView.album || musicView.playlist ? { album: null, playlist: null } : { artist: null }),
+      pages: previous.pages,
+      trail: musicView.trail.slice(0, -1),
+    };
+    scroll = previous.scroll;
+  } else if (["music-album", "music-artist", "music-playlist"].includes(name))
+    musicView = {
+      ...musicView,
+      [name.slice(6)]: id,
+      pages: 1,
+      trail: [...musicView.trail, { pages: musicView.pages, scroll: page()?.scrollTop || 0 }],
+    };
+  else return;
+  renderMusic(v, scroll);
+}
 async function renderDetail(pending = false) {
   const serial = renderSerial;
   const v = status.volumes.find((v) => v.id === detailId);
@@ -3296,12 +4447,23 @@ async function renderDetail(pending = false) {
   }
   if (folderViewId !== v.id) {
     folderViewId = v.id;
-    folderTab = v.gallery ? "gallery" : "files";
+    folderTab = v.gallery ? "gallery" : musicAvailable(v) ? "library" : "files";
     folderPrefix = "";
     folderSearch = "";
     folderSearchOpen = false;
     folderPageCount = 1;
     folderReturn = { tab: "files", scroll: 0 };
+    musicView = { tab: "artists", artist: null, album: null, pages: 1, trail: [] };
+    musicQuery = musicSearch();
+    const cached = musicLibraries.get(musicKey(v.id));
+    if (cached) cached.checked = 0;
+  }
+  if (folderTab === "library" && !musicAvailable(v)) folderTab = "files";
+  placeMusic();
+  if (folderTab === "library") {
+    renderMusic(v);
+    void refreshMusic(v.id);
+    return;
   }
   if (folderTab === "gallery") {
     // The photo grid does not depend on activity, file browsing or copy reports.
@@ -3314,7 +4476,7 @@ async function renderDetail(pending = false) {
   }
   if (status.role !== "hub" && !status.hub) {
     $("#content").innerHTML =
-      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} local`, (native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "") + galleryModeButton(v) + folderActionsMenu(v))}</div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}">${folderTab === "gallery" ? "" : section("Hub connection", hubConnection()) + `<div class="stats">${folderRetentionSummary(v)}</div>`}${await folderBrowser(v, [])}</div>`;
+      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} local`, (native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "") + galleryModeButton(v) + musicModeButton(v) + folderActionsMenu(v))}</div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}">${folderTab === "gallery" ? "" : section("Hub connection", hubConnection()) + `<div class="stats">${folderRetentionSummary(v)}</div>`}${await folderBrowser(v, [])}</div>`;
     icons();
     if (folderTab === "gallery") mountGallery(v.id);
     return;
@@ -3360,7 +4522,7 @@ async function renderDetail(pending = false) {
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(v.gallery ? "images" : "folder")}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
   if (!pending && folderTab === "gallery") mountGallery(v.id);
@@ -4680,6 +5842,7 @@ async function reviewConflict(item) {
   icons();
 }
 async function handle(name, id, control) {
+  if (name.startsWith("music-")) return handleMusic(name, id);
   if (name === "install-update") {
     const button = $("#update-install");
     button.disabled = true;
@@ -4808,6 +5971,21 @@ async function handle(name, id, control) {
         folderTab = "gallery";
       },
       "Enable gallery",
+    );
+    return;
+  }
+  if (name === "enable-music") {
+    modal(
+      modalHeader(
+        "Enable music library?",
+        "Browse and play this folder’s music by artist and album here, on your phone and in the car. Files and synchronization stay the same.",
+        "music",
+      ),
+      async () => {
+        await api("/v1/music/mark", { volume: id });
+        folderTab = "library";
+      },
+      "Enable music library",
     );
     return;
   }
@@ -5655,6 +6833,7 @@ async function handle(name, id, control) {
 const navigationActions = new Set([
   "unselect",
   "enable-gallery",
+  "enable-music",
   "delete-share",
   "rename-share",
   "rename-file",
@@ -5663,6 +6842,29 @@ const navigationActions = new Set([
   "replacement-hub",
   "refresh",
   "gallery-mode",
+  "music-mode",
+  "music-tab",
+  "music-artist",
+  "music-album",
+  "music-playlist",
+  "music-add",
+  "music-pick",
+  "music-pick-new",
+  "music-remove",
+  "music-playlist-rename",
+  "music-playlist-delete",
+  "music-back",
+  "music-more",
+  "music-retry",
+  "music-track",
+  "music-play",
+  "music-shuffle",
+  "music-song",
+  "music-shuffle-all",
+  "music-shuffle-artist",
+  "music-search-toggle",
+  "music-search-apply",
+  "music-search-more",
   "folder-tab",
   "browse-directory",
   "browse-more",
@@ -5905,6 +7107,7 @@ async function showLogin(message = "") {
   folderPages.clear();
   recentSaved.clear();
   recentFailed.clear();
+  stopMusic();
   document.body.classList.remove("view-loading");
   $("#content").setAttribute("aria-busy", "false");
   ready = false;
@@ -6071,6 +7274,7 @@ async function showLogin(message = "") {
 }
 function renderOnboarding() {
   ready = false;
+  stopMusic();
   document.body.classList.remove("access-mode");
   document.body.classList.add("onboarding-mode");
   const o = onboarding;
@@ -6507,6 +7711,16 @@ if (native && window.__TAURI__.event) {
     }),
   );
 
+  window.__TAURI__.event.listen("music-command", (event) => {
+    const command = event.payload?.command;
+    if (command === "state") return musicBroadcast(true);
+    if (!musicPlayer) return;
+    if (command === "toggle") musicPlayPause();
+    if (command === "next") musicStep(1);
+    if (command === "previous") musicPrevious();
+    if (command === "show") void navigate(musicShowAlbum);
+  });
+  musicBroadcast(true);
   window.__TAURI__.event.listen("open-folder-detail", (event) =>
     action(async () => {
       view = "folders";
@@ -6591,6 +7805,12 @@ document.addEventListener("keydown", (event) => {
   ) {
     event.preventDefault();
     event.target.click();
+    return;
+  }
+  if (event.target.id === "music-search-input" && ["Enter", "Escape"].includes(event.key)) {
+    event.preventDefault();
+    if (event.key === "Enter") return void musicSearchInput(event.target.value);
+    document.querySelector('[data-action="music-search-toggle"]')?.click();
     return;
   }
   if (event.target.id === "folder-search-input" && event.key === "Enter") {

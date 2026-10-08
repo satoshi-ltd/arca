@@ -272,6 +272,7 @@ export class Web {
       "/app.js": "app.js",
       "/notice-contract.js": "notice-contract.js",
       "/file-icons.js": "file-icons.js",
+      "/music-library.js": "music-library.js",
       "/gallery-timeline-layout.js": "gallery-timeline-layout.js",
       "/style.css": "style.css",
       "/tokens.css": "tokens.css",

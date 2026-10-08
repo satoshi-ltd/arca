@@ -11,6 +11,19 @@ import { entryKey, directoryItem } from "../core/entries.js";
 import { FIXED_POLICY } from "../core/builtin-exclusions.js";
 import { mediaKind } from "../core/gallery-date.js";
 import {
+  PLAYLIST_BYTES,
+  PLAYLIST_DIRECTORY,
+  editableText,
+  isEditablePlaylist,
+  playlistPath,
+  createPlaylist,
+  appendEntry,
+  removeEntry,
+  renamePlaylist,
+  moveTrack,
+} from "../core/playlist.js";
+import { audioType } from "./music.js";
+import {
   IGNORE_FILE,
   DEFAULT_IGNORE,
   MAX_IGNORE_BYTES,
@@ -46,6 +59,7 @@ import {
 const CHUNK = 1024 * 1024;
 const MIN_UPLOAD_CHUNK = 256 * 1024;
 export const HUB_UNAVAILABLE = "Hub unavailable. Try again when it is reachable.";
+const PLAYLIST_UNSYNCED = "This playlist has not synced yet. Try again once it has.";
 const MISSING_LOCAL =
   "This file is no longer in the local copy. The list updates after the next sync.";
 function fileDate(file) {
@@ -201,6 +215,12 @@ export class Engine {
                   .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
                   .get(v.id)
               : !!this.config.catalog?.find((row) => row.id === v.id)?.gallery,
+          music:
+            this.config.role === "hub"
+              ? !!s.db
+                  .prepare("SELECT 1 FROM music_folders WHERE volume=?")
+                  .get(v.id)
+              : !!this.config.catalog?.find((row) => row.id === v.id)?.music,
           sync: totals.policyError
             ? { state: "error", error: totals.policyError, lastCompleted: null }
             : (this.paused || this.hubUnavailable) && v.selected
@@ -1170,10 +1190,11 @@ export class Engine {
               state: "synced",
               lastCompleted: new Date().toISOString(),
             });
-            if (
-              this.config.catalog?.find((folder) => folder.id === v.id)?.gallery
-            )
-              this.gallery?.prepare(v.id);
+            const marker = this.config.catalog?.find(
+              (folder) => folder.id === v.id,
+            );
+            if (marker?.gallery) this.gallery?.prepare(v.id);
+            if (marker?.music) this.music?.prepare(v.id);
           } catch (e) {
             if (this.syncAbort.signal.aborted)
               throw this.syncAbort.signal.reason;
@@ -1931,6 +1952,8 @@ export class Engine {
           beginInstallationReset(this.store, resetTargets(this.store));
         this.gallery?.close();
         this.gallery = null;
+        this.music?.close();
+        this.music = null;
         finishInstallationReset(this.store);
         this.folderStates.clear();
         this.paused = false;
@@ -2018,6 +2041,7 @@ export class Engine {
       id: v.id,
       name: v.name,
       gallery: !!v.gallery,
+      music: !!v.music,
       historyRetention:
         v.historyRetention ??
         this.config.catalog?.find((saved) => saved.id === v.id)
@@ -2079,7 +2103,7 @@ export class Engine {
     this.lastReport = null;
     return local;
   }
-  async renameFile(volume, name, newName, rev) {
+  async renameFile(volume, name, newName, rev, { rewrites = false } = {}) {
     name = validPath(name);
     let destination;
     try {
@@ -2122,7 +2146,7 @@ export class Engine {
         )
       )
         fail("A file or folder with that name already exists", 409);
-      if (!fs.lstatSync(file).isFile() || hashFile(file) !== current.hash)
+      if (!fs.lstatSync(file).isFile() || (!rewrites && hashFile(file) !== current.hash))
         fail("Local file changed. Sync before renaming.", 409);
       if (this.config.role !== "hub") {
         if (name.toLowerCase() === destination.toLowerCase())
@@ -2135,10 +2159,139 @@ export class Engine {
         syncDirectory(path.dirname(file));
         this.work.mark(volume, name);
         this.work.mark(volume, destination);
+        await this.rewritePlaylists(volume, name, destination);
         return { path: destination };
       }
     }
-    return s.renameFile(current, destination, this.config.id);
+    const renamed = s.renameFile(current, destination, this.config.id);
+    await this.rewritePlaylists(volume, name, destination);
+    return renamed;
+  }
+  async rewritePlaylists(volume, from, to) {
+    const s = this.store;
+    const v = s.volume(volume);
+    if (!v.selected || !this.music?.isMusic(volume)) return;
+    const visible = s.visibleRules(volume);
+    const directory = path.dirname(s.filePath(v, `${PLAYLIST_DIRECTORY}/x`));
+    let names = [];
+    try {
+      names = fs.readdirSync(directory);
+    } catch {
+      return;
+    }
+    const paths = [];
+    for (const entry of names) {
+      const name = `${PLAYLIST_DIRECTORY}/${entry.normalize("NFC")}`;
+      if (!isEditablePlaylist(name) || name === to || visible(name, false)) continue;
+      try {
+        const file = path.join(directory, entry);
+        const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+        if (!stat?.isFile() || stat.size > PLAYLIST_BYTES) continue;
+        const next = moveTrack(editableText(fs.readFileSync(file, "utf8")), name, from, to);
+        if (next === null) continue;
+        atomic(file, next, 0o644);
+        paths.push(name);
+      } catch {
+        continue;
+      }
+    }
+    if (!paths.length) return;
+    if (this.config.role === "hub") await this.scanHub(volume, { paths });
+    else for (const name of paths) this.work.mark(volume, name);
+  }
+  playlistTrack(volume, track) {
+    const row = typeof track === "string" ? this.store.current(volume, track) : null;
+    if (
+      !row ||
+      row.deleted ||
+      row.directory ||
+      !audioType(row.path) ||
+      this.store.visibleRules(volume)(row.path, false)
+    )
+      fail("This track is no longer in the library", 404);
+    return row.path;
+  }
+  async writePlaylist(volume, name, file, text) {
+    const bytes = Buffer.from(text, "utf8");
+    atomic(file, bytes, 0o644);
+    if (this.config.role === "hub") await this.scanHub(volume, { paths: [name] });
+    else this.work.mark(volume, name);
+    return { path: name, hash: digest(bytes) };
+  }
+  async editPlaylist({ volume, action, path: name, name: title, track, position, hash }) {
+    const s = this.store;
+    const v = s.volume(volume);
+    if (!this.music?.isMusic(volume)) fail("This folder is not a music library", 404);
+    if (!v.selected) fail("This device has no local copy of this music library", 409);
+    if (!["create", "add", "remove", "rename", "delete"].includes(action))
+      fail("Unknown playlist action", 400);
+    let target;
+    try {
+      target = action === "create" ? playlistPath(title) : name;
+    } catch (error) {
+      fail(error.message);
+    }
+    if (!isEditablePlaylist(target))
+      fail("Only .m3u8 playlists in Playlists can be edited here", 400);
+    if (s.visibleRules(volume)(target, false))
+      fail("Excluded files cannot be edited here", 409);
+    const file = s.filePath(v, target);
+    if (action === "create") {
+      const taken = [s.current(volume, target), s.caseAlias(volume, target)].some(
+        (row) => row && !row.deleted,
+      );
+      const siblings = fs.existsSync(path.dirname(file)) ? fs.readdirSync(path.dirname(file)) : [];
+      if (
+        taken ||
+        siblings.some(
+          (entry) => entry.normalize("NFC").toLowerCase() === path.basename(target).toLowerCase(),
+        )
+      )
+        fail("A playlist with that name already exists", 409);
+    }
+    if (this.config.role === "hub") await this.scanHub(volume, { paths: [target, IGNORE_FILE] });
+    const current = s.current(volume, target);
+    if (action === "create") {
+      if ((current && !current.deleted) || fs.lstatSync(file, { throwIfNoEntry: false }))
+        fail("A playlist with that name already exists", 409);
+      const tracks = track ? [this.playlistTrack(volume, track)] : [];
+      return this.writePlaylist(volume, target, file, createPlaylist(title, target, tracks));
+    }
+    const local = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (!local?.isFile()) fail(MISSING_LOCAL, 409);
+    if (local.size > PLAYLIST_BYTES) fail("This playlist is too large to change here", 409);
+    const bytes = fs.readFileSync(file);
+    if (digest(bytes) !== hash) fail("This playlist changed. Try again.", 409);
+    if (action === "delete") {
+      if (!current || current.deleted) fail(PLAYLIST_UNSYNCED, 409);
+      await this.deleteFile(volume, target, current.rev);
+      return { path: target, deleted: true };
+    }
+    let text;
+    try {
+      text = editableText(bytes.toString("utf8"));
+    } catch (error) {
+      fail(error.message, 409);
+    }
+    if (action === "rename") {
+      let destination;
+      try {
+        destination = playlistPath(title);
+      } catch (error) {
+        fail(error.message);
+      }
+      if (destination !== target) {
+        if (!current || current.deleted) fail(PLAYLIST_UNSYNCED, 409);
+        await this.renameFile(volume, target, destination.slice(PLAYLIST_DIRECTORY.length + 1), current.rev, { rewrites: true });
+      }
+      return this.writePlaylist(volume, destination, s.filePath(v, destination), renamePlaylist(text, title));
+    }
+    const next =
+      action === "add"
+        ? appendEntry(text, target, this.playlistTrack(volume, track))
+        : removeEntry(text, target, Number(position), track);
+    if (next === null) fail("This playlist changed. Try again.", 409);
+    return this.writePlaylist(volume, target, file, next);
   }
   async deleteFile(volume, name, rev) {
     validPath(name);
@@ -2199,6 +2352,7 @@ export class Engine {
   }
   close() {
     this.gallery?.close();
+    this.music?.close();
     this.closeBackup();
     this.scanner.close();
     this.store.close();

@@ -12,6 +12,7 @@ import { client } from "./persistence";
 import { Replica } from "./replica";
 import { ReplicaStore } from "./replica-store";
 import { files } from "./files";
+import { player } from "./music-player";
 let finishTransferTask;
 AppRegistry.registerHeadlessTask(
   "ArcaPhotoTransfer",
@@ -182,6 +183,7 @@ export function runtime() {
         store,
         transfer,
         media: mediaLibrary,
+        player: Platform.OS === "android" ? player : null,
         files,
         client,
         platform: Platform.OS,

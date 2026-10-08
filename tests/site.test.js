@@ -187,6 +187,18 @@ test("the installation note comes before the downloads and the page states what 
   assert.match(html, /30 days by default/);
   assert.match(html, /Restoring needs the hub to be reachable/);
 });
+test("the page presents music libraries with the iPhone and Android Auto caveats", () => {
+  const html = render(template, release).replace(/\s+/g, " ");
+  assert.match(html, /<strong>Adventures<\/strong><span>16 files<\/span><b>›<\/b> <\/div> <div class="file-row"> <span class="folder-symbol small"><\/span ><strong>Music<\/strong><span>240 files<\/span>/);
+  assert.match(html, /<h3>Turn a folder into a music library\.<\/h3>/);
+  assert.match(html, /<span>06<\/span> <div> <h3>Check how long history is kept\./);
+  assert.match(html, /upload photo albums to your hub and play your music library/);
+  assert.match(html, /<summary>How does music work\?<\/summary>/);
+  assert.match(html, /iPhone browses it and opens tracks in other apps for now/);
+  assert.match(html, /Unknown sources turned on in Android Auto’s developer settings/);
+  assert.match(html, /playlists you make are saved as ordinary files in that folder/);
+  assert.doesNotMatch(html, /m3u8/i, "the page stays non-technical");
+});
 test("the page never says a linked album keeps no copy on the phone, and its FAQ answers the hard questions", () => {
   const html = render(template, release);
   assert.doesNotMatch(html, /second Arca copy|without keeping/);

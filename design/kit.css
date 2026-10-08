@@ -433,3 +433,98 @@ body.kit {
 .kit-pressed-state .primary {
   opacity: 0.85;
 }
+.kit-side-column {
+  width: var(--detail-side-width);
+  max-width: 100%;
+}
+.kit-phone-column {
+  width: calc(360px - 64px - 2 * var(--space-4));
+  max-width: 100%;
+}
+.kit-segmented-fill {
+  flex-wrap: nowrap;
+}
+.kit-segmented-fill button {
+  flex: 1;
+  justify-content: center;
+  padding-inline: var(--space-1);
+  white-space: nowrap;
+}
+.kit-row-cover {
+  width: var(--touch-target-min);
+  flex: none;
+}
+.kit-board-pair .kit-window .detail-head {
+  padding: var(--space-4) var(--space-6);
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.kit-board-pair .kit-window .heading-actions {
+  align-items: center;
+}
+.kit-caption + .kit-window {
+  margin-top: var(--space-5);
+}
+.music-cover.kit-art {
+  background: linear-gradient(135deg, var(--green), var(--ink));
+  color: var(--onGreen);
+}
+.kit-board-pair.kit-board-stack {
+  grid-template-columns: minmax(0, 1fr);
+}
+.kit-board-pair .kit-menu-float[open] .menu-items {
+  position: absolute;
+  margin-top: 0;
+}
+.kit-board-pair .kit-dialog-stage dialog {
+  max-width: 100%;
+}
+.history-group.kit-menu-host {
+  overflow: visible;
+}
+.music-track.kit-track-more {
+  grid-template-columns: var(--space-6) minmax(0, 2fr) minmax(0, 1fr) calc(var(--space-6) * 2) var(--control-height);
+}
+.music-track.kit-track-more > :nth-last-child(2) {
+  justify-self: end;
+}
+.music-track.kit-track-more > :last-child {
+  justify-self: center;
+}
+@media (max-width: 760px) {
+  .music-tracks:not(.music-songs) > .music-track.kit-track-more {
+    grid-template-columns: var(--space-6) minmax(0, 1fr) calc(var(--space-6) * 2) var(--control-height);
+  }
+  .music-tracks:not(.music-songs) > .music-track.kit-track-more > :nth-last-child(2) {
+    display: block;
+  }
+  .music-tracks:not(.music-songs) > .music-track.kit-track-more > :nth-last-child(3) {
+    display: none;
+  }
+  .kit-board-stack .kit-window .shell {
+    height: auto;
+  }
+}
+.kit-board-pair .m-actions-row {
+  flex-wrap: wrap;
+}
+@media (max-width: 480px) {
+  .kit-board-pair .music-head-info .kit-menu-float[open] .menu-items {
+    left: 0;
+    right: auto;
+  }
+  .kit-board-pair .a-unit {
+    zoom: 0.6;
+  }
+}
+.kit-art-warm {
+  background: linear-gradient(135deg, var(--wa), var(--erFg));
+  color: var(--onGreen);
+}
+.m-button.kit-center {
+  align-self: center;
+}
+.a-item.kit-a-playing .a-title {
+  color: var(--m-accent);
+}

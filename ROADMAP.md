@@ -85,9 +85,13 @@ _None._
   `verify · maintainer · low`
   accept: the iOS Share Extension works; cold-start, foreground and multiple-file shares work. Known gaps stay documented: text/plain streams, links and text are not imported, and duplicate temporary filenames must be shared separately.
 
+- **VERIFY-DESK-MUSIC** — Music plays on desktop and web
+  `verify · maintainer · normal`
+  accept: after a Casa redeploy, the hub's web admin opens the music folder on its Artists tab, an A–Z index with a heading per letter, square covers and, on a wide window, a strip of each artist's other album covers, plays an album with the player bar through seeking, next, shuffle and repeat, the bar's title, artist and album open the album and the artist page from another folder, a playlist's table shows the Album column, search finds songs, albums and artists, Shuffle plays the whole library and an artist, and Recent lists what that browser played; on the Mac build, off the library the sidebar card plays, pauses, skips and opens the album, the tray's Previous, Play/Pause and Next drive the player with the main window hidden, the tray's track brings the window forward on the album, and Quit Arca stops the music; after a desktop build, the Mac app as a replica that selected the folder does the same from its own copy with the hub unreachable; View folder and Library switch both ways; a playlist made from a track's Add to playlist… on the web admin and on the Mac replica appears in `Playlists/` as an `.m3u8` file on every selected device, plays in order with a repeated song, renames, loses a track and deletes into History, and a track renamed in Arca keeps its place in the playlist.
+
 - **VERIFY-ANDROID-AUTO** — Arca plays in the car
-  `verify · maintainer · normal · depends: MOB-ANDROID-AUTO`
-  accept: a sideloaded build on the Fold with Unknown sources enabled in Android Auto's developer settings appears on the Desktop Head Unit on the Mac and in the car; Artists, Albums, Playlists and Recent browse with covers; a track plays with lock-screen and steering-wheel controls; the car starts Arca cold with the phone locked and offline; nothing auto-plays on connection.
+  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  accept: a sideloaded build on the Fold with Unknown sources enabled in Android Auto's developer settings appears on the Desktop Head Unit on the Mac and in the car; Arca opens on Artists with a heading per letter and each artist's newest album cover, Albums browse as a cover grid with covers, an album's and a playlist's tracks show their length (and the album in a playlist), the queue button reads the playing album's or playlist's name, the phone's Now playing opens the album with Go to album, and Recent lists what this phone played under Recently played; a track plays with lock-screen and steering-wheel controls; the car starts Arca cold with the phone locked and offline; a navigation prompt ducks the music and a phone call pauses and resumes it; disconnecting Bluetooth pauses; nothing auto-plays on connection; a playlist made on the phone or the desktop shows under Playlists in the car, read-only, and a song repeated in it plays from the entry picked; an MP3, an AAC (M4A), a FLAC, a WAV and an Ogg/Opus file each play on the Fold; `./gradlew :arca-network:testDebugUnitTest` passes.
 
 ### Phase 1 qualification
 
@@ -143,9 +147,6 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 ### Decisions
 
-- **DEC-MUSIC-SCOPE** — Music library: engine, codecs and playlists
-  `decision · maintainer · normal`
-  accept: three answers before MUSIC-INDEX starts. Engine: a playback and media service of Arca's own inside `arca-network` (Media3 on Android; recommended, no licence, the tree and queue live in native code) or `@rntp/player` v5 (less code, commercial licence for a company, scene delegates by hand). Codecs: MP3, AAC, FLAC and WAV as the core (ALAC on Android and Opus outside CAF/MP4 wait). Playlists: relative M3U8 files inside the folder, synchronized like any file and indexed by the hub (recommended), or a hub-owned table with its own API and conflicts. The study behind these options sits in the session notes of 2026-10-07; CarPlay, iOS and desktop playback are later phases.
 - **DEC-LAN-PERMISSION** — Cache LAN permission?
   `decision · maintainer · normal`
 - **DEC-FIRST-PAGE** — Serve the first snapshot page without a hub scan?
@@ -208,26 +209,6 @@ Suggested order for approval: preservation of user files, synchronization recove
   `bug · agent · normal`
   accept: the conflict dialog's download links on a server replica's web view use a route the replica serves and its local hash (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409), and the link is hidden when there is no local copy; DOM and API tests.
 
-### Music library and Android Auto
-
-Phase order: MUSIC-FOLDERS → MUSIC-INDEX → MOB-MUSIC-LIBRARY → MOB-MUSIC-PLAYER → MOB-ANDROID-AUTO, then VERIFY-ANDROID-AUTO. Android only in this phase; iOS, CarPlay and desktop playback are in Later phases.
-
-- **MUSIC-FOLDERS** — The hub marks a folder as a music library
-  `feature · agent · normal · depends: DEC-MUSIC-SCOPE`
-  accept: a persistent `music_folders` marker like `gallery_folders`, set by the hub only (`POST /v1/music/mark`, 409 on replicas, refused on a gallery folder and vice versa), advertised as `music` in the catalog and status and cached by replicas; it changes nothing about sync, selection, unlink or deletion, and phones keep the whole folder offline as for any selected folder; daemon tests for the marker, the exclusions and the replica cache. The interface follows board UI-MUSIC-FOLDER.
-- **MUSIC-INDEX** — The hub indexes a music library's tags and covers
-  `feature · agent · normal · depends: MUSIC-FOLDERS`
-  accept: for music folders the hub reads tags with `music-metadata` (ID3, Vorbis comments, MP4 atoms) into `music_tracks` by volume, path and hash (title, artist, album artist, album, track and disc numbers, year, genre, duration, codec) in the same background queue as thumbnails, with covers from embedded art or the folder's `cover.jpg`/`folder.jpg` as 360 and 1024 px derivatives through the existing Sharp pipeline; `.m3u`/`.m3u8` files in the folder become playlists resolved against the index; `GET /v1/music` (artists, albums, tracks, playlists, recent, keyset cursors) and `/v1/music/cover`; the index follows renames, deletions and ignore rules like the gallery index; tests use small tagged files generated with `ffmpeg-static`.
-- **MOB-MUSIC-LIBRARY** — The phone browses a music folder as a library, offline
-  `feature · agent · normal · depends: MUSIC-INDEX`
-  accept: the phone keeps a saved copy of a music folder's index, refreshed with sync, and builds Artists, Albums, Playlists and Recent from it against the files present locally; covers come from derivatives kept with the local copy; the folder's actions menu offers View files; a structural mobile test and a pure test of the library builder cover it. The interface follows board UI-MOB-MUSIC-LIBRARY.
-- **MOB-MUSIC-PLAYER** — The phone plays the library with a queue and lock-screen controls
-  `feature · agent · normal · depends: MOB-MUSIC-LIBRARY`
-  accept: Android playback lives in `arca-network` (Media3 ExoPlayer in a `mediaPlayback` foreground service with a `MediaSession`: lock screen, Bluetooth and headset controls, cover art, queue, shuffle and repeat) and plays the local copy's files; JS drives it through a small bridge (play from a list position, queue, state events) and shows the mini player and Now playing; a core-codec file of each kind plays in a Kotlin test. Needs a native build.
-- **MOB-ANDROID-AUTO** — Arca appears in Android Auto with the library's browse tree
-  `feature · agent · normal · depends: MOB-MUSIC-PLAYER`
-  accept: `arca-network` declares `automotive_app_desc.xml` and the car meta-data by manifest merging and ships a Media3 `MediaLibraryService` whose tree (Artists → Albums → Tracks, Albums, Playlists, Recent; four roots, three levels) and covers come from the phone's saved index without JavaScript running, so the car can start Arca cold; every item has a title, subtitle and art; nothing plays until the driver picks; Kotlin tests cover the tree builder and SPEC documents the DHU and Unknown sources steps. The interface follows board UI-AUTO-BROWSE. Needs a native build.
-
 ### Deferred usability and cleanup
 
 - **DESK-ONBOARDING-HUB-ADDRESS** — The onboarding Hub address field loses its placeholder and is forced to monospace
@@ -264,6 +245,15 @@ Phase order: MUSIC-FOLDERS → MUSIC-INDEX → MOB-MUSIC-LIBRARY → MOB-MUSIC-P
   `feature · agent · low · depends: BUILD-IOS`
   accept: a Swift `hashFile` using CryptoKit reads 1 MiB at a time off the main thread with the same storage check as Android's, and a JS test shows the native path is used instead of the JavaScript SHA-256 fallback in `files.js`; device evidence follows.
 
+### Music
+
+- **MUSIC-CAR-AZ** — Long car lists are grouped A–Z
+  `feature · agent · normal · depends: VERIFY-ANDROID-AUTO`
+  accept: Artists, Albums and an artist's albums with more items than one car answer carries (Media3 cuts each list at 256 KiB, roughly 300 items) open on letter groups in Android Auto, so every album, artist and track is reachable (the # artists sort last, so the cut drops them first today); JVM tests in `MusicTreeTest.kt` cover a library past the limit. The grouping is a product choice the maintainer validates first.
+- **MUSIC-CAR-SEARCH** — Search and voice requests in the car
+  `feature · agent · low · depends: VERIFY-ANDROID-AUTO`
+  accept: `MusicService` answers library search and "play … on Arca" voice requests by title, artist and album over the published library, and plays the best match; JVM tests cover the matching. Today search commands are not offered.
+
 ## Later phases
 
 - **MOB-MUSIC-IOS** — Music playback on iPhone
@@ -271,10 +261,10 @@ Phase order: MUSIC-FOLDERS → MUSIC-INDEX → MOB-MUSIC-LIBRARY → MOB-MUSIC-P
   accept: AVPlayer-based playback in `arca-network`'s Swift side with lock-screen controls and the same queue and library screens as Android.
 - **MUSIC-CARPLAY** — Arca on CarPlay
   `feature · maintainer · planned after Expo SDK 58`
-  accept: the `com.apple.developer.carplay-audio` entitlement granted (request it early at developer.apple.com/contact/carplay), the app on Expo SDK 58's scene lifecycle, a CarPlay scene with list, tab bar and Now Playing templates serving the same four roots; proven on the CarPlay Simulator and in a car.
-- **DESK-MUSIC** — Music on desktop and web
+  accept: the `com.apple.developer.carplay-audio` entitlement granted (request it early at developer.apple.com/contact/carplay), the app on Expo SDK 58's scene lifecycle, a CarPlay scene with list, tab bar and Now Playing templates serving the same roots as Android Auto (Artists, Albums, Recent); proven on the CarPlay Simulator and in a car.
+- **DESK-MUSIC-NATIVE** — Native Now Playing and media keys on desktop
   `feature · agent · planned for phase 3`
-  accept: `<audio>` playback over the daemon's range streaming (local copy on a desktop replica, the hub on the web) with the library screens; native Now Playing and media keys through a Tauri command; gapless and ALAC on Windows only if a native engine is adopted.
+  accept: the desktop app reports the playing track to macOS Now Playing and the Windows media overlay and answers hardware media keys through a Tauri command; gapless playback and ALAC on Windows only if a native engine is adopted.
 - **P3-I18N** — Localization
   `feature · agent · planned for phase 3`
   accept: strings in catalogs for Tauri, Expo and the shared web frontend; language selection; localized dates, numbers and sizes; dialogs, errors, tray menus and notifications; user content is never translated. English-only through phases 1 and 2.

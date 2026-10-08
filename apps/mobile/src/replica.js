@@ -5,6 +5,13 @@ import { renamedPath } from "../../../packages/core/file-rename.js";
 import { DAMAGED_GALLERY, validPath, validRow } from "./validation.js";
 import { Gallery, galleryConfig } from "./gallery.js";
 import {
+  folderExclusion,
+  isMusicFolder,
+  publishMusic,
+  refreshMusic,
+} from "./music-sync.js";
+import * as playlists from "../../../packages/core/playlist.js";
+import {
   conditionNotices,
   isHubUnreachable,
 } from "../../desktop/src/notice-contract.js";
@@ -30,9 +37,10 @@ export class Replica {
     changed = () => {},
     platform = "mobile",
     media = null,
+    player = null,
     transfer = { begin: async () => false, end: async () => {} },
   }) {
-    Object.assign(this, { store, files, changed, platform, transfer });
+    Object.assign(this, { store, files, changed, platform, transfer, player });
     this.interactiveClient = client;
     // Only replica work inherits this cancellation scope; UI uses the original client.
     this.client = {
@@ -111,6 +119,14 @@ export class Replica {
     await this.client.destroy();
     await this.store.reset();
     this.scope = null;
+    await this.musicPublishing?.catch(() => {});
+    await this.musicHistoryWriting?.catch(() => {});
+    for (const target of [this.files.musicLibrary?.(), this.files.musicHistory?.()])
+      if (target) await this.files.remove(target).catch(() => {});
+    this.publishedMusic = null;
+    try {
+      await this.player?.reload?.();
+    } catch {}
     this.paused = false;
     this.error = this.progress = null;
     this.hashCache.clear();
@@ -120,7 +136,7 @@ export class Replica {
   async destroy(confirmed = false) {
     if (!confirmed)
       throw new Error("Confirm erasing this device first");
-    if (this.removing || this.importing)
+    if (this.removing || this.importing || this.renaming)
       throw new Error("Wait for the current operation to finish.");
     this.removing = true;
     this.stop();
@@ -222,6 +238,7 @@ export class Replica {
       await this.store.set(removalKey, false);
       this.hashCache.clear();
       await this.cleanTransferObjects(scope, removedHashes);
+      await publishMusic(this).catch(() => {});
     } catch (error) {
       if (await this.store.get(`removing:${this.scope}:${id}`, false))
         await this.store.issue(
@@ -1202,12 +1219,14 @@ export class Replica {
         await this.store.set(`fullScan:${this.scope}`, this.lastFullScan);
         this.fullScanRequested = false;
       }
+      const complete = !errors.length && !this.moreFolderWork && !deferred;
+      await refreshMusic(this, { covers: complete });
       if (errors.length) {
         this.error = errors.join("; ");
         await this.report();
         throw new Error(this.error);
       }
-      if (this.moreFolderWork || deferred) return;
+      if (!complete) return;
       await warmViews(this, folders);
       await this.store.set(`lastSync:${this.scope}`, new Date().toISOString());
       await this.report();
@@ -1298,67 +1317,192 @@ export class Replica {
         await this.active;
       }
       await this.requireActiveReplica();
-      validPath(name);
-      const destination = validPath(renamedPath(name, newName));
-      const folder = await this.store.folder(this.scope, volume);
-      if (!folder?.selected) throw new Error("Start syncing this folder first");
-      if (galleryConfig(folder)?.mode === "damaged")
-        throw new Error(DAMAGED_GALLERY);
-      const row = await this.store.current(this.scope, volume, name);
-      const file = this.files.work(this.scope, volume, name);
-      const info = await this.files.stat(file);
-      if (!info || info.directory || row?.directory)
-        throw new Error("Only synced files can be renamed here.");
-      if (row && !row.deleted) {
-        if (rev != null && row.rev !== Number(rev))
-          throw new Error("File changed. Reload before renaming.");
-        if ((await this.localHash(file)) !== row.hash)
-          throw new Error("Local file changed. Sync before renaming.");
-      }
-      const policyFile = this.files.work(this.scope, volume, ".arcaignore");
-      const policy = ignore().add(
-        (await this.files.exists(policyFile))
-          ? await this.files.text(policyFile)
-          : "",
-      );
-      if (
-        [name, destination].some(
-          (value) => builtinExcluded(value) || policy.ignores(value),
-        )
-      )
-        throw new Error("Excluded files cannot be renamed here.");
-      if (destination === name) return { path: name };
-      const rows = await this.store.rows(this.scope, volume);
-      if (
-        rows.some(
-          (other) =>
-            !other.deleted &&
-            other.path !== name &&
-            other.path.toLowerCase() === destination.toLowerCase(),
-        )
-      )
-        throw new Error("A file or folder with that name already exists.");
-      const parent = this.files.parent(file);
-      // Include unsynced and excluded siblings in collision checks.
-      const siblings = await this.files.listNames(parent);
-      if (
-        siblings.some(
-          (entry) =>
-            entry !== name.split("/").at(-1) &&
-            entry.toLowerCase() === newName.toLowerCase(),
-        )
-      )
-        throw new Error("A file or folder with that name already exists.");
-      await this.files.move(
-        file,
-        this.files.work(this.scope, volume, destination),
-      );
-      this.hashCache.delete(file);
-      this.changed();
-      return { path: destination };
+      return await this.moveFile(volume, name, newName, { rev });
     } finally {
       this.renaming = false;
     }
+  }
+  async moveFile(volume, name, newName, { rev, rewrites = false } = {}) {
+    validPath(name);
+    const destination = validPath(renamedPath(name, newName));
+    const folder = await this.store.folder(this.scope, volume);
+    if (!folder?.selected) throw new Error("Start syncing this folder first");
+    if (galleryConfig(folder)?.mode === "damaged")
+      throw new Error(DAMAGED_GALLERY);
+    const row = await this.store.current(this.scope, volume, name);
+    const file = this.files.work(this.scope, volume, name);
+    const info = await this.files.stat(file);
+    if (!info || info.directory || row?.directory)
+      throw new Error("Only synced files can be renamed here.");
+    if (row && !row.deleted) {
+      if (rev != null && row.rev !== Number(rev))
+        throw new Error("File changed. Reload before renaming.");
+      if (!rewrites && (await this.localHash(file)) !== row.hash)
+        throw new Error("Local file changed. Sync before renaming.");
+    }
+    if ([name, destination].some(await folderExclusion(this, volume)))
+      throw new Error("Excluded files cannot be renamed here.");
+    if (destination === name) return { path: name };
+    const rows = await this.store.rows(this.scope, volume);
+    if (
+      rows.some(
+        (other) =>
+          !other.deleted &&
+          other.path !== name &&
+          other.path.toLowerCase() === destination.toLowerCase(),
+      )
+    )
+      throw new Error("A file or folder with that name already exists.");
+    const parent = this.files.parent(file);
+    // Include unsynced and excluded siblings in collision checks.
+    const siblings = await this.files.listNames(parent);
+    if (
+      siblings.some(
+        (entry) =>
+          entry !== name.split("/").at(-1) &&
+          entry.toLowerCase() === newName.toLowerCase(),
+      )
+    )
+      throw new Error("A file or folder with that name already exists.");
+    await this.files.move(
+      file,
+      this.files.work(this.scope, volume, destination),
+    );
+    this.hashCache.delete(file);
+    await this.retargetPlaylists(volume, name, destination);
+    this.changed();
+    return { path: destination };
+  }
+  async retargetPlaylists(volume, from, to) {
+    if (!isMusicFolder(this.client.state().catalog, volume)) return;
+    const directory = this.files.work(this.scope, volume, playlists.PLAYLIST_DIRECTORY);
+    if (!(await this.files.exists(directory))) return;
+    const excluded = await folderExclusion(this, volume);
+    for (const name of await this.files.listNames(directory)) {
+      const path = `${playlists.PLAYLIST_DIRECTORY}/${name.normalize("NFC")}`;
+      if (!playlists.isEditablePlaylist(path) || excluded(path)) continue;
+      let text;
+      try {
+        text = await this.readPlaylist(this.files.work(this.scope, volume, path));
+      } catch {
+        continue;
+      }
+      const next = playlists.moveTrack(text, path, from, to);
+      if (next !== null) await this.writePlaylist(volume, path, next);
+    }
+  }
+  async readPlaylist(uri) {
+    const info = await this.files.stat(uri);
+    if (info?.size > playlists.PLAYLIST_BYTES)
+      throw new Error("This playlist is too large to change here.");
+    return playlists.editableText(await this.files.text(uri));
+  }
+  async writePlaylist(volume, path, text) {
+    const target = this.files.work(this.scope, volume, path);
+    const staged = this.files.staged(target);
+    await this.files.mkdir(this.files.parent(target));
+    try {
+      await this.files.write(staged, new TextEncoder().encode(text));
+      await this.files.replace(staged, target);
+    } catch (error) {
+      await this.files.remove(staged).catch(() => {});
+      throw error;
+    }
+    // A same-size edit within one mtime tick would otherwise reuse the stale cached hash and never sync.
+    const record = { ...(await this.files.stat(target)), hash: await this.files.hash(target) };
+    this.hashCache.set(target, record);
+    await this.store.cacheHash(target, record);
+  }
+  async playlistEdit(volume, path, work) {
+    if (this.renaming || this.removing || this.importing || this.picking)
+      throw new Error("Wait for the current operation to finish.");
+    this.renaming = true;
+    try {
+      if (this.active) {
+        this.stop();
+        await this.active;
+      }
+      await this.requireActiveReplica();
+      const folder = await this.store.folder(this.scope, volume);
+      if (!folder?.selected) throw new Error("Start syncing this folder first");
+      if (!isMusicFolder(this.client.state().catalog, volume))
+        throw new Error("Playlists belong to music folders.");
+      if ((await folderExclusion(this, volume))(path))
+        throw new Error("Excluded files cannot be edited here.");
+      const result = await work();
+      this.changed();
+      return result;
+    } finally {
+      this.renaming = false;
+    }
+  }
+  async editPlaylist(volume, path, edit) {
+    if (!playlists.isEditablePlaylist(path))
+      throw new Error("Only .m3u8 playlists in Playlists/ can be changed here.");
+    return this.playlistEdit(volume, path, async () => {
+      const next = edit(await this.localPlaylist(volume, path));
+      if (next === null)
+        throw new Error("This playlist changed. Try again.");
+      await this.writePlaylist(volume, path, next);
+      return { path };
+    });
+  }
+  async localPlaylist(volume, path) {
+    const file = this.files.work(this.scope, volume, path);
+    if (!(await this.files.exists(file)))
+      throw new Error("This playlist is not on this phone yet. Sync and try again.");
+    return this.readPlaylist(file);
+  }
+  async addToPlaylist(volume, path, track) {
+    validPath(track);
+    return this.editPlaylist(volume, path, (text) =>
+      playlists.appendEntry(text, path, track),
+    );
+  }
+  async removeFromPlaylist(volume, path, position, track) {
+    return this.editPlaylist(volume, path, (text) =>
+      playlists.removeEntry(text, path, position, track),
+    );
+  }
+  async createPlaylist(volume, name, track) {
+    validPath(track);
+    const path = validPath(playlists.playlistPath(name));
+    return this.playlistEdit(volume, path, async () => {
+      const file = this.files.work(this.scope, volume, path);
+      const directory = this.files.parent(file);
+      const taken = [
+        ...(await this.store.rows(this.scope, volume))
+          .filter((row) => !row.deleted)
+          .map((row) => row.path),
+        ...((await this.files.exists(directory))
+          ? (await this.files.listNames(directory)).map(
+              (entry) => `${playlists.PLAYLIST_DIRECTORY}/${entry}`,
+            )
+          : []),
+      ];
+      if (taken.some((entry) => entry.normalize("NFC").toLowerCase() === path.toLowerCase()))
+        throw new Error("A playlist with that name already exists.");
+      await this.writePlaylist(
+        volume,
+        path,
+        playlists.createPlaylist(name, path, [track]),
+      );
+      return { path };
+    });
+  }
+  async renamePlaylist(volume, path, name) {
+    if (!playlists.isEditablePlaylist(path))
+      throw new Error("Only .m3u8 playlists in Playlists/ can be changed here.");
+    const target = validPath(playlists.playlistPath(name));
+    return this.playlistEdit(volume, path, async () => {
+      const next = playlists.renamePlaylist(await this.localPlaylist(volume, path), name);
+      const renamed =
+        target === path
+          ? path
+          : (await this.moveFile(volume, path, target.split("/").at(-1), { rewrites: true })).path;
+      await this.writePlaylist(volume, renamed, next);
+      return { path: renamed };
+    });
   }
   async removeFile(volume, name) {
     validPath(name);

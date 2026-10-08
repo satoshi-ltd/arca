@@ -33,6 +33,16 @@ test("single port web, discovery, one-time login, CSRF rejection and logout", as
       "utf8",
     ),
   );
+  const musicLibrary = await fetch(url + "/music-library.js");
+  assert.equal(musicLibrary.status, 200);
+  assert.match(musicLibrary.headers.get("content-type"), /javascript/);
+  assert.equal(
+    await musicLibrary.text(),
+    fs.readFileSync(
+      new URL("../apps/desktop/src/music-library.js", import.meta.url),
+      "utf8",
+    ),
+  );
   assert.equal((await fetch(url + "/v1/status")).status, 401);
   assert.equal(
     (await (await fetch(url + "/.well-known/arca")).json()).apiPort,

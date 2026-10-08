@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0 — 2026-10-08
+
+- The hub can make a folder a music library from its ⋯ menu (Enable music library), and reads each track's tags and covers.
+- A music library opens on Artists, Albums and Recent on desktop, web, the phone and in the car; Artists is an A–Z index under a heading per letter, each artist shown with its newest album's cover, and Recent lists the albums and playlists that device played last, never shared with the hub; desktop, web and the phone also search songs, albums and artists and shuffle the whole library or one artist.
+- Playlists are `.m3u8` files in the folder's `Playlists/` directory, so they sync to every device and work outside Arca; desktop, web and the phone create them from a track's Add to playlist…, rename them, remove tracks and delete them into History, and the car lists them read-only; a playlist names each track's album; on the phone, an album keeps tracks that are still downloading in place, dimmed, with “10 of 12 on this phone” in its header.
+- Desktop and web play the library with a player bar in the library, whose title, artist and album open what is playing, and a compact player in the sidebar everywhere else, and the desktop tray shows what plays with its controls; each device plays the copy its daemon holds, so a desktop replica plays offline too.
+- Android plays it with a mini player, Now playing with Go to album, lock-screen and Bluetooth controls, and Arca appears in Android Auto with the same tabs and covers, track lengths and a queue named after what plays; a build installed outside the Play Store needs Unknown sources in Android Auto's developer settings; iPhone browses music libraries and opens tracks in other apps until it gets its own player.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.6.117 — 2026-10-07
 
 - The phone's Save file sheet now lists up to three recent destinations above the selected folders, most used first, so a file shared from another app lands in its usual subfolder with one tap; the list stays on the phone and forgets folders that stop syncing there.

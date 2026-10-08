@@ -1,9 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
   <application>
     <service android:name=".TransferService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="true" />
+    <service android:name=".MusicService" android:exported="true" android:foregroundServiceType="mediaPlayback">
+      <intent-filter>
+        <action android:name="androidx.media3.session.MediaLibraryService" />
+        <action android:name="android.media.browse.MediaBrowserService" />
+      </intent-filter>
+    </service>
+    <provider android:name=".CoverProvider" android:authorities="${applicationId}.arcamusic" android:exported="true" />
+    <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
   </application>
 </manifest>

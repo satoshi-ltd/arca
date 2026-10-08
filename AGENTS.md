@@ -84,7 +84,7 @@ Rules of the loop:
 
 - Metro is the maintainer's: never start or restart it; ask when configuration changes need a restart.
 - Native builds and installs are the maintainer's unless explicitly requested in the turn. Source changes and reviews do not authorize them.
-- Casa (SSH `casa`, Docker container `arca`, state under `/home/atlas/arca-pilot`) is the maintainer's: never update or restart its container unless explicitly requested in the turn. Prepare and validate locally, then report deployment and client-compatibility requirements; operational details live in SPEC.
+- Casa (SSH `casa`, Docker container `arca`, state under `/home/atlas/arca`) is the maintainer's: never update or restart its container unless explicitly requested in the turn. Prepare and validate locally, then report deployment and client-compatibility requirements; operational details live in SPEC.
 - Development uses the real `~/.arca` in `/Users/javi/git/arca`; tests use isolated state.
 - Never reset live state, delete user files, enable backup or resume a user pause as incidental cleanup. Nothing relocates or deletes existing copies automatically, including code you write.
 - Native changes need the running binary rebuilt and daemon changes need the service restarted; a built bundle is not the running process.

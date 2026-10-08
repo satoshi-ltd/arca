@@ -7,6 +7,7 @@ import { coalescedRun } from "../apps/mobile/src/folder-listing.js";
 import { browseEntries } from "../apps/mobile/src/browse.js";
 import { sidebarLayout, fileMenuPosition } from "../apps/mobile/src/layout.js";
 import { icons, iconNames } from "../apps/mobile/src/icons.js";
+import { musicSheet } from "../apps/mobile/src/music-library.js";
 
 test("fold/tablet layout uses available space, preserves hysteresis and excludes short landscape phones", () => {
   assert.equal(sidebarLayout(false, 393, 852), false);
@@ -386,12 +387,17 @@ test("closing folder actions retain their title after local removal without rend
     shownSheet,
     folder: null,
     photoFolder: false,
+    musicFolder: false,
     folderSubtitle: "",
     bytes: () => "",
   });
   assert.equal(shown.title, "photos-demo");
   assert.equal(shown.menu, true, "folder actions are a compact menu");
   assert.equal(shown.icon, "folder");
+  assert.equal(
+    vm.runInNewContext(header, { shownSheet, folder: null, photoFolder: false, musicFolder: true, folderSubtitle: "", bytes: () => "" }).icon,
+    "music",
+  );
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: volume }), true);
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: null }), false);
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: { id: "other" } }), false);
@@ -419,6 +425,13 @@ test("sheets share the desktop dialog header anatomy and menus stay compact", ()
       folderSubtitle: "3598 photos · 13 GB local",
       bytes: () => "1 B",
       folderSize: () => "1 file · 1 B",
+    });
+    assert.ok(shown.title && shown.icon, kind);
+  }
+  for (const kind of ["track-actions", "add-to-playlist", "new-playlist", "playlist-actions", "rename-playlist"]) {
+    const shown = vm.runInNewContext(header, {
+      shownSheet: { kind, track: { title: "So What", artist: "Miles Davis", album: "Kind of Blue" }, playlist: { name: "Road trip", tracks: [], duration: 0 } },
+      musicSheet,
     });
     assert.ok(shown.title && shown.icon, kind);
   }
@@ -550,9 +563,9 @@ test("folder rows show the gallery icon the hub assigns and selection states the
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   const selected = app.slice(app.indexOf("{locals.map((f) => ("), app.indexOf("description={`${f.files} files"));
   assert.match(selected, /galleryConfig\(f\) \|\|\s*f\.gallery \|\|\s*catalog\?\.volumes\?\.find\(/);
-  assert.match(app, /available\s+icon=\{v\.gallery \? "gallery" : "folders"\}/);
+  assert.match(app, /available\s+icon=\{v\.gallery \? "gallery" : v\.music && catalog\?\.music \? "music" : "folders"\}/);
   assert.match(app, /`Needs \$\{bytes\(shownSheet\.volume\.bytes\)\} · `/);
-  assert.match(app, /shownSheet\.kind === "select"\s*\?\s*\{\s*title: shownSheet\.volume\.name,\s*icon: shownSheet\.volume\.gallery \? "gallery" : "folder",/);
+  assert.match(app, /shownSheet\.kind === "select"\s*\?\s*\{\s*title: shownSheet\.volume\.name,\s*icon: shownSheet\.volume\.gallery \? "gallery" : shownSheet\.volume\.music && catalog\?\.music \? "music" : "folder",/);
   assert.doesNotMatch(app, /free here/);
 });
 

@@ -104,6 +104,22 @@ import { FolderGallery } from "./FolderGallery";
 import { coalescedRun } from "./folder-listing";
 import { FolderRecent } from "./FolderRecent";
 import {
+  MiniPlayer,
+  MusicLibrary,
+  MusicSheet,
+  NowPlaying,
+} from "./MusicLibrary";
+import { player, playerAvailable, usePlayingId } from "./music-player";
+import { baseContext, musicSheet, playlistKey } from "./music-library.js";
+import {
+  folderLibrary,
+  isMusicFolder,
+  publishMusic,
+  readMusicHistory,
+  recordMusicPlay,
+  renameMusicPlay,
+} from "./music-sync.js";
+import {
   failedChange,
   readLastChange,
   seededChange,
@@ -207,6 +223,12 @@ export default function App() {
     [historyFilter, setHistoryFilter] = useState("revisions");
   const historyRequest = useRef(0);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [musicRoute, setMusicRoute] = useState([{ kind: "artists" }]);
+  const [musicSearch, setMusicSearch] = useState(null);
+  const [musicHistory, setMusicHistory] = useState([]);
+  const [historyTick, setHistoryTick] = useState(0);
+  const [musicData, setMusicData] = useState(null);
+  const [musicEdits, setMusicEdits] = useState(0);
   const [filesLoading, setFilesLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
   const folderLists = useRef(new Map());
@@ -265,6 +287,7 @@ export default function App() {
         error: r.error,
         last,
         free,
+        musicTick: r.musicTick || 0,
       }),
     );
     const onboarding = await r.store.get("onboarding");
@@ -631,6 +654,9 @@ export default function App() {
       folder.gallery ||
       catalog?.volumes?.find((v) => v.id === folder.id)?.gallery
     );
+  const musicFolder =
+    !!folder && !photoFolder && isMusicFolder(catalog, folder.id);
+  const musicView = musicFolder && fileView === "music";
   const policyEntry = entries.find((entry) => entry.path === ".arcaignore");
   useEffect(() => {
     const replica = engine.current;
@@ -737,6 +763,141 @@ export default function App() {
     };
   }, [folder?.id, screen, photoFolder, replica, status.last, status.offline]);
   useEffect(() => {
+    if (!musicFolder || !replica) return undefined;
+    let active = true;
+    const key = `${replica.scope}:${folder.id}`;
+    (async () => {
+      const value = await folderLibrary(replica, folder.id);
+      if (active) setMusicData({ key, ...value });
+    })().catch(() => active && setMusicData(null));
+    return () => {
+      active = false;
+    };
+  }, [musicFolder, folder?.id, replica, status.last, status.musicTick, musicEdits]);
+  const playingId = usePlayingId(musicFolder && screen === "Folders");
+  const musicTab = musicRoute[0]?.kind;
+  useEffect(() => {
+    if (!musicFolder || !replica || musicTab !== "recent") return undefined;
+    let active = true;
+    const read = () =>
+      readMusicHistory(replica).then((value) => active && setMusicHistory(value));
+    read();
+    const settled = setTimeout(read, 1500);
+    return () => {
+      active = false;
+      clearTimeout(settled);
+    };
+  }, [musicFolder, musicTab, replica, playingId, historyTick]);
+  const shownMusic =
+    musicData?.key === `${replica?.scope}:${folder?.id}` ? musicData : null;
+  const musicCover = (key, size) => {
+    if (!key || !replica?.scope) return null;
+    try {
+      for (const option of size === "large" ? ["large", "small"] : ["small"]) {
+        const uri = replica.files.musicCover(replica.scope, key, option);
+        if (!replica.files.present || replica.files.present(uri)) return uri;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  };
+  function musicCommand(name, value) {
+    player.command(name, value).catch((e) => setError(e.message));
+  }
+  function playMusic(context, track, shuffle = false, position = -1) {
+    if (!track) return;
+    if (!playerAvailable) {
+      if (engine.current)
+        recordMusicPlay(engine.current, baseContext(context))
+          .then(() => setHistoryTick((tick) => tick + 1))
+          .catch(() => {});
+      openFileDetail({ path: track.path, uri: track.uri }).catch((e) =>
+        setError(e.message),
+      );
+      return;
+    }
+    runLocal(async () => {
+      await publishMusic(engine.current).catch(() => {});
+      await player.play(
+        context,
+        track.id,
+        shuffle,
+        Number.isSafeInteger(position) ? position : -1,
+      );
+    });
+  }
+  function musicChanged() {
+    setMusicEdits((count) => count + 1);
+    publishMusic(engine.current).catch(() => {});
+    if (connected && !status.paused) startSync();
+  }
+  function changePlaylist(kind, value) {
+    const r = engine.current;
+    run(
+      async () => {
+        const result =
+          kind === "add"
+            ? await r.addToPlaylist(folder.id, value.playlist.path, value.track.path)
+            : kind === "remove"
+              ? await r.removeFromPlaylist(
+                  folder.id,
+                  value.playlist.path,
+                  value.entry,
+                  value.path,
+                )
+              : kind === "create"
+                ? await r.createPlaylist(folder.id, value.name, value.track.path)
+                : await r.renamePlaylist(folder.id, value.playlist.path, value.name);
+        if (kind === "rename") {
+          await renameMusicPlay(r, value.playlist.id, playlistKey(folder.id, result.path)).catch(() => {});
+          setHistoryTick((tick) => tick + 1);
+          setMusicRoute((route) =>
+            route.map((item) =>
+              item.kind === "playlist" && item.id === value.playlist.id
+                ? { ...item, id: playlistKey(folder.id, result.path) }
+                : item,
+            ),
+          );
+        }
+        setSheet(null);
+        musicChanged();
+      },
+      {
+        success:
+          kind === "remove"
+            ? "Removed from playlist"
+            : kind === "rename"
+              ? "Playlist renamed"
+              : `Added to ${kind === "add" ? value.playlist.name : value.name}`,
+      },
+    );
+  }
+  function deletePlaylist(playlist) {
+    confirm(
+      "Delete this playlist?",
+      "Deletes it from all synced copies. Retained history can be restored." +
+        (!connected || status.paused
+          ? " Deletion will sync when connected and resumed."
+          : ""),
+      () =>
+        run(
+          async () => {
+            await engine.current.removeFile(folder.id, playlist.path);
+            setSheet(null);
+            setMusicRoute((route) =>
+              route.filter(
+                (item) => !(item.kind === "playlist" && item.id === playlist.id),
+              ),
+            );
+            musicChanged();
+          },
+          { success: "Playlist deleted" },
+        ),
+      "Delete playlist",
+    );
+  }
+  useEffect(() => {
     if (screen === "History" && connected && replica)
       getHistory().catch((e) => setError(e.message));
   }, [
@@ -768,8 +929,12 @@ export default function App() {
       (f.gallery || catalog?.volumes?.find((v) => v.id === f.id)?.gallery) &&
         !galleryConfig(f)
         ? "gallery"
-        : "files",
+        : isMusicFolder(catalog, f.id) && !galleryConfig(f)
+          ? "music"
+          : "files",
     );
+    setMusicRoute([{ kind: "artists" }]);
+    setMusicSearch(null);
     setDirectory("");
     setVisibleCount(100);
     setSearch("");
@@ -1165,7 +1330,7 @@ export default function App() {
     }),
     [entries],
   );
-  const folderSubtitle = `${photoFolder ? `${photoCount ?? "—"} photos` : `${entrySummary.files} files`} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`;
+  const folderSubtitle = `${photoFolder ? `${photoCount ?? "—"} photos` : musicView && shownMusic ? `${shownMusic.library.tracks.size.toLocaleString("en")} tracks · ${shownMusic.library.albums.size.toLocaleString("en")} albums` : `${entrySummary.files} files`} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`;
   const timelineNotice =
     sourceConfig?.mode === "damaged"
       ? sourceConfig.issue
@@ -1311,6 +1476,27 @@ export default function App() {
         );
         return true;
       }
+      if (
+        folder &&
+        view === "Folders" &&
+        musicView &&
+        musicRoute.length === 1 &&
+        typeof musicSearch === "string" &&
+        shownMusic?.library?.tracks.size
+      ) {
+        setMusicSearch(null);
+        return true;
+      }
+      if (
+        folder &&
+        view === "Folders" &&
+        musicView &&
+        musicRoute.length > 1 &&
+        shownMusic?.library?.tracks.size
+      ) {
+        setMusicRoute(musicRoute.slice(0, -1));
+        return true;
+      }
       if (folder && view === "Folders") {
         setFolder(null);
         return true;
@@ -1318,7 +1504,16 @@ export default function App() {
       return false;
     });
     return () => listener.remove();
-  }, [sheet, folder, view, fileActionsOpen]);
+  }, [
+    sheet,
+    folder,
+    view,
+    fileActionsOpen,
+    musicView,
+    musicRoute,
+    shownMusic,
+    musicSearch,
+  ]);
   const selectTab = (tab) => {
     historyRequest.current++;
     setView(tab);
@@ -1386,8 +1581,11 @@ export default function App() {
               ? "Settings"
               : "Folders",
           );
-          if (item.volume)
-            setFolder(locals.find((f) => f.id === item.volume) || null);
+          if (item.volume) {
+            const target = locals.find((f) => f.id === item.volume);
+            if (target) openFolder(target).catch((e) => setError(e.message));
+            else setFolder(null);
+          }
         }
         setSheet(null);
       }),
@@ -1594,7 +1792,9 @@ export default function App() {
                                 wide
                                   ? folder.gallery || source
                                     ? "gallery"
-                                    : "folder"
+                                    : musicFolder
+                                      ? "music"
+                                      : "folder"
                                   : undefined
                               }
                               subtitle={folderSubtitle}
@@ -1721,7 +1921,7 @@ export default function App() {
                         : { y, height },
                     );
                   }}
-                  key={`${screen}:${folder?.id || ""}`}
+                  key={`${screen}:${folder?.id || ""}${musicView ? `:${musicRoute.length}:${JSON.stringify(musicRoute.at(-1))}` : ""}`}
                   onScroll={(event) => {
                     const { contentOffset } = event.nativeEvent;
                     if (contentOffset.y !== galleryScrollY.current)
@@ -1738,7 +1938,7 @@ export default function App() {
                   enter={screenEnter}
                   enterStyle={[s.enter, onboarding && s.enterSetup]}
                 >
-                  {folder && screen === "Folders" && !photoFolder && (
+                  {folder && screen === "Folders" && !photoFolder && !musicView && (
                     <View style={[s.group, s.statsGrid]}>
                       {[
                         [
@@ -1843,6 +2043,33 @@ export default function App() {
                       {folder ? (
                         photoFolder ? (
                           timeline
+                        ) : musicView ? (
+                          <MusicLibrary
+                            library={shownMusic?.library}
+                            saved={!!shownMusic?.saved}
+                            indexing={!!shownMusic?.indexing}
+                            offline={!!status.offline}
+                            route={musicRoute}
+                            push={(next) => setMusicRoute([...musicRoute, next])}
+                            pop={() => setMusicRoute(musicRoute.slice(0, -1))}
+                            select={(kind) => setMusicRoute([{ kind }])}
+                            history={musicHistory}
+                            search={musicSearch}
+                            setSearch={setMusicSearch}
+                            folderId={folder.id}
+                            cover={musicCover}
+                            canPlay={playerAvailable}
+                            play={playMusic}
+                            playingId={playingId}
+                            sync={() => startSync(true)}
+                            reconnect={reconnect}
+                            trackActions={(value) =>
+                              setSheet({ kind: "track-actions", ...value })
+                            }
+                            playlistActions={(playlist) =>
+                              setSheet({ kind: "playlist-actions", playlist })
+                            }
+                          />
                         ) : (
                           <View style={s.detailGrid}>
                             <View style={s.detailMain}>
@@ -2119,7 +2346,9 @@ export default function App() {
                                         (v) => v.id === f.id,
                                       )?.gallery
                                         ? "gallery"
-                                        : "folders"
+                                        : isMusicFolder(catalog, f.id)
+                                          ? "music"
+                                          : "folders"
                                     }
                                     description={`${f.files} files · ${bytes(f.bytes)} local`}
                                     status={
@@ -2172,7 +2401,7 @@ export default function App() {
                                       key={v.id}
                                       name={v.name}
                                       available
-                                      icon={v.gallery ? "gallery" : "folders"}
+                                      icon={v.gallery ? "gallery" : v.music && catalog?.music ? "music" : "folders"}
                                       description={folderSize(v)}
                                       disabled={!connected || actionLocked}
                                       onPress={() => choose(v)}
@@ -2853,6 +3082,14 @@ export default function App() {
                     controller={galleryRail}
                   />
                 )}
+                {folder && screen === "Folders" && musicFolder && !sheet && (
+                  <MiniPlayer
+                    library={shownMusic?.library}
+                    cover={musicCover}
+                    open={() => setSheet({ kind: "now-playing" })}
+                    command={musicCommand}
+                  />
+                )}
                 {!onboarding && !wide && !keyboardVisible && (
                   <Navigation
                     view={view}
@@ -2927,26 +3164,30 @@ export default function App() {
                   }
                 : shownSheet.kind === "gallery"
                   ? { title: "Photo uploads", icon: "gallery", subtitle: folder?.name }
+                  : shownSheet.kind === "now-playing"
+                    ? { title: "Now playing", icon: "music" }
                   : shownSheet.kind === "history-filter"
                     ? { title: "Shared folder", icon: "folders" }
                     : shownSheet.kind === "folder-actions"
                       ? {
                           title: shownSheet.volume.name,
-                          icon: photoFolder ? "gallery" : "folder",
+                          icon: photoFolder ? "gallery" : musicFolder ? "music" : "folder",
                           subtitle: folderSubtitle,
                           menu: true,
                         }
                       : shownSheet.kind === "select"
                         ? {
                             title: shownSheet.volume.name,
-                            icon: shownSheet.volume.gallery ? "gallery" : "folder",
+                            icon: shownSheet.volume.gallery ? "gallery" : shownSheet.volume.music && catalog?.music ? "music" : "folder",
                             subtitle: `${folderSize(shownSheet.volume)} on hub`,
                           }
-                        : {
-                            title: "Resolve conflict",
-                            icon: "conflict",
-                            subtitle: shownSheet.original.path.split("/").at(-1),
-                          })}
+                        : shownSheet.kind === "conflict"
+                          ? {
+                              title: "Resolve conflict",
+                              icon: "conflict",
+                              subtitle: shownSheet.original.path.split("/").at(-1),
+                            }
+                          : musicSheet(shownSheet))}
               busy={busy}
               busyLabel={actionLabel}
               onClose={() =>
@@ -3001,6 +3242,33 @@ export default function App() {
                   />
                 </View>
               )}
+              {!!musicSheet(shownSheet) && (
+                <MusicSheet
+                  sheet={shownSheet}
+                  library={shownMusic?.library}
+                  cover={musicCover}
+                  locked={actionLocked}
+                  open={setSheet}
+                  change={changePlaylist}
+                  remove={deletePlaylist}
+                />
+              )}
+              {shownSheet.kind === "now-playing" && (
+                <NowPlaying
+                  library={shownMusic?.library}
+                  cover={musicCover}
+                  command={musicCommand}
+                  openAlbum={(track) => {
+                    setSheet(null);
+                    setFileView("music");
+                    setMusicSearch(null);
+                    setMusicRoute([
+                      { kind: "albums" },
+                      { kind: "album", id: track.albumId },
+                    ]);
+                  }}
+                />
+              )}
               {shownSheet.kind === "gallery" && (
                 <GallerySetup
                   gallery={engine.current.gallery}
@@ -3045,7 +3313,20 @@ export default function App() {
                           }}
                         />
                       )}
-                      {!!folder.selected && (
+                      {musicFolder && (
+                        <ActionRow
+                          label={musicView ? "View files" : "View library"}
+                          icon={musicView ? "folder" : "music"}
+                          onPress={() => {
+                            setSheet(null);
+                            setFileView(musicView ? "files" : "music");
+                            setMusicRoute([{ kind: "artists" }]);
+                            setMusicSearch(null);
+                            setVisibleCount(100);
+                          }}
+                        />
+                      )}
+                      {!!folder.selected && !musicFolder && (
                         <ActionRow
                           label="Add photos…"
                           icon="image"
@@ -3078,6 +3359,7 @@ export default function App() {
                           }}
                         />
                       )}
+                      {!musicFolder && (
                       <ActionRow
                         label={source ? "Change album…" : "Link album…"}
                         note={!source && status.offline ? HUB_ONLY_REASON : undefined}
@@ -3092,6 +3374,7 @@ export default function App() {
                         }
                         onPress={() => setSheet({ kind: "gallery" })}
                       />
+                      )}
                       {source && (
                         <ActionRow
                           label={

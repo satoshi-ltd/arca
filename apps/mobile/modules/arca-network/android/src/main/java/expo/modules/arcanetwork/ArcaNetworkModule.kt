@@ -14,6 +14,7 @@ import android.net.NetworkCapabilities
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.functions.Coroutine
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -23,6 +24,9 @@ class ArcaNetworkModule : Module() {
     @Volatile var connection: HttpURLConnection? = null
   }
   private val requests = java.util.concurrent.ConcurrentHashMap<String, RequestState>()
+  private var music: MusicRemote? = null
+  private fun music(): MusicRemote =
+    music ?: MusicRemote(appContext.reactContext ?: error("App is unavailable")) { sendEvent("musicState", it) }.also { music = it }
   override fun definition() = ModuleDefinition {
     Name("ArcaNetwork")
     AsyncFunction("openFile") Coroutine { uri: String ->
@@ -66,9 +70,31 @@ class ArcaNetworkModule : Module() {
         }
       }
     }
-    Events("transferStopped")
+    Events("transferStopped", "musicState")
     OnCreate { TransferService.onStopped = { reason -> sendEvent("transferStopped", mapOf("reason" to reason)) } }
-    OnDestroy { TransferService.onStopped = null }
+    OnDestroy {
+      TransferService.onStopped = null
+      music?.release()
+      music = null
+    }
+    AsyncFunction("musicReload") Coroutine { ->
+      val applied = CompletableDeferred<Unit>()
+      MusicService.reloadRunning(appContext.reactContext ?: error("App is unavailable")) { applied.complete(Unit) }
+      applied.await()
+      true
+    }
+    AsyncFunction("musicRenameHistory") Coroutine { from: String, to: String ->
+      val applied = CompletableDeferred<Unit>()
+      MusicService.renameHistory(appContext.reactContext ?: error("App is unavailable"), from, to) { applied.complete(Unit) }
+      applied.await()
+      true
+    }
+    AsyncFunction("musicPlay") Coroutine { context: String, track: String, shuffle: Boolean, position: Int ->
+      music().play(context, track, shuffle, position)
+    }
+    AsyncFunction("musicCommand") Coroutine { name: String, value: Double ->
+      music().command(name, value)
+    }
     AsyncFunction("startTransfer") {
       val context = appContext.reactContext ?: error("App is unavailable")
       check(appContext.currentActivity != null && appContext.currentActivity?.isFinishing == false) { "Open Arca to start photo uploads" }

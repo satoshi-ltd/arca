@@ -2,6 +2,7 @@ import { native } from "./private-network";
 import { File, Directory, Paths } from "expo-file-system";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
+import { toByteArray } from "base64-js";
 import { validPath, CHUNK } from "./replica";
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 function id(value) {
@@ -42,6 +43,14 @@ export const files = {
     );
   },
   object: (scope, hash) => new File(root, id(scope), "objects", id(hash)).uri,
+  musicLibrary: () => new File(root, "music-library.json").uri,
+  musicHistory: () => new File(root, "music-history.json").uri,
+  musicCovers: (scope) => new Directory(root, id(scope), "music-covers").uri,
+  musicCover(scope, key, size) {
+    if (!/^[a-f0-9]{64}$/.test(key) || !["small", "large"].includes(size))
+      throw new Error("Invalid cover");
+    return new File(root, id(scope), "music-covers", `${key}-${size}.jpg`).uri;
+  },
   partial: (scope, hash) => new File(root, id(scope), "partial", id(hash)).uri,
 
   parent: (uri) => Paths.dirname(uri),
@@ -52,6 +61,9 @@ export const files = {
     return new Directory(uri).list().map((entry) => entry.name);
   },
   async exists(uri) {
+    return Paths.info(uri).exists;
+  },
+  present(uri) {
     return Paths.info(uri).exists;
   },
   async stat(uri) {
@@ -117,6 +129,11 @@ export const files = {
       await new Directory(from).move(new Directory(to));
     else await new File(from).move(new File(to));
   },
+  staged: (uri) =>
+    Paths.join(
+      Paths.dirname(uri),
+      `.arca-copy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    ),
   // Callers journal replacements before entering this operation.
   async replace(from, to) {
     native.replaceFile(from, to);
@@ -131,6 +148,9 @@ export const files = {
     } finally {
       h.close();
     }
+  },
+  async writeBase64(uri, data) {
+    await this.write(uri, toByteArray(data));
   },
   async read(uri, offset, length) {
     const h = new File(uri).open();

@@ -26,6 +26,13 @@ const script =
   "\n" +
   fs
     .readFileSync(
+      new URL("../apps/desktop/src/music-library.js", import.meta.url),
+      "utf8",
+    )
+    .replace(/export /g, "") +
+  "\n" +
+  fs
+    .readFileSync(
       new URL("../apps/desktop/src/notice-contract.js", import.meta.url),
       "utf8",
     )
@@ -1100,6 +1107,78 @@ test("hub-only actions are disabled with a reason while the hub is unavailable a
     await new Promise((resolve) => setTimeout(resolve, 20));
     assert.deepEqual(routes.slice(count).filter((route) => route !== "/v1/status"), [], `${name} is blocked offline`);
   }
+});
+
+test("the hub's folder menu makes an ordinary folder a music library, which then shows the music tile and offers neither Enable item", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-music-menu-"));
+  init(home, { port: 0, name: "Music hub" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Records");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.engine.music?.background;
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  let poll = null;
+  w.setInterval = (callback, ms) => {
+    if (ms === 5000) poll = callback;
+    return 0;
+  };
+  const posted = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+        if (command === "desktop_preferences") return {};
+        if (command !== "api") return {};
+        if (args.method === "POST") posted.push(args.route);
+        const response = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          method: args.method,
+          ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          headers: { authorization: `Bearer ${daemon.engine.config.adminToken}` },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        return data;
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  await until(() => w.document.querySelector('.folder-card[data-action="folder-detail"]') && idle());
+  assert.equal(w.document.querySelector(".folder-card .tile [data-icon]").dataset.icon, "folder");
+  w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
+  await until(() => w.document.querySelector(".heading-actions .folder-actions-menu") && idle());
+  const menu = w.document.querySelector(".heading-actions .folder-actions-menu");
+  const enable = menu.querySelector('[data-action="enable-music"]');
+  assert.match(enable.textContent, /Enable music library/);
+  assert.equal(enable.querySelector("[data-icon]").dataset.icon, "music");
+  menu.open = true;
+  enable.click();
+  await until(() => /Enable music library\?/.test(w.document.querySelector("#dialog-content")?.textContent || "") && idle());
+  assert.match(w.document.querySelector("#dialog-content").textContent, /Files and synchronization stay the same/);
+  assert.equal(menu.open, false);
+  w.document.querySelector("#submit-dialog").click();
+  await until(() => daemon.engine.status().volumes[0].music && !w.document.querySelector("#dialog").open && idle());
+  await poll();
+  await until(() => w.document.querySelector(".music-page") && idle());
+  assert.ok(w.document.querySelector('.detail-title .tile [data-icon="music"]'));
+  assert.equal(w.document.querySelector('.heading-actions [data-action="music-mode"]').textContent.trim(), "View folder");
+  assert.deepEqual(posted, ["/v1/music/mark"]);
+  assert.deepEqual(
+    [...w.document.querySelectorAll(".heading-actions .folder-actions-menu [data-action]")].map((el) => el.dataset.action),
+    ["rename-share", "edit-ignore"],
+    "a music library offers neither Enable gallery nor Enable music library",
+  );
+  w.document.querySelector('[data-action="back-folders"]').click();
+  await until(() => w.document.querySelector('.folder-card .tile [data-icon="music"]') && idle());
+  assert.equal(volume.id, daemon.engine.status().volumes[0].id);
 });
 
 test("a replica's folder header offers Open in Finder alone: no Enable gallery and no folder actions menu", async (t) => {
@@ -3891,7 +3970,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   assert.equal(folderMenu.querySelector("summary").getAttribute("aria-label"), "Folder actions");
   assert.deepEqual(
     [...folderMenu.querySelectorAll(".menu-items [data-action]")].map((el) => el.dataset.action),
-    ["enable-gallery", "rename-share", "edit-ignore"],
+    ["enable-gallery", "enable-music", "rename-share", "edit-ignore"],
     "configuration actions live in the menu",
   );
   assert.deepEqual(

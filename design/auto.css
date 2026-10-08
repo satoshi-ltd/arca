@@ -147,3 +147,31 @@
   color: var(--m-mute);
   padding: 24px;
 }
+.a-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding-top: var(--space-1);
+}
+.a-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.a-tile .a-cover {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  margin-bottom: var(--space-1);
+}
+.a-tile .a-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.a-heading {
+  padding: var(--space-1) 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--m-mute);
+}

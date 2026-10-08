@@ -1010,7 +1010,10 @@ test("destroy mobile replica removes all private copies and hub registration, pr
   fs.writeFileSync(path.join(local, "unsynced.txt"), "local only");
   const device = client.state().connection.id;
   await assert.rejects(replica.destroy(), /Confirm/);
-  assert.ok(fs.existsSync(local));
+  const renaming = replica.renameFile(volume.id, "kept.txt", "moved.txt");
+  await assert.rejects(replica.destroy(true), /Wait for the current operation/, "erasing never runs under a rename");
+  await renaming;
+  assert.ok(fs.existsSync(path.join(local, "moved.txt")));
   await replica.destroy(true);
   assert.equal(fs.existsSync(local), false);
   assert.equal(
@@ -5399,4 +5402,219 @@ test("a replacement whose directory flush fails after the rename is reported, ke
   await sync(f);
   assert.equal(fs.readFileSync(local, "utf8"), "version two");
   assert.deepEqual(await f.store.applying(f.replica.scope, f.volume.id), []);
+});
+
+test("a phone keeps the hub's music library, its covers and the car's library file in step with its local copy", async (t) => {
+  const f = await fixture(t),
+    { volume, replica, files, daemon } = f;
+  const { default: ffmpeg } = await import("ffmpeg-static");
+  const { execFileSync } = await import("node:child_process");
+  const { default: sharp } = await import("sharp");
+  const local = path.join(f.root, "mobile");
+  Object.assign(files, {
+    musicLibrary: () => path.join(local, "music-library.json"),
+    musicHistory: () => path.join(local, "music-history.json"),
+    text: async (p) => fs.readFileSync(p, "utf8"),
+    musicCovers: (scope) => path.join(local, scope, "music-covers"),
+    musicCover: (scope, key, size) => path.join(local, scope, "music-covers", `${key}-${size}.jpg`),
+    writeBase64: async (p, data) => fs.writeFileSync(p, Buffer.from(data, "base64")),
+  });
+  const reloads = [];
+  replica.player = { reload: async (uri) => reloads.push(uri ?? null) };
+  const admin = async (route, body) => {
+    const response = await fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(response.status, 200, await response.text());
+  };
+  await admin("/v1/music/mark", { volume: volume.id });
+  const art = path.join(f.root, "art.jpg");
+  fs.writeFileSync(art, await sharp({ create: { width: 500, height: 500, channels: 3, background: "teal" } }).jpeg().toBuffer());
+  const track = (name, tags, cover = false) => {
+    const target = path.join(volume.path, ...name.split("/"));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    execFileSync(ffmpeg, [
+      "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=500:duration=0.3",
+      ...(cover ? ["-i", art, "-map", "0:a", "-map", "1:v", "-disposition:v:0", "attached_pic"] : []),
+      ...Object.entries(tags).flatMap(([key, value]) => ["-metadata", `${key}=${value}`]),
+      ...(name.endsWith(".mp3") ? ["-id3v2_version", "3"] : []),
+      target,
+    ]);
+  };
+  track("Ann/First/01 One.mp3", { title: "One", artist: "Ann", album_artist: "Ann", album: "First", track: "1" }, true);
+  track("Ann/First/02 Two.mp3", { title: "Two", artist: "Ann", album_artist: "Ann", album: "First", track: "2" }, true);
+  track("Bo/Solo/01 Alone.flac", { title: "Alone", artist: "Bo", album: "Solo", track: "1" });
+  fs.copyFileSync(art, path.join(volume.path, "Bo", "Solo", "folder.jpg"));
+  await daemon.engine.cycle();
+  daemon.engine.music.prepare(volume.id);
+  await daemon.engine.music.background;
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const saved = await f.store.musicLibrary(replica.scope, volume.id);
+  assert.equal(saved.value.tracks.length, 3);
+  const written = JSON.parse(fs.readFileSync(files.musicLibrary(), "utf8"));
+  assert.equal(written.scope, replica.scope);
+  assert.deepEqual(written.albums.map((album) => [album.title, album.artist, album.tracks.length]), [["First", "Ann", 2], ["Solo", "Bo", 1]]);
+  assert.deepEqual(written.artists.map((artist) => artist.name), ["Ann", "Bo"]);
+  const one = written.tracks.find((item) => item.title === "One");
+  assert.equal(one.uri, files.work(replica.scope, volume.id, "Ann/First/01 One.mp3"));
+  assert.ok(fs.existsSync(one.uri), "the car plays the phone's own copy");
+  const keys = new Set(written.tracks.map((item) => item.cover));
+  assert.equal(keys.size, 2, "the embedded cover is shared by both Ann tracks and Bo uses folder.jpg");
+  for (const key of keys)
+    for (const size of ["small", "large"]) {
+      const meta = await sharp(files.musicCover(replica.scope, key, size)).metadata();
+      assert.equal(meta.width, size === "small" ? 360 : 500);
+    }
+  assert.deepEqual(reloads, [files.musicLibrary()]);
+  const covers = f.requests.filter((route) => route === "/v1/music/cover").length;
+  assert.equal(covers, 4);
+  const asked = [];
+  const api = f.client.api;
+  f.client.api = (route, ...rest) => {
+    asked.push(route);
+    return api.call(f.client, route, ...rest);
+  };
+  await f.store.setMusicIndexing(replica.scope, volume.id, true);
+  await sync(f);
+  f.client.api = api;
+  assert.ok(asked.some((route) => route.startsWith("/v1/music/library?") && new URLSearchParams(route.split("?")[1]).get("version") === saved.version), "the phone sends the version it holds");
+  assert.equal((await f.store.musicLibrary(replica.scope, volume.id)).indexing, false, "an unchanged answer still updates the indexing flag");
+  assert.equal(f.requests.filter((route) => route === "/v1/music/cover").length, covers, "covers already on the phone are not fetched again");
+  assert.equal(reloads.length, 1, "an unchanged library is not republished");
+
+  fs.rmSync(path.join(volume.path, "Bo"), { recursive: true });
+  await daemon.engine.cycle();
+  await sync(f);
+  const after = JSON.parse(fs.readFileSync(files.musicLibrary(), "utf8"));
+  assert.deepEqual(after.tracks.map((item) => item.title).sort(), ["One", "Two"]);
+  assert.deepEqual(fs.readdirSync(files.musicCovers(replica.scope)).sort(), [...keys].filter((key) => key === one.cover).flatMap((key) => [`${key}-large.jpg`, `${key}-small.jpg`]));
+  assert.equal(reloads.length, 2);
+
+  const { folderLibrary } = await import("../apps/mobile/src/music-sync.js");
+  const { playlistKey } = await import("../apps/mobile/src/music-library.js");
+  Object.assign(files, { staged: (p) => path.join(path.dirname(p), `.arca-copy-${crypto.randomUUID()}`) });
+  const lists = path.join(volume.path, "Playlists");
+  const hubText = (name) => fs.readFileSync(path.join(lists, name), "utf8");
+  fs.mkdirSync(lists);
+  fs.writeFileSync(path.join(lists, "Mix.m3u8"), "#EXTM3U\r\n#PLAYLIST:Mix\r\n../Ann/First/02 Two.mp3\r\nhttp://radio/x\r\n../Ann/First/01 One.mp3\r\n../Ann/First/02 Two.mp3\r\n");
+  fs.writeFileSync(path.join(lists, "old.m3u"), "../Ann/First/02 Two.mp3\n");
+  await daemon.engine.cycle();
+  await sync(f);
+  const mix = playlistKey(volume.id, "Playlists/Mix.m3u8");
+  const shown = (await folderLibrary(replica, volume.id)).library;
+  assert.deepEqual(shown.playlists.get(mix).entries.map((entry) => entry.state), ["ready", "missing", "ready", "ready"], "a playlist made elsewhere downloads and appears in Playlists");
+  const car = JSON.parse(fs.readFileSync(files.musicLibrary(), "utf8")).playlists;
+  assert.deepEqual(car.find((item) => item.id === mix).tracks.map((id) => id.split("/").at(-1)), ["02 Two.mp3", "01 One.mp3", "02 Two.mp3"]);
+  await replica.addToPlaylist(volume.id, "Playlists/Mix.m3u8", "Ann/First/01 One.mp3");
+  await sync(f);
+  assert.equal(
+    hubText("Mix.m3u8"),
+    "#EXTM3U\r\n#PLAYLIST:Mix\r\n../Ann/First/02 Two.mp3\r\nhttp://radio/x\r\n../Ann/First/01 One.mp3\r\n../Ann/First/02 Two.mp3\r\n../Ann/First/01 One.mp3\r\n",
+    "an edit made on the phone uploads as an ordinary file change and keeps every other line",
+  );
+  await assert.rejects(replica.removeFromPlaylist(volume.id, "Playlists/Mix.m3u8", 1, "Ann/First/02 Two.mp3"), /This playlist changed/);
+  await assert.rejects(replica.addToPlaylist(volume.id, "Playlists/old.m3u", "Ann/First/01 One.mp3"), /Only \.m3u8 playlists/);
+  const mine = files.work(replica.scope, volume.id, "Playlists");
+  fs.writeFileSync(path.join(mine, "Latin.m3u8"), Buffer.from([0x23, 0xe9, 0x0a]));
+  await assert.rejects(replica.addToPlaylist(volume.id, "Playlists/Latin.m3u8", "Ann/First/01 One.mp3"), /not valid UTF-8/);
+  fs.writeFileSync(path.join(mine, "Huge.m3u8"), Buffer.alloc(1024 * 1024 + 1, 0x23));
+  await assert.rejects(replica.addToPlaylist(volume.id, "Playlists/Huge.m3u8", "Ann/First/01 One.mp3"), /too large/);
+  for (const [name, reason] of [["Latin", /not valid UTF-8/], ["Huge", /too large/]])
+    await assert.rejects(replica.renamePlaylist(volume.id, `Playlists/${name}.m3u8`, `${name} 2`), reason);
+  assert.deepEqual(fs.readdirSync(mine).filter((name) => /^(Latin|Huge)/.test(name)).sort(), ["Huge.m3u8", "Latin.m3u8"], "a playlist that cannot be changed keeps its name too");
+  assert.deepEqual(fs.readFileSync(path.join(mine, "Latin.m3u8")), Buffer.from([0x23, 0xe9, 0x0a]), "a refused edit leaves the file untouched");
+  fs.rmSync(path.join(mine, "Latin.m3u8"));
+  fs.rmSync(path.join(mine, "Huge.m3u8"));
+  await replica.removeFromPlaylist(volume.id, "Playlists/Mix.m3u8", 3, "Ann/First/02 Two.mp3");
+  await replica.renameFile(volume.id, "Ann/First/01 One.mp3", "01 Uno.mp3");
+  await sync(f);
+  assert.equal(
+    hubText("Mix.m3u8"),
+    "#EXTM3U\r\n#PLAYLIST:Mix\r\n../Ann/First/02 Two.mp3\r\nhttp://radio/x\r\n../Ann/First/01 Uno.mp3\r\n../Ann/First/01 Uno.mp3\r\n",
+    "removing one appearance and renaming a track on the phone rewrite only those entries",
+  );
+  assert.equal(hubText("old.m3u"), "../Ann/First/02 Two.mp3\n", "an .m3u file is never rewritten");
+  await replica.createPlaylist(volume.id, "Road trip", "Ann/First/02 Two.mp3");
+  await assert.rejects(replica.createPlaylist(volume.id, "road TRIP", "Ann/First/02 Two.mp3"), /already exists/);
+  await sync(f);
+  assert.equal(hubText("Road trip.m3u8"), "#EXTM3U\n#PLAYLIST:Road trip\n../Ann/First/02 Two.mp3\n");
+  await replica.addToPlaylist(volume.id, "Playlists/Road trip.m3u8", "Ann/First/01 Uno.mp3");
+  await replica.renamePlaylist(volume.id, "Playlists/Road trip.m3u8", "Drive");
+  await sync(f);
+  assert.equal(fs.existsSync(path.join(lists, "Road trip.m3u8")), false);
+  assert.equal(hubText("Drive.m3u8"), "#EXTM3U\n#PLAYLIST:Drive\n../Ann/First/02 Two.mp3\n../Ann/First/01 Uno.mp3\n", "an edit that has not synced yet moves with the rename");
+  await replica.removeFile(volume.id, "Playlists/Drive.m3u8");
+  await sync(f);
+  assert.equal(fs.existsSync(path.join(lists, "Drive.m3u8")), false, "Delete playlist… is the phone's ordinary deletion");
+  assert.deepEqual(fs.readdirSync(files.work(replica.scope, volume.id, "Playlists")).sort(), ["Mix.m3u8", "old.m3u"], "no staged file is left behind");
+  await f.store.saveMusicLibrary(replica.scope, volume.id, { version: "stale", indexing: false, tracks: [] });
+  f.client.api = async (route, ...rest) => {
+    const value = await api.call(f.client, route, ...rest);
+    return route.startsWith("/v1/music/library") && Array.isArray(value.tracks)
+      ? { ...value, playlists: [{ path: "Playlists/Hub only.m3u8", name: "Hub only", hash: "c".repeat(64), editable: true, entries: ["Ann/First/02 Two.mp3", null] }] }
+      : value;
+  };
+  await sync(f);
+  f.client.api = api;
+  assert.deepEqual((await f.store.musicLibrary(replica.scope, volume.id)).value.playlists.map((item) => item.name), ["Hub only"], "the phone keeps the hub's playlists with its tracks");
+  const listed = (await folderLibrary(replica, volume.id)).library;
+  assert.deepEqual(
+    listed.playlistOrder.map((id) => [listed.playlists.get(id).name, listed.playlists.get(id).entries.map((entry) => entry.state)]),
+    [["Hub only", ["ready", "missing"]], ["Mix", ["ready", "missing", "ready", "ready"]], ["old", ["ready"]]],
+    "a playlist the phone has not downloaded yet comes from the hub's answer",
+  );
+  fs.writeFileSync(path.join(volume.path, ".arcaignore"), "Playlists/private.m3u8\n");
+  await daemon.engine.cycle();
+  await sync(f);
+  const hidden = path.join(mine, "private.m3u8");
+  fs.writeFileSync(hidden, "#EXTM3U\n../Ann/First/02 Two.mp3\n");
+  assert.ok(
+    !(await folderLibrary(replica, volume.id)).library.playlists.has(playlistKey(volume.id, "Playlists/private.m3u8")),
+    "a playlist .arcaignore excludes is not listed",
+  );
+  await assert.rejects(replica.addToPlaylist(volume.id, "Playlists/private.m3u8", "Ann/First/01 Uno.mp3"), /Excluded files cannot be edited here/);
+  await assert.rejects(replica.createPlaylist(volume.id, "private", "Ann/First/01 Uno.mp3"), /Excluded files cannot be edited here/);
+  await replica.renameFile(volume.id, "Ann/First/02 Two.mp3", "02 Dos.mp3");
+  assert.equal(fs.readFileSync(hidden, "utf8"), "#EXTM3U\n../Ann/First/02 Two.mp3\n", "renaming a track leaves an excluded playlist alone");
+  await sync(f);
+  assert.match(hubText("Mix.m3u8"), /\.\.\/Ann\/First\/02 Dos\.mp3/, "visible playlists still follow the rename");
+  assert.equal(fs.existsSync(path.join(lists, "private.m3u8")), false, "the excluded playlist never uploads");
+  fs.rmSync(hidden);
+  const published = reloads.length;
+
+  await replica.unselect(volume.id);
+  assert.deepEqual(JSON.parse(fs.readFileSync(files.musicLibrary(), "utf8")).tracks, [], "a folder that stops syncing leaves the car's library at once");
+  await sync(f);
+  assert.deepEqual(fs.readdirSync(files.musicCovers(replica.scope)), [], "covers go once no music folder is left");
+  assert.equal(reloads.length, published + 1);
+  assert.equal(await f.store.musicLibrary(replica.scope, volume.id), null);
+  replica.publishedMusic = "previous";
+  let late;
+  replica.musicPublishing = new Promise((resolve) => setTimeout(resolve, 30)).then(() => {
+    late = true;
+    fs.writeFileSync(files.musicLibrary(), "{}");
+  });
+  replica.musicHistoryWriting = Promise.reject(new Error("history write failed"));
+  replica.musicHistoryWriting.catch(() => {});
+  replica.lastFullScan = 123;
+  const { recordMusicPlay } = await import("../apps/mobile/src/music-sync.js");
+  const clientDestroy = replica.client.destroy.bind(replica.client);
+  replica.client.destroy = async () => {
+    recordMusicPlay(replica, "album:late");
+    await clientDestroy();
+  };
+  replica.player.reload = async (value) => {
+    reloads.push(value ?? null);
+    throw new Error("service gone");
+  };
+  await replica.destroy(true);
+  assert.ok(late, "erasing waits for a car library write already running");
+  assert.equal(replica.publishedMusic, null, "erasing forgets what the car was given");
+  assert.equal(reloads.at(-1), null, "and tells the car service to reload");
+  assert.equal(replica.lastFullScan, 0, "a service that cannot reload never stops the reset");
+  assert.equal(fs.existsSync(files.musicLibrary()), false);
+  assert.equal(fs.existsSync(files.musicHistory()), false, "a play recorded while erasing does not survive it");
 });

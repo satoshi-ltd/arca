@@ -246,6 +246,9 @@ export class Store {
       .exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS gallery_derivatives(key TEXT PRIMARY KEY,size INTEGER NOT NULL,used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS gallery_folders(volume TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS music_folders(volume TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS music_tracks(hash TEXT PRIMARY KEY,title TEXT,artist TEXT,album_artist TEXT,album TEXT,track INTEGER,disc INTEGER,year INTEGER,genre TEXT,duration REAL,codec TEXT,cover TEXT,checked INTEGER NOT NULL,retry INTEGER NOT NULL DEFAULT 0,release TEXT);
+      CREATE INDEX IF NOT EXISTS music_tracks_cover ON music_tracks(cover);
       CREATE TABLE IF NOT EXISTS gallery_assets(volume TEXT,source TEXT,asset TEXT,resources TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(volume,source,asset));
       CREATE TABLE IF NOT EXISTS gallery_members(volume TEXT,path TEXT,source TEXT,asset TEXT,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS gallery_deletions(seq INTEGER PRIMARY KEY AUTOINCREMENT,author TEXT,id TEXT,volume TEXT,request TEXT,result TEXT,source TEXT,asset TEXT,created INTEGER,UNIQUE(author,id));
@@ -305,6 +308,22 @@ export class Store {
         .some((column) => column.name === "modified")
     )
       this.db.exec("ALTER TABLE gallery_metadata ADD COLUMN modified TEXT");
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(music_tracks)")
+        .all()
+        .some((column) => column.name === "retry")
+    )
+      this.db.exec(
+        "ALTER TABLE music_tracks ADD COLUMN retry INTEGER NOT NULL DEFAULT 0",
+      );
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(music_tracks)")
+        .all()
+        .some((column) => column.name === "release")
+    )
+      this.db.exec("ALTER TABLE music_tracks ADD COLUMN release TEXT");
     if (
       !this.db
         .prepare("PRAGMA table_info(snapshot_sessions)")
@@ -423,6 +442,7 @@ export class Store {
         )
         .run(id);
       this.db.prepare("DELETE FROM gallery_folders WHERE volume=?").run(id);
+      this.db.prepare("DELETE FROM music_folders WHERE volume=?").run(id);
       this.db.prepare("DELETE FROM volumes WHERE id=?").run(id);
       if (removeMarker) fs.unlinkSync(marker);
       this.db.exec("COMMIT");

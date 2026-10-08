@@ -61,6 +61,18 @@ export const iconNames = {
   camera: "Camera",
   calendar: "Calendar",
   info: "Info",
+  music: "Music",
+  album: "Disc3",
+  artist: "MicVocal",
+  "skip-forward": "SkipForward",
+  "skip-back": "SkipBack",
+  shuffle: "Shuffle",
+  repeat: "Repeat",
+  "repeat-one": "Repeat1",
+  playlist: "ListMusic",
+  "list-plus": "ListPlus",
+  "list-minus": "ListMinus",
+  plus: "Plus",
 };
 export const icons = {
   "map-pin": [
@@ -915,5 +927,86 @@ export const icons = {
         d: "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11",
       },
     ],
+  ],
+  music: [
+    ["path", { d: "M9 18V5l12-2v13" }],
+    ["circle", { cx: "6", cy: "18", r: "3" }],
+    ["circle", { cx: "18", cy: "16", r: "3" }],
+  ],
+  album: [
+    ["circle", { cx: "12", cy: "12", r: "10" }],
+    ["path", { d: "M6 12c0-1.7.7-3.2 1.8-4.2" }],
+    ["circle", { cx: "12", cy: "12", r: "2" }],
+    ["path", { d: "M18 12c0 1.7-.7 3.2-1.8 4.2" }],
+  ],
+  artist: [
+    [
+      "path",
+      {
+        d: "m11 7.601-5.994 8.19a1 1 0 0 0 .1 1.298l.817.818a1 1 0 0 0 1.314.087L15.09 12",
+      },
+    ],
+    [
+      "path",
+      {
+        d: "M16.5 21.174C15.5 20.5 14.372 20 13 20c-2.058 0-3.928 2.356-6 2-2.072-.356-2.775-3.369-1.5-4.5",
+      },
+    ],
+    ["circle", { cx: "16", cy: "7", r: "5" }],
+  ],
+  "skip-forward": [
+    ["polygon", { points: "5 4 15 12 5 20 5 4" }],
+    ["line", { x1: "19", x2: "19", y1: "5", y2: "19" }],
+  ],
+  "skip-back": [
+    ["polygon", { points: "19 20 9 12 19 4 19 20" }],
+    ["line", { x1: "5", x2: "5", y1: "19", y2: "5" }],
+  ],
+  shuffle: [
+    [
+      "path",
+      { d: "M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22" },
+    ],
+    ["path", { d: "m18 2 4 4-4 4" }],
+    ["path", { d: "M2 6h1.9c1.5 0 2.9.9 3.6 2.2" }],
+    ["path", { d: "M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8" }],
+    ["path", { d: "m18 14 4 4-4 4" }],
+  ],
+  repeat: [
+    ["path", { d: "m17 2 4 4-4 4" }],
+    ["path", { d: "M3 11v-1a4 4 0 0 1 4-4h14" }],
+    ["path", { d: "m7 22-4-4 4-4" }],
+    ["path", { d: "M21 13v1a4 4 0 0 1-4 4H3" }],
+  ],
+  "repeat-one": [
+    ["path", { d: "m17 2 4 4-4 4" }],
+    ["path", { d: "M3 11v-1a4 4 0 0 1 4-4h14" }],
+    ["path", { d: "m7 22-4-4 4-4" }],
+    ["path", { d: "M21 13v1a4 4 0 0 1-4 4H3" }],
+    ["path", { d: "M11 10h1v4" }],
+  ],
+  playlist: [
+    ["path", { d: "M21 15V6" }],
+    ["path", { d: "M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" }],
+    ["path", { d: "M12 12H3" }],
+    ["path", { d: "M16 6H3" }],
+    ["path", { d: "M12 18H3" }],
+  ],
+  "list-plus": [
+    ["path", { d: "M11 12H3" }],
+    ["path", { d: "M16 6H3" }],
+    ["path", { d: "M16 18H3" }],
+    ["path", { d: "M18 9v6" }],
+    ["path", { d: "M21 12h-6" }],
+  ],
+  "list-minus": [
+    ["path", { d: "M11 12H3" }],
+    ["path", { d: "M16 6H3" }],
+    ["path", { d: "M16 18H3" }],
+    ["path", { d: "M21 12h-6" }],
+  ],
+  plus: [
+    ["path", { d: "M5 12h14" }],
+    ["path", { d: "M12 5v14" }],
   ],
 };

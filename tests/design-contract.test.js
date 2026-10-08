@@ -559,3 +559,11 @@ test("floating surfaces lift off the page in dark and the selected segment shows
   const dropdown = css.match(/\n\.dropdown-menu \{([^}]*)\}/)[1];
   assert.match(dropdown, /background: var\(--notice-surface\);/);
 });
+
+test("a primary icon button keeps its accent fill on hover, so its icon stays visible", () => {
+  const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  const hover = css.slice(css.indexOf("@media (hover: hover) {\n  .secondary:hover:not(:disabled),"));
+  const block = hover.slice(0, hover.indexOf("\n}\n"));
+  assert.ok(block.indexOf(".icon-button:hover:not(:disabled)") < block.indexOf(".primary.icon-button:hover:not(:disabled)"), "the primary rule follows the generic one");
+  assert.match(block, /\.primary\.icon-button:hover:not\(:disabled\) \{\s+background: var\(--green\);\s+\}/);
+});

@@ -896,8 +896,12 @@ test("destroy hub deletes its files/history and returns to setup without deletin
     /Only a hub/,
   );
   assert.ok(fs.existsSync(volume.path));
+  const covers = path.join(hub.engine.store.home, "music-covers");
+  fs.mkdirSync(covers, { recursive: true });
+  fs.writeFileSync(path.join(covers, `${"a".repeat(64)}-360.jpg`), "cover");
   await hub.api("/v1/destroy-hub", { confirmed: true });
   assert.equal(fs.existsSync(volume.path), false);
+  assert.equal(fs.existsSync(path.join(covers, `${"a".repeat(64)}-360.jpg`)), false, "erasing the hub removes music covers");
   assert.equal(
     hub.engine.store.db.prepare("SELECT count(*) AS n FROM revisions").get().n,
     0,
