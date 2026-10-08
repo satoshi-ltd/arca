@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.118 — 2026-10-08
+
+- A `store` EAS profile builds the Google Play app bundle and the App Store build; `production` stays the sideloaded APK.
+- Android builds no longer request drawing over other apps; iOS builds answer the export-compliance question themselves (Arca has no encryption of its own) and carry the privacy manifest and purpose strings App Store processing checks.
+- The iPhone's photo access prompt now says Arca reads the albums you link, or the whole library, to upload them to your hub.
+
+Needs: native build
+
 ## 0.6.117 — 2026-10-07
 
 - The phone's Save file sheet now lists up to three recent destinations above the selected folders, most used first, so a file shared from another app lands in its usual subfolder with one tap; the list stays on the phone and forgets folders that stop syncing there.

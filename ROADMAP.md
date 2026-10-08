@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-07 · Phase 1 functional, not release-qualified.
+Updated 2026-10-08 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -125,6 +125,9 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 ### Distribution
 
+- **STORE-REVIEW-HUB** — A demo hub that store reviewers can pair with
+  `deploy · maintainer · high`
+  accept: reviewers have no hub, Tailscale or LAN, and a pairing code lasts ten minutes and works once, so no code in the review notes survives until review. A disposable Docker hub behind HTTPS on a public name (outside the pilot; the reverse proxy reaches it over loopback or with Allow HTTP on local network, since a Docker bridge peer is private) holds two seeded folders with a few photos and documents; a password-protected page with rate limiting runs `node packages/cli/arca.js pair "App Review"` in that container and shows the hub address, the six-digit code and its countdown, noting that a new code replaces the previous one. A test phone pairs through the public name, downloads, uploads and sees the gallery; then it is removed. App Store Connect and Play Console carry the page, its credentials and the steps; the hub stops after approval.
 - **P1-UMBREL-IMAGE** — Choose the Umbrel release image
   `decision · maintainer · normal`
   accept: keep 0.4.1, or move all three image references and the manifest version to a newer image (0.4.1 lacks the onboarding fixes). Moving it also retires `deploy/umbrel/arca/server-setup.js.template`, a copy of `packages/daemon/setup.js` mounted over the pinned image.
@@ -135,8 +138,8 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   `verify · maintainer · low`
   accept: `arca.satoshi-ltd.com` serves the candidate's Pages project and Git auto-deploys are off.
 - **P1-PUBLIC-ACCESS** — Store listings
-  `deploy · maintainer · low`
-  accept: `APP_STORE_URL` and `PLAY_STORE_URL` name real listings so the site's mobile card shows store buttons instead of saying the apps are not in the stores yet.
+  `deploy · maintainer · low · depends: STORE-REVIEW-HUB`
+  accept: `store` builds uploaded; both listings give `https://satoshi-ltd.com/privacy.html` as the privacy policy (it already covers Arca); Play Console declarations filed (photo and video permissions for linked albums, the `dataSync` foreground service with its video, `REQUEST_INSTALL_PACKAGES` under file sharing, transfer or management with the listing description mentioning that APKs open from folders, app access, data safety; if Play refuses the install permission, that becomes a decision task) and App Store privacy answers given, with review notes explaining that arbitrary loads serve plain HTTP to the user's own hub over Tailscale or the LAN; the existing EAS keystore enrolled as the Play app signing key so sideloaded installs can update from Play; the first iOS upload checked for missing purpose strings and privacy declarations, including the `expo-sharing` share extension, which `ios.privacyManifests` does not cover; `APP_STORE_URL` and `PLAY_STORE_URL` name real listings so the site's mobile card shows store buttons instead of saying the apps are not in the stores yet.
 - **P1-SIGNING** — Code signing
   `decision · maintainer · low`
   accept: a decision on Windows signing; optionally one signed macOS run with `sign_macos` checked and `publish` unchecked.

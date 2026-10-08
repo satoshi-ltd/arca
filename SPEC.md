@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.117 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.6.118 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -373,6 +373,7 @@ The phone and Fold app (`apps/mobile`) is an Expo/React Native JavaScript replic
 
 - Expo SDK **57.0.24**, React Native **0.86.3**, React **19.2.3**; iOS 16.4 minimum (`ArcaNetwork.podspec`). `expo-file-system` `copy()` and `move()` are awaited; paginated media-library calls come from `expo-media-library/legacy` through `media-library.js`. React Native 0.86 has only `StyleSheet.absoluteFill`, and the text-scaling pass skips anything that is not a style object so a future removal degrades instead of crashing at launch.
 - The local `ArcaNetwork` module (Kotlin and Swift) is required directly, with no optional-module fallback. It provides network requests whose block transfers read and write app-owned temporary files with range and length validation and no payload base64 across the bridge; streaming SHA-256 on Android; `replaceFile` (fsync the source, then an atomic rename; iOS also fsyncs the parent directory and raises every failed open or flush, so a failure before the rename leaves the destination untouched and the phone keeps its recovery record, and a retry completes the replacement); `receiveShared` (Android, `SharedFiles.kt`: copies a shared `content://` file into the private inbox under a generated name); gallery export (`GalleryExport.kt`, `GalleryExport.swift`); thumbnails (`ArcaNetwork.thumbnail(source, destination, size, cover, video)` in `Thumbnails.kt` and `Thumbnails.swift`); non-recursive `removeEmptyDirectory`; opening files (Android `ACTION_VIEW` with a temporary read-only content URI, iOS Open In); APK installation (`REQUEST_INSTALL_PACKAGES` with the APK MIME type, explaining and opening settings only on an explicit tap); the Android transfer session; and the clipboard. Android network, hashing and export run on coroutines on `Dispatchers.IO`; iOS uses async URLSession. Metro cannot add native methods: native changes need a new binary.
+- **Permissions and store compliance** (`app.json`): photo and video library read access with media location (Android `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `ACCESS_MEDIA_LOCATION`; no audio media); local network on iOS; notifications; the Android `dataSync` foreground service and APK installation from the native module. Camera, microphone and `SYSTEM_ALERT_WINDOW` are blocked. iOS still carries purpose strings saying Arca does not use the camera and never saves to the photo library, because `expo-image-picker` and `expo-media-library` link those APIs and App Store processing refuses binaries without them; Arca never asks for either. The photo-library purpose string says Arca reads the linked albums or the whole library to upload them to the hub. `ITSAppUsesNonExemptEncryption` is false because Arca has no encryption of its own, only SHA-256 hashing and the platform's TLS when a hub is reached over HTTPS, and the iOS privacy manifest declares disk-space reason `E174.1` for the free-space check in `GalleryExport.swift`. ATS allows arbitrary loads because pairing and sync use plain HTTP to Tailscale and private LAN addresses. `tests/mobile-store-config.test.js` guards these keys.
 
 ### Replica cycle
 
@@ -659,7 +660,7 @@ The target must not exist. Recovery verifies stored objects and rebuilds receive
 - **Settings → History** has one row, Older versions (the number of kept older versions: each file's current version and current deletions are not counted, so untouched files add nothing; superseded folder entries are included), with Clean up… and a hint stating that cleanup shows what it would remove first and never removes current files, pending changes or history not yet backed up. The Clean up older versions dialog asks "Remove versions older than (days)" and "But always keep the last (versions per file)" (0 skips a rule), shows Would remove, Keeps and Protected after See the count (Keeps and each folder's kept figure count older versions only, like the Older versions row, so the two numbers agree; Protected still counts current, pending and unbacked versions), and removes nothing until Apply cleanup; editing either field after the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen. Per-folder retention sits in the hub's folder detail, in its Version history panel.
 - **Settings → Hub recovery** promotes a replica holding every last-known share after the old hub is stopped for good; other replicas use **Reconnect to replacement hub**.
 
-### Android builds
+### Mobile builds
 
 From `apps/mobile` (Android SDK, mobile dependencies and an Expo login):
 
@@ -668,10 +669,14 @@ npm run build:local:dev    # compile locally with EAS signing and install
 npm run build:local:prod   # signed APK in apps/mobile/release-assets/
 npm run build:dev          # the same development build on EAS cloud, downloaded and installed
 npm run build:prod         # the same signed APK on EAS cloud
+npx -y eas-cli build --platform android --profile store   # Play app bundle (AAB) on EAS cloud
+npx -y eas-cli build --platform ios --profile store       # App Store build on EAS cloud
 npm run build:local:dev -- --install-only
 ```
 
 Development builds install on the first USB device, else a running emulator, else they boot `Pixel_9_Pro_Fold` (`ANDROID_AVD`, `ANDROID_SERIAL` override); installation uses `adb install -r`, keeps app data and stops on a signature mismatch without uninstalling. Development builds compile only `arm64-v8a`; production keeps every ABI. Local builds use `eas build --local` with the remote signing credentials; cloud builds use the `satoshi-ltd/arca` EAS project and consume quota. Every build runs `check:release` first, writes `arca-<version>-android.apk` (production) or `arca-<version>-android-dev.apk` (development), and `apps/mobile/scripts/release-assets.mjs` keeps only the latest development and production APK. EAS profiles pin the `.node-version` Node. `.easignore` must include every shared module mobile imports (such as `apps/desktop/src/notice-contract.js` and `file-icons.js`); a root test checks it. Metro is user-managed and never started by builds. Launcher and splash assets come from `node apps/mobile/scripts/generate-brand-assets.mjs` (needs librsvg) and need a new binary.
+
+The `store` profile is the only one that builds for the stores: Android gets an app bundle for Google Play, iOS an App Store build, and `production` stays the sideloaded APK. It bypasses `android-build.mjs`, so run `npm run check:release` first. Google Play re-signs bundles with its own key unless the existing EAS keystore is enrolled as the app signing key; without that, a phone running the sideloaded APK cannot update from Play and must uninstall, which deletes its app-owned copies.
 
 ### Code map
 

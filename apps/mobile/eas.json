@@ -28,6 +28,12 @@
       },
       "extends": "base"
     },
+    "store": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "extends": "base"
+    },
     "base": {
       "node": "24.21.0"
     }
