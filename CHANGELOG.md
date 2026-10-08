@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.6 — 2026-10-08
+
+- A hub that accepts connections but never answers no longer stalls the desktop: after the first saved view times out the rest answer at once from saved data, and Sync now says plainly that the hub is unavailable.
+- On the phone, saving the device name, Photo Info and the gallery give up quickly, Add photos… and Change album… never ask a hub known to be away (Change album… now repairs a damaged album offline), and a hub lost during the music step ends the sync instead of reporting it complete.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.5 — 2026-10-08
 
 - The desktop window now shows Offline and the way back within a few seconds of the daemon knowing, instead of 20–25 seconds later, and pausing and resuming while the hub is away no longer erases why the device is offline.

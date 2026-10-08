@@ -261,8 +261,8 @@ export async function refreshMusic(replica, { covers = true } = {}) {
       if (result.fetched) changed = true;
       if (result.complete) await pruneCovers(replica, library);
     }
-  } catch {
-    /* The saved library and covers stay usable; the next cycle retries. */
+  } catch (error) {
+    if (isHubUnreachable(error)) throw error;
   } finally {
     if (changed) replica.musicTick = (replica.musicTick || 0) + 1;
   }

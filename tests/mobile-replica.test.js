@@ -1869,6 +1869,40 @@ test("manual gallery picks share receipts with automatic album uploads", async (
   );
 });
 
+test("Add photos asks nothing of a hub the phone already knows is unreachable, and Change album still repairs a damaged record", async (t) => {
+  const f = await galleryFixture(t);
+  const r = f.replica;
+  await f.enable();
+  const uri = path.join(f.root, "known-offline.jpg");
+  fs.writeFileSync(uri, "picked while the hub is known to be away");
+  r.hubUnavailable = true;
+  f.requests.length = 0;
+  await assert.rejects(r.gallery.addPhotos(f.volume.id, [{ uri, fileName: "known-offline.jpg" }]), (error) => error.journaled === true && /unreachable/i.test(error.message));
+  assert.deepEqual(f.requests, [], "no request waits on a hub the phone knows is away");
+  assert.equal((await f.store.gallerySummary(r.scope, f.volume.id)).pending >= 1, true, "the pick is still kept for later");
+  await f.store.db.runAsync("UPDATE gallery_sources SET config=? WHERE scope=? AND volume=?", '{"mode":"conv', r.scope, f.volume.id);
+  await r.load();
+  r.hubUnavailable = true;
+  f.offline();
+  f.requests.length = 0;
+  await r.gallery.configure(f.volume.id, {}, true);
+  assert.equal((await f.store.gallery(r.scope, f.volume.id)).mode, "converting", "the damaged record is repaired from the saved catalog");
+  assert.deepEqual(f.requests, []);
+});
+
+test("saving the device name gives the hub a short deadline", async (t) => {
+  const f = await fixture(t);
+  await sync(f);
+  const calls = [];
+  const api = f.client.api.bind(f.client);
+  f.client.api = (route, body, options) => {
+    calls.push([route, options?.timeout]);
+    return api(route, body, options);
+  };
+  assert.equal(await f.replica.rename("Kitchen phone"), true);
+  assert.deepEqual(calls.find(([route]) => route === "/v1/machine-report"), ["/v1/machine-report", 5000]);
+});
+
 test("Add photos while the hub is unreachable keeps the picks pending and uploads them after reconnecting", async (t) => {
   const f = await galleryFixture(t);
   const r = f.replica;

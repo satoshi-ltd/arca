@@ -939,7 +939,7 @@ export class Replica {
     this.changed();
     try {
       if (!this.client.state().connection || this.hubUnavailable) return false;
-      await this.report(this.interactiveClient);
+      await this.report(this.interactiveClient, { timeout: 5000 });
       this.nameReportError = null;
       return true;
     } catch (error) {
@@ -948,7 +948,7 @@ export class Replica {
       return false;
     }
   }
-  async report(client = this.client) {
+  async report(client = this.client, options) {
     const selected = (await this.store.folders(this.scope)).filter(
       (f) => f.selected,
     );
@@ -975,7 +975,7 @@ export class Replica {
       albumFolderIds,
       indexedFiles: folders.reduce((n, f) => n + f.files, 0),
       indexedBytes: folders.reduce((n, f) => n + f.bytes, 0),
-    });
+    }, options);
   }
   sync(force = false, { scheduled = false } = {}) {
     if (this.picking || this.importing || this.removing || this.renaming)

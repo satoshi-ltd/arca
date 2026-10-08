@@ -162,6 +162,19 @@ test("a track that finishes downloading during a partial cycle refreshes the ope
   assert.equal(replica.musicTick, 1);
 });
 
+test("a hub that cannot be reached ends the music step instead of letting the cycle carry on", async () => {
+  const { replica } = phone({ cover: async () => ({}) });
+  replica.store.musicVersion = async () => ({ version: "0", indexing: 0 });
+  replica.client.api = async () => {
+    throw Object.assign(new Error("Hub request timed out"), { code: "HUB_TIMEOUT" });
+  };
+  await assert.rejects(refreshMusic(replica), { code: "HUB_TIMEOUT" });
+  replica.client.api = async () => {
+    throw Object.assign(new Error("Hub 500"), { status: 500 });
+  };
+  await refreshMusic(replica);
+});
+
 test("a new library still refreshes the open screen when the cover pass stops", async () => {
   const { replica } = phone({
     cover: async () => {

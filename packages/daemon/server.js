@@ -163,12 +163,18 @@ export async function start(home, options = {}) {
   s.db.exec(
     "CREATE TABLE IF NOT EXISTS remote_views(key TEXT PRIMARY KEY, value TEXT NOT NULL, used INTEGER NOT NULL)",
   );
+  let viewSilentAt = 0,
+    viewSilentHub = null;
   async function remoteView(route, fallback) {
     const normalized = new URL(route, "http://local");
     normalized.searchParams.sort();
     const key = `${config.hub?.id || ""}:${normalized.pathname}${normalized.search}`;
+    const started = Date.now();
     try {
-      if (engine.hubUnavailable)
+      if (
+        engine.hubUnavailable ||
+        (viewSilentHub === config.hub?.id && Date.now() - viewSilentAt < 12000)
+      )
         throw Object.assign(new Error("Hub unavailable"), {
           hubUnavailable: true,
         });
@@ -189,6 +195,10 @@ export async function start(home, options = {}) {
     } catch (error) {
       // Optional views never decide connectivity; a slow view only falls back to saved data.
       if (!error.hubUnavailable) throw error;
+      if (Date.now() - started >= 2500) {
+        viewSilentAt = Date.now();
+        viewSilentHub = config.hub?.id;
+      }
       const cached = s.db
         .prepare("SELECT value,used FROM remote_views WHERE key=?")
         .get(key);
@@ -1719,7 +1729,19 @@ export async function start(home, options = {}) {
             setImmediate(() => tick(true));
             return send(202, { accepted: true });
           }
-          await authorizedWork(() => engine.cycle());
+          if (running) {
+            for (let i = 0; i < 600 && running; i++)
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            if (engine.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
+          }
+          await authorizedWork(async () => {
+            try {
+              await engine.cycle();
+            } catch (error) {
+              if (error.hubUnavailable || engine.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
+              throw error;
+            }
+          });
           return send(200, engine.status(await s.allVisibleTotals()));
         }
         if (route === "/v1/pause") {
@@ -2330,6 +2352,7 @@ export async function start(home, options = {}) {
       await engine.exclusive(() => engine.cycle({ incremental: !full }));
       failures = engine.error ? Math.min(failures + 1, 5) : 0;
       offline = !!engine.hubUnavailable;
+      if (!offline && !engine.error) viewSilentAt = 0;
       if (engine.activity !== activity) lastActivity = Date.now();
     } catch (error) {
       engine.error = error.message;

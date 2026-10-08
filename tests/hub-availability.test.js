@@ -897,6 +897,37 @@ test("a cycle interrupted while the hub is away keeps its unreachable error", as
   assert.equal((await replica.api("/v1/status")).error, message);
 });
 
+test("once one saved view has timed out on a silent hub the next ones answer at once from saved data", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "a.txt", "alpha");
+  await hub.sync();
+  const replica = await connect("silent-views");
+  await replica.sync();
+  const warm = await replica.api("/v1/machines");
+  assert.ok(warm.machines.length);
+  const quiet = await silent(t);
+  replica.engine.config.hub.url = quiet.url;
+  const started = Date.now();
+  const first = await replica.api("/v1/machines");
+  const afterFirst = Date.now() - started;
+  assert.equal(first.offline, true, "the first view falls back to saved data after its 3 s deadline");
+  assert.ok(afterFirst >= 2500 && afterFirst < 8000, `first took ${afterFirst} ms`);
+  const rest = Date.now();
+  for (let i = 0; i < 6; i++) assert.equal((await replica.api("/v1/machines")).offline, true);
+  assert.ok(Date.now() - rest < 4000, `six more views took ${Date.now() - rest} ms; they cost 18 s while each waited its own deadline`);
+});
+
+test("a foreground sync with the hub away answers in plain words and never waits behind a second cycle", async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("plain-sync");
+  await replica.sync();
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  await assert.rejects(replica.api("/v1/sync", {}), (error) => error.status === 503 && error.message === "Hub unavailable. Try again when it is reachable.");
+  const started = Date.now();
+  await assert.rejects(replica.api("/v1/sync", {}), { status: 503 });
+  assert.ok(Date.now() - started < 5000);
+});
+
 test("a cycle that fails, and a paused replica, still show what changed locally", async (t) => {
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "a.txt", "alpha");

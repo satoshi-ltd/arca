@@ -100,8 +100,17 @@ export class Gallery {
       r.busy = true;
       r.stopped = false;
       r.check();
-      if ((await r.store.gallery(r.scope, volume))?.mode !== "source")
-        await r.client.refresh();
+      let away = r.hubUnavailable;
+      if (
+        (await r.store.gallery(r.scope, volume))?.mode !== "source" &&
+        !away
+      )
+        try {
+          await r.client.refresh();
+        } catch (error) {
+          if (!isHubUnreachable(error) || !r.client.state().catalog) throw error;
+          away = true;
+        }
       const remote = r.client
         .state()
         .catalog?.volumes.find((v) => v.id === volume);
@@ -162,7 +171,7 @@ export class Gallery {
         issue: null,
         limited: permission.accessPrivileges === "limited",
       };
-      if (r.client.state().catalog?.gallery && !remote.gallery)
+      if (!away && r.client.state().catalog?.gallery && !remote.gallery)
         await r.client.api("/v1/gallery/link", { volume });
       await r.store.setGallery(r.scope, volume, source);
       await r.store.retryGallery(r.scope, volume);
@@ -263,6 +272,10 @@ export class Gallery {
         }
       }
       if (journalFailure && !queued.length) throw journalFailure;
+      if (r.hubUnavailable) {
+        if (!queued.length) return;
+        throw Object.assign(new Error("Hub unreachable"), { hubUnavailable: true });
+      }
       await r.client.refresh();
       r.check();
       const policy = await this.policy(volume);

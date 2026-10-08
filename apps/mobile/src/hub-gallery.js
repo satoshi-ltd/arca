@@ -257,11 +257,14 @@ export function withLocalOnly(state, entries, known, ignored = null) {
     months,
   };
 }
+export const HUB_VIEW_MS = 8000;
 export function hubPhotoInfo({ api, linked, volume, item }) {
   if (!linked)
     return Promise.reject(new Error("Connect to the hub for capture details."));
   return api(
     `/v1/gallery/info?${new URLSearchParams({ volume, path: item.path, hash: item.hash })}`,
+    undefined,
+    { timeout: HUB_VIEW_MS },
   );
 }
 // The phone keeps dates and hashes for ordering; photo bytes stay on the hub or in the working copy.
@@ -276,7 +279,9 @@ export function hubGallery({ api, store, scope, volume }) {
     return result;
   };
   const request = (params) =>
-    api(`/v1/gallery?${new URLSearchParams({ volume, ...params })}`);
+    api(`/v1/gallery?${new URLSearchParams({ volume, ...params })}`, undefined, {
+      timeout: HUB_VIEW_MS,
+    });
   const persist = async () => {
     let budget = CACHE_ITEMS;
     const months = {};
@@ -320,15 +325,13 @@ export function hubGallery({ api, store, scope, volume }) {
     return state;
   };
   return {
-    cached: () =>
-      serial(async () => {
-        if (!state) {
-          const value = await store.get(key, null).catch(() => null);
-          state = restored(value);
-          if (state) saved = JSON.stringify(value);
-        }
-        return state;
-      }),
+    cached: async () => {
+      if (!state) {
+        const value = await store.get(key, null).catch(() => null);
+        if (!state && (state = restored(value))) saved = JSON.stringify(value);
+      }
+      return state;
+    },
     refresh: () =>
       serial(async () => {
         const data = await request({});

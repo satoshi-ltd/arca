@@ -26,6 +26,28 @@ import {
 import { prepareThumbnails } from "../apps/mobile/src/thumbnail-cache.js";
 import { galleryDate, mediaKind } from "../packages/core/gallery-date.js";
 
+test("the saved gallery index never waits behind a hub read that hangs, and every hub read has a deadline", async () => {
+  const seen = [];
+  let release;
+  const hung = new Promise((resolve) => {
+    release = resolve;
+  });
+  const api = (route, body, options) => {
+    seen.push([route.split("?")[0], options?.timeout]);
+    return hung;
+  };
+  const saved = { timeline: [{ month: "2026-09", count: 1 }], undated: 0, undatedRev: 0, total: 1, months: { "2026-09": { items: [{ path: "a.jpg", hash: "a", date: "2026-09-01" }], fresh: 1, complete: true, next: null } } };
+  const gallery = hubGallery({ api, store: { get: async () => saved, set: async () => {} }, scope: "s", volume: "v" });
+  const refreshing = gallery.refresh();
+  const cached = await Promise.race([gallery.cached(), new Promise((resolve) => setTimeout(() => resolve("waited"), 200))]);
+  assert.notEqual(cached, "waited", "the saved index answers while a refresh hangs");
+  assert.equal(cached.total, 1);
+  void hubPhotoInfo({ api, linked: true, volume: "v", item: { path: "a.jpg", hash: "a" } }).catch(() => {});
+  assert.deepEqual(seen, [["/v1/gallery", 8000], ["/v1/gallery/info", 8000]]);
+  release({ items: [], timeline: [], undated: 0 });
+  await refreshing.catch(() => {});
+});
+
 test("timeline orders newest first from hub dates, fills local copies and leads with pending uploads", () => {
   const index = [
     {

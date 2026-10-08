@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **OFFLINE-SILENT-HUB** — A hub that accepts connections but never answers stalls replicas before they decide it is offline
-  `bug · agent · normal`
-  accept: on a desktop replica, a saved view that times out asks for an immediate availability check and later views serve saved data at once instead of 3 s each (eight reads cost 24 s today), also right after start; on the phone, saving the device name, Photo Info, the gallery index, Add photos… and Change album… (which today needs the hub even to repair a damaged record) never wait the 15 s default or ask the hub once it is known unreachable, and `refreshMusic` ends the cycle on a transport failure instead of carrying on and advancing the last sync; `POST /v1/sync` in the foreground answers in plain words without waiting two cycles. Tests use a hub that accepts and never answers. Reported by the maintainer on 2026-10-08.
 - **DESK-OFFLINE-WORDING** — History and Copies say the wrong thing without the hub
   `bug · agent · low`
   accept: offline, a History filter or folder whose saved page is empty reads its normal empty state ("No conflicts", "No deleted files") instead of "History unavailable offline", and Copies marks saved data with "Hub unavailable. Showing last known copies." when `/v1/machines` answers from saved data (`offline: true`); desktop tests cover both. Reported by the maintainer on 2026-10-08.
