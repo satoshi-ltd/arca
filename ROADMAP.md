@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-OFFLINE-WORDING** — History and Copies say the wrong thing without the hub
-  `bug · agent · low`
-  accept: offline, a History filter or folder whose saved page is empty reads its normal empty state ("No conflicts", "No deleted files") instead of "History unavailable offline", and Copies marks saved data with "Hub unavailable. Showing last known copies." when `/v1/machines` answers from saved data (`offline: true`); desktop tests cover both. Reported by the maintainer on 2026-10-08.
+_None._
 
 ## In progress
 

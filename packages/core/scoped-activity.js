@@ -30,6 +30,10 @@ export async function scopedActivity(fetchPage, selected, query) {
   const versions = rows.slice(0, limit);
   return {
     ...(pages.some((page) => page.offline) ? { offline: true } : {}),
+    ...(pages.some((page) => page.offline) &&
+    pages.every((page) => !page.offline || page.savedAt)
+      ? { saved: true }
+      : {}),
     versions,
     next:
       versions.length &&

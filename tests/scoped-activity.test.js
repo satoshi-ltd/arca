@@ -97,3 +97,21 @@ test("retained copies of deleted shares do not block history of current selected
   assert.deepEqual(calls, ["kept"]);
   assert.deepEqual(page.versions, [{ volume: "kept", rev: 7 }]);
 });
+test("an offline page that was saved, even empty, tells the window it is saved data", async () => {
+  const query = new URLSearchParams({ filter: "conflicts" });
+  assert.deepEqual(
+    await scopedActivity(async () => ({ offline: true, savedAt: 5, versions: [], next: null }), ["a", "b"], query),
+    { offline: true, saved: true, versions: [], next: null },
+  );
+  assert.deepEqual(
+    await scopedActivity(async () => ({ offline: true, versions: [], next: null }), ["a"], query),
+    { offline: true, versions: [], next: null },
+    "nothing saved stays unmarked",
+  );
+  assert.deepEqual(
+    await scopedActivity(async (q) => (q.get("volume") === "a" ? { offline: true, savedAt: 5, versions: [], next: null } : { offline: true, versions: [], next: null }), ["a", "b"], query),
+    { offline: true, versions: [], next: null },
+    "a folder with nothing saved keeps it honest",
+  );
+  assert.equal("saved" in (await scopedActivity(async () => ({ versions: [], next: null }), ["a"], query)), false, "online answers carry no flag");
+});

@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.6";
+const APP_VERSION = "0.7.7";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -708,7 +708,7 @@ function refreshCopies() {
     .then((data) => {
       if (copiesHub !== hub) return;
       copiesRoster = data;
-      copiesUnavailable = false;
+      copiesUnavailable = !!data.offline && !!data.savedAt;
     })
     .catch(() => {
       copiesUnavailable = true;
@@ -4647,7 +4647,7 @@ async function renderHistory(
   }
   if (!target) list = $("#history-list");
   if (!list) return;
-  if (data.offline && !data.versions.length) {
+  if (data.offline && !data.saved && !data.versions.length) {
     list.innerHTML = empty(
       "History unavailable offline",
       "Your local files remain available. Connect to the hub to load their history.",

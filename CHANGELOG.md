@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.7 — 2026-10-08
+
+- Without the hub, a History filter or folder with no saved entries reads its normal empty state ("No conflicts", "No deleted files") instead of "History unavailable offline", which is kept for when nothing is saved, and a folder's Copies say "Hub unavailable. Showing last known copies." whenever the list comes from saved data.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.6 — 2026-10-08
 
 - A hub that accepts connections but never answers no longer stalls the desktop: after the first saved view times out the rest answer at once from saved data, and Sync now says plainly that the hub is unavailable.

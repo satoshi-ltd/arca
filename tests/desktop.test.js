@@ -1761,6 +1761,51 @@ test("a paused replica stays Paused and a live list while the hub is unavailable
   assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
 });
 
+test("offline, an empty saved History reads its normal empty state and Copies say they are last known", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-offline-wording-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  const requests = new Set();
+  let activity = { offline: true, saved: true, versions: [], next: null };
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.setInterval = () => 0;
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: "offline", lastSync: new Date().toISOString(), hubUnavailable: true, hubName: "Casa", hub: "http://127.0.0.1:49999" };
+        if (args.route.startsWith("/v1/activity?")) return activity;
+        if (args.route === "/v1/machines") return { offline: true, savedAt: 1, machines: [{ name: "Casa", role: "hub", isHub: true, machineId: "hub", folderIds: [volume.id] }] };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [] };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  w.location.hash = "#/history?filter=conflicts";
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => /No conflicts/.test(w.document.querySelector("#content").textContent));
+  assert.doesNotMatch(w.document.querySelector("#content").textContent, /History unavailable offline/);
+  activity = { offline: true, versions: [], next: null };
+  w.location.hash = "#/history?filter=deleted";
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => /History unavailable offline/.test(w.document.querySelector("#content").textContent));
+  w.location.hash = `#/folders/${volume.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => /Hub unavailable\. Showing last known copies\./.test(w.document.querySelector("#folder-copies")?.textContent || ""));
+});
+
 test("online, the machines list keeps real states and never says last known", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-online-labels-"));
   init(home, { port: 0, name: "Local Mac" });

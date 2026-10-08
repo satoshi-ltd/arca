@@ -204,7 +204,7 @@ export async function start(home, options = {}) {
         .get(key);
       const prepared = fallback?.();
       if (cached && (!prepared?.savedAt || cached.used > prepared.savedAt))
-        return { ...JSON.parse(cached.value), offline: true };
+        return { ...JSON.parse(cached.value), offline: true, savedAt: cached.used };
       if (prepared) return { ...prepared, offline: true };
       throw new Error(
         "Hub unavailable. This information is not saved on this device.",
