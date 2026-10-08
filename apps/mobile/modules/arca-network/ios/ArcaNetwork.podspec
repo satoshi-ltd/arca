@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name = 'ArcaNetwork'
-  s.version = '0.7.1'
+  s.version = '0.7.2'
   s.summary = 'Arca private network checks'
   s.description = s.summary
   s.license = 'LicenseRef-PolyForm-Strict-1.0.0'

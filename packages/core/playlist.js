@@ -97,6 +97,9 @@ export function createPlaylist(name, path, tracks = []) {
 }
 
 export function appendEntry(text, path, track) {
+  const wanted = track.normalize("NFC");
+  if (parsePlaylist(text, path).entries.some((entry) => entry.path === wanted))
+    throw new Error("This track is already in this playlist.");
   const rows = lines(text);
   while (rows.length && !rows.at(-1).trim()) rows.pop();
   rows.push(relative(track, path));

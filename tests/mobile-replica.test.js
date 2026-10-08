@@ -5508,11 +5508,17 @@ test("a phone keeps the hub's music library, its covers and the car's library fi
   assert.deepEqual(shown.playlists.get(mix).entries.map((entry) => entry.state), ["ready", "missing", "ready", "ready"], "a playlist made elsewhere downloads and appears in Playlists");
   const car = JSON.parse(fs.readFileSync(files.musicLibrary(), "utf8")).playlists;
   assert.deepEqual(car.find((item) => item.id === mix).tracks.map((id) => id.split("/").at(-1)), ["02 Two.mp3", "01 One.mp3", "02 Two.mp3"]);
+  const mixFile = path.join(files.work(replica.scope, volume.id, "Playlists"), "Mix.m3u8");
+  const mixBefore = fs.readFileSync(mixFile);
+  for (const track of ["Ann/First/01 One.mp3", "Ann/First/02 Two.mp3"])
+    await assert.rejects(replica.addToPlaylist(volume.id, "Playlists/Mix.m3u8", track), /This track is already in this playlist\./);
+  assert.deepEqual(fs.readFileSync(mixFile), mixBefore, "a refused add leaves the file untouched and a made-elsewhere repeat stays");
+  await replica.removeFromPlaylist(volume.id, "Playlists/Mix.m3u8", 2, "Ann/First/01 One.mp3");
   await replica.addToPlaylist(volume.id, "Playlists/Mix.m3u8", "Ann/First/01 One.mp3");
   await sync(f);
   assert.equal(
     hubText("Mix.m3u8"),
-    "#EXTM3U\r\n#PLAYLIST:Mix\r\n../Ann/First/02 Two.mp3\r\nhttp://radio/x\r\n../Ann/First/01 One.mp3\r\n../Ann/First/02 Two.mp3\r\n../Ann/First/01 One.mp3\r\n",
+    "#EXTM3U\r\n#PLAYLIST:Mix\r\n../Ann/First/02 Two.mp3\r\nhttp://radio/x\r\n../Ann/First/02 Two.mp3\r\n../Ann/First/01 One.mp3\r\n",
     "an edit made on the phone uploads as an ordinary file change and keeps every other line",
   );
   await assert.rejects(replica.removeFromPlaylist(volume.id, "Playlists/Mix.m3u8", 1, "Ann/First/02 Two.mp3"), /This playlist changed/);
@@ -5528,12 +5534,12 @@ test("a phone keeps the hub's music library, its covers and the car's library fi
   assert.deepEqual(fs.readFileSync(path.join(mine, "Latin.m3u8")), Buffer.from([0x23, 0xe9, 0x0a]), "a refused edit leaves the file untouched");
   fs.rmSync(path.join(mine, "Latin.m3u8"));
   fs.rmSync(path.join(mine, "Huge.m3u8"));
-  await replica.removeFromPlaylist(volume.id, "Playlists/Mix.m3u8", 3, "Ann/First/02 Two.mp3");
+  await replica.removeFromPlaylist(volume.id, "Playlists/Mix.m3u8", 2, "Ann/First/02 Two.mp3");
   await replica.renameFile(volume.id, "Ann/First/01 One.mp3", "01 Uno.mp3");
   await sync(f);
   assert.equal(
     hubText("Mix.m3u8"),
-    "#EXTM3U\r\n#PLAYLIST:Mix\r\n../Ann/First/02 Two.mp3\r\nhttp://radio/x\r\n../Ann/First/01 Uno.mp3\r\n../Ann/First/01 Uno.mp3\r\n",
+    "#EXTM3U\r\n#PLAYLIST:Mix\r\n../Ann/First/02 Two.mp3\r\nhttp://radio/x\r\n../Ann/First/01 Uno.mp3\r\n",
     "removing one appearance and renaming a track on the phone rewrite only those entries",
   );
   assert.equal(hubText("old.m3u"), "../Ann/First/02 Two.mp3\n", "an .m3u file is never rewritten");
@@ -5542,6 +5548,7 @@ test("a phone keeps the hub's music library, its covers and the car's library fi
   await sync(f);
   assert.equal(hubText("Road trip.m3u8"), "#EXTM3U\n#PLAYLIST:Road trip\n../Ann/First/02 Two.mp3\n");
   await replica.addToPlaylist(volume.id, "Playlists/Road trip.m3u8", "Ann/First/01 Uno.mp3");
+  await assert.rejects(replica.addToPlaylist(volume.id, "Playlists/Road trip.m3u8", "Ann/First/01 Uno.mp3"), /This track is already in this playlist\./, "an edit that has not synced yet counts too");
   await replica.renamePlaylist(volume.id, "Playlists/Road trip.m3u8", "Drive");
   await sync(f);
   assert.equal(fs.existsSync(path.join(lists, "Road trip.m3u8")), false);
@@ -5563,7 +5570,7 @@ test("a phone keeps the hub's music library, its covers and the car's library fi
   const listed = (await folderLibrary(replica, volume.id)).library;
   assert.deepEqual(
     listed.playlistOrder.map((id) => [listed.playlists.get(id).name, listed.playlists.get(id).entries.map((entry) => entry.state)]),
-    [["Hub only", ["ready", "missing"]], ["Mix", ["ready", "missing", "ready", "ready"]], ["old", ["ready"]]],
+    [["Hub only", ["ready", "missing"]], ["Mix", ["ready", "missing", "ready"]], ["old", ["ready"]]],
     "a playlist the phone has not downloaded yet comes from the hub's answer",
   );
   fs.writeFileSync(path.join(volume.path, ".arcaignore"), "Playlists/private.m3u8\n");

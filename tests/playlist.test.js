@@ -64,6 +64,18 @@ test("a new playlist and an appended song are written relative to the playlist",
   assert.equal(appendEntry(hand, path, "A/1.mp3"), "\uFEFF#EXTM3U\r\n#EXTINF:1,x\r\nhttp://radio/x\r\n../A/1.mp3\r\n", "line endings, BOM and unknown lines are kept");
 });
 
+test("appending refuses a track the playlist already names, in any spelling, and leaves repeats made elsewhere alone", () => {
+  const path = "Playlists/Road trip.m3u8";
+  const text = "#EXTM3U\r\n#EXTINF:1,x\r\n..\\A\\1.mp3\r\n./../B/Cafe\u0301.mp3\r\nhttp://radio/x\r\n";
+  for (const track of ["A/1.mp3", "B/Caf\u00e9.mp3", "B/Cafe\u0301.mp3"])
+    assert.throws(() => appendEntry(text, path, track), /^Error: This track is already in this playlist\.$/);
+  assert.equal(appendEntry(text, path, "A/2.mp3"), `${text}../A/2.mp3\r\n`, "another track is still added");
+  assert.equal(appendEntry(text, path, "a/1.mp3"), `${text}../a/1.mp3\r\n`, "paths keep their case, as the library does");
+  const repeats = "#EXTM3U\n../A/1.mp3\n../A/1.mp3\n";
+  assert.throws(() => appendEntry(repeats, path, "A/1.mp3"), /already in this playlist/);
+  assert.equal(removeEntry(repeats, path, 1, "A/1.mp3"), "#EXTM3U\n../A/1.mp3\n", "a list made elsewhere keeps its repeats and they stay removable one at a time");
+});
+
 test("removing an appearance removes only that one, with its #EXTINF line, and refuses a stale position", () => {
   const path = "Playlists/r.m3u8";
   const text = "#EXTM3U\n#EXTINF:1,One\n../A/1.mp3\n../missing.mp3\n#EXTINF:1,One again\n../A/1.mp3\n";

@@ -26,7 +26,21 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **OFFLINE-LOCAL-CHANGES** — Without the hub, a desktop or server replica does not show its own local changes and refuses the next action on them
+  `bug · agent · high`
+  accept: with the hub refused or silent, files renamed, deleted, added or edited on the replica (through Arca or on disk) show at once in Files, the gallery and the music library, with their real names, sizes and counts; Rename and Delete work on a file changed offline and on a playlist made or renamed offline (no "Local file changed. Sync before…", "This file is no longer in the local copy" or "This playlist has not synced yet" while the hub is away); a track deleted offline leaves the library and a new one can be played and added to a playlist. The local scan runs without the catalog (`runCycle` scans only after `/v1/catalog` today), and the next sync with the hub still uploads exactly those changes, with conflict preservation intact. Daemon tests cover each case in both unreachable modes. Reported by the maintainer on 2026-10-08 ("if the hub is not accessible, the replica is not 100% functional").
+- **MOB-OFFLINE-LOCAL-CHANGES** — Without the hub, the phone's music library keeps tracks renamed or deleted on the phone, and Delete refuses files changed offline
+  `bug · agent · high`
+  accept: offline, a track renamed or deleted on the phone leaves (or moves in) its album, Shuffle, search, its playlists and the car's library file at once, judged from the working files rather than the synced rows (`source()` in `music-sync.js`); Delete file… and Delete playlist… work on a file or playlist added or edited offline instead of "Local file changed. Sync before deleting." or "Only synced files can be deleted here.", and an edit that never synced is deleted only after the confirmation says it was never synced; a track that is not on the phone reads "Not on this phone yet" offline rather than "Downloading". Replica tests cover both unreachable modes and the upload once the hub returns. Reported by the maintainer on 2026-10-08.
+- **DESK-OFFLINE-STATUS-LAG** — The desktop window takes 20–25 seconds to show that the hub went away or came back
+  `bug · agent · normal`
+  accept: the daemon's local change signature (`server.js`) includes hub availability, phase and error so `/v1/events` wakes the window, which shows Offline, the hub-unreachable notice and the hub-only controls within five seconds of the daemon knowing, in both directions; the notice follows `hubUnavailable`, so a cycle interrupted while the hub is away (pause and resume) does not clear it; a JSDOM test with real timers covers loss and return. Reported by the maintainer on 2026-10-08.
+- **OFFLINE-SILENT-HUB** — A hub that accepts connections but never answers stalls replicas before they decide it is offline
+  `bug · agent · normal`
+  accept: on a desktop replica, a saved view that times out asks for an immediate availability check and later views serve saved data at once instead of 3 s each (eight reads cost 24 s today), also right after start; on the phone, saving the device name, Photo Info, the gallery index, Add photos… and Change album… (which today needs the hub even to repair a damaged record) never wait the 15 s default or ask the hub once it is known unreachable, and `refreshMusic` ends the cycle on a transport failure instead of carrying on and advancing the last sync; `POST /v1/sync` in the foreground answers in plain words without waiting two cycles. Tests use a hub that accepts and never answers. Reported by the maintainer on 2026-10-08.
+- **DESK-OFFLINE-WORDING** — History and Copies say the wrong thing without the hub
+  `bug · agent · low`
+  accept: offline, a History filter or folder whose saved page is empty reads its normal empty state ("No conflicts", "No deleted files") instead of "History unavailable offline", and Copies marks saved data with "Hub unavailable. Showing last known copies." when `/v1/machines` answers from saved data (`offline: true`); desktop tests cover both. Reported by the maintainer on 2026-10-08.
 
 ## In progress
 
@@ -87,7 +101,7 @@ _None._
 
 - **VERIFY-DESK-MUSIC** — Music plays on desktop and web
   `verify · maintainer · normal`
-  accept: after a Casa redeploy, the hub's web admin opens the music folder on its Artists tab, an A–Z index with a heading per letter, square covers and, on a wide window, a strip of each artist's other album covers, plays an album with the player bar through seeking, next, shuffle and repeat, the bar's title, artist and album open the album and the artist page from another folder, a playlist's table shows the Album column, search finds songs, albums and artists, Shuffle plays the whole library and an artist, and Recent lists what that browser played; on the Mac build, off the library the sidebar card plays, pauses, skips and opens the album, the tray's Previous, Play/Pause and Next drive the player with the main window hidden, the tray's track brings the window forward on the album, and Quit Arca stops the music; after a desktop build, the Mac app as a replica that selected the folder does the same from its own copy with the hub unreachable; View folder and Library switch both ways; a playlist made from a track's Add to playlist… on the web admin and on the Mac replica appears in `Playlists/` as an `.m3u8` file on every selected device, plays in order with a repeated song, renames, loses a track and deletes into History, and a track renamed in Arca keeps its place in the playlist.
+  accept: after a Casa redeploy, the hub's web admin opens the music folder on its Artists tab, an A–Z index with a heading per letter, square covers and, on a wide window, a strip of each artist's other album covers, plays an album with the player bar through seeking, next, shuffle and repeat, the bar's title, artist and album open the album and the artist page from another folder, a playlist's table shows the Album column, search finds songs, albums and artists, Shuffle plays the whole library and an artist, and Recent lists what that browser played; on the Mac build, off the library the sidebar card plays, pauses, skips and opens the album, the tray's Previous, Play/Pause and Next drive the player with the main window hidden, the tray's track brings the window forward on the album, and Quit Arca stops the music; after a desktop build, the Mac app as a replica that selected the folder does the same from its own copy with the hub unreachable; View folder and Library switch both ways; a playlist made from a track's Add to playlist… on the web admin and on the Mac replica appears in `Playlists/` as an `.m3u8` file on every selected device, plays in order, refuses to add the same track twice, renames, loses a track and deletes into History, and a track renamed in Arca keeps its place in the playlist; a hand-edited list that repeats a song plays it in order.
 
 - **VERIFY-ANDROID-AUTO** — Arca plays in the car
   `verify · maintainer · normal · depends: BUILD-MOBILE`
@@ -217,6 +231,12 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Deferred usability and cleanup
 
+- **DESK-REPLICA-AUTHOR** — A replica shows its own changes as "Device xxxxxxxx"
+  `bug · agent · low`
+  accept: History, Recent and file detail on a desktop or server replica name the replica's own changes with its device name, as the hub does, although the replica does not know its hub device id today (`authorName` in `app.js`, empty `status.devices`); a desktop test covers it. Found while investigating offline replicas on 2026-10-08.
+- **REPLICA-GALLERY-ADDED-DATE** — Photos the hub dates by when they were added may read Date unknown on a replica
+  `bug · agent · low`
+  accept: first confirm with the hub's indexing finished; then a replica dates photos without capture metadata by their added date like the hub (SPEC "replicas date undated photos like the hub"), with a gallery test. Seen once on 2026-10-08 while the hub was still indexing.
 - **DESK-ONBOARDING-HUB-ADDRESS** — The onboarding Hub address field loses its placeholder and is forced to monospace
   `bug · agent · low`
   accept: the onboarding "Pair with your hub" step passes its placeholder `https://arca.your-network` in the placeholder position, as the Connect to hub dialog does, so the field shows it and only the typed value is monospace; a desktop test asserts the placeholder. Found by the design audit: `textField` takes no placeholder, so the sixth argument lands in `mono`.

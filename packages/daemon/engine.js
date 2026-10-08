@@ -2286,10 +2286,17 @@ export class Engine {
       }
       return this.writePlaylist(volume, destination, s.filePath(v, destination), renamePlaylist(text, title));
     }
-    const next =
-      action === "add"
-        ? appendEntry(text, target, this.playlistTrack(volume, track))
-        : removeEntry(text, target, Number(position), track);
+    if (action === "add") {
+      const added = this.playlistTrack(volume, track);
+      let appended;
+      try {
+        appended = appendEntry(text, target, added);
+      } catch (error) {
+        fail(error.message, 409);
+      }
+      return this.writePlaylist(volume, target, file, appended);
+    }
+    const next = removeEntry(text, target, Number(position), track);
     if (next === null) fail("This playlist changed. Try again.", 409);
     return this.writePlaylist(volume, target, file, next);
   }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 — 2026-10-08
+
+- Add to playlist… no longer adds a track a playlist already lists: desktop, web and the phone say "This track is already in this playlist." and leave the file as it is. Playlists made elsewhere keep their repeated tracks, which still play and can be removed one at a time.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.1 — 2026-10-08
 
 - On a hub, a folder's Version history choices (Off, 1 day, 1 week, 30 days, Forever) stay on one row in the desktop side column and in the web admin on phones 360 px and wider, instead of dropping Forever to a second row.

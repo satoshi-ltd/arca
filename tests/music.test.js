@@ -905,6 +905,10 @@ test("the hub edits its own playlists through the playlist route, atomically, wi
     status: 409,
     message: "This playlist changed. Try again.",
   });
+  for (const track of ["Album/01 One.mp3", "Album/02 Two.flac"])
+    await assert.rejects(edit({ action: "add", path: created.path, hash: added.hash, track }), { status: 409, message: "This track is already in this playlist." });
+  assert.equal(fs.readFileSync(file(created.path), "utf8"), "#EXTM3U\n#PLAYLIST:Road trip\n../Album/01 One.mp3\n../Album/02 Two.flac\n", "a refused add leaves the file untouched");
+  assert.equal(f.s.current(f.v.id, created.path).hash, added.hash);
   await assert.rejects(edit({ action: "add", path: created.path, hash: added.hash, track: "Album/none.mp3" }), { status: 404 });
   const listed = (await f.library()).playlists.find((list) => list.path === created.path);
   assert.deepEqual(listed.entries, ["Album/01 One.mp3", "Album/02 Two.flac"]);
@@ -944,6 +948,7 @@ test("a replica edits playlists in its own copy and the file syncs to the hub; w
   const f = await fixture(t);
   await f.api("/v1/music/mark", { volume: f.v.id });
   await f.track("Album/01 One.mp3", { title: "One" });
+  await f.track("Album/02 Two.flac", { title: "Two" });
   await f.indexed();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-music-replica-"));
   init(home, { port: 0, name: "Desk", role: "replica" });
@@ -981,17 +986,18 @@ test("a replica edits playlists in its own copy and the file syncs to the hub; w
     await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(f.s.current(f.v.id, created.path)?.hash, created.hash, "the playlist syncs to the hub");
   assert.deepEqual((await f.library()).playlists.map((list) => list.name), ["Desk mix"]);
-  const added = await call("/v1/music/playlist", { volume: f.v.id, action: "add", path: created.path, hash: created.hash, track: "Album/01 One.mp3" });
-  assert.equal(fs.readFileSync(local, "utf8"), "#EXTM3U\n#PLAYLIST:Desk mix\n../Album/01 One.mp3\n../Album/01 One.mp3\n");
-  const removed = await call("/v1/music/playlist", { volume: f.v.id, action: "remove", path: created.path, hash: added.hash, position: 1, track: "Album/01 One.mp3" });
+  await assert.rejects(call("/v1/music/playlist", { volume: f.v.id, action: "add", path: created.path, hash: created.hash, track: "Album/01 One.mp3" }), { status: 409, message: "This track is already in this playlist." });
+  const added = await call("/v1/music/playlist", { volume: f.v.id, action: "add", path: created.path, hash: created.hash, track: "Album/02 Two.flac" });
+  assert.equal(fs.readFileSync(local, "utf8"), "#EXTM3U\n#PLAYLIST:Desk mix\n../Album/01 One.mp3\n../Album/02 Two.flac\n");
+  const removed = await call("/v1/music/playlist", { volume: f.v.id, action: "remove", path: created.path, hash: added.hash, position: 1, track: "Album/02 Two.flac" });
   assert.equal(fs.readFileSync(local, "utf8"), "#EXTM3U\n#PLAYLIST:Desk mix\n../Album/01 One.mp3\n");
   assert.equal(removed.path, created.path);
   replica.engine.paused = true;
-  const edited = await call("/v1/music/playlist", { volume: f.v.id, action: "add", path: created.path, hash: removed.hash, track: "Album/01 One.mp3" });
+  const edited = await call("/v1/music/playlist", { volume: f.v.id, action: "add", path: created.path, hash: removed.hash, track: "Album/02 Two.flac" });
   const moved = await call("/v1/music/playlist", { volume: f.v.id, action: "rename", path: created.path, hash: edited.hash, name: "Night mix" });
   const night = path.join(path.dirname(local), "Night mix.m3u8");
   assert.equal(fs.existsSync(local), false);
-  assert.equal(fs.readFileSync(night, "utf8"), "#EXTM3U\n#PLAYLIST:Night mix\n../Album/01 One.mp3\n../Album/01 One.mp3\n", "an edit that has not synced yet moves with the rename");
+  assert.equal(fs.readFileSync(night, "utf8"), "#EXTM3U\n#PLAYLIST:Night mix\n../Album/01 One.mp3\n../Album/02 Two.flac\n", "an edit that has not synced yet moves with the rename");
   replica.engine.paused = false;
   await replica.engine.cycle();
   for (let i = 0; i < 100 && f.s.current(f.v.id, moved.path)?.hash !== moved.hash; i++)
@@ -1000,7 +1006,7 @@ test("a replica edits playlists in its own copy and the file syncs to the hub; w
   assert.ok(f.s.current(f.v.id, created.path)?.deleted, "and the old name leaves the hub");
   const track = replica.engine.store.current(f.v.id, "Album/01 One.mp3");
   await call("/v1/rename-file", { volume: f.v.id, path: "Album/01 One.mp3", name: "01 Uno.mp3", rev: track.rev });
-  assert.equal(fs.readFileSync(night, "utf8"), "#EXTM3U\n#PLAYLIST:Night mix\n../Album/01 Uno.mp3\n../Album/01 Uno.mp3\n", "a track renamed on a replica rewrites its playlists");
+  assert.equal(fs.readFileSync(night, "utf8"), "#EXTM3U\n#PLAYLIST:Night mix\n../Album/01 Uno.mp3\n../Album/02 Two.flac\n", "a track renamed on a replica rewrites its playlists");
   await call("/v1/unselect", { id: f.v.id, deleteFiles: false });
   await assert.rejects(call("/v1/music/playlist", { volume: f.v.id, action: "create", name: "Other" }), (error) => [404, 409].includes(error.status));
 });
