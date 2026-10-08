@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-08 · Phase 1 functional, not release-qualified.
+Updated 2026-10-09 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -22,11 +22,22 @@ Lanes:
 - **Needs maintainer** — `verify`, `deploy` and `decision` tasks, and agent work waiting on one of them.
 - **Proposed** — ideas not yet approved, from the maintainer or from Claude. Never worked on until approved.
 
-A purely visual idea is not filed here as Proposed: its board in `design/proposals.html` is the proposal. Once the maintainer approves it, it enters Queue as a `ui` task with the board ID and `accept: the board`; when it ships, delete the task and the board. A task that mixes logic and a screen splits: the screen is board `UI-<TASKID>`, the logic stays under its ID and its accept says "the interface follows board UI-<TASKID>"; a board ID never equals a non-`ui` task ID. When a task ships, delete it and record it in the changelog and in the SPEC section it changes. When a feature needs device evidence, split it: the implementation is an agent task; the device check is a maintainer `verify` task that depends on it. The loop never builds native code, so a `NAT-*` task ends with its JavaScript and contract tests; its compile and device evidence come from a maintainer build (BUILD-MOBILE or BUILD-IOS) recorded as a follow-up `verify`.
+A purely visual idea is not filed here as Proposed: its board in `design/proposals.html` is the proposal. Once the maintainer approves it, it enters Queue as a `ui` task with the board ID and `accept: the board`; when it ships, delete the task and the board. A task that mixes logic and a screen splits: the screen is board `UI-<TASKID>`, the logic stays under its ID and its accept says "the interface follows board UI-<TASKID>"; a board ID never equals a non-`ui` task ID. When a task ships, delete it and record it in the changelog and in the SPEC section it changes. When a feature needs device evidence, split it: the implementation is an agent task; the device check is a maintainer `verify` task that depends on it. The loop never builds native code, so a `NAT-*` task ends with its JavaScript and contract tests; its compile and device evidence come from a maintainer build (your Android or iOS build) recorded as a follow-up `verify`.
 
 ## Queue
 
-_None._
+- **HUB-TEST-SLOW-LINK-FLAKE** — The slow-link transfer test failed once on the Windows runner
+  `bug · agent · normal`
+  accept: "slow links upload in smaller blocks and download without a total deadline" (`tests/hub-availability.test.js`) no longer fails with an empty error on `windows-2022` (failed once on the v0.7.2 run, 14.6 s, and passed on a rerun of the same commit, with macOS and Ubuntu green): its throttled relays and 400–600 ms idle limits are given margins that do not depend on runner speed, and it reports the real error instead of an empty one.
+- **DESK-TEST-GALLERY-PAGES-FLAKE** — The gallery paging JSDOM test times out under load
+  `bug · agent · normal`
+  accept: "the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons" (`tests/desktop.test.js`) waits for its 66 thumbnails on the gallery requests it tracks instead of `until`'s fixed two-second budget, so it no longer fails with "UI did not reach expected state" when other suites or a browser run alongside; on 2026-10-08 it failed in a suite run and in one of nine single runs while other work loaded the machine, and passed every quiet run.
+- **WEB-REPLICA-CONFLICT-LINKS** — Conflict download links on a replica's web view
+  `bug · agent · normal`
+  accept: the conflict dialog's download links on a server replica's web view use a route the replica serves and its local hash (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409), and the link is hidden when there is no local copy; DOM and API tests.
+- **MUSIC-CAR-AZ** — Long car lists are grouped A–Z
+  `feature · agent · normal`
+  accept: Artists, Albums and an artist's albums with more items than one car answer carries (Media3 cuts each list at 256 KiB, roughly 300 items) open on letter groups in Android Auto, so every album, artist and track is reachable (the # artists sort last, so the cut drops them first today); JVM tests in `MusicTreeTest.kt` cover a library past the limit. The maintainer approved the grouping when queueing it.
 
 ## In progress
 
@@ -36,12 +47,6 @@ _None._
 
 ### Builds and deployments
 
-- **BUILD-MOBILE** — Android native build for stabilization
-  `deploy · maintainer · high`
-  accept: a standalone build of the chosen candidate is installed on the Fold; record its source SHA, displayed version and native build identifier. Native modules match the JavaScript bundle; cold start, pairing and one complete upload/download work before device qualification begins.
-- **BUILD-IOS** — First iOS device build on SDK 57
-  `deploy · maintainer · normal`
-  accept: a build of the chosen candidate is installed on a physical iPhone; record source SHA, version and native build identifier. Cold start, LAN pairing, upload/download, cancellation and file replacement work; the native module compiles against the installed Expo dependencies.
 - **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on Casa
   `verify · maintainer · normal`
   accept: shipped installers and Casa carry the production dependencies (Sharp, exifr) and the gallery opens on both.
@@ -49,28 +54,28 @@ _None._
 ### Device checks
 
 - **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high · depends: BUILD-MOBILE`
+  `verify · maintainer · high`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **VERIFY-SHARE-CACHE** — Incoming shares on the Fold
-  `verify · maintainer · high · depends: BUILD-MOBILE`
+  `verify · maintainer · high`
   accept: sharing one and several files, a large file and a file named like a path from another app into Arca on the Fold lists them in the Save sheet with their real names, saves them, and leaves nothing under the app's cache except generated names (`arca-incoming/<id>-<n>`) while the sheet is open and nothing after Save or Cancel.
 - **FOLD-STORAGE** — Account for persistent storage on the Fold
-  `verify · maintainer · high · depends: BUILD-MOBILE`
+  `verify · maintainer · high`
   accept: after sync and a restart, account separately for complete working copies, pending originals, transfer staging, databases and derivative caches. No unexplained second full copy or unbounded staging growth remains; low-space recovery preserves pending originals and existing working files. Never remove live files to meet a storage target.
 - **FOLD-THUMBNAILS** — Gallery thumbnails, posters and viewer
-  `verify · maintainer · high · depends: BUILD-MOBILE`
+  `verify · maintainer · high`
   accept: on the candidate, grid thumbnails and video posters fill in while folders sync; HEIC photos open and the viewer shows the thumbnail immediately. Offline, downloaded photos remain viewable, unavailable originals are identified and failed derivatives can recover. Record timings and native errors for persistent grey tiles or crashes, including after suspension and cold start.
 - **WIN-UPDATE-WATCHER** — A failed Windows update gets the daemon back
   `verify · maintainer · high`
   accept: on a real Windows machine, with an update that fails after Arca closes (for example a locked installation file), the daemon is running again within about a minute without opening Arca, `update-watch.log` in the state directory says `restored` and `%TEMP%\arca-update-watch-*` is gone; a successful update logs `relaunched` and starts no second daemon.
 - **P2-GALLERY** — Album uploads on physical devices
-  `verify · maintainer · high · depends: BUILD-MOBILE, BUILD-IOS`
+  `verify · maintainer · high`
   accept: original cloud access and EXIF/RAW/HEIC/Live Photo fidelity (limited access and editor workflows included), and a Samsung run with a library over 10 GiB covering screen-off/background continuity, battery restrictions, interruption and resumed completion. Pending picks survive process termination, lost upload responses and low storage without losing names, duplicating accepted paths or deleting Photos originals. Verify the historical archive and real-phone uploads before removing Immich or claiming a migration.
 - **P2-GALLERY-DELETE-DEVICE** — Shared gallery deletion on devices
-  `verify · maintainer · high · depends: BUILD-MOBILE, BUILD-IOS`
+  `verify · maintainer · high`
   accept: with disposable photos on Android and iOS: direct shared deletion, Live Photo groups, connection failure, partial selection failure and unchanged Photos originals; deletions persist across remounts; non-recursive directory deletion works (Android `Files.delete`, iOS `rmdir`).
 - **P2-MOBILE** — Mobile replica acceptance
-  `verify · maintainer · high · depends: BUILD-MOBILE, BUILD-IOS`
+  `verify · maintainer · high`
   accept: complete persistent copies, honest incomplete-work reporting, imports reaching the hub, resumable transfers without corruption, no data loss on suspension; low storage, interrupted downloads, revoked credentials and offline access. Reimporting a file preserves edited conflict copies; failed imports preserve existing files. Cached views remain usable during slow refreshes and back navigation. Check keyboard handling and text scaling on phone, Fold and iOS; launcher and splash in a standalone build; rename; APK opening on Samsung; Fold sticky scroll; settings visuals; iOS LAN pairing; name propagation; Fold throughput.
 - **VERIFY-REVEAL-FILE** — Show in folder on real Windows and Linux
   `verify · maintainer · normal`
@@ -90,7 +95,7 @@ _None._
   accept: after a Casa redeploy, the hub's web admin opens the music folder on its Artists tab, an A–Z index with a heading per letter, square covers and, on a wide window, a strip of each artist's other album covers, plays an album with the player bar through seeking, next, shuffle and repeat, the bar's title, artist and album open the album and the artist page from another folder, a playlist's table shows the Album column, search finds songs, albums and artists, Shuffle plays the whole library and an artist, and Recent lists what that browser played; on the Mac build, off the library the sidebar card plays, pauses, skips and opens the album, the tray's Previous, Play/Pause and Next drive the player with the main window hidden, the tray's track brings the window forward on the album, and Quit Arca stops the music; after a desktop build, the Mac app as a replica that selected the folder does the same from its own copy with the hub unreachable; View folder and Library switch both ways; a playlist made from a track's Add to playlist… on the web admin and on the Mac replica appears in `Playlists/` as an `.m3u8` file on every selected device, plays in order, refuses to add the same track twice, renames, loses a track and deletes into History, and a track renamed in Arca keeps its place in the playlist; a hand-edited list that repeats a song plays it in order.
 
 - **VERIFY-ANDROID-AUTO** — Arca plays in the car
-  `verify · maintainer · normal · depends: BUILD-MOBILE`
+  `verify · maintainer · normal`
   accept: a sideloaded build on the Fold with Unknown sources enabled in Android Auto's developer settings appears on the Desktop Head Unit on the Mac and in the car; Arca opens on Artists with a heading per letter and each artist's newest album cover, Albums browse as a cover grid with covers, an album's and a playlist's tracks show their length (and the album in a playlist), the queue button reads the playing album's or playlist's name, the phone's Now playing opens the album with Go to album, and Recent lists what this phone played under Recently played; a track plays with lock-screen and steering-wheel controls; the car starts Arca cold with the phone locked and offline; a navigation prompt ducks the music and a phone call pauses and resumes it; disconnecting Bluetooth pauses; nothing auto-plays on connection; a playlist made on the phone or the desktop shows under Playlists in the car, read-only, and a song repeated in it plays from the entry picked; an MP3, an AAC (M4A), a FLAC, a WAV and an Ogg/Opus file each play on the Fold; `./gradlew :arca-network:testDebugUnitTest` passes.
 
 ### Phase 1 qualification
@@ -183,12 +188,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Release and native reliability
 
-- **HUB-TEST-SLOW-LINK-FLAKE** — The slow-link transfer test failed once on the Windows runner
-  `bug · agent · normal`
-  accept: "slow links upload in smaller blocks and download without a total deadline" (`tests/hub-availability.test.js`) no longer fails with an empty error on `windows-2022` (failed once on the v0.7.2 run, 14.6 s, and passed on a rerun of the same commit, with macOS and Ubuntu green): its throttled relays and 400–600 ms idle limits are given margins that do not depend on runner speed, and it reports the real error instead of an empty one.
-- **DESK-TEST-GALLERY-PAGES-FLAKE** — The gallery paging JSDOM test times out under load
-  `bug · agent · normal`
-  accept: "the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons" (`tests/desktop.test.js`) waits for its 66 thumbnails on the gallery requests it tracks instead of `until`'s fixed two-second budget, so it no longer fails with "UI did not reach expected state" when other suites or a browser run alongside; on 2026-10-08 it failed in a suite run and in one of nine single runs while other work loaded the machine, and passed every quiet run.
 - **DESK-ONBOARDING-TRAFFIC-LIGHTS** — The onboarding rail's brand sits under the macOS window controls
   `bug · agent · low`
   accept: in the native Mac app the onboarding screens (the sidebar is hidden there) keep the brand and rail clear of the red, yellow and green controls, reusing the `mac-native` class and `--window-controls-inset`; the web interface and other platforms keep their layout; a stylesheet contract test covers it. Found by the review of 0.6.111 from reading the CSS (`.onboarding-rail` starts at the top-left); check it on the Mac first. Needs a desktop build.
@@ -198,18 +197,12 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
   `bug · agent · high`
   accept: `publish-docker.yml` pushes `latest` only for the current eligible release at publication time; older, delayed or forced runs still publish their version tag without moving `latest` backwards. Tests cover out-of-order completion, reruns and a newer release arriving during a build; checking only at job start is insufficient.
-- **NAT-F01-F10-COPIES** — Importing a large file from Files on Android no longer freezes the app
-  `bug · agent · high`
-  accept: on Android, Import files picks with `copyToCacheDirectory: false` and copies each file through the existing `receiveShared` into `arca-incoming`, off the UI thread, instead of expo-document-picker copying in the main-thread result handler; iOS stays as it is; a JS test covers it; device evidence follows under BUILD-MOBILE and P2-MOBILE.
 - **NAT-F03-IOS-CANCEL** — iOS cancel/session race
   `bug · agent · normal`
-  accept: a per-request cancelled flag, set under the lock and checked before the URL session task is created, so cancelling during session setup throws a cancellation instead of creating a task on an invalidated session; source-contract and cancellation tests cover the race, with native/device evidence under BUILD-IOS and P2-MOBILE.
+  accept: a per-request cancelled flag, set under the lock and checked before the URL session task is created, so cancelling during session setup throws a cancellation instead of creating a task on an invalidated session; source-contract and cancellation tests cover the race, with native/device evidence under P2-MOBILE.
 - **DESK-UPDATER-TESTS** — The Rust updater tests also run on Windows
   `chore · agent · normal`
   accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
-- **WEB-REPLICA-CONFLICT-LINKS** — Conflict download links on a replica's web view
-  `bug · agent · normal`
-  accept: the conflict dialog's download links on a server replica's web view use a route the replica serves and its local hash (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409), and the link is hidden when there is no local copy; DOM and API tests.
 
 ### Deferred usability and cleanup
 
@@ -253,14 +246,11 @@ Suggested order for approval: preservation of user files, synchronization recove
   accept: changing the albums or the videos setting while uploads are pending or failed no longer fails with "Finish pending uploads…" (`gallery.js:102-116`); after the maintainer chooses whether queued photos of an unticked album keep uploading (simplest, no new state) or are dropped, a replica test covers adding and removing an album with pending uploads; uploaded files are never touched.
 
 - **NAT-IOS-HASH** — Native hashing on iOS
-  `feature · agent · low · depends: BUILD-IOS`
+  `feature · agent · low`
   accept: a Swift `hashFile` using CryptoKit reads 1 MiB at a time off the main thread with the same storage check as Android's, and a JS test shows the native path is used instead of the JavaScript SHA-256 fallback in `files.js`; device evidence follows.
 
 ### Music
 
-- **MUSIC-CAR-AZ** — Long car lists are grouped A–Z
-  `feature · agent · normal · depends: VERIFY-ANDROID-AUTO`
-  accept: Artists, Albums and an artist's albums with more items than one car answer carries (Media3 cuts each list at 256 KiB, roughly 300 items) open on letter groups in Android Auto, so every album, artist and track is reachable (the # artists sort last, so the cut drops them first today); JVM tests in `MusicTreeTest.kt` cover a library past the limit. The grouping is a product choice the maintainer validates first.
 - **MUSIC-CAR-SEARCH** — Search and voice requests in the car
   `feature · agent · low · depends: VERIFY-ANDROID-AUTO`
   accept: `MusicService` answers library search and "play … on Arca" voice requests by title, artist and album over the published library, and plays the best match; JVM tests cover the matching. Today search commands are not offered.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.9 — 2026-10-09
+
+- On Android, Add files from the Files picker no longer freezes the app while a large file is copied: each pick is copied in the background and imported from there.
+
+Needs: native build
+
 ## 0.7.8 — 2026-10-08
 
 - On the phone, a sync that stops right after the hub reports a conflict (the connection drops, the app is closed, or you rename or delete something) no longer overwrites the other device's newer version on the next sync: that version stays where it is, and the phone's own change is kept as a conflict copy.

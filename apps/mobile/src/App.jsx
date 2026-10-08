@@ -5,6 +5,7 @@ import { textSizes, textScale } from "./text-size.js";
 import { coalescedRefresh, retainSnapshot } from "./ui-refresh.js";
 import { fileIcon } from "../../desktop/src/file-icons.js";
 import { native } from "./private-network.js";
+import { copyPicked } from "./incoming-files.js";
 import { canContinueInBackground } from "./runtime";
 import { BrandActivity, Busy, Scaffold } from "./components";
 import { GallerySetup } from "./GallerySource";
@@ -1180,7 +1181,7 @@ export default function App() {
               })
             : DocumentPicker.getDocumentAsync({
                 multiple: true,
-                copyToCacheDirectory: true,
+                copyToCacheDirectory: Platform.OS !== "android",
               })
         ).catch((error) => {
           throw sourceUnavailable(error);
@@ -1189,8 +1190,18 @@ export default function App() {
         if (kind === "photos" && source) {
           await replica.gallery.addPhotos(folder.id, result.assets);
         } else {
+          const copied =
+            kind !== "photos" && Platform.OS === "android"
+              ? await copyPicked(
+                  replica,
+                  (uri, destination) => native.receiveShared(uri, destination),
+                  result.assets,
+                  `import-${Date.now()}`,
+                )
+              : null;
+          const assets = copied || result.assets;
           try {
-            for (const asset of result.assets)
+            for (const asset of assets)
               await replica.importFile(
                 folder.id,
                 directory +
@@ -1198,8 +1209,11 @@ export default function App() {
                 asset.uri,
               );
           } finally {
-            for (const asset of result.assets)
-              await replica.files.discardPicked(asset.uri).catch(() => {});
+            for (const asset of assets)
+              await (copied
+                ? replica.files.remove(asset.uri)
+                : replica.files.discardPicked(asset.uri)
+              ).catch(() => {});
           }
           await listFiles();
         }

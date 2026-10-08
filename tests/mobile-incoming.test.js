@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   IncomingSession,
   clearIncoming,
+  copyPicked,
   resolveShared,
 } from "../apps/mobile/src/incoming-files.js";
 
@@ -207,6 +208,39 @@ test("staged shares are verified and kept without a second copy, and a failure r
     /rather than a link or text/,
   );
   await assert.rejects(resolveShared(f.runtime, receive, [], "share-5"), /between 1 and 20/);
+});
+
+test("Android Import files copies each pick natively into the inbox, off the picker's main-thread copy, and removes the copies on failure", async (t) => {
+  const f = await fixture(t);
+  const calls = [];
+  const receive = async (uri, destination) => {
+    calls.push({ uri, destination });
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(destination, "pick");
+    return { name: "provider-name.bin", size: 4 };
+  };
+  const assets = [
+    { uri: "content://docs/1", name: "Report.pdf" },
+    { uri: "content://docs/2" },
+  ];
+  const copies = await copyPicked(f.runtime, receive, assets, "import-1");
+  assert.deepEqual(copies.map((copy) => copy.name), ["Report.pdf", "provider-name.bin"], "the picker's name wins, the provider's fills a gap");
+  assert.deepEqual(calls.map((call) => call.destination), [path.join(f.temporary, "import-1-0"), path.join(f.temporary, "import-1-1")]);
+  assert.equal(await fs.readFile(copies[0].uri, "utf8"), "pick");
+  let attempts = 0;
+  const failing = async (uri, destination) => {
+    if (++attempts === 2) throw new Error("provider went away");
+    return receive(uri, destination);
+  };
+  await assert.rejects(copyPicked(f.runtime, failing, assets, "import-2"), /provider went away/);
+  await missing(path.join(f.temporary, "import-2-0"));
+  await missing(path.join(f.temporary, "import-2-1"));
+  const read = (file) => fs.readFile(new URL(`../apps/mobile/${file}`, import.meta.url), "utf8");
+  const app = await read("src/App.jsx");
+  assert.match(app, /copyToCacheDirectory: Platform\.OS !== "android"/, "the picker no longer copies on Android");
+  const imported = app.slice(app.indexOf("async function imported("), app.indexOf("function choose("));
+  assert.match(imported, /kind !== "photos" && Platform\.OS === "android"[\s\S]*copyPicked\(\s+replica,\s+\(uri, destination\) => native\.receiveShared\(uri, destination\),\s+result\.assets,/);
+  assert.match(imported, /copied\s+\? replica\.files\.remove\(asset\.uri\)\s+: replica\.files\.discardPicked\(asset\.uri\)/, "the inbox copies are removed after the import, iOS keeps its cleanup");
 });
 
 test("the Android share path never lets the library resolve files into the cache", async () => {

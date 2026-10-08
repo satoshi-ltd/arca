@@ -818,6 +818,7 @@ test("a silent hub and a case-only rename still behave offline, and a hub edit m
   await hub.sync();
   const replica = await connect("offline-silent");
   await replica.sync();
+  replica.engine.metadataTimeoutMs = 1500;
   const quiet = await silent(t);
   const url = replica.engine.config.hub.url;
   replica.engine.config.hub.url = quiet.url;
@@ -881,6 +882,7 @@ test("a cycle interrupted while the hub is away keeps its unreachable error", as
   const { connect } = await setup(t);
   const replica = await connect("interrupted");
   await replica.sync();
+  replica.engine.metadataTimeoutMs = 1500;
   const quiet = await silent(t);
   replica.engine.config.hub.url = quiet.url;
   await assert.rejects(replica.sync());

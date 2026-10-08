@@ -59,6 +59,22 @@ export async function resolveShared(r, receive, raw, id) {
     throw error;
   }
 }
+export async function copyPicked(r, receive, assets, id) {
+  const staged = [];
+  try {
+    const copies = [];
+    for (const [index, asset] of assets.entries()) {
+      const destination = r.files.incoming(`${id}-${index}`);
+      staged.push(destination);
+      const received = await receive(asset.uri, destination);
+      copies.push({ name: asset.name || received.name, uri: destination });
+    }
+    return copies;
+  } catch (error) {
+    for (const uri of staged) await r.files.remove(uri).catch(() => {});
+    throw error;
+  }
+}
 export async function stageIncoming(r, payloads, id) {
   const copied = payloads.filter((p) => p.staged).map((p) => p.contentUri);
   try {
