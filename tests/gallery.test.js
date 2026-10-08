@@ -283,6 +283,59 @@ test("old photos use EXIF capture date and unsupported media keep a usable listi
   });
 });
 
+test("a replica without its hub lists a photo added on disk with its preview and details, and a deleted photo leaves the grid", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  await f.photo("old.jpg", "2026-01-01T00:00:00.000Z", "blue");
+  const home = path.join(f.home, "replica-away");
+  init(home, { port: 0, name: "Viewer", role: "replica" });
+  const replica = await start(home, { timer: false });
+  const call = async (route, body) => {
+    const response = await fetch(`http://127.0.0.1:${replica.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { Authorization: `Bearer ${replica.engine.config.adminToken}`, "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw Object.assign(new Error(data.error), { status: response.status });
+    return data;
+  };
+  try {
+    const invite = await f.api("/v1/devices", { name: "Viewer", role: "replica" });
+    await call("/v1/connect", { url: `http://127.0.0.1:${f.daemon.port}`, token: invite.token });
+    await call("/v1/select", { id: f.v.id });
+    await replica.engine.cycle();
+    await replica.engine.gallery.background;
+    assert.deepEqual((await call(f.route)).items.map((item) => item.path), ["old.jpg"]);
+
+    replica.engine.config.hub.url = "http://127.0.0.1:1";
+    const folder = replica.engine.store.volume(f.v.id).path;
+    const added = await sharp({ create: { width: 800, height: 600, channels: 3, background: "green" } }).jpeg().toBuffer();
+    fs.writeFileSync(path.join(folder, "new.jpg"), added);
+    fs.unlinkSync(path.join(folder, "old.jpg"));
+    await replica.engine.reconcileLocal(f.v.id, ["new.jpg", "old.jpg"]);
+    let items = [];
+    for (let i = 0; i < 100; i++) {
+      await replica.engine.gallery.background;
+      items = (await call(f.route)).items;
+      if (items.length === 1 && items[0].path === "new.jpg") break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.deepEqual(items.map((item) => item.path), ["new.jpg"], "the new photo is listed and the deleted one is gone");
+    const hash = digest(added);
+    assert.equal(items[0].hash, hash);
+    assert.match((await call(f.preview("new.jpg", hash))).data, /^data:image\/jpeg;base64,/, "it renders from the local copy");
+    assert.equal((await call(`/v1/gallery/info?volume=${f.v.id}&path=new.jpg&hash=${hash}`)).width, 800, "and shows its details");
+    const clip = Buffer.from("not really a video");
+    fs.writeFileSync(path.join(folder, "clip.mp4"), clip);
+    await replica.engine.reconcileLocal(f.v.id, ["clip.mp4"]);
+    assert.ok((await call(`/v1/gallery/playback?volume=${f.v.id}&path=clip.mp4&hash=${digest(clip)}`)).url, "a video added offline plays from the local copy");
+  } finally {
+    await replica.engine.gallery?.background;
+    await replica.close();
+  }
+});
+
 test("replicas render selected local previews and never ask the hub for photos they do not hold", async (t) => {
   const f = await fixture(t);
   await f.api("/v1/gallery/link", { volume: f.v.id });

@@ -2654,21 +2654,19 @@ test("file deletion rejects stale content, preserves history and propagates from
   assert.equal(read(replica, volume, "delete.txt"), "retained");
   const row = replica.engine.store.current(volume.id, "delete.txt");
   write(replica, volume, "delete.txt", "unsynced");
-  await assert.rejects(
-    replica.api("/v1/delete-file", {
-      volume: volume.id,
-      path: "delete.txt",
-      rev: row.rev,
-    }),
-    /changed/,
-  );
-  await replica.sync();
-  const updated = replica.engine.store.current(volume.id, "delete.txt");
+  const trashed = [];
+  replica.engine.moveToTrash = async (files) => {
+    for (const file of files) {
+      trashed.push(path.basename(file));
+      fs.unlinkSync(file);
+    }
+  };
   await replica.api("/v1/delete-file", {
     volume: volume.id,
     path: "delete.txt",
-    rev: updated.rev,
+    rev: row.rev,
   });
+  assert.deepEqual(trashed, ["delete.txt"], "an edit the hub never received goes to the Trash, not into the void");
   await replica.sync();
   assert.equal(hub.engine.store.current(volume.id, "delete.txt").deleted, 1);
 });
@@ -3117,23 +3115,13 @@ test("file rename validates names and stale revisions, preserves history and syn
   assert.equal(read(replica, volume, "nested/renamed.txt"), "retained");
   const local = replica.engine.store.current(volume.id, "nested/renamed.txt");
   write(replica, volume, local.path, "pending edit");
-  await assert.rejects(
-    replica.api("/v1/rename-file", {
-      volume: volume.id,
-      path: local.path,
-      rev: local.rev,
-      name: "final.txt",
-    }),
-    /changed/,
-  );
-  await replica.sync();
-  const updated = replica.engine.store.current(volume.id, local.path);
   await replica.api("/v1/rename-file", {
     volume: volume.id,
     path: local.path,
-    rev: updated.rev,
+    rev: local.rev,
     name: "RENAMED.txt",
   });
+  assert.equal(read(replica, volume, "nested/RENAMED.txt"), "pending edit", "an edit not yet synced moves with the rename");
   await replica.sync();
   assert.equal(read(hub, volume, "nested/RENAMED.txt"), "pending edit");
   const renamed = hub.engine.store.current(volume.id, "nested/RENAMED.txt");

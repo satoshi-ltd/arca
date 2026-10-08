@@ -26,7 +26,7 @@ test("browse groups directories, scopes search and paginates without including d
     put.run("other", "leak.txt", 100, 1, 0);
     db.exec("UPDATE files SET hash='content-hash' WHERE path='root.txt'");
     const browse = (values = {}) =>
-      browsePage({ db }, "v", new URLSearchParams(values));
+      browsePage({ db, fileSource: () => "files" }, "v", new URLSearchParams(values));
     const first = browse({ limit: "1" });
     assert.equal(first.entries[0].name, "notes");
     assert.equal(first.entries[0].files, 2);

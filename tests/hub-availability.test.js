@@ -607,6 +607,28 @@ test("a successful event poll ends the offline backoff at once", async (t) => {
   assert.equal(read(hub, volume, "offline-edit.txt"), "made offline");
 });
 
+test("a file saved while the hub is away shows within seconds, not at the next retry", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "a.txt", "alpha");
+  await hub.sync();
+  const replica = await connect("away-watch", { timer: true, eventRetryMs: 100 });
+  await waitFor(() => replica.engine.status().phase === "idle" && replica.engine.lastSync, 20000);
+  const link = await relay(t, replica.engine.config.hub.url, { refuse: true });
+  replica.engine.config.hub.url = link.url;
+  await replica.api("/v1/sync", { background: true });
+  await waitFor(() => replica.engine.status().phase === "offline", 20000);
+  write(replica, volume, "saved-offline.txt", "made while away");
+  await waitFor(
+    async () => (await listing(replica, volume)).some(([name, size]) => name === "saved-offline.txt" && size === 15),
+    10000,
+  );
+  write(replica, volume, "while-backing-off.txt", "second");
+  await waitFor(
+    async () => (await listing(replica, volume)).some(([name, size]) => name === "while-backing-off.txt" && size === 6),
+    10000,
+  );
+});
+
 test("interrupted desktop snapshots release their hub leases", async (t) => {
   const { hub, volume, connect } = await setup(t);
   for (let i = 0; i < 3; i++) write(hub, volume, `file-${i}.txt`, String(i));
@@ -712,11 +734,133 @@ test("offline file pages use the newer local revision and missing files answer c
         rev: current.rev,
         ...body,
       }),
-      (error) =>
-        error.status === 409 &&
-        error.message ===
-          "This file is no longer in the local copy. The list updates after the next sync.",
+      (error) => error.status === 404 && error.message === "File not found",
     );
+});
+
+const away = (replica) => {
+  const url = replica.engine.config.hub.url;
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  return () => {
+    replica.engine.config.hub.url = url;
+  };
+};
+const browsed = async (replica, volume) =>
+  (await replica.api(`/v1/browse?volume=${volume.id}&limit=200`)).entries;
+const listing = async (replica, volume) =>
+  (await browsed(replica, volume)).filter((entry) => entry.name !== ".arcaignore").map((entry) => [entry.name, entry.size, entry.rev]);
+const totals = async (replica, volume) => {
+  const row = (await replica.api("/v1/status")).volumes.find((item) => item.id === volume.id);
+  const policy = (await browsed(replica, volume)).find((entry) => entry.name === ".arcaignore");
+  return [row.files - 1, row.bytes - policy.size];
+};
+
+test("with the hub away a replica lists, renames and deletes its own local changes, and the next sync uploads exactly those", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "a.txt", "alpha");
+  write(hub, volume, "b.txt", "beta");
+  await hub.sync();
+  const replica = await connect("offline-local");
+  await replica.sync();
+  const trashed = [];
+  replica.engine.moveToTrash = async (files) => {
+    for (const file of files) {
+      trashed.push(path.basename(file));
+      fs.unlinkSync(file);
+    }
+  };
+  const back = away(replica);
+  await assert.rejects(replica.sync());
+  const rev = (name) => replica.engine.store.current(volume.id, name).rev;
+  assert.deepEqual(await listing(replica, volume), [["a.txt", 5, rev("a.txt")], ["b.txt", 4, rev("b.txt")]]);
+
+  await replica.api("/v1/rename-file", { volume: volume.id, path: "a.txt", name: "c.txt", rev: rev("a.txt") });
+  assert.deepEqual(await listing(replica, volume), [["b.txt", 4, rev("b.txt")], ["c.txt", 5, 0]], "a rename shows at once, with the new name");
+  assert.deepEqual(await totals(replica, volume), [2, 9]);
+  await replica.api("/v1/rename-file", { volume: volume.id, path: "c.txt", name: "d.txt", rev: 0 });
+  assert.deepEqual((await listing(replica, volume)).map(([name]) => name), ["b.txt", "d.txt"], "a file renamed offline renames again");
+
+  write(replica, volume, "b.txt", "beta, edited offline");
+  await replica.engine.reconcileLocal(volume.id, ["b.txt"]);
+  assert.deepEqual((await listing(replica, volume))[0].slice(0, 2), ["b.txt", 20], "an edit made on disk shows its new size");
+  await replica.api("/v1/rename-file", { volume: volume.id, path: "b.txt", name: "e.txt", rev: rev("b.txt") });
+  assert.equal(read(replica, volume, "e.txt"), "beta, edited offline", "an edited file renames without asking to sync");
+
+  write(replica, volume, "n.txt", "never synced");
+  await replica.engine.reconcileLocal(volume.id, ["n.txt"]);
+  assert.deepEqual((await listing(replica, volume)).find(([name]) => name === "n.txt").slice(1), [12, 0]);
+  assert.deepEqual(await totals(replica, volume), [3, 5 + 20 + 12]);
+
+  await replica.api("/v1/delete-file", { volume: volume.id, path: "d.txt", rev: 0 });
+  assert.deepEqual(trashed, [], "content the hub already holds is deleted without the Trash");
+  await replica.api("/v1/delete-file", { volume: volume.id, path: "n.txt", rev: 0 });
+  assert.deepEqual(trashed, ["n.txt"], "a file that never reached the hub goes to the Trash instead of vanishing");
+  await assert.rejects(replica.api("/v1/delete-file", { volume: volume.id, path: "n.txt", rev: 0 }), { status: 404 });
+  assert.deepEqual((await listing(replica, volume)).map(([name]) => name), ["e.txt"]);
+  assert.deepEqual(await totals(replica, volume), [1, 20]);
+
+  back();
+  await replica.sync();
+  assert.equal(replica.engine.store.db.prepare("SELECT count(*) AS n FROM local_files").get().n, 0, "the overlay clears once the hub has the changes");
+  await hub.sync();
+  assert.deepEqual(
+    fs.readdirSync(hub.engine.store.volume(volume.id).path).filter((name) => !name.startsWith(".")).sort(),
+    ["e.txt"],
+    "the hub received exactly the rename of the edited file and the deletions",
+  );
+  assert.equal(read(hub, volume, "e.txt"), "beta, edited offline");
+});
+
+test("a silent hub and a case-only rename still behave offline, and a hub edit meanwhile is kept as a conflict", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "a.txt", "alpha");
+  write(hub, volume, "keep.txt", "keep");
+  await hub.sync();
+  const replica = await connect("offline-silent");
+  await replica.sync();
+  const quiet = await silent(t);
+  const url = replica.engine.config.hub.url;
+  replica.engine.config.hub.url = quiet.url;
+  await assert.rejects(replica.sync());
+  assert.ok(quiet.connections() > 0, "the hub accepted the connection and never answered");
+  const rev = (name) => replica.engine.store.current(volume.id, name).rev;
+  await replica.api("/v1/rename-file", { volume: volume.id, path: "a.txt", name: "A.txt", rev: rev("a.txt") });
+  assert.deepEqual((await listing(replica, volume)).map(([name]) => name), ["A.txt", "keep.txt"], "a case-only rename lists the file once");
+  write(replica, volume, "keep.txt", "keep, edited here");
+  await replica.engine.reconcileLocal(volume.id, ["keep.txt"]);
+  assert.deepEqual((await listing(replica, volume)).find(([name]) => name === "keep.txt").slice(1, 2), [17]);
+  write(hub, volume, "keep.txt", "keep, edited on the hub");
+  await hub.sync();
+  replica.engine.config.hub.url = url;
+  await replica.sync();
+  await replica.sync();
+  const names = fs.readdirSync(replica.engine.store.volume(volume.id).path);
+  assert.ok(names.some((name) => /^keep\.txt\.conflict-/.test(name)), "both edits survive as a conflict copy on the replica");
+  assert.ok(fs.readdirSync(hub.engine.store.volume(volume.id).path).some((name) => /^keep\.txt\.conflict-/.test(name)), "and on the hub");
+  assert.equal(replica.engine.store.db.prepare("SELECT count(*) AS n FROM local_files").get().n, 0);
+});
+
+test("a cycle that fails, and a paused replica, still show what changed locally", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "a.txt", "alpha");
+  await hub.sync();
+  const replica = await connect("offline-cycle");
+  await replica.sync();
+  const back = away(replica);
+  write(replica, volume, "z.txt", "zed");
+  replica.engine.noteLocal(volume.id, "z.txt");
+  await assert.rejects(replica.sync());
+  assert.deepEqual((await listing(replica, volume)).map(([name, size]) => [name, size]), [["a.txt", 5], ["z.txt", 3]], "a failed cycle derives the local view");
+  back();
+  replica.engine.paused = true;
+  write(replica, volume, "y.txt", "why");
+  replica.engine.noteLocal(volume.id, "y.txt");
+  await replica.sync();
+  assert.deepEqual((await listing(replica, volume)).map(([name]) => name), ["a.txt", "y.txt", "z.txt"], "a paused replica derives it too");
+  replica.engine.paused = false;
+  await replica.sync();
+  assert.equal(replica.engine.store.db.prepare("SELECT count(*) AS n FROM local_files").get().n, 0);
+  assert.deepEqual((await listing(replica, volume)).map(([name]) => name), ["a.txt", "y.txt", "z.txt"]);
 });
 
 test("a crash-interrupted remote change is completed before the hub answers", async (t) => {

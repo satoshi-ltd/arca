@@ -272,6 +272,20 @@ export class Store {
       CREATE TRIGGER IF NOT EXISTS files_generation_delete AFTER DELETE ON files BEGIN
         INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
       END;
+      CREATE TABLE IF NOT EXISTS local_files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,directory INTEGER NOT NULL DEFAULT 0,path_key TEXT NOT NULL,PRIMARY KEY(volume,path));
+      CREATE VIEW IF NOT EXISTS files_view AS
+        SELECT f.volume,f.path,f.hash,f.size,f.deleted,f.rev,f.directory,f.path_key FROM files f
+          WHERE NOT EXISTS (SELECT 1 FROM local_files l WHERE l.volume=f.volume AND l.path=f.path)
+        UNION ALL SELECT volume,path,hash,size,deleted,rev,directory,path_key FROM local_files;
+      CREATE TRIGGER IF NOT EXISTS local_generation_insert AFTER INSERT ON local_files BEGIN
+        INSERT INTO file_generations VALUES(NEW.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS local_generation_update AFTER UPDATE ON local_files BEGIN
+        INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS local_generation_delete AFTER DELETE ON local_files BEGIN
+        INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+      END;
       CREATE TABLE IF NOT EXISTS pending(volume TEXT NOT NULL,path TEXT NOT NULL,row TEXT NOT NULL,expected TEXT,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL,role TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,last_seen TEXT,last_address TEXT);
       CREATE TABLE IF NOT EXISTS conflict_resolutions(volume TEXT NOT NULL,path TEXT NOT NULL,conflict_rev INTEGER NOT NULL,resolution_rev INTEGER NOT NULL,choice TEXT NOT NULL,PRIMARY KEY(volume,path));
@@ -433,6 +447,7 @@ export class Store {
         "sync_state",
         "pending",
         "files",
+        "local_files",
         "revisions",
       ])
         this.db.prepare(`DELETE FROM ${table} WHERE volume=?`).run(id);
@@ -753,7 +768,7 @@ export class Store {
     }
     const { files, bytes } = this.db
       .prepare(
-        "SELECT count(*) AS files, coalesce(sum(size),0) AS bytes FROM files WHERE volume=? AND deleted=0 AND directory=0",
+        `SELECT count(*) AS files, coalesce(sum(size),0) AS bytes FROM ${this.fileSource()} WHERE volume=? AND deleted=0 AND directory=0`,
       )
       .get(volume);
     return { files, bytes };
@@ -921,7 +936,68 @@ export class Store {
       .prepare("SELECT * FROM files WHERE volume=? AND path=?")
       .get(id, name.normalize("NFC"));
   }
+  fileSource() {
+    return this.db.prepare("SELECT 1 FROM local_files LIMIT 1").get()
+      ? "files_view"
+      : "files";
+  }
+  viewCurrent(id, name) {
+    return this.db
+      .prepare(`SELECT * FROM ${this.fileSource()} WHERE volume=? AND path=?`)
+      .get(id, name.normalize("NFC"));
+  }
+  replaceLocal(v, scopes, disk) {
+    const known = new Map(this.rowsInScope(v.id, scopes).map((row) => [row.path, row]));
+    const rows = [];
+    for (const [name, item] of disk) {
+      const old = known.get(name);
+      if (this.excluded(v.id, name, !!item.directory)) continue;
+      if (!old || old.deleted || entryKey(old) !== entryKey(item))
+        rows.push({
+          path: name,
+          hash: item.directory ? null : item.hash,
+          size: item.directory ? 0 : item.size || 0,
+          deleted: 0,
+          rev: old?.rev ?? 0,
+          directory: Number(!!item.directory),
+        });
+    }
+    for (const old of known.values())
+      if (
+        !old.deleted &&
+        !disk.has(old.path) &&
+        !this.excluded(v.id, old.path, !!old.directory)
+      )
+        rows.push({ ...old, deleted: 1 });
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.clearLocal(v.id, scopes);
+      const insert = this.db.prepare(
+        "INSERT OR REPLACE INTO local_files(volume,path,hash,size,deleted,rev,directory,path_key) VALUES(?,?,?,?,?,?,?,?)",
+      );
+      for (const row of rows)
+        insert.run(v.id, row.path, row.hash ?? null, row.size, row.deleted, row.rev, row.directory ? 1 : 0, row.path.toLowerCase());
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  clearLocal(id, scopes = null) {
+    if (scopes === null) {
+      this.db.prepare("DELETE FROM local_files WHERE volume=?").run(id);
+      return;
+    }
+    const remove = this.db.prepare(
+      "DELETE FROM local_files WHERE volume=? AND (path=? COLLATE NOCASE OR path LIKE ? ESCAPE '!')",
+    );
+    for (const requested of scopes) {
+      const scope = validPath(requested);
+      remove.run(id, scope, scope.replace(/[!%_]/g, (c) => "!" + c) + "/%");
+    }
+  }
   setFile(row) {
+    this.db.prepare("DELETE FROM local_files WHERE volume=? AND path=?").run(row.volume, row.path);
     this.db
       .prepare(
         "INSERT INTO files(volume,path,hash,size,deleted,rev,directory,path_key) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(volume,path) DO UPDATE SET hash=excluded.hash,size=excluded.size,deleted=excluded.deleted,rev=excluded.rev,directory=excluded.directory,path_key=excluded.path_key",

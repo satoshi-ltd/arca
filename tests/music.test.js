@@ -978,8 +978,24 @@ test("a replica edits playlists in its own copy and the file syncs to the hub; w
   assert.equal(fs.readFileSync(local, "utf8"), "#EXTM3U\n#PLAYLIST:Desk mix\n../Album/01 One.mp3\n");
   const unsynced = await call(`/v1/music/library?volume=${f.v.id}`);
   assert.deepEqual(unsynced.playlists.map((list) => [list.path, list.entries]), [[created.path, ["Album/01 One.mp3"]]], "a playlist made here lists before it has synced");
-  await assert.rejects(call("/v1/music/playlist", { volume: f.v.id, action: "rename", path: created.path, hash: created.hash, name: "Early" }), { status: 409, message: /not synced yet/ });
-  await assert.rejects(call("/v1/music/playlist", { volume: f.v.id, action: "delete", path: created.path, hash: created.hash }), { status: 409, message: /not synced yet/ });
+  const trashed = [];
+  replica.engine.moveToTrash = async (files) => {
+    for (const file of files) {
+      trashed.push(path.basename(file));
+      fs.unlinkSync(file);
+    }
+  };
+  const scratch = await call("/v1/music/playlist", { volume: f.v.id, action: "create", name: "Scratch", track: "Album/01 One.mp3" });
+  const early = await call("/v1/music/playlist", { volume: f.v.id, action: "rename", path: scratch.path, hash: scratch.hash, name: "Early" });
+  const later = await call("/v1/music/playlist", { volume: f.v.id, action: "rename", path: early.path, hash: early.hash, name: "Later" });
+  assert.equal(later.path, "Playlists/Later.m3u8", "a playlist that has not synced renames, again and again");
+  assert.deepEqual((await call(`/v1/music/library?volume=${f.v.id}`)).playlists.map((list) => list.name).sort(), ["Desk mix", "Later"]);
+  await call("/v1/music/playlist", { volume: f.v.id, action: "delete", path: later.path, hash: later.hash });
+  assert.deepEqual(trashed, ["Later.m3u8"], "a playlist the hub never saw goes to the Trash");
+  assert.deepEqual((await call(`/v1/music/library?volume=${f.v.id}`)).playlists.map((list) => list.name), ["Desk mix"]);
+  assert.equal((await call("/v1/music/playlist", { volume: f.v.id, action: "create", name: "Later", track: "Album/01 One.mp3" })).path, "Playlists/Later.m3u8", "a name deleted offline can be used again at once");
+  const again = await call(`/v1/music/library?volume=${f.v.id}`);
+  await call("/v1/music/playlist", { volume: f.v.id, action: "delete", path: "Playlists/Later.m3u8", hash: again.playlists.find((list) => list.name === "Later").hash });
   replica.engine.paused = false;
   await replica.engine.cycle();
   for (let i = 0; i < 100 && f.s.current(f.v.id, created.path)?.hash !== created.hash; i++)
@@ -1009,6 +1025,62 @@ test("a replica edits playlists in its own copy and the file syncs to the hub; w
   assert.equal(fs.readFileSync(night, "utf8"), "#EXTM3U\n#PLAYLIST:Night mix\n../Album/01 Uno.mp3\n../Album/02 Two.flac\n", "a track renamed on a replica rewrites its playlists");
   await call("/v1/unselect", { id: f.v.id, deleteFiles: false });
   await assert.rejects(call("/v1/music/playlist", { volume: f.v.id, action: "create", name: "Other" }), (error) => [404, 409].includes(error.status));
+});
+
+test("a replica without its hub lists a track added on disk, plays it and adds it to a playlist, and a deleted track leaves the library", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/music/mark", { volume: f.v.id });
+  await f.track("Album/01 One.mp3", { title: "One", artist: "Ann", album: "First" });
+  await f.track("Album/02 Two.mp3", { title: "Two", artist: "Ann", album: "First" });
+  const extra = await f.track("Album/03 Three.mp3", { title: "Three", artist: "Ann", album: "First" });
+  fs.rmSync(path.join(f.v.path, "Album", "03 Three.mp3"));
+  await f.daemon.engine.cycle();
+  await f.indexed();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-music-away-"));
+  init(home, { port: 0, name: "Desk", role: "replica" });
+  const replica = await start(home, { timer: false });
+  t.after(async () => {
+    await replica.engine.music?.background;
+    await replica.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const call = async (route, body) => {
+    const response = await fetch(`http://127.0.0.1:${replica.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { Authorization: `Bearer ${replica.engine.config.adminToken}`, "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw Object.assign(new Error(data.error), { status: response.status });
+    return data;
+  };
+  const desk = await f.api("/v1/devices", { name: "Desk", role: "replica" });
+  await call("/v1/connect", { url: `http://127.0.0.1:${f.daemon.port}`, token: desk.token });
+  await call("/v1/select", { id: f.v.id });
+  await replica.engine.cycle();
+  const titles = async () => (await call(`/v1/music/library?volume=${f.v.id}`)).tracks.map((track) => track.title).sort();
+  const settled = async (done) => {
+    for (let i = 0; i < 100 && !done(await titles()); i++) {
+      replica.engine.music.prepare(f.v.id);
+      await replica.engine.music.background;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  };
+  await settled((list) => list.join() === "One,Two");
+  assert.deepEqual(await titles(), ["One", "Two"]);
+
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  const folder = replica.engine.store.volume(f.v.id).path;
+  fs.unlinkSync(path.join(folder, "Album", "02 Two.mp3"));
+  fs.writeFileSync(path.join(folder, "Album", "03 Three.mp3"), extra.buffer);
+  await replica.engine.reconcileLocal(f.v.id, ["Album/02 Two.mp3", "Album/03 Three.mp3"]);
+  await settled((list) => list.join() === "One,Three");
+  assert.deepEqual(await titles(), ["One", "Three"], "a track deleted on disk leaves the library and a new one joins it with its tags");
+  const added = (await call(`/v1/music/library?volume=${f.v.id}`)).tracks.find((track) => track.title === "Three");
+  assert.equal((await call(`/v1/music/playback?volume=${f.v.id}&path=${encodeURIComponent(added.path)}&hash=${added.hash}`)).url.length > 0, true, "and it plays from the local copy");
+  const created = await call("/v1/music/playlist", { volume: f.v.id, action: "create", name: "Away", track: added.path });
+  assert.equal(fs.readFileSync(path.join(folder, "Playlists", "Away.m3u8"), "utf8"), "#EXTM3U\n#PLAYLIST:Away\n../Album/03 Three.mp3\n");
+  assert.equal(created.path, "Playlists/Away.m3u8");
 });
 
 test("a playlist name that differs only by case never replaces or deletes the existing one", async (t) => {

@@ -59,9 +59,8 @@ import {
 const CHUNK = 1024 * 1024;
 const MIN_UPLOAD_CHUNK = 256 * 1024;
 export const HUB_UNAVAILABLE = "Hub unavailable. Try again when it is reachable.";
-const PLAYLIST_UNSYNCED = "This playlist has not synced yet. Try again once it has.";
 const MISSING_LOCAL =
-  "This file is no longer in the local copy. The list updates after the next sync.";
+  "This file is no longer in the local copy.";
 function fileDate(file) {
   const time = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
   return time > Date.UTC(1990, 0, 1) && time < Date.now() + 86400000
@@ -74,6 +73,8 @@ export class Engine {
     this.config = this.store.config;
     this.moveToTrash = moveToTrash;
     this.staleHeads = new Map();
+    this.localDirty = new Map();
+    this.localSeen = new Set();
     if (this.config.destroyPending) {
       try {
         this.gallery?.close();
@@ -761,6 +762,44 @@ export class Engine {
         .get(old.rev, volume, device.id, base)
     );
   }
+  noteLocal(volume, name = "") {
+    const names = this.localDirty.get(volume) || new Set();
+    this.localDirty.set(volume, names);
+    if (names.has("")) return;
+    if (name && names.size < 2048) names.add(name);
+    else {
+      names.clear();
+      names.add("");
+    }
+  }
+  reconcileLocal(volume = null, paths = undefined) {
+    if (this.config.role !== "replica" || !this.config.hub) return Promise.resolve();
+    const run = async () => {
+      let folders = [];
+      try {
+        folders = this.store.volumes().filter((v) => v.selected && (!volume || v.id === volume));
+      } catch {
+        return;
+      }
+      for (const v of folders) {
+        let scope = paths;
+        if (scope === undefined) {
+          const noted = this.localDirty.get(v.id);
+          scope = !this.localSeen.has(v.id) || noted?.has("") ? null : [...(noted || [])];
+          this.localDirty.delete(v.id);
+        }
+        if (scope?.length === 0) continue;
+        try {
+          this.store.replaceLocal(v, scope, await this.scanner.scan(v, scope));
+          if (scope === null) this.localSeen.add(v.id);
+        } catch {
+          if (paths === undefined) for (const name of scope ?? [""]) this.noteLocal(v.id, name);
+        }
+      }
+    };
+    this.localReconcile = (this.localReconcile || Promise.resolve()).then(run, run);
+    return this.localReconcile;
+  }
   cycle(options = {}) {
     return this.requestContext.run(new AbortController(), () =>
       this.runCycle(options),
@@ -778,6 +817,7 @@ export class Engine {
       this.setPaused(false);
     }
     if (this.paused) {
+      await this.reconcileLocal();
       if (!this.hubUnavailable) await this.reportMachine();
       return;
     }
@@ -1182,6 +1222,7 @@ export class Engine {
             }
             if (useChanges) this.work.cursor(v.id, through);
             this.work.complete(v, plan);
+            if (plan.acknowledge) s.clearLocal(v.id, plan.paths);
             this.work.policy(v.id, policy);
             s.db
               .prepare("UPDATE volumes SET last_sync=? WHERE id=?")
@@ -1300,6 +1341,7 @@ export class Engine {
         this.error = null;
         return;
       }
+      await this.reconcileLocal();
       if (this.progress?.volume && !e.hubUnavailable)
         this.folderStates.set(this.progress.volume, {
           state: "error",
@@ -1518,7 +1560,7 @@ export class Engine {
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec(
-        "DELETE FROM files; DELETE FROM revisions; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
+        "DELETE FROM files; DELETE FROM local_files; DELETE FROM revisions; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
       );
       const add = db.prepare(
         "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,0,?,?,?)",
@@ -2008,6 +2050,7 @@ export class Engine {
   }
   clearHubConnection() {
     this.closeBackup();
+    this.store.db.exec("DELETE FROM local_files");
     const { id, url } = this.config.hub;
     const backupConfigPath = this.config.backup?.path
       ? path.join(this.config.backup.path, "state", "config.json")
@@ -2121,14 +2164,15 @@ export class Engine {
     const excluded = s.visibleRules(volume);
     if (excluded(name, false) || excluded(destination, false))
       fail("Excluded files cannot be renamed here", 409);
-    const current = s.current(volume, name);
+    await this.reconcileLocal(volume, [name, destination]);
+    const current = s.viewCurrent(volume, name);
     if (!current || current.deleted) fail("File not found", 404);
     if (current.directory) fail("Only files can be renamed here", 409);
     if (current.rev !== Number(rev))
       fail("File changed. Reload before renaming.", 409);
     if (destination === name) return { path: name };
     const collision = [
-      s.current(volume, destination),
+      s.viewCurrent(volume, destination),
       s.caseAlias(volume, destination),
     ].find((row) => row && !row.deleted && row.path !== name);
     if (collision) fail("A file or folder with that name already exists", 409);
@@ -2159,7 +2203,8 @@ export class Engine {
         syncDirectory(path.dirname(file));
         this.work.mark(volume, name);
         this.work.mark(volume, destination);
-        await this.rewritePlaylists(volume, name, destination);
+        const rewritten = await this.rewritePlaylists(volume, name, destination);
+        await this.reconcileLocal(volume, [name, destination, ...rewritten]);
         return { path: destination };
       }
     }
@@ -2170,14 +2215,14 @@ export class Engine {
   async rewritePlaylists(volume, from, to) {
     const s = this.store;
     const v = s.volume(volume);
-    if (!v.selected || !this.music?.isMusic(volume)) return;
+    if (!v.selected || !this.music?.isMusic(volume)) return [];
     const visible = s.visibleRules(volume);
     const directory = path.dirname(s.filePath(v, `${PLAYLIST_DIRECTORY}/x`));
     let names = [];
     try {
       names = fs.readdirSync(directory);
     } catch {
-      return;
+      return [];
     }
     const paths = [];
     for (const entry of names) {
@@ -2195,12 +2240,13 @@ export class Engine {
         continue;
       }
     }
-    if (!paths.length) return;
+    if (!paths.length) return paths;
     if (this.config.role === "hub") await this.scanHub(volume, { paths });
     else for (const name of paths) this.work.mark(volume, name);
+    return paths;
   }
   playlistTrack(volume, track) {
-    const row = typeof track === "string" ? this.store.current(volume, track) : null;
+    const row = typeof track === "string" ? this.store.viewCurrent(volume, track) : null;
     if (
       !row ||
       row.deleted ||
@@ -2215,7 +2261,10 @@ export class Engine {
     const bytes = Buffer.from(text, "utf8");
     atomic(file, bytes, 0o644);
     if (this.config.role === "hub") await this.scanHub(volume, { paths: [name] });
-    else this.work.mark(volume, name);
+    else {
+      this.work.mark(volume, name);
+      await this.reconcileLocal(volume, [name]);
+    }
     return { path: name, hash: digest(bytes) };
   }
   async editPlaylist({ volume, action, path: name, name: title, track, position, hash }) {
@@ -2237,7 +2286,7 @@ export class Engine {
       fail("Excluded files cannot be edited here", 409);
     const file = s.filePath(v, target);
     if (action === "create") {
-      const taken = [s.current(volume, target), s.caseAlias(volume, target)].some(
+      const taken = [s.viewCurrent(volume, target), s.caseAlias(volume, target)].some(
         (row) => row && !row.deleted,
       );
       const siblings = fs.existsSync(path.dirname(file)) ? fs.readdirSync(path.dirname(file)) : [];
@@ -2250,7 +2299,8 @@ export class Engine {
         fail("A playlist with that name already exists", 409);
     }
     if (this.config.role === "hub") await this.scanHub(volume, { paths: [target, IGNORE_FILE] });
-    const current = s.current(volume, target);
+    await this.reconcileLocal(volume, [target]);
+    const current = s.viewCurrent(volume, target);
     if (action === "create") {
       if ((current && !current.deleted) || fs.lstatSync(file, { throwIfNoEntry: false }))
         fail("A playlist with that name already exists", 409);
@@ -2263,7 +2313,7 @@ export class Engine {
     const bytes = fs.readFileSync(file);
     if (digest(bytes) !== hash) fail("This playlist changed. Try again.", 409);
     if (action === "delete") {
-      if (!current || current.deleted) fail(PLAYLIST_UNSYNCED, 409);
+      if (!current || current.deleted) fail(MISSING_LOCAL, 409);
       await this.deleteFile(volume, target, current.rev);
       return { path: target, deleted: true };
     }
@@ -2281,7 +2331,7 @@ export class Engine {
         fail(error.message);
       }
       if (destination !== target) {
-        if (!current || current.deleted) fail(PLAYLIST_UNSYNCED, 409);
+        if (!current || current.deleted) fail(MISSING_LOCAL, 409);
         await this.renameFile(volume, target, destination.slice(PLAYLIST_DIRECTORY.length + 1), current.rev, { rewrites: true });
       }
       return this.writePlaylist(volume, destination, s.filePath(v, destination), renamePlaylist(text, title));
@@ -2309,7 +2359,8 @@ export class Engine {
       fail("Excluded files cannot be deleted here", 409);
     if (this.config.role === "hub")
       await this.scanHub(volume, { paths: [name, IGNORE_FILE] });
-    const current = this.store.current(volume, name);
+    await this.reconcileLocal(volume, [name]);
+    const current = this.store.viewCurrent(volume, name);
     if (!current || current.deleted) fail("File not found", 404);
     if (current.directory) fail("Use file deletion only for files", 409);
     if (current.rev !== Number(rev))
@@ -2328,8 +2379,21 @@ export class Engine {
     if (!local) fail(MISSING_LOCAL, 409);
     if (!local.isFile() || hashFile(file) !== current.hash)
       fail("Local file changed. Sync before deleting.", 409);
-    fs.unlinkSync(file);
+    const held = this.store.db
+      .prepare("SELECT 1 FROM files WHERE volume=? AND hash=? AND deleted=0 LIMIT 1")
+      .get(volume, current.hash);
+    if (!held) {
+      try {
+        await this.moveToTrash([file]);
+      } catch (error) {
+        fail(
+          `This file has changes that never reached the hub, and it could not be moved to the Trash: ${error.message}. Sync it first, or move it yourself.`,
+          409,
+        );
+      }
+    } else fs.unlinkSync(file);
     this.work.mark(volume, name);
+    await this.reconcileLocal(volume, [name]);
     return { deleted: true };
   }
   async chooseConflict(choice) {

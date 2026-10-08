@@ -7,7 +7,7 @@ export function galleryMedia(store, volume, name, hash) {
   const folder = store.volume(volume);
   if (store.config.role !== "hub" && !folder.selected)
     fail("Select this folder first", 403);
-  const row = store.current(volume, name);
+  const row = store.viewCurrent(volume, name);
   if (
     !row ||
     row.deleted ||

@@ -672,7 +672,7 @@ export async function start(home, options = {}) {
         const folder = s.volume(volume);
         if (config.role !== "hub" && !folder.selected)
           fail("Select this folder first", 403);
-        const row = s.current(volume, name);
+        const row = s.viewCurrent(volume, name);
         if (
           !row ||
           row.deleted ||
@@ -746,7 +746,7 @@ export async function start(home, options = {}) {
         const v = s.volume(volume);
         if (config.role !== "hub" && !v.selected)
           fail("Select this folder first", 403);
-        const row = s.current(volume, name);
+        const row = s.viewCurrent(volume, name);
         if (
           !row ||
           row.deleted ||
@@ -1156,7 +1156,7 @@ export async function start(home, options = {}) {
           requireAdmin();
           if (!s.volumes().some((v) => v.id === volume && v.selected))
             fail("Select this folder to view its history", 403);
-          const local = name ? s.current(volume, name) : null;
+          const local = name ? s.viewCurrent(volume, name) : null;
           const view = await remoteView(`/v1/history${url.search}`, () => {
             const saved = name
               ? cachedFileHistory(
@@ -1849,8 +1849,11 @@ export async function start(home, options = {}) {
               200,
               await authorizedWork(async () => {
                 const plan = b.deleteFiles ? s.syncedCopyPlan(b.id) : null;
-                if (config.role === "replica") s.forgetVolume(b.id);
-                else
+                if (config.role === "replica") {
+                  s.forgetVolume(b.id);
+                  engine.localSeen.delete(b.id);
+                  engine.localDirty.delete(b.id);
+                } else
                   s.db
                     .prepare("UPDATE volumes SET selected=0 WHERE id=?")
                     .run(b.id);
@@ -2124,7 +2127,7 @@ export async function start(home, options = {}) {
               s.db.exec("BEGIN IMMEDIATE");
               try {
                 s.db.exec(
-                  "DELETE FROM files; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM sync_state; DELETE FROM sync_dirty;",
+                  "DELETE FROM files; DELETE FROM local_files; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM sync_state; DELETE FROM sync_dirty;",
                 );
                 s.db.prepare("INSERT INTO transitions VALUES(?)").run(id);
                 s.db.exec("COMMIT");
@@ -2204,7 +2207,10 @@ export async function start(home, options = {}) {
     s.db.exec("BEGIN IMMEDIATE");
     try {
       for (const [volume, names] of events)
-        for (const name of names) engine.work.mark(volume, name);
+        for (const name of names) {
+          engine.work.mark(volume, name);
+          engine.noteLocal(volume, name);
+        }
       s.db.exec("COMMIT");
       events.clear();
     } catch (e) {
@@ -2278,6 +2284,7 @@ export async function start(home, options = {}) {
           );
           w.on("error", () => {
             engine.work.mark(volume.id);
+            engine.noteLocal(volume.id);
             schedule(1000);
             w.close();
             watchers.delete(folder);
@@ -2296,6 +2303,14 @@ export async function start(home, options = {}) {
       retryAt = 0;
     }
     if (Date.now() < retryAt) {
+      if (config.role === "replica") {
+        try {
+          flushEvents();
+        } catch {
+          /* The next tick marks them again. */
+        }
+        void engine.exclusive(() => engine.reconcileLocal()).catch(() => {});
+      }
       schedule(retryAt - Date.now());
       return;
     }
@@ -2319,6 +2334,14 @@ export async function start(home, options = {}) {
       offline = !!(error.hubUnavailable || engine.hubUnavailable);
     } finally {
       running = false;
+      if (config.role === "replica" && !stopping && (failures || engine.hubUnavailable)) {
+        try {
+          flushEvents();
+        } catch {
+          /* The next tick marks them again. */
+        }
+        void engine.exclusive(() => engine.reconcileLocal()).catch(() => {});
+      }
       if (!stopping && options.timer !== false) {
         watchFolders();
         const normal =

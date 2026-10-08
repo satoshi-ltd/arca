@@ -219,7 +219,7 @@ export class Music {
     );
     return this.s.db
       .prepare(
-        `SELECT f.hash,min(f.path) AS path FROM files f LEFT JOIN music_tracks t ON t.hash=f.hash
+        `SELECT f.hash,min(f.path) AS path FROM ${this.s.fileSource()} f LEFT JOIN music_tracks t ON t.hash=f.hash
         WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND f.hash IS NOT NULL
         AND arca_audio_type(f.path) IS NOT NULL AND arca_music_visible(f.path)=1
         AND (t.hash IS NULL OR (t.checked<? AND t.retry<=?))
@@ -506,7 +506,7 @@ export class Music {
       .prepare(
         `SELECT f.path,f.hash,f.size,t.checked,t.retry,t.title,t.artist,t.album_artist,t.album,t.track,t.disc,t.year,t.genre,t.duration,t.codec,t.cover,t.release,
         (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.hash=f.hash) AS added
-        FROM files f LEFT JOIN music_tracks t ON t.hash=f.hash
+        FROM ${this.s.fileSource()} f LEFT JOIN music_tracks t ON t.hash=f.hash
         WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND f.hash IS NOT NULL
         AND (arca_audio_type(f.path) IS NOT NULL OR arca_music_side(f.path)=1 OR arca_music_playlist(f.path)=1)
         ORDER BY f.path`,
@@ -575,7 +575,7 @@ export class Music {
     const excluded = this.s.visibleRules(volume);
     const embedded = this.s.db
       .prepare(
-        `SELECT f.path,f.hash FROM files f JOIN music_tracks t ON t.hash=f.hash
+        `SELECT f.path,f.hash FROM ${this.s.fileSource()} f JOIN music_tracks t ON t.hash=f.hash
         WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND t.cover=?`,
       )
       .all(volume, key)
@@ -584,7 +584,7 @@ export class Music {
       ? null
       : this.s.db
           .prepare(
-            "SELECT path,hash FROM files WHERE volume=? AND hash=? AND deleted=0 AND directory=0 AND size<=?",
+            `SELECT path,hash FROM ${this.s.fileSource()} WHERE volume=? AND hash=? AND deleted=0 AND directory=0 AND size<=?`,
           )
           .all(volume, key, COVER_FILE_BYTES)
           .find((row) => coverRank(row.path) >= 0 && !excluded(row.path, false));
@@ -634,7 +634,7 @@ export class Music {
     if (this.s.config.role !== "hub" && !this.s.volume(volume).selected)
       fail("Select this folder first", 403);
     this.requireLibrary(volume);
-    const row = typeof name === "string" ? this.s.current(volume, name) : null;
+    const row = typeof name === "string" ? this.s.viewCurrent(volume, name) : null;
     if (
       !row ||
       row.deleted ||
@@ -658,7 +658,7 @@ export class Music {
   }
   removeUnreferenced() {
     const libraries = JSON.stringify(this.libraries());
-    const current = `SELECT f.hash FROM files f WHERE f.volume IN (SELECT value FROM json_each(?)) AND f.deleted=0 AND f.directory=0 AND f.hash IS NOT NULL`;
+    const current = `SELECT f.hash FROM ${this.s.fileSource()} f WHERE f.volume IN (SELECT value FROM json_each(?)) AND f.deleted=0 AND f.directory=0 AND f.hash IS NOT NULL`;
     if (
       this.s.db
         .prepare(`DELETE FROM music_tracks WHERE hash NOT IN (${current})`)

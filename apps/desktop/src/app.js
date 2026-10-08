@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.2";
+const APP_VERSION = "0.7.3";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1735,8 +1735,11 @@ function currentFileRev() {
   const opened =
     fileRevision?.volume === historyVolume && fileRevision.path === historyPath
       ? fileRevision.rev
-      : 0;
-  return Math.max(opened, historyVersions[0]?.rev || 0) || undefined;
+      : null;
+  const latest = historyVersions[0]?.rev ?? null;
+  return opened === null && latest === null
+    ? undefined
+    : Math.max(opened ?? 0, latest ?? 0);
 }
 function fileHistorySummary() {
   const current = historyVersions[0];

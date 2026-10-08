@@ -187,7 +187,7 @@ export class Gallery {
     const s = this.s;
     const rows = s.db
       .prepare(
-        `SELECT f.hash,min(f.path) AS path FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
+        `SELECT f.hash,min(f.path) AS path FROM ${s.fileSource()} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
       WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL AND ${needsCaptureDate} GROUP BY f.hash LIMIT 64`,
       )
       .all(volume);
@@ -247,7 +247,7 @@ export class Gallery {
     const indexing = Boolean(
       s.db
         .prepare(
-          `SELECT 1 FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
+          `SELECT 1 FROM ${s.fileSource()} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
        WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path) IS NOT NULL
        AND ${needsCaptureDate} LIMIT 1`,
         )
@@ -270,14 +270,15 @@ export class Gallery {
       (name, captured, added, modified) =>
         galleryDate(name, captured, added, modified).date,
     );
+    const files = s.fileSource();
     const source = `WITH media AS (
       SELECT f.path,f.hash,f.size,f.rev,m.captured,m.modified,
         (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash) AS added
-      FROM files f LEFT JOIN gallery_metadata m ON m.hash=f.hash
+      FROM ${files} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
       WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_gallery_visible(f.path)=1
       AND NOT EXISTS (SELECT 1 FROM gallery_members gm JOIN gallery_assets ga USING(volume,source,asset)
         WHERE gm.volume=f.volume AND gm.path=f.path AND ga.deleted=0 AND f.path<>json_extract(ga.resources,'$[0].path')
-        AND EXISTS (SELECT 1 FROM files primary_file WHERE primary_file.volume=f.volume AND primary_file.path=json_extract(ga.resources,'$[0].path') AND primary_file.deleted=0 AND arca_gallery_visible(primary_file.path)=1))
+        AND EXISTS (SELECT 1 FROM ${files} primary_file WHERE primary_file.volume=f.volume AND primary_file.path=json_extract(ga.resources,'$[0].path') AND primary_file.deleted=0 AND arca_gallery_visible(primary_file.path)=1))
     ), dated AS (SELECT *,arca_gallery_date(path,captured,added,modified) AS date FROM media)`;
     const cursor = "coalesce(date, '') || '|' || path";
     const select = (bound, order) =>
@@ -340,7 +341,7 @@ export class Gallery {
 
   async info(volume, name, hash) {
     this.s.volume(volume);
-    const row = this.s.current(volume, name);
+    const row = this.s.viewCurrent(volume, name);
     if (
       !row ||
       row.deleted ||
@@ -483,7 +484,7 @@ export class Gallery {
       fail("Invalid revision", 400);
     const row =
       revision === null
-        ? s.current(volume, name)
+        ? s.viewCurrent(volume, name)
         : s.db
             .prepare(
               "SELECT * FROM revisions WHERE volume=? AND path=? AND rev=?",

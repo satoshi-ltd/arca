@@ -17,7 +17,7 @@ export function listPage(store, volume, query, name) {
   } else
     rows = store.db
       .prepare(
-        "SELECT * FROM files WHERE volume=? AND path>? ORDER BY path LIMIT ?",
+        `SELECT * FROM ${store.fileSource()} WHERE volume=? AND path>? ORDER BY path LIMIT ?`,
       )
       .all(volume, query.get("after") || "", limit + 1);
   return {
@@ -33,7 +33,7 @@ export function listPage(store, volume, query, name) {
   };
 }
 
-// Browse the accepted index, never arbitrary paths on the host filesystem.
+// Browse the index plus this replica's own scanned changes, never arbitrary paths on the host filesystem.
 export function browsePage(store, volume, query) {
   const prefix = query.get("prefix") || "";
   const search = query.get("search") || "";
@@ -52,7 +52,7 @@ export function browsePage(store, volume, query) {
     .prepare(
       `
     WITH source AS (
-      SELECT *, substr(path, ?) AS relative FROM files
+      SELECT *, substr(path, ?) AS relative FROM ${store.fileSource()}
       WHERE volume=? AND deleted=0 ${base ? "AND path>=? AND path<?" : ""}
     ), entries AS (
       SELECT CASE WHEN ?='' AND instr(relative,'/')>0

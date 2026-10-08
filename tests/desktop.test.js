@@ -5894,6 +5894,76 @@ test("file rename and delete send the newest known revision when saved history i
   assert.equal(fs.existsSync(path.join(v.path, "renamed.txt")), false);
 });
 
+test("a file only this replica holds is renamed and deleted with revision 0, not with no revision", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-file-rev-zero-"));
+  init(home, { port: 0, name: "Casa" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Documents");
+  fs.writeFileSync(path.join(v.path, "note.txt"), "one");
+  await daemon.engine.cycle();
+  const current = daemon.engine.store.current(v.id, "note.txt");
+  const pending = new Set();
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.setInterval = () => 0;
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  const posted = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (command === "check_update") return { available: false, version: null, notes: null };
+        if (command !== "api") throw new Error(command);
+        if (args.route.startsWith("/v1/history?"))
+          return { offline: true, localOnly: true, next: null, versions: [{ ...current, rev: 0 }] };
+        if (args.method === "POST") {
+          posted.push([args.route, args.body]);
+          return {};
+        }
+        const work = fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+          headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}` },
+        }).then(async (r) => {
+          const value = await r.json();
+          if (args.route.startsWith("/v1/browse?"))
+            value.entries = value.entries.map((entry) => ({ ...entry, rev: 0 }));
+          return value;
+        });
+        pending.add(work);
+        try {
+          return await work;
+        } finally {
+          pending.delete(work);
+        }
+      },
+    },
+  };
+  const q = (selector) => w.document.querySelector(selector);
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => q('[data-action="folder-detail"]') && idle());
+  q('[data-action="folder-detail"]').click();
+  await until(() => [...w.document.querySelectorAll(".browser-file-row")].some((el) => el.querySelector("strong").textContent === "note.txt") && idle());
+  [...w.document.querySelectorAll(".browser-file-row")].find((el) => el.querySelector("strong").textContent === "note.txt").click();
+  await until(() => q('.file-actions-menu [data-action="rename-file"]') && idle());
+  q('.file-actions-menu [data-action="rename-file"]').click();
+  await until(() => q('#dialog [name="name"]'));
+  q('#dialog [name="name"]').value = "renamed.txt";
+  q("#dialog-form").dispatchEvent(new w.Event("submit", { cancelable: true }));
+  await until(() => posted.length === 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(posted[0])), ["/v1/rename-file", { volume: v.id, path: "note.txt", rev: 0, name: "renamed.txt" }]);
+});
+
 test("web admin reports gateway failures as an unreachable machine and keeps the daemon's own 503 readable", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-web-gateway-"));
   init(home, { port: 0, name: "Casa" });

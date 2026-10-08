@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.3 — 2026-10-08
+
+- A desktop or server replica now shows what changed on its own disk while the hub is away or the replica is paused: files you rename, delete, add or edit appear in Files, the gallery and the music library with their real names and sizes, and Rename and Delete keep working on them, playlists made offline included; the next sync still uploads exactly those changes. A file the hub never received goes to the system Trash when you delete it, so nothing is lost.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.2 — 2026-10-08
 
 - Add to playlist… no longer adds a track a playlist already lists: desktop, web and the phone say "This track is already in this playlist." and leave the file as it is. Playlists made elsewhere keep their repeated tracks, which still play and can be removed one at a time.

@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **OFFLINE-LOCAL-CHANGES** — Without the hub, a desktop or server replica does not show its own local changes and refuses the next action on them
-  `bug · agent · high`
-  accept: with the hub refused or silent, files renamed, deleted, added or edited on the replica (through Arca or on disk) show at once in Files, the gallery and the music library, with their real names, sizes and counts; Rename and Delete work on a file changed offline and on a playlist made or renamed offline (no "Local file changed. Sync before…", "This file is no longer in the local copy" or "This playlist has not synced yet" while the hub is away); a track deleted offline leaves the library and a new one can be played and added to a playlist. The local scan runs without the catalog (`runCycle` scans only after `/v1/catalog` today), and the next sync with the hub still uploads exactly those changes, with conflict preservation intact. Daemon tests cover each case in both unreachable modes. Reported by the maintainer on 2026-10-08 ("if the hub is not accessible, the replica is not 100% functional").
 - **MOB-OFFLINE-LOCAL-CHANGES** — Without the hub, the phone's music library keeps tracks renamed or deleted on the phone, and Delete refuses files changed offline
   `bug · agent · high`
   accept: offline, a track renamed or deleted on the phone leaves (or moves in) its album, Shuffle, search, its playlists and the car's library file at once, judged from the working files rather than the synced rows (`source()` in `music-sync.js`); Delete file… and Delete playlist… work on a file or playlist added or edited offline instead of "Local file changed. Sync before deleting." or "Only synced files can be deleted here.", and an edit that never synced is deleted only after the confirmation says it was never synced; a track that is not on the phone reads "Not on this phone yet" offline rather than "Downloading". Replica tests cover both unreachable modes and the upload once the hub returns. Reported by the maintainer on 2026-10-08.
@@ -201,6 +198,9 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Release and native reliability
 
+- **HUB-TEST-SLOW-LINK-FLAKE** — The slow-link transfer test failed once on the Windows runner
+  `bug · agent · normal`
+  accept: "slow links upload in smaller blocks and download without a total deadline" (`tests/hub-availability.test.js`) no longer fails with an empty error on `windows-2022` (failed once on the v0.7.2 run, 14.6 s, and passed on a rerun of the same commit, with macOS and Ubuntu green): its throttled relays and 400–600 ms idle limits are given margins that do not depend on runner speed, and it reports the real error instead of an empty one.
 - **DESK-TEST-NAVIGATION-FLAKE** — The navigation JSDOM test leaks asynchronous work after it ends
   `bug · agent · normal`
   accept: "navigation paints before slow reads, retains updating feedback and ignores responses from older tabs" (`tests/desktop.test.js`) waits for its released reads deterministically (track the pending `invoke` promises and await them in `t.after`) instead of a 50 ms sleep, so the file no longer fails with "generated asynchronous activity after the test ended" when the pre-push hook runs the suite with concurrency; seen twice on 2026-10-07 while pushing a docs-only commit, with the same suite green when run alone.
