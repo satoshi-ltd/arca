@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.7.1";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1235,6 +1235,7 @@ function folderRetentionPanel(volume) {
       id: choice.id,
       active: mode === choice.id,
     })),
+    "segmented-fill",
   )}</div>${effect ? `<p>${effect}</p>` : ""}</div>`;
 }
 async function changeFolderRetention(mode, control) {

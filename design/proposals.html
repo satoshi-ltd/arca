@@ -24,7 +24,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.7.0 · proposals</span>
+      <span class="kit-version">v0.7.1 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -38,21 +38,8 @@
 
       <section class="kit-section" id="boards">
         <h2>Boards <span>01</span></h2>
-        <article class="kit-board" data-board="UI-RETENTION-ONE-LINE">
-          <header><code>UI-RETENTION-ONE-LINE</code><h3>Retention choices stay on one line</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> The hub's Version history panel offers Off, 1 day, 1 week, 30 days and Forever in the shared segmented control, which wraps and pads every segment 10 px a side: the five need about 287 px, one more than the 286 px the 320 px side column leaves and far more than the 260 or 230 px the web admin leaves on a 390 or 360 px phone, so Forever drops alone to a second row on the desktop and on phones, as in the maintainer's phone screenshot. The phone app has no such control (it only shows the Version history summary), so the fix belongs to the desktop and web panel. The proposal gives this control a fill variant of the same component, like Web access's sign-in tabs: one row that never wraps, segments of equal width with centred labels that never break, and --space-1 of side padding as the floor, so the five need about 224 px and hold from a 354 px viewport. Labels, order and the sentence below stay as they are. The alternative, a "Keep older versions for · 30 days" row opening the shared dropdown, fits any width and longer translated labels, but hides the five choices and their order behind a tap; the segmented row keeps them comparable at a glance, and reductions already confirm.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-<div class="kit-devices"><div class="detail-side kit-side-column"><div><div class="section-label">Version history</div><div class="panel"><h3>Keep older versions for</h3><div class="segmented" role="group" aria-label="Version history retention"><button type="button">Off</button><button type="button">1 day</button><button type="button">1 week</button><button type="button" class="active">30 days</button><button type="button">Forever</button></div><p>Older versions of every file in this folder stay restorable for 30 days after a change or deletion; after that, only the current files remain.</p></div></div><p class="kit-caption">Desktop and web · 320 px side column</p></div><div class="detail-side kit-phone-column"><div><div class="section-label">Version history</div><div class="panel"><h3>Keep older versions for</h3><div class="segmented" role="group" aria-label="Version history retention"><button type="button">Off</button><button type="button">1 day</button><button type="button">1 week</button><button type="button" class="active">30 days</button><button type="button">Forever</button></div><p>Older versions of every file in this folder stay restorable for 30 days after a change or deletion; after that, only the current files remain.</p></div></div><p class="kit-caption">Web admin on a 360 px phone</p></div></div>
-              <p class="kit-caption">The segmented control wraps: Forever drops alone to a second row in the side column and on the phone.</p>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-<div class="kit-devices"><div class="detail-side kit-side-column"><div><div class="section-label">Version history</div><div class="panel"><h3>Keep older versions for</h3><div class="segmented kit-segmented-fill" role="group" aria-label="Version history retention"><button type="button">Off</button><button type="button">1 day</button><button type="button">1 week</button><button type="button" class="active">30 days</button><button type="button">Forever</button></div><p>Older versions of every file in this folder stay restorable for 30 days after a change or deletion; after that, only the current files remain.</p></div></div><p class="kit-caption">Desktop and web · 320 px side column</p></div><div class="detail-side kit-phone-column"><div><div class="section-label">Version history</div><div class="panel"><h3>Keep older versions for</h3><div class="segmented kit-segmented-fill" role="group" aria-label="Version history retention"><button type="button">Off</button><button type="button">1 day</button><button type="button">1 week</button><button type="button" class="active">30 days</button><button type="button">Forever</button></div><p>Older versions of every file in this folder stay restorable for 30 days after a change or deletion; after that, only the current files remain.</p></div></div><p class="kit-caption">Web admin on a 360 px phone</p></div></div>
-              <p class="kit-caption">The fill variant: the five share one row in equal segments with centred, whole labels; on a 360 px phone they narrow toward their labels.</p>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>On a hub, a folder's Version history panel shows Off, 1 day, 1 week, 30 days and Forever on one row with no label clipped or broken, in the desktop's 320 px side column and in the web admin at 360, 390, 480 and 481 to 760 px viewports; segment padding and type come from tokens (--space-1, --text-body) and the other segmented controls (Files/Recent, history filters, theme, network mode, sign-in) keep their layout. A desktop JSDOM test with style.css asserts the retention group computes as the fill variant (no wrap, equal flexible segments, nowrap labels) while the history filters still wrap; a headless render at a 360 px viewport shows one row; the Desktop view in the design kit draws the new panel.</p></div></div>
-        </article>
+        <div class="kit-empty"><strong>No proposals</strong><p>Every drawn idea has shipped. A new board appears here only while it is a proposal.</p></div>
+
       </section>
 
       <section class="kit-section" id="format">

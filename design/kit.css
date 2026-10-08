@@ -433,23 +433,6 @@ body.kit {
 .kit-pressed-state .primary {
   opacity: 0.85;
 }
-.kit-side-column {
-  width: var(--detail-side-width);
-  max-width: 100%;
-}
-.kit-phone-column {
-  width: calc(360px - 64px - 2 * var(--space-4));
-  max-width: 100%;
-}
-.kit-segmented-fill {
-  flex-wrap: nowrap;
-}
-.kit-segmented-fill button {
-  flex: 1;
-  justify-content: center;
-  padding-inline: var(--space-1);
-  white-space: nowrap;
-}
 .kit-row-cover {
   width: var(--touch-target-min);
   flex: none;

@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-07 · Phase 1 functional, not release-qualified.
+Updated 2026-10-08 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -181,12 +181,18 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### File preservation and synchronization
 
+- **MOB-CONFLICT-RESUME** — A phone cycle interrupted after a conflict overwrites the other device's version
+  `bug · agent · high`
+  accept: when the hub answers a phone proposal with a conflict, the phone stores the hub's row with `localHash` (`push` in `apps/mobile/src/replica.js`); if the cycle stops before `pull` applies it (offline, the app killed, or Rename, a playlist edit or Delete stopping the cycle), the next `scan` compares the disk with the new `hash` and proposes the phone's version, or its deletion, at the hub's new revision, so the other device's version leaves the current tree (history keeps it) and the hub's conflict copy duplicates the phone's. `scan` proposes nothing for a row whose recorded `localHash` differs from its `hash` until `pull` applies it, a missing file included; tests interrupt a cycle right after a conflicting proposal for an edit, a rename and a deletion and end with both versions kept. Desktop replicas already ignore conflict results. Found by the review of 0.7.0.
 
 ### Release and native reliability
 
 - **DESK-TEST-NAVIGATION-FLAKE** — The navigation JSDOM test leaks asynchronous work after it ends
   `bug · agent · normal`
   accept: "navigation paints before slow reads, retains updating feedback and ignores responses from older tabs" (`tests/desktop.test.js`) waits for its released reads deterministically (track the pending `invoke` promises and await them in `t.after`) instead of a 50 ms sleep, so the file no longer fails with "generated asynchronous activity after the test ended" when the pre-push hook runs the suite with concurrency; seen twice on 2026-10-07 while pushing a docs-only commit, with the same suite green when run alone.
+- **DESK-TEST-GALLERY-PAGES-FLAKE** — The gallery paging JSDOM test times out under load
+  `bug · agent · normal`
+  accept: "the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons" (`tests/desktop.test.js`) waits for its 66 thumbnails on the gallery requests it tracks instead of `until`'s fixed two-second budget, so it no longer fails with "UI did not reach expected state" when other suites or a browser run alongside; on 2026-10-08 it failed in a suite run and in one of nine single runs while other work loaded the machine, and passed every quiet run.
 - **DESK-ONBOARDING-TRAFFIC-LIGHTS** — The onboarding rail's brand sits under the macOS window controls
   `bug · agent · low`
   accept: in the native Mac app the onboarding screens (the sidebar is hidden there) keep the brand and rail clear of the red, yellow and green controls, reusing the `mac-native` class and `--window-controls-inset`; the web interface and other platforms keep their layout; a stylesheet contract test covers it. Found by the review of 0.6.111 from reading the CSS (`.onboarding-rail` starts at the top-left); check it on the Mac first. Needs a desktop build.

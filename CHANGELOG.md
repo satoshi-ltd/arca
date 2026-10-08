@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1 — 2026-10-08
+
+- On a hub, a folder's Version history choices (Off, 1 day, 1 week, 30 days, Forever) stay on one row in the desktop side column and in the web admin on phones 360 px and wider, instead of dropping Forever to a second row.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.0 — 2026-10-08
 
 - The hub can make a folder a music library from its ⋯ menu (Enable music library), and reads each track's tags and covers.

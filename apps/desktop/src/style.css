@@ -743,6 +743,13 @@ main {
   box-shadow: var(--focus-ring);
   outline: 1px solid var(--green);
 }
+/* Keep min-width auto and the group's wrap: whole labels set each segment's floor, so rows break before the page scrolls sideways. */
+.segmented-fill button {
+  flex: 1;
+  justify-content: center;
+  padding-inline: var(--space-1);
+  white-space: nowrap;
+}
 .history-filters {
   max-width: 100%;
 }

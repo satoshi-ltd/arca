@@ -995,6 +995,29 @@ test("history revision numbers keep one line in a column wide enough for six dig
   dom.window.close();
 });
 
+test("retention choices share one row in equal segments with whole labels, and the history filters keep their layout", () => {
+  const css = fs.readFileSync(
+    new URL("../apps/desktop/src/style.css", import.meta.url),
+    "utf8",
+  );
+  const dom = new JSDOM(
+    `<style>${css}</style><div class="segmented segmented-fill"><button>Forever</button></div><div class="segmented history-filters"><button>All</button></div>`,
+  );
+  const [fill, filters] = dom.window.document.querySelectorAll(".segmented");
+  const style = (element) => dom.window.getComputedStyle(element);
+  const choice = style(fill.firstChild);
+  assert.deepEqual([choice.flexGrow, choice.flexShrink, choice.flexBasis], ["1", "1", "0%"], "segments share the row equally");
+  assert.equal(style(fill).flexWrap, "wrap", "a row too narrow for the whole labels wraps instead of scrolling the page sideways");
+  assert.equal(choice.minWidth, "auto", "each whole label sets its segment's floor");
+  assert.equal(choice.whiteSpace, "nowrap", "a label never breaks");
+  assert.equal(choice.justifyContent, "center");
+  assert.equal(choice.paddingInline, "var(--space-1)");
+  assert.equal(choice.fontSize, "var(--text-body)");
+  assert.equal(style(filters).flexWrap, "wrap", "the history filters still wrap");
+  assert.equal(style(filters.firstChild).flexGrow, "0");
+  dom.window.close();
+});
+
 test("local folders render while the hub catalog is still pending", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-offline-ui-"));
   init(home, { port: 0, name: "Local Mac" });
@@ -3917,6 +3940,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     ["Off", "1 day", "1 week", "30 days", "Forever"],
   );
   assert.equal(retention.querySelector(".segmented-compact"), null);
+  assert.ok(retention.querySelector(".segmented.segmented-fill"), "the five choices use the fill variant");
   assert.match(
     retention.closest(".panel").querySelector("p").textContent,
     /Older versions of every file in this folder stay restorable for 30 days after a change or deletion; after that, only the current files remain\./,
