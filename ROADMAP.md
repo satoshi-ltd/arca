@@ -181,10 +181,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### File preservation and synchronization
 
-- **MOB-CONFLICT-RESUME** — A phone cycle interrupted after a conflict overwrites the other device's version
-  `bug · agent · high`
-  accept: when the hub answers a phone proposal with a conflict, the phone stores the hub's row with `localHash` (`push` in `apps/mobile/src/replica.js`); if the cycle stops before `pull` applies it (offline, the app killed, or Rename, a playlist edit or Delete stopping the cycle), the next `scan` compares the disk with the new `hash` and proposes the phone's version, or its deletion, at the hub's new revision, so the other device's version leaves the current tree (history keeps it) and the hub's conflict copy duplicates the phone's. `scan` proposes nothing for a row whose recorded `localHash` differs from its `hash` until `pull` applies it, a missing file included; tests interrupt a cycle right after a conflicting proposal for an edit, a rename and a deletion and end with both versions kept. Desktop replicas already ignore conflict results. Found by the review of 0.7.0.
-
 ### Release and native reliability
 
 - **HUB-TEST-SLOW-LINK-FLAKE** — The slow-link transfer test failed once on the Windows runner

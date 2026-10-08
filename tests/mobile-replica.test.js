@@ -752,6 +752,88 @@ test("mobile renames its own device, persists offline edits and reports them on 
   assert.equal(f.client.state().connection.id, id);
 });
 
+test("a cycle stopped right after a conflicting proposal never overwrites the other device's version, for an edit, a rename and a deletion", async (t) => {
+  const f = await fixture(t);
+  const { volume, replica, daemon } = f;
+  const hubFile = (name) => path.join(volume.path, name);
+  const phoneFile = (name) => f.files.work(replica.scope, volume.id, name);
+  for (const name of ["edit.txt", "rename.txt", "delete.txt"]) fs.writeFileSync(hubFile(name), "base");
+  await daemon.engine.exclusive(() => daemon.engine.cycle());
+  await replica.select(volume);
+  await sync(f);
+  fs.writeFileSync(phoneFile("edit.txt"), "phone edit");
+  fs.renameSync(phoneFile("rename.txt"), phoneFile("renamed.txt"));
+  fs.unlinkSync(phoneFile("delete.txt"));
+  for (const name of ["edit.txt", "rename.txt", "delete.txt"]) fs.writeFileSync(hubFile(name), "hub edit");
+  await daemon.engine.exclusive(() => daemon.engine.cycle());
+  replica.pull = async () => {
+    throw Object.assign(new Error("Sync paused"), { code: "SYNC_INTERRUPTED" });
+  };
+  await replica.sync();
+  delete replica.pull;
+  await sync(f);
+  await sync(f);
+  await daemon.engine.exclusive(() => daemon.engine.cycle());
+  const hub = (name) => fs.readFileSync(hubFile(name), "utf8");
+  assert.equal(hub("edit.txt"), "hub edit", "the edit made on the hub stays at its path");
+  assert.equal(hub("rename.txt"), "hub edit", "so does the file the phone renamed");
+  assert.equal(hub("delete.txt"), "hub edit", "and the file the phone deleted");
+  assert.equal(hub("renamed.txt"), "base", "the phone's rename still arrives under its new name");
+  const copies = fs.readdirSync(volume.path).filter((name) => name.includes(".conflict-"));
+  assert.ok(copies.some((name) => name.startsWith("edit.txt.conflict-") && hub(name) === "phone edit"), "the phone's edit survives as a conflict copy");
+  assert.equal(copies.filter((name) => name.startsWith("edit.txt.conflict-")).length, 1, "exactly one, not a duplicate");
+  for (const name of ["edit.txt", "rename.txt", "delete.txt"])
+    assert.equal(fs.readFileSync(phoneFile(name), "utf8"), "hub edit", "the phone ends with the hub's version too");
+  const rows = await f.store.rows(replica.scope, volume.id);
+  assert.equal(rows.some((row) => row.unapplied), false, "nothing stays waiting once the hub's rows are applied");
+});
+
+test("an edit made after the interrupted conflict is kept as its own copy, and a hub deletion meanwhile still keeps the phone's content", async (t) => {
+  const f = await fixture(t);
+  const { volume, replica, daemon } = f;
+  const hubFile = (name) => path.join(volume.path, name);
+  const phoneFile = (name) => f.files.work(replica.scope, volume.id, name);
+  for (const name of ["again.txt", "gone.txt"]) fs.writeFileSync(hubFile(name), "base");
+  await daemon.engine.exclusive(() => daemon.engine.cycle());
+  await replica.select(volume);
+  await sync(f);
+  fs.writeFileSync(phoneFile("again.txt"), "first phone edit");
+  fs.writeFileSync(phoneFile("gone.txt"), "phone edit of a file the hub deletes");
+  fs.writeFileSync(hubFile("again.txt"), "hub edit");
+  fs.unlinkSync(hubFile("gone.txt"));
+  await daemon.engine.exclusive(() => daemon.engine.cycle());
+  replica.pull = async () => {
+    throw Object.assign(new Error("Sync paused"), { code: "SYNC_INTERRUPTED" });
+  };
+  await replica.sync();
+  delete replica.pull;
+  fs.writeFileSync(phoneFile("again.txt"), "second phone edit");
+  await replica.sync();
+  await sync(f);
+  await sync(f);
+  await daemon.engine.exclusive(() => daemon.engine.cycle());
+  const hub = (name) => fs.readFileSync(hubFile(name), "utf8");
+  assert.equal(hub("again.txt"), "hub edit");
+  const contents = fs.readdirSync(volume.path).filter((name) => name.startsWith("again.txt.conflict-")).map(hub).sort();
+  assert.deepEqual(contents, ["first phone edit", "second phone edit"], "both phone edits survive, one as the hub's conflict copy and one as the phone's");
+  assert.equal(fs.existsSync(hubFile("gone.txt")), false, "the hub's deletion stands");
+  assert.ok(fs.readdirSync(volume.path).some((name) => name.startsWith("gone.txt.conflict-") && hub(name) === "phone edit of a file the hub deletes"), "and the phone's content survives next to it");
+  assert.equal(fs.readFileSync(phoneFile("again.txt"), "utf8"), "hub edit");
+  assert.equal((await f.store.rows(replica.scope, volume.id)).some((row) => row.unapplied), false);
+});
+
+test("a row waiting for the hub's version stops waiting once the disk already holds that version", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.volume.path, "same.txt"), "hub");
+  await f.daemon.engine.exclusive(() => f.daemon.engine.cycle());
+  await f.replica.select(f.volume);
+  await sync(f);
+  const row = await f.store.current(f.replica.scope, f.volume.id, "same.txt");
+  await f.store.put(f.replica.scope, { ...row, localHash: "stale", unapplied: true });
+  await f.replica.apply(row);
+  assert.equal((await f.store.current(f.replica.scope, f.volume.id, "same.txt")).unapplied, undefined);
+});
+
 test("mobile file deletion works offline on an unsynced edit and propagates a deletion that restores the last synced version", async (t) => {
   const f = await fixture(t);
   const v = f.volume;

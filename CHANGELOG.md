@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.8 — 2026-10-08
+
+- On the phone, a sync that stops right after the hub reports a conflict (the connection drops, the app is closed, or you rename or delete something) no longer overwrites the other device's newer version on the next sync: that version stays where it is, and the phone's own change is kept as a conflict copy.
+
+Needs: native build
+
 ## 0.7.7 — 2026-10-08
 
 - Without the hub, a History filter or folder with no saved entries reads its normal empty state ("No conflicts", "No deleted files") instead of "History unavailable offline", which is kept for when nothing is saved, and a folder's Copies say "Hub unavailable. Showing last known copies." whenever the list comes from saved data.

@@ -485,6 +485,7 @@ export class Replica {
       foldedNames.add(entry.path.toLowerCase());
       if (excluded(entry.path + (entry.directory ? "/" : ""))) continue;
       const previous = heads.get(entry.path.toLowerCase());
+      if (previous?.unapplied) continue;
       const hash = entry.directory
         ? "directory"
         : await this.localHash(entry.uri);
@@ -526,6 +527,7 @@ export class Replica {
     for (const row of rows.sort((a, b) => b.path.localeCompare(a.path)))
       if (
         !row.deleted &&
+        !row.unapplied &&
         !excluded(row.path + (row.directory ? "/" : "")) &&
         !names.has(row.path) &&
         !foldedNames.has(row.path.toLowerCase())
@@ -624,7 +626,11 @@ export class Replica {
       const result = await this.client.api("/v1/propose", op);
       // The acknowledged source hash is the baseline for safe materialization.
       if (result.row)
-        await this.store.put(this.scope, { ...result.row, localHash: op.hash });
+        await this.store.put(this.scope, {
+          ...result.row,
+          localHash: op.hash,
+          ...(result.conflict && { unapplied: true }),
+        });
       await this.store.dequeue(this.scope, folder.id, op.path);
     }
   }
@@ -727,8 +733,10 @@ export class Replica {
       current?.rev === row.rev &&
       current.hash === row.hash &&
       actual === row.hash
-    )
+    ) {
+      if (current.unapplied) await this.store.put(this.scope, row);
       return;
+    }
     // A size/mtime cache hit cannot prove a file is unedited before it is replaced or removed.
     if (
       exists &&
