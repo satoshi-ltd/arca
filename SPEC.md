@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.6.118 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.6.119 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -610,6 +610,26 @@ Linux hosts watch each non-excluded directory with one inotify watch, and `fs.in
 echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/60-arca-inotify.conf
 sudo sysctl --system
 ```
+
+### Store review hub
+
+App Store and Google Play reviewers have no hub, Tailscale or LAN, and a pairing code lasts ten minutes, so they pair with a disposable hub on the `satoshi-ltd` droplet at `https://arca-review.satoshi-ltd.com`, behind Cloudflare and nginx. `deploy/review/` holds everything; run it as root from `/srv/arca-review/kit`:
+
+```sh
+ssh root@satoshi-ltd install -d /srv/arca-review/kit
+scp deploy/review/*.sh deploy/review/*.mjs deploy/review/*.py root@satoshi-ltd:/srv/arca-review/kit/
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh up 0.6.119      # install or update; seeds an empty hub
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh remove-devices  # after a review: unpair reviewers' phones
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh down            # after approval: hub, page and site off, data kept
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh wipe --yes      # delete the data; the next up seeds again
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh status          # also: devices
+```
+
+- **Hub.** `satoshiltd/arca:VERSION`, the version under review or newer, runs from systemd (`arca-review.service`) as the dedicated system user `arca-review-hub` with `--init`, a read-only root, no capabilities, `no-new-privileges`, 512 MiB, half a CPU and 256 processes, on its own IPv4-only Docker network (`172.30.77.0/24`) published only on `127.0.0.1:17841`. Its data is a 2 GB ext4 image under the root-only `/srv/arca-review/private`, so uploads cannot fill the droplet and no other account can read the hub's admin token. `firewall.sh` drops every connection the hub starts: Internet, host, tailnet and private networks. Allow HTTP on local network is on because nginx arrives from the Docker gateway, a private address. Starting the unit removes `daemon.lock`, which a killed container leaves behind.
+- **Content.** `seed.mjs` runs once inside the image on an empty hub: Photos is a gallery of 30 generated landscapes and two videos dated 2024 to 2026; Documents has Markdown, text, CSV, JSON, PDF, SVG and a WAV, with two edited files and one deletion so History has versions to show and a file to restore; Phone uploads is empty, for a linked album. `up` refuses a hub whose seed never finished.
+- **Page.** `codes.py` (`arca-review-codes.service`, user `arca-review`, localhost only) asks the hub for a pairing code with its admin token and shows the hub address, the six digits and their countdown, and warns that other reviewers see what is uploaded; a new code replaces the previous one. nginx serves it at `/review` behind basic authentication (`appreview` and the password in `/root/arca-review-credentials.txt`, kept across `up` so the store notes stay valid).
+- **Exposure.** `up` regenerates the nginx site from the script, keeps the previous one if `nginx -t` fails, and renews its Let's Encrypt certificate through `/srv/arca-review/acme`. Only Cloudflare's published ranges reach the site; limits use `CF-Connecting-IP`: six page requests and, for `/pair`, four attempts and then one a minute per visitor. nginx forwards only `/pair`, `/v1/` and `/.well-known/arca`, the routes the phone uses, rejects backslashes in the request target (Node reads them as slashes and would leave `/v1/`), and answers 404 elsewhere; `tests/review-hub.test.js` checks the routes against the mobile client. The hub itself sees every visitor as the Docker gateway, so its own pairing limit (five requests a minute per address) and failure budget (the active code is discarded after five wrong codes) are shared by everyone: a handful of addresses sending wrong codes can keep reviewers from pairing until they stop. If that happens, `down` the hub and bring it back later.
+- The review hub is not part of the pilot; its reviewers' uploads go to every device that selects Phone uploads, so `wipe` it before the next review.
 
 ### Umbrel packaging and submission
 

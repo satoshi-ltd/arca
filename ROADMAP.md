@@ -125,9 +125,9 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 ### Distribution
 
-- **STORE-REVIEW-HUB** — A demo hub that store reviewers can pair with
-  `deploy · maintainer · high`
-  accept: reviewers have no hub, Tailscale or LAN, and a pairing code lasts ten minutes and works once, so no code in the review notes survives until review. A disposable Docker hub behind HTTPS on a public name (outside the pilot; the reverse proxy reaches it over loopback or with Allow HTTP on local network, since a Docker bridge peer is private) holds two seeded folders with a few photos and documents; a password-protected page with rate limiting runs `node packages/cli/arca.js pair "App Review"` in that container and shows the hub address, the six-digit code and its countdown, noting that a new code replaces the previous one. A test phone pairs through the public name, downloads, uploads and sees the gallery; then it is removed. App Store Connect and Play Console carry the page, its credentials and the steps; the hub stops after approval.
+- **STORE-REVIEW-HUB** — A phone pairs with the store review hub
+  `verify · maintainer · high`
+  accept: on a phone with a `store` build, `https://arca-review.satoshi-ltd.com/review` gives a code that pairs; Photos and Documents download, the gallery and a video open, History shows the edited files and restores `Personal/Old notes.txt`, and a linked album uploads into Phone uploads; then remove the device on the hub. The hub is deployed (see [Store review hub](SPEC.md#store-review-hub)) and was checked through its public name with an API client: pairing, a reused code refused, catalog, gallery, previews, video ranges, history and verified downloads.
 - **P1-UMBREL-IMAGE** — Choose the Umbrel release image
   `decision · maintainer · normal`
   accept: keep 0.4.1, or move all three image references and the manifest version to a newer image (0.4.1 lacks the onboarding fixes). Moving it also retires `deploy/umbrel/arca/server-setup.js.template`, a copy of `packages/daemon/setup.js` mounted over the pinned image.
@@ -139,7 +139,7 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   accept: `arca.satoshi-ltd.com` serves the candidate's Pages project and Git auto-deploys are off.
 - **P1-PUBLIC-ACCESS** — Store listings
   `deploy · maintainer · low · depends: STORE-REVIEW-HUB`
-  accept: `store` builds uploaded; both listings give `https://satoshi-ltd.com/privacy.html` as the privacy policy (it already covers Arca); Play Console declarations filed (photo and video permissions for linked albums, the `dataSync` foreground service with its video, `REQUEST_INSTALL_PACKAGES` under file sharing, transfer or management with the listing description mentioning that APKs open from folders, app access, data safety; if Play refuses the install permission, that becomes a decision task) and App Store privacy answers given, with review notes explaining that arbitrary loads serve plain HTTP to the user's own hub over Tailscale or the LAN; the existing EAS keystore enrolled as the Play app signing key so sideloaded installs can update from Play; the first iOS upload checked for missing purpose strings and privacy declarations, including the `expo-sharing` share extension, which `ios.privacyManifests` does not cover; `APP_STORE_URL` and `PLAY_STORE_URL` name real listings so the site's mobile card shows store buttons instead of saying the apps are not in the stores yet.
+  accept: `store` builds uploaded, with the existing EAS keystore enrolled as the Play app signing key so sideloaded installs can update from Play. Both listings give `https://satoshi-ltd.com/privacy.html` as the privacy policy (it names Arca; add the phone's photo access). App Store Connect (App Review Information) and Play Console (App access) carry the review page, its credentials and the steps, and the review notes explain that arbitrary loads serve plain HTTP to the user's own hub over Tailscale or the LAN. Play Console declarations filed: photo and video permissions for linked albums, the `dataSync` foreground service with its video, `REQUEST_INSTALL_PACKAGES` under file sharing, transfer or management with the listing description mentioning that APKs open from folders (if Play refuses it, that becomes a decision task), app access and data safety; App Store privacy answers given. The first iOS upload is checked for missing purpose strings and privacy declarations, including the `expo-sharing` share extension, which `ios.privacyManifests` does not cover. After both approvals, `arca-review.sh down`. `APP_STORE_URL` and `PLAY_STORE_URL` name real listings so the site's mobile card shows store buttons instead of saying the apps are not in the stores yet.
 - **P1-SIGNING** — Code signing
   `decision · maintainer · low`
   accept: a decision on Windows signing; optionally one signed macOS run with `sign_macos` checked and `publish` unchecked.
@@ -186,6 +186,15 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Release and native reliability
 
+- **DAEMON-STALE-LOCK** — A daemon killed inside a container cannot start again
+  `bug · agent · high`
+  accept: `start()` in `packages/daemon/server.js` treats a `daemon.lock` whose PID is its own, or that belongs to a process that is not an Arca daemon, as stale, so a Docker hub killed by OOM or `docker kill` restarts; today the new container's PIDs repeat the old ones (`--init` makes them predictable), `process.kill(pid, 0)` succeeds and the daemon exits with "A daemon already owns this state directory" until the PIDs happen to differ. Seen on the store review hub on 2026-10-08, whose unit now removes the lock; Casa and Umbrel run the same image. A test covers both cases.
+- **DAEMON-TRUSTED-PROXY** — Per-address limits behind a reverse proxy
+  `feature · agent · normal`
+  accept: an explicit setting names trusted proxy addresses, and only for requests from them the daemon takes the client address from `X-Forwarded-For` for its per-address limits on pairing, web codes and approvals (never for LAN HTTP policy or authorization); without it, everything behind a proxy shares one bucket and a few addresses can block pairing, as on the store review hub. Tests cover trusted, untrusted and spoofed headers.
+- **DAEMON-BACKSLASH-PATHS** — The daemon reads a backslash in a request path as a slash
+  `bug · agent · normal`
+  accept: the server rejects request targets containing `\` (raw or `%5C`) with 400 before routing, because Node's URL parser turns `/v1/..\auth/login` into `/auth/login` and a reverse proxy that allows only `/v1/` (nginx on Linux treats `\` as an ordinary character) would publish the web administration; a test covers it. Found by the review of the store review hub, which rejects backslashes in nginx.
 - **DESK-TEST-NAVIGATION-FLAKE** — The navigation JSDOM test leaks asynchronous work after it ends
   `bug · agent · normal`
   accept: "navigation paints before slow reads, retains updating feedback and ignores responses from older tabs" (`tests/desktop.test.js`) waits for its released reads deterministically (track the pending `invoke` promises and await them in `t.after`) instead of a 50 ms sleep, so the file no longer fails with "generated asynchronous activity after the test ended" when the pre-push hook runs the suite with concurrency; seen twice on 2026-10-07 while pushing a docs-only commit, with the same suite green when run alone.

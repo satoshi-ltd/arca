@@ -1,6 +1,6 @@
 {
   "name": "arca-mobile",
-  "version": "0.6.118",
+  "version": "0.6.119",
   "private": true,
   "license": "SEE LICENSE IN ../../LICENSE",
   "main": "index.js",

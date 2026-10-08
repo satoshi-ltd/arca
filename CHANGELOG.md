@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.119 — 2026-10-08
+
+- Maintainers can bring up a disposable demo hub for App Store and Google Play reviewers, with sample photos, videos and documents and a password-protected page that issues pairing codes, and take it down after approval (`deploy/review/arca-review.sh`).
+
 ## 0.6.118 — 2026-10-08
 
 - A `store` EAS profile builds the Google Play app bundle and the App Store build; `production` stays the sideloaded APK.
