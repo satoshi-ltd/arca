@@ -82,3 +82,63 @@ test("a preview refuses a stale hash, a missing or ignored file and a replica cr
   assert.equal(hidden, undefined, "an ignored file never enters the index");
   await assert.rejects(f.preview("secret.txt", "1".repeat(64)), (error) => error.status === 404, "an ignored file has no preview");
 });
+
+test("search ranks names across folders by scope, skips deleted, ignored and unmatched files and validates input", async (t) => {
+  const f = await fixture(t);
+  const other = f.daemon.engine.store.addVolume("Holiday photos");
+  const put = async (volume, name, content = "x") => {
+    fs.mkdirSync(path.dirname(path.join(volume.path, name)), { recursive: true });
+    fs.writeFileSync(path.join(volume.path, name), content);
+  };
+  await put(f.v, "plans/site-plan.pdf");
+  await put(f.v, "plans/plan.txt");
+  await put(f.v, "old/planet.md");
+  await put(f.v, "deep/folder/unplanned.txt");
+  await put(f.v, "gone-plan.txt");
+  await put(other, "2026/plan-b.jpg", "jpeg");
+  await put(other, "tracks/Planet Earth.mp3", "mp3");
+  fs.writeFileSync(path.join(f.v.path, ".arcaignore"), "secret-plan.txt\n");
+  await put(f.v, "secret-plan.txt");
+  await f.daemon.engine.cycle();
+  fs.rmSync(path.join(f.v.path, "gone-plan.txt"));
+  await f.daemon.engine.cycle();
+  const search = (query, scope = "all", limit = 6) => f.api(`/v1/search?${new URLSearchParams({ q: query, scope, limit: String(limit) })}`);
+  const all = await search("plan");
+  assert.deepEqual(all.files.map((r) => r.name), ["plan.txt", "planet.md", "site-plan.pdf", "unplanned.txt"], "exact name first, then prefix, then contains, newest first among equals");
+  assert.deepEqual(all.photos.map((r) => r.name), ["plan-b.jpg"]);
+  assert.equal(all.photos[0].folder, "Holiday photos");
+  assert.deepEqual(all.music.map((r) => r.name), ["Planet Earth.mp3"]);
+  assert.deepEqual(all.counts, { files: 4, photos: 1, music: 1, folders: 0 });
+  assert.ok(!JSON.stringify(all).includes("gone-plan"), "deleted files never match");
+  assert.ok(!JSON.stringify(all).includes("secret-plan"), "ignored files never match");
+  assert.deepEqual((await search("holiday")).folders.map((r) => r.name), ["Holiday photos"]);
+  assert.deepEqual((await search("plan", "files")).photos, [], "a scope limits the groups");
+  assert.equal((await search("plan", "files", 2)).files.length, 2);
+  assert.equal((await search("plan", "files", 2)).counts.files, 4, "counts report every match");
+  assert.deepEqual((await search("site pla")).files.map((r) => r.name), ["site-plan.pdf"], "every word must match");
+  assert.deepEqual((await search("zzzz")).files, []);
+  for (const bad of ["q=", "q=x&scope=everything", "q=x&limit=0", "q=x&limit=99", `q=${"a".repeat(101)}`])
+    await assert.rejects(f.api(`/v1/search?${bad}`), (error) => error.status === 400, bad);
+  const invite = await f.api("/v1/devices", undefined, { name: "phone", role: "replica" });
+  await assert.rejects(f.api("/v1/search?q=plan", invite.token), (error) => error.status === 401 || error.status === 403);
+});
+
+test("search folds case for any script, ranks an older exact name above newer partial ones and survives an unreadable ignore file", async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.v.path, "Ñandú.txt"), "x");
+  await f.daemon.engine.cycle();
+  const search = (q) => f.api(`/v1/search?${new URLSearchParams({ q, scope: "files" })}`);
+  assert.deepEqual((await search("ñandú")).files.map((r) => r.name), ["Ñandú.txt"], "an uppercase non-ASCII letter matches a lowercase query");
+  assert.deepEqual((await search("ÑANDÚ")).files.map((r) => r.name), ["Ñandú.txt"]);
+  fs.writeFileSync(path.join(f.v.path, "report.pdf"), "x");
+  await f.daemon.engine.cycle();
+  for (let i = 0; i < 4; i++) fs.writeFileSync(path.join(f.v.path, `quarterly-report-${i}.pdf`), String(i));
+  await f.daemon.engine.cycle();
+  const found = await search("report");
+  assert.equal(found.files[0].name, "report.pdf", "the exact name, extension aside, ranks first");
+  const store = f.daemon.engine.store;
+  const original = store.visibleRules.bind(store);
+  store.visibleRules = () => { throw new Error("broken ignore policy"); };
+  assert.deepEqual((await search("report")).files, [], "a volume with an unreadable ignore file is skipped instead of failing the search");
+  store.visibleRules = original;
+});

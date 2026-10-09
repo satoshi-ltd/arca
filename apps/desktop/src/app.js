@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.21";
+const APP_VERSION = "0.7.22";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -201,6 +201,233 @@ const busyIcon = () =>
   '<span class="busy-grid" aria-hidden="true">' +
   "<i></i>".repeat(9) +
   "</span>";
+const paletteKey = /Mac/i.test(navigator.platform || navigator.userAgent || "") ? "⌘K" : "Ctrl K";
+document.querySelectorAll(".palette-key").forEach((el) => (el.textContent = paletteKey));
+let palette = null;
+const PALETTE_RECENT = "arca-palette-recent";
+const paletteRecent = () => {
+  try {
+    const list = JSON.parse(localStorage.getItem(PALETTE_RECENT) || "[]");
+    return Array.isArray(list) ? list.filter((x) => typeof x === "string").slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+};
+function rememberPalette(query) {
+  const text = query.trim();
+  if (!text) return;
+  try {
+    localStorage.setItem(PALETTE_RECENT, JSON.stringify([text, ...paletteRecent().filter((x) => x !== text)].slice(0, 5)));
+  } catch {
+    /* Private storage only disables recent searches. */
+  }
+}
+function paletteActions() {
+  const paused = status.phase === "paused";
+  return [
+    { type: "action", name: "sync", label: "Sync now", symbol: "refresh-cw" },
+    { type: "action", name: "pause", label: paused ? "Resume sync" : "Pause sync", symbol: paused ? "play" : "pause" },
+    status.role === "hub"
+      ? { type: "action", name: "share", label: "Create shared folder", symbol: "folder-plus" }
+      : { type: "action", name: "add", label: "Choose folders…", symbol: "folder-plus" },
+    { type: "action", name: "settings", label: "Open Settings", symbol: "settings" },
+  ];
+}
+function paletteDialog() {
+  let dialog = document.getElementById("palette");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "palette";
+    dialog.className = "palette";
+    dialog.setAttribute("aria-label", "Search Arca");
+    dialog.addEventListener("close", () => {
+      const back = palette?.opener;
+      clearTimeout(palette?.timer);
+      palette = null;
+      if (back?.isConnected) back.focus();
+    });
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    document.body.append(dialog);
+  }
+  return dialog;
+}
+function paletteRows(data) {
+  const rows = [];
+  const query = palette.query.trim();
+  if (!query) {
+    rows.push(...paletteRecent().map((text) => ({ type: "recent", text, group: "Recent searches" })));
+    rows.push(...paletteActions().map((row) => ({ ...row, group: "Actions" })));
+    return rows;
+  }
+  if (data) {
+    rows.push(...data.folders.map((row) => ({ type: "folder", group: "Folders", count: data.counts.folders, ...row })));
+    rows.push(...data.files.map((row) => ({ type: "file", group: "Files", count: data.counts.files, ...row })));
+    rows.push(...data.photos.map((row) => ({ type: "photo", group: "Photos", count: data.counts.photos, ...row })));
+    rows.push(...data.music.map((row) => ({ type: "music", group: "Music", count: data.counts.music, ...row })));
+  }
+  if (query.length >= 2 && palette.scope === "all")
+    rows.push(...paletteActions().filter((row) => row.label.toLowerCase().includes(query.toLowerCase())).map((row) => ({ ...row, group: "Actions" })));
+  return rows;
+}
+function paletteRowMarkup(row, index) {
+  const active = index === palette.active ? " pal-active" : "";
+  const option = `role="option" aria-selected="${index === palette.active}" id="pal-${index}" data-pal="${index}"`;
+  if (row.type === "recent")
+    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon("clock")}</span><div><strong>${escape(row.text)}</strong></div></div>`;
+  if (row.type === "action")
+    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon(row.symbol)}</span><div><strong>${escape(row.label)}</strong></div></div>`;
+  if (row.type === "folder")
+    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon("folder")}</span><div><strong>${escape(row.name)}</strong></div></div>`;
+  if (row.type === "photo")
+    return `<div class="pal-cell${active}" ${option}><span class="pal-thumb" data-pal-photo="${index}">${icon(row.kind === "video" ? "play" : "image")}</span><span class="pal-cap">${escape(row.name)}</span></div>`;
+  if (row.type === "music")
+    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon("music")}</span><div><strong>${escape(row.title || row.name)}</strong><p>${escape([row.artist, row.album].filter(Boolean).join(" · ") || row.folder)}</p></div></div>`;
+  return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon(fileIcon(row.path))}</span><div><strong>${escape(row.name)}</strong><p>${escape(row.path.includes("/") ? row.path.slice(0, row.path.lastIndexOf("/")) : row.folder)} · ${escape(bytes(row.size))}</p></div></div>`;
+}
+function paintPalette(data) {
+  if (!palette) return;
+  const rows = (palette.rows = paletteRows(data));
+  palette.active = Math.min(palette.active, Math.max(0, rows.length - 1));
+  const body = document.querySelector("#palette .pal-body");
+  const query = palette.query.trim();
+  if (query && data && !rows.length) {
+    body.innerHTML = empty(`No matches for “${escape(query)}”`, "Search covers file names, photos and music held on this device.", "", "search");
+  } else {
+    let html = "";
+    let group = "";
+    const close = () => (group === "Photos" ? "</div></div>" : "</div>");
+    rows.forEach((row, index) => {
+      if (row.group !== group) {
+        if (group) html += close();
+        group = row.group;
+        html += `<div class="pal-group" role="group" aria-label="${escape(group)}"><div class="pal-label"><span>${escape(group)}</span>${row.count ? `<span class="mono">${row.count}</span>` : ""}</div>${group === "Photos" ? '<div class="pal-thumbs">' : ""}`;
+      }
+      html += paletteRowMarkup(row, index);
+    });
+    body.innerHTML = html + (group ? close() : "");
+  }
+  icons();
+  document.querySelector("#palette .pal-input")?.setAttribute("aria-activedescendant", rows.length ? `pal-${palette.active}` : "");
+  document.querySelectorAll("#palette [data-pal-photo]").forEach(async (node) => {
+    const row = rows[Number(node.dataset.palPhoto)];
+    try {
+      const result = await cachedPhoto("/v1/gallery/preview?" + new URLSearchParams({ volume: row.volume, path: row.path, hash: row.hash }));
+      if (!node.isConnected || !result?.data) return;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = result.data;
+      node.replaceChildren(img);
+    } catch {
+      /* A missing preview keeps the icon. */
+    }
+  });
+}
+async function runPalette() {
+  if (!palette) return;
+  const query = palette.query.trim();
+  const serial = ++palette.serial;
+  if (!query) return paintPalette(null);
+  let data = null;
+  try {
+    data = await api(`/v1/search?${new URLSearchParams({ q: query, scope: palette.scope, limit: "6" })}`);
+  } catch {
+    data = { folders: [], files: [], photos: [], music: [], counts: {} };
+  }
+  if (!palette || palette.serial !== serial) return;
+  paintPalette(data);
+}
+function openPalette() {
+  if (!ready || $("#dialog").open) return;
+  if (palette) return void document.getElementById("palette")?.close();
+  const looking = document.getElementById("quicklook");
+  if (looking?.open) looking.close();
+  const dialog = paletteDialog();
+  palette = { query: "", scope: "all", rows: [], active: 0, serial: 0, opener: document.activeElement };
+  dialog.innerHTML = `<div class="pal-field">${icon("search")}<input class="pal-input" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-label="Search Arca" placeholder="Search folders, files, photos and music" autocomplete="off" spellcheck="false"><span class="tag">esc</span></div><div class="pal-scopes"><div class="segmented" role="group" aria-label="Scope">${[["all", "All"], ["files", "Files"], ["photos", "Photos"], ["music", "Music"]].map(([id, label]) => `<button type="button" data-pal-scope="${id}" class="${id === "all" ? "active" : ""}" aria-pressed="${id === "all"}">${label}</button>`).join("")}</div></div><div class="pal-body" id="pal-list" role="listbox"></div><div class="pal-foot"><span class="pal-hint"><span class="tag">↑</span><span class="tag">↓</span>Move</span><span class="pal-hint"><span class="tag">↵</span>Open</span><span class="pal-hint"><span class="tag">esc</span>Close</span><span class="pal-end">This device · ${countLabel(status.volumes.filter((v) => status.role === "hub" || v.selected).length, "folder")}</span></div>`;
+  dialog.showModal();
+  icons();
+  dialog.querySelector(".pal-input").focus();
+  paintPalette(null);
+}
+async function activatePalette(index) {
+  const row = palette?.rows[index];
+  if (!row) return;
+  const query = palette.query;
+  if (row.type === "recent") {
+    const input = document.querySelector("#palette .pal-input");
+    input.value = row.text;
+    palette.query = row.text;
+    palette.active = 0;
+    return void runPalette();
+  }
+  document.getElementById("palette").close();
+  if (row.type === "action") {
+    if (row.name === "settings") {
+      view = "settings";
+      detailId = null;
+      await render();
+      updateShell();
+    } else await handle(row.name, "");
+    return;
+  }
+  rememberPalette(query);
+  if (row.type === "folder") {
+    view = "folders";
+    await handle("folder-detail", row.id);
+    updateShell();
+    return;
+  }
+  await handle("activity-file", JSON.stringify({ volume: row.volume, path: row.path, rev: row.rev, deleted: false }));
+}
+document.addEventListener("input", (event) => {
+  if (!palette || !event.target.matches?.("#palette .pal-input")) return;
+  palette.query = event.target.value;
+  palette.active = 0;
+  clearTimeout(palette.timer);
+  palette.timer = setTimeout(runPalette, event.target.value.trim() ? 120 : 0);
+});
+document.addEventListener("click", (event) => {
+  if (!palette) return;
+  const scope = event.target.closest?.("#palette [data-pal-scope]");
+  if (scope) {
+    palette.scope = scope.dataset.palScope;
+    document.querySelectorAll("#palette [data-pal-scope]").forEach((control) => {
+      const on = control === scope;
+      control.classList.toggle("active", on);
+      control.setAttribute("aria-pressed", String(on));
+    });
+    palette.active = 0;
+    void runPalette();
+    return;
+  }
+  const row = event.target.closest?.("#palette [data-pal]");
+  if (row) void activatePalette(Number(row.dataset.pal));
+});
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    openPalette();
+    return;
+  }
+  if (!palette || !document.getElementById("palette")?.open) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const count = palette.rows.length;
+    if (!count) return;
+    palette.active = (palette.active + (event.key === "ArrowDown" ? 1 : count - 1)) % count;
+    document.querySelectorAll("#palette [data-pal]").forEach((row, index) => {
+      row.classList.toggle("pal-active", index === palette.active);
+      row.setAttribute("aria-selected", String(index === palette.active));
+    });
+    document.querySelector(`#palette #pal-${palette.active}`)?.scrollIntoView?.({ block: "nearest" });
+    document.querySelector("#palette .pal-input")?.setAttribute("aria-activedescendant", `pal-${palette.active}`);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    void activatePalette(palette.active);
+  }
+});
 const TEXT_NAME = /\.(txt|md|markdown|mdx|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|tsv|log|xml|html?|css|scss|js|mjs|cjs|jsx|ts|tsx|py|rb|go|rs|c|h|cc|cpp|hpp|java|kt|swift|sh|bash|zsh|sql|env|gitignore|arcaignore)$/i;
 function previewKind(name) {
   return /\.(jpe?g|png|webp|gif|avif|hei[cf])$/i.test(name)
@@ -306,7 +533,7 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   const dialog = document.getElementById("quicklook");
-  if (!quick || !dialog?.open) return;
+  if (!quick || !dialog?.open || palette) return;
   if (event.key === "ArrowLeft" && quick.index > 0) {
     event.preventDefault();
     void showQuick(quick.index - 1);
@@ -7104,6 +7331,7 @@ async function handle(name, id, control) {
     }
     return;
   }
+  if (name === "palette") return openPalette();
   if (name === "sync") {
     await api("/v1/sync", { background: true });
     void background(() => refresh());

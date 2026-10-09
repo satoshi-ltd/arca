@@ -6657,6 +6657,103 @@ test("Space opens a Quick Look with the file's preview, arrows move through the 
   assert.ok(w.document.querySelector(".file-history-summary .stats"), "the preview heads File detail above its stats");
 });
 
+test("Command-K opens a palette that searches by scope, walks results with the keyboard, runs actions and remembers searches", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-palette-"));
+  init(home, { port: 0, name: "Palette" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  w.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new w.Event("close")); };
+  const searches = [];
+  const calls = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        calls.push(`${args.method || "GET"} ${args.route}`);
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: "idle", hubId: "hub", hubName: "Casa", hub: "http://127.0.0.1:49999", volumes: [{ id: "docs", name: "documents", selected: 1, files: 3, bytes: 1, sync: { state: "idle" } }] };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [] };
+        if (args.route.startsWith("/v1/search")) {
+          searches.push(args.route);
+          const q = new URL(args.route, "http://x").searchParams;
+          if (q.get("q") === "zzzz") return { folders: [], files: [], photos: [], music: [], counts: {} };
+          return {
+            folders: q.get("scope") === "all" ? [{ id: "docs", name: "blueprints" }] : [],
+            files: [{ volume: "docs", folder: "documents", path: "plans/blueprint-v3.pdf", name: "blueprint-v3.pdf", hash: "h1", size: 2400, rev: 7 }],
+            photos: [{ volume: "docs", folder: "documents", path: "blue-door.jpg", name: "blue-door.jpg", hash: "h2", size: 10, rev: 6, kind: "image" }],
+            music: [{ volume: "docs", folder: "documents", path: "Blue in Green.flac", name: "Blue in Green.flac", hash: "h3", size: 10, rev: 5, title: "Blue in Green", artist: "Miles Davis", album: "Kind of Blue", cover: null }],
+            counts: { folders: 1, files: 1, photos: 1, music: 1 },
+          };
+        }
+        if (args.route.startsWith("/v1/gallery/preview")) return { data: "data:image/png;base64,AAAA" };
+        if (args.route.startsWith("/v1/activity") || args.route.startsWith("/v1/history")) return { versions: [], next: null };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card") && w.document.body.getAttribute("aria-busy") === "false");
+  const press = (key, extra = {}) => w.document.body.dispatchEvent(new w.KeyboardEvent("keydown", { key, bubbles: true, ...extra }));
+  press("k", { ctrlKey: true });
+  const dialog = w.document.getElementById("palette");
+  assert.ok(dialog.open, "Control-K opens it from any page");
+  assert.match(dialog.textContent, /Actions/);
+  assert.deepEqual([...dialog.querySelectorAll('[role="group"][aria-label="Actions"] strong')].map((n) => n.textContent), ["Sync now", "Pause sync", "Choose folders…", "Open Settings"], "an empty field is a launcher");
+  const type = (value) => {
+    const input = dialog.querySelector(".pal-input");
+    input.value = value;
+    input.dispatchEvent(new w.Event("input", { bubbles: true }));
+  };
+  type("blue");
+  await until(() => dialog.querySelector('[aria-label="Files"]'));
+  assert.deepEqual([...dialog.querySelectorAll(".pal-group")].map((g) => g.getAttribute("aria-label")), ["Folders", "Files", "Photos", "Music"]);
+  assert.equal(dialog.querySelectorAll(".pal-thumbs .pal-cell").length, 1, "photos are a thumbnail row");
+  await until(() => dialog.querySelector(".pal-thumb img"));
+  assert.match(dialog.querySelector('[aria-label="Music"]').textContent, /Blue in Green.*Miles Davis · Kind of Blue/s);
+  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("blueprints"), true, "the first row is selected");
+  press("ArrowDown");
+  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("blueprint-v3.pdf"), true);
+  press("ArrowUp");
+  press("ArrowUp");
+  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("Blue in Green"), true, "the selection wraps");
+  dialog.querySelector('[data-pal-scope="music"]').click();
+  await until(() => searches.some((route) => route.includes("scope=music")));
+  assert.equal(dialog.querySelector('[data-pal-scope="music"]').getAttribute("aria-pressed"), "true");
+  dialog.querySelector('[data-pal-scope="all"]').click();
+  await until(() => searches.filter((route) => route.includes("scope=all")).length >= 2);
+  press("ArrowDown");
+  press("Enter");
+  await until(() => !dialog.open);
+  await until(() => /Device|History|blueprint/i.test(w.document.querySelector("#content h1")?.textContent || ""));
+  assert.ok(calls.some((call) => call.includes("/v1/history?") && call.includes("blueprint-v3.pdf")), "Enter on a file opens its detail");
+  assert.deepEqual(JSON.parse(w.localStorage.getItem("arca-palette-recent")), ["blue"], "an opened result remembers its search");
+  press("k", { metaKey: true });
+  assert.ok(dialog.open);
+  assert.match(dialog.querySelector('[aria-label="Recent searches"]').textContent, /blue/);
+  type("zzzz");
+  await until(() => dialog.querySelector(".empty"));
+  assert.match(dialog.querySelector(".empty").textContent, /No matches for “zzzz”/);
+  type("sync");
+  await until(() => dialog.querySelector('[aria-label="Actions"]'));
+  dialog.querySelector('[aria-label="Actions"] [data-pal]').click();
+  await until(() => !dialog.open);
+  await until(() => calls.includes("POST /v1/sync"));
+  press("k", { ctrlKey: true });
+  press("k", { ctrlKey: true });
+  assert.equal(dialog.open, false, "the shortcut toggles it");
+});
+
 test("the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-gallery-more-"));
   init(home, { port: 0, name: "Gallery" });

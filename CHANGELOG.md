@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.22 — 2026-10-09
+
+- Command-K (Control-K on Windows, Linux and the web) or the new Search field in the sidebar opens a palette that finds folders, files, photos and music tracks by name from any page, with All, Files, Photos and Music scopes, arrow keys and Enter, and your recent searches. Typing a short action name such as "sync" offers Sync now, Pause sync, Choose folders and Open Settings.
+- A photo or a track opens its file detail from the palette, not the viewer or the album. The search reads only what this device already holds.
+
+Needs: Casa redeploy · desktop build
+
 ## 0.7.21 — 2026-10-09
 
 - Press Space on a file in a folder's Files list to open a Quick Look: the photo or a video's poster, or the first lines of a text, Markdown or code file. The arrow keys move through the folder's files, Space or Esc closes it and Enter opens the file.

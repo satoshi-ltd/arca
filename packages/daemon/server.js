@@ -17,6 +17,7 @@ import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
 import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
 import { filePreview } from "./file-preview.js";
+import { searchLocal } from "./search.js";
 import { acceptReport, machines } from "./machines.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
 import { listPage, browsePage } from "./pages.js";
@@ -841,6 +842,11 @@ export async function start(home, options = {}) {
                 )
               : await engine.gallery.page(volume, url.searchParams),
         );
+      }
+      if (req.method === "GET" && route === "/v1/search") {
+        requireAdmin();
+        music();
+        return send(200, searchLocal(s, url.searchParams));
       }
       if (req.method === "GET" && route === "/v1/file-preview") {
         requireAdmin();

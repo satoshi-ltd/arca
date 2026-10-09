@@ -34,20 +34,12 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
   `ui · agent · normal · depends: MOB-FILES-PREVIEW`
   accept: the board.
 
-- **COMMAND-PALETTE** — A local index searches names across folders, photos and music
-  `feature · agent · normal`
-  accept: each desktop or server replica keeps a local name index of its complete copies (files, photos, tracks with artist and album) and the daemon answers a ranked cross-folder query; the hub answers for what it holds; daemon tests cover ranking, scopes, deleted files and ignored paths; the interface follows board UI-COMMAND-PALETTE.
-
-- **UI-COMMAND-PALETTE** — Command-K finds anything and runs an action
-  `ui · agent · normal · depends: COMMAND-PALETTE`
-  accept: the board.
-
 - **MOB-SEARCH** — The phone searches names across its folders
   `feature · agent · normal`
   accept: the phone keeps a local name index of its working copies and answers a ranked query by scope (All, Files, Photos, Music); tests cover ranking, scopes and deleted files; the interface follows board UI-MOB-SEARCH.
 
 - **UI-MOB-SEARCH** — The phone and the Fold get a search screen
-  `ui · agent · normal · depends: MOB-SEARCH, UI-COMMAND-PALETTE`
+  `ui · agent · normal · depends: MOB-SEARCH`
   accept: the board.
 
 - **UI-MOB-VIEWER-GESTURES** — The photo viewer opens, zooms and dismisses by gesture
