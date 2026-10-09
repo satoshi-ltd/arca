@@ -909,6 +909,10 @@ export async function start(home, options = {}) {
           pathTransitions: true,
           id: config.id,
           name: config.name,
+          device: device.id,
+          devices: s.db
+            .prepare("SELECT id,name FROM devices WHERE role='replica'")
+            .all(),
           ready: s.volumes().length > 0,
           volumes: s.volumes().map((v) => ({
             id: v.id,
@@ -2172,6 +2176,7 @@ export async function start(home, options = {}) {
               id: catalog.id,
               name: catalog.name,
             };
+            config.hubDevices = [];
             delete config.disconnectedHub;
             config.catalog = catalog.volumes.map((v) => ({
               id: v.id,

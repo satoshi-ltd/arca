@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-REPLICA-AUTHOR** — A replica shows its own changes as "Device xxxxxxxx"
-  `bug · agent · high`
-  accept: History, Recent and file detail on a desktop or server replica name the replica's own changes with its device name, as the hub does, although the replica does not know its hub device id today (`authorName` in `app.js`, empty `status.devices`); a desktop test covers it. Found while investigating offline replicas on 2026-10-08.
-
 - **UI-DEVICES-TOPOLOGY** — Devices opens on a map of the hub and its devices
   `ui · agent · normal`
   accept: the board.

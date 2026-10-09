@@ -5393,6 +5393,28 @@ test("Review opens the folder error details without navigating away", async (t) 
   assert.equal(w.document.querySelector("#dialog").open, false);
 });
 
+test("a replica names its own changes and the hub's other devices instead of Device ids", async (t) => {
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  await w.eval(
+    `(async()=>{${script.replace("await action(boot);", "")}\nstatus = { id: "local", name: "macbook-pro", deviceId: "mine", hubId: "hub", hubName: "casa", devices: [], hubDevices: [{ id: "mine", name: "macbook-pro" }, { id: "fold", name: "phone-fold" }] }; window.author = authorName; window.disposeNotices = () => noticeStore.dispose();})()`,
+  );
+  t.after(() => {
+    w.disposeNotices();
+    w.close();
+  });
+  assert.equal(w.author("mine"), "macbook-pro");
+  assert.equal(w.author("local"), "macbook-pro");
+  assert.equal(w.author("hub"), "casa");
+  assert.equal(w.author("fold"), "phone-fold");
+  assert.equal(w.author("0123456789abcdef"), "Device 01234567");
+  assert.equal(w.author(null), "Device null");
+});
+
 test("gallery deletion filtering survives reload and permits restored revisions without hiding another folder", async (t) => {
   const key = JSON.stringify(["replica", "hub", "photos", "photo.jpg"]);
   const dom = new JSDOM(html, {

@@ -200,6 +200,8 @@ export class Engine {
       hub: this.config.hub?.url || null,
       hubId: this.config.hub?.id || null,
       hubName: this.config.hub?.name || null,
+      deviceId: this.config.hub?.deviceId || null,
+      hubDevices: this.config.hubDevices || [],
       disconnectedHub: this.config.disconnectedHub || null,
       volumes: s.volumes().map((v) => {
         const totals = visibleTotals?.get(v.id) || s.visibleTotals(v.id);
@@ -876,6 +878,16 @@ export class Engine {
         if (catalog.id !== this.config.hub.id)
           fail("Hub identity changed; reconnect explicitly", 409);
         this.config.hub.name = catalog.name;
+        this.config.hub.deviceId =
+          typeof catalog.device === "string" ? catalog.device : null;
+        this.config.hubDevices = Array.isArray(catalog.devices)
+          ? catalog.devices
+              .filter(
+                (d) => typeof d?.id === "string" && typeof d.name === "string",
+              )
+              .slice(0, 200)
+              .map(({ id, name }) => ({ id, name: name.slice(0, 100) }))
+          : [];
         this.config.catalog = catalog.volumes.map((v) =>
           this.catalogEntry(v),
         );
@@ -1670,7 +1682,7 @@ export class Engine {
         port: 0,
       });
       const child = new Store(state);
-      child.config.hub = { ...this.config.hub };
+      child.config.hub = { ...this.config.hub, deviceId: null };
       child.saveConfig();
       child.close();
     }
@@ -1740,7 +1752,7 @@ export class Engine {
         child.close();
         fail("Backup belongs to another hub", 409);
       }
-      child.config.hub = { ...this.config.hub };
+      child.config.hub = { ...this.config.hub, deviceId: null };
       child.store.saveConfig();
       this.backupEngine = child;
       this.backupLock = lock;
@@ -2067,6 +2079,7 @@ export class Engine {
       hub: null,
       disconnectedHub: { id, url },
       catalog: [],
+      hubDevices: [],
       backup: { ...this.config.backup, enabled: false },
     };
     // Persist the removed credential before presenting a disconnected state.

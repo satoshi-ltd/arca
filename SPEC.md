@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.7.12 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.7.13 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -132,6 +132,7 @@ From a terminal with SSH access to a Docker server, a web code comes from `docke
 `GET /v1/machines` gives authenticated linked devices and hub administrators the hub's read-only roster: current registrations, last authenticated contact, backup acknowledgements and optional machine reports. A replica's local administrator reads it through its daemon. It grants no remote administration. Invited and authenticated states stay distinct; removed credentials are absent and no revoked list is kept.
 
 - Reports (`POST /v1/machine-report`, linked credentials only, sanitized counters) carry selected folder IDs and totals, indexed files and bytes, `albumFolderIds` for album-linked folders, coarse platform, kernel release, uptime, last completed sync and server receipt time. Clients send them after successful cycles at most every 15 seconds, and immediately after selection, unlink or a machine rename, even while paused. They become stale after two minutes; missing reports stay unknown. They are not a heartbeat, an OS version lookup, disk usage, revision lag or proof that files match. Credentials and local paths are never included, nor album names or library content.
+- `GET /v1/catalog` also returns the caller's own device id and every registered device's id and name, revoked ones included so old revisions keep a name. A replica keeps them (`status.deviceId`, `status.hubDevices`) so History, Recent and file detail name each author, its own changes included, without a pairing token or any other secret.
 - A backup acknowledgement is the last reported enabled/revision/time state, not an integrity audit. No acknowledgement means unknown, not disabled.
 - Tailscale connectivity is not TLS. Discovery exposes the configured network mode and daemon transport, not browser-side TLS behind a proxy. A Tailscale label needs discovery evidence; a 100.x address alone proves nothing.
 

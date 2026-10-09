@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.13 — 2026-10-09
+
+- On a desktop or server replica, History, Recent and file detail now name the replica's own changes and every other device by name instead of "Device" plus eight characters. The hub's catalog hands each replica its own device id and the device names, and a replica keeps them for when the hub is away.
+
+Needs: Casa redeploy
+
 ## 0.7.12 — 2026-10-09
 
 - In Android Auto, a long list of artists or albums, or an artist with many albums, now opens on letter folders (A, B, … and # for digits and symbols, splitting further, or into numbered ranges, when a letter is still long), so every artist and album is reachable instead of only the first few hundred.
