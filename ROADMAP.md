@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-MOB-GALLERY-MOMENTS** — The phone and the Fold group days into moments
-  `ui · agent · normal`
-  accept: the board.
-
 - **UI-MOB-MOTION-SYSTEM** — The phone and the Fold get the same motion language
   `ui · agent · low`
   accept: the board's remaining moments (shared elements, tab tint slide, edge swipe, pull to sync, sync ring, press scale on cards and buttons) with SPEC's mobile Motion section extended.
@@ -147,6 +143,10 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   accept: a decision on Windows signing; optionally one signed macOS run with `sign_macos` checked and `publish` unchecked.
 
 ### Decisions
+
+- **UI-MOB-GALLERY-MOMENTS** — The phone and the Fold group days into moments
+  `ui · maintainer · normal`
+  accept: the board. Waits on a device: the phone's virtualized timeline keys its sections, the date rail, the pinch anchors and scroll restoration by month, so day sections, a hero tile and a quiet-days group change all of them at once. Building it blind risks the main photo screen, so the maintainer approves doing it with a device at hand (per-day counts already come from the hub's gallery index).
 
 - **DEC-LAN-PERMISSION** — Cache LAN permission?
   `decision · maintainer · normal`
