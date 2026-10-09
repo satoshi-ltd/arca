@@ -163,7 +163,7 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
                   const index = results.folders.length + results.files.length + i;
                   const source = uri(r);
                   return (
-                    <Pressable key={`${r.volume}:${r.path}`} accessibilityRole="button" accessibilityLabel={r.name} onPress={() => (twoPane ? setSelected(index) : open({ type: "photo", ...r }))} style={[s.searchThumb, twoPane && selected === index && s.machineChosen]}>
+                    <Pressable key={`${r.volume}:${r.path}`} accessibilityRole="button" accessibilityLabel={r.name} onPress={() => (twoPane ? setSelected(index) : open({ type: "photo", ...r }))} style={[s.searchThumb, twoPane && selected === index && s.searchThumbChosen]}>
                       {source ? <Image source={{ uri: source }} resizeMethod="resize" style={s.searchThumbImage} /> : <Icon name={r.kind === "video" ? "play" : "gallery"} color={c.mute} />}
                     </Pressable>
                   );

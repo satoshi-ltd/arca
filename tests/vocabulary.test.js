@@ -258,14 +258,14 @@ test("History heads each day group and tells each row's clock time the same way 
   assert.equal(phone.clockTime(at(2026, 9, 4, 9, 5)), "09:05");
   assert.equal(phone.clockTime(at(2026, 9, 4, 0, 0)), "00:00");
   const app = fs.readFileSync(path.join(root, "apps/mobile/src/App.jsx"), "utf8");
-  assert.ok(app.includes("day: dayLabel(row.created)"), "the phone groups by day label");
+  assert.ok(app.includes("const day = dayLabel(row.created);"), "the phone groups by day label");
   assert.ok(app.includes("{clockTime(row.created)}"), "its wide rows show the clock time");
   assert.ok(app.includes("{` · ${clockTime(row.created)}`}"), "and its narrow rows too");
   const theme = fs.readFileSync(path.join(root, "apps", "mobile", "src", "theme.js"), "utf8");
   assert.match(theme, /historyDate: \{ width: 90, fontVariant: \["tabular-nums"\] \}/, "wide times use tabular figures");
   assert.match(theme, /tabularTime: \{ fontVariant: \["tabular-nums"\] \}/, "and so do narrow times");
   assert.ok(app.includes("style={s.tabularTime}"), "the narrow time carries that style");
-  assert.ok(source.includes("day: dayLabel(r.created)"), "the desktop groups by day label");
+  assert.ok(source.includes("const day = dayLabel(r.created);"), "the desktop groups by day label");
   assert.ok(source.includes("row-time\">${compact ? relative(v.created) : clockTime(v.created)}<"), "desktop History rows show the clock, Recent keeps relative times");
 });
 

@@ -73,8 +73,6 @@ import {
   Navigation,
   MachineRow,
   ArrivalsStrip,
-  DeviceBranch,
-  DeviceMapSide,
   ActionRow,
   SettingsGroup,
   SegmentedControl,
@@ -131,14 +129,11 @@ import {
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize } from "./format";
 import { browseEntries } from "./browse";
-import { deviceNodes } from "./device-map";
 import { homeFromActivity } from "./home-data";
-import { ActivityStrip, AwayBanner, DayGroup } from "./HistoryActivity";
 import { FilePreview, RowThumb } from "./FilePreview";
 import { GlobalSearch } from "./GlobalSearch";
 import { NowPlayingPage } from "./NowPlayingPage";
 import { buildResults, forgetSearch, rememberSearch, searchTokens } from "./search-local";
-import { awayDue, daySummary, localDay, stripBars } from "./history-activity";
 // Keep the native launch surface until fonts and local startup are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 const relative = (value) => {
@@ -207,17 +202,11 @@ export default function App() {
     [machines, setMachines] = useState(null),
     [machinesSaved, setMachinesSaved] = useState(false),
     [machinesLoaded, setMachinesLoaded] = useState(false),
-    [pickedDevice, setPickedDevice] = useState(""),
-    [historyDays, setHistoryDays] = useState(null),
     [home, setHome] = useState({ arrivals: [] }),
     [previewEntry, setPreviewEntry] = useState(null),
     [globalSearch, setGlobalSearch] = useState(false),
     [nowPlayingOpen, setNowPlayingOpen] = useState(false),
     [searchRecents, setSearchRecents] = useState([]),
-    [awayNotice, setAwayNotice] = useState(null),
-    [landingDay, setLandingDay] = useState(""),
-    [landingReady, setLandingReady] = useState(false),
-    [selectedRev, setSelectedRev] = useState(""),
     [lastChange, setLastChange] = useState(undefined),
     [status, setStatus] = useState({}),
     [busy, setBusy] = useState(false),
@@ -946,74 +935,6 @@ export default function App() {
       .join(","),
   ]);
   useEffect(() => {
-    if (!connected || !replica) return;
-    let unresolved = false;
-    const key = (r) => `historySeen:${r?.scope}`;
-    const mark = () => {
-      const r = engine.current;
-      if (r?.scope && !unresolved) r.store.set(key(r), Date.now()).catch(() => {});
-    };
-    const check = async () => {
-      const r = engine.current;
-      if (!r?.scope) return;
-      const last = await r.store.get(key(r), 0).catch(() => 0);
-      if (!awayDue(last)) {
-        unresolved = false;
-        mark();
-        return;
-      }
-      unresolved = true;
-      try {
-        const ids = historyFolderIds(
-          await r.store.folders(r.scope),
-          client.state().catalog?.volumes || [],
-        );
-        if (!ids.length) return;
-        const data = await r.interactiveClient.api(
-          `/v1/activity-days?${new URLSearchParams({
-            days: "1",
-            offset: String(new Date().getTimezoneOffset()),
-            volumes: ids.join(","),
-            since: new Date(Number(last)).toISOString(),
-          })}`,
-        );
-        if (!data?.since) return;
-        unresolved = false;
-        mark();
-        if (data.since.changes)
-          setAwayNotice({ since: new Date(Number(last)).toISOString(), ...data.since });
-      } catch {}
-    };
-    check();
-    const listener = AppState.addEventListener("change", (value) =>
-      value === "active" ? check() : mark(),
-    );
-    return () => listener.remove();
-  }, [connected, replica]);
-  const landingCount = useRef(-1);
-  const stopLanding = () => {
-    landingCount.current = -1;
-    setLandingDay("");
-    setLandingReady(false);
-  };
-  useEffect(() => {
-    if (!landingDay || landingReady) return;
-    const reached =
-      history.versions.some((row) => localDay(row.created) < landingDay) ||
-      !history.next;
-    if (reached) setLandingReady(true);
-    else if (historyError || landingCount.current === history.versions.length)
-      stopLanding();
-    else if (!historyLoading) {
-      landingCount.current = history.versions.length;
-      getHistory(null, true).catch((e) => setHistoryError(e.message));
-    }
-  }, [landingDay, landingReady, history, historyLoading, historyError]);
-  useEffect(() => {
-    stopLanding();
-    setSelectedRev("");
-  }, [screen, historyFilter, historyVolume]);
-  useEffect(() => {
     setPreviewEntry(null);
   }, [folder?.id, directory, search, screen]);
   useEffect(() => {
@@ -1155,7 +1076,6 @@ export default function App() {
         q.set("volume", historyVolume);
       else if (historyVolume) setHistoryVolume("");
       if (!more) setHistory({ versions: [], next: null });
-      if (!more) setHistoryDays(null);
       q.set("filter", historyFilter);
       setHistoryLoading(true);
     }
@@ -1198,20 +1118,6 @@ export default function App() {
     if (request !== historyRequest.current || !mounted.current) return;
     if (quiet && !sameDetail(openSheet.current, target)) return;
     const own = target && !more ? offlineFileHistory(page, saved, localEntry) : null;
-    if (!target && !more && selectedIds.length)
-      engine.current
-        .remoteView(
-          `/v1/activity-days?${new URLSearchParams({
-            days: "30",
-            offset: String(new Date().getTimezoneOffset()),
-            ...(q.get("volume") ? { volume: q.get("volume") } : { volumes: selectedIds.join(",") }),
-          })}`,
-        )
-        .then((days) => {
-          if (request === historyRequest.current && Array.isArray(days?.days))
-            setHistoryDays(days);
-        })
-        .catch(() => setHistoryDays(null));
     (target ? setFileHistory : setHistory)({
       versions: more
         ? [...previous.versions, ...page.versions]
@@ -2790,41 +2696,11 @@ export default function App() {
                       }
                     />
                   )}
-                  {screen === "Devices" && (() => {
-                    const hubAway = !!status.offline;
-                    const nodes = deviceNodes(machines, {
-                      selfId: connection?.id,
-                      hubAway,
-                    });
-                    const tree = !wide && !!connection && nodes.length > 0;
-                    const pick = (key) =>
-                      setPickedDevice((now) => (now === key ? "" : key));
-                    const selfState = status.paused
-                                    ? "Paused"
-                                    : status.offline
-                                      ? "Offline"
-                                      : status.error ||
-                                          locals.some(
-                                            (f) => f.selected && f.issue,
-                                          )
-                                        ? "Needs attention"
-                                        : status.busy
-                                          ? "Syncing"
-                                          : locals.some(
-                                                (f) =>
-                                                  f.selected && !f.completed,
-                                              )
-                                            ? "Incomplete"
-                                            : status.last
-                                              ? "Up to date"
-                                              : "Not yet synced";
-                    const sideMap = wide && !!connection && nodes.length > 0;
-                    return (
-                    <View style={sideMap ? s.deviceMapRow : s.deviceMapPlain}>
-                    <View style={sideMap ? s.deviceMapMain : s.deviceMapPlain}>
+                  {screen === "Devices" && (
+                    <>
                       {connection ? (
                         <Section>
-                          <Text style={s.eyebrow}>{tree ? "NETWORK" : "HUB CONNECTION"}</Text>
+                          <Text style={s.eyebrow}>HUB CONNECTION</Text>
                           {machinesSaved && !!machines?.length && (
                             <Text style={s.caption}>
                               Showing saved device information.
@@ -2839,32 +2715,8 @@ export default function App() {
                             machine={machines?.find((m) => m.isHub)}
                             busy={actionLocked}
                             disconnect={disconnect}
-                            away={tree && hubAway}
                             retry={() => run(() => client.refresh(), { hubOnly: true })}
                           />
-                          {tree && (
-                            <View style={s.deviceTree}>
-                              {nodes.map((node) => (
-                                <DeviceBranch key={node.key} line={node.line}>
-                                  <MachineRow
-                                    name={node.machine.name}
-                                    description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[node.machine.platform] || node.machine.platform || "Platform not reported"}${node.machine.lastAddress ? ` · ${node.machine.lastAddress}` : ""}`}
-                                    role={node.machine.role || "Replica"}
-                                    self={node.self}
-                                    report={node.report}
-                                    state={node.self ? selfState : undefined}
-                                    away={hubAway || node.state === "none"}
-                                  />
-                                </DeviceBranch>
-                              ))}
-                            </View>
-                          )}
-                          {tree && !hubAway && (
-                            <Text style={s.caption}>
-                              Solid line: report under 5 min · Dashed: older ·
-                              No line: never reported
-                            </Text>
-                          )}
                         </Section>
                       ) : (
                         <PairingForm
@@ -2899,19 +2751,38 @@ export default function App() {
                           credential is stored securely on this device.
                         </Text>
                       )}
-                      {connection && !tree && (
+                      {connection && (
                         <>
                           <Section>
                             <Text style={s.eyebrow}>DEVICES</Text>
                             <View style={s.folderList}>
                               <MachineRow
-                                chosen={!!connection?.id && pickedDevice === connection.id}
                                 name={name}
                                 self
                                 role="Replica"
                                 totals={`${locals.filter((f) => f.selected).length} folders · ${bytes(locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0))} local`}
                                 description={`${Platform.OS === "ios" ? "iOS" : "Android"}${machines?.find((m) => m.credentialId === connection.id)?.lastAddress ? ` · ${machines.find((m) => m.credentialId === connection.id).lastAddress}` : ""}`}
-                                state={selfState}
+                                state={
+                                  status.paused
+                                    ? "Paused"
+                                    : status.offline
+                                      ? "Offline"
+                                      : status.error ||
+                                          locals.some(
+                                            (f) => f.selected && f.issue,
+                                          )
+                                        ? "Needs attention"
+                                        : status.busy
+                                          ? "Syncing"
+                                          : locals.some(
+                                                (f) =>
+                                                  f.selected && !f.completed,
+                                              )
+                                            ? "Incomplete"
+                                            : status.last
+                                              ? "Up to date"
+                                              : "Not yet synced"
+                                }
                               />
                               {machines?.length ? (
                                 machines
@@ -2923,7 +2794,6 @@ export default function App() {
                                   .map((m) => (
                                     <MachineRow
                                       key={m.credentialId}
-                                      chosen={pickedDevice === m.credentialId}
                                       name={m.name}
                                       description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[m.platform] || m.platform || "Platform not reported"}${m.lastAddress ? ` · ${m.lastAddress}` : ""}`}
                                       role={m.role || "Replica"}
@@ -2943,19 +2813,8 @@ export default function App() {
                           </Section>
                         </>
                       )}
-                    </View>
-                    {sideMap && (
-                      <DeviceMapSide
-                        nodes={nodes}
-                        hubName={catalog?.name}
-                        away={hubAway}
-                        picked={pickedDevice}
-                        onPick={pick}
-                      />
-                    )}
-                    </View>
-                    );
-                  })()}
+                    </>
+                  )}
                   {screen === "History" && (
                     <>
                       {!connected && (
@@ -2992,160 +2851,107 @@ export default function App() {
                             })}
                           />
                         )}
-                      {!!history.versions.length && (() => {
-                        const twoPane = wide && !compact;
-                        const days = historyFilter === "revisions" ? historyDays : null;
-                        const summaries = new Map((days?.days || []).map((d) => [d.day, d]));
-                        const groups = Array.from(
-                          history.versions.reduce((map, row) => {
-                            const key = localDay(row.created);
-                            if (!map.has(key)) map.set(key, { day: dayLabel(row.created), rows: [] });
-                            map.get(key).rows.push(row);
-                            return map;
-                          }, new Map()),
-                        );
-                        const landing = landingReady
-                          ? groups.find(([key]) => key <= landingDay)?.[0] || groups.at(-1)?.[0]
-                          : null;
-                        const rowId = (row) => `${row.volume}:${row.rev}`;
-                        const chosen =
-                          history.versions.find((row) => rowId(row) === selectedRev) ||
-                          history.versions[0];
-                        const banner = awayNotice ? (
-                          <AwayBanner
-                            notice={awayNotice}
-                            nameOf={authorName}
-                            onDismiss={() => setAwayNotice(null)}
-                          />
-                        ) : null;
-                        return (
-                          <>
-                            {!twoPane && banner}
-                            {!!days && (
-                              <ActivityStrip
-                                bars={stripBars(days.days)}
-                                onJump={(key) => {
-                                  setLandingReady(false);
-                                  setLandingDay(key);
-                                }}
-                              />
-                            )}
-                            <View style={twoPane ? s.historyPane : undefined}>
-                              <View style={twoPane ? s.historyPaneList : s.historyGroups}>
-                                {twoPane && banner}
-                                {groups.map(([key, { day, rows }]) => (
-                                  <DayGroup
-                                    key={key}
-                                    dayKey={key}
-                                    landing={landing}
-                                    onLanded={stopLanding}
-                                    header={<Text style={s.eyebrow}>{day.toUpperCase()}</Text>}
-                                    summary={daySummary(summaries.get(key), authorName)}
-                                  >
-                                    <View style={s.group}>
-                                      {rows.map((row, index) => (
-                                        <Pressable
-                                          key={rowId(row)}
-                                          accessibilityRole="button"
-                                          accessibilityLabel={`View history for ${row.path}`}
-                                          onPress={() =>
-                                            twoPane
-                                              ? setSelectedRev(rowId(row))
-                                              : getHistory({
-                                                  volume: row.volume,
-                                                  path: row.path,
-                                                }).catch((e) => setError(e.message))
-                                          }
-                                          style={[
-                                            s.settingRow,
-                                            index > 0 && s.separator,
-                                            s.row,
-                                            twoPane && chosen && rowId(chosen) === rowId(row) && s.historyRowChosen,
-                                          ]}
-                                        >
-                                          <Icon
-                                            name={
-                                              row.deleted
-                                                ? "trash"
-                                                : row.path.includes(".conflict-")
-                                                  ? "conflict"
-                                                  : "revision"
-                                            }
-                                            color={
-                                              row.deleted
-                                                ? c.mute
-                                                : row.path.includes(".conflict-") &&
-                                                    !row.resolved
-                                                  ? c.warning
-                                                  : c.accent
-                                            }
-                                          />
-                                          <View style={[s.flex, s.stack]}>
-                                            <Text
-                                              numberOfLines={1}
-                                              style={[s.rowTitle, !!row.deleted && s.deletedFile]}
-                                            >
-                                              {row.path}
-                                            </Text>
-                                            <Text style={s.caption}>
-                                              {!wide && `${row.folder} · `}
-                                              {row.deleted
-                                                ? "Deleted · recoverable"
-                                                : row.path.includes(".conflict-")
-                                                  ? row.resolved
-                                                    ? "Conflict resolved · copy kept"
-                                                    : "Conflict copy retained"
-                                                  : `${bytes(row.size)}`}
-                                              {!wide && (
-                                                <Text style={s.tabularTime}>
-                                                  {` · ${clockTime(row.created)}`}
-                                                </Text>
-                                              )}
-                                            </Text>
-                                          </View>
-                                          {wide && (
-                                            <>
-                                              <Text numberOfLines={1} style={[s.caption, s.historyFolder]}>
-                                                {row.folder}
-                                              </Text>
-                                              <Text style={[s.mono, s.historyRevision]}>
-                                                rev {row.rev}
-                                              </Text>
-                                              <Text style={[s.caption, s.historyDate]}>
-                                                {clockTime(row.created)}
-                                              </Text>
-                                            </>
-                                          )}
-                                          <Icon name="chevron" color={c.mute} />
-                                        </Pressable>
-                                      ))}
-                                    </View>
-                                  </DayGroup>
-                                ))}
-                              </View>
-                              {twoPane && !!chosen && (
-                                <View style={s.historyPaneSide}>
-                                  <Text style={s.eyebrow}>REVISION</Text>
-                                  <Text style={s.rowTitle}>{chosen.path}</Text>
-                                  <Text style={s.caption}>{chosen.folder}</Text>
-                                  <Text style={s.caption}>
-                                    {`${authorName(chosen.author)} · ${clockTime(chosen.created)} · rev ${chosen.rev}`}
-                                  </Text>
-                                  <Button
-                                    label="File history"
+                      {!!history.versions.length && (
+                        <View style={s.historyGroups}>
+                          {Array.from(
+                            history.versions.reduce((groups, row) => {
+                              const day = dayLabel(row.created);
+                              if (!groups.has(day)) groups.set(day, []);
+                              groups.get(day).push(row);
+                              return groups;
+                            }, new Map()),
+                          ).map(([day, rows]) => (
+                            <Section key={day}>
+                              <Text style={s.eyebrow}>{day.toUpperCase()}</Text>
+                              <View style={s.group}>
+                                {rows.map((row, index) => (
+                                  <Pressable
+                                    key={`${row.volume}:${row.rev}`}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`View history for ${row.path}`}
                                     onPress={() =>
                                       getHistory({
-                                        volume: chosen.volume,
-                                        path: chosen.path,
+                                        volume: row.volume,
+                                        path: row.path,
                                       }).catch((e) => setError(e.message))
                                     }
-                                  />
-                                </View>
-                              )}
-                            </View>
-                          </>
-                        );
-                      })()}
+                                    style={[
+                                      s.settingRow,
+                                      index > 0 && s.separator,
+                                      s.row,
+                                    ]}
+                                  >
+                                    <Icon
+                                      name={
+                                        row.deleted
+                                          ? "trash"
+                                          : row.path.includes(".conflict-")
+                                            ? "conflict"
+                                            : "revision"
+                                      }
+                                      color={
+                                        row.deleted
+                                          ? c.mute
+                                          : row.path.includes(".conflict-") &&
+                                              !row.resolved
+                                            ? c.warning
+                                            : c.accent
+                                      }
+                                    />
+                                    <View style={[s.flex, s.stack]}>
+                                      <Text
+                                        numberOfLines={1}
+                                        style={[
+                                          s.rowTitle,
+                                          !!row.deleted && s.deletedFile,
+                                        ]}
+                                      >
+                                        {row.path}
+                                      </Text>
+                                      <Text style={s.caption}>
+                                        {!wide && `${row.folder} · `}
+                                        {row.deleted
+                                          ? "Deleted · recoverable"
+                                          : row.path.includes(".conflict-")
+                                            ? row.resolved
+                                              ? "Conflict resolved · copy kept"
+                                              : "Conflict copy retained"
+                                            : `${bytes(row.size)}`}
+                                        {!wide && (
+                                          <Text style={s.tabularTime}>
+                                            {` · ${clockTime(row.created)}`}
+                                          </Text>
+                                        )}
+                                      </Text>
+                                    </View>
+                                    {wide && (
+                                      <>
+                                        <Text
+                                          numberOfLines={1}
+                                          style={[s.caption, s.historyFolder]}
+                                        >
+                                          {row.folder}
+                                        </Text>
+                                        <Text
+                                          style={[s.mono, s.historyRevision]}
+                                        >
+                                          rev {row.rev}
+                                        </Text>
+                                        <Text
+                                          style={[s.caption, s.historyDate]}
+                                        >
+                                          {clockTime(row.created)}
+                                        </Text>
+                                      </>
+                                    )}
+                                    <Icon name="chevron" color={c.mute} />
+                                  </Pressable>
+                                ))}
+                              </View>
+                            </Section>
+                          ))}
+                        </View>
+                      )}
                       {history.next && (
                         <Button
                           label="Show more versions"

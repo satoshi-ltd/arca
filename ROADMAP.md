@@ -29,7 +29,9 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 - **UI-MOB-MOTION-SYSTEM** — The phone and the Fold get the same motion language
   `ui · agent · low`
   accept: the board's remaining moments (shared elements, tab tint slide, edge swipe, pull to sync, sync ring, press scale on cards and buttons) with SPEC's mobile Motion section extended.
-
+- **DEVICES-BACKUP-TAG** — The Devices list tags a backup server
+  `feature · agent · normal`
+  accept: on desktop/web Devices, and on the phone and Fold Devices, a device that is the hub's configured full-backup target (for example the maintainer's umbrel server) carries a Backup tag beside its name, the same Tag component used for Hub and This device, shown only when the hub reports it as the backup; tests prove the tag appears for the backup device and not for others; SPEC's Devices section and the CHANGELOG say so.
 
 ## In progress
 

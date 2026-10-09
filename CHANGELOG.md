@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.30 — 2026-10-09
+
+- Devices goes back to its list: Hub connection, then one row per device, on the desktop, the phone and the Fold. The network map with its report lines is gone.
+- History goes back to day groups without the 30-day activity strip, the per-device day summaries and the away banner. The activity-days endpoint goes with them.
+
+Needs: Casa redeploy · desktop build · native build
+
 ## 0.7.29 — 2026-10-09
 
 - On the phone and the Fold, the first six folders under "Selected on this device" rise in one after another when Folders first shows, and a folder that appears while you are looking at the list rises once and glows briefly, like on the desktop.

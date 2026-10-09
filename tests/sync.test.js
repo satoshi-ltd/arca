@@ -75,41 +75,6 @@ test("a replica learns its own device id and the names of the hub's devices", as
   assert.equal(after.deviceId, null);
 });
 
-test("activity per day counts changes by device, deletions and conflicts for hubs and replicas", async (t) => {
-  const { hub, volume, connect } = await setup(t);
-  const mac = await connect("mac");
-  write(hub, volume, "a.txt", "hub");
-  write(hub, volume, "b.txt", "hub");
-  await hub.sync();
-  await mac.sync();
-  write(mac, volume, "c.txt", "mac");
-  fs.rmSync(path.join(hub.engine.store.volume(volume.id).path, "b.txt"));
-  await mac.sync();
-  await hub.sync();
-  await mac.sync();
-  const query = "/v1/activity-days?days=30&offset=0";
-  const report = await hub.api(query);
-  const today = new Date().toISOString().slice(0, 10);
-  const day = report.days.at(-1);
-  assert.equal(day.day, today);
-  assert.ok(day.changes >= 4);
-  assert.ok(day.deleted >= 1);
-  const macId = (await mac.api("/v1/status")).deviceId;
-  assert.ok(day.devices[macId] >= 1, "the replica's own changes are counted under its device id");
-  assert.equal(Object.values(day.devices).reduce((a, b) => a + b, 0), day.changes);
-  const fromReplica = await mac.api(query);
-  assert.equal(fromReplica.days.at(-1).changes, day.changes, "a replica reads the hub's counts for its folders");
-  const shifted = await hub.api("/v1/activity-days?days=30&offset=-840");
-  assert.equal(shifted.days.at(-1).day, new Date(Date.now() + 840 * 60000).toISOString().slice(0, 10), "the client's offset moves the day boundary");
-  const since = await hub.api(`/v1/activity-days?days=1&since=${encodeURIComponent(new Date(Date.now() - 60000).toISOString())}`);
-  assert.equal(since.since.changes, day.changes);
-  const none = await hub.api(`/v1/activity-days?days=1&since=${encodeURIComponent(new Date(Date.now() + 60000).toISOString())}`);
-  assert.deepEqual(none.since, { changes: 0, devices: {} });
-  for (const bad of ["days=0", "days=91", "offset=900", "offset=x", "since=never"])
-    await assert.rejects(hub.api(`/v1/activity-days?${bad}`), (error) => error.status === 400, bad);
-  await assert.rejects(hub.api("/v1/activity-days?volume=missing"), (error) => error.status === 404 || error.status === 400);
-});
-
 test("selecting a folder waits for a catalog refresh in flight, so the refresh cannot drop it", async (t) => {
   const { hub, connect } = await setup(t);
   const replica = await connect("replica");

@@ -261,7 +261,6 @@ export class Store {
       CREATE TABLE IF NOT EXISTS revisions(rev INTEGER PRIMARY KEY AUTOINCREMENT, volume TEXT NOT NULL, path TEXT NOT NULL, hash TEXT, size INTEGER NOT NULL, deleted INTEGER NOT NULL, author TEXT NOT NULL, created TEXT NOT NULL,directory INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,directory INTEGER NOT NULL DEFAULT 0,path_key TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS history_views(hub TEXT,volume TEXT,filter TEXT,version TEXT,updated INTEGER,value TEXT,PRIMARY KEY(hub,volume,filter));
-      CREATE INDEX IF NOT EXISTS revisions_volume_created ON revisions(volume,created);
       CREATE TABLE IF NOT EXISTS file_generations(volume TEXT PRIMARY KEY,generation INTEGER NOT NULL);
       CREATE TRIGGER IF NOT EXISTS files_generation_insert AFTER INSERT ON files BEGIN
         INSERT INTO file_generations VALUES(NEW.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;

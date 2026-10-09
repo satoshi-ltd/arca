@@ -1107,96 +1107,6 @@ export function Navigation({ wide, compact, view, onSelect, name, hub }) {
   );
 }
 
-export function ReportLine({ report }) {
-  const { s, c } = useDesign();
-  const color =
-    report.tone === "ok"
-      ? c.okFg
-      : report.tone === "warning"
-        ? c.warning
-        : c.mute;
-  return (
-    <View style={s.reportLine}>
-      <Icon name={report.icon} size={14} color={color} />
-      <Text style={[s.reportText, { color }]}>{report.text}</Text>
-    </View>
-  );
-}
-
-export function DeviceBranch({ line, children }) {
-  const { s } = useDesign();
-  return (
-    <View style={s.deviceBranch}>
-      {line !== "none" && (
-        <View
-          style={[s.branchLine, line === "dashed" && s.branchLineDashed]}
-          pointerEvents="none"
-        />
-      )}
-      {children}
-    </View>
-  );
-}
-
-export function DeviceMapSide({ nodes, hubName, away, picked, onPick }) {
-  const { s, c } = useDesign();
-  return (
-    <View style={s.deviceMapSide}>
-      <Text style={s.eyebrow}>NETWORK</Text>
-      <View style={[s.deviceMapNode, away && s.machineAway]}>
-        <View style={[s.tile, s.machineTile, s.hubTile]}>
-          <Icon name="server" color={c.onAccent} />
-        </View>
-        <View style={[s.flex, s.stack]}>
-          <View style={s.machineIdentity}>
-            <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
-              {hubName || "Hub"}
-            </Text>
-            <Tag variant="hub">HUB</Tag>
-          </View>
-          {away && <Text style={s.caption}>Unavailable</Text>}
-        </View>
-      </View>
-      <View style={s.deviceTree}>
-        {nodes.map((node) => (
-          <DeviceBranch key={node.key} line={node.line}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: picked === node.key }}
-              accessibilityLabel={`${node.machine.name}${node.self ? ", this device" : ""}, ${node.report.text}`}
-              onPress={() => onPick(node.key)}
-              style={[
-                s.deviceMapNode,
-                (away || node.state === "none") && s.machineAway,
-                picked === node.key && s.machineChosen,
-              ]}
-            >
-              <View style={[s.tile, s.machineTile]}>
-                <Icon
-                  name={
-                    /android|ios|iphone/i.test(node.machine.platform || "")
-                      ? "phone"
-                      : "monitor"
-                  }
-                />
-              </View>
-              <View style={[s.flex, s.stack]}>
-                <View style={s.machineIdentity}>
-                  <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
-                    {node.machine.name}
-                  </Text>
-                  {node.self && <Tag variant="self">THIS DEVICE</Tag>}
-                </View>
-                <ReportLine report={node.report} />
-              </View>
-            </Pressable>
-          </DeviceBranch>
-        ))}
-      </View>
-    </View>
-  );
-}
-
 export function MachineRow({
   name,
   description,
@@ -1206,21 +1116,13 @@ export function MachineRow({
   hub,
   state,
   actions,
-  report,
-  away,
-  chosen,
 }) {
   const { s, c, wide } = useDesign();
   const shownRole = role.toLowerCase() === "replica" ? "" : role;
   return (
     <View
-      style={[
-        s.card,
-        s.machineRow,
-        away && s.machineAway,
-        chosen && s.machineChosen,
-      ]}
-      accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}, ${description}${report ? `, ${report.text}` : ""}${state ? `, ${state}` : ""}`}
+      style={[s.card, s.machineRow]}
+      accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}, ${description}${state ? `, ${state}` : ""}`}
     >
       <View style={s.row}>
         <View style={[s.tile, s.machineTile, hub && s.hubTile]}>
@@ -1248,7 +1150,6 @@ export function MachineRow({
           <Text numberOfLines={1} style={wide ? s.mono : s.caption}>
             {description}
           </Text>
-          {!!report && <ReportLine report={report} />}
         </View>
         {wide && (
           <View style={s.machineEnd}>
