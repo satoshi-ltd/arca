@@ -35,3 +35,29 @@ export function zoomAround(state, nextScale, focal, viewport) {
 }
 export const toggleZoom = (state, focal, viewport) =>
   zoomAround(state, state.scale > 1 ? 1 : 2.5, focal, viewport);
+
+export const DISMISS_FRACTION = 1 / 3;
+export const INFO_FRACTION = 1 / 8;
+export const DISMISS_VELOCITY = 1.2;
+export const DRAG_SCALE = 0.6;
+
+export function isVerticalIntent(dx, dy, scale) {
+  return scale <= 1.02 && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.5;
+}
+
+export function decideRelease({ dy, vy = 0, height, wide = false }) {
+  if (dy > 0)
+    return dy > height * DISMISS_FRACTION || vy > DISMISS_VELOCITY ? "close" : "back";
+  if (!wide && -dy > height * INFO_FRACTION) return "info";
+  return "back";
+}
+
+export function dragLook(dy, height) {
+  const down = Math.max(0, Math.min(dy, height));
+  const progress = height ? down / height : 0;
+  return {
+    translateY: dy < 0 ? Math.max(dy * 0.4, -height / 6) : down,
+    scale: 1 - (1 - DRAG_SCALE) * progress,
+    backdrop: Math.max(0, 1 - progress * 2),
+  };
+}

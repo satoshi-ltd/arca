@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-MOB-VIEWER-GESTURES** — The photo viewer opens, zooms and dismisses by gesture
-  `ui · agent · normal`
-  accept: the board (supersedes MOB-VIEWER-CHROME-TAP); device evidence follows from the maintainer.
-
 - **UI-MOB-NOW-PLAYING** — Android gets a full-screen Now Playing
   `ui · agent · normal`
   accept: the board.

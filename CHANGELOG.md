@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.25 — 2026-10-09
+
+- The phone's photo viewer opens without its bar: tap once to show it with a filmstrip of neighbouring photos and your position, and tap a thumbnail to jump there. Drag the photo down to close it (it shrinks and the background fades; let go early and it springs back), and swipe up to open Info as a sheet; swiping the sheet's header down closes it.
+- On the Fold, Info stays a side panel opened by its button and swiping up does nothing; dragging down still closes. The photo shrinks in place rather than settling into its grid tile. TalkBack and VoiceOver get actions for the details, the controls and closing.
+
+Needs: native build
+
 ## 0.7.24 — 2026-10-09
 
 - The phone's Folders has a Search Arca field that opens a full-screen search of file names, photos, folders and music tracks (title, artist, album) across every folder on the phone, with All, Files, Photos and Music scopes, your last searches and quick actions. It reads only what the phone holds, so it works offline.
