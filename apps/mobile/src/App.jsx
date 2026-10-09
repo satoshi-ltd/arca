@@ -15,7 +15,7 @@ import { historyEmpty } from "./history-empty.js";
 import { clockTime, dayLabel } from "./history-days.js";
 import { Section } from "./components";
 import { ConfirmDialog } from "./components";
-import { useRetained } from "./motion";
+import { Rise, useListMotion, useRetained } from "./motion";
 import { subscribeNotificationResponse } from "./runtime";
 import { NoticeStack, ErrorNotice } from "./Notice";
 import { crashRecord } from "./crash";
@@ -539,6 +539,7 @@ export default function App() {
   openSheet.current = sheet;
   shownFolder.current =
     folder && engine.current ? `${engine.current.scope}:${folder.id}` : null;
+  const folderMotion = useListMotion(locals.map((f) => f.id));
   const listedFolder = locals.find((f) => f.id === folder?.id);
   useEffect(() => {
     if (!folder || !engine.current) return;
@@ -2580,8 +2581,12 @@ export default function App() {
                               </Text>
                               <View style={s.folderList}>
                                 {locals.map((f) => (
-                                  <FolderRow
+                                  <Rise
                                     key={f.id}
+                                    tint={c.tint}
+                                    {...folderMotion(f.id)}
+                                  >
+                                  <FolderRow
                                     name={f.name}
                                     icon={
                                       galleryConfig(f) ||
@@ -2625,6 +2630,7 @@ export default function App() {
                                       )
                                     }
                                   />
+                                  </Rise>
                                 ))}
                               </View>
                             </Section>

@@ -13,6 +13,7 @@
   --motion-dialog-scale: 0.985;
   --motion-touch-push: 30px;
   --motion-touch-dialog-scale: 0.9;
+  --motion-touch-press-scale: 0.98;
   --notice-width: 360px;
   --toast-bg: #121a16;
   --toast-fg: #f4f6f1;
@@ -240,5 +241,6 @@
     --motion-dialog-scale: 1;
     --motion-touch-push: 0px;
     --motion-touch-dialog-scale: 1;
+    --motion-touch-press-scale: 1;
   }
 }

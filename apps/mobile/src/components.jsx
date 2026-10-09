@@ -965,6 +965,7 @@ export function FolderRow({
   conflict,
 }) {
   const { s, c, wide } = useDesign();
+  const { reduce } = useMotion();
   const syncing = status === "Syncing";
   const tile = (
     <View
@@ -1029,6 +1030,7 @@ export function FolderRow({
         selectable && selected && s.selectedCard,
         divider && s.separator,
         pressed && !disabled && s.pressed,
+        pressed && !disabled && !reduce && { transform: [{ scale: motion.pressScale }] },
       ]}
     >
       {contents}

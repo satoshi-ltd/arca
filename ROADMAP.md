@@ -32,7 +32,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 - **UI-MOB-MOTION-SYSTEM** — The phone and the Fold get the same motion language
   `ui · agent · low`
-  accept: the board with SPEC's mobile Motion section rewritten.
+  accept: the board's remaining moments (shared elements, tab tint slide, edge swipe, pull to sync, sync ring, press scale on cards and buttons) with SPEC's mobile Motion section extended.
 
 
 ## In progress

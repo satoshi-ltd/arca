@@ -14,6 +14,7 @@ test("mobile motion tokens match the desktop motion tokens", () => {
   assert.equal(token("fast"), `${motion.fast}ms`);
   assert.equal(token("enter"), `${motion.enter}ms`);
   assert.equal(token("exit"), `${motion.exit}ms`);
+  assert.equal(token("distance"), `${motion.distance}px`);
   assert.equal(token("shared"), `${motion.shared}ms`);
   assert.equal(token("stagger"), `${motion.stagger}ms`);
   assert.equal(token("settle"), `${motion.settle}ms`);
@@ -27,6 +28,8 @@ test("mobile motion tokens match the desktop motion tokens", () => {
     assert.match(reduced, new RegExp(`--motion-${name}:\\s*0ms;`));
   assert.match(reduced, /--motion-touch-push:\s*0px;/);
   assert.match(reduced, /--motion-touch-dialog-scale:\s*1;/);
+  assert.equal(token("touch-press-scale"), String(motion.pressScale));
+  assert.match(reduced, /--motion-touch-press-scale:\s*1;/);
   assert.deepEqual(motionDurations(true), { fast: 0, enter: 0, exit: 0 });
   assert.deepEqual(motionDurations(false), {
     fast: motion.fast,

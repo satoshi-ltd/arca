@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.29 — 2026-10-09
+
+- On the phone and the Fold, the first six folders under "Selected on this device" rise in one after another when Folders first shows, and a folder that appears while you are looking at the list rises once and glows briefly, like on the desktop.
+- A folder row you press shrinks slightly under your finger. Reduced motion turns all of it off.
+- The remaining moments of the mobile motion proposal (shared elements, edge swipe, pull to sync, sync ring, tab tint slide) stay on its board until they are built and checked on a device.
+
+Needs: native build
+
 ## 0.7.28 — 2026-10-09
 
 - On the desktop and the web, motion shows where things come from: a photo opens from its own thumbnail, a folder card's icon travels into the folder header, and the first rows of a new page rise in one after another.
