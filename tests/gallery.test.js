@@ -271,27 +271,6 @@ test("the gallery reports per-day counts, year and month periods and photos from
   }
 });
 
-test("folder previews list the newest photos of a gallery folder only and refuse bad lists", async (t) => {
-  const f = await fixture(t);
-  const colors = ["red", "green", "blue", "yellow", "purple", "orange"];
-  for (const [index, color] of colors.entries()) await f.photo(`p${index}.jpg`, `2026-01-0${index + 1}T10:00:00.000Z`, color);
-  f.s.db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(f.v.id);
-  const other = f.s.addVolume("Docs");
-  const result = await f.api(`/v1/folder-previews?volumes=${f.v.id},${other.id}`);
-  assert.deepEqual(Object.keys(result.previews), [f.v.id], "a folder that is not a gallery or music folder has none");
-  assert.equal(result.previews[f.v.id].kind, "photos");
-  assert.deepEqual(result.previews[f.v.id].photos.map((p) => p.path), ["p5.jpg", "p4.jpg", "p3.jpg", "p2.jpg"], "the four newest, newest first");
-  assert.ok(result.previews[f.v.id].photos.every((p) => p.hash));
-  await assert.rejects(f.api("/v1/folder-previews?volumes="), (error) => error.status === 400);
-  await assert.rejects(f.api(`/v1/folder-previews?volumes=${Array.from({ length: 51 }, (_, i) => "v" + i).join(",")}`), (error) => error.status === 400);
-  assert.deepEqual((await f.api("/v1/folder-previews?volumes=missing")).previews, {});
-  assert.deepEqual(Object.keys((await f.api(`/v1/folder-previews?volumes=${f.v.id},${f.v.id}`)).previews), [f.v.id], "a repeated id answers once");
-  const invite = await f.api("/v1/devices", { name: "phone", role: "replica" });
-  await assert.rejects(f.api(`/v1/folder-previews?volumes=${f.v.id}`, undefined, invite.token), (error) => error.status === 401 || error.status === 403, "a replica credential does not read previews");
-  await f.photo("p6.jpg", "2026-02-01T10:00:00.000Z", "pink");
-  assert.equal((await f.api(`/v1/folder-previews?volumes=${f.v.id}`)).previews[f.v.id].photos[0].path, "p6.jpg", "a new photo refreshes the cached preview");
-});
-
 test("old photos use EXIF capture date and unsupported media keep a usable listing", async (t) => {
   const f = await fixture(t);
   const image = await sharp({

@@ -521,16 +521,6 @@ export class ReplicaStore {
       )
     ).map((r) => JSON.parse(r.row));
   }
-  async recentRows(scope, volume, limit = 40) {
-    return (
-      await this.db.getAllAsync(
-        "SELECT row FROM files WHERE scope=? AND volume=? ORDER BY CAST(json_extract(row,'$.rev') AS INTEGER) DESC LIMIT ?",
-        scope,
-        volume,
-        limit,
-      )
-    ).map((r) => JSON.parse(r.row));
-  }
   async knownFiles(scope, volume) {
     return new Map(
       (

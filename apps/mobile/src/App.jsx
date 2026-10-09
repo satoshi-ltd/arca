@@ -132,7 +132,7 @@ import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize } from "./format";
 import { browseEntries } from "./browse";
 import { deviceNodes } from "./device-map";
-import { homeFromActivity, latestLine, newestCovers, newestImages } from "./home-data";
+import { homeFromActivity } from "./home-data";
 import { ActivityStrip, AwayBanner, DayGroup } from "./HistoryActivity";
 import { FilePreview, RowThumb } from "./FilePreview";
 import { GlobalSearch } from "./GlobalSearch";
@@ -209,7 +209,7 @@ export default function App() {
     [machinesLoaded, setMachinesLoaded] = useState(false),
     [pickedDevice, setPickedDevice] = useState(""),
     [historyDays, setHistoryDays] = useState(null),
-    [home, setHome] = useState({ arrivals: [], last: {}, previews: {} }),
+    [home, setHome] = useState({ arrivals: [] }),
     [previewEntry, setPreviewEntry] = useState(null),
     [globalSearch, setGlobalSearch] = useState(false),
     [nowPlayingOpen, setNowPlayingOpen] = useState(false),
@@ -1022,30 +1022,12 @@ export default function App() {
       const r = engine.current;
       const selected = locals.filter((f) => f.selected);
       if (!r?.scope || !selected.length) return;
-      let derived = { arrivals: [], last: {} };
+      let derived = { arrivals: [] };
       try {
         const page = await r.remoteView("/v1/activity?limit=50&filter=revisions", { silent: true });
         derived = homeFromActivity(page.versions, selected.map((f) => f.id));
       } catch {}
-      const previews = {};
-      for (const f of selected) {
-        if (!live) return;
-        try {
-          const isGallery = galleryConfig(f) || f.gallery || catalog?.volumes?.find((v) => v.id === f.id)?.gallery;
-          if (isGallery) {
-            const rows = await r.store.recentRows(r.scope, f.id);
-            const uris = newestImages(rows)
-              .map((path) => r.files.work(r.scope, f.id, path))
-              .filter((uri) => !r.files.present || r.files.present(uri));
-            if (uris.length) previews[f.id] = { kind: "photos", uris };
-          } else if (isMusicFolder(catalog, f.id)) {
-            const library = await r.store.musicLibrary(r.scope, f.id);
-            const uris = newestCovers(library?.value).map((key) => musicCover(key, "small"));
-            if (uris.some(Boolean)) previews[f.id] = { kind: "covers", uris };
-          }
-        } catch {}
-      }
-      if (live) setHome({ ...derived, previews });
+      if (live) setHome(derived);
     })();
     return () => {
       live = false;
@@ -2613,8 +2595,6 @@ export default function App() {
                                           : "folders"
                                     }
                                     description={`${f.files} files · ${bytes(f.bytes)} local`}
-                                    preview={home.previews[f.id]}
-                                    latest={latestLine(home.last[f.id], authorName, relative)}
                                     conflict={!!catalog?.volumes?.find((v) => v.id === f.id)?.conflicts}
                                     status={
                                       status.paused

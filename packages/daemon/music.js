@@ -568,30 +568,6 @@ export class Music {
       .map((row) => ({ path: row.path, hash: row.hash }));
     return { version, indexing, retryAt, tracks, lists };
   }
-  latestCovers(volume, limit = 3) {
-    this.s.volume(volume);
-    const generation =
-      this.s.db.prepare("SELECT generation FROM file_generations WHERE volume=?").get(volume)?.generation || 0;
-    this.coversCache ||= new Map();
-    const hit = this.coversCache.get(volume);
-    if (hit?.generation === generation && hit.limit === limit) return hit.keys;
-    const excluded = this.s.visibleRules(volume);
-    const seen = new Set();
-    const keys = [];
-    for (const row of this.s.db
-      .prepare(
-        `SELECT f.path,t.cover FROM ${this.s.fileSource()} f JOIN music_tracks t ON t.hash=f.hash
-        WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND t.cover IS NOT NULL ORDER BY f.rev DESC LIMIT 200`,
-      )
-      .all(volume)) {
-      if (seen.has(row.cover) || excluded(row.path, false)) continue;
-      seen.add(row.cover);
-      keys.push(row.cover);
-      if (keys.length >= limit) break;
-    }
-    this.coversCache.set(volume, { generation, limit, keys });
-    return keys;
-  }
   async cover(volume, key, size = "small") {
     this.requireLibrary(volume);
     if (!/^[a-f0-9]{64}$/.test(key || "")) fail("Invalid cover", 400);

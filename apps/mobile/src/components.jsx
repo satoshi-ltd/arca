@@ -962,8 +962,6 @@ export function FolderRow({
   available,
   onPress,
   disabled,
-  preview,
-  latest,
   conflict,
 }) {
   const { s, c, wide } = useDesign();
@@ -980,39 +978,12 @@ export function FolderRow({
       )}
     </View>
   );
-  const images = preview?.uris?.filter(Boolean) || [];
-  const lead =
-    !syncing && images.length ? (
-      preview.kind === "photos" && images.length < 4 ? (
-        <Image source={{ uri: images[0] }} resizeMethod="resize" style={s.homeSingle} />
-      ) : preview.kind === "photos" ? (
-        <View style={s.homeMosaic} accessible={false}>
-          {images.slice(0, 4).map((uri) => (
-            <Image key={uri} source={{ uri }} resizeMethod="resize" style={s.homeMosaicCell} />
-          ))}
-        </View>
-      ) : (
-        <View style={s.homeStack} accessible={false}>
-          {images.slice(0, 3).map((uri, index) => (
-            <Image
-              key={uri}
-              source={{ uri }}
-              resizeMethod="resize"
-              style={[s.homeStackCover, { left: index * 8, top: index * 8 }]}
-            />
-          ))}
-        </View>
-      )
-    ) : (
-      tile
-    );
   const contents = (
     <>
-      <View style={[s.homeLead, conflict && s.homeConflict]}>{lead}</View>
+      <View style={[s.homeLead, conflict && s.homeConflict]}>{tile}</View>
       <View style={[s.flex, s.stack]}>
         <Text style={s.rowTitle}>{name}</Text>
         {!!description && <Text style={s.caption}>{description}</Text>}
-        {!!latest && <Text style={s.homeLatest}>{latest}</Text>}
       </View>
       {selectable ? (
         selected ? (
@@ -1044,7 +1015,7 @@ export function FolderRow({
   ) : (
     <Pressable
       accessibilityRole={selectable ? "checkbox" : "button"}
-      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${description ? `, ${description}` : ""}${latest ? `, latest change ${latest}` : ""}${conflict ? ", conflict" : ""}${status ? `, ${status}` : ""}`}
+      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${description ? `, ${description}` : ""}${conflict ? ", conflict" : ""}${status ? `, ${status}` : ""}`}
       accessibilityState={{
         disabled: !!disabled,
         ...(selectable ? { checked: selected } : {}),

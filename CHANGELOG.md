@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.27 — 2026-10-09
+
+- Folder cards on the desktop and on the phone go back to the folder's type icon: Images for a photo folder, Music for a music library, Folder for the rest. The photo mosaic, the stack of covers and the line naming the last file touched are gone, along with the read the hub served for the covers. The Just arrived strip and the conflict ring stay.
+
+Needs: Casa redeploy · desktop build · native build
+
 ## 0.7.26 — 2026-10-09
 
 - On Android, tapping the mini player opens Now playing as a full page that slides up: Playing from the album or playlist, the cover, the title with the artist and the album as links to their screens, the scrubber, the transport and an Up next row that lifts the queue; tap a track there to play it. On a wide Fold the page fills the window with the queue beside the player.

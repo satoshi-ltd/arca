@@ -1722,7 +1722,7 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   await new Promise((resolve) => setTimeout(resolve, 50));
 });
 
-test("Folders opens with Just arrived, content tiles, a latest-change line and no path", async (t) => {
+test("Folders opens with Just arrived, type icons and no path or last file", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-home-live-"));
   init(home, { port: 0, name: "Local Mac" });
   const daemon = await start(home, { timer: false });
@@ -1761,8 +1761,6 @@ test("Folders opens with Just arrived, content tiles, a latest-change line and n
         if (args.route === "/v1/remote") return { name: "Casa", volumes };
         if (args.route === "/v1/machines") return { machines: [] };
         if (args.route.startsWith("/v1/activity")) return { versions, next: null };
-        if (args.route.startsWith("/v1/folder-previews"))
-          return { previews: { photos: { kind: "photos", photos: [1, 2, 3, 4, 5].map((n) => ({ path: `p${n}.jpg`, hash: `h${n}` })) }, music: { kind: "covers", covers: ["a".repeat(64), "b".repeat(64)] } } };
         if (args.route.startsWith("/v1/gallery/preview")) return { data: "data:image/png;base64,AAAA" };
         if (args.route.startsWith("/v1/music/cover")) return { data: "data:image/jpeg;base64,BBBB" };
         return {};
@@ -1778,17 +1776,13 @@ test("Folders opens with Just arrived, content tiles, a latest-change line and n
   assert.match(arrivals[2], /So What\.flac/, "deletions are not arrivals");
   assert.equal(JSON.parse(w.document.querySelector(".home-arrival").dataset.id).rev, 9, "an arrival opens its file");
   const cards = [...w.document.querySelectorAll(".folder-card")];
-  assert.equal(cards[0].querySelectorAll(".home-mosaic span").length, 4, "a photo folder shows at most four photos");
-  await until(() => cards[0].querySelectorAll(".home-mosaic img").length === 4);
-  assert.equal(cards[1].querySelectorAll(".home-stack span").length, 2);
-  await until(() => cards[1].querySelectorAll(".home-stack img").length === 2);
-  assert.equal(cards[2].querySelector(".home-mosaic, .home-stack"), null, "an ordinary folder keeps its icon tile");
+  assert.ok(cards[0].querySelector('.home-lead .tile [data-icon="images"], .home-lead .tile svg'), "a photo folder keeps its Images icon");
+  assert.ok(cards[1].querySelector('.home-lead .tile [data-icon="music"], .home-lead .tile svg'), "a music folder keeps its Music icon");
+  assert.equal(cards[0].querySelector("img"), null, "a folder card never shows file content");
   assert.ok(cards[2].querySelector(".home-conflict .home-ring"), "a conflict draws the ring in the warning colour");
-  assert.match(cards[0].querySelector(".home-latest").textContent, /IMG_4412\.jpg · phone-fold · 2 min ago/);
-  assert.match(cards[2].querySelector(".home-latest").textContent, /brief\.md · Local Mac · 2 h ago/, "the latest change skips a deletion");
+  assert.equal(w.document.querySelector(".home-latest"), null, "a card does not name the last file touched");
   for (const card of cards) assert.doesNotMatch(card.textContent, /\/Users\/javi/, "the path lives in the folder detail");
-  assert.equal(routes.filter((route) => route.startsWith("/v1/folder-previews")).length, 1);
-  assert.match(routes.find((route) => route.startsWith("/v1/folder-previews")), /volumes=photos,music,docs/);
+  assert.equal(routes.some((route) => route.startsWith("/v1/folder-previews")), false);
 });
 
 test("a paused replica stays Paused and a live list while the hub is unavailable stays Linked", async (t) => {
