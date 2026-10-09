@@ -154,7 +154,7 @@ export class Music {
       this.s.db.prepare("SELECT 1 FROM gallery_folders WHERE volume=?").get(volume)
     )
       fail(
-        "This folder is a gallery. A folder is a gallery or a music library, not both.",
+        "This folder is a gallery. A folder is a gallery or an audio library, not both.",
         409,
       );
     this.s.db
@@ -391,7 +391,7 @@ export class Music {
   requireLibrary(volume) {
     this.s.volume(volume);
     if (!this.isMusic(volume))
-      fail("This folder is not a music library", 404);
+      fail("This folder is not an audio library", 404);
   }
   library(volume, known = null) {
     this.requireLibrary(volume);

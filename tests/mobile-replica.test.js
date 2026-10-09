@@ -5594,7 +5594,7 @@ test("a phone without its hub drops a deleted track and follows a renamed one, d
   );
 });
 
-test("a phone keeps the hub's music library, its covers and the car's library file in step with its local copy", async (t) => {
+test("a phone keeps the hub's audio library, its covers and the car's library file in step with its local copy", async (t) => {
   const f = await fixture(t),
     { volume, replica, files, daemon } = f;
   const { default: ffmpeg } = await import("ffmpeg-static");

@@ -9,8 +9,10 @@ import React, {
   useState,
 } from "react";
 import {
+  Animated,
   AppState,
   Image,
+  Dimensions,
   Pressable,
   PanResponder,
   ScrollView,
@@ -25,8 +27,10 @@ import {
   Icon,
   MediaPlaceholder,
   Scaffold,
+  SegmentedControl,
   useDesign,
 } from "./components";
+import { Pop, useMotion } from "./motion";
 import {
   mergeTimeline,
   monthLabel,
@@ -36,6 +40,7 @@ import {
   timelineItem,
 } from "./gallery-timeline";
 import {
+  HUB_VIEW_MS,
   hubGallery,
   folderIgnored,
   hubPhotoInfo,
@@ -76,11 +81,13 @@ import {
   neededMonth,
   sectionAt,
 } from "./gallery-layout";
+import { planCell } from "./gallery-days";
 
 const Tile = memo(function Tile({
   item,
   uri,
   size,
+  height = size,
   top,
   left,
   onPress,
@@ -88,10 +95,21 @@ const Tile = memo(function Tile({
   selected,
 }) {
   const { s } = useDesign();
+  const frame = useRef(null);
+  const { duration } = useMotion();
+  const settle = useRef(new Animated.Value(selected ? 0.94 : 1)).current;
+  useEffect(() => {
+    Animated.timing(settle, {
+      toValue: selected ? 0.94 : 1,
+      duration: duration(120),
+      useNativeDriver: true,
+    }).start();
+  }, [selected]);
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [uri]);
   return (
     <Pressable
+      ref={frame}
       accessibilityRole="button"
       accessibilityLabel={
         item.upload
@@ -112,15 +130,22 @@ const Tile = memo(function Tile({
         pressed && s.pressedFade,
         {
           width: size,
-          height: size,
+          height,
           ...(top !== undefined ? { top, left } : {}),
           ...(size < 40 ? { borderRadius: 2 } : {}),
         },
       ]}
-      onPress={() => onPress(item)}
+      onPress={() =>
+        frame.current?.measureInWindow
+          ? frame.current.measureInWindow((x, y, width, height) =>
+              onPress(item, { x, y, width, height }),
+            )
+          : onPress(item)
+      }
       onLongPress={onLongPress && (() => onLongPress(item))}
       accessibilityState={{ selected: !!selected }}
     >
+      <Animated.View style={[s.galleryImage, { transform: [{ scale: settle }] }]}>
       {uri && !failed ? (
         <Image
           source={{ uri }}
@@ -132,10 +157,11 @@ const Tile = memo(function Tile({
       ) : (
         <MediaPlaceholder size={size} video={item.kind === "video"} />
       )}
+      </Animated.View>
       {selected && (
-        <View style={s.photoBadge}>
+        <Pop style={s.photoBadge}>
           <Icon name="check" size={14} color="#fff" />
-        </View>
+        </Pop>
       )}
       {!selected &&
         size >= 40 &&
@@ -185,7 +211,8 @@ export function FolderGallery({
   reconnect,
   columns = 4,
 }) {
-  const { s } = useDesign();
+  const { s, wide } = useDesign();
+  const { duration } = useMotion();
   const linked = connected && !offline;
   const [failures, setFailures] = useState(0);
   const online = linked && failures < 2;
@@ -203,6 +230,29 @@ export function FolderGallery({
   const [measured, setMeasured] = useState(0);
   const [level, setLevel] = useState("base");
   const density = levelColumns(level, columns);
+  const levelName = { base: "Days", compact: "Months", years: "Years" }[level];
+  const pill = useRef(new Animated.Value(0)).current;
+  const [pillAt, setPillAt] = useState(null);
+  const levelSeen = useRef(level);
+  useEffect(() => {
+    if (levelSeen.current === level) return;
+    levelSeen.current = level;
+    setPillAt(Math.max(0, lastScrollY.current - rootTop.current) + 12);
+    pill.setValue(1);
+    Animated.timing(pill, {
+      toValue: 0,
+      delay: duration(1000),
+      duration: duration(200),
+      useNativeDriver: true,
+    }).start();
+  }, [level]);
+  const [memories, setMemories] = useState([]);
+  const today = new Date().toDateString();
+  const memoryDay = useMemo(() => {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return { day: `${pad(now.getMonth() + 1)}-${pad(now.getDate())}`, year: String(now.getFullYear()) };
+  }, [today]);
   const pinch = useRef(null),
     anchor = useRef(null),
     layoutRef = useRef(null);
@@ -445,15 +495,40 @@ export function FolderGallery({
       });
     return list;
   }, [source, months]);
+  useEffect(() => {
+    if (!online || level !== "base") return setMemories([]);
+    let live = true;
+    api(
+      `/v1/gallery/memories?${new URLSearchParams({ volume, ...memoryDay })}`,
+      undefined,
+      { timeout: HUB_VIEW_MS },
+    )
+      .then((result) => live && setMemories((result?.memories || []).slice(0, 3)))
+      .catch(() => live && setMemories([]));
+    return () => {
+      live = false;
+    };
+  }, [online, level, volume, api, memoryDay]);
   const years = useMemo(() => galleryYears(source.timeline), [source.timeline]);
+  const dayItems = useMemo(() => {
+    if (level !== "base") return null;
+    const byDay = new Map();
+    for (const { month, count } of sections) {
+      const items = months.get(month);
+      if (source.months[month]?.complete && items?.length === count)
+        byDay.set(month, items);
+    }
+    return byDay;
+  }, [level, sections, months, source]);
   const layout = useMemo(
     () =>
       galleryLayout(
         sections,
         width,
         density === "years" ? compactColumns(columns) : density,
+        dayItems,
       ),
-    [sections, width, density, columns],
+    [sections, width, density, columns, dayItems],
   );
   const rows = useMemo(
     () =>
@@ -462,8 +537,23 @@ export function FolderGallery({
   );
   const cells = useMemo(() => {
     const list = [];
-    for (const { section, first, last } of rows) {
+    for (const { section, first, last, cells: planned } of rows) {
       const items = months.get(section.month) || [];
+      if (planned) {
+        for (const index of planned) {
+          const place = section.plan.cells[index];
+          list.push({
+            month: section.month,
+            index,
+            item: items[index],
+            top: section.gridTop + place.top,
+            left: place.left,
+            width: place.width,
+            height: place.height,
+          });
+        }
+        continue;
+      }
       for (let row = first; row <= last; row++)
         for (let column = 0; column < layout.columns; column++) {
           const index = row * layout.columns + column;
@@ -995,13 +1085,15 @@ export function FolderGallery({
           const y = localY - canvasTop.current;
           const section = grid.sections[sectionAt(grid, y)];
           if (!section) return;
-          const cell = pinchCell(
-            section.count,
-            grid.columns,
-            grid.step,
-            pageX - x,
-            y - section.gridTop,
-          );
+          const cell = section.plan
+            ? planCell(section.plan, pageX - x, y - section.gridTop)
+            : pinchCell(
+                section.count,
+                grid.columns,
+                grid.step,
+                pageX - x,
+                y - section.gridTop,
+              );
           gesture.anchor = {
             month: section.month,
             index: cell.index,
@@ -1009,7 +1101,7 @@ export function FolderGallery({
               rootTop.current +
               canvasTop.current +
               section.gridTop +
-              cell.row * grid.step -
+              (section.plan ? cell.top : cell.row * grid.step) -
               lastScrollY.current,
           };
         });
@@ -1073,15 +1165,18 @@ export function FolderGallery({
   );
   const actions = useRef({});
   actions.current = {
-    open: (item) =>
+    open: (item, rect) => {
+      const index = photos.findIndex((photo) => photo.path === item.path);
       setViewer({
         items: photos,
-        index: photos.findIndex((photo) => photo.path === item.path),
-      }),
-    press: (item) => {
+        index,
+        origin: rect ? { rect, path: item.path, window: Dimensions.get("window") } : undefined,
+      });
+    },
+    press: (item, rect) => {
       if (Date.now() <= suppressPressUntil.current) return;
       if (selection.length) toggle(item);
-      else actions.current.open(item);
+      else actions.current.open(item, rect);
     },
     select: (item) => {
       if (Date.now() > suppressPressUntil.current) toggle(item);
@@ -1089,7 +1184,7 @@ export function FolderGallery({
   };
   const handlers = useRef({
     open: (item) => actions.current.open(item),
-    press: (item) => actions.current.press(item),
+    press: (item, rect) => actions.current.press(item, rect),
     select: (item) => actions.current.select(item),
   }).current;
   const leave = (action) => (item) => {
@@ -1125,6 +1220,18 @@ export function FolderGallery({
       ref={rootRef}
       {...pinchResponder.panHandlers}
       style={s.timeline}
+      accessibilityActions={[
+        { name: "days", label: "Show days" },
+        { name: "months", label: "Show months" },
+        { name: "years", label: "Show years" },
+      ]}
+      onAccessibilityAction={(event) => {
+        anchor.current = null;
+        yearPositions.current.clear();
+        setLevel(
+          { days: "base", months: "compact", years: "years" }[event.nativeEvent.actionName] || level,
+        );
+      }}
       onLayout={(event) => {
         const { y, width } = event.nativeEvent.layout;
         setWidth(width);
@@ -1155,6 +1262,58 @@ export function FolderGallery({
         </View>
       )}
       {!!notice && <Text style={s.caption}>{notice}</Text>}
+      {wide && (
+        <SegmentedControl
+          value={level}
+          onChange={(next) => {
+            anchor.current = null;
+            yearPositions.current.clear();
+            setLevel(next);
+          }}
+          options={[
+            { value: "years", label: "Years" },
+            { value: "compact", label: "Months" },
+            { value: "base", label: "Days" },
+          ]}
+        />
+      )}
+      {pillAt !== null && (
+        <Animated.View
+          pointerEvents="none"
+          style={[s.levelPill, { top: pillAt, opacity: pill }]}
+        >
+          <Text style={s.levelPillText}>{levelName}</Text>
+        </Animated.View>
+      )}
+      {!!memories.length && level === "base" && (
+        <View style={s.memories}>
+          <Text style={s.eyebrow}>ON THIS DAY</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.memoryRow}>
+            {memories.map((memory) => (
+              <Pressable
+                key={memory.year}
+                accessibilityRole="button"
+                accessibilityLabel={`On this day in ${memory.year}, ${memory.count} ${memory.count === 1 ? "photo" : "photos"}`}
+                style={({ pressed }) => [s.memoryCard, pressed && s.pressed]}
+                onPress={() => {
+                  const section = layout.sections.find(
+                    (item) => item.month === `${memory.year}-${memoryDay.day.slice(0, 2)}`,
+                  );
+                  if (!section) return;
+                  const y = rootTop.current + canvasTop.current + section.top;
+                  positionRef.current?.scrollTo(y);
+                  followRef.current(y);
+                }}
+              >
+                <Text style={s.rowTitle}>{memory.year}</Text>
+                <Text style={s.caption}>
+                  {memory.count.toLocaleString("en")} {memory.count === 1 ? "photo" : "photos"}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {!!pendingItems.length && (
         <View style={s.pendingUploads}>
@@ -1294,13 +1453,29 @@ export function FolderGallery({
                 {monthLabel(section.month)}
               </Text>
             ))}
+          {rows.flatMap(({ section, heads }) =>
+            (heads || []).map((head) => (
+              <View
+                key={`day:${section.month}:${head.top}`}
+                style={[s.dayHead, { top: section.gridTop + head.top }]}
+              >
+                <Text numberOfLines={1} style={[s.rowTitle, s.flex]}>
+                  {head.label}
+                </Text>
+                <Text style={s.caption}>
+                  {head.count.toLocaleString("en")} {head.count === 1 ? "photo" : "photos"}
+                </Text>
+              </View>
+            )),
+          )}
           {cells.map((cell) => {
             const item = cell.item && withNative(cell.item);
             return item ? (
               <Tile
                 key={`${cell.month}:${item.path}`}
                 item={item}
-                size={layout.tile}
+                size={cell.width || layout.tile}
+                height={cell.height}
                 top={cell.top}
                 left={cell.left}
                 uri={thumb(item)}
@@ -1363,6 +1538,7 @@ export function FolderGallery({
       <PhotoViewer
         items={viewer ? viewer.items.map(withNative) : photos}
         index={viewer?.index ?? null}
+        origin={viewer?.origin}
         onClose={() => setViewer(null)}
         onIndexChange={(index) =>
           setViewer((value) => value && { ...value, index })

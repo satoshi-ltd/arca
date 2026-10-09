@@ -112,7 +112,7 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
     "utf8",
   );
   const pairs = {
-    listItemGap: "list-item-gap",
+    rowGap: "row-gap",
     workspaceInset: "space-6",
     desktopTitleFont: "text-title",
     desktopTitleLine: "text-title-line",
@@ -128,8 +128,8 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
     touchControlLine: "touch-control-line",
     touchInputFont: "touch-input-font",
     touchInputLine: "touch-input-line",
-    listRowPaddingY: "list-row-padding-y",
-    listRowPaddingX: "list-row-padding-x",
+    rowPaddingY: "row-padding-y",
+    rowPaddingX: "row-padding-x",
     sectionLabelGap: "section-label-gap",
     sectionGap: "section-gap",
     headerBottomGap: "header-bottom-gap",
@@ -414,7 +414,7 @@ test("sheets share the desktop dialog header anatomy and menus stay compact", ()
   assert.doesNotMatch(sheet, /!menu && \(\s*<Button/);
   assert.match(sheet, /contentContainerStyle=\{menu \? s\.sheetMenu : s\.content\}/);
   assert.match(theme, /sheetHeader: \{[^}]*paddingHorizontal: wide \? g\.workspaceInset : 16,[^}]*borderBottomWidth: 1/);
-  assert.match(theme, /actionRow: \{[^}]*minHeight: g\.touchControlHeight,[^}]*paddingHorizontal: wide \? g\.workspaceInset : 16,/, "action rows align with the sheet title");
+  assert.match(theme, /actionRow: \{[^}]*minHeight: g\.rowMinHeight,[^}]*paddingHorizontal: wide \? g\.workspaceInset : g\.rowPaddingX,/, "action rows align with the sheet title");
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   const header = app.slice(app.indexOf("{shownSheet && (")).match(/\{\.\.\.(\(shownSheet\.kind === "rename-file"[\s\S]*?\))\}\s+busy=/)[1];
   for (const kind of ["rename-file", "gallery", "history-filter", "folder-actions", "select", "conflict"]) {
@@ -929,9 +929,9 @@ test("phone buttons, rows, tabs and photo tiles show a pressed state", () => {
   const components = read("components.jsx");
   assert.match(read("theme.js"), /pressed: \{ backgroundColor: c\.hover \},\s+pressedFade: \{ opacity: 0\.85 \},/);
   assert.match(components, /pressed && !disabled && !busy && \(primary \? s\.pressedFade : s\.pressed\)/, "primary buttons fade, the others fill");
-  assert.match(components, /pressed && !disabled && s\.pressed,\s+disabled && s\.disabled/, "action rows fill");
+  assert.match(components, /pressed && !disabled && s\.pressed,\s+!disabled && pressScale\(pressed, reduce\),\s+disabled && s\.disabled/, "action rows fill");
   assert.match(components, /divider && s\.separator,\s+pressed && !disabled && s\.pressed,/, "folder rows fill");
-  assert.match(components, /pressed && s\.pressed,\s+view === tab && s\.navSelected/, "tabs fill without hiding the selection");
+  assert.match(components, /pressed && s\.pressed,\s+view === tab && !box && s\.navSelected/, "tabs fill without hiding the selection");
   assert.match(read("FolderGallery.jsx"), /pressed && s\.pressedFade,/, "photo tiles fade");
 });
 

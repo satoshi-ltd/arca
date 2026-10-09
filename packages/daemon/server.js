@@ -15,6 +15,8 @@ import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
 import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
 import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
+import { filePreview } from "./file-preview.js";
+import { searchLocal } from "./search.js";
 import { acceptReport, machines } from "./machines.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
 import { listPage, browsePage } from "./pages.js";
@@ -787,6 +789,8 @@ export async function start(home, options = {}) {
       }
       if (
         route === "/v1/gallery" ||
+        route === "/v1/gallery/periods" ||
+        route === "/v1/gallery/memories" ||
         route === "/v1/gallery/preview" ||
         route === "/v1/gallery/info"
       ) {
@@ -823,7 +827,11 @@ export async function start(home, options = {}) {
                 url.searchParams.get("path"),
                 url.searchParams.get("hash"),
               )
-            : route.endsWith("/preview")
+            : route.endsWith("/periods")
+              ? engine.gallery.periods(volume, url.searchParams)
+              : route.endsWith("/memories")
+                ? engine.gallery.memories(volume, url.searchParams)
+                : route.endsWith("/preview")
               ? await engine.gallery.preview(
                   volume,
                   url.searchParams.get("path"),
@@ -832,6 +840,23 @@ export async function start(home, options = {}) {
                   url.searchParams.get("rev"),
                 )
               : await engine.gallery.page(volume, url.searchParams),
+        );
+      }
+      if (req.method === "GET" && route === "/v1/search") {
+        requireAdmin();
+        music();
+        return send(200, searchLocal(s, url.searchParams));
+      }
+      if (req.method === "GET" && route === "/v1/file-preview") {
+        requireAdmin();
+        return send(
+          200,
+          filePreview(
+            s,
+            url.searchParams.get("volume"),
+            url.searchParams.get("path"),
+            url.searchParams.get("hash"),
+          ),
         );
       }
       if (
@@ -909,6 +934,10 @@ export async function start(home, options = {}) {
           pathTransitions: true,
           id: config.id,
           name: config.name,
+          device: device.id,
+          devices: s.db
+            .prepare("SELECT id,name FROM devices WHERE role='replica'")
+            .all(),
           ready: s.volumes().length > 0,
           volumes: s.volumes().map((v) => ({
             id: v.id,
@@ -1468,7 +1497,7 @@ export async function start(home, options = {}) {
           await authorizedWork(() => {
             if (music().isMusic(b.volume))
               fail(
-                "This folder is a music library. A folder is a gallery or a music library, not both.",
+                "This folder is an audio library. A folder is a gallery or an audio library, not both.",
                 409,
               );
             engine.gallery ||= new Gallery(s);
@@ -2172,6 +2201,7 @@ export async function start(home, options = {}) {
               id: catalog.id,
               name: catalog.name,
             };
+            config.hubDevices = [];
             delete config.disconnectedHub;
             config.catalog = catalog.volumes.map((v) => ({
               id: v.id,

@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.12";
+const APP_VERSION = "0.7.34";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -201,6 +201,373 @@ const busyIcon = () =>
   '<span class="busy-grid" aria-hidden="true">' +
   "<i></i>".repeat(9) +
   "</span>";
+const paletteKey = /Mac/i.test(navigator.platform || navigator.userAgent || "") ? "⌘K" : "Ctrl K";
+document.querySelectorAll(".palette-key").forEach((el) => (el.textContent = paletteKey));
+let palette = null;
+const PALETTE_RECENT = "arca-palette-recent";
+const paletteRecent = () => {
+  try {
+    const list = JSON.parse(localStorage.getItem(PALETTE_RECENT) || "[]");
+    return Array.isArray(list) ? list.filter((x) => typeof x === "string").slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+};
+function rememberPalette(query) {
+  const text = query.trim();
+  if (!text) return;
+  try {
+    localStorage.setItem(PALETTE_RECENT, JSON.stringify([text, ...paletteRecent().filter((x) => x !== text)].slice(0, 5)));
+  } catch {
+    /* Private storage only disables recent searches. */
+  }
+}
+function paletteActions() {
+  const paused = status.phase === "paused";
+  return [
+    { type: "action", name: "sync", label: "Sync now", symbol: "refresh-cw" },
+    { type: "action", name: "pause", label: paused ? "Resume sync" : "Pause sync", symbol: paused ? "play" : "pause" },
+    status.role === "hub"
+      ? { type: "action", name: "share", label: "Create shared folder", symbol: "folder-plus" }
+      : { type: "action", name: "add", label: "Choose folders…", symbol: "folder-plus" },
+    { type: "action", name: "settings", label: "Open Settings", symbol: "settings" },
+  ];
+}
+function paletteDialog() {
+  let dialog = document.getElementById("palette");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "palette";
+    dialog.className = "palette";
+    dialog.setAttribute("aria-label", "Search Arca");
+    dialog.addEventListener("close", () => {
+      const back = palette?.opener;
+      clearTimeout(palette?.timer);
+      palette = null;
+      if (back?.isConnected) back.focus();
+    });
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    document.body.append(dialog);
+  }
+  return dialog;
+}
+function paletteRows(data) {
+  const rows = [];
+  const query = palette.query.trim();
+  if (!query) {
+    rows.push(...paletteRecent().map((text) => ({ type: "recent", text, group: "Recent searches" })));
+    rows.push(...paletteActions().map((row) => ({ ...row, group: "Actions" })));
+    return rows;
+  }
+  if (data) {
+    rows.push(...data.folders.map((row) => ({ type: "folder", group: "Folders", count: data.counts.folders, ...row })));
+    rows.push(...data.files.map((row) => ({ type: "file", group: "Files", count: data.counts.files, ...row })));
+    rows.push(...data.photos.map((row) => ({ type: "photo", group: "Photos", count: data.counts.photos, ...row })));
+    rows.push(...data.music.map((row) => ({ type: "music", group: "Music", count: data.counts.music, ...row })));
+  }
+  if (query.length >= 2 && palette.scope === "all")
+    rows.push(...paletteActions().filter((row) => row.label.toLowerCase().includes(query.toLowerCase())).map((row) => ({ ...row, group: "Actions" })));
+  return rows;
+}
+function paletteRowMarkup(row, index) {
+  const active = index === palette.active ? " pal-active" : "";
+  const option = `role="option" aria-selected="${index === palette.active}" id="pal-${index}" data-pal="${index}"`;
+  if (row.type === "recent")
+    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon("clock")}</span><div><strong>${escape(row.text)}</strong></div></div>`;
+  if (row.type === "action")
+    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon(row.symbol)}</span><div><strong>${escape(row.label)}</strong></div></div>`;
+  if (row.type === "folder")
+    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon("folder")}</span><div><strong>${escape(row.name)}</strong></div></div>`;
+  if (row.type === "photo")
+    return `<div class="pal-cell${active}" ${option}><span class="pal-thumb" data-pal-photo="${index}">${icon(row.kind === "video" ? "play" : "image")}</span><span class="pal-cap">${escape(row.name)}</span></div>`;
+  if (row.type === "music")
+    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon("music")}</span><div><strong>${escape(row.title || row.name)}</strong><p>${escape([row.artist, row.album].filter(Boolean).join(" · ") || row.folder)}</p></div></div>`;
+  return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon(fileIcon(row.path))}</span><div><strong>${escape(row.name)}</strong><p>${escape(row.path.includes("/") ? row.path.slice(0, row.path.lastIndexOf("/")) : row.folder)} · ${escape(bytes(row.size))}</p></div></div>`;
+}
+function paintPalette(data) {
+  if (!palette) return;
+  const rows = (palette.rows = paletteRows(data));
+  palette.active = Math.min(palette.active, Math.max(0, rows.length - 1));
+  const body = document.querySelector("#palette .pal-body");
+  const query = palette.query.trim();
+  if (query && data && !rows.length) {
+    body.innerHTML = empty(`No matches for “${escape(query)}”`, "Search covers file names, photos and music held on this device.", "", "search");
+  } else {
+    let html = "";
+    let group = "";
+    const close = () => (group === "Photos" ? "</div></div>" : "</div>");
+    rows.forEach((row, index) => {
+      if (row.group !== group) {
+        if (group) html += close();
+        group = row.group;
+        html += `<div class="pal-group" role="group" aria-label="${escape(group)}"><div class="pal-label"><span>${escape(group)}</span>${row.count ? `<span class="mono">${row.count}</span>` : ""}</div>${group === "Photos" ? '<div class="pal-thumbs">' : ""}`;
+      }
+      html += paletteRowMarkup(row, index);
+    });
+    body.innerHTML = html + (group ? close() : "");
+  }
+  icons();
+  document.querySelector("#palette .pal-input")?.setAttribute("aria-activedescendant", rows.length ? `pal-${palette.active}` : "");
+  document.querySelectorAll("#palette [data-pal-photo]").forEach(async (node) => {
+    const row = rows[Number(node.dataset.palPhoto)];
+    try {
+      const result = await cachedPhoto("/v1/gallery/preview?" + new URLSearchParams({ volume: row.volume, path: row.path, hash: row.hash }));
+      if (!node.isConnected || !result?.data) return;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = result.data;
+      node.replaceChildren(img);
+    } catch {
+      /* A missing preview keeps the icon. */
+    }
+  });
+}
+async function runPalette() {
+  if (!palette) return;
+  const query = palette.query.trim();
+  const serial = ++palette.serial;
+  if (!query) return paintPalette(null);
+  let data = null;
+  try {
+    data = await api(`/v1/search?${new URLSearchParams({ q: query, scope: palette.scope, limit: "6" })}`);
+  } catch {
+    data = { folders: [], files: [], photos: [], music: [], counts: {} };
+  }
+  if (!palette || palette.serial !== serial) return;
+  paintPalette(data);
+}
+function openPalette() {
+  if (!ready || $("#dialog").open) return;
+  if (palette) return void document.getElementById("palette")?.close();
+  const looking = document.getElementById("quicklook");
+  if (looking?.open) looking.close();
+  const dialog = paletteDialog();
+  palette = { query: "", scope: "all", rows: [], active: 0, serial: 0, opener: document.activeElement };
+  dialog.innerHTML = `<div class="pal-field">${icon("search")}<input class="pal-input" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-label="Search Arca" placeholder="Search folders, files, photos and music" autocomplete="off" spellcheck="false"><span class="tag">esc</span></div><div class="pal-scopes"><div class="segmented" role="group" aria-label="Scope">${[["all", "All"], ["files", "Files"], ["photos", "Photos"], ["music", "Music"]].map(([id, label]) => `<button type="button" data-pal-scope="${id}" class="${id === "all" ? "active" : ""}" aria-pressed="${id === "all"}">${label}</button>`).join("")}</div></div><div class="pal-body" id="pal-list" role="listbox"></div><div class="pal-foot"><span class="pal-hint"><span class="tag">↑</span><span class="tag">↓</span>Move</span><span class="pal-hint"><span class="tag">↵</span>Open</span><span class="pal-hint"><span class="tag">esc</span>Close</span><span class="pal-end">This device · ${countLabel(status.volumes.filter((v) => status.role === "hub" || v.selected).length, "folder")}</span></div>`;
+  dialog.showModal();
+  icons();
+  dialog.querySelector(".pal-input").focus();
+  paintPalette(null);
+  if (typeof staggerRows === "function") staggerRows("#palette .pal-row");
+}
+async function activatePalette(index) {
+  const row = palette?.rows[index];
+  if (!row) return;
+  const query = palette.query;
+  if (row.type === "recent") {
+    const input = document.querySelector("#palette .pal-input");
+    input.value = row.text;
+    palette.query = row.text;
+    palette.active = 0;
+    return void runPalette();
+  }
+  document.getElementById("palette").close();
+  if (row.type === "action") {
+    if (row.name === "settings") {
+      view = "settings";
+      detailId = null;
+      await render();
+      updateShell();
+    } else await handle(row.name, "");
+    return;
+  }
+  rememberPalette(query);
+  if (row.type === "folder") {
+    view = "folders";
+    await handle("folder-detail", row.id);
+    updateShell();
+    return;
+  }
+  await handle("activity-file", JSON.stringify({ volume: row.volume, path: row.path, rev: row.rev, deleted: false }));
+}
+document.addEventListener("input", (event) => {
+  if (!palette || !event.target.matches?.("#palette .pal-input")) return;
+  palette.query = event.target.value;
+  palette.active = 0;
+  clearTimeout(palette.timer);
+  palette.timer = setTimeout(runPalette, event.target.value.trim() ? 120 : 0);
+});
+document.addEventListener("click", (event) => {
+  if (!palette) return;
+  const scope = event.target.closest?.("#palette [data-pal-scope]");
+  if (scope) {
+    palette.scope = scope.dataset.palScope;
+    document.querySelectorAll("#palette [data-pal-scope]").forEach((control) => {
+      const on = control === scope;
+      control.classList.toggle("active", on);
+      control.setAttribute("aria-pressed", String(on));
+    });
+    palette.active = 0;
+    void runPalette();
+    return;
+  }
+  const row = event.target.closest?.("#palette [data-pal]");
+  if (row) void activatePalette(Number(row.dataset.pal));
+});
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    openPalette();
+    return;
+  }
+  if (!palette || !document.getElementById("palette")?.open) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const count = palette.rows.length;
+    if (!count) return;
+    palette.active = (palette.active + (event.key === "ArrowDown" ? 1 : count - 1)) % count;
+    document.querySelectorAll("#palette [data-pal]").forEach((row, index) => {
+      row.classList.toggle("pal-active", index === palette.active);
+      row.setAttribute("aria-selected", String(index === palette.active));
+    });
+    document.querySelector(`#palette #pal-${palette.active}`)?.scrollIntoView?.({ block: "nearest" });
+    document.querySelector("#palette .pal-input")?.setAttribute("aria-activedescendant", `pal-${palette.active}`);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    void activatePalette(palette.active);
+  }
+});
+const TEXT_NAME = /\.(txt|md|markdown|mdx|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|tsv|log|xml|html?|css|scss|js|mjs|cjs|jsx|ts|tsx|py|rb|go|rs|c|h|cc|cpp|hpp|java|kt|swift|sh|bash|zsh|sql|env|gitignore|arcaignore)$/i;
+function previewKind(name) {
+  return /\.(jpe?g|png|webp|gif|avif|hei[cf])$/i.test(name)
+    ? "image"
+    : /\.(mp4|mov|m4v|webm)$/i.test(name)
+      ? "video"
+      : /\.(mp3|m4a|flac|wav|ogg|opus|aac|aiff?)$/i.test(name)
+        ? "audio"
+        : TEXT_NAME.test(name)
+          ? "text"
+          : "none";
+}
+const previewQuery = (volume, path, hash, large) =>
+  new URLSearchParams({ volume, path, hash, ...(large ? { size: "large" } : {}) });
+async function loadPreview(volume, path, hash, large = true) {
+  const kind = previewKind(path);
+  if (kind === "image" || kind === "video") {
+    const result = await cachedPhoto(`/v1/gallery/preview?${previewQuery(volume, path, hash, large && kind === "image")}`);
+    return result?.data ? { kind, data: result.data } : { kind: "none" };
+  }
+  if (kind === "text") {
+    const result = await api(`/v1/file-preview?${previewQuery(volume, path, hash)}`);
+    return result.kind === "text" ? { kind, lines: result.lines, truncated: result.truncated } : { kind: "none" };
+  }
+  return { kind };
+}
+function previewBody(preview, name) {
+  if (preview.data) return `<img alt="${escape(name)}" src="${escape(preview.data)}">`;
+  if (preview.lines)
+    return `<pre class="ql-text">${escape(preview.lines.join("\n"))}${preview.truncated ? "\n…" : ""}</pre>`;
+  return `<span class="ql-icon">${icon(fileIcon(name))}</span>`;
+}
+let quick = null;
+function quickDialog() {
+  let dialog = document.getElementById("quicklook");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "quicklook";
+    dialog.className = "quicklook";
+    dialog.addEventListener("close", () => {
+      const row = quick?.rows[quick.index]?.el;
+      quick = null;
+      if (row?.isConnected) row.focus();
+    });
+    document.body.append(dialog);
+  }
+  return dialog;
+}
+async function showQuick(index) {
+  if (!quick) return;
+  quick.index = index;
+  const row = quick.rows[index];
+  const name = row.name;
+  const dialog = quickDialog();
+  const id = JSON.parse(row.id);
+  const kind = previewKind(name);
+  const serial = (quick.serial = (quick.serial || 0) + 1);
+  const meta = [bytes(row.size || 0), (name.split(".").pop() || "").toUpperCase()].filter(Boolean).map((x) => `<span>${escape(x)}</span>`).join("");
+  dialog.innerHTML = `<div class="ql-bar"><div class="tile">${icon(fileIcon(name))}</div><div class="ql-title"><strong>${escape(name)}</strong><p>${index + 1} of ${quick.rows.length} in this folder</p></div><button type="button" class="ghost icon-button" data-ql="prev" aria-label="Previous file"${index === 0 ? " disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="ghost icon-button" data-ql="next" aria-label="Next file"${index === quick.rows.length - 1 ? " disabled" : ""}>${icon("chevron-right")}</button><button type="button" class="secondary small-button" data-ql="open">Open</button><button type="button" class="ghost icon-button" data-ql="close" aria-label="Close">${icon("x")}</button></div><div class="ql-stage" aria-busy="${kind !== "audio" && kind !== "none"}"><span class="ql-icon">${icon(fileIcon(name))}</span></div><div class="ql-meta">${meta}</div><div class="ql-foot"><span class="ql-hint"><span class="tag">←</span><span class="tag">→</span>Previous and next</span><span class="ql-hint"><span class="tag">Space</span>Close</span><span class="ql-hint"><span class="tag">↵</span>Open file</span></div>`;
+  dialog.setAttribute("aria-label", `Quick Look ${name}`);
+  if (!dialog.open) {
+    dialog.showModal();
+    dialog.tabIndex = -1;
+    dialog.focus();
+  }
+  icons();
+  if (kind === "none" || kind === "audio" || !row.hash) {
+    dialog.querySelector(".ql-stage").setAttribute("aria-busy", "false");
+    return;
+  }
+  try {
+    const preview = await loadPreview(id.volume, id.path, row.hash);
+    if (!quick || quick.serial !== serial) return;
+    const stage = dialog.querySelector(".ql-stage");
+    stage.innerHTML = previewBody(preview, name);
+    stage.setAttribute("aria-busy", "false");
+    icons();
+  } catch {
+    if (quick?.serial === serial) dialog.querySelector(".ql-stage")?.setAttribute("aria-busy", "false");
+  }
+}
+function openQuickLook(row) {
+  const nodes = [...document.querySelectorAll('#content .browser-file-row[data-action="activity-file"]')];
+  const index = nodes.indexOf(row);
+  if (index < 0) return;
+  const rows = nodes.map((el) => ({ el, id: el.dataset.id, name: el.dataset.name, hash: el.dataset.hash, size: Number(el.dataset.size) || 0 }));
+  quick = { rows, index, serial: 0 };
+  void showQuick(index);
+}
+document.addEventListener("click", (event) => {
+  const control = event.target.closest?.("#quicklook [data-ql]");
+  if (!control || !quick) return;
+  const dialog = document.getElementById("quicklook");
+  const action = control.dataset.ql;
+  if (action === "close") dialog.close();
+  else if (action === "prev" && quick.index > 0) void showQuick(quick.index - 1);
+  else if (action === "next" && quick.index < quick.rows.length - 1) void showQuick(quick.index + 1);
+  else if (action === "open") {
+    const row = quick.rows[quick.index];
+    dialog.close();
+    void handle("activity-file", row.id);
+  }
+});
+document.addEventListener("keydown", (event) => {
+  const dialog = document.getElementById("quicklook");
+  if (!quick || !dialog?.open || palette) return;
+  if (event.key === "ArrowLeft" && quick.index > 0) {
+    event.preventDefault();
+    void showQuick(quick.index - 1);
+  } else if (event.key === "ArrowRight" && quick.index < quick.rows.length - 1) {
+    event.preventDefault();
+    void showQuick(quick.index + 1);
+  } else if (event.key === " ") {
+    event.preventDefault();
+    if (!event.repeat) dialog.close();
+  } else if (event.key === "Enter" && !event.target.closest?.("button")) {
+    event.preventDefault();
+    const row = quick.rows[quick.index];
+    dialog.close();
+    void handle("activity-file", row.id);
+  }
+});
+async function hydrateFileHeroes() {
+  for (const hero of document.querySelectorAll(".file-hero:not([data-loaded])")) {
+    hero.dataset.loaded = "true";
+    try {
+      const preview = await loadPreview(hero.dataset.volume, hero.dataset.path, hero.dataset.hash, false);
+      if (!hero.isConnected || preview.kind === "none") {
+        if (hero.isConnected) hero.remove();
+        continue;
+      }
+      hero.querySelector(".file-hero-stage").innerHTML = previewBody(preview, hero.dataset.path.split("/").pop());
+      hero.removeAttribute("aria-busy");
+      icons();
+    } catch {
+      hero.remove();
+    }
+  }
+}
 function rowPreview(row, fallback, historical = false) {
   if (
     row.directory ||
@@ -287,6 +654,7 @@ function mountRowPreviews() {
 }
 function icons() {
   mountRowPreviews();
+  if (typeof hydrateFileHeroes === "function") void hydrateFileHeroes();
   document.querySelectorAll("[data-icon]").forEach((el) => {
     const name = el.dataset.icon.replace(/(^|-)([a-z0-9])/g, (_, a, b) =>
       b.toUpperCase(),
@@ -1134,24 +1502,32 @@ async function refresh(renderView = true) {
         volume.policyError ||
         (p
           ? progressLabel(p)
-          : `${countLabel(volume.files || 0, "file")} · ${bytes(volume.bytes)} · ${volume.path || "Not on this device"}`);
-      let progress = row.querySelector("progress");
-      if (!p) {
-        progress?.remove();
+          : `${countLabel(volume.files || 0, "file")} · ${bytes(volume.bytes)}`);
+      const lead = row.querySelector(".home-lead");
+      if (!lead) continue;
+      let ring = lead.querySelector(".home-ring");
+      const determinate = p && Number.isFinite(p.filesTotal) && p.filesTotal > 0;
+      if (!determinate) {
+        if (!volume.conflicts) ring?.remove();
+        else ring?.querySelector(".home-ring-fill")?.removeAttribute("stroke-dasharray");
+        lead.removeAttribute("aria-label");
+        lead.removeAttribute("role");
         continue;
       }
-      if (!progress) {
-        progress = document.createElement("progress");
-        row.querySelector(".row-main").append(progress);
+      if (!ring) {
+        lead.insertAdjacentHTML(
+          "afterbegin",
+          '<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="home-ring-track" cx="24" cy="24" r="22" /><circle class="home-ring-fill" cx="24" cy="24" r="22" pathLength="100" /></svg>',
+        );
+        ring = lead.querySelector(".home-ring");
       }
-      progress.setAttribute(
-        "aria-label",
-        p.stage === "upload" ? "Files sent" : "Files checked",
+      lead.setAttribute("role", "status");
+      lead.setAttribute("aria-label", ringLabel(p));
+      const fill = ring.querySelector(".home-ring-fill");
+      fill.setAttribute(
+        "stroke-dasharray",
+        `${Math.min(100, Math.round((100 * (p.filesDone || 0)) / p.filesTotal))} 100`,
       );
-      if (Number.isFinite(p.filesTotal) && p.filesTotal > 0) {
-        progress.max = p.filesTotal;
-        progress.value = p.filesDone || 0;
-      } else progress.removeAttribute("value");
     }
   }
   if (!renderView && view === "folders" && detailId) {
@@ -1308,6 +1684,58 @@ function progressLabel(p) {
       : "";
   return `${count}${size} · ${p.path || (sending ? "Preparing upload" : "Checking hub files")}${transfer}`;
 }
+let homeData = { arrivals: [], at: 0 };
+const baseName = (path) => path.split("/").pop();
+function homeStrip() {
+  if (!homeData.arrivals.length || (status.role !== "hub" && !status.hub)) return "";
+  return section(
+    "Just arrived",
+    `<div class="home-arrivals">${homeData.arrivals
+      .map(
+        (row) =>
+          `<button type="button" class="home-arrival" data-action="activity-file" data-id="${escape(JSON.stringify({ volume: row.volume, path: row.path, rev: row.rev, deleted: false }))}"><span class="tile">${icon(fileIcon(row.path))}</span><span class="home-arrival-text"><strong>${escape(baseName(row.path))}</strong><span>${escape(authorName(row.author))} · ${escape(relative(row.created))}</span></span></button>`,
+      )
+      .join("")}</div>`,
+  );
+}
+const ringLabel = (p) =>
+  `${p.stage === "upload" || p.direction === "upload" ? "Files sent" : "Files checked"}: ${(p.filesDone || 0).toLocaleString("en")} of ${p.filesTotal.toLocaleString("en")}`;
+function homeLead(v, state, p) {
+  const busy = state[2] === "busy";
+  const ring =
+    p?.filesTotal > 0
+      ? Math.min(100, Math.round((100 * (Number(p.filesDone) || 0)) / p.filesTotal))
+      : null;
+  const conflict = Boolean(v.conflicts);
+  const tile = `<div class="tile large"${busy ? ` role="status" aria-label="${escape(state[0])}"` : ""}>${busy ? busyIcon() : icon(folderSymbol(v))}</div>`;
+  const svg =
+    ring !== null || conflict
+      ? `<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true">${conflict ? "" : '<circle class="home-ring-track" cx="24" cy="24" r="22" />'}<circle class="home-ring-fill" cx="24" cy="24" r="22" pathLength="100"${conflict ? "" : ` stroke-dasharray="${ring} 100"`} /></svg>`
+      : "";
+  return `<div class="home-lead${conflict ? " home-conflict" : ""}"${ring !== null ? ` role="status" aria-label="${escape(ringLabel(p))}"` : ""}>${svg}${tile}</div>`;
+}
+let homeHub = "";
+async function loadHome(serial) {
+  const hub = status.hubId || status.id;
+  if (hub !== homeHub) {
+    homeHub = hub;
+    homeData = { arrivals: [], at: 0 };
+  }
+  if (Date.now() - homeData.at < 15000) return;
+  const ids = status.volumes.filter((v) => status.role === "hub" || v.selected).map((v) => v.id);
+  if (!ids.length) return;
+  homeData.at = Date.now();
+  const [activity] = await Promise.allSettled([api("/v1/activity?limit=50&filter=revisions")]);
+  if (hub !== (status.hubId || status.id)) return;
+  const rows = activity.status === "fulfilled" && Array.isArray(activity.value?.versions) ? activity.value.versions : [];
+  const next = {
+    arrivals: rows.filter((r) => !r.deleted).slice(0, 3).map(({ volume, path, rev, created, author }) => ({ volume, path, rev, created, author })),
+    at: Date.now(),
+  };
+  const changed = JSON.stringify(next.arrivals) !== JSON.stringify(homeData.arrivals);
+  homeData = next;
+  if (changed && view === "folders" && !detailId && !$("#dialog").open) await renderView(false);
+}
 function folderRow(v, available = false) {
   const p =
     status.phase !== "paused" &&
@@ -1346,11 +1774,14 @@ function folderRow(v, available = false) {
     ? Number.isFinite(v.files)
       ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`
       : "Not counted yet"
-    : `${countLabel(v.files, "file")} · ${bytes(v.bytes)} · ${escape(v.path || "Not on this device")}`;
+    : `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`;
   if (p) meta = escape(progressLabel(p));
   if (v.sync?.error || v.policyError)
     meta = escape(v.sync?.error || v.policyError);
-  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}><div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div><div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p>${p ? `<progress aria-label="${p.stage === "upload" ? "Files sent" : "Files checked"}" ${p.filesTotal > 0 ? `value="${Number(p.filesDone) || 0}" max="${Number(p.filesTotal)}"` : ""}></progress>` : ""}</div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || ["Up to date", "Offline"].includes(state[0]) ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
+  const lead = available
+    ? `<div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
+    : homeLead(v, state, p);
+  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p></div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || ["Up to date", "Offline"].includes(state[0]) ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
 }
 async function loadCatalog() {
   if (status.role !== "hub" && !status.hub) {
@@ -1427,6 +1858,238 @@ function motionDuration(token) {
     ) || 0
   );
 }
+const reducedMotion = () =>
+  Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+const MOTION_EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+const ROW_SELECTOR =
+  "#content :is(.folder-card, .history-row, .browser-file-row)[data-id], #content .device-row[data-device]";
+function staggerRows(selector = ROW_SELECTOR) {
+  if (reducedMotion()) return;
+  const enter = motionDuration("--motion-enter");
+  const step = motionDuration("--motion-stagger");
+  const rise = tokenPixels("--motion-distance", 8);
+  [...document.querySelectorAll(selector)].slice(0, 6).forEach((row, index) =>
+    row.animate?.(
+      [
+        { opacity: 0, transform: `translateY(${rise}px)` },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: enter, delay: index * step, easing: MOTION_EASE, fill: "backwards" },
+    ),
+  );
+}
+function flipFrames(from, to, uniform = false) {
+  if (!from || !to || reducedMotion()) return null;
+  if (!to.width || !to.height || !from.width || !from.height) return null;
+  if (
+    from.right <= 0 ||
+    from.bottom <= 0 ||
+    from.left >= window.innerWidth ||
+    from.top >= window.innerHeight
+  )
+    return null;
+  const scaleX = from.width / to.width;
+  const scaleY = from.height / to.height;
+  const scale = uniform ? `scale(${Math.min(scaleX, scaleY)})` : `scale(${scaleX}, ${scaleY})`;
+  const shift = uniform
+    ? `translate(${from.left + from.width / 2 - to.left - to.width / 2}px, ${from.top + from.height / 2 - to.top - to.height / 2}px)`
+    : `translate(${from.left - to.left}px, ${from.top - to.top}px)`;
+  const transformOrigin = uniform ? "center" : "top left";
+  return [
+    { transformOrigin, transform: `${shift} ${scale}` },
+    { transformOrigin, transform: "none" },
+  ];
+}
+function flip(element, from, { uniform = false } = {}) {
+  if (!element) return;
+  const frames = flipFrames(from, element.getBoundingClientRect(), uniform);
+  if (frames)
+    element.animate?.(frames, {
+      duration: motionDuration("--motion-shared"),
+      easing: MOTION_EASE,
+    });
+}
+function viewerExit() {
+  const dialog = $("#dialog");
+  if (!dialog?.classList.contains("photo-viewer")) return null;
+  const image = $(".photo-viewer-image");
+  const tile = [...document.querySelectorAll(".photo-thumb[data-photo]")].find(
+    (node) => Number(node.dataset.photo) === galleryView?.selected,
+  );
+  if (!image || !tile || !image.animate) return null;
+  const frames = flipFrames(tile.getBoundingClientRect(), image.getBoundingClientRect(), true);
+  if (!frames) return null;
+  const animation = image.animate([...frames].reverse(), {
+    duration: motionDuration("--motion-shared"),
+    easing: MOTION_EASE,
+    fill: "forwards",
+  });
+  return animation.finished || new Promise((resolve) => setTimeout(resolve, motionDuration("--motion-shared")));
+}
+const segmentedPlaces = new Map();
+function syncSegmented(settle = false) {
+  for (const group of document.querySelectorAll(".segmented")) {
+    let thumb = group.querySelector(":scope > .segmented-thumb");
+    const active = group.querySelector(':scope > button.active, :scope > button[aria-pressed="true"]');
+    if (!active || !group.offsetWidth) {
+      thumb?.remove();
+      if (group.classList.contains("has-thumb")) group.classList.remove("has-thumb");
+      continue;
+    }
+    if (!thumb) {
+      thumb = document.createElement("span");
+      thumb.className = "segmented-thumb";
+      thumb.setAttribute("aria-hidden", "true");
+      group.prepend(thumb);
+    }
+    if (!group.classList.contains("has-thumb")) group.classList.add("has-thumb");
+    const place = {
+      left: active.offsetLeft,
+      top: active.offsetTop,
+      width: active.offsetWidth,
+      height: active.offsetHeight,
+    };
+    thumb.style.left = `${place.left}px`;
+    thumb.style.top = `${place.top}px`;
+    thumb.style.width = `${place.width}px`;
+    thumb.style.height = `${place.height}px`;
+    const key = group.getAttribute("aria-label") || group.className;
+    const memory = segmentedPlaces.get(key);
+    const before =
+      memory && (memory.group === group || Date.now() - memory.at < 800) ? memory.place : null;
+    segmentedPlaces.set(key, { group, place, at: Date.now() });
+    if (
+      before &&
+      !settle &&
+      !reducedMotion() &&
+      (before.left !== place.left || before.top !== place.top || before.width !== place.width)
+    )
+      thumb.animate?.(
+        [
+          {
+            transformOrigin: "top left",
+            transform: `translate(${before.left - place.left}px, ${before.top - place.top}px) scale(${before.width / place.width}, 1)`,
+          },
+          { transformOrigin: "top left", transform: "none" },
+        ],
+        { duration: motionDuration("--motion-fast"), easing: MOTION_EASE },
+      );
+  }
+}
+let segmentedPending = false;
+const segmentedObserver =
+  typeof MutationObserver === "function"
+    ? new MutationObserver(() => {
+    if (segmentedPending) return;
+    segmentedPending = true;
+    const run = () => {
+      segmentedPending = false;
+      if (typeof document === "undefined" || !document.defaultView) return;
+      syncSegmented();
+      segmentedObserver.takeRecords();
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  })
+    : null;
+if (segmentedObserver) {
+  segmentedObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "aria-pressed"],
+  });
+  window.addEventListener("resize", () => syncSegmented(true));
+}
+const microMemory = new Map();
+function noteMicro() {
+  if (reducedMotion() || document.hidden) return;
+  const route = routeURL();
+  const seen = new Map();
+  const keyOf = (element, kind) => {
+    const owner = element.closest("[data-id], [data-device], .stat, .settings-card, .segmented, section");
+    const base = `${route}|${kind}|${owner?.dataset?.id || owner?.dataset?.device || owner?.className || ""}`;
+    const index = seen.get(base) || 0;
+    seen.set(base, index + 1);
+    return `${base}|${index}`;
+  };
+  for (const element of document.querySelectorAll("#content .filter-count, #content .stat > strong:not(.stat-status)")) {
+    const key = keyOf(element, "count");
+    const text = element.textContent;
+    const before = microMemory.get(key);
+    microMemory.set(key, text);
+    if (before !== undefined && before !== text)
+      element.animate?.(
+        [
+          { opacity: 0.4, transform: `translateY(${tokenPixels("--motion-distance", 8) / 2}px)` },
+          { opacity: 1, transform: "none" },
+        ],
+        { duration: motionDuration("--motion-fast"), easing: MOTION_EASE },
+      );
+  }
+  for (const element of document.querySelectorAll("#content .pill")) {
+    const key = keyOf(element, "pill");
+    const state = `${element.className}|${element.textContent}`;
+    const before = microMemory.get(key);
+    microMemory.set(key, state);
+    if (before !== undefined && before !== state)
+      element.animate?.(
+        [{ opacity: 0.35 }, { opacity: 1 }],
+        { duration: motionDuration("--motion-enter"), easing: MOTION_EASE },
+      );
+  }
+  if (microMemory.size > 400) microMemory.delete(microMemory.keys().next().value);
+}
+const rowKey = (row) => row.dataset.id || row.dataset.device;
+let notePending = false;
+const settleTimers = new WeakMap();
+let seenRows = { route: "", keys: new Set() };
+function noteRows() {
+  const route = routeURL();
+  const rows = [...document.querySelectorAll(ROW_SELECTOR)];
+  const keys = new Set(rows.map(rowKey));
+  if (!keys.size && seenRows.route === route) return;
+  if (seenRows.route === route && seenRows.keys.size && !document.hidden && !reducedMotion()) {
+    const lastSeen = rows.findLastIndex((row) => seenRows.keys.has(rowKey(row)));
+    const fresh = rows.filter(
+      (row, index) =>
+        !seenRows.keys.has(rowKey(row)) &&
+        (index < lastSeen || row.matches(".folder-card, .device-row")),
+    );
+    if (fresh.length && fresh.length <= 6)
+      for (const row of fresh) {
+        row.classList.add("row-arrived");
+        row.animate?.(
+          [
+            { opacity: 0, transform: `translateY(${tokenPixels("--motion-distance", 8)}px)` },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration: motionDuration("--motion-enter"), easing: MOTION_EASE },
+        );
+        clearTimeout(settleTimers.get(row));
+        settleTimers.set(
+          row,
+          setTimeout(() => row.classList.remove("row-arrived"), motionDuration("--motion-settle")),
+        );
+      }
+  }
+  seenRows = { route, keys };
+}
+if (typeof MutationObserver === "function" && document.querySelector("#content"))
+  new MutationObserver(() => {
+    if (notePending) return;
+    notePending = true;
+    const run = () => {
+      notePending = false;
+      noteRows();
+      noteMicro();
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  }).observe(
+    document.querySelector("#content"),
+    { childList: true, subtree: true },
+  );
 async function render({ refreshStatus = false } = {}) {
   if (daemonStopped) return renderDaemonStopped();
   placeMusic();
@@ -1444,6 +2107,7 @@ async function render({ refreshStatus = false } = {}) {
       dates: galleryView.dates,
       undated: galleryView.undated,
       month: galleryView.month,
+      days: galleryView.days,
       scroll: galleryView.root.closest(".page")?.scrollTop || 0,
     };
   }
@@ -1460,6 +2124,7 @@ async function render({ refreshStatus = false } = {}) {
   try {
     const painted = status;
     const page = renderView(true, undefined, refreshStatus);
+    const cascade = animatedRoute !== route;
     if (animatedRoute !== route) {
       navigationAnimation?.cancel();
       navigationAnimation = $("#content").animate?.(
@@ -1489,6 +2154,7 @@ async function render({ refreshStatus = false } = {}) {
         })
       : null;
     const results = await Promise.allSettled([page, state]);
+    if (cascade && serial === renderSerial) staggerRows();
     const failed = results.find((result) => result.status === "rejected");
     // The view just painted is current; the next poll repaints only if status really changes.
     if (!failed && serial === renderSerial && status === painted)
@@ -1545,6 +2211,7 @@ async function renderView(
     html += '<div class="page">';
     if (status.role !== "hub" && !status.hub)
       html += section("Hub connection", hubConnection());
+    else html += homeStrip();
     const shown = status.role === "hub" ? status.volumes : selected;
     html += section(
       status.role === "hub"
@@ -1574,6 +2241,7 @@ async function renderView(
     )
       html += section("On hub · not selected", scaffoldRow("card", true));
     content.innerHTML = html + "</div>";
+    if (status.role === "hub" || status.hub) void loadHome(serial);
     if (refreshCatalog && status.role !== "hub") {
       icons();
       const previous = JSON.stringify([catalog, catalogHubName, catalogLoaded]);
@@ -1746,7 +2414,11 @@ function fileHistorySummary() {
   if (current && !current.created)
     return `<div class="file-history-summary"><p class="hint">Local copy · ${bytes(current.size)} · hub history unavailable</p></div>`;
   const available = current && !current.deleted;
-  return `<div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest version</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : historyOffline ? "No saved versions" : "No retained versions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
+  const hero =
+    available && current.hash && previewKind(historyPath) !== "none" && previewKind(historyPath) !== "audio"
+      ? `<div class="file-hero" aria-busy="true" data-volume="${escape(historyVolume)}" data-path="${escape(historyPath)}" data-hash="${escape(current.hash)}"><div class="file-hero-stage"><span class="ql-icon">${icon(fileIcon(historyPath))}</span></div></div>`
+      : "";
+  return `<div class="file-history-summary">${hero}<div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest version</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : historyOffline ? "No saved versions" : "No retained versions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
 }
 
 function fileHistorySide() {
@@ -1909,6 +2581,20 @@ let galleryReturn = null;
 let galleryView = null,
   folderViewId = null,
   folderReturn = { tab: "files", scroll: 0 };
+const GALLERY_HERO_AT = 8;
+const GALLERY_QUIET_BELOW = 4;
+const GALLERY_SIDE_TILES = 4;
+const galleryDayHeading = (key) => {
+  const d = new Date(`${key}T12:00:00`);
+  const part = (options) => d.toLocaleDateString("en", options);
+  return `${part({ weekday: "long" })} ${d.getDate()} ${part({ month: "long" })}`;
+};
+const galleryRange = (days) => {
+  const sorted = [...days].sort();
+  const first = new Date(`${sorted[0]}T12:00:00`);
+  const last = new Date(`${sorted.at(-1)}T12:00:00`);
+  return `${first.getDate()}–${last.getDate()} ${last.toLocaleDateString("en", { month: "long" })}`;
+};
 function mountGallery(volume) {
   galleryView?.observer?.disconnect();
   galleryView?.moreObserver?.disconnect();
@@ -1931,6 +2617,8 @@ function mountGallery(volume) {
     poll: null,
     queue: [],
     workers: 0,
+    days: {},
+    plans: {},
   });
   const current = () => galleryView === state && root.isConnected;
   let hoverVideo = null;
@@ -1947,6 +2635,90 @@ function mountGallery(volume) {
     }
   };
   state.stopHover = stopHover;
+  const tileImage = async (button, item) => {
+    try {
+      const result = await cachedPhoto(previewRoute(item));
+      if (!current() || !button.isConnected || !result.data) return;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = result.data;
+      button.prepend(img);
+    } catch {
+      /* A missing preview leaves the placeholder. */
+    }
+  };
+  const periodLabel = (period) =>
+    period.length === 4
+      ? period
+      : new Date(`${period}-01T12:00:00`).toLocaleDateString("en", { month: "short", year: "numeric" });
+  async function showPeriods(level) {
+    const box = root.querySelector(".photo-periods");
+    const seek = state.seek;
+    let data;
+    try {
+      data = await api(`/v1/gallery/periods?${new URLSearchParams({ volume, level: level === "years" ? "year" : "month" })}`);
+    } catch {
+      if (current() && galleryZoom === level) box.textContent = "Could not load this view.";
+      return;
+    }
+    if (!current() || galleryZoom !== level || state.seek !== seek) return;
+    box.innerHTML = `<div class="period-grid period-${level}">${data.periods
+      .map(
+        (p) =>
+          `<button type="button" class="period-tile" data-period="${escape(p.period)}" aria-label="${escape(`${periodLabel(p.period)}, ${countLabel(p.count, "photo")}`)}"><span class="period-name">${escape(periodLabel(p.period))}</span><span class="period-count">${p.count.toLocaleString("en")}</span></button>`,
+      )
+      .join("")}</div>`;
+    box.querySelectorAll(".period-tile").forEach((tile, index) => {
+      const p = data.periods[index];
+      tileImage(tile, p);
+      tile.onclick = () => {
+        galleryZoom = "days";
+        state.setZoom();
+        seekMonth(level === "years" ? p.latest || `${p.period}-12` : p.period);
+      };
+    });
+  }
+  state.setZoom = () => {
+    const periods = galleryZoom !== "days";
+    root.classList.toggle("gallery-periods-view", periods);
+    root.querySelector(".photo-periods").hidden = !periods;
+    document
+      .querySelectorAll('.gallery-zoom button[data-action="gallery-zoom"]')
+      .forEach((control) => {
+        const on = control.dataset.id === galleryZoom;
+        control.classList.toggle("active", on);
+        control.setAttribute("aria-pressed", String(on));
+      });
+    if (periods) showPeriods(galleryZoom);
+    else root.querySelector(".photo-periods").replaceChildren();
+  };
+  const showMemories = async () => {
+    const box = root.querySelector(".photo-memories");
+    const now = new Date();
+    const day = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    try {
+      const data = await api(`/v1/gallery/memories?${new URLSearchParams({ volume, day, year: String(now.getFullYear()) })}`);
+      if (!current() || !data.memories.length) {
+        if (current()) box.hidden = true;
+        return;
+      }
+      box.hidden = Boolean(state.month);
+      box.innerHTML = `<div class="section-label">On this day</div><div class="memory-grid">${data.memories
+        .slice(0, 4)
+        .map((m) => {
+          const ago = now.getFullYear() - Number(m.year);
+          return `<button type="button" class="memory-card" data-year="${escape(m.year)}"><span class="memory-title">${escape(new Date(`${m.year}-${day}T12:00:00`).toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric" }))}</span><span class="memory-sub">${ago === 1 ? "1 year ago" : `${ago} years ago`} · ${escape(countLabel(m.count, "photo"))}</span></button>`;
+        })
+        .join("")}</div>`;
+      box.querySelectorAll(".memory-card").forEach((card, index) => {
+        tileImage(card, data.memories[index]);
+        card.onclick = () => seekMonth(`${data.memories[index].year}-${day.slice(0, 2)}`);
+      });
+    } catch {
+      if (current()) box.hidden = true;
+    }
+  };
+  state.showMemories = showMemories;
   const previewVideo = (tile, item, event) => {
     if (
       event.pointerType !== "mouse" ||
@@ -2108,6 +2880,8 @@ function mountGallery(volume) {
       state.queue = state.queue.filter((queued) => queued !== tile);
       tile.remove();
     }
+    for (const block of root.querySelectorAll(".photo-block"))
+      if (!block.querySelector(".photo-thumb")) block.remove();
     for (const group of root.querySelectorAll(".photo-day"))
       if (!group.querySelector(".photo-thumb")) group.remove();
     updateSelection();
@@ -2155,12 +2929,66 @@ function mountGallery(volume) {
       if (row.length) place(false);
     }
   }
+  const monthPlan = (month) => {
+    const days = Object.keys(state.days)
+      .filter((key) => key.length === 10 && key.startsWith(month))
+      .sort()
+      .reverse();
+    if (!days.length) return null;
+    const blocks = [];
+    for (const key of days) {
+      const count = state.days[key];
+      const last = blocks.at(-1);
+      if (count < GALLERY_QUIET_BELOW && last?.kind === "quiet") {
+        last.days.push(key);
+        last.count += count;
+      } else
+        blocks.push({
+          kind: count >= GALLERY_HERO_AT ? "hero" : count < GALLERY_QUIET_BELOW ? "quiet" : "day",
+          days: [key],
+          count,
+        });
+    }
+    for (const block of blocks)
+      if (block.kind === "quiet" && block.days.length === 1) block.kind = "day";
+    return { blocks, of: new Map(blocks.flatMap((block) => block.days.map((key) => [key, block]))) };
+  };
+  const blockHeading = (block) => {
+    const label =
+      block.kind === "quiet"
+        ? galleryRange(block.days)
+        : galleryDayHeading(block.days[0]);
+    return `<h3>${escape(label)}<span class="photo-count">${escape(countLabel(block.count, "photo"))}</span></h3>`;
+  };
+  function gridFor(group, month, dayKey) {
+    const plan = (state.plans[month] ||= monthPlan(month) || false);
+    const block = plan && dayKey.length === 10 && plan.of.get(dayKey);
+    if (!block) return group.querySelector(".photo-grid");
+    let element = [...group.querySelectorAll(".photo-block")].find(
+      (el) => el.dataset.block === block.days[0],
+    );
+    if (!element) {
+      element = document.createElement("div");
+      element.className = `photo-block photo-block-${block.kind}`;
+      element.dataset.block = block.days[0];
+      element.innerHTML = `${blockHeading(block)}${block.kind === "hero" ? '<div class="photo-mosaic"><div class="photo-hero"></div><div class="photo-side"></div></div>' : ""}<div class="photo-grid"></div>`;
+      group.append(element);
+    }
+    const placed = Number(element.dataset.placed || 0);
+    element.dataset.placed = String(placed + 1);
+    if (block.kind === "hero" && placed === 0)
+      return element.querySelector(".photo-hero");
+    if (block.kind === "hero" && placed <= GALLERY_SIDE_TILES)
+      return element.querySelector(".photo-side");
+    return element.querySelector(".photo-grid");
+  }
   function addItems(items) {
     for (const item of items) {
       if (state.paths.has(item.path)) continue;
       state.paths.add(item.path);
       const index = state.items.push(item) - 1;
-      const day = (item.date || item.captured)?.slice(0, 7) || "unknown";
+      const dayKey = (item.date || item.captured)?.slice(0, 10) || "";
+      const day = dayKey.slice(0, 7) || "unknown";
       let group = [...root.querySelectorAll(".photo-day")].find(
         (el) => el.dataset.day === day,
       );
@@ -2194,7 +3022,7 @@ function mountGallery(volume) {
       tile.querySelector(".photo-open").onclick = () =>
         state.selection.size ? togglePhoto(item) : openGalleryPhoto(index);
       tile.querySelector(".photo-select").onclick = () => togglePhoto(item);
-      group.querySelector(".photo-grid").append(tile);
+      gridFor(group, day, dayKey).append(tile);
       if (item.kind === "image" || item.kind === "video") {
         if (state.observer) state.observer.observe(tile);
         else {
@@ -2432,6 +3260,8 @@ function mountGallery(volume) {
         root.querySelector(".photo-timeline").replaceChildren();
       }
       updateTimeline(data);
+      Object.assign(state.days, data.days);
+      state.plans = {};
       addItems(data.items);
       if (first) state.previous = data.previous ?? null;
       state.next = data.next;
@@ -2528,6 +3358,8 @@ function mountGallery(volume) {
         state.previous = null;
         return;
       }
+      Object.assign(state.days, data.days);
+      state.plans = {};
       replaceItems([...data.items, ...state.items]);
       state.range = { from: data.items[0].cursor };
       state.previous = data.previous ?? null;
@@ -2574,6 +3406,8 @@ function mountGallery(volume) {
         )
           return;
         items.push(...data.items);
+        Object.assign(state.days, data.days);
+        state.plans = {};
         after = data.next;
         if (!after) break;
       }
@@ -2716,12 +3550,15 @@ function mountGallery(volume) {
       previous: saved.previous,
       range: saved.range,
       month: saved.month,
+      days: saved.days || {},
     });
     updateTimeline({ timeline: saved.dates, undated: saved.undated });
     addItems(saved.items.filter((item) => !item.deleted));
     root.querySelector(".photo-more").hidden = !state.next;
     page.scrollTop = saved.scroll;
   } else state.load();
+  state.setZoom();
+  state.showMemories();
 }
 function galleryCanDelete() {
   return (
@@ -2947,6 +3784,13 @@ async function openGalleryPhoto(index) {
     true,
   );
   $("#dialog").className = "photo-viewer";
+  flip(
+    $(".photo-viewer-image"),
+    [...document.querySelectorAll(".photo-thumb[data-photo]")]
+      .find((tile) => Number(tile.dataset.photo) === index)
+      ?.getBoundingClientRect(),
+    { uniform: true },
+  );
   $("#submit-dialog").hidden = true;
   $("#cancel-dialog").innerHTML = icon("arrow-left");
   $("#cancel-dialog").setAttribute("aria-label", "Back to gallery");
@@ -3194,15 +4038,33 @@ function folderActionsMenu(volume) {
   const items =
     (ordinary
       ? button("Enable gallery", "enable-gallery", volume.id, "secondary", "images") +
-        button("Enable music library", "enable-music", volume.id, "secondary", "music")
+        button("Enable audio library", "enable-music", volume.id, "secondary", "music")
       : "") +
     button("Rename", "rename-share", volume.id, "secondary", "pencil") +
     button(".arcaignore…", "edit-ignore", volume.id, "secondary", "file-pen-line");
   return `<details class="details-menu folder-actions-menu"><summary class="icon-button" aria-label="Folder actions">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
 }
-function galleryModeButton(volume) {
+let galleryZoom = "days";
+const galleryZooms = [
+  ["years", "Years"],
+  ["months", "Months"],
+  ["days", "Days"],
+];
+function galleryZoomControl() {
+  return segmented(
+    "Gallery zoom",
+    galleryZooms.map(([id, label]) => ({
+      action: "gallery-zoom",
+      id,
+      label,
+      active: galleryZoom === id,
+    })),
+    "gallery-zoom",
+  );
+}
+function galleryModeButton(volume, withZoom = true) {
   if (!volume.gallery) return "";
-  return button(
+  return (withZoom && folderTab === "gallery" ? galleryZoomControl() : "") + button(
     folderTab === "gallery" ? "View folder" : "Gallery",
     "gallery-mode",
     volume.id,
@@ -3229,7 +4091,7 @@ async function folderBrowser(v, recent, pending = false) {
     ],
   )}<div>${folderTab === "files" ? `<button class="icon-button" data-action="folder-search-toggle" aria-label="${folderSearchOpen ? "Close search" : "Search files"}">${icon(folderSearchOpen ? "x" : "search")}</button>` : folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
   if (folderTab === "gallery")
-    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
+    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v, false)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-memories" hidden></div><div class="photo-periods" hidden></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
   if (folderTab === "recent" && !recent) return tools + scaffoldRow("history");
   if (folderTab === "recent")
     return (
@@ -3282,7 +4144,7 @@ async function folderBrowser(v, recent, pending = false) {
       search +
       `<div class="history-group folder-explorer">${trail}` +
       (data.entries.length
-        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}" aria-label="${escape(`Open ${row.name}`)}">${rowPreview({ ...row, volume: v.id }, fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
+        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}"${row.directory ? "" : ` data-hash="${escape(row.hash || "")}" data-size="${Number(row.size) || 0}" data-name="${escape(row.name)}"`} aria-label="${escape(`Open ${row.name}`)}">${rowPreview({ ...row, volume: v.id }, fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
         : empty(
             folderSearch ? "No matching files" : "This folder is empty",
             "",
@@ -3699,7 +4561,7 @@ function renderMusic(v, scroll = null) {
   const body = entry
     ? musicBody(v, entry)
     : failure
-      ? empty("Library unavailable", "Arca could not read this music library. Try again.", button("Retry", "music-retry", "", "secondary"), "music")
+      ? empty("Library unavailable", "Arca could not read this audio library. Try again.", button("Retry", "music-retry", "", "secondary"), "music")
       : scaffoldRow("card");
   content.innerHTML = `<div class="detail-head">${head}</div><div class="page music-page">${body}</div>`;
   content.dataset.detail = v.id;
@@ -4866,7 +5728,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
           .map((m) =>
             row(
               m.name,
-              roleTag(m.role),
+              `${roleTag(m.role)}${m.backup?.enabled ? '<span class="tag">Backs up hub</span>' : ""}`,
               [
                 connection(
                   peers.find(
@@ -5375,13 +6237,23 @@ function bindDialog(dialog) {
     dialog.close();
     dialog.restore?.();
   };
+  let leaving = false;
   const dismiss = () => {
     if (pending) {
       pending.detached = true;
       pending = null;
       idle();
     }
-    close();
+    if (leaving) return;
+    const exit = viewerExit();
+    if (!exit) return close();
+    leaving = true;
+    Promise.resolve(exit)
+      .catch(() => {})
+      .then(() => {
+        leaving = false;
+        close();
+      });
   };
   cancel.onclick = dismiss;
   dialog.addEventListener("cancel", (event) => {
@@ -5704,13 +6576,17 @@ async function copyFeedback(control, value) {
   const previous = copyStates.get(control);
   if (previous) clearTimeout(previous.timer);
   const original = previous?.original || control.innerHTML;
-  control.innerHTML = icon("check") + "Copied";
+  control.innerHTML = icon("check") + '<span class="copy-label">Copied</span>';
+  control.classList.add("copy-confirmed");
   control.setAttribute("aria-live", "polite");
   icons();
   const timer = setTimeout(() => {
-    if (control.isConnected) control.innerHTML = original;
+    if (control.isConnected) {
+      control.innerHTML = original;
+      control.classList.remove("copy-confirmed");
+    }
     copyStates.delete(control);
-  }, 2000);
+  }, 1500);
   copyStates.set(control, { original, timer });
 }
 async function copy(value) {
@@ -5746,10 +6622,11 @@ async function copy(value) {
 }
 
 function authorName(id) {
-  if (id === status.id) return status.name;
+  if (id === status.id || (status.deviceId && id === status.deviceId)) return status.name;
   if (id === status.hubId) return hubName();
   return (
     status.devices.find((d) => d.id === id)?.name ||
+    status.hubDevices?.find((d) => d.id === id)?.name ||
     `Device ${String(id).slice(0, 8)}`
   );
 }
@@ -5991,7 +6868,7 @@ async function handle(name, id, control) {
   if (name === "enable-music") {
     modal(
       modalHeader(
-        "Enable music library?",
+        "Enable audio library?",
         "Browse and play this folder’s music by artist and album here, on your phone and in the car. Files and synchronization stay the same.",
         "music",
       ),
@@ -5999,8 +6876,14 @@ async function handle(name, id, control) {
         await api("/v1/music/mark", { volume: id });
         folderTab = "library";
       },
-      "Enable music library",
+      "Enable audio library",
     );
+    return;
+  }
+  if (name === "gallery-zoom") {
+    if (galleryZoom === id || !galleryView) return;
+    galleryZoom = id;
+    galleryView.setZoom();
     return;
   }
   if (name === "gallery-mode") {
@@ -6017,6 +6900,7 @@ async function handle(name, id, control) {
         dates: galleryView.dates,
         undated: galleryView.undated,
         month: galleryView.month,
+        days: galleryView.days,
         scroll: $(".page")?.scrollTop || 0,
       };
       folderTab = folderReturn.tab;
@@ -6096,7 +6980,12 @@ async function handle(name, id, control) {
       folderPageCount = 1;
     }
     detailId = id;
+    const from = [...document.querySelectorAll(".folder-card[data-id]")]
+      .find((card) => card.dataset.id === id)
+      ?.querySelector(".home-lead, .tile")
+      ?.getBoundingClientRect();
     await render();
+    flip(document.querySelector(".detail-title .tile"), from);
     return;
   }
   if (name === "folder-history" || name === "folder-conflicts") {
@@ -6117,7 +7006,28 @@ async function handle(name, id, control) {
   if (name === "history-filter") {
     historyFilter = historyFilter === id ? "revisions" : id;
     historyPath = null;
-    await render();
+    if (!$("#history-list")) {
+      await render();
+      return;
+    }
+    for (const button of document.querySelectorAll('[data-action="history-filter"]')) {
+      const on = button.dataset.id === historyFilter;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-pressed", String(on));
+    }
+    const list = $("#history-list");
+    const mine = ++renderSerial;
+    list.style.minHeight = `${list.offsetHeight}px`;
+    try {
+      await renderHistory();
+    } finally {
+      if (mine === renderSerial) list.style.minHeight = "";
+    }
+    if (mine === renderSerial && !reducedMotion())
+      list.animate?.(
+        [{ opacity: 0.55 }, { opacity: 1 }],
+        { duration: motionDuration("--motion-fast"), easing: MOTION_EASE },
+      );
     return;
   }
   if (name === "history-page") {
@@ -6427,6 +7337,7 @@ async function handle(name, id, control) {
     }
     return;
   }
+  if (name === "palette") return openPalette();
   if (name === "sync") {
     await api("/v1/sync", { background: true });
     void background(() => refresh());
@@ -7818,7 +8729,10 @@ document.addEventListener("keydown", (event) => {
     ["Enter", " "].includes(event.key)
   ) {
     event.preventDefault();
-    event.target.click();
+    if (event.key === " " && event.target.dataset.action === "activity-file") {
+      if (!event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey) openQuickLook(event.target);
+    }
+    else event.target.click();
     return;
   }
   if (event.target.id === "music-search-input" && ["Enter", "Escape"].includes(event.key)) {

@@ -1,5 +1,161 @@
 # Changelog
 
+## 0.7.34 — 2026-10-09
+
+- The phone's and the Fold's gallery reads as days: each day has a heading and count, a busy day opens with a large tile, quiet days share one group, a pill names the level while you pinch, the Fold has a Years / Months / Days control and On this day shows earlier years from the hub.
+- Lists share one rhythm on the desktop, the phone and the Fold: cards 12 apart, rows padded 12 by 16, phone rows at least 48 dp tall, labels 8 over their list and sections 24 apart.
+- Small controls answer when touched: cards lift on hover, Copy turns into a tick, menus drop in, changed counts roll and status pills cross-fade on the desktop; the switch knob slides, selected photos settle with a tick and Sync now shows a tick when it finishes on the phone.
+- On the phone, the mini player's cover grows into Now playing, and on the desktop closing the photo viewer shrinks the photo back into its thumbnail.
+- "Music library" is now "audio library" everywhere in the app, so Enable audio library opens the way for podcasts; inside a folder you can swipe from the left edge to go back, and on iOS an arch mark follows the pull on Folders.
+
+Needs: desktop build · native build
+
+## 0.7.33 — 2026-10-09
+
+- On the desktop, choosing Conflicts or Deleted in History no longer redraws the page, so the shake is gone: the buttons and the list update in place with a short fade.
+- The search palette now drops in with its first results rising one after another, and the selected pill of every segmented control, like Artists, Albums, Playlists and Recent, slides to the new choice, on the desktop and on the phone.
+
+Needs: desktop build · native build
+
+## 0.7.32 — 2026-10-09
+
+- A device that backs up the hub, like the umbrel server, now carries a Backs up hub tag in the Devices list on a desktop that is not the hub, and a Backs up hub tag on the phone and the Fold.
+
+Needs: desktop build · native build
+
+## 0.7.31 — 2026-10-09
+
+- On the phone and the Fold, a photo grows out of the tile you tapped and shrinks back into it on Back; on the Fold a folder's icon travels into the folder header.
+- The selected tab's tint slides to the new tab, a syncing folder draws a progress ring around its icon while a file transfers, and pulling Folders down starts a sync.
+- Buttons and action rows shrink slightly while pressed, like folder rows. Reduced motion turns all of it off.
+- Still on the board: the mini player's cover growing into Now playing, the edge swipe back and the arch mark that follows a pull.
+
+Needs: native build
+
+## 0.7.30 — 2026-10-09
+
+- Devices goes back to its list: Hub connection, then one row per device, on the desktop, the phone and the Fold. The network map with its report lines is gone.
+- History goes back to day groups without the 30-day activity strip, the per-device day summaries and the away banner. The activity-days endpoint goes with them.
+
+Needs: Casa redeploy · desktop build · native build
+
+## 0.7.29 — 2026-10-09
+
+- On the phone and the Fold, the first six folders under "Selected on this device" rise in one after another when Folders first shows, and a folder that appears while you are looking at the list rises once and glows briefly, like on the desktop.
+- A folder row you press shrinks slightly under your finger. Reduced motion turns all of it off.
+- The remaining moments of the mobile motion proposal (shared elements, edge swipe, pull to sync, sync ring, tab tint slide) stay on its board until they are built and checked on a device.
+
+Needs: native build
+
+## 0.7.28 — 2026-10-09
+
+- On the desktop and the web, motion shows where things come from: a photo opens from its own thumbnail, a folder card's icon travels into the folder header, and the first rows of a new page rise in one after another.
+- A file that arrives through sync while you are looking at the list rises once and its row glows briefly; rows already there and refreshes stay still. Closing the photo viewer is still immediate.
+- Three new motion tokens (shared, stagger, settle) are zeroed under reduced motion and mirrored for the phone.
+
+Needs: desktop build
+
+## 0.7.27 — 2026-10-09
+
+- Folder cards on the desktop and on the phone go back to the folder's type icon: Images for a photo folder, Music for a music library, Folder for the rest. The photo mosaic, the stack of covers and the line naming the last file touched are gone, along with the read the hub served for the covers. The Just arrived strip and the conflict ring stay.
+
+Needs: Casa redeploy · desktop build · native build
+
+## 0.7.26 — 2026-10-09
+
+- On Android, tapping the mini player opens Now playing as a full page that slides up: Playing from the album or playlist, the cover, the title with the artist and the album as links to their screens, the scrubber, the transport and an Up next row that lifts the queue; tap a track there to play it. On a wide Fold the page fills the window with the queue beside the player.
+- The page uses the accent tint, not a tint taken from the cover, and the cover does not travel from the mini player; both need your validation before they are built. While shuffling, Up next says the order is chosen as you go.
+
+Needs: native build
+
+## 0.7.25 — 2026-10-09
+
+- The phone's photo viewer opens without its bar: tap once to show it with a filmstrip of neighbouring photos and your position, and tap a thumbnail to jump there. Drag the photo down to close it (it shrinks and the background fades; let go early and it springs back), and swipe up to open Info as a sheet; swiping the sheet's header down closes it.
+- On the Fold, Info stays a side panel opened by its button and swiping up does nothing; dragging down still closes. The photo shrinks in place rather than settling into its grid tile. TalkBack and VoiceOver get actions for the details, the controls and closing.
+
+Needs: native build
+
+## 0.7.24 — 2026-10-09
+
+- The phone's Folders has a Search Arca field that opens a full-screen search of file names, photos, folders and music tracks (title, artist, album) across every folder on the phone, with All, Files, Photos and Music scopes, your last searches and quick actions. It reads only what the phone holds, so it works offline.
+- On a wide Fold the search opens as a centred dialog with a preview of the selected result beside the list. Tapping a result opens the folder or the file's detail, not the photo viewer or the album.
+
+Needs: native build
+
+## 0.7.23 — 2026-10-09
+
+- On the phone, image rows in Files show a thumbnail and a long press on any file opens a peek with the photo, or the first lines of a text or Markdown file, plus Open and Share. File detail shows the same preview above its stats.
+- On a wide Fold, tapping a file fills a preview card in the side column instead of leaving the list, with an Open button. HEIC photos keep their icon because the phone cannot draw them, and audio and video keep theirs.
+
+Needs: native build
+
+## 0.7.22 — 2026-10-09
+
+- Command-K (Control-K on Windows, Linux and the web) or the new Search field in the sidebar opens a palette that finds folders, files, photos and music tracks by name from any page, with All, Files, Photos and Music scopes, arrow keys and Enter, and your recent searches. Typing a short action name such as "sync" offers Sync now, Pause sync, Choose folders and Open Settings.
+- A photo or a track opens its file detail from the palette, not the viewer or the album. The search reads only what this device already holds.
+
+Needs: Casa redeploy · desktop build
+
+## 0.7.21 — 2026-10-09
+
+- Press Space on a file in a folder's Files list to open a Quick Look: the photo or a video's poster, or the first lines of a text, Markdown or code file. The arrow keys move through the folder's files, Space or Esc closes it and Enter opens the file.
+- A file's detail page shows the same preview above its stats. Audio and other types keep their icon and metadata, and audio does not play in Quick Look.
+
+Needs: Casa redeploy · desktop build
+
+## 0.7.20 — 2026-10-09
+
+- The phone's Folders opens with a Just arrived row of the three newest changes, and each folder row shows its newest photos or covers, a line with its latest change and its device, and no longer the path. A folder with a conflict draws its tile in the warning colour.
+- The phone draws no progress ring on a syncing folder: it does not report per-folder file counts, so the nine-dot stays.
+
+Needs: native build
+
+## 0.7.19 — 2026-10-09
+
+- Folders opens with a Just arrived strip of the three newest changes across your folders, each with the device that made it, and every folder card now shows what is inside: a photo folder a 2×2 mosaic of its newest photos, a music folder a stack of its newest covers, and a line with its latest change. The path moved to the folder's detail.
+- While a folder syncs, a ring around its tile fills with the files checked or sent, replacing the thin bar; a conflict draws the ring in the warning colour.
+
+Needs: Casa redeploy · desktop build
+
+## 0.7.18 — 2026-10-09
+
+- The desktop and web gallery now reads as days: each month is split by day with headings like "Saturday 12 September · 12 photos", a busy day opens on a large photo beside the next four, and runs of quiet days share one block under their date range. Above the first month, On this day brings back photos taken on today's date in earlier years.
+- A Years / Months / Days control in the gallery header switches density: Years and Months show one representative photo per period with its count and open the days at that period. The default is Days, the photo wall.
+- The hub and replicas answer three new gallery reads (per-day counts, year and month periods, photos from earlier years on a date); only capture dates are used.
+
+Needs: Casa redeploy · desktop build
+
+## 0.7.17 — 2026-10-09
+
+- The phone's History gets the same Last 30 days strip: touch and hold a bar to read its day, lift to jump the list there. Each day heading counts the changes and the devices behind them, and a banner "Changed while you were away" appears when you come back after four hours or more. On a wide Fold the day groups sit beside the selected revision, with its device, time and File history.
+
+Needs: native build · Casa redeploy
+
+## 0.7.16 — 2026-10-09
+
+- History opens with a Last 30 days strip of daily activity: tap or press a bar to jump to that day, and a conflict or a deletion shows as a coloured dot. Each day heading now says how many changes were made and by which devices, and a banner "Changed while you were away" counts what changed since you last had the window open after four hours or more.
+- The hub and replicas answer a new per-day activity read, so a replica shows its hub's counts and keeps the last ones while the hub is away.
+
+Needs: Casa redeploy · desktop build
+
+## 0.7.15 — 2026-10-09
+
+- The phone's Devices screen now shows the same network map: the hub row with a branch to each device, solid when it reported in the last five minutes, dashed when older and absent when it never did, with "Reported 2 min ago" under each name. With the hub away the branches disappear and rows read as last known. On the Fold the map sits in the side column beside the device list and choosing a device highlights its row.
+
+Needs: native build
+
+## 0.7.14 — 2026-10-09
+
+- Devices opens on a Network map: the hub on top and every authorized device under it with the time of its last report. A solid line means a report in the last five minutes, a dashed one an older report and no line that the device never reported. Choosing a device highlights its row below; with the hub away the lines disappear and the times read as last known. The line says when the hub last heard from a device, never that it is synced.
+
+Needs: desktop build
+
+## 0.7.13 — 2026-10-09
+
+- On a desktop or server replica, History, Recent and file detail now name the replica's own changes and every other device by name instead of "Device" plus eight characters. The hub's catalog hands each replica its own device id and the device names, and a replica keeps them for when the hub is away.
+
+Needs: Casa redeploy
+
 ## 0.7.12 — 2026-10-09
 
 - In Android Auto, a long list of artists or albums, or an artist with many albums, now opens on letter folders (A, B, … and # for digits and symbols, splitting further, or into numbered ranges, when a letter is still long), so every artist and album is reachable instead of only the first few hundred.

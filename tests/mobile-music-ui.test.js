@@ -24,14 +24,14 @@ test("a music folder opens on its library, keeps View files in the folder menu a
 });
 
 test("Android back leaves library screens before the folder, and the mini player opens Now playing", () => {
-  const back = app.slice(app.indexOf('addEventListener("hardwareBackPress"'), app.indexOf("const selectTab"));
+  const back = app.slice(app.indexOf("const handler = () => {"), app.indexOf("const selectTab"));
   assert.ok(back.indexOf("musicRoute.length > 1") < back.indexOf("setFolder(null)"));
   assert.match(back, /\[\s*sheet,\s*folder,\s*view,\s*fileActionsOpen,\s*musicView,\s*musicRoute,\s*shownMusic,\s*musicSearch,?\s*\]/);
   assert.ok(back.indexOf('typeof musicSearch === "string"') < back.indexOf("musicRoute.length > 1"), "Back closes an open search before leaving the folder");
   assert.match(back, /musicRoute\.length > 1 &&\s+shownMusic\?\.library\?\.tracks\.size/, "an empty library leaves the folder at once");
-  assert.match(app, /musicFolder && !sheet && \(\s+<MiniPlayer[\s\S]*?open=\{\(\) => setSheet\(\{ kind: "now-playing" \}\)\}/);
+  assert.match(app, /musicFolder && !sheet && \(\s+<MiniPlayer[\s\S]*?open=\{\(\) => setNowPlayingOpen\(true\)\}/);
   assert.ok(app.indexOf("<MiniPlayer") < app.indexOf("<Navigation\n", app.indexOf("<MiniPlayer")), "the mini player sits above the tab bar");
-  assert.match(app, /shownSheet\.kind === "now-playing" && \(\s+<NowPlaying/);
+  assert.match(app, /<NowPlayingPage\s+visible=\{nowPlayingOpen\}/);
 });
 
 test("playing publishes the car library first on Android and opens the file on iPhone", () => {
@@ -77,8 +77,9 @@ test("the library opens on the Artists tab, Recent lists this phone's plays, and
   assert.match(library, /Playback on this iPhone comes in a later version/);
   assert.match(library, /formatDuration\(track\.duration\)/);
   assert.match(library, /label="Shuffle"/);
-  assert.match(library, /command\("repeat", nextRepeat\(state\.repeat\)\)/);
-  assert.match(library, /accessibilityRole="adjustable"/, "the progress bar seeks");
+  const nowPage = read("src/NowPlayingPage.jsx");
+  assert.match(nowPage, /command\("repeat", nextRepeat\(state\.repeat\)\)/);
+  assert.match(nowPage, /accessibilityRole="adjustable"/, "the progress bar seeks");
 });
 
 test("a track still downloading stays in its album, dimmed, labelled and not playable", () => {
@@ -220,12 +221,11 @@ test("Artists lists letter groups 120 artists at a time, no artist cover is roun
   assert.match(kotlin, /private fun artistNode\(artist: MusicArtist\) =\s+MusicNode\([^\n]*group = artist\.letter\)/);
 });
 
-test("Now playing goes to the playing album, and a playlist's rows name each track's album", () => {
-  const now = library.slice(library.indexOf("export function NowPlaying("), library.length);
-  assert.match(now, /export function NowPlaying\(\{ library, cover, command, openAlbum \}\)/);
-  assert.match(now, /\{!!track && \(\s+<Button\s+quiet\s+icon="album"\s+label="Go to album"\s+onPress=\{\(\) => openAlbum\(track\)\}/, "only a track this folder's library knows offers the album");
-  assert.ok(now.indexOf('label="Go to album"') < now.indexOf("s.playerProgressArea"), "the button sits under the title, above the progress bar");
-  assert.match(app, /<NowPlaying[\s\S]*?openAlbum=\{\(track\) => \{\s+setSheet\(null\);\s+setFileView\("music"\);\s+setMusicSearch\(null\);\s+setMusicRoute\(\[\s+\{ kind: "albums" \},\s+\{ kind: "album", id: track\.albumId \},\s+\]\);/, "it closes the sheet and opens the album in this folder's library, even from View files");
+test("Now playing is a full page whose artist and album go to their screens, and a playlist's rows name each track's album", () => {
+  const page = read("src/NowPlayingPage.jsx");
+  assert.match(page, /export function NowPlayingPage\(\{ visible, library, cover, command, play, openAlbum, openArtist, onClose \}\)/);
+  assert.match(page, /accessibilityLabel=\{`Album \$\{track\?\.album \|\| state\.album\}`\}\s+disabled=\{!track\}\s+onPress=\{\(\) => track && openAlbum\(track\)\}/, "only a track this folder's library knows links to its album");
+  assert.match(app, /openAlbum=\{\(track\) => \{\s+setNowPlayingOpen\(false\);\s+setFileView\("music"\);\s+setMusicSearch\(null\);\s+setMusicRoute\(\[\{ kind: "albums" \}, \{ kind: "album", id: track\.albumId \}\]\);/, "it closes the page and opens the album in this folder's library, even from View files");
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
   assert.match(list, /\{numbered && !withAlbum \? track\.artist : `\$\{track\.artist\} · \$\{track\.album\}`\}/);
   const screen = library.slice(library.indexOf("} else if (shownPlaylist)"), library.indexOf("return (", library.indexOf("} else if (shownPlaylist)")));

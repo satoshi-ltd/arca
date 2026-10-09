@@ -238,6 +238,39 @@ test("gallery is explicit, chronological, scoped and respects exclusions even fo
   await assert.rejects(f.api("/v1/gallery?volume=missing"), { status: 404 });
 });
 
+test("the gallery reports per-day counts, year and month periods and photos from earlier years on a date", async (t) => {
+  const f = await fixture(t);
+  const colors = ["red", "green", "blue", "yellow", "purple", "orange", "teal", "pink", "gray"];
+  const dates = [
+    ["a.jpg", "2026-09-12T10:00:00.000Z"],
+    ["b.jpg", "2026-09-12T11:00:00.000Z"],
+    ["c.jpg", "2026-09-11T09:00:00.000Z"],
+    ["d.jpg", "2025-09-12T09:00:00.000Z"],
+    ["e.jpg", "2025-09-12T10:00:00.000Z"],
+    ["f.jpg", "2025-09-12T11:00:00.000Z"],
+    ["g.jpg", "2024-09-12T08:00:00.000Z"],
+    ["h.jpg", "2024-03-01T08:00:00.000Z"],
+  ];
+  for (const [index, [name, captured]] of dates.entries()) await f.photo(name, captured, colors[index]);
+  const page = await f.api(f.route);
+  assert.equal(page.days["2026-09-12"], 2);
+  assert.equal(page.days["2026-09-11"], 1);
+  assert.equal(page.days["2025-09-12"], 3, "counts cover every month the page touches, not only the rows it returned");
+  const years = await f.api(`/v1/gallery/periods?volume=${f.v.id}&level=year`);
+  assert.deepEqual(years.periods.map((p) => [p.period, p.count]), [["2026", 3], ["2025", 3], ["2024", 2]]);
+  assert.equal(years.periods[0].path, "b.jpg", "the representative is the newest photo of the period");
+  assert.ok(years.periods.every((p) => p.hash && p.kind === "image"));
+  const months = await f.api(`/v1/gallery/periods?volume=${f.v.id}&level=month`);
+  assert.deepEqual(months.periods.map((p) => [p.period, p.count]), [["2026-09", 3], ["2025-09", 3], ["2024-09", 1], ["2024-03", 1]]);
+  const memories = await f.api(`/v1/gallery/memories?volume=${f.v.id}&day=09-12&year=2026`);
+  assert.deepEqual(memories.memories.map((m) => [m.year, m.count]), [["2025", 3], ["2024", 1]], "earlier years only, newest first");
+  assert.deepEqual((await f.api(`/v1/gallery/memories?volume=${f.v.id}&day=12-25&year=2026`)).memories, []);
+  for (const bad of ["day=13-45&year=2026", "day=09-12&year=26", "day=&year=", "level=week"]) {
+    const route = bad.startsWith("level") ? `/v1/gallery/periods?volume=${f.v.id}&${bad}` : `/v1/gallery/memories?volume=${f.v.id}&${bad}`;
+    await assert.rejects(f.api(route), (error) => error.status === 400, bad);
+  }
+});
+
 test("old photos use EXIF capture date and unsupported media keep a usable listing", async (t) => {
   const f = await fixture(t);
   const image = await sharp({

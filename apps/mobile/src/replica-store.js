@@ -510,6 +510,17 @@ export class ReplicaStore {
       )
     ).map((r) => JSON.parse(r.row));
   }
+  async searchRows(scope, volume, token, limit = 2000) {
+    const ascii = /^[\x20-\x7e]+$/.test(token);
+    return (
+      await this.db.getAllAsync(
+        ascii
+          ? "SELECT row FROM files WHERE scope=? AND volume=? AND instr(lower(path),?)>0 AND json_extract(row,'$.deleted') IS NOT 1 AND json_extract(row,'$.directory') IS NOT 1 ORDER BY CAST(json_extract(row,'$.rev') AS INTEGER) DESC LIMIT ?"
+          : "SELECT row FROM files WHERE scope=? AND volume=? AND json_extract(row,'$.deleted') IS NOT 1 AND json_extract(row,'$.directory') IS NOT 1 ORDER BY CAST(json_extract(row,'$.rev') AS INTEGER) DESC LIMIT ?",
+        ...(ascii ? [scope, volume, token.toLowerCase(), limit] : [scope, volume, limit * 5]),
+      )
+    ).map((r) => JSON.parse(r.row));
+  }
   async knownFiles(scope, volume) {
     return new Map(
       (

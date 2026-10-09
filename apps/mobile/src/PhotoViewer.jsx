@@ -1,5 +1,5 @@
 import { GalleryVideo } from "./GalleryVideo";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   FlatList,
@@ -10,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StatusBar,
+  StyleSheet,
   Text,
   View,
   useWindowDimensions,
@@ -21,11 +22,17 @@ import { photoInfo } from "./photo-info";
 import { localPhotoInfo } from "./local-photo-info";
 import {
   clampOffset,
+  decideRelease,
   distance,
+  dragLook,
+  isVerticalIntent,
   midpoint,
   toggleZoom,
   zoomAround,
 } from "./viewer-gestures";
+import { motion } from "./design-tokens.js";
+import { useMotion } from "./motion";
+import { originTransform } from "./viewer-origin.js";
 
 const rest = { scale: 1, x: 0, y: 0 };
 const begin = (touches, state, gesture) =>
@@ -38,7 +45,7 @@ const begin = (touches, state, gesture) =>
       }
     : { pinch: false, state, dx: gesture.dx, dy: gesture.dy };
 
-function ZoomableImage({ uri, preview, width, height, onZoomed, onError }) {
+function ZoomableImage({ uri, preview, width, height, onZoomed, onError, onTap, onDrag, onDragEnd, onAction }) {
   const { s } = useDesign();
   const [loaded, setLoaded] = useState(false);
   useEffect(() => setLoaded(false), [uri]);
@@ -88,22 +95,44 @@ function ZoomableImage({ uri, preview, width, height, onZoomed, onError }) {
       return;
     }
     taps.current.at = now;
+    clearTimeout(taps.current.timer);
+    taps.current.timer = setTimeout(() => {
+      if (taps.current.at === now) onTap?.();
+    }, 300);
   };
+  useEffect(() => () => clearTimeout(taps.current.timer), []);
   const responder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: (event) =>
           event.nativeEvent.touches.length > 1 || state.current.scale > 1,
-        onMoveShouldSetPanResponder: (event) =>
-          event.nativeEvent.touches.length > 1 || state.current.scale > 1,
+        onMoveShouldSetPanResponder: (event, g) =>
+          event.nativeEvent.touches.length > 1 ||
+          state.current.scale > 1 ||
+          (!!onDrag && isVerticalIntent(g.dx, g.dy, state.current.scale)),
         onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: (event, g) => {
-          gesture.current = begin(event.nativeEvent.touches, state.current, g);
+          gesture.current = {
+            ...begin(event.nativeEvent.touches, state.current, g),
+            drag:
+              event.nativeEvent.touches.length === 1 &&
+              state.current.scale <= 1.02 &&
+              !!onDrag,
+          };
         },
         onPanResponderMove: (event, g) => {
           const touches = event.nativeEvent.touches;
           let begun = gesture.current;
           if (!begun) return;
+          if (begun.drag) {
+            if (touches.length > 1) {
+              onDragEnd?.(0, 0);
+              gesture.current = begun = { ...begin(touches, state.current, g), drag: false };
+            } else {
+              onDrag(g.dy - begun.dy);
+              return;
+            }
+          }
           if (touches.length > 1 !== begun.pinch)
             begun = gesture.current = begin(touches, state.current, g);
           if (begun.pinch) {
@@ -140,9 +169,18 @@ function ZoomableImage({ uri, preview, width, height, onZoomed, onError }) {
             });
           }
         },
+        onPanResponderTerminate: () => {
+          const begun = gesture.current;
+          gesture.current = null;
+          if (begun?.drag) onDragEnd?.(0, 0);
+        },
         onPanResponderRelease: (event, g) => {
           const begun = gesture.current;
           gesture.current = null;
+          if (begun?.drag) {
+            onDragEnd?.(g.dy - begun.dy, g.vy);
+            return;
+          }
           if (
             begun &&
             !begun.pinch &&
@@ -154,7 +192,7 @@ function ZoomableImage({ uri, preview, width, height, onZoomed, onError }) {
           if (state.current.scale < 1.02) apply(rest, true);
         },
       }),
-    [viewport],
+    [viewport, onDrag, onDragEnd],
   );
   return (
     <View style={[s.viewerPage, viewport]} {...responder.panHandlers}>
@@ -162,6 +200,12 @@ function ZoomableImage({ uri, preview, width, height, onZoomed, onError }) {
         style={viewport}
         accessibilityRole="image"
         accessibilityLabel="Photo"
+        accessibilityActions={onAction ? [
+          { name: "details", label: "Photo details" },
+          { name: "controls", label: "Show or hide controls" },
+          { name: "dismiss", label: "Close photo" },
+        ] : undefined}
+        onAccessibilityAction={(event) => onAction?.(event.nativeEvent.actionName)}
         onPress={(event) =>
           tap(event.nativeEvent.pageX, event.nativeEvent.pageY)
         }
@@ -203,6 +247,10 @@ function Page({
   active,
   held,
   onZoomed,
+  onTap,
+  onDrag,
+  onDragEnd,
+  onAction,
 }) {
   const { s } = useDesign();
   const compatiblePreview = !item.nativeSource && /\.hei[cf]$/i.test(item.path);
@@ -277,6 +325,10 @@ function Page({
       width={width}
       height={height}
       onZoomed={onZoomed}
+      onTap={onTap}
+      onDrag={onDrag}
+      onDragEnd={onDragEnd}
+      onAction={onAction}
       onError={() => fallbackRef.current?.()}
     />
   );
@@ -302,6 +354,18 @@ function InfoPanel({ item, state, folderName, onClose, history }) {
   const { s, c, wide } = useDesign();
   const insets = useSafeAreaInsets();
   const info = photoInfo(item, state?.value, folderName);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const swipe = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) => !wide && g.dy > 12 && g.dy > Math.abs(g.dx) * 1.5,
+        onPanResponderRelease: (_, g) => {
+          if (g.dy > 60 || g.vy > 1) closeRef.current();
+        },
+      }),
+    [wide],
+  );
   return (
     <View
       style={[
@@ -310,7 +374,7 @@ function InfoPanel({ item, state, folderName, onClose, history }) {
         wide ? { paddingTop: insets.top } : { paddingBottom: insets.bottom },
       ]}
     >
-      <View style={s.sheetHeader}>
+      <View style={s.sheetHeader} {...swipe.panHandlers}>
         <Text accessibilityRole="header" style={[s.heading, s.flex]}>
           Photo details
         </Text>
@@ -407,14 +471,81 @@ export function PhotoViewer({
   remove,
   deletable,
   deleteReason,
+  origin,
 }) {
-  const { s } = useDesign();
+  const { s, wide } = useDesign();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { duration, easing } = useMotion();
   const [zoomed, setZoomed] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [chromeOn, setChromeOn] = useState(false);
+  const drag = useRef(new Animated.Value(0)).current;
+  const grow = useRef(new Animated.Value(0)).current;
+  const sameWindow = origin?.window?.width === width && origin?.window?.height === height;
+  const from = sameWindow ? originTransform(origin?.rect, width, height) : null;
+  const travels = !!from && duration(motion.shared) > 0;
+  useLayoutEffect(() => {
+    if (index === null) return;
+    if (!travels) return grow.setValue(1);
+    grow.setValue(0);
+    Animated.timing(grow, {
+      toValue: 1,
+      duration: duration(motion.shared),
+      easing,
+      useNativeDriver: true,
+    }).start();
+  }, [index === null]);
+  const closeToOrigin = () => {
+    if (!travels || items[index]?.path !== origin.path) return onClose();
+    Animated.timing(grow, {
+      toValue: 0,
+      duration: duration(motion.shared),
+      easing,
+      useNativeDriver: true,
+    }).start(() => onClose());
+  };
+  const chrome = useRef(new Animated.Value(0)).current;
+  const live = useRef({});
+  live.current = { height, wide, onClose, duration };
+  useEffect(() => {
+    Animated.timing(chrome, {
+      toValue: chromeOn ? 1 : 0,
+      duration: duration(120),
+      useNativeDriver: true,
+    }).start();
+  }, [chromeOn]);
+  const onTap = useRef(() => setChromeOn((value) => !value)).current;
+  const onDrag = useRef((dy) => {
+    const { height: h } = live.current;
+    const look = dragLook(dy, h);
+    drag.setValue(look.translateY);
+  }).current;
+  const onAction = useRef((name) => {
+    if (name === "details") setInfoOpen(true);
+    else if (name === "controls") setChromeOn((value) => !value);
+    else if (name === "dismiss") live.current.onClose();
+  }).current;
+  const onDragEnd = useRef((dy, vy) => {
+    const { height: h, wide: fold, onClose: close, duration: ms } = live.current;
+    const action = decideRelease({ dy, vy, height: h, wide: fold });
+    const back = () =>
+      Animated.timing(drag, { toValue: 0, duration: ms(200), useNativeDriver: true }).start();
+    if (action === "close")
+      Animated.timing(drag, { toValue: h, duration: ms(200), useNativeDriver: true }).start(
+        () => {
+          close();
+          drag.setValue(0);
+        },
+      );
+    else {
+      back();
+      if (action === "info") setInfoOpen(true);
+    }
+  }).current;
   const [metadata, setMetadata] = useState({});
   const list = useRef(null);
+  const strip = useRef(null);
   const visible = index != null && index >= 0 && index < items.length;
   const item = visible ? items[index] : null;
   const canShare = !!item?.uri && !item?.upload && !!share;
@@ -424,6 +555,8 @@ export function PhotoViewer({
     if (visible) {
       setZoomed(false);
       setInfoOpen(false);
+      setChromeOn(false);
+      drag.setValue(0);
     }
   }, [visible]);
   useEffect(() => {
@@ -485,17 +618,43 @@ export function PhotoViewer({
   useEffect(() => {
     if (visible) list.current?.scrollToIndex({ index, animated: false });
   }, [width, index, visible]);
+  useEffect(() => {
+    if (visible && chromeOn)
+      strip.current?.scrollToOffset({ offset: Math.max(0, 52 * index - width / 2 + 26), animated: true });
+  }, [index, chromeOn, visible]);
   return (
     <Modal
       visible={visible}
-      onRequestClose={() => (infoOpen ? setInfoOpen(false) : onClose())}
+      onRequestClose={() => (infoOpen ? setInfoOpen(false) : closeToOrigin())}
       animationType="fade"
+      transparent
       statusBarTranslucent
-      presentationStyle="fullScreen"
       supportedOrientations={["portrait", "landscape"]}
     >
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <View style={s.viewerRoot}>
+      <View style={[s.viewerRoot, s.viewerTransparent]}>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            s.viewerBackdrop,
+            { opacity: Animated.multiply(grow, drag.interpolate({ inputRange: [0, height / 2], outputRange: [1, 0], extrapolate: "clamp" })) },
+          ]}
+        />
+        <Animated.View
+          style={[
+            s.flex,
+            {
+              transform: [
+                { translateX: grow.interpolate({ inputRange: [0, 1], outputRange: [from?.dx || 0, 0] }) },
+                { translateY: grow.interpolate({ inputRange: [0, 1], outputRange: [from?.dy || 0, 0] }) },
+                { scale: grow.interpolate({ inputRange: [0, 1], outputRange: [from?.scale || 1, 1] }) },
+                { translateY: drag },
+                { scale: drag.interpolate({ inputRange: [0, height], outputRange: [1, 0.6], extrapolate: "clamp" }) },
+              ],
+            },
+          ]}
+        >
         {visible && (
           <FlatList
             ref={list}
@@ -503,6 +662,7 @@ export function PhotoViewer({
             extraData={`${index}:${infoOpen}`}
             horizontal
             pagingEnabled
+            directionalLockEnabled
             showsHorizontalScrollIndicator={false}
             initialScrollIndex={index}
             getItemLayout={(_, position) => ({
@@ -534,19 +694,35 @@ export function PhotoViewer({
                 onZoomed={(value) => {
                   if (position === index) setZoomed(value);
                 }}
+                onTap={onTap}
+                onDrag={onDrag}
+                onDragEnd={onDragEnd}
+                onAction={onAction}
               />
             )}
           />
         )}
+        </Animated.View>
         {item && (
-          <View
-            style={[s.viewerChrome, s.viewerTop, { paddingTop: insets.top }]}
+          <Animated.View
+            pointerEvents={chromeOn ? "box-none" : "none"}
+            style={[
+              s.viewerChrome,
+              s.viewerTop,
+              {
+                paddingTop: insets.top,
+                opacity: Animated.multiply(
+                  chrome,
+                  drag.interpolate({ inputRange: [0, height / 6], outputRange: [1, 0], extrapolate: "clamp" }),
+                ),
+              },
+            ]}
           >
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close"
               style={s.viewerIconButton}
-              onPress={onClose}
+              onPress={closeToOrigin}
             >
               <Icon name="back" color="#fff" />
             </Pressable>
@@ -598,7 +774,40 @@ export function PhotoViewer({
             >
               <Icon name="trash" color="#fff" />
             </Pressable>
-          </View>
+          </Animated.View>
+        )}
+        {item && items.length > 1 && (
+          <Animated.View
+            pointerEvents={chromeOn ? "box-none" : "none"}
+            style={[s.viewerStrip, { paddingBottom: insets.bottom + 8, opacity: chrome }]}
+          >
+            <Text style={s.viewerCount}>{`${index + 1} of ${items.length}`}</Text>
+            <FlatList
+              ref={strip}
+              horizontal
+              data={items}
+              extraData={index}
+              keyExtractor={(entry) => `strip:${entry.path}`}
+              showsHorizontalScrollIndicator={false}
+              initialNumToRender={9}
+              windowSize={5}
+              getItemLayout={(_, position) => ({ length: 52, offset: 52 * position, index: position })}
+              contentOffset={{ x: Math.max(0, 52 * index - width / 2 + 26), y: 0 }}
+              renderItem={({ item: entry, index: position }) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Photo ${position + 1} of ${items.length}`}
+                  accessibilityState={{ selected: position === index }}
+                  onPress={() => onIndexChange(position)}
+                  style={[s.viewerThumb, position === index && s.viewerThumbOn]}
+                >
+                  {!!(entry.preview || entry.uri) && (
+                    <Image source={{ uri: entry.preview || entry.uri }} resizeMethod="resize" style={s.viewerThumbImage} />
+                  )}
+                </Pressable>
+              )}
+            />
+          </Animated.View>
         )}
         {infoOpen && item && (
           <InfoPanel

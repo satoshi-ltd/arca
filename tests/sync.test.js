@@ -57,6 +57,24 @@ async function setup(t, options = { timer: false }) {
   };
   return { root, hub, volume, connect, node };
 }
+test("a replica learns its own device id and the names of the hub's devices", async (t) => {
+  const { hub, connect } = await setup(t);
+  const replica = await connect("replica");
+  const other = await connect("other");
+  await replica.sync();
+  const status = await replica.api("/v1/status");
+  assert.ok(status.deviceId);
+  assert.equal(status.hubDevices.find((d) => d.id === status.deviceId).name, "replica");
+  assert.ok(status.hubDevices.some((d) => d.name === "other"));
+  assert.equal(status.hubDevices.some((d) => "token_hash" in d || "token" in d), false);
+  const hubStatus = await hub.api("/v1/status");
+  assert.equal(hubStatus.deviceId, null);
+  await replica.api("/v1/disconnect", { confirmed: true });
+  const after = await replica.api("/v1/status");
+  assert.deepEqual(after.hubDevices, []);
+  assert.equal(after.deviceId, null);
+});
+
 test("selecting a folder waits for a catalog refresh in flight, so the refresh cannot drop it", async (t) => {
   const { hub, connect } = await setup(t);
   const replica = await connect("replica");

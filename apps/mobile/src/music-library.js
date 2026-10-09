@@ -539,3 +539,30 @@ export function searchLibrary(library, query) {
     playlists: hits(index.playlists),
   };
 }
+
+export function upNext(library, state, limit = 30) {
+  const node = parseTrackNode(state?.id);
+  if (!node || !library) return { name: "", current: null, shuffled: false, rows: [] };
+  const base = baseContext(node.context);
+  const album = library.albums.get(base);
+  const playlist = library.playlists.get(base);
+  const ids = (album ? album.tracks : playlist ? playlist.tracks : libraryTracks(library)).filter((id) =>
+    library.tracks.has(id),
+  );
+  const at = Number.isSafeInteger(node.position) && ids[node.position] === node.track ? node.position : ids.indexOf(node.track);
+  return {
+    name: album?.title || playlist?.name || "Library",
+    context: node.context,
+    current: node.track,
+    shuffled: !!state.shuffle,
+    rows: state.shuffle || at < 0 ? [] : ids.slice(at + 1, at + 1 + limit).map((id, offset) => ({ track: library.tracks.get(id), position: at + 1 + offset })),
+  };
+}
+
+export function artistFor(library, track) {
+  return (
+    library?.artists.find((artist) => artist.name === track?.artist) ||
+    library?.artists.find((artist) => artist.name === track?.albumArtist) ||
+    null
+  );
+}

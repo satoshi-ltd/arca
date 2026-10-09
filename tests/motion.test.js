@@ -10,20 +10,45 @@ const app = read("../apps/desktop/src/app.js");
 const token = (name) =>
   tokens.match(new RegExp(`--motion-${name}:\\s*([^;]+);`))[1].trim();
 
+test("the palette enters with its own keyframes and the selected segment slides", () => {
+  assert.match(style, /dialog\.palette\[open\] \{\s*animation-name: palette-enter;/);
+  assert.match(style, /@keyframes palette-enter \{[^}]*opacity: 0;[^}]*transform: translateY\(calc\(var\(--motion-distance\) \* -1\.5\)\) scale\(0\.97\)/);
+  assert.match(style, /\.segmented-thumb \{\s*position: absolute;/);
+  assert.doesNotMatch(style, /@keyframes palette-enter \{[^}]*(width|height|top|left)/);
+  assert.match(app, /staggerRows\("#palette \.pal-row"\)/);
+});
+
+test("small controls animate only opacity and transform with the motion tokens", () => {
+  assert.match(style, /\.folder-card \{\s*transition:\s*transform var\(--motion-fast\) var\(--motion-ease\),\s*border-color var\(--motion-fast\)/);
+  assert.match(style, /\.menu-items \{\s*animation: menu-enter var\(--motion-fast\)/);
+  assert.match(style, /\.dropdown-menu \{[^}]*animation: menu-enter var\(--motion-fast\)/);
+  assert.match(style, /\.copy-confirmed > \.icon \{\s*animation: tick-in var\(--motion-fast\)/);
+  for (const name of ["menu-enter", "tick-in", "label-in"])
+    assert.doesNotMatch(style.match(new RegExp(`@keyframes ${name} \\{[\\s\\S]*?\\n\\}`))[0], /(width|height|top|left|margin|padding)/);
+  assert.match(app, /\}, 1500\);/);
+  assert.match(app, /noteRows\(\);\s+noteMicro\(\);/);
+});
+
 test("mobile motion tokens match the desktop motion tokens", () => {
   assert.equal(token("fast"), `${motion.fast}ms`);
   assert.equal(token("enter"), `${motion.enter}ms`);
   assert.equal(token("exit"), `${motion.exit}ms`);
+  assert.equal(token("distance"), `${motion.distance}px`);
+  assert.equal(token("shared"), `${motion.shared}ms`);
+  assert.equal(token("stagger"), `${motion.stagger}ms`);
+  assert.equal(token("settle"), `${motion.settle}ms`);
   assert.equal(token("touch-push"), `${motion.push}px`);
   assert.equal(token("touch-dialog-scale"), String(motion.dialogScale));
   assert.equal(token("ease"), `cubic-bezier(${motion.ease.join(", ")})`);
   const reduced = tokens.slice(
     tokens.indexOf("@media (prefers-reduced-motion: reduce)"),
   );
-  for (const name of ["fast", "enter", "exit"])
+  for (const name of ["fast", "enter", "exit", "shared", "stagger", "settle"])
     assert.match(reduced, new RegExp(`--motion-${name}:\\s*0ms;`));
   assert.match(reduced, /--motion-touch-push:\s*0px;/);
   assert.match(reduced, /--motion-touch-dialog-scale:\s*1;/);
+  assert.equal(token("touch-press-scale"), String(motion.pressScale));
+  assert.match(reduced, /--motion-touch-press-scale:\s*1;/);
   assert.deepEqual(motionDurations(true), { fast: 0, enter: 0, exit: 0 });
   assert.deepEqual(motionDurations(false), {
     fast: motion.fast,

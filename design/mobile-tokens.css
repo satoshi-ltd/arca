@@ -30,7 +30,7 @@
   --m-danger-bg: #f7e2df;
   --m-approval-reference-font: 28px;
   --m-reference-tracking: 4px;
-  --m-list-item-gap: 12px;
+  --m-row-gap: 12px;
   --m-workspace-inset: 24px;
   --m-detail-title-font: 20px;
   --m-detail-title-line: 26px;
@@ -48,10 +48,11 @@
   --m-touch-control-line: 20px;
   --m-touch-input-font: 16px;
   --m-touch-input-line: 24px;
-  --m-list-row-padding-y: 10px;
-  --m-list-row-padding-x: 12px;
-  --m-section-label-gap: 6px;
-  --m-section-gap: 20px;
+  --m-row-padding-y: 12px;
+  --m-row-padding-x: 16px;
+  --m-section-label-gap: 8px;
+  --m-section-gap: 24px;
+  --m-row-min-height: 48px;
   --m-header-bottom-gap: 16px;
   --m-detail-navigation-gap: 4px;
   --m-detail-header-top: 8px;

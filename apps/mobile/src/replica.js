@@ -78,8 +78,8 @@ export class Replica {
     this.lastInventory = new Map();
     this.lastFullScan = 0;
   }
-  remoteView(route) {
-    return remoteView(this, route);
+  remoteView(route, options) {
+    return remoteView(this, route, options);
   }
   async load() {
     await this.store.init();

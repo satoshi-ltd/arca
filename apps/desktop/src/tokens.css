@@ -5,11 +5,15 @@
   --motion-fast: 120ms;
   --motion-enter: 200ms;
   --motion-exit: 140ms;
+  --motion-shared: 280ms;
+  --motion-stagger: 20ms;
+  --motion-settle: 1800ms;
   --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --motion-distance: 8px;
   --motion-dialog-scale: 0.985;
   --motion-touch-push: 30px;
   --motion-touch-dialog-scale: 0.9;
+  --motion-touch-press-scale: 0.98;
   --notice-width: 360px;
   --toast-bg: #121a16;
   --toast-fg: #f4f6f1;
@@ -50,7 +54,7 @@
   --text-row: 14px;
   --text-title: 20px;
   --text-title-line: 26px;
-  --list-item-gap: 12px;
+  --row-gap: 12px;
   --touch-title-font: 26px;
   --touch-title-line: 32px;
   --touch-row-font: 16px;
@@ -63,10 +67,10 @@
   --touch-control-line: 20px;
   --touch-input-font: 16px;
   --touch-input-line: 24px;
-  --list-row-padding-y: 10px;
-  --list-row-padding-x: 12px;
-  --section-label-gap: 6px;
-  --section-gap: 20px;
+  --row-padding-y: 12px;
+  --row-padding-x: 16px;
+  --section-label-gap: 8px;
+  --section-gap: 24px;
   --header-bottom-gap: 16px;
 
   --screen-title-logo: 32px;
@@ -230,9 +234,13 @@
     --motion-fast: 0ms;
     --motion-enter: 0ms;
     --motion-exit: 0ms;
+    --motion-shared: 0ms;
+    --motion-stagger: 0ms;
+    --motion-settle: 0ms;
     --motion-distance: 0px;
     --motion-dialog-scale: 1;
     --motion-touch-push: 0px;
     --motion-touch-dialog-scale: 1;
+    --motion-touch-press-scale: 1;
   }
 }

@@ -26,8 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
-
 ## In progress
 
 _None._
@@ -198,9 +196,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **DESK-FORCED-POLL-DROPPED** — An event that arrives while a status poll is running can leave the window stale for 20–30 seconds
   `bug · agent · low`
   accept: `pollStatus(true)` (`apps/desktop/src/app.js`) no longer returns at once when a poll is already in flight; it runs once more right after that poll ends, so a connectivity event consumed during a slow `/v1/status` still updates the window within seconds; a JSDOM test holds one status read open, delivers an event cursor change and sees the second read follow. Suspected by the review of 0.7.5, not reproduced.
-- **DESK-REPLICA-AUTHOR** — A replica shows its own changes as "Device xxxxxxxx"
-  `bug · agent · low`
-  accept: History, Recent and file detail on a desktop or server replica name the replica's own changes with its device name, as the hub does, although the replica does not know its hub device id today (`authorName` in `app.js`, empty `status.devices`); a desktop test covers it. Found while investigating offline replicas on 2026-10-08.
 - **REPLICA-GALLERY-ADDED-DATE** — Photos the hub dates by when they were added may read Date unknown on a replica
   `bug · agent · low`
   accept: first confirm with the hub's indexing finished; then a replica dates photos without capture metadata by their added date like the hub (SPEC "replicas date undated photos like the hub"), with a gallery test. Seen once on 2026-10-08 while the hub was still indexing.
@@ -220,9 +215,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **MOB-VIDEO-SAFE-AREA** — The photo viewer's video surface uses safe-area insets
   `bug · agent · low`
   accept: the video surface in the phone viewer uses the safe-area insets instead of the fixed 90 and 110 margins in `theme.js`; a layout test covers a device with a cutout.
-- **MOB-VIEWER-CHROME-TAP** — A tap hides the photo viewer's chrome
-  `feature · agent · low`
-  accept: a single tap on the photo viewer fades its top bar over `--motion-enter` (a single tap waits 300 ms to be told from the double tap), Back still works and reduced motion makes the change instant; this adds a gesture, so the maintainer validates it before it enters Queue.
 
 - **DESIGN-COVERAGE** — Draw the few shipped views the design kit still lacks
   `chore · agent · low`

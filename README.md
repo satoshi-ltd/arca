@@ -2,7 +2,7 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.7.12 · Functional, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing, music libraries with desktop, web and Android playback and Android Auto, and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.7.34 · Functional, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing, audio libraries with desktop, web and Android playback and Android Auto, and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -77,7 +77,7 @@ Implemented locally: secure pairing, persistent whole-folder sync with verified 
 
 **Shared gallery deletion:** any participant can explicitly delete a shared photo, including a source phone or a copy that has not downloaded it. Verified Live Photo resources are deleted together. Mobile supports long-press selection. All clients send confirmed deletions directly to the hub; failures are shown without queuing or automatic retries. Sources suppress automatic re-upload of explicitly deleted assets. Originals stay in the system Photos library. Recovery follows the folder’s ordinary revision retention. There is no separate deletion-review workflow. Source changes do not deploy Casa or update an installed app. Physical-device qualification remains open.
 
-**Music libraries:** Enable music library in a hub folder's ⋯ menu opens that folder on its artists, albums and recent plays on desktop, web and phones, with search and shuffle; desktop, web and Android play it, and Android lists it in Android Auto (turn on Unknown sources in Android Auto's developer settings for a sideloaded build).
+**Audio libraries:** Enable audio library in a hub folder's ⋯ menu opens that folder on its artists, albums and recent plays on desktop, web and phones, with search and shuffle; desktop, web and Android play it, and Android lists it in Android Auto (turn on Unknown sources in Android Auto's developer settings for a sideloaded build).
 
 **Desktop/web gallery:** gallery folders use the Images icon and open in Gallery; View folder switches to Files and Recent (with All history). Gallery provides a dated thumbnail grid and a month/year navigation rail. Accepted photo uploads prepare reusable thumbnails in the hub’s background queue. Existing gallery folders are prepared in the background on activation and hub startup; metadata and thumbnails survive restart. Navigation reuses gallery pages and separate thumbnail/large-preview caches. Clicking an image opens a larger preview; videos open an authenticated streaming player with seek controls. This requires the updated hub daemon and desktop runtime, including production dependencies. It is implemented and tested locally, not deployed to Casa. Unsupported browser/OS video codecs and image formats retain original download.
 

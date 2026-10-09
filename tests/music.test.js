@@ -108,7 +108,7 @@ test("audio and cover names are recognised by extension and rank", () => {
   assert.equal(coverRank("Album/cover.gif"), -1);
 });
 
-test("only the hub's administrator marks a music folder; a folder is a gallery or a music library, never both", async (t) => {
+test("only the hub's administrator marks a music folder; a folder is a gallery or an audio library, never both", async (t) => {
   const f = await fixture(t);
   await assert.rejects(f.library(), { status: 404 }, "an ordinary folder has no library");
   const invite = await f.api("/v1/devices", { name: "Phone", role: "replica" });
@@ -123,7 +123,7 @@ test("only the hub's administrator marks a music folder; a folder is a gallery o
   assert.equal((await f.api("/v1/remote")).volumes[0].music, true);
   await assert.rejects(f.api("/v1/gallery/link", { volume: f.v.id }), {
     status: 409,
-    message: /music library/,
+    message: /audio library/,
   });
   const photos = f.s.addVolume("Photos");
   await f.api("/v1/gallery/link", { volume: photos.id });
@@ -548,7 +548,7 @@ test("the hub streams a library's audio with ranges to its desktop app and web s
   await assert.rejects(
     f.api(`/v1/music/playback?${new URLSearchParams({ volume: other.id, path: "loose.mp3", hash: loose })}`),
     { status: 404 },
-    "audio outside a music library does not play",
+    "audio outside an audio library does not play",
   );
 
   const { issueWebCode } = await import("../packages/daemon/web.js");
@@ -569,7 +569,7 @@ test("the hub streams a library's audio with ranges to its desktop app and web s
   assert.equal((await fetch(url)).status, 404);
 });
 
-test("a desktop replica indexes, lists and plays its own copy of a selected music library, offline too", async (t) => {
+test("a desktop replica indexes, lists and plays its own copy of a selected audio library, offline too", async (t) => {
   const f = await fixture(t);
   await f.api("/v1/music/mark", { volume: f.v.id });
   const { hash, buffer } = await f.track(

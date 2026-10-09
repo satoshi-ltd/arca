@@ -1168,7 +1168,7 @@ test("desktop albums are their album directory, album artist and title, with dis
   assert.deepEqual(shape(desktop.albums), [["CD 2", 1], ["First", 2], ["Kind of Blue", 2], ["Unknown album", 1]]);
 });
 
-test("off a music library the sidebar card replaces the bar while a track is loaded; in any music library the bar shows", async (t) => {
+test("off an audio library the sidebar card replaces the bar while a track is loaded; in any audio library the bar shows", async (t) => {
   const ui = await open(t, { folders: ["Music", "Records"], others: ["Docs"] });
   const { $, w } = ui;
   const bar = () => !$("#music-player").hidden && !$("#music-player").classList.contains("music-elsewhere");
@@ -1192,7 +1192,7 @@ test("off a music library the sidebar card replaces the bar while a track is loa
   assert.deepEqual([bar(), card()], [false, true], "another folder");
   w.location.hash = `#/folders/${ui.volumes[1].id}`;
   await until(() => ui.text(".detail-title h1") === "Records" && $(".music-page") && ui.idle());
-  assert.deepEqual([bar(), card()], [true, false], "any music library");
+  assert.deepEqual([bar(), card()], [true, false], "any audio library");
   $('[data-view="devices"]').click();
   await until(() => $('[data-view="devices"]').classList.contains("active") && card() && ui.idle());
   const opener = $("#music-mini .music-mini-track");

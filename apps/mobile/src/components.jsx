@@ -1,7 +1,9 @@
 import { brandMark } from "./palette.js";
+import { fileIcon } from "../../desktop/src/file-icons.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g, motion } from "./design-tokens.js";
-import { useMotion } from "./motion";
+import { ChangeFade, Pop, RollText, useFlight, useMotion } from "./motion";
+import { putFlight } from "./flight.js";
 import React, {
   createContext,
   useContext,
@@ -12,6 +14,7 @@ import React, {
 import {
   Animated,
   AccessibilityInfo,
+  Image,
   StyleSheet,
   View,
   Text,
@@ -232,6 +235,41 @@ export function BrandActivity() {
     </View>
   );
 }
+export function ArrivalsStrip({ arrivals, nameOf, relative, onOpen }) {
+  const { s } = useDesign();
+  return (
+    <Section>
+      <Text style={s.eyebrow}>JUST ARRIVED</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={s.arrivals}
+      >
+        {arrivals.map((row) => (
+          <Pressable
+            key={`${row.volume}:${row.rev}`}
+            accessibilityRole="button"
+            accessibilityLabel={`${row.path.split("/").pop()}, ${nameOf(row.author)}, ${relative(row.created)}`}
+            onPress={() => onOpen(row)}
+            style={s.arrival}
+          >
+            <View style={s.tile}>
+              <Icon name={fileIcon(row.path)} size={16} />
+            </View>
+            <View style={s.stack}>
+              <Text numberOfLines={1} style={s.rowTitle}>
+                {row.path.split("/").pop()}
+              </Text>
+              <Text numberOfLines={1} style={s.caption}>
+                {`${nameOf(row.author)} · ${relative(row.created)}`}
+              </Text>
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </Section>
+  );
+}
 export function Section({ children }) {
   const { s } = useDesign();
   return <View style={s.section}>{children}</View>;
@@ -243,13 +281,14 @@ export function ScreenTitle({
   contentIcon,
 }) {
   const { s, wide } = useDesign();
+  const flight = useFlight(detail && wide && contentIcon ? "folder" : null);
   return (
     <View style={s.screenTitle}>
       {!wide && <BrandActivity />}
       {wide && contentIcon && (
-        <View style={[s.tile, s.detailTile]}>
+        <Animated.View ref={flight.frame} style={[s.tile, s.detailTile, flight.style]}>
           <Icon name={contentIcon} />
-        </View>
+        </Animated.View>
       )}
       {detail || subtitle != null ? (
         <View style={[s.flex, s.stack]}>
@@ -269,6 +308,8 @@ export function ScreenTitle({
     </View>
   );
 }
+const pressScale = (pressed, reduce) =>
+  pressed && !reduce && { transform: [{ scale: motion.pressScale }] };
 export function Button({
   label,
   onPress,
@@ -281,8 +322,10 @@ export function Button({
   size = "normal",
   danger = false,
   activity = false,
+  swap = false,
 }) {
   const { s, c } = useDesign();
+  const { reduce } = useMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -304,17 +347,28 @@ export function Button({
         danger && s.dangerButton,
         danger && primary && s.destructivePrimary,
         pressed && !disabled && !busy && (primary ? s.pressedFade : s.pressed),
+        !disabled && !busy && pressScale(pressed, reduce),
         (disabled || busy) && s.disabled,
       ]}
     >
       {busy || activity ? (
         <Busy color={primary ? c.onAccent : danger ? c.danger : c.ink} />
       ) : icon ? (
-        <Icon
-          name={icon}
-          size={size === "small" ? g.buttonSmallIcon : g.buttonIcon}
-          color={primary ? c.onAccent : danger ? c.danger : c.ink}
-        />
+        swap ? (
+          <Pop key={icon}>
+            <Icon
+              name={icon}
+              size={size === "small" ? g.buttonSmallIcon : g.buttonIcon}
+              color={primary ? c.onAccent : danger ? c.danger : c.ink}
+            />
+          </Pop>
+        ) : (
+          <Icon
+            name={icon}
+            size={size === "small" ? g.buttonSmallIcon : g.buttonIcon}
+            color={primary ? c.onAccent : danger ? c.danger : c.ink}
+          />
+        )
       ) : null}
       {!iconOnly && (
         <Text
@@ -545,6 +599,7 @@ export function Badge({ children, iconOnly = false }) {
   const warning = ["Incomplete", "Paused", "Not yet synced"].includes(children);
   const success = children === "Up to date";
   return (
+    <ChangeFade token={children}>
     <View
       style={[
         s.badge,
@@ -593,6 +648,7 @@ export function Badge({ children, iconOnly = false }) {
         </Text>
       )}
     </View>
+    </ChangeFade>
   );
 }
 
@@ -604,6 +660,16 @@ export function Toggle({
   disabled = false,
 }) {
   const { s, c } = useDesign();
+  const { duration, easing } = useMotion();
+  const slide = useRef(new Animated.Value(value ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(slide, {
+      toValue: value ? 1 : 0,
+      duration: duration(motion.fast),
+      easing,
+      useNativeDriver: true,
+    }).start();
+  }, [value]);
   return (
     <View style={s.row}>
       <View style={s.flex}>
@@ -618,8 +684,14 @@ export function Toggle({
         onPress={() => onChange(!value)}
         style={[s.switchTarget, disabled && s.disabled]}
       >
-        <View style={[s.switchTrack, value && s.switchOn]}>
-          <View style={[s.switchThumb, value && s.switchThumbOn]} />
+        <View style={s.switchTrack}>
+          <Animated.View style={[s.switchFill, { opacity: slide }]} />
+          <Animated.View
+            style={[
+              s.switchThumb,
+              { transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, 16] }) }] },
+            ]}
+          />
         </View>
       </Pressable>
     </View>
@@ -857,6 +929,7 @@ export function ActionRow({
   note,
 }) {
   const { s, c } = useDesign();
+  const { reduce } = useMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -869,6 +942,7 @@ export function ActionRow({
         s.actionRow,
         divider && s.separator,
         pressed && !disabled && s.pressed,
+        !disabled && pressScale(pressed, reduce),
         disabled && s.disabled,
       ]}
     >
@@ -913,6 +987,64 @@ export function StatusRow({
   );
 }
 
+export function ProgressRing({ fraction, size = 46, thickness = 2 }) {
+  const { c } = useDesign();
+  const { duration, easing } = useMotion();
+  const value = useRef(new Animated.Value(fraction)).current;
+  useEffect(() => {
+    Animated.timing(value, {
+      toValue: fraction,
+      duration: duration(motion.enter),
+      easing,
+      useNativeDriver: true,
+    }).start();
+  }, [fraction]);
+  const half = size / 2;
+  const arc = {
+    position: "absolute",
+    top: 0,
+    width: size,
+    height: size,
+    borderRadius: half,
+    borderWidth: thickness,
+    borderColor: "transparent",
+    borderTopColor: c.accent,
+    borderRightColor: c.accent,
+  };
+  const right = value.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: ["-135deg", "45deg", "45deg"],
+  });
+  const left = value.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: ["45deg", "45deg", "225deg"],
+  });
+  return (
+    <View
+      pointerEvents="none"
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(fraction * 100) }}
+      style={{ position: "absolute", width: size, height: size }}
+    >
+      <View
+        style={{
+          position: "absolute",
+          width: size,
+          height: size,
+          borderRadius: half,
+          borderWidth: thickness,
+          borderColor: c.line,
+        }}
+      />
+      <View style={{ position: "absolute", left: half, width: half, height: size, overflow: "hidden" }}>
+        <Animated.View style={[arc, { left: -half, transform: [{ rotate: right }] }]} />
+      </View>
+      <View style={{ position: "absolute", left: 0, width: half, height: size, overflow: "hidden" }}>
+        <Animated.View style={[arc, { left: 0, transform: [{ rotate: left }] }]} />
+      </View>
+    </View>
+  );
+}
 export function FolderRow({
   selectable = false,
   selected = false,
@@ -925,23 +1057,36 @@ export function FolderRow({
   available,
   onPress,
   disabled,
+  conflict,
+  progress,
 }) {
   const { s, c, wide } = useDesign();
+  const { reduce } = useMotion();
+  const lead = useRef(null);
+  const syncing = status === "Syncing";
+  const tile = (
+    <View
+      style={[s.tile, available && s.tileAvailable, syncing && progress > 0 && s.tileRound]}
+      accessibilityLabel={syncing ? "Syncing" : undefined}
+    >
+      {syncing && !(progress > 0) ? (
+        <Busy color={c.accent} />
+      ) : syncing ? (
+        <Icon name={icon} size={16} color={c.accent} />
+      ) : (
+        <Icon name={icon} size={16} color={available ? c.mute : c.accent} />
+      )}
+    </View>
+  );
   const contents = (
     <>
-      <View
-        style={[s.tile, available && s.tileAvailable]}
-        accessibilityLabel={status === "Syncing" ? "Syncing" : undefined}
-      >
-        {status === "Syncing" ? (
-          <Busy color={c.accent} />
-        ) : (
-          <Icon name={icon} size={16} color={available ? c.mute : c.accent} />
-        )}
+      <View ref={lead} style={[s.homeLead, conflict && s.homeConflict]}>
+        {syncing && progress > 0 && <ProgressRing fraction={Math.min(1, progress)} />}
+        {tile}
       </View>
       <View style={[s.flex, s.stack]}>
         <Text style={s.rowTitle}>{name}</Text>
-        {!!description && <Text style={s.caption}>{description}</Text>}
+        {!!description && <RollText style={s.caption}>{description}</RollText>}
       </View>
       {selectable ? (
         selected ? (
@@ -973,13 +1118,20 @@ export function FolderRow({
   ) : (
     <Pressable
       accessibilityRole={selectable ? "checkbox" : "button"}
-      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${description ? `, ${description}` : ""}${status ? `, ${status}` : ""}`}
+      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${description ? `, ${description}` : ""}${conflict ? ", conflict" : ""}${status ? `, ${status}` : ""}`}
       accessibilityState={{
         disabled: !!disabled,
         ...(selectable ? { checked: selected } : {}),
       }}
       disabled={disabled}
-      onPress={onPress}
+      onPress={() =>
+        wide && !selectable && lead.current?.measureInWindow
+          ? lead.current.measureInWindow((x, y, width, height) => {
+              putFlight("folder", { x, y, width, height });
+              onPress?.();
+            })
+          : onPress?.()
+      }
       style={({ pressed }) => [
         !grouped && s.card,
         s.folderRow,
@@ -987,14 +1139,39 @@ export function FolderRow({
         selectable && selected && s.selectedCard,
         divider && s.separator,
         pressed && !disabled && s.pressed,
+        !disabled && pressScale(pressed, reduce),
       ]}
     >
       {contents}
     </Pressable>
   );
 }
+const TABS = ["Folders", "Devices", "History", "Settings"];
 export function Navigation({ wide, compact, view, onSelect, name, hub }) {
   const { s, c } = useDesign();
+  const { duration, easing } = useMotion();
+  const [boxes, setBoxes] = useState({});
+  const slide = useRef(new Animated.Value(0)).current;
+  const placed = useRef(false);
+  const box = boxes[view];
+  useEffect(() => {
+    placed.current = false;
+    setBoxes({});
+  }, [wide]);
+  useEffect(() => {
+    if (!box) return;
+    const target = wide ? box.y : box.x;
+    if (!placed.current) {
+      placed.current = true;
+      slide.setValue(target);
+    } else
+      Animated.timing(slide, {
+        toValue: target,
+        duration: duration(motion.fast),
+        easing,
+        useNativeDriver: true,
+      }).start();
+  }, [box?.x, box?.y, wide]);
   const Container = wide ? SafeAreaView : View;
   return (
     <Container
@@ -1017,9 +1194,35 @@ export function Navigation({ wide, compact, view, onSelect, name, hub }) {
           )}
         </>
       )}
-      {["Folders", "Devices", "History", "Settings"].map((tab) => (
+      {!!box && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            s.navIndicator,
+            {
+              width: box.width,
+              height: box.height,
+              transform: [wide ? { translateY: slide } : { translateX: slide }],
+            },
+            wide ? { top: 0, left: box.x } : { top: box.y - 1, left: 0 },
+          ]}
+        />
+      )}
+      {TABS.map((tab) => (
         <Pressable
           key={tab}
+          onLayout={({ nativeEvent: { layout } }) =>
+            setBoxes((boxes) => {
+              const known = boxes[tab];
+              return known &&
+                known.x === layout.x &&
+                known.y === layout.y &&
+                known.width === layout.width &&
+                known.height === layout.height
+                ? boxes
+                : { ...boxes, [tab]: layout };
+            })
+          }
           accessibilityRole="tab"
           accessibilityLabel={tab}
           accessibilityState={{ selected: view === tab }}
@@ -1030,9 +1233,9 @@ export function Navigation({ wide, compact, view, onSelect, name, hub }) {
                   s.navItem,
                   compact && s.compactNav,
                   pressed && s.pressed,
-                  view === tab && s.navSelected,
+                  view === tab && !box && s.navSelected,
                 ]
-              : [s.tab, pressed && s.pressed, view === tab && s.navSelected]
+              : [s.tab, pressed && s.pressed, view === tab && !box && s.navSelected]
           }
         >
           <Icon
@@ -1070,6 +1273,7 @@ export function MachineRow({
   totals,
   self,
   hub,
+  backup,
   state,
   actions,
 }) {
@@ -1078,7 +1282,7 @@ export function MachineRow({
   return (
     <View
       style={[s.card, s.machineRow]}
-      accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}, ${description}${state ? `, ${state}` : ""}`}
+      accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}${backup ? ", backs up the hub" : ""}, ${description}${state ? `, ${state}` : ""}`}
     >
       <View style={s.row}>
         <View style={[s.tile, s.machineTile, hub && s.hubTile]}>
@@ -1102,6 +1306,7 @@ export function MachineRow({
               <Tag variant={hub ? "hub" : undefined}>{shownRole.toUpperCase()}</Tag>
             )}
             {self && <Tag variant="self">THIS DEVICE</Tag>}
+            {backup && <Tag>BACKS UP HUB</Tag>}
           </View>
           <Text numberOfLines={1} style={wide ? s.mono : s.caption}>
             {description}
@@ -1132,15 +1337,56 @@ export function SettingsGroup({ children }) {
 
 export function SegmentedControl({ options, value, onChange }) {
   const { s } = useDesign();
+  const { duration, easing } = useMotion();
+  const [boxes, setBoxes] = useState({});
+  const slide = useRef(new Animated.Value(0)).current;
+  const placed = useRef(false);
+  const [settled, setSettled] = useState(false);
+  const box = boxes[value];
+  useEffect(() => {
+    if (!box) return;
+    if (!placed.current) {
+      placed.current = true;
+      slide.setValue(box.x);
+      setSettled(true);
+    } else
+      Animated.timing(slide, {
+        toValue: box.x,
+        duration: duration(motion.fast),
+        easing,
+        useNativeDriver: true,
+      }).start();
+  }, [box?.x]);
   return (
     <View style={s.segments}>
+      {!!box && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            s.segmentSelected,
+            s.segmentThumb,
+            { width: box.width, height: box.height, opacity: settled ? 1 : 0, transform: [{ translateX: slide }] },
+          ]}
+        />
+      )}
       {options.map((option) => (
         <Pressable
           key={option.value}
           accessibilityRole="button"
           accessibilityState={{ selected: value === option.value }}
           onPress={() => onChange(option.value)}
-          style={[s.segment, value === option.value && s.segmentSelected]}
+          onLayout={({ nativeEvent: { layout } }) =>
+            setBoxes((boxes) => {
+              const known = boxes[option.value];
+              return known &&
+                known.x === layout.x &&
+                known.width === layout.width &&
+                known.height === layout.height
+                ? boxes
+                : { ...boxes, [option.value]: layout };
+            })
+          }
+          style={[s.segment, value === option.value && !box && s.segmentSelected]}
         >
           <Text
             style={[

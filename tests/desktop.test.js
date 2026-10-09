@@ -1132,7 +1132,7 @@ test("hub-only actions are disabled with a reason while the hub is unavailable a
   }
 });
 
-test("the hub's folder menu makes an ordinary folder a music library, which then shows the music tile and offers neither Enable item", async (t) => {
+test("the hub's folder menu makes an ordinary folder an audio library, which then shows the music tile and offers neither Enable item", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-music-menu-"));
   init(home, { port: 0, name: "Music hub" });
   const daemon = await start(home, { timer: false });
@@ -1180,11 +1180,11 @@ test("the hub's folder menu makes an ordinary folder a music library, which then
   await until(() => w.document.querySelector(".heading-actions .folder-actions-menu") && idle());
   const menu = w.document.querySelector(".heading-actions .folder-actions-menu");
   const enable = menu.querySelector('[data-action="enable-music"]');
-  assert.match(enable.textContent, /Enable music library/);
+  assert.match(enable.textContent, /Enable audio library/);
   assert.equal(enable.querySelector("[data-icon]").dataset.icon, "music");
   menu.open = true;
   enable.click();
-  await until(() => /Enable music library\?/.test(w.document.querySelector("#dialog-content")?.textContent || "") && idle());
+  await until(() => /Enable audio library\?/.test(w.document.querySelector("#dialog-content")?.textContent || "") && idle());
   assert.match(w.document.querySelector("#dialog-content").textContent, /Files and synchronization stay the same/);
   assert.equal(menu.open, false);
   w.document.querySelector("#submit-dialog").click();
@@ -1197,7 +1197,7 @@ test("the hub's folder menu makes an ordinary folder a music library, which then
   assert.deepEqual(
     [...w.document.querySelectorAll(".heading-actions .folder-actions-menu [data-action]")].map((el) => el.dataset.action),
     ["rename-share", "edit-ignore"],
-    "a music library offers neither Enable gallery nor Enable music library",
+    "an audio library offers neither Enable gallery nor Enable audio library",
   );
   w.document.querySelector('[data-action="back-folders"]').click();
   await until(() => w.document.querySelector('.folder-card .tile [data-icon="music"]') && idle());
@@ -1722,6 +1722,69 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   await new Promise((resolve) => setTimeout(resolve, 50));
 });
 
+test("Folders opens with Just arrived, type icons and no path or last file", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-home-live-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const base = { selected: 1, sync: { state: "idle", lastCompleted: new Date().toISOString() }, conflicts: 0, files: 12, bytes: 2048, path: "/Users/javi/arca/x" };
+  const volumes = [
+    { ...base, id: "photos", name: "photos", gallery: true },
+    { ...base, id: "music", name: "music", music: true },
+    { ...base, id: "docs", name: "documents", conflicts: 1 },
+  ];
+  const ago = (ms) => new Date(Date.now() - ms).toISOString();
+  const versions = [
+    { rev: 9, volume: "photos", path: "2026/IMG_4412.jpg", created: ago(120000), author: "fold", deleted: 0 },
+    { rev: 8, volume: "docs", path: "notes/brief.md", created: ago(2 * 3600000), author: "mac", deleted: 0 },
+    { rev: 7, volume: "docs", path: "gone.md", created: ago(3 * 3600000), author: "mac", deleted: 1 },
+    { rev: 6, volume: "music", path: "Kind of Blue/So What.flac", created: ago(86400000), author: "mac", deleted: 0 },
+    { rev: 5, volume: "photos", path: "2026/IMG_1.jpg", created: ago(90000000), author: "fold", deleted: 0 },
+  ];
+  const routes = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        routes.push(args.route);
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: "idle", hubId: "hub", hubName: "Casa", hub: "http://127.0.0.1:49999", deviceId: "mac", hubDevices: [{ id: "mac", name: "Local Mac" }, { id: "fold", name: "phone-fold" }], volumes };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes };
+        if (args.route === "/v1/machines") return { machines: [] };
+        if (args.route.startsWith("/v1/activity")) return { versions, next: null };
+        if (args.route.startsWith("/v1/gallery/preview")) return { data: "data:image/png;base64,AAAA" };
+        if (args.route.startsWith("/v1/music/cover")) return { data: "data:image/jpeg;base64,BBBB" };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelectorAll(".home-arrival").length === 3);
+  const arrivals = [...w.document.querySelectorAll(".home-arrival")].map((a) => a.textContent.replace(/\s+/g, " "));
+  assert.match(arrivals[0], /IMG_4412\.jpg.*phone-fold · 2 min ago/);
+  assert.match(arrivals[1], /brief\.md.*Local Mac · 2 h ago/);
+  assert.match(arrivals[2], /So What\.flac/, "deletions are not arrivals");
+  assert.equal(JSON.parse(w.document.querySelector(".home-arrival").dataset.id).rev, 9, "an arrival opens its file");
+  const cards = [...w.document.querySelectorAll(".folder-card")];
+  assert.ok(cards[0].querySelector('.home-lead .tile [data-icon="images"], .home-lead .tile svg'), "a photo folder keeps its Images icon");
+  assert.ok(cards[1].querySelector('.home-lead .tile [data-icon="music"], .home-lead .tile svg'), "a music folder keeps its Music icon");
+  assert.equal(cards[0].querySelector("img"), null, "a folder card never shows file content");
+  assert.ok(cards[2].querySelector(".home-conflict .home-ring"), "a conflict draws the ring in the warning colour");
+  assert.equal(w.document.querySelector(".home-latest"), null, "a card does not name the last file touched");
+  for (const card of cards) assert.doesNotMatch(card.textContent, /\/Users\/javi/, "the path lives in the folder detail");
+  assert.equal(routes.some((route) => route.startsWith("/v1/folder-previews")), false);
+});
+
 test("a paused replica stays Paused and a live list while the hub is unavailable stays Linked", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-paused-labels-"));
   init(home, { port: 0, name: "Local Mac" });
@@ -1744,7 +1807,7 @@ test("a paused replica stays Paused and a live list while the hub is unavailable
           return { ...daemon.engine.status(), role: "replica", phase, hubUnavailable: true, hubName: "Casa", hub: "http://127.0.0.1:49999" };
         if (args.route === "/v1/remote") return { name: "Casa", volumes: [] };
         if (args.route === "/v1/machines")
-          return { machines: [{ name: "phone-fold", role: "replica", platform: "android", machineId: "fold", lastAddress: "192.168.1.144", isHub: false }] };
+          return { machines: [{ name: "phone-fold", role: "replica", platform: "android", machineId: "fold", lastAddress: "192.168.1.144", isHub: false }, { name: "umbrel", role: "replica", platform: "linux", machineId: "umbrel", lastAddress: "192.168.1.150", isHub: false, backup: { enabled: true } }] };
         return {};
       },
     },
@@ -1752,13 +1815,15 @@ test("a paused replica stays Paused and a live list while the hub is unavailable
   w.eval(`(async()=>{${script}\n})()`);
   await until(() => w.document.querySelector(".folder-card"));
   w.document.querySelector('[data-view="devices"]').click();
-  await until(() => w.document.querySelectorAll(".device-row").length >= 3);
+  await until(() => w.document.querySelectorAll(".device-row").length >= 4);
   const rows = [...w.document.querySelectorAll(".device-row")];
   assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").textContent.trim(), "Paused", "pausing is a choice that outranks Offline");
   assert.ok(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").classList.contains("wa"), "Paused is a warning on the Devices row too");
   const other = rows.find((row) => /phone-fold/.test(row.textContent));
   assert.equal(other.querySelector(".pill").textContent.trim(), "Linked", "a live list is never marked Offline just because the hub is");
   assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
+  assert.doesNotMatch(other.textContent, /Backs up hub/, "a device that is not a backup carries no tag");
+  assert.match(rows.find((row) => /umbrel/.test(row.textContent)).querySelector(".row-tags").textContent, /Backs up hub/, "the hub's backup server is tagged in a replica's list");
 });
 
 test("offline, an empty saved History reads its normal empty state and Copies say they are last known", async (t) => {
@@ -2146,12 +2211,14 @@ test("share web routes survive reload and history navigation; hub edits use real
     "false",
   );
   assert.equal(historyWindow.document.activeElement.id, "history-share");
+  const filtersBefore = historyQuery(".history-filters");
   historyQuery('[data-action="history-filter"][data-id="conflicts"]').click();
   await until(
     () =>
       historyQuery('[data-id="conflicts"]').getAttribute("aria-pressed") ===
         "true" && historyIdle(),
   );
+  assert.equal(historyQuery(".history-filters"), filtersBefore, "a filter changes the list in place, without redrawing the page");
   historyQuery("#history-share").click();
   historyQuery(`[role="option"][data-id="${v.id}"]`).click();
   await until(
@@ -2519,14 +2586,17 @@ test("folder progress shows files and bytes for the current phase", async (t) =>
   });
   await w.eval(`(async()=>{${script}\n})()`);
   const q = (selector) => w.document.querySelector(selector);
-  await until(() => q(".folder-card progress"));
+  await until(() => q(".folder-card .home-ring"));
   assert.equal(q(".folder-card .meta").textContent, "402 / 1,269 files sent · 4.0 GB / 14.0 GB · IMG_0042.jpg");
-  assert.equal(q(".folder-card progress").getAttribute("aria-label"), "Files sent");
+  assert.equal(q(".folder-card .home-lead").getAttribute("aria-label"), "Files sent: 402 of 1,269");
+  assert.equal(q(".folder-card .home-ring-fill").getAttribute("stroke-dasharray"), "32 100", "a ring around the tile fills with files sent");
+  assert.equal(q(".folder-card progress"), null, "the ring replaces the bar");
   progress = { volume: volume.id, stage: "receive", direction: "download", path: "IMG_0100.jpg", filesDone: 3, filesTotal: null, sizeDone: 0, sizeTotal: 0, bytesDone: 1024, bytesTotal: 2048 };
   await poll();
   await until(() => /checked/.test(q(".folder-card .meta").textContent));
   assert.equal(q(".folder-card .meta").textContent, "3 files checked · IMG_0100.jpg · 1.0 KB / 2.0 KB");
-  assert.equal(q(".folder-card progress").getAttribute("aria-label"), "Files checked");
+  assert.equal(q(".folder-card .home-ring"), null, "an indeterminate cycle draws no ring");
+  assert.equal(q(".folder-card progress"), null);
 });
 
 test("unlink can also delete the replica files the hub already has", async (t) => {
@@ -5393,6 +5463,28 @@ test("Review opens the folder error details without navigating away", async (t) 
   assert.equal(w.document.querySelector("#dialog").open, false);
 });
 
+test("a replica names its own changes and the hub's other devices instead of Device ids", async (t) => {
+  const dom = new JSDOM(html, {
+    runScripts: "outside-only",
+    url: "http://localhost",
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  await w.eval(
+    `(async()=>{${script.replace("await action(boot);", "")}\nstatus = { id: "local", name: "macbook-pro", deviceId: "mine", hubId: "hub", hubName: "casa", devices: [], hubDevices: [{ id: "mine", name: "macbook-pro" }, { id: "fold", name: "phone-fold" }] }; window.author = authorName; window.disposeNotices = () => noticeStore.dispose();})()`,
+  );
+  t.after(() => {
+    w.disposeNotices();
+    w.close();
+  });
+  assert.equal(w.author("mine"), "macbook-pro");
+  assert.equal(w.author("local"), "macbook-pro");
+  assert.equal(w.author("hub"), "casa");
+  assert.equal(w.author("fold"), "phone-fold");
+  assert.equal(w.author("0123456789abcdef"), "Device 01234567");
+  assert.equal(w.author(null), "Device null");
+});
+
 test("gallery deletion filtering survives reload and permits restored revisions without hiding another folder", async (t) => {
   const key = JSON.stringify(["replica", "hub", "photos", "photo.jpg"]);
   const dom = new JSDOM(html, {
@@ -6323,6 +6415,410 @@ test("the photo timeline appears and seeks while the gallery is still indexing",
     w.document.querySelector(".photo-timeline [aria-current]")?.dataset.month,
     "2020-12",
   );
+});
+
+test("the gallery groups days into blocks with a hero, a quiet run, On this day and Years and Months views", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-moments-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  daemon.engine.store.db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const item = (day, n) => ({ path: `${day}-${n}.jpg`, hash: `h${day}${n}`, kind: "image", date: `${day}T10:00:00.000Z`, cursor: `${day}T10:00:00.000Z|${day}-${n}.jpg`, size: 1, rev: 1, dateSource: "capture date" });
+  const plan = [["2026-09-12", 9], ["2026-09-10", 2], ["2026-09-09", 1], ["2026-09-05", 5]];
+  const items = plan.flatMap(([day, n]) => Array.from({ length: n }, (_, i) => item(day, i)));
+  const days = Object.fromEntries(plan);
+  const routes = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          routes.push(args.route);
+          if (args.route.startsWith("/v1/gallery?"))
+            return { indexing: false, timeline: [{ month: "2026-09", count: 17, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, items, days, next: null, previous: null };
+          if (args.route.startsWith("/v1/gallery/memories"))
+            return { memories: [{ year: String(new Date().getFullYear() - 1), count: 21, path: "m.jpg", hash: "mh", kind: "image" }, { year: String(new Date().getFullYear() - 2), count: 1, path: "n.jpg", hash: "nh", kind: "image" }] };
+          if (args.route.startsWith("/v1/gallery/periods"))
+            return { level: args.route.includes("level=year") ? "year" : "month", periods: args.route.includes("level=year") ? [{ period: "2026", latest: "2026-09", count: 17, path: "p.jpg", hash: "ph", kind: "image" }, { period: "2025", latest: "2025-12", count: 4, path: "q.jpg", hash: "qh", kind: "image" }] : [{ period: "2026-09", count: 17, path: "p.jpg", hash: "ph", kind: "image" }] };
+          if (args.route.startsWith("/v1/gallery/preview")) return { unavailable: true };
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  if (!w.document.querySelector(".photo-timeline")) w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 17);
+  const blocks = [...w.document.querySelectorAll(".photo-day .photo-block")];
+  assert.deepEqual(blocks.map((b) => b.querySelector("h3").textContent), ["Saturday 12 September9 photos", "9–10 September3 photos", "Saturday 5 September5 photos"], "a quiet run shares one block under its date range");
+  assert.deepEqual(blocks.map((b) => b.className.replace("photo-block ", "")), ["photo-block-hero", "photo-block-quiet", "photo-block-day"]);
+  assert.equal(blocks[0].querySelectorAll(".photo-hero .photo-thumb").length, 1);
+  assert.equal(blocks[0].querySelectorAll(".photo-side .photo-thumb").length, 4);
+  assert.equal(blocks[0].querySelectorAll(".photo-grid .photo-thumb").length, 4, "a busy day puts its remaining photos in ordinary rows");
+  assert.equal(blocks[1].querySelectorAll(".photo-grid .photo-thumb").length, 3);
+  await until(() => !w.document.querySelector(".photo-memories").hidden);
+  const memories = [...w.document.querySelectorAll(".memory-card")].map((c) => c.textContent);
+  assert.equal(memories.length, 2);
+  assert.match(memories[0], /1 year ago · 21 photos/);
+  assert.match(memories[1], /2 years ago · 1 photo/);
+  assert.ok(routes.some((route) => /memories\?.*day=\d\d-\d\d.*year=\d{4}/.test(route) || /memories\?.*year=\d{4}.*day=\d\d-\d\d/.test(route)));
+  const zoom = w.document.querySelector(".gallery-zoom");
+  assert.deepEqual([...zoom.querySelectorAll("button")].map((b) => [b.textContent, b.getAttribute("aria-pressed")]), [["Years", "false"], ["Months", "false"], ["Days", "true"]]);
+  zoom.querySelector('[data-id="years"]').click();
+  await until(() => w.document.querySelectorAll(".period-tile").length === 2);
+  assert.ok(w.document.querySelector("#photo-gallery").classList.contains("gallery-periods-view"));
+  assert.match(w.document.querySelector(".period-tile").textContent, /2026\s*17/);
+  assert.equal(w.document.querySelector('.gallery-zoom [data-id="years"]').getAttribute("aria-pressed"), "true");
+  w.document.querySelectorAll(".period-tile")[1].click();
+  await until(() => routes.some((route) => route.includes("month=2025-12")));
+  assert.equal(w.document.querySelector("#photo-gallery").classList.contains("gallery-periods-view"), false, "choosing a year returns to the days at that period");
+  assert.equal(w.document.querySelector('.gallery-zoom [data-id="days"]').getAttribute("aria-pressed"), "true");
+  const flights = [];
+  w.Element.prototype.animate = function (frames, options) {
+    flights.push({ element: this, frames, options });
+    return { cancel() {} };
+  };
+  w.Element.prototype.getBoundingClientRect = function () {
+    return this.matches?.(".photo-thumb") ? { left: 10, top: 20, width: 100, height: 50 } : this.matches?.(".photo-viewer-image") ? { left: 0, top: 0, width: 400, height: 200 } : { left: 0, top: 0, width: 0, height: 0 };
+  };
+  w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  w.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+  await until(() => w.document.querySelector(".photo-thumb .photo-open"));
+  w.document.querySelector(".photo-thumb .photo-open").click();
+  await until(() => flights.some((flight) => flight.element.matches?.(".photo-viewer-image")));
+  const opening = flights.find((flight) => flight.element.matches?.(".photo-viewer-image"));
+  assert.equal(opening.frames[0].transform, "translate(-140px, -55px) scale(0.25)", "a photo opens from its own thumbnail");
+  assert.equal(opening.frames[1].transform, "none");
+  const flightsBefore = flights.length;
+  w.document.querySelector("#cancel-dialog").click();
+  await until(() => flights.length > flightsBefore);
+  const leaving = flights[flights.length - 1];
+  assert.equal(leaving.frames[0].transform, "none", "closing starts from the open viewer");
+  assert.equal(leaving.frames[1].transform, "translate(-140px, -55px) scale(0.25)", "and shrinks back into its own thumbnail");
+  assert.equal(leaving.options.fill, "forwards");
+  await until(() => !w.document.querySelector("#dialog").hasAttribute("open"));
+  const count = flights.length;
+  w.Element.prototype.getBoundingClientRect = function () {
+    return this.matches?.(".photo-thumb") ? { left: 10, top: 5000, right: 110, bottom: 5050, width: 100, height: 50 } : { left: 0, top: 0, width: 400, height: 200 };
+  };
+  w.document.querySelector(".photo-thumb .photo-open").click();
+  await until(() => w.document.querySelector(".photo-viewer-image"));
+  assert.equal(flights.length, count, "a thumbnail scrolled out of view opens with the plain fade");
+});
+
+test("Space opens a Quick Look with the file's preview, arrows move through the folder and Space closes", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-quicklook-"));
+  init(home, { port: 0, name: "Quick Look" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Docs");
+  const sharp = (await import("sharp")).default;
+  fs.writeFileSync(path.join(v.path, "a-note.txt"), "first line\nsecond line");
+  fs.writeFileSync(path.join(v.path, "b-picture.png"), await sharp({ create: { width: 40, height: 30, channels: 3, background: "red" } }).png().toBuffer());
+  fs.writeFileSync(path.join(v.path, "c-sheet.xlsx"), "binary-ish");
+  fs.mkdirSync(path.join(v.path, "zdir"));
+  fs.writeFileSync(path.join(v.path, "zdir", "inner.txt"), "x");
+  await daemon.engine.cycle();
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  w.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new w.Event("close")); };
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelectorAll(".browser-file-row").length === 4);
+  const rows = [...w.document.querySelectorAll('.browser-file-row[data-action="activity-file"]')];
+  assert.equal(rows.length, 3);
+  const key = (el, k) => el.dispatchEvent(new w.KeyboardEvent("keydown", { key: k, bubbles: true }));
+  key(rows[0], " ");
+  const dialog = w.document.getElementById("quicklook");
+  assert.ok(dialog.open);
+  assert.match(dialog.querySelector(".ql-title").textContent, /a-note\.txt.*1 of 3 in this folder/s, "folders are not part of the walk");
+  await until(() => dialog.querySelector(".ql-text"));
+  assert.match(dialog.querySelector(".ql-text").textContent, /first line\nsecond line/);
+  assert.equal(dialog.querySelector('[data-ql="prev"]').disabled, true);
+  key(dialog, "ArrowRight");
+  await until(() => /b-picture\.png/.test(dialog.querySelector(".ql-title").textContent));
+  await until(() => dialog.querySelector(".ql-stage img"));
+  key(dialog, "ArrowRight");
+  await until(() => /c-sheet\.xlsx/.test(dialog.querySelector(".ql-title").textContent));
+  assert.equal(dialog.querySelector(".ql-stage img, .ql-stage .ql-text"), null, "an unknown type shows its icon and metadata with no error");
+  assert.equal(dialog.querySelector('[data-ql="next"]').disabled, true);
+  assert.match(dialog.querySelector(".ql-meta").textContent, /XLSX/);
+  key(dialog, " ");
+  assert.equal(dialog.open, false, "Space closes");
+  rows[1].focus();
+  key(rows[1], " ");
+  rows[1].remove();
+  dialog.querySelector('[data-ql="open"]').click();
+  await until(() => w.document.querySelector(".file-hero .file-hero-stage img"));
+  assert.equal(dialog.open, false);
+  assert.ok(w.document.querySelector(".file-history-summary .stats"), "the preview heads File detail above its stats");
+});
+
+test("Command-K opens a palette that searches by scope, walks results with the keyboard, runs actions and remembers searches", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-palette-"));
+  init(home, { port: 0, name: "Palette" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  w.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new w.Event("close")); };
+  const searches = [];
+  const calls = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        calls.push(`${args.method || "GET"} ${args.route}`);
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: "idle", hubId: "hub", hubName: "Casa", hub: "http://127.0.0.1:49999", volumes: [{ id: "docs", name: "documents", selected: 1, files: 3, bytes: 1, sync: { state: "idle" } }] };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [] };
+        if (args.route.startsWith("/v1/search")) {
+          searches.push(args.route);
+          const q = new URL(args.route, "http://x").searchParams;
+          if (q.get("q") === "zzzz") return { folders: [], files: [], photos: [], music: [], counts: {} };
+          return {
+            folders: q.get("scope") === "all" ? [{ id: "docs", name: "blueprints" }] : [],
+            files: [{ volume: "docs", folder: "documents", path: "plans/blueprint-v3.pdf", name: "blueprint-v3.pdf", hash: "h1", size: 2400, rev: 7 }],
+            photos: [{ volume: "docs", folder: "documents", path: "blue-door.jpg", name: "blue-door.jpg", hash: "h2", size: 10, rev: 6, kind: "image" }],
+            music: [{ volume: "docs", folder: "documents", path: "Blue in Green.flac", name: "Blue in Green.flac", hash: "h3", size: 10, rev: 5, title: "Blue in Green", artist: "Miles Davis", album: "Kind of Blue", cover: null }],
+            counts: { folders: 1, files: 1, photos: 1, music: 1 },
+          };
+        }
+        if (args.route.startsWith("/v1/gallery/preview")) return { data: "data:image/png;base64,AAAA" };
+        if (args.route.startsWith("/v1/activity") || args.route.startsWith("/v1/history")) return { versions: [], next: null };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card") && w.document.body.getAttribute("aria-busy") === "false");
+  const press = (key, extra = {}) => w.document.body.dispatchEvent(new w.KeyboardEvent("keydown", { key, bubbles: true, ...extra }));
+  press("k", { ctrlKey: true });
+  const dialog = w.document.getElementById("palette");
+  assert.ok(dialog.open, "Control-K opens it from any page");
+  assert.match(dialog.textContent, /Actions/);
+  assert.deepEqual([...dialog.querySelectorAll('[role="group"][aria-label="Actions"] strong')].map((n) => n.textContent), ["Sync now", "Pause sync", "Choose folders…", "Open Settings"], "an empty field is a launcher");
+  const type = (value) => {
+    const input = dialog.querySelector(".pal-input");
+    input.value = value;
+    input.dispatchEvent(new w.Event("input", { bubbles: true }));
+  };
+  type("blue");
+  await until(() => dialog.querySelector('[aria-label="Files"]'));
+  assert.deepEqual([...dialog.querySelectorAll(".pal-group")].map((g) => g.getAttribute("aria-label")), ["Folders", "Files", "Photos", "Music"]);
+  assert.equal(dialog.querySelectorAll(".pal-thumbs .pal-cell").length, 1, "photos are a thumbnail row");
+  await until(() => dialog.querySelector(".pal-thumb img"));
+  assert.match(dialog.querySelector('[aria-label="Music"]').textContent, /Blue in Green.*Miles Davis · Kind of Blue/s);
+  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("blueprints"), true, "the first row is selected");
+  press("ArrowDown");
+  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("blueprint-v3.pdf"), true);
+  press("ArrowUp");
+  press("ArrowUp");
+  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("Blue in Green"), true, "the selection wraps");
+  const flights = [];
+  w.Element.prototype.animate = function (frames, options) {
+    flights.push({ element: this, frames, options });
+    return { cancel() {} };
+  };
+  const place = (node) => [...node.parentNode.children].filter((n) => n.matches("button")).indexOf(node);
+  const originals = ["offsetWidth", "offsetLeft"].map((name) => [name, Object.getOwnPropertyDescriptor(w.HTMLElement.prototype, name)]);
+  Object.defineProperty(w.HTMLElement.prototype, "offsetWidth", { configurable: true, get() { return this.matches("button") ? 60 : this.matches(".segmented") ? 240 : 0; } });
+  Object.defineProperty(w.HTMLElement.prototype, "offsetLeft", { configurable: true, get() { return this.matches("button") ? place(this) * 60 : 0; } });
+  w.document.documentElement.style.setProperty("--motion-fast", "120ms");
+  dialog.querySelector('[data-pal-scope="files"]').click();
+  await until(() => dialog.querySelector(".segmented-thumb"));
+  assert.ok(dialog.querySelector(".segmented").classList.contains("has-thumb"));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  let churn = 0;
+  const probe = new w.MutationObserver((records) => (churn += records.length));
+  probe.observe(dialog, { attributes: true, subtree: true, attributeFilter: ["class"] });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  probe.disconnect();
+  assert.equal(churn, 0, "placing the pill does not retrigger itself");
+  dialog.querySelector('[data-pal-scope="music"]').click();
+  await until(() => flights.some((flight) => flight.element.matches?.(".segmented-thumb")));
+  assert.equal(flights.find((flight) => flight.element.matches(".segmented-thumb")).frames[0].transform, "translate(-120px, 0px) scale(1, 1)", "the selected pill slides to the new segment");
+  Object.defineProperty(w.document, "hidden", { configurable: true, get: () => false });
+  const content = w.document.querySelector("#content");
+  content.insertAdjacentHTML("beforeend", '<span class="pill ok probe">Up to date</span><span class="filter-count">3</span>');
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const quiet = flights.filter((flight) => flight.element.matches?.(".probe, .filter-count")).length;
+  assert.equal(quiet, 0, "a first sight animates nothing");
+  content.querySelector(".probe").className = "pill wa probe";
+  content.querySelector(".probe").textContent = "Syncing";
+  content.querySelector(".filter-count").textContent = "4";
+  await until(() => flights.filter((flight) => flight.element.matches?.(".probe, .filter-count")).length >= 2);
+  const moved = flights.filter((flight) => flight.element.matches?.(".probe, .filter-count"));
+  assert.ok(moved.some((flight) => flight.element.matches(".filter-count") && /translateY\(4px\)/.test(flight.frames[0].transform)), "a changed count rolls in");
+  assert.ok(moved.some((flight) => flight.element.matches(".probe") && flight.frames[0].opacity === 0.35), "a changed status cross-fades");
+  content.querySelector(".probe").remove();
+  content.querySelector(".filter-count").remove();
+  for (const [name, descriptor] of originals) Object.defineProperty(w.HTMLElement.prototype, name, descriptor);
+  delete w.Element.prototype.animate;
+  await until(() => searches.some((route) => route.includes("scope=music")));
+  assert.equal(dialog.querySelector('[data-pal-scope="music"]').getAttribute("aria-pressed"), "true");
+  dialog.querySelector('[data-pal-scope="all"]').click();
+  await until(() => searches.filter((route) => route.includes("scope=all")).length >= 2);
+  await until(() => dialog.querySelector('[role="option"][aria-selected="true"]')?.textContent.includes("blueprints"));
+  press("ArrowDown");
+  press("Enter");
+  await until(() => !dialog.open);
+  await until(() => /Device|History|blueprint/i.test(w.document.querySelector("#content h1")?.textContent || ""));
+  assert.ok(calls.some((call) => call.includes("/v1/history?") && call.includes("blueprint-v3.pdf")), "Enter on a file opens its detail");
+  assert.deepEqual(JSON.parse(w.localStorage.getItem("arca-palette-recent")), ["blue"], "an opened result remembers its search");
+  press("k", { metaKey: true });
+  assert.ok(dialog.open);
+  assert.match(dialog.querySelector('[aria-label="Recent searches"]').textContent, /blue/);
+  type("zzzz");
+  await until(() => dialog.querySelector(".empty"));
+  assert.match(dialog.querySelector(".empty").textContent, /No matches for “zzzz”/);
+  type("sync");
+  await until(() => dialog.querySelector('[aria-label="Actions"]'));
+  dialog.querySelector('[aria-label="Actions"] [data-pal]').click();
+  await until(() => !dialog.open);
+  await until(() => calls.includes("POST /v1/sync"));
+  press("k", { ctrlKey: true });
+  press("k", { ctrlKey: true });
+  assert.equal(dialog.open, false, "the shortcut toggles it");
+});
+
+test("rows cascade in on a new route, a new arrival settles once and a folder's tile travels into its header", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-motion-"));
+  init(home, { port: 0, name: "Motion" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost", pretendToBeVisual: true });
+  const w = dom.window;
+  let poll;
+  w.setInterval = (callback, ms) => {
+    if (ms === 5000) poll = callback;
+    return 0;
+  };
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const base = { selected: 1, sync: { state: "idle", lastCompleted: new Date().toISOString() }, conflicts: 0, files: 1, bytes: 1, path: "/x" };
+  const volumes = Array.from({ length: 8 }, (_, i) => ({ ...base, id: `v${i}`, name: `folder-${i}` }));
+  const animations = [];
+  w.Element.prototype.animate = function (frames, options) {
+    animations.push({ element: this, frames, options });
+    return { cancel() {} };
+  };
+  w.Element.prototype.getBoundingClientRect = function () {
+    return this.matches?.(".home-lead, .tile") && this.closest?.(".folder-card")
+      ? { left: 100, top: 200, width: 40, height: 40 }
+      : this.matches?.(".detail-title .tile")
+        ? { left: 20, top: 40, width: 80, height: 80 }
+        : { left: 0, top: 0, width: 0, height: 0 };
+  };
+  w.document.documentElement.style.setProperty("--motion-enter", "200ms");
+  w.document.documentElement.style.setProperty("--motion-stagger", "20ms");
+  w.document.documentElement.style.setProperty("--motion-shared", "280ms");
+  w.document.documentElement.style.setProperty("--motion-settle", "1800ms");
+  w.document.documentElement.style.setProperty("--motion-distance", "8px");
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: "idle", hubId: "hub", hubName: "Casa", hub: "http://127.0.0.1:49999", volumes };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes };
+        if (args.route === "/v1/machines") return { machines: [] };
+        if (args.route.startsWith("/v1/activity")) return { versions: [], next: null };
+        if (args.route.startsWith("/v1/browse")) return { entries: [], next: null };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelectorAll(".folder-card").length === 8 && w.document.body.getAttribute("aria-busy") === "false");
+  const rise = animations.filter((a) => a.element.matches?.(".folder-card") && a.options.fill === "backwards");
+  assert.equal(rise.length, 6, "at most six rows cascade");
+  assert.deepEqual(rise.map((a) => a.options.delay), [0, 20, 40, 60, 80, 100], "a 20 ms step");
+  assert.equal(JSON.stringify(rise[0].frames[0]), JSON.stringify({ opacity: 0, transform: "translateY(8px)" }));
+  assert.equal(w.document.querySelector(".row-arrived"), null, "rows present at first paint are not arrivals");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  volumes.push({ ...base, id: "v8", name: "folder-8" });
+  await poll();
+  await until(() => w.document.querySelectorAll(".folder-card").length === 9);
+  await until(() => w.document.querySelector(".folder-card.row-arrived"));
+  assert.equal(w.document.querySelectorAll(".row-arrived").length, 1, "only the new row settles");
+  assert.match(w.document.querySelector(".row-arrived").textContent, /folder-8/);
+  const before = animations.length;
+  w.document.querySelector('.folder-card[data-id="v0"]').click();
+  await until(() => w.document.querySelector(".detail-title .tile"));
+  await until(() => animations.some((a, i) => i >= before && a.element.matches?.(".detail-title .tile")));
+  const travel = animations.find((a, i) => i >= before && a.element.matches?.(".detail-title .tile"));
+  assert.equal(travel.options.duration, 280);
+  assert.equal(travel.frames[0].transform, "translate(80px, 160px) scale(0.5, 0.5)", "the header tile starts where the card's tile was");
+  assert.equal(travel.frames[1].transform, "none");
 });
 
 test("the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons", async (t) => {

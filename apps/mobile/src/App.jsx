@@ -7,7 +7,7 @@ import { fileIcon } from "../../desktop/src/file-icons.js";
 import { native } from "./private-network.js";
 import { copyPicked } from "./incoming-files.js";
 import { canContinueInBackground } from "./runtime";
-import { BrandActivity, Busy, Scaffold } from "./components";
+import { BrandActivity, Busy, Logo, Scaffold } from "./components";
 import { GallerySetup } from "./GallerySource";
 import { galleryConfig } from "./gallery.js";
 import { allPhotosNote, sourceAlbums } from "./validation.js";
@@ -15,7 +15,7 @@ import { historyEmpty } from "./history-empty.js";
 import { clockTime, dayLabel } from "./history-days.js";
 import { Section } from "./components";
 import { ConfirmDialog } from "./components";
-import { useRetained } from "./motion";
+import { Rise, useListMotion, useMotion, useRetained } from "./motion";
 import { subscribeNotificationResponse } from "./runtime";
 import { NoticeStack, ErrorNotice } from "./Notice";
 import { crashRecord } from "./crash";
@@ -44,7 +44,10 @@ import {
   View,
   Text,
   ScrollView,
+  Animated,
+  PanResponder,
   Pressable,
+  RefreshControl,
   AppState,
   BackHandler,
   Alert,
@@ -72,6 +75,7 @@ import {
   FolderRow,
   Navigation,
   MachineRow,
+  ArrivalsStrip,
   ActionRow,
   SettingsGroup,
   SegmentedControl,
@@ -108,7 +112,6 @@ import {
   MiniPlayer,
   MusicLibrary,
   MusicSheet,
-  NowPlaying,
 } from "./MusicLibrary";
 import { player, playerAvailable, usePlayingId } from "./music-player";
 import { baseContext, musicSheet, playlistKey } from "./music-library.js";
@@ -129,6 +132,11 @@ import {
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize } from "./format";
 import { browseEntries } from "./browse";
+import { homeFromActivity } from "./home-data";
+import { FilePreview, RowThumb } from "./FilePreview";
+import { GlobalSearch } from "./GlobalSearch";
+import { NowPlayingPage } from "./NowPlayingPage";
+import { buildResults, forgetSearch, rememberSearch, searchTokens } from "./search-local";
 // Keep the native launch surface until fonts and local startup are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 const relative = (value) => {
@@ -197,6 +205,11 @@ export default function App() {
     [machines, setMachines] = useState(null),
     [machinesSaved, setMachinesSaved] = useState(false),
     [machinesLoaded, setMachinesLoaded] = useState(false),
+    [home, setHome] = useState({ arrivals: [] }),
+    [previewEntry, setPreviewEntry] = useState(null),
+    [globalSearch, setGlobalSearch] = useState(false),
+    [nowPlayingOpen, setNowPlayingOpen] = useState(false),
+    [searchRecents, setSearchRecents] = useState([]),
     [lastChange, setLastChange] = useState(undefined),
     [status, setStatus] = useState({}),
     [busy, setBusy] = useState(false),
@@ -518,6 +531,55 @@ export default function App() {
   openSheet.current = sheet;
   shownFolder.current =
     folder && engine.current ? `${engine.current.scope}:${folder.id}` : null;
+  const folderMotion = useListMotion(locals.map((f) => f.id));
+  const [pulling, setPulling] = useState(false);
+  const { duration: motionMs } = useMotion();
+  const edge = useRef(new Animated.Value(0)).current;
+  const pull = useRef(new Animated.Value(0)).current;
+  const backRef = useRef(null);
+  useEffect(() => {
+    pull.setValue(0);
+  }, [screen, folder]);
+  const edgeState = useRef({ ready: false, width: 0, ms: motionMs });
+  edgeState.current = { ready: !!folder && view === "Folders" && !sheet && !fileActionsOpen, width, ms: motionMs };
+  const edgeSwipe = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, g) =>
+          edgeState.current.ready && g.dx > 8 && Math.abs(g.dx) > Math.abs(g.dy),
+        onPanResponderMove: (_, g) => edge.setValue(Math.max(0, g.dx)),
+        onPanResponderRelease: (_, g) => {
+          const { width: span, ms } = edgeState.current;
+          if (g.dx > span / 3 || g.vx > 0.6)
+            Animated.timing(edge, { toValue: span, duration: ms(160), useNativeDriver: true }).start(({ finished }) => {
+              if (!finished) return;
+              backRef.current?.();
+              setTimeout(() => edge.setValue(0), 120);
+            });
+          else Animated.timing(edge, { toValue: 0, duration: ms(200), useNativeDriver: true }).start();
+        },
+        onPanResponderTerminate: () =>
+          Animated.timing(edge, { toValue: 0, duration: edgeState.current.ms(200), useNativeDriver: true }).start(),
+      }),
+    [],
+  );
+  const [syncDone, setSyncDone] = useState(false);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    const finished = wasBusy.current && !status.busy && !status.offline && !status.error;
+    wasBusy.current = !!status.busy;
+    if (status.busy) setSyncDone(false);
+    if (!finished) return;
+    setSyncDone(true);
+    const timer = setTimeout(() => setSyncDone(false), 1200);
+    return () => clearTimeout(timer);
+  }, [status.busy]);
+  useEffect(() => {
+    if (!pulling || status.busy) return;
+    const timer = setTimeout(() => setPulling(false), 800);
+    return () => clearTimeout(timer);
+  }, [pulling, status.busy]);
   const listedFolder = locals.find((f) => f.id === folder?.id);
   useEffect(() => {
     if (!folder || !engine.current) return;
@@ -923,6 +985,84 @@ export default function App() {
       .sort()
       .join(","),
   ]);
+  useEffect(() => {
+    setPreviewEntry(null);
+  }, [folder?.id, directory, search, screen]);
+  useEffect(() => {
+    if (screen !== "Folders" || !connected || !replica || folder) return;
+    let live = true;
+    (async () => {
+      const r = engine.current;
+      const selected = locals.filter((f) => f.selected);
+      if (!r?.scope || !selected.length) return;
+      let derived = { arrivals: [] };
+      try {
+        const page = await r.remoteView("/v1/activity?limit=50&filter=revisions", { silent: true });
+        derived = homeFromActivity(page.versions, selected.map((f) => f.id));
+      } catch {}
+      if (live) setHome(derived);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [screen, connected, replica, folder, catalog?.volumes?.length, locals.map((f) => `${f.id}:${f.files}:${f.completed ? 1 : 0}:${f.selected ? 1 : 0}`).join(",")]);
+  useEffect(() => {
+    if (!globalSearch) return;
+    engine.current?.store.get("searchRecents", []).then((list) => Array.isArray(list) && setSearchRecents(list)).catch(() => {});
+  }, [globalSearch]);
+  const searchLibraries = useRef(new Map());
+  useEffect(() => {
+    if (!globalSearch) searchLibraries.current.clear();
+  }, [globalSearch]);
+  async function searchAll(query, scope) {
+    const r = engine.current;
+    const volumes = locals.filter((f) => f.selected).map(({ id, name }) => ({ id, name }));
+    const { tokens } = searchTokens(query);
+    const rows = {};
+    const tracks = {};
+    if (tokens.length)
+      for (const v of volumes) {
+        rows[v.id] = await r.store.searchRows(r.scope, v.id, tokens[0]);
+        if (scope === "all" || scope === "music") {
+          if (!searchLibraries.current.has(v.id)) {
+            const library = await r.store.musicLibrary(r.scope, v.id).catch(() => null);
+            searchLibraries.current.set(v.id, Array.isArray(library?.value?.tracks) ? library.value.tracks : []);
+          }
+          tracks[v.id] = searchLibraries.current.get(v.id);
+        }
+      }
+    return buildResults({ query, scope, volumes, rows, tracks });
+  }
+  const persistRecents = (list) => {
+    setSearchRecents(list);
+    engine.current?.store.set("searchRecents", list).catch(() => {});
+  };
+  function openSearchResult(item, query) {
+    setGlobalSearch(false);
+    if (item.type === "action") {
+      if (item.name === "sync") startSync(true);
+      else if (item.name === "pause")
+        run(async () => {
+          await engine.current.pause(!status.paused);
+          if (status.paused) startSync();
+        });
+      else {
+        setFolder(null);
+        setView(item.name === "settings" ? "Settings" : "Folders");
+      }
+      return;
+    }
+    persistRecents(rememberSearch(searchRecents, query));
+    if (item.type === "folder") {
+      const target = locals.find((f) => f.id === item.id);
+      if (target) {
+        setView("Folders");
+        openFolder(target).catch((e) => setError(e.message));
+      }
+      return;
+    }
+    getHistory({ volume: item.volume, path: item.path }).catch((e) => setError(e.message));
+  }
   const actionLocked = busy || !engine.current;
   async function openFolder(f) {
     setEntries(
@@ -1481,7 +1621,7 @@ export default function App() {
     );
   }
   useEffect(() => {
-    const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+    const handler = () => {
       if (fileActionsOpen) {
         setFileActionsOpen(false);
         return true;
@@ -1521,7 +1661,9 @@ export default function App() {
         return true;
       }
       return false;
-    });
+    };
+    backRef.current = handler;
+    const listener = BackHandler.addEventListener("hardwareBackPress", handler);
     return () => listener.remove();
   }, [
     sheet,
@@ -1916,7 +2058,8 @@ export default function App() {
                           <Button
                             iconOnly={!!folder}
                             label="Sync now"
-                            icon="refresh"
+                            swap
+                            icon={syncDone ? "check" : "refresh"}
                             activity={!status.offline && status.busy}
                             disabled={status.paused || !engine.current}
                             onPress={() => startSync(true)}
@@ -1935,7 +2078,8 @@ export default function App() {
                   locals={locals}
                   onSaved={update}
                 />
-                <KeyboardScrollView
+                <Animated.View
+                  style={[s.flex, { transform: [{ translateX: edge }] }]}
                   onLayout={(event) => {
                     const { y, height } = event.nativeEvent.layout;
                     setGalleryViewport((old) =>
@@ -1944,9 +2088,12 @@ export default function App() {
                         : { y, height },
                     );
                   }}
+                >
+                <KeyboardScrollView
                   key={`${screen}:${folder?.id || ""}${musicView ? `:${musicRoute.length}:${JSON.stringify(musicRoute.at(-1))}` : ""}`}
                   onScroll={(event) => {
                     const { contentOffset } = event.nativeEvent;
+                    if (Platform.OS === "ios") pull.setValue(Math.max(0, Math.min(1, -contentOffset.y / 56)));
                     if (contentOffset.y !== galleryScrollY.current)
                       galleryScroll.current?.(contentOffset.y);
                     galleryScrollY.current = contentOffset.y;
@@ -1958,6 +2105,20 @@ export default function App() {
                     onboarding && s.setup,
                   ]}
                   keyboardShouldPersistTaps="handled"
+                  refreshControl={
+                    screen === "Folders" && !folder && connected && replica ? (
+                      <RefreshControl
+                        refreshing={pulling}
+                        tintColor={c.accent}
+                        colors={[c.accent]}
+                        progressBackgroundColor={c.paper}
+                        onRefresh={() => {
+                          setPulling(true);
+                          startSync();
+                        }}
+                      />
+                    ) : undefined
+                  }
                   enter={screenEnter}
                   enterStyle={[s.enter, onboarding && s.enterSetup]}
                 >
@@ -2201,17 +2362,24 @@ export default function App() {
                                             if (e.directory) {
                                               setDirectory(e.path + "/");
                                               setVisibleCount(100);
-                                            } else openFileDetail(e);
+                                            } else if (wide && !compact) setPreviewEntry(e);
+                                            else openFileDetail(e);
                                           }}
-                                          style={[s.settingRow, s.separator]}
+                                          onLongPress={() => {
+                                            if (!e.directory) setSheet({ kind: "peek", entry: e });
+                                          }}
+                                          accessibilityActions={e.directory ? undefined : [{ name: "preview", label: "Preview" }]}
+                                          onAccessibilityAction={() => {
+                                            if (!e.directory) setSheet({ kind: "peek", entry: e });
+                                          }}
+                                          style={[
+                                            s.settingRow,
+                                            s.separator,
+                                            previewEntry?.path === e.path && wide && !compact && s.historyRowChosen,
+                                          ]}
                                         >
                                           <View style={s.row}>
-                                            <Icon
-                                              name={fileIcon(
-                                                e.path,
-                                                e.directory,
-                                              )}
-                                            />
+                                            <RowThumb entry={e} enabled={index < 30} />
                                             <View style={s.flex}>
                                               <Text style={s.heading}>
                                                 {e.label}
@@ -2266,6 +2434,17 @@ export default function App() {
                             </View>
                             {wide && (
                               <StickyDetailSide>
+                                {!compact && !!previewEntry && entries.some((x) => x.path === previewEntry.path) && (
+                                  <Section>
+                                    <Text style={s.eyebrow}>PREVIEW</Text>
+                                    <Card>
+                                      <FilePreview entry={previewEntry} files={engine.current?.files} />
+                                      <Text style={s.heading}>{previewEntry.path.split("/").pop()}</Text>
+                                      <Text style={s.caption}>{bytes(previewEntry.size || 0)}</Text>
+                                      <Button label="Open" onPress={() => openFileDetail(previewEntry)} />
+                                    </Card>
+                                  </Section>
+                                )}
                                 <Section>
                                   <Text style={s.eyebrow}>LOCAL COPY</Text>
                                   <Card>
@@ -2352,6 +2531,27 @@ export default function App() {
                         )
                       ) : (
                         <>
+                          {!!connection && locals.some((f) => f.selected) && (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="Search Arca"
+                              onPress={() => setGlobalSearch(true)}
+                              style={s.searchFieldRow}
+                            >
+                              <Icon name="search" color={c.mute} />
+                              <Text style={[s.caption, s.flex]}>Search Arca</Text>
+                            </Pressable>
+                          )}
+                          {!!home.arrivals.length && !!connection && (
+                            <ArrivalsStrip
+                              arrivals={home.arrivals}
+                              nameOf={authorName}
+                              relative={relative}
+                              onOpen={(row) =>
+                                getHistory({ volume: row.volume, path: row.path }).catch((e) => setError(e.message))
+                              }
+                            />
+                          )}
                           {!!locals.length && (
                             <Section>
                               <Text style={s.eyebrow}>
@@ -2359,8 +2559,12 @@ export default function App() {
                               </Text>
                               <View style={s.folderList}>
                                 {locals.map((f) => (
-                                  <FolderRow
+                                  <Rise
                                     key={f.id}
+                                    tint={c.tint}
+                                    {...folderMotion(f.id)}
+                                  >
+                                  <FolderRow
                                     name={f.name}
                                     icon={
                                       galleryConfig(f) ||
@@ -2374,6 +2578,15 @@ export default function App() {
                                           : "folders"
                                     }
                                     description={`${f.files} files · ${bytes(f.bytes)} local`}
+                                    conflict={!!catalog?.volumes?.find((v) => v.id === f.id)?.conflicts}
+                                    progress={
+                                      status.busy &&
+                                      status.syncingVolume === f.id &&
+                                      status.progress?.bytesTotal > 0
+                                        ? status.progress.bytesDone /
+                                          status.progress.bytesTotal
+                                        : undefined
+                                    }
                                     status={
                                       status.paused
                                         ? "Paused"
@@ -2403,6 +2616,7 @@ export default function App() {
                                       )
                                     }
                                   />
+                                  </Rise>
                                 ))}
                               </View>
                             </Section>
@@ -2456,6 +2670,7 @@ export default function App() {
                       loading={detailLoading}
                       error={detailError}
                       localEntry={sheet.localEntry}
+                      files={engine.current?.files}
                       retry={() => {
                         reconnect();
                         getHistory(sheet).catch((e) =>
@@ -2662,6 +2877,7 @@ export default function App() {
                                       name={m.name}
                                       description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[m.platform] || m.platform || "Platform not reported"}${m.lastAddress ? ` · ${m.lastAddress}` : ""}`}
                                       role={m.role || "Replica"}
+                                      backup={!!m.backup?.enabled}
                                       state={m.revoked ? "Removed" : "Linked"}
                                     />
                                   ))
@@ -3097,6 +3313,24 @@ export default function App() {
                     </>
                   )}
                 </KeyboardScrollView>
+                </Animated.View>
+                {!!folder && view === "Folders" && !sheet && !fileActionsOpen && (
+                  <View style={s.edgeStrip} {...edgeSwipe.panHandlers} />
+                )}
+                {Platform.OS === "ios" && screen === "Folders" && !folder && (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      s.pullMark,
+                      {
+                        opacity: pulling ? 1 : pull,
+                        transform: [{ scale: pull.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }],
+                      },
+                    ]}
+                  >
+                    <Logo size={28} />
+                  </Animated.View>
+                )}
                 {folder && screen === "Folders" && photoFolder && (
                   <GalleryDateRail
                     key={folder.id}
@@ -3109,7 +3343,7 @@ export default function App() {
                   <MiniPlayer
                     library={shownMusic?.library}
                     cover={musicCover}
-                    open={() => setSheet({ kind: "now-playing" })}
+                    open={() => setNowPlayingOpen(true)}
                     command={musicCommand}
                   />
                 )}
@@ -3167,6 +3401,49 @@ export default function App() {
               onExited={releaseApproval}
             />
           )}
+          <NowPlayingPage
+            visible={nowPlayingOpen}
+            library={shownMusic?.library}
+            cover={musicCover}
+            command={musicCommand}
+            play={(context, track, position) => playMusic(context, track, false, position)}
+            onClose={() => setNowPlayingOpen(false)}
+            openAlbum={(track) => {
+              setNowPlayingOpen(false);
+              setFileView("music");
+              setMusicSearch(null);
+              setMusicRoute([{ kind: "albums" }, { kind: "album", id: track.albumId }]);
+            }}
+            openArtist={(artist) => {
+              setNowPlayingOpen(false);
+              setFileView("music");
+              setMusicSearch(null);
+              setMusicRoute([{ kind: "artists" }, { kind: "artist", id: artist.id }]);
+            }}
+          />
+          <GlobalSearch
+            visible={globalSearch}
+            twoPane={wide && !compact}
+            search={searchAll}
+            recents={searchRecents}
+            onForget={(text) => persistRecents(forgetSearch(searchRecents, text))}
+            actions={[
+              ...(status.paused ? [] : [{ name: "sync", label: "Sync now", icon: "refresh" }]),
+              { name: "pause", label: status.paused ? "Resume sync" : "Pause sync", icon: status.paused ? "play" : "pause" },
+              { name: "choose", label: "Open Folders", icon: "folders" },
+              { name: "settings", label: "Open Settings", icon: "settings" },
+            ]}
+            onOpen={openSearchResult}
+            onClose={() => setGlobalSearch(false)}
+            uri={(r) => {
+              const e = engine.current;
+              if (!e?.scope) return null;
+              const uri = e.files.work(e.scope, r.volume, r.path);
+              return !e.files.present || e.files.present(uri) ? uri : null;
+            }}
+            cover={(key) => musicCover(key, "small")}
+            files={engine.current?.files}
+          />
           {shownSheet && (
             <Sheet
               closing={!sheet || detail}
@@ -3185,10 +3462,14 @@ export default function App() {
                     icon: "edit",
                     subtitle: shownSheet.path.split("/").at(-1),
                   }
-                : shownSheet.kind === "gallery"
+                : shownSheet.kind === "peek"
+                  ? {
+                      title: shownSheet.entry.path.split("/").pop(),
+                      icon: fileIcon(shownSheet.entry.path),
+                      subtitle: bytes(shownSheet.entry.size || 0),
+                    }
+                  : shownSheet.kind === "gallery"
                   ? { title: "Photo uploads", icon: "gallery", subtitle: folder?.name }
-                  : shownSheet.kind === "now-playing"
-                    ? { title: "Now playing", icon: "music" }
                   : shownSheet.kind === "history-filter"
                     ? { title: "Shared folder", icon: "folders" }
                     : shownSheet.kind === "folder-actions"
@@ -3223,6 +3504,33 @@ export default function App() {
             >
               {!!error && shownSheet.kind !== "folder-actions" && (
                 <ErrorNotice error={error} retry={retryAction.current} />
+              )}
+              {shownSheet.kind === "peek" && (
+                <View style={s.stack}>
+                  <FilePreview entry={shownSheet.entry} files={engine.current?.files} />
+                  <Button
+                    label="Open"
+                    onPress={() => {
+                      const entry = shownSheet.entry;
+                      setSheet(null);
+                      openFileDetail(entry);
+                    }}
+                  />
+                  {!!shownSheet.entry.uri && (
+                    <Button
+                      quiet
+                      icon="export"
+                      label="Share this file"
+                      onPress={() =>
+                        runLocal(async () => {
+                          if (!(await Sharing.isAvailableAsync()))
+                            throw new Error("Sharing is unavailable on this device.");
+                          await Sharing.shareAsync(shownSheet.entry.uri);
+                        })
+                      }
+                    />
+                  )}
+                </View>
               )}
               {shownSheet.kind === "rename-file" && (
                 <View style={s.group}>
@@ -3274,22 +3582,6 @@ export default function App() {
                   open={setSheet}
                   change={changePlaylist}
                   remove={deletePlaylist}
-                />
-              )}
-              {shownSheet.kind === "now-playing" && (
-                <NowPlaying
-                  library={shownMusic?.library}
-                  cover={musicCover}
-                  command={musicCommand}
-                  openAlbum={(track) => {
-                    setSheet(null);
-                    setFileView("music");
-                    setMusicSearch(null);
-                    setMusicRoute([
-                      { kind: "albums" },
-                      { kind: "album", id: track.albumId },
-                    ]);
-                  }}
                 />
               )}
               {shownSheet.kind === "gallery" && (
