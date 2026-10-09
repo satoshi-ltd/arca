@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.17 — 2026-10-09
+
+- The phone's History gets the same Last 30 days strip: touch and hold a bar to read its day, lift to jump the list there. Each day heading counts the changes and the devices behind them, and a banner "Changed while you were away" appears when you come back after four hours or more. On a wide Fold the day groups sit beside the selected revision, with its device, time and File history.
+
+Needs: native build · Casa redeploy
+
 ## 0.7.16 — 2026-10-09
 
 - History opens with a Last 30 days strip of daily activity: tap or press a bar to jump to that day, and a conflict or a deletion shows as a coloured dot. Each day heading now says how many changes were made and by which devices, and a banner "Changed while you were away" counts what changed since you last had the window open after four hours or more.

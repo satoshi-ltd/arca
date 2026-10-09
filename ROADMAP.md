@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-MOB-HISTORY-ACTIVITY** — The phone and the Fold show the activity strip
-  `ui · agent · normal`
-  accept: the board.
-
 - **GALLERY-MOMENTS** — The gallery reports photo counts per day and earlier years' photos for a date
   `feature · agent · normal`
   accept: the gallery index answers a per-day count and a same-date-in-earlier-years query over capture dates (added date for undated photos) on the hub and replicas, with daemon tests; no place or face data is read; the interface follows board UI-GALLERY-MOMENTS.
