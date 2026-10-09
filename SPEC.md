@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.7.13 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.7.14 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -781,7 +781,7 @@ Web and desktop use hash routes: `#/folders`, `#/folders/SHARE_ID`, `#/machines`
 
 - **Folders:** selected working copies first, available shares second; Choose folders is the replica's primary action (Connect to hub… while disconnected) and the hub owns share creation. The header holds that button and an empty Folders only explains, pointing on a replica to the available rows below when there are any.
 - **Folder detail:** see [Folders and details](#folders-and-details).
-- **Devices:** Hub connection, then one Devices list, then backup information. Pairing and removal belong to the hub. Discovery is not linking, network presence is not verified sync, and reports carry their real freshness.
+- **Devices:** a Network map (the hub on top, one button node per authorized device with its last report time, a solid line for a report under five minutes, a dashed one for an older report and none for a device that never reported; choosing a node highlights and scrolls to its row, Escape clears it; with the hub away or more than four devices no line is drawn, and under 761px the nodes stack), then Hub connection, then one Devices list, then backup information. A line states when the hub last heard from a device, never that it is synced. Pairing and removal belong to the hub. Discovery is not linking, network presence is not verified sync, and reports carry their real freshness.
 - **History:** day groups headed Today, Yesterday or a short date (the year only when it is not the current one), each row ending in its HH:mm clock time in the same way on desktop and phone (Recent keeps relative times), and bounded pagination that appends under one Show more button (a file's history says Show more versions, the phone too); placeholder rows carry no label; a shared-folder dropdown defaults to All, and Conflicts and Deleted are mutually exclusive toggles (clicking the active one clears it). Folder and type filters combine and survive each other's changes. The default excludes deletions and conflict-copy versions. Rows open file history from the whole row with an accessible file name, Enter/Space activation, a hover background, an inset focus outline and the bare muted chevron; conflict rows open review without a separate button. Filter counts are numeric badges. Restore never predicts a version number.
 - **Settings:** replica connection first, then identity, service, access, appearance and maintenance, all sections always expanded (no accordions). Service holds the version, Copy diagnostics, runtime and state paths; Appearance only display preferences. Advanced explanations sit beside their control or in a dialog.
 

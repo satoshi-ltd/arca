@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.13";
+const APP_VERSION = "0.7.14";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1429,6 +1429,7 @@ function motionDuration(token) {
 }
 async function render({ refreshStatus = false } = {}) {
   if (daemonStopped) return renderDaemonStopped();
+  if (view !== "devices") pickedDevice = "";
   placeMusic();
   if (
     folderTab === "gallery" &&
@@ -4691,9 +4692,89 @@ const machineRow = (
   dashed = false,
   metadata = "",
   totals = "",
+  deviceKey = "",
 ) =>
-  `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This device</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
+  `<article class="device-row ${dashed ? "discovered" : ""}${deviceKey && deviceKey === pickedDevice ? " device-picked" : ""}"${deviceKey ? ` data-device="${escape(deviceKey)}"` : ""}><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This device</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
 
+let pickedDevice = "";
+const REPORT_FRESH_MS = 300000;
+function deviceMap() {
+  const known = (roster?.machines || []).filter((m) => !m.isHub && !m.revoked);
+  if (!known.length) return "";
+  const away =
+    status.role !== "hub" && Boolean(status.hubUnavailable || roster?.offline);
+  const nodes = known.map((m) => {
+    const key = m.credentialId || m.machineId || m.name;
+    const at = m.reportedAt && !Number.isNaN(Date.parse(m.reportedAt)) ? m.reportedAt : "";
+    const state = !at
+      ? "none"
+      : Date.now() - Date.parse(at) < REPORT_FRESH_MS
+        ? "fresh"
+        : "stale";
+    return {
+      key,
+      name: m.name,
+      at,
+      state,
+      self:
+        m.machineId === status.id ||
+        Boolean(status.deviceId && m.credentialId === status.deviceId),
+      symbol: /ios|android|iphone|ipad/i.test(m.platform || "")
+        ? "smartphone"
+        : "monitor",
+    };
+  });
+  const lined = !away && nodes.length <= 4;
+  const x = (i) => ((i + 0.5) * 300) / nodes.length;
+  const paths = lined
+    ? nodes
+        .map((n, i) =>
+          n.state === "none"
+            ? ""
+            : `<path class="topo-link topo-${n.state}" d="${Math.round(x(i)) === 150 ? "M150 0 L150 56" : `M150 0 C150 30 ${x(i)} 26 ${x(i)} 56`}" />`,
+        )
+        .join("")
+    : "";
+  const hubNode = `<div class="topo-hub"><div class="topo-node topo-hub-node${away ? " topo-last" : ""}"><span class="tile large hub">${icon("server")}</span><span class="topo-name"><strong>${escape(status.role === "hub" ? status.name : hubName())}</strong><span class="tag hub">Hub</span></span>${away ? pill("Unavailable", "wa", "wifi-off") : ""}</div></div>`;
+  const pillFor = (n) =>
+    n.state === "none"
+      ? pill("No report yet", "id", "circle-dashed")
+      : away
+        ? n.self
+          ? pill("Offline", "wa", "wifi-off")
+          : pill(relative(n.at), "id", "circle-dashed")
+        : n.state === "fresh"
+          ? pill(relative(n.at), "ok", "activity")
+          : pill(relative(n.at), "wa", "clock");
+  const cards = nodes
+    .map(
+      (n) =>
+        `<button type="button" class="topo-node${away ? " topo-last" : n.state === "none" ? " topo-none" : ""}" data-action="pick-device" data-id="${escape(n.key)}" aria-pressed="${n.key === pickedDevice}">${`<span class="tile large">${icon(n.symbol)}</span>`}<span class="topo-name"><strong>${escape(n.name)}</strong>${n.self ? '<span class="tag self">This device</span>' : ""}</span>${pillFor(n)}</button>`,
+    )
+    .join("");
+  const key = lined
+    ? '<div class="topo-key"><span><svg viewBox="0 0 24 4" aria-hidden="true"><line class="topo-link topo-fresh" x1="0" y1="2" x2="24" y2="2" /></svg>Last report under 5 min</span><span><svg viewBox="0 0 24 4" aria-hidden="true"><line class="topo-link topo-stale" x1="0" y1="2" x2="24" y2="2" /></svg>Older report</span><span>No line: never reported</span></div>'
+    : "";
+  const bridge = away
+    ? `<div class="topo-break">${icon("unplug")}Hub unreachable: reports below are the last saved</div>`
+    : lined
+      ? `<svg class="topo-links" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true">${paths}</svg>`
+      : "";
+  return `<div class="topo">${hubNode}${bridge}<div class="topo-nodes topo-cols-${Math.min(nodes.length, 4)}">${cards}</div>${key}</div>`;
+}
+function pickDevice(key) {
+  pickedDevice = pickedDevice === key ? "" : key;
+  document.querySelectorAll("[data-action=\"pick-device\"]").forEach((node) =>
+    node.setAttribute("aria-pressed", String(node.dataset.id === pickedDevice)),
+  );
+  let target = null;
+  document.querySelectorAll(".device-row[data-device]").forEach((row) => {
+    const on = row.dataset.device === pickedDevice;
+    row.classList.toggle("device-picked", on);
+    if (on) target = row;
+  });
+  target?.scrollIntoView({ block: "nearest" });
+}
 function selfPill() {
   if (!status.hub) return pill("Disconnected", "wa", "unplug");
   if (status.hubUnavailable && status.phase !== "paused")
@@ -4748,8 +4829,10 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     ? '<p class="hint">Offline · showing saved device information · last known</p>'
     : "";
   let machineRows = "";
+  const map = deviceMap();
   let html =
-    status.role === "replica" ? section("Hub connection", hubConnection()) : "";
+    (map ? section("Network", map) : "") +
+    (status.role === "replica" ? section("Hub connection", hubConnection()) : "");
   const selfAddress = discovered?.tailscale?.self?.addresses?.[0];
   if (status.role === "hub")
     machineRows += row(
@@ -4822,6 +4905,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
       false,
       escape(platformLabel(status.platform)),
       `${status.volumes.filter((v) => v.selected).length} folders · ${bytes(status.volumes.filter((v) => v.selected).reduce((n, v) => n + v.bytes, 0))} local`,
+      status.deviceId || status.id,
     );
   if (status.role === "hub" && status.devices.length) {
     let records = "";
@@ -4853,6 +4937,8 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         false,
         !d.last_seen,
         p ? platform(p) : escape(platformLabel(report?.platform || "")),
+        "",
+        d.id,
       );
     }
     machineRows += records;
@@ -4891,6 +4977,8 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
               false,
               false,
               escape(platformLabel(m.platform || "")),
+              "",
+              m.credentialId || m.machineId || m.name,
             ),
           )
           .join("")
@@ -5871,6 +5959,7 @@ async function handle(name, id, control) {
     }
     return;
   }
+  if (name === "pick-device") return pickDevice(id);
   if (name === "web-approver") {
     const enabled = !status.webApprovers?.includes(id);
     modal(
@@ -7834,6 +7923,15 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+document.addEventListener("keydown", (event) => {
+  if (
+    event.key === "Escape" &&
+    view === "devices" &&
+    pickedDevice &&
+    !document.querySelector("dialog[open]")
+  )
+    pickDevice(pickedDevice);
+});
 // File actions use a native disclosure, with keyboard dismissal and focus return.
 document.addEventListener("keydown", (event) => {
   const menu = event.target.closest(".file-actions-menu[open], .folder-actions-menu[open]");

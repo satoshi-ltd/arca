@@ -24,7 +24,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.7.13 · proposals</span>
+      <span class="kit-version">v0.7.14 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -101,52 +101,6 @@
             </div></figure>
           </div>
           <div class="kit-rules"><div><strong>Accept</strong><p>On the phone, Folders opens with a Just arrived row of up to three 48 dp chips (file, originating device, relative time) that scrolls sideways and is hidden when empty; each chip opens its file detail. Selected rows keep the 12 dp gap and 48 dp touch targets and end in a third caption line with the folder's latest change; the path is never shown. A photo folder's tile is a 2×2 mosaic of up to four local thumbnails and a music folder's a stack of up to three local covers, falling back to the icon tile when none is local; nothing loads from the hub. While syncing, a ring around the tile fills with files checked and the nine-dot sits inside it; an indeterminate cycle draws no ring. Phone badges stay icons. On the Fold (700 dp and wider with the icon rail) the strip shows its three chips in a row, badges keep their text, and a conflict draws the ring in the warning colour. The row stays one touch target with its status in the accessible name, the strip scrolls by touch with no hover affordance, only opacity and transform animate and reduced motion removes the entrance. Light and dark hold, the Fold's two states are drawn above, and large text sizes wrap the third line instead of clipping it.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-DEVICES-TOPOLOGY">
-          <header><code>UI-DEVICES-TOPOLOGY</code><h3>Devices shows the hub and who reports to it</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> Arca is a hub with replicas, but Devices is a flat list that never shows it. A small map puts the hub on top and each device under it, joined by a line that encodes how fresh its last report is: solid for a recent report, dashed for an older one, none when it has never reported. A line says when the hub last heard from a device, never that the device is synced: sync state still lives in the rows and in Folders. Selecting a node highlights its row below, so the map and the list stay one source. It needs no new data: reports already carry the hub's receipt time. The phone shows the same map above its list.</p>
-          <div class="kit-board-pair">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-<div class="heading"><div><h1>Devices</h1></div><div class="heading-actions"></div></div>
-<div class="page"><section><div class="section-label">Hub connection</div><article class="device-row"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong><span class="tag hub">Hub</span></div><p class="connection-line">Linux · Tailscale · 100.99.29.84:17831</p></div><div class="row-end"></div><button type="button" class="secondary small-button danger" data-action="disconnect-hub"><span data-icon="unplug"></span>Disconnect…</button></article></section>
-<section><div class="section-label">Devices</div>
-<article class="device-row"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>macbook-pro</strong><span class="tag self">This device</span></div><p class="connection-line">macOS</p></div><div class="row-end"><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span><span class="hint">3 folders · 26.1 GB local</span></div></article>
-<article class="device-row"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong></div><p class="connection-line">Android · 192.168.1.144</p></div><div class="row-end"><span class="pill id"><span data-icon="link"></span>Linked</span></div></article>
-<article class="device-row"><div class="tile large"><span data-icon="tablet"></span></div><div class="row-main"><div class="row-tags"><strong>tablet-yuri</strong></div><p class="connection-line">Android · 192.168.1.188</p></div><div class="row-end"><span class="pill id"><span data-icon="link"></span>Linked</span></div></article>
-</section></div>
-              <p class="kit-caption">A flat list: the hub is one row among others and nothing shows when a device last reported.</p>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-<div class="heading"><div><h1>Devices</h1></div><div class="heading-actions"></div></div>
-<div class="page"><section><div class="section-label">Network</div>
-<div class="kit-topo">
-<div class="kit-topo-hub"><div class="kit-topo-node kit-topo-hub-node"><span class="tile large hub"><span data-icon="server"></span></span><span class="kit-topo-name"><strong>casa</strong><span class="tag hub">Hub</span><span class="hint">Linux · Tailscale</span></span></div></div>
-<svg class="kit-topo-links" viewBox="0 0 300 56" preserveAspectRatio="none" aria-hidden="true"><path class="kit-topo-link kit-topo-fresh" d="M150 0 C150 30 50 26 50 56" /><path class="kit-topo-link kit-topo-stale" d="M150 0 L150 56" /></svg>
-<div class="kit-topo-nodes">
-<button type="button" class="kit-topo-node" aria-pressed="false"><span class="tile large"><span data-icon="monitor"></span></span><span class="kit-topo-name"><strong>macbook-pro</strong><span class="tag self">This device</span></span><span class="pill ok"><span data-icon="activity"></span>2 min ago</span></button>
-<button type="button" class="kit-topo-node" aria-pressed="true"><span class="tile large"><span data-icon="smartphone"></span></span><span class="kit-topo-name"><strong>phone-fold</strong></span><span class="pill wa"><span data-icon="clock"></span>5 h ago</span></button>
-<button type="button" class="kit-topo-node kit-topo-none" aria-pressed="false"><span class="tile large"><span data-icon="tablet"></span></span><span class="kit-topo-name"><strong>tablet-yuri</strong></span><span class="pill id"><span data-icon="circle-dashed"></span>No report yet</span></button>
-</div>
-<div class="kit-topo-key"><span><svg viewBox="0 0 24 4" aria-hidden="true"><line class="kit-topo-link kit-topo-fresh" x1="0" y1="2" x2="24" y2="2" /></svg>Last report under 5 min</span><span><svg viewBox="0 0 24 4" aria-hidden="true"><line class="kit-topo-link kit-topo-stale" x1="0" y1="2" x2="24" y2="2" /></svg>Older report</span><span>No line: never reported</span></div>
-</div></section>
-<section><div class="section-label">Devices</div>
-<article class="device-row"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>macbook-pro</strong><span class="tag self">This device</span></div><p class="connection-line">macOS</p></div><div class="row-end"><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span><span class="hint">3 folders · 26.1 GB local</span></div></article>
-<article class="device-row kit-topo-picked"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong></div><p class="connection-line">Android · 192.168.1.144</p></div><div class="row-end"><span class="pill id"><span data-icon="link"></span>Linked</span></div></article>
-</section>
-<section><div class="section-label">Network · hub unavailable</div>
-<div class="kit-topo">
-<div class="kit-topo-hub"><div class="kit-topo-node kit-topo-hub-node kit-topo-last"><span class="tile large hub"><span data-icon="server"></span></span><span class="kit-topo-name"><strong>casa</strong><span class="tag hub">Hub</span></span><span class="pill wa"><span data-icon="wifi-off"></span>Unavailable</span></div></div>
-<div class="kit-topo-break"><span data-icon="unplug"></span>Hub unreachable: reports below are the last saved</div>
-<div class="kit-topo-nodes">
-<button type="button" class="kit-topo-node kit-topo-last" aria-pressed="false"><span class="tile large"><span data-icon="monitor"></span></span><span class="kit-topo-name"><strong>macbook-pro</strong><span class="tag self">This device</span></span><span class="pill wa"><span data-icon="wifi-off"></span>Offline</span></button>
-<button type="button" class="kit-topo-node kit-topo-last" aria-pressed="false"><span class="tile large"><span data-icon="smartphone"></span></span><span class="kit-topo-name"><strong>phone-fold</strong></span><span class="pill id"><span data-icon="circle-dashed"></span>5 h ago</span></button>
-<button type="button" class="kit-topo-node kit-topo-last" aria-pressed="false"><span class="tile large"><span data-icon="tablet"></span></span><span class="kit-topo-name"><strong>tablet-yuri</strong></span><span class="pill id"><span data-icon="circle-dashed"></span>No report yet</span></button>
-</div>
-</div></section></div>
-              <p class="kit-caption">The map sits above the list and selecting a node highlights its row. While the hub is away no line is drawn, because nothing can be confirmed, and nodes keep their saved information as last known.</p>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>Devices opens with a Network map above Hub connection and Devices: the hub on top, one node per authorized device under it, each with icon, name, role tag and a pill that pairs icon, text and colour with the time of its last report. The line to a node is solid for a report within the last 5 minutes, dashed for an older one and absent when it has never reported; the 5-minute limit is a product choice to confirm. No label on the map says synced or up to date. A node is a button with aria-pressed: choosing it highlights the matching row and scrolls it into view, choosing it again or pressing Escape clears it; nothing animates. While the hub is unavailable no line is drawn and the nodes read as last known, as the offline list does today. Under 761 px the map stacks into one column with no lines and the list is unchanged; light and dark hold.</p></div></div>
         </article>
         <article class="kit-board" data-board="UI-MOB-DEVICES-TOPOLOGY">
           <header><code>UI-MOB-DEVICES-TOPOLOGY</code><h3>The phone's Devices shows the hub and who reports to it</h3><span>Phone · Fold</span></header>

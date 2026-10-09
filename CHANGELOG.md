@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.14 — 2026-10-09
+
+- Devices opens on a Network map: the hub on top and every authorized device under it with the time of its last report. A solid line means a report in the last five minutes, a dashed one an older report and no line that the device never reported. Choosing a device highlights its row below; with the hub away the lines disappear and the times read as last known. The line says when the hub last heard from a device, never that it is synced.
+
+Needs: desktop build
+
 ## 0.7.13 — 2026-10-09
 
 - On a desktop or server replica, History, Recent and file detail now name the replica's own changes and every other device by name instead of "Device" plus eight characters. The hub's catalog hands each replica its own device id and the device names, and a replica keeps them for when the hub is away.

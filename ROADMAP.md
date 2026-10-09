@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-DEVICES-TOPOLOGY** — Devices opens on a map of the hub and its devices
-  `ui · agent · normal`
-  accept: the board.
-
 - **UI-MOB-DEVICES-TOPOLOGY** — The phone and the Fold draw the same device map
   `ui · agent · normal · depends: UI-DEVICES-TOPOLOGY`
   accept: the board.

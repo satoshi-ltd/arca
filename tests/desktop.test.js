@@ -1761,6 +1761,84 @@ test("a paused replica stays Paused and a live list while the hub is unavailable
   assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
 });
 
+test("Devices draws a network map whose lines encode report freshness and whose nodes pick their rows", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-topology-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.HTMLElement.prototype.scrollIntoView = function () {
+    w.scrolled = this.dataset.device;
+  };
+  let away = false;
+  const ago = (ms) => new Date(Date.now() - ms).toISOString();
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: "idle", hubUnavailable: away, hubName: "Casa", hub: "http://127.0.0.1:49999", deviceId: "mine" };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [] };
+        if (args.route === "/v1/machines")
+          return {
+            offline: away,
+            machines: [
+              { name: "Casa", role: "hub", isHub: true, machineId: "hub" },
+              { name: "Local Mac", role: "replica", platform: "darwin", machineId: daemon.engine.config.id, credentialId: "mine", reportedAt: ago(60000) },
+              { name: "phone-fold", role: "replica", platform: "android", machineId: "fold", credentialId: "fold", reportedAt: ago(5 * 3600000) },
+              { name: "tablet-yuri", role: "replica", platform: "ios", machineId: "yuri", credentialId: "yuri" },
+              { name: "gone", role: "replica", platform: "linux", machineId: "gone", credentialId: "gone", revoked: true, reportedAt: ago(1000) },
+            ],
+          };
+        return {};
+      },
+    },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card"));
+  w.document.querySelector('[data-view="devices"]').click();
+  await until(() => w.document.querySelector(".topo-node[data-action]"));
+  const nodes = [...w.document.querySelectorAll('.topo-node[data-action="pick-device"]')];
+  assert.deepEqual(nodes.map((n) => n.querySelector("strong").textContent), ["Local Mac", "phone-fold", "tablet-yuri"], "a removed device has no node");
+  assert.ok(nodes[0].querySelector(".tag.self"));
+  assert.ok(nodes[0].querySelector(".pill.ok"), "a report under five minutes is ok");
+  assert.ok(nodes[1].querySelector(".pill.wa"), "an older report is a warning");
+  assert.match(nodes[2].textContent, /No report yet/);
+  const links = [...w.document.querySelectorAll(".topo-links path")].map((p) => [...p.classList].filter((c) => c !== "topo-link").join());
+  assert.deepEqual(links, ["topo-fresh", "topo-stale"], "no line for a device that never reported");
+  assert.doesNotMatch(w.document.querySelector(".topo").textContent, /synced|up to date/i);
+  nodes[1].click();
+  assert.equal(w.document.querySelector('.topo-node[aria-pressed="true"]').textContent.includes("phone-fold"), true);
+  assert.ok(w.document.querySelector('.device-row[data-device="fold"]').classList.contains("device-picked"));
+  assert.equal(w.scrolled, "fold");
+  w.document.body.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(w.document.querySelectorAll('.topo-node[aria-pressed="true"]').length, 0);
+  assert.equal(w.document.querySelectorAll(".device-picked").length, 0);
+  nodes[1].click();
+  w.document.querySelector('[data-view="folders"]').click();
+  await until(() => w.document.querySelector(".folder-card"));
+  w.document.querySelector('[data-view="devices"]').click();
+  await until(() => w.document.querySelector(".topo-node[data-action]"));
+  assert.equal(w.document.querySelectorAll('.topo-node[aria-pressed="true"]').length, 0, "a pick does not survive leaving Devices");
+  away = true;
+  const refresh = w.document.createElement("button");
+  refresh.dataset.action = "refresh";
+  w.document.body.append(refresh);
+  refresh.click();
+  await until(() => w.document.querySelector(".topo-break"));
+  assert.equal(w.document.querySelectorAll(".topo-links").length, 0, "no line while the hub is away");
+  assert.ok(w.document.querySelector(".topo-hub-node .pill.wa"));
+  assert.match(w.document.querySelector(".topo-node .tag.self").closest(".topo-node").textContent, /Offline/);
+  assert.ok([...w.document.querySelectorAll(".topo-node[data-action]")].every((n) => n.classList.contains("topo-last")));
+});
+
 test("offline, an empty saved History reads its normal empty state and Copies say they are last known", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-offline-wording-"));
   init(home, { port: 0, name: "Local Mac" });

@@ -693,6 +693,157 @@ main {
   width: 13px;
   height: 13px;
 }
+.topo {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  border: 1px solid var(--div);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+.topo-hub {
+  display: flex;
+  justify-content: center;
+}
+.topo-links {
+  display: block;
+  width: 100%;
+  height: calc(var(--space-6) * 2);
+}
+.topo-link {
+  fill: none;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.topo-fresh {
+  stroke: var(--green);
+}
+.topo-stale {
+  stroke: var(--wa);
+  stroke-dasharray: 5 5;
+}
+.topo-hub + .topo-nodes {
+  margin-top: var(--space-4);
+}
+.topo-nodes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.topo-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) var(--space-2);
+  border: 1px solid var(--div);
+  border-radius: var(--r-card);
+  background: var(--paper);
+  color: var(--ink);
+  text-align: center;
+}
+button.topo-node {
+  cursor: pointer;
+}
+button.topo-node:hover {
+  border-color: var(--mute);
+}
+.topo-node[aria-pressed="true"] {
+  border-color: var(--green);
+  background: var(--surface);
+  box-shadow: var(--focus-ring);
+}
+.topo-hub-node {
+  flex-direction: row;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+}
+.topo-hub-node .topo-name {
+  align-items: flex-start;
+}
+.topo-node > .pill {
+  margin-top: auto;
+}
+.topo-name {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+}
+.topo-name strong {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: var(--text-row);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topo-none,
+.topo-last {
+  border-style: dashed;
+  border-color: var(--line);
+  background: transparent;
+}
+.topo-key {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-1) var(--space-4);
+  margin-top: var(--space-3);
+  color: var(--mute);
+  font-size: var(--text-caption);
+}
+.topo-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topo-key svg {
+  width: var(--space-6);
+  height: var(--space-1);
+}
+.topo-break {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  color: var(--mute);
+  font-size: var(--text-caption);
+}
+.topo-break svg {
+  width: 14px;
+  height: 14px;
+}
+.device-row.device-picked {
+  border-color: var(--green);
+  box-shadow: var(--focus-ring);
+}
+.topo-cols-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+.topo-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.topo-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 760px) {
+  .topo-links,
+  .topo-key {
+    display: none;
+  }
+  .topo-nodes {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: var(--space-2);
+  }
+  .topo-hub-node {
+    width: 100%;
+  }
+}
 .backup-card {
   display: flex;
   gap: var(--space-3);
