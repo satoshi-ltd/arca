@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.16 — 2026-10-09
+
+- History opens with a Last 30 days strip of daily activity: tap or press a bar to jump to that day, and a conflict or a deletion shows as a coloured dot. Each day heading now says how many changes were made and by which devices, and a banner "Changed while you were away" counts what changed since you last had the window open after four hours or more.
+- The hub and replicas answer a new per-day activity read, so a replica shows its hub's counts and keeps the last ones while the hub is away.
+
+Needs: Casa redeploy · desktop build
+
 ## 0.7.15 — 2026-10-09
 
 - The phone's Devices screen now shows the same network map: the hub row with a branch to each device, solid when it reported in the last five minutes, dashed when older and absent when it never did, with "Reported 2 min ago" under each name. With the hub away the branches disappear and rows read as last known. On the Fold the map sits in the side column beside the device list and choosing a device highlights its row.

@@ -12,6 +12,7 @@ import { Music } from "./music.js";
 import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
 import { inspectSetupRoot } from "./setup.js";
 import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
+import { activityDays, parseActivityDays } from "../core/activity-days.js";
 import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
 import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
@@ -1111,6 +1112,41 @@ export async function start(home, options = {}) {
             .prepare("SELECT COALESCE(MAX(rev),0) AS n FROM revisions")
             .get().n,
         });
+      }
+      if (req.method === "GET" && route === "/v1/activity-days") {
+        const range = parseActivityDays(url.searchParams);
+        if (config.role !== "hub") {
+          requireAdmin();
+          const selectedIds = historyFolderIds(s.volumes(), config.catalog || []);
+          const requested = url.searchParams.get("volume");
+          if (requested && !selectedIds.includes(requested))
+            fail("Select a shared folder to view its history", 403);
+          const ids = requested ? [requested] : selectedIds;
+          if (!ids.length) return send(200, activityDays(s.db, [], range));
+          const query = new URLSearchParams(url.searchParams);
+          query.delete("volume");
+          query.set("volumes", ids.join(","));
+          if (query.has("since"))
+            return send(
+              200,
+              await engine
+                .request(`/v1/activity-days?${query}`, {
+                  signal: AbortSignal.timeout(3000),
+                  trackConnection: false,
+                })
+                .then((response) => response.json())
+                .catch(() => ({ days: [] })),
+            );
+          return send(
+            200,
+            await remoteView(`/v1/activity-days?${query}`, () => ({ days: [] })),
+          );
+        }
+        const requested = url.searchParams.get("volume") || url.searchParams.get("volumes");
+        const ids = requested
+          ? [...new Set(requested.split(","))].map((id) => s.volume(id).id)
+          : s.volumes().map((v) => v.id);
+        return send(200, activityDays(s.db, ids, range));
       }
       if (req.method === "GET" && route === "/v1/activity") {
         if (config.role !== "hub") {

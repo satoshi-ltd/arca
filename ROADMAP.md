@@ -26,16 +26,8 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **HISTORY-ACTIVITY** — History reports per-day activity and the author device
-  `feature · agent · normal · depends: DESK-REPLICA-AUTHOR`
-  accept: the daemon's history read returns, for the last 30 days, a count of changes per day with deletion and conflict flags and the changes per author device, on hubs and replicas alike, and a first-open marker for "changed while you were away"; daemon tests cover hub and replica; the interface follows board UI-HISTORY-ACTIVITY.
-
-- **UI-HISTORY-ACTIVITY** — History shows a 30-day activity strip and who changed what
-  `ui · agent · normal · depends: HISTORY-ACTIVITY`
-  accept: the board.
-
 - **UI-MOB-HISTORY-ACTIVITY** — The phone and the Fold show the activity strip
-  `ui · agent · normal · depends: UI-HISTORY-ACTIVITY`
+  `ui · agent · normal`
   accept: the board.
 
 - **GALLERY-MOMENTS** — The gallery reports photo counts per day and earlier years' photos for a date

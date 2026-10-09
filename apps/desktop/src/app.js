@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.15";
+const APP_VERSION = "0.7.16";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -596,6 +596,8 @@ let status,
   folderPageCount = 1,
   historyRows = [],
   historyNext = null,
+  historyDays = null,
+  awayNotice = null,
   historyVersions = [],
   historyLocal = null,
   historyOffline = false,
@@ -4556,6 +4558,120 @@ async function renderDetail(pending = false) {
     }
   });
 }
+const pad2 = (n) => String(n).padStart(2, "0");
+const localDay = (value) => {
+  const d = new Date(value);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const dayLong = (key) =>
+  new Date(`${key}T12:00:00`).toLocaleDateString("en", { month: "short", day: "numeric" });
+const changeLabel = (n) => countLabel(n, "change");
+function activityDevices(devices) {
+  return Object.entries(devices || {}).sort((a, b) => b[1] - a[1]);
+}
+function deviceCounts(devices) {
+  return activityDevices(devices)
+    .map(
+      ([id, n]) =>
+        `<span class="act-dev">${icon(id === (status.role === "hub" ? status.id : status.hubId) ? "server" : "monitor-smartphone")}${escape(authorName(id))} ${n}</span>`,
+    )
+    .join("");
+}
+function historyStrip() {
+  if (!historyDays) return "";
+  const byDay = new Map(historyDays.days.map((d) => [d.day, d]));
+  const keys = [];
+  const now = new Date();
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    keys.push(localDay(d));
+  }
+  const max = Math.max(1, ...keys.map((k) => byDay.get(k)?.changes || 0));
+  const bars = keys
+    .map((key, index) => {
+      const entry = byDay.get(key);
+      const n = entry?.changes || 0;
+      const level = n ? Math.max(1, Math.ceil((n / max) * 9)) : 0;
+      const mark = entry?.conflicts ? " act-conflict" : entry?.deleted ? " act-deleted" : "";
+      const today = index === keys.length - 1;
+      const label = today ? "Today" : dayLong(key);
+      const detail = `${label} · ${changeLabel(n)}${entry?.deleted ? ` · ${entry.deleted} deleted` : ""}${entry?.conflicts ? ` · ${countLabel(entry.conflicts, "conflict")}` : ""}`;
+      return `<button type="button" class="act-bar act-h${level}${mark}" data-action="history-day" data-id="${key}" aria-label="${escape(detail)}"${today ? ' aria-current="date"' : ""}><span class="act-tip">${escape(detail)}</span><i></i></button>`;
+    })
+    .join("");
+  return `<div class="act-strip"><div class="act-strip-head"><div class="section-label">Last 30 days</div><div class="act-legend"><span>Changes</span><span class="act-lg-conflict">Conflict</span><span class="act-lg-deleted">Deleted</span></div></div><div class="act-bars">${bars}</div><div class="act-axis"><span>${dayLong(keys[0])}</span><span>${dayLong(keys[15])}</span><span class="act-today">Today</span></div></div>`;
+}
+function awayBanner() {
+  if (!awayNotice) return "";
+  const when = dayLabel(awayNotice.since);
+  const phrase = when === "Today" ? "today" : when === "Yesterday" ? "yesterday" : when;
+  const devices = activityDevices(awayNotice.devices)
+    .map(([id, n]) => `${escape(authorName(id))} ${n}`)
+    .join(" · ");
+  return `<div class="act-away" role="status"><div class="tile">${icon("history")}</div><div class="act-text"><strong>Changed while you were away</strong><p>Since ${phrase} ${clockTime(awayNotice.since)} · ${changeLabel(awayNotice.changes)}${devices ? ` · ${devices}` : ""}</p></div>${button("Show", "history-away-show", "", "secondary small-button")}<button type="button" class="ghost icon-button" data-action="history-away-dismiss" aria-label="Dismiss">${icon("x")}</button></div>`;
+}
+const AWAY_MS = 4 * 3600000;
+const awayKey = () => `arca-history-seen:${status?.hubId || status?.id || ""}`;
+function markSeen() {
+  try {
+    localStorage.setItem(awayKey(), String(Date.now()));
+  } catch {
+    /* Private storage only disables the away banner. */
+  }
+}
+async function checkAway() {
+  if (!status?.id) return;
+  let last = 0;
+  try {
+    last = Number(localStorage.getItem(awayKey()) || 0);
+  } catch {
+    return;
+  }
+  if (!last || Date.now() - last < AWAY_MS) {
+    markSeen();
+    return;
+  }
+  const since = new Date(last).toISOString();
+  try {
+    const data = await api(
+      `/v1/activity-days?days=1&offset=${new Date().getTimezoneOffset()}&since=${encodeURIComponent(since)}`,
+    );
+    if (!data.since) return;
+    markSeen();
+    if (!data.since.changes) return;
+    awayNotice = { since, ...data.since };
+    if (view === "history" && !historyPath) await renderHistory();
+  } catch {
+    /* The banner is optional; the hub may be away. */
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) markSeen();
+  else checkAway();
+});
+async function jumpToDay(key) {
+  let guard = 0;
+  while (
+    historyNext &&
+    guard++ < 40 &&
+    !historyRows.some((r) => localDay(r.created) < key)
+  )
+    await renderHistory(historyNext, true);
+  const target = [...document.querySelectorAll("#history-list section[data-day]")].find(
+    (el) => el.dataset.day <= key,
+  );
+  if (!target) return;
+  target.scrollIntoView({ block: "start" });
+  target.classList.add("act-landed");
+  setTimeout(() => target.classList.remove("act-landed"), 2000);
+}
+function showAway() {
+  const since = awayNotice && Date.parse(awayNotice.since);
+  if (!since) return;
+  const rows = [...document.querySelectorAll("#history-list .history-row")];
+  const index = historyRows.findLastIndex((r) => Date.parse(r.created) > since);
+  (rows[Math.max(0, index)] || rows[0])?.scrollIntoView({ block: "start" });
+}
 async function renderHistory(
   cursor = "",
   append = false,
@@ -4657,24 +4773,39 @@ async function renderHistory(
   }
   historyRows = append ? [...historyRows, ...data.versions] : data.versions;
   historyNext = data.next;
+  if (!append && !cursor) {
+    const days = await viewRead(
+      `/v1/activity-days?days=30&offset=${new Date().getTimezoneOffset()}${historyVolume ? `&volume=${encodeURIComponent(historyVolume)}` : ""}`,
+    ).catch(() => null);
+    if (serial !== renderSerial) return;
+    historyDays = Array.isArray(days?.days) ? days : null;
+    if (!target) list = $("#history-list");
+    if (!list) return;
+  }
   const groups = new Map();
   for (const r of historyRows) {
-    const day = dayLabel(r.created);
-    if (!groups.has(day)) groups.set(day, []);
-    groups.get(day).push(r);
+    const key = localDay(r.created);
+    if (!groups.has(key)) groups.set(key, { day: dayLabel(r.created), rows: [] });
+    groups.get(key).rows.push(r);
   }
+  const summaries = new Map(
+    (historyFilter === "revisions" ? historyDays?.days || [] : []).map((d) => [d.day, d]),
+  );
   list.innerHTML =
+    awayBanner() +
+    (historyRows.length && historyFilter === "revisions" ? historyStrip() : "") +
     (data.offline
       ? '<p class="hint">Showing saved history · recent entries only. Connect to the hub for updated retention and older versions.</p>'
       : "") +
     (historyRows.length
       ? [...groups]
-          .map(([day, rows]) =>
-            section(
-              day,
-              `<div class="history-group">${rows.map((v) => revisionRow(v)).join("")}</div>`,
-            ),
-          )
+          .map(([key, { day, rows }]) => {
+            const entry = summaries.get(key);
+            const summary = entry
+              ? `<span class="act-summary"><b>${changeLabel(entry.changes)}</b>${deviceCounts(entry.devices)}</span>`
+              : "";
+            return `<section data-day="${key}"><div class="section-label">${day}${summary}</div><div class="history-group">${rows.map((v) => revisionRow(v)).join("")}</div></section>`;
+          })
           .join("") +
         `${historyNext ? `<div class="pagination">${button("Show more", "history-page", historyNext, "secondary")}</div>` : ""}`
       : historyEmpty());
@@ -6212,6 +6343,19 @@ async function handle(name, id, control) {
   }
   if (name === "history-page") {
     await renderHistory(id, true);
+    return;
+  }
+  if (name === "history-day") {
+    await jumpToDay(id);
+    return;
+  }
+  if (name === "history-away-show") {
+    showAway();
+    return;
+  }
+  if (name === "history-away-dismiss") {
+    awayNotice = null;
+    document.querySelector("#history-list .act-away")?.remove();
     return;
   }
   if (name === "history-open-file" || name === "history-reveal-file") {

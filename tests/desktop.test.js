@@ -7100,6 +7100,103 @@ test("only the native macOS app marks the page so the viewer's Back button clear
   assert.deepEqual((await open(false, "MacIntel")).filter((name) => name.endsWith("native")), [], "the web interface on a Mac keeps its layout");
 });
 
+test("History draws a 30-day activity strip, per-device day summaries and a while-you-were-away banner", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-history-activity-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Docs");
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost", pretendToBeVisual: true });
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const dayKey = (back) => {
+    const d = new Date();
+    d.setDate(d.getDate() - back);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const at = (back) => {
+    const d = new Date();
+    d.setDate(d.getDate() - back);
+    d.setHours(12, 0, 0, 0);
+    return d.toISOString();
+  };
+  const versions = [0, 3].map((back, n) => ({ rev: 10 - n, path: `file-${n}.txt`, volume: volume.id, folder: "Docs", created: at(back), size: 10, deleted: 0, author: "mac" }));
+  const days = [
+    { day: dayKey(3), changes: 4, deleted: 1, conflicts: 0, devices: { fold: 3, mac: 1 } },
+    { day: dayKey(0), changes: 2, deleted: 0, conflicts: 1, devices: { mac: 2 } },
+  ];
+  const calls = [];
+  w.localStorage.setItem("arca-history-seen:hub", String(Date.now() - 5 * 3600000));
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", hubUnavailable: false, hubId: "hub", hubName: "Casa", hub: "http://127.0.0.1:49999", deviceId: "mac", hubDevices: [{ id: "mac", name: "Local Mac" }, { id: "fold", name: "phone-fold" }] };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes: [{ ...volume, selected: 1, gallery: false }] };
+        if (args.route === "/v1/machines") return { machines: [] };
+        if (args.route.startsWith("/v1/browse")) return { entries: [], next: null };
+        if (args.route.startsWith("/v1/activity-days")) {
+          calls.push(args.route);
+          return args.route.includes("since=") ? { days: [], since: { changes: 5, devices: { fold: 3, hub: 2 } } } : { days };
+        }
+        if (args.route.startsWith("/v1/activity")) return { versions, next: null };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector(".folder-card") && w.document.body.getAttribute("aria-busy") === "false");
+  w.document.querySelector('[data-view="history"]').click();
+  await until(() => w.document.querySelector("#history-list .act-bars"));
+  const bars = [...w.document.querySelectorAll("#history-list .act-bar")];
+  assert.equal(bars.length, 30);
+  assert.equal(bars.at(-1).getAttribute("aria-current"), "date");
+  assert.match(bars.at(-1).getAttribute("aria-label"), /^Today · 2 changes · 1 conflict$/);
+  assert.ok(bars.at(-1).classList.contains("act-conflict"));
+  assert.ok(bars.at(-4).classList.contains("act-deleted") && bars.at(-4).classList.contains("act-h9"), "the busiest day is the tallest bar");
+  assert.ok(bars[0].classList.contains("act-h0"), "a quiet day is a hairline");
+  const todayLabel = w.document.querySelector('#history-list section[data-day="' + dayKey(0) + '"] .section-label').textContent;
+  assert.match(todayLabel, /2 changes/);
+  assert.match(todayLabel, /Local Mac 2/);
+  const older = w.document.querySelector('#history-list section[data-day="' + dayKey(3) + '"] .section-label').textContent;
+  assert.match(older, /4 changes/);
+  assert.match(older, /phone-fold 3/);
+  let scrolled = "";
+  w.HTMLElement.prototype.scrollIntoView = function () {
+    scrolled = this.dataset.day || this.className;
+  };
+  bars.at(-4).click();
+  await until(() => scrolled);
+  assert.equal(scrolled, dayKey(3), "a bar scrolls to its day group");
+  assert.ok(calls.some((route) => route.includes("days=30") && route.includes("offset=")));
+  assert.equal(w.document.querySelector(".act-away"), null, "no banner without an absence");
+  Object.defineProperty(w.document, "hidden", { value: false, configurable: true });
+  w.document.dispatchEvent(new w.Event("visibilitychange"));
+  await until(() => w.document.querySelector(".act-away"));
+  const banner = w.document.querySelector(".act-away").textContent;
+  assert.match(banner, /5 changes/);
+  assert.match(banner, /phone-fold 3/);
+  assert.match(banner, /Device hub|Casa 2/);
+  w.document.querySelector('[data-action="history-away-dismiss"]').click();
+  await until(() => !w.document.querySelector(".act-away"));
+  w.localStorage.setItem("arca-history-seen:hub", String(Date.now() - 3600000));
+  calls.length = 0;
+  w.document.dispatchEvent(new w.Event("visibilitychange"));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(calls.filter((route) => route.includes("since=")).length, 0, "under four hours is not an absence");
+  w.document.querySelector('[data-action="history-filter"][data-id="conflicts"]').click();
+  await until(() => !w.document.querySelector("#history-list .act-strip") && w.document.querySelector("#history-list .history-row"));
+  assert.equal(w.document.querySelector("#history-list .act-summary"), null, "the strip and summaries count every change, so they leave the Conflicts and Deleted filters");
+});
+
 test("History groups rows under Today, Yesterday and a short date and shows each row's clock time", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-history-days-"));
   init(home, { port: 0, name: "Local Mac" });
