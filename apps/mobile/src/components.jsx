@@ -2,7 +2,8 @@ import { brandMark } from "./palette.js";
 import { fileIcon } from "../../desktop/src/file-icons.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g, motion } from "./design-tokens.js";
-import { useMotion } from "./motion";
+import { useFlight, useMotion } from "./motion";
+import { putFlight } from "./flight.js";
 import React, {
   createContext,
   useContext,
@@ -280,13 +281,14 @@ export function ScreenTitle({
   contentIcon,
 }) {
   const { s, wide } = useDesign();
+  const flight = useFlight(detail && wide && contentIcon ? "folder" : null);
   return (
     <View style={s.screenTitle}>
       {!wide && <BrandActivity />}
       {wide && contentIcon && (
-        <View style={[s.tile, s.detailTile]}>
+        <Animated.View ref={flight.frame} style={[s.tile, s.detailTile, flight.style]}>
           <Icon name={contentIcon} />
-        </View>
+        </Animated.View>
       )}
       {detail || subtitle != null ? (
         <View style={[s.flex, s.stack]}>
@@ -306,6 +308,8 @@ export function ScreenTitle({
     </View>
   );
 }
+const pressScale = (pressed, reduce) =>
+  pressed && !reduce && { transform: [{ scale: motion.pressScale }] };
 export function Button({
   label,
   onPress,
@@ -320,6 +324,7 @@ export function Button({
   activity = false,
 }) {
   const { s, c } = useDesign();
+  const { reduce } = useMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -341,6 +346,7 @@ export function Button({
         danger && s.dangerButton,
         danger && primary && s.destructivePrimary,
         pressed && !disabled && !busy && (primary ? s.pressedFade : s.pressed),
+        !disabled && !busy && pressScale(pressed, reduce),
         (disabled || busy) && s.disabled,
       ]}
     >
@@ -894,6 +900,7 @@ export function ActionRow({
   note,
 }) {
   const { s, c } = useDesign();
+  const { reduce } = useMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -906,6 +913,7 @@ export function ActionRow({
         s.actionRow,
         divider && s.separator,
         pressed && !disabled && s.pressed,
+        !disabled && pressScale(pressed, reduce),
         disabled && s.disabled,
       ]}
     >
@@ -950,6 +958,64 @@ export function StatusRow({
   );
 }
 
+export function ProgressRing({ fraction, size = 46, thickness = 2 }) {
+  const { c } = useDesign();
+  const { duration, easing } = useMotion();
+  const value = useRef(new Animated.Value(fraction)).current;
+  useEffect(() => {
+    Animated.timing(value, {
+      toValue: fraction,
+      duration: duration(motion.enter),
+      easing,
+      useNativeDriver: true,
+    }).start();
+  }, [fraction]);
+  const half = size / 2;
+  const arc = {
+    position: "absolute",
+    top: 0,
+    width: size,
+    height: size,
+    borderRadius: half,
+    borderWidth: thickness,
+    borderColor: "transparent",
+    borderTopColor: c.accent,
+    borderRightColor: c.accent,
+  };
+  const right = value.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: ["-135deg", "45deg", "45deg"],
+  });
+  const left = value.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: ["45deg", "45deg", "225deg"],
+  });
+  return (
+    <View
+      pointerEvents="none"
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(fraction * 100) }}
+      style={{ position: "absolute", width: size, height: size }}
+    >
+      <View
+        style={{
+          position: "absolute",
+          width: size,
+          height: size,
+          borderRadius: half,
+          borderWidth: thickness,
+          borderColor: c.line,
+        }}
+      />
+      <View style={{ position: "absolute", left: half, width: half, height: size, overflow: "hidden" }}>
+        <Animated.View style={[arc, { left: -half, transform: [{ rotate: right }] }]} />
+      </View>
+      <View style={{ position: "absolute", left: 0, width: half, height: size, overflow: "hidden" }}>
+        <Animated.View style={[arc, { left: 0, transform: [{ rotate: left }] }]} />
+      </View>
+    </View>
+  );
+}
 export function FolderRow({
   selectable = false,
   selected = false,
@@ -963,17 +1029,21 @@ export function FolderRow({
   onPress,
   disabled,
   conflict,
+  progress,
 }) {
   const { s, c, wide } = useDesign();
   const { reduce } = useMotion();
+  const lead = useRef(null);
   const syncing = status === "Syncing";
   const tile = (
     <View
       style={[s.tile, available && s.tileAvailable]}
       accessibilityLabel={syncing ? "Syncing" : undefined}
     >
-      {syncing ? (
+      {syncing && !(progress > 0) ? (
         <Busy color={c.accent} />
+      ) : syncing ? (
+        <Icon name={icon} size={16} color={c.accent} />
       ) : (
         <Icon name={icon} size={16} color={available ? c.mute : c.accent} />
       )}
@@ -981,7 +1051,10 @@ export function FolderRow({
   );
   const contents = (
     <>
-      <View style={[s.homeLead, conflict && s.homeConflict]}>{tile}</View>
+      <View ref={lead} style={[s.homeLead, conflict && s.homeConflict]}>
+        {syncing && progress > 0 && <ProgressRing fraction={Math.min(1, progress)} />}
+        {tile}
+      </View>
       <View style={[s.flex, s.stack]}>
         <Text style={s.rowTitle}>{name}</Text>
         {!!description && <Text style={s.caption}>{description}</Text>}
@@ -1022,7 +1095,14 @@ export function FolderRow({
         ...(selectable ? { checked: selected } : {}),
       }}
       disabled={disabled}
-      onPress={onPress}
+      onPress={() =>
+        wide && !selectable && lead.current?.measureInWindow
+          ? lead.current.measureInWindow((x, y, width, height) => {
+              putFlight("folder", { x, y, width, height });
+              onPress?.();
+            })
+          : onPress?.()
+      }
       style={({ pressed }) => [
         !grouped && s.card,
         s.folderRow,
@@ -1030,15 +1110,39 @@ export function FolderRow({
         selectable && selected && s.selectedCard,
         divider && s.separator,
         pressed && !disabled && s.pressed,
-        pressed && !disabled && !reduce && { transform: [{ scale: motion.pressScale }] },
+        !disabled && pressScale(pressed, reduce),
       ]}
     >
       {contents}
     </Pressable>
   );
 }
+const TABS = ["Folders", "Devices", "History", "Settings"];
 export function Navigation({ wide, compact, view, onSelect, name, hub }) {
   const { s, c } = useDesign();
+  const { duration, easing } = useMotion();
+  const [boxes, setBoxes] = useState({});
+  const slide = useRef(new Animated.Value(0)).current;
+  const placed = useRef(false);
+  const box = boxes[view];
+  useEffect(() => {
+    placed.current = false;
+    setBoxes({});
+  }, [wide]);
+  useEffect(() => {
+    if (!box) return;
+    const target = wide ? box.y : box.x;
+    if (!placed.current) {
+      placed.current = true;
+      slide.setValue(target);
+    } else
+      Animated.timing(slide, {
+        toValue: target,
+        duration: duration(motion.fast),
+        easing,
+        useNativeDriver: true,
+      }).start();
+  }, [box?.x, box?.y, wide]);
   const Container = wide ? SafeAreaView : View;
   return (
     <Container
@@ -1061,9 +1165,35 @@ export function Navigation({ wide, compact, view, onSelect, name, hub }) {
           )}
         </>
       )}
-      {["Folders", "Devices", "History", "Settings"].map((tab) => (
+      {!!box && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            s.navIndicator,
+            {
+              width: box.width,
+              height: box.height,
+              transform: [wide ? { translateY: slide } : { translateX: slide }],
+            },
+            wide ? { top: 0, left: box.x } : { top: box.y - 1, left: 0 },
+          ]}
+        />
+      )}
+      {TABS.map((tab) => (
         <Pressable
           key={tab}
+          onLayout={({ nativeEvent: { layout } }) =>
+            setBoxes((boxes) => {
+              const known = boxes[tab];
+              return known &&
+                known.x === layout.x &&
+                known.y === layout.y &&
+                known.width === layout.width &&
+                known.height === layout.height
+                ? boxes
+                : { ...boxes, [tab]: layout };
+            })
+          }
           accessibilityRole="tab"
           accessibilityLabel={tab}
           accessibilityState={{ selected: view === tab }}
@@ -1074,9 +1204,9 @@ export function Navigation({ wide, compact, view, onSelect, name, hub }) {
                   s.navItem,
                   compact && s.compactNav,
                   pressed && s.pressed,
-                  view === tab && s.navSelected,
+                  view === tab && !box && s.navSelected,
                 ]
-              : [s.tab, pressed && s.pressed, view === tab && s.navSelected]
+              : [s.tab, pressed && s.pressed, view === tab && !box && s.navSelected]
           }
         >
           <Icon

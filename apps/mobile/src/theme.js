@@ -573,6 +573,11 @@ export function styles(
       color: c.ink,
     },
     navSelected: { backgroundColor: c.tint },
+    navIndicator: {
+      position: "absolute",
+      backgroundColor: c.tint,
+      borderRadius: g.controlRadius,
+    },
     navFooter: { marginTop: "auto", padding: 12, gap: 6 },
     folderRow: {
       flexDirection: "row",

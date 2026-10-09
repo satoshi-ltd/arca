@@ -8,6 +8,7 @@ import React, {
 import { AccessibilityInfo, Animated, Easing } from "react-native";
 import { geometry, motion, motionDurations } from "./design-tokens.js";
 import { createListMotion } from "./list-motion.js";
+import { flightTransform, takeFlight } from "./flight.js";
 
 export function useReduceMotion() {
   const [reduce, setReduce] = useState(false);
@@ -139,4 +140,46 @@ export function Rise({ mode: entering, index: slot = 0, tint: tintColor, childre
       )}
     </Animated.View>
   );
+}
+export function useFlight(key) {
+  const { duration, easing } = useMotion();
+  const frame = useRef(null);
+  const progress = useRef(new Animated.Value(1)).current;
+  const [from] = useState(() => (key ? takeFlight(key) : null));
+  const [state, setState] = useState({ ready: !from, shape: null });
+  useEffect(() => {
+    if (!from) return;
+    const give = setTimeout(() => setState({ ready: true, shape: null }), 300);
+    if (!duration(motion.shared) || !frame.current?.measureInWindow) {
+      clearTimeout(give);
+      return setState({ ready: true, shape: null });
+    }
+    frame.current.measureInWindow((x, y, width, height) => {
+      clearTimeout(give);
+      const shape = flightTransform(from, { x, y, width, height });
+      setState({ ready: true, shape });
+      if (!shape) return;
+      progress.setValue(0);
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: duration(motion.shared),
+        easing,
+        useNativeDriver: true,
+      }).start();
+    });
+  }, []);
+  const { shape } = state;
+  return {
+    frame,
+    style: {
+      opacity: state.ready ? 1 : 0,
+      transform: shape
+        ? [
+            { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [shape.dx, 0] }) },
+            { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [shape.dy, 0] }) },
+            { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [shape.scale, 1] }) },
+          ]
+        : [],
+    },
+  };
 }

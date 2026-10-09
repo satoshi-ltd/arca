@@ -11,6 +11,7 @@ import React, {
 import {
   AppState,
   Image,
+  Dimensions,
   Pressable,
   PanResponder,
   ScrollView,
@@ -88,10 +89,12 @@ const Tile = memo(function Tile({
   selected,
 }) {
   const { s } = useDesign();
+  const frame = useRef(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [uri]);
   return (
     <Pressable
+      ref={frame}
       accessibilityRole="button"
       accessibilityLabel={
         item.upload
@@ -117,7 +120,13 @@ const Tile = memo(function Tile({
           ...(size < 40 ? { borderRadius: 2 } : {}),
         },
       ]}
-      onPress={() => onPress(item)}
+      onPress={() =>
+        frame.current?.measureInWindow
+          ? frame.current.measureInWindow((x, y, width, height) =>
+              onPress(item, { x, y, width, height }),
+            )
+          : onPress(item)
+      }
       onLongPress={onLongPress && (() => onLongPress(item))}
       accessibilityState={{ selected: !!selected }}
     >
@@ -1073,15 +1082,18 @@ export function FolderGallery({
   );
   const actions = useRef({});
   actions.current = {
-    open: (item) =>
+    open: (item, rect) => {
+      const index = photos.findIndex((photo) => photo.path === item.path);
       setViewer({
         items: photos,
-        index: photos.findIndex((photo) => photo.path === item.path),
-      }),
-    press: (item) => {
+        index,
+        origin: rect ? { rect, path: item.path, window: Dimensions.get("window") } : undefined,
+      });
+    },
+    press: (item, rect) => {
       if (Date.now() <= suppressPressUntil.current) return;
       if (selection.length) toggle(item);
-      else actions.current.open(item);
+      else actions.current.open(item, rect);
     },
     select: (item) => {
       if (Date.now() > suppressPressUntil.current) toggle(item);
@@ -1089,7 +1101,7 @@ export function FolderGallery({
   };
   const handlers = useRef({
     open: (item) => actions.current.open(item),
-    press: (item) => actions.current.press(item),
+    press: (item, rect) => actions.current.press(item, rect),
     select: (item) => actions.current.select(item),
   }).current;
   const leave = (action) => (item) => {
@@ -1363,6 +1375,7 @@ export function FolderGallery({
       <PhotoViewer
         items={viewer ? viewer.items.map(withNative) : photos}
         index={viewer?.index ?? null}
+        origin={viewer?.origin}
         onClose={() => setViewer(null)}
         onIndexChange={(index) =>
           setViewer((value) => value && { ...value, index })

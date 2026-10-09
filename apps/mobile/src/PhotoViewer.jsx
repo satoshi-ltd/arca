@@ -1,5 +1,5 @@
 import { GalleryVideo } from "./GalleryVideo";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   FlatList,
@@ -30,7 +30,9 @@ import {
   toggleZoom,
   zoomAround,
 } from "./viewer-gestures";
+import { motion } from "./design-tokens.js";
 import { useMotion } from "./motion";
+import { originTransform } from "./viewer-origin.js";
 
 const rest = { scale: 1, x: 0, y: 0 };
 const begin = (touches, state, gesture) =>
@@ -469,15 +471,40 @@ export function PhotoViewer({
   remove,
   deletable,
   deleteReason,
+  origin,
 }) {
   const { s, wide } = useDesign();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { duration } = useMotion();
+  const { duration, easing } = useMotion();
   const [zoomed, setZoomed] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [chromeOn, setChromeOn] = useState(false);
   const drag = useRef(new Animated.Value(0)).current;
+  const grow = useRef(new Animated.Value(0)).current;
+  const sameWindow = origin?.window?.width === width && origin?.window?.height === height;
+  const from = sameWindow ? originTransform(origin?.rect, width, height) : null;
+  const travels = !!from && duration(motion.shared) > 0;
+  useLayoutEffect(() => {
+    if (index === null) return;
+    if (!travels) return grow.setValue(1);
+    grow.setValue(0);
+    Animated.timing(grow, {
+      toValue: 1,
+      duration: duration(motion.shared),
+      easing,
+      useNativeDriver: true,
+    }).start();
+  }, [index === null]);
+  const closeToOrigin = () => {
+    if (!travels || items[index]?.path !== origin.path) return onClose();
+    Animated.timing(grow, {
+      toValue: 0,
+      duration: duration(motion.shared),
+      easing,
+      useNativeDriver: true,
+    }).start(() => onClose());
+  };
   const chrome = useRef(new Animated.Value(0)).current;
   const live = useRef({});
   live.current = { height, wide, onClose, duration };
@@ -598,7 +625,7 @@ export function PhotoViewer({
   return (
     <Modal
       visible={visible}
-      onRequestClose={() => (infoOpen ? setInfoOpen(false) : onClose())}
+      onRequestClose={() => (infoOpen ? setInfoOpen(false) : closeToOrigin())}
       animationType="fade"
       transparent
       statusBarTranslucent
@@ -611,7 +638,7 @@ export function PhotoViewer({
           style={[
             StyleSheet.absoluteFill,
             s.viewerBackdrop,
-            { opacity: drag.interpolate({ inputRange: [0, height / 2], outputRange: [1, 0], extrapolate: "clamp" }) },
+            { opacity: Animated.multiply(grow, drag.interpolate({ inputRange: [0, height / 2], outputRange: [1, 0], extrapolate: "clamp" })) },
           ]}
         />
         <Animated.View
@@ -619,6 +646,9 @@ export function PhotoViewer({
             s.flex,
             {
               transform: [
+                { translateX: grow.interpolate({ inputRange: [0, 1], outputRange: [from?.dx || 0, 0] }) },
+                { translateY: grow.interpolate({ inputRange: [0, 1], outputRange: [from?.dy || 0, 0] }) },
+                { scale: grow.interpolate({ inputRange: [0, 1], outputRange: [from?.scale || 1, 1] }) },
                 { translateY: drag },
                 { scale: drag.interpolate({ inputRange: [0, height], outputRange: [1, 0.6], extrapolate: "clamp" }) },
               ],
@@ -692,7 +722,7 @@ export function PhotoViewer({
               accessibilityRole="button"
               accessibilityLabel="Close"
               style={s.viewerIconButton}
-              onPress={onClose}
+              onPress={closeToOrigin}
             >
               <Icon name="back" color="#fff" />
             </Pressable>

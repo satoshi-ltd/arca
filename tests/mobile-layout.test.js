@@ -929,9 +929,9 @@ test("phone buttons, rows, tabs and photo tiles show a pressed state", () => {
   const components = read("components.jsx");
   assert.match(read("theme.js"), /pressed: \{ backgroundColor: c\.hover \},\s+pressedFade: \{ opacity: 0\.85 \},/);
   assert.match(components, /pressed && !disabled && !busy && \(primary \? s\.pressedFade : s\.pressed\)/, "primary buttons fade, the others fill");
-  assert.match(components, /pressed && !disabled && s\.pressed,\s+disabled && s\.disabled/, "action rows fill");
+  assert.match(components, /pressed && !disabled && s\.pressed,\s+!disabled && pressScale\(pressed, reduce\),\s+disabled && s\.disabled/, "action rows fill");
   assert.match(components, /divider && s\.separator,\s+pressed && !disabled && s\.pressed,/, "folder rows fill");
-  assert.match(components, /pressed && s\.pressed,\s+view === tab && s\.navSelected/, "tabs fill without hiding the selection");
+  assert.match(components, /pressed && s\.pressed,\s+view === tab && !box && s\.navSelected/, "tabs fill without hiding the selection");
   assert.match(read("FolderGallery.jsx"), /pressed && s\.pressedFade,/, "photo tiles fade");
 });
 

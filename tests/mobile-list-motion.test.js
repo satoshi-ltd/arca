@@ -61,7 +61,7 @@ test("a whole new list replacing the old one is not an arrival", () => {
 
 test("folder rows scale on press and rise through Rise, both off under reduced motion", () => {
   const components = read("../apps/mobile/src/components.jsx");
-  assert.match(components, /pressed && !disabled && !reduce && \{ transform: \[\{ scale: motion\.pressScale \}\] \}/);
+  assert.match(components, /!disabled && pressScale\(pressed, reduce\)/);
   const app = read("../apps/mobile/src/App.jsx");
   assert.match(app, /useListMotion\(locals\.map\(\(f\) => f\.id\)\)/);
   assert.match(app, /<Rise\s+key=\{f\.id\}\s+tint=\{c\.tint\}\s+\{\.\.\.folderMotion\(f\.id\)\}/);

@@ -1736,3 +1736,36 @@ body.kit {
     zoom: 0.42;
   }
 }
+.kit-rhythm {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.kit-rhythm-note {
+  margin: 0 0 var(--space-2);
+  font: var(--text-caption) var(--font-mono);
+  color: var(--mute);
+}
+.kit-rhythm-next .folder-card,
+.kit-rhythm-next .device-row,
+.kit-rhythm-next .history-row {
+  padding: var(--space-3) var(--space-4);
+}
+.kit-rhythm-next .kit-rhythm-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.kit-rhythm-next .device-row {
+  margin-bottom: 0;
+}
+.kit-rhythm-phone .m-list {
+  gap: var(--space-3);
+}
+.kit-rhythm-phone.kit-rhythm-next .m-row,
+.kit-rhythm-phone.kit-rhythm-next .m-card,
+.kit-rhythm-phone.kit-rhythm-next .m-action {
+  padding: var(--space-3) var(--space-4);
+  min-height: calc(var(--space-6) * 2);
+}

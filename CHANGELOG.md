@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.31 — 2026-10-09
+
+- On the phone and the Fold, a photo grows out of the tile you tapped and shrinks back into it on Back; on the Fold a folder's icon travels into the folder header.
+- The selected tab's tint slides to the new tab, a syncing folder draws a progress ring around its icon while a file transfers, and pulling Folders down starts a sync.
+- Buttons and action rows shrink slightly while pressed, like folder rows. Reduced motion turns all of it off.
+- Still on the board: the mini player's cover growing into Now playing, the edge swipe back and the arch mark that follows a pull.
+
+Needs: native build
+
 ## 0.7.30 — 2026-10-09
 
 - Devices goes back to its list: Hub connection, then one row per device, on the desktop, the phone and the Fold. The network map with its report lines is gone.

@@ -45,6 +45,7 @@ import {
   Text,
   ScrollView,
   Pressable,
+  RefreshControl,
   AppState,
   BackHandler,
   Alert,
@@ -529,6 +530,12 @@ export default function App() {
   shownFolder.current =
     folder && engine.current ? `${engine.current.scope}:${folder.id}` : null;
   const folderMotion = useListMotion(locals.map((f) => f.id));
+  const [pulling, setPulling] = useState(false);
+  useEffect(() => {
+    if (!pulling || status.busy) return;
+    const timer = setTimeout(() => setPulling(false), 800);
+    return () => clearTimeout(timer);
+  }, [pulling, status.busy]);
   const listedFolder = locals.find((f) => f.id === folder?.id);
   useEffect(() => {
     if (!folder || !engine.current) return;
@@ -2047,6 +2054,20 @@ export default function App() {
                     onboarding && s.setup,
                   ]}
                   keyboardShouldPersistTaps="handled"
+                  refreshControl={
+                    screen === "Folders" && !folder && connected && replica ? (
+                      <RefreshControl
+                        refreshing={pulling}
+                        tintColor={c.accent}
+                        colors={[c.accent]}
+                        progressBackgroundColor={c.paper}
+                        onRefresh={() => {
+                          setPulling(true);
+                          startSync();
+                        }}
+                      />
+                    ) : undefined
+                  }
                   enter={screenEnter}
                   enterStyle={[s.enter, onboarding && s.enterSetup]}
                 >
@@ -2507,6 +2528,14 @@ export default function App() {
                                     }
                                     description={`${f.files} files · ${bytes(f.bytes)} local`}
                                     conflict={!!catalog?.volumes?.find((v) => v.id === f.id)?.conflicts}
+                                    progress={
+                                      status.busy &&
+                                      status.syncingVolume === f.id &&
+                                      status.progress?.bytesTotal > 0
+                                        ? status.progress.bytesDone /
+                                          status.progress.bytesTotal
+                                        : undefined
+                                    }
                                     status={
                                       status.paused
                                         ? "Paused"
