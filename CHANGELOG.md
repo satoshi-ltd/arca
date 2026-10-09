@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.21 — 2026-10-09
+
+- Press Space on a file in a folder's Files list to open a Quick Look: the photo or a video's poster, or the first lines of a text, Markdown or code file. The arrow keys move through the folder's files, Space or Esc closes it and Enter opens the file.
+- A file's detail page shows the same preview above its stats. Audio and other types keep their icon and metadata, and audio does not play in Quick Look.
+
+Needs: Casa redeploy · desktop build
+
 ## 0.7.20 — 2026-10-09
 
 - The phone's Folders opens with a Just arrived row of the three newest changes, and each folder row shows its newest photos or covers, a line with its latest change and its device, and no longer the path. A folder with a conflict draws its tile in the warning colour.

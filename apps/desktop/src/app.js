@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.20";
+const APP_VERSION = "0.7.21";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -201,6 +201,145 @@ const busyIcon = () =>
   '<span class="busy-grid" aria-hidden="true">' +
   "<i></i>".repeat(9) +
   "</span>";
+const TEXT_NAME = /\.(txt|md|markdown|mdx|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|tsv|log|xml|html?|css|scss|js|mjs|cjs|jsx|ts|tsx|py|rb|go|rs|c|h|cc|cpp|hpp|java|kt|swift|sh|bash|zsh|sql|env|gitignore|arcaignore)$/i;
+function previewKind(name) {
+  return /\.(jpe?g|png|webp|gif|avif|hei[cf])$/i.test(name)
+    ? "image"
+    : /\.(mp4|mov|m4v|webm)$/i.test(name)
+      ? "video"
+      : /\.(mp3|m4a|flac|wav|ogg|opus|aac|aiff?)$/i.test(name)
+        ? "audio"
+        : TEXT_NAME.test(name)
+          ? "text"
+          : "none";
+}
+const previewQuery = (volume, path, hash, large) =>
+  new URLSearchParams({ volume, path, hash, ...(large ? { size: "large" } : {}) });
+async function loadPreview(volume, path, hash, large = true) {
+  const kind = previewKind(path);
+  if (kind === "image" || kind === "video") {
+    const result = await cachedPhoto(`/v1/gallery/preview?${previewQuery(volume, path, hash, large && kind === "image")}`);
+    return result?.data ? { kind, data: result.data } : { kind: "none" };
+  }
+  if (kind === "text") {
+    const result = await api(`/v1/file-preview?${previewQuery(volume, path, hash)}`);
+    return result.kind === "text" ? { kind, lines: result.lines, truncated: result.truncated } : { kind: "none" };
+  }
+  return { kind };
+}
+function previewBody(preview, name) {
+  if (preview.data) return `<img alt="${escape(name)}" src="${escape(preview.data)}">`;
+  if (preview.lines)
+    return `<pre class="ql-text">${escape(preview.lines.join("\n"))}${preview.truncated ? "\n…" : ""}</pre>`;
+  return `<span class="ql-icon">${icon(fileIcon(name))}</span>`;
+}
+let quick = null;
+function quickDialog() {
+  let dialog = document.getElementById("quicklook");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "quicklook";
+    dialog.className = "quicklook";
+    dialog.addEventListener("close", () => {
+      const row = quick?.rows[quick.index]?.el;
+      quick = null;
+      if (row?.isConnected) row.focus();
+    });
+    document.body.append(dialog);
+  }
+  return dialog;
+}
+async function showQuick(index) {
+  if (!quick) return;
+  quick.index = index;
+  const row = quick.rows[index];
+  const name = row.name;
+  const dialog = quickDialog();
+  const id = JSON.parse(row.id);
+  const kind = previewKind(name);
+  const serial = (quick.serial = (quick.serial || 0) + 1);
+  const meta = [bytes(row.size || 0), (name.split(".").pop() || "").toUpperCase()].filter(Boolean).map((x) => `<span>${escape(x)}</span>`).join("");
+  dialog.innerHTML = `<div class="ql-bar"><div class="tile">${icon(fileIcon(name))}</div><div class="ql-title"><strong>${escape(name)}</strong><p>${index + 1} of ${quick.rows.length} in this folder</p></div><button type="button" class="ghost icon-button" data-ql="prev" aria-label="Previous file"${index === 0 ? " disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="ghost icon-button" data-ql="next" aria-label="Next file"${index === quick.rows.length - 1 ? " disabled" : ""}>${icon("chevron-right")}</button><button type="button" class="secondary small-button" data-ql="open">Open</button><button type="button" class="ghost icon-button" data-ql="close" aria-label="Close">${icon("x")}</button></div><div class="ql-stage" aria-busy="${kind !== "audio" && kind !== "none"}"><span class="ql-icon">${icon(fileIcon(name))}</span></div><div class="ql-meta">${meta}</div><div class="ql-foot"><span class="ql-hint"><span class="tag">←</span><span class="tag">→</span>Previous and next</span><span class="ql-hint"><span class="tag">Space</span>Close</span><span class="ql-hint"><span class="tag">↵</span>Open file</span></div>`;
+  dialog.setAttribute("aria-label", `Quick Look ${name}`);
+  if (!dialog.open) {
+    dialog.showModal();
+    dialog.tabIndex = -1;
+    dialog.focus();
+  }
+  icons();
+  if (kind === "none" || kind === "audio" || !row.hash) {
+    dialog.querySelector(".ql-stage").setAttribute("aria-busy", "false");
+    return;
+  }
+  try {
+    const preview = await loadPreview(id.volume, id.path, row.hash);
+    if (!quick || quick.serial !== serial) return;
+    const stage = dialog.querySelector(".ql-stage");
+    stage.innerHTML = previewBody(preview, name);
+    stage.setAttribute("aria-busy", "false");
+    icons();
+  } catch {
+    if (quick?.serial === serial) dialog.querySelector(".ql-stage")?.setAttribute("aria-busy", "false");
+  }
+}
+function openQuickLook(row) {
+  const nodes = [...document.querySelectorAll('#content .browser-file-row[data-action="activity-file"]')];
+  const index = nodes.indexOf(row);
+  if (index < 0) return;
+  const rows = nodes.map((el) => ({ el, id: el.dataset.id, name: el.dataset.name, hash: el.dataset.hash, size: Number(el.dataset.size) || 0 }));
+  quick = { rows, index, serial: 0 };
+  void showQuick(index);
+}
+document.addEventListener("click", (event) => {
+  const control = event.target.closest?.("#quicklook [data-ql]");
+  if (!control || !quick) return;
+  const dialog = document.getElementById("quicklook");
+  const action = control.dataset.ql;
+  if (action === "close") dialog.close();
+  else if (action === "prev" && quick.index > 0) void showQuick(quick.index - 1);
+  else if (action === "next" && quick.index < quick.rows.length - 1) void showQuick(quick.index + 1);
+  else if (action === "open") {
+    const row = quick.rows[quick.index];
+    dialog.close();
+    void handle("activity-file", row.id);
+  }
+});
+document.addEventListener("keydown", (event) => {
+  const dialog = document.getElementById("quicklook");
+  if (!quick || !dialog?.open) return;
+  if (event.key === "ArrowLeft" && quick.index > 0) {
+    event.preventDefault();
+    void showQuick(quick.index - 1);
+  } else if (event.key === "ArrowRight" && quick.index < quick.rows.length - 1) {
+    event.preventDefault();
+    void showQuick(quick.index + 1);
+  } else if (event.key === " ") {
+    event.preventDefault();
+    if (!event.repeat) dialog.close();
+  } else if (event.key === "Enter" && !event.target.closest?.("button")) {
+    event.preventDefault();
+    const row = quick.rows[quick.index];
+    dialog.close();
+    void handle("activity-file", row.id);
+  }
+});
+async function hydrateFileHeroes() {
+  for (const hero of document.querySelectorAll(".file-hero:not([data-loaded])")) {
+    hero.dataset.loaded = "true";
+    try {
+      const preview = await loadPreview(hero.dataset.volume, hero.dataset.path, hero.dataset.hash, false);
+      if (!hero.isConnected || preview.kind === "none") {
+        if (hero.isConnected) hero.remove();
+        continue;
+      }
+      hero.querySelector(".file-hero-stage").innerHTML = previewBody(preview, hero.dataset.path.split("/").pop());
+      hero.removeAttribute("aria-busy");
+      icons();
+    } catch {
+      hero.remove();
+    }
+  }
+}
 function rowPreview(row, fallback, historical = false) {
   if (
     row.directory ||
@@ -287,6 +426,7 @@ function mountRowPreviews() {
 }
 function icons() {
   mountRowPreviews();
+  if (typeof hydrateFileHeroes === "function") void hydrateFileHeroes();
   document.querySelectorAll("[data-icon]").forEach((el) => {
     const name = el.dataset.icon.replace(/(^|-)([a-z0-9])/g, (_, a, b) =>
       b.toUpperCase(),
@@ -1394,7 +1534,7 @@ async function loadHome(serial) {
   if (!ids.length) return;
   homeData.at = Date.now();
   const [activity, previews] = await Promise.allSettled([
-    viewRead("/v1/activity?limit=50&filter=revisions"),
+    api("/v1/activity?limit=50&filter=revisions"),
     api(`/v1/folder-previews?volumes=${ids.join(",")}`),
   ]);
   if (hub !== (status.hubId || status.id)) return;
@@ -1858,7 +1998,11 @@ function fileHistorySummary() {
   if (current && !current.created)
     return `<div class="file-history-summary"><p class="hint">Local copy · ${bytes(current.size)} · hub history unavailable</p></div>`;
   const available = current && !current.deleted;
-  return `<div class="file-history-summary"><div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest version</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : historyOffline ? "No saved versions" : "No retained versions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
+  const hero =
+    available && current.hash && previewKind(historyPath) !== "none" && previewKind(historyPath) !== "audio"
+      ? `<div class="file-hero" aria-busy="true" data-volume="${escape(historyVolume)}" data-path="${escape(historyPath)}" data-hash="${escape(current.hash)}"><div class="file-hero-stage"><span class="ql-icon">${icon(fileIcon(historyPath))}</span></div></div>`
+      : "";
+  return `<div class="file-history-summary">${hero}<div class="stats"><div class="stat"><span>Status on hub</span><strong>${current ? (current.deleted ? "Deleted" : current.resolved ? "Resolved" : "Available") : "Unknown"}</strong></div><div class="stat"><span>File size</span><strong>${available ? bytes(current.size) : "—"}</strong><p>Latest accepted version</p></div><div class="stat"><span>Latest version</span><strong class="mono">${current ? `rev ${current.rev}` : "—"}</strong><p>${current ? escape(authorName(current.author)) : historyOffline ? "No saved versions" : "No retained versions"}</p></div><div class="stat"><span>Last changed</span><strong>${current ? date(current.created) : "—"}</strong><p>Accepted by the hub</p></div></div></div>`;
 }
 
 function fileHistorySide() {
@@ -3577,7 +3721,7 @@ async function folderBrowser(v, recent, pending = false) {
       search +
       `<div class="history-group folder-explorer">${trail}` +
       (data.entries.length
-        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}" aria-label="${escape(`Open ${row.name}`)}">${rowPreview({ ...row, volume: v.id }, fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
+        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}"${row.directory ? "" : ` data-hash="${escape(row.hash || "")}" data-size="${Number(row.size) || 0}" data-name="${escape(row.name)}"`} aria-label="${escape(`Open ${row.name}`)}">${rowPreview({ ...row, volume: v.id }, fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
         : empty(
             folderSearch ? "No matching files" : "This folder is empty",
             "",
@@ -8351,7 +8495,10 @@ document.addEventListener("keydown", (event) => {
     ["Enter", " "].includes(event.key)
   ) {
     event.preventDefault();
-    event.target.click();
+    if (event.key === " " && event.target.dataset.action === "activity-file") {
+      if (!event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey) openQuickLook(event.target);
+    }
+    else event.target.click();
     return;
   }
   if (event.target.id === "music-search-input" && ["Enter", "Escape"].includes(event.key)) {

@@ -6579,6 +6579,84 @@ test("the gallery groups days into blocks with a hero, a quiet run, On this day 
   assert.equal(w.document.querySelector('.gallery-zoom [data-id="days"]').getAttribute("aria-pressed"), "true");
 });
 
+test("Space opens a Quick Look with the file's preview, arrows move through the folder and Space closes", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-quicklook-"));
+  init(home, { port: 0, name: "Quick Look" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Docs");
+  const sharp = (await import("sharp")).default;
+  fs.writeFileSync(path.join(v.path, "a-note.txt"), "first line\nsecond line");
+  fs.writeFileSync(path.join(v.path, "b-picture.png"), await sharp({ create: { width: 40, height: 30, channels: 3, background: "red" } }).png().toBuffer());
+  fs.writeFileSync(path.join(v.path, "c-sheet.xlsx"), "binary-ish");
+  fs.mkdirSync(path.join(v.path, "zdir"));
+  fs.writeFileSync(path.join(v.path, "zdir", "inner.txt"), "x");
+  await daemon.engine.cycle();
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  w.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new w.Event("close")); };
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelectorAll(".browser-file-row").length === 4);
+  const rows = [...w.document.querySelectorAll('.browser-file-row[data-action="activity-file"]')];
+  assert.equal(rows.length, 3);
+  const key = (el, k) => el.dispatchEvent(new w.KeyboardEvent("keydown", { key: k, bubbles: true }));
+  key(rows[0], " ");
+  const dialog = w.document.getElementById("quicklook");
+  assert.ok(dialog.open);
+  assert.match(dialog.querySelector(".ql-title").textContent, /a-note\.txt.*1 of 3 in this folder/s, "folders are not part of the walk");
+  await until(() => dialog.querySelector(".ql-text"));
+  assert.match(dialog.querySelector(".ql-text").textContent, /first line\nsecond line/);
+  assert.equal(dialog.querySelector('[data-ql="prev"]').disabled, true);
+  key(dialog, "ArrowRight");
+  await until(() => /b-picture\.png/.test(dialog.querySelector(".ql-title").textContent));
+  await until(() => dialog.querySelector(".ql-stage img"));
+  key(dialog, "ArrowRight");
+  await until(() => /c-sheet\.xlsx/.test(dialog.querySelector(".ql-title").textContent));
+  assert.equal(dialog.querySelector(".ql-stage img, .ql-stage .ql-text"), null, "an unknown type shows its icon and metadata with no error");
+  assert.equal(dialog.querySelector('[data-ql="next"]').disabled, true);
+  assert.match(dialog.querySelector(".ql-meta").textContent, /XLSX/);
+  key(dialog, " ");
+  assert.equal(dialog.open, false, "Space closes");
+  rows[1].focus();
+  key(rows[1], " ");
+  rows[1].remove();
+  dialog.querySelector('[data-ql="open"]').click();
+  await until(() => w.document.querySelector(".file-hero .file-hero-stage img"));
+  assert.equal(dialog.open, false);
+  assert.ok(w.document.querySelector(".file-history-summary .stats"), "the preview heads File detail above its stats");
+});
+
 test("the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-gallery-more-"));
   init(home, { port: 0, name: "Gallery" });

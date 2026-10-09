@@ -26,24 +26,16 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **FILES-PREVIEW** — Local previews for images, video, text and audio
-  `feature · agent · normal`
-  accept: a local preview cache (image and video thumbnails, the first lines of text and Markdown) is generated on demand from the complete local copy and served by the daemon for desktop and web; nothing is generated for files a device does not hold; daemon tests cover each kind and cache invalidation on a new revision; the interface follows board UI-FILES-PREVIEW.
-
-- **UI-FILES-PREVIEW** — Files show thumbnails and open a Quick Look
-  `ui · agent · normal · depends: FILES-PREVIEW`
-  accept: the board.
-
 - **MOB-FILES-PREVIEW** — The phone previews local files
   `feature · agent · normal`
   accept: thumbnails for local images and videos and the first lines of text files are produced on the phone from its complete copy and cached with the working copy; tests cover generation and eviction; the interface follows board UI-MOB-FILES-PREVIEW.
 
 - **UI-MOB-FILES-PREVIEW** — The phone and the Fold preview files
-  `ui · agent · normal · depends: MOB-FILES-PREVIEW, UI-FILES-PREVIEW`
+  `ui · agent · normal · depends: MOB-FILES-PREVIEW`
   accept: the board.
 
 - **COMMAND-PALETTE** — A local index searches names across folders, photos and music
-  `feature · agent · normal · depends: FILES-PREVIEW`
+  `feature · agent · normal`
   accept: each desktop or server replica keeps a local name index of its complete copies (files, photos, tracks with artist and album) and the daemon answers a ranked cross-folder query; the hub answers for what it holds; daemon tests cover ranking, scopes, deleted files and ignored paths; the interface follows board UI-COMMAND-PALETTE.
 
 - **UI-COMMAND-PALETTE** — Command-K finds anything and runs an action

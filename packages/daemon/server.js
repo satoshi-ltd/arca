@@ -16,6 +16,7 @@ import { activityDays, parseActivityDays } from "../core/activity-days.js";
 import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
 import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
+import { filePreview } from "./file-preview.js";
 import { acceptReport, machines } from "./machines.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
 import { listPage, browsePage } from "./pages.js";
@@ -839,6 +840,18 @@ export async function start(home, options = {}) {
                   url.searchParams.get("rev"),
                 )
               : await engine.gallery.page(volume, url.searchParams),
+        );
+      }
+      if (req.method === "GET" && route === "/v1/file-preview") {
+        requireAdmin();
+        return send(
+          200,
+          filePreview(
+            s,
+            url.searchParams.get("volume"),
+            url.searchParams.get("path"),
+            url.searchParams.get("hash"),
+          ),
         );
       }
       if (req.method === "GET" && route === "/v1/folder-previews") {
