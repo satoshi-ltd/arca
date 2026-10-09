@@ -135,6 +135,7 @@ import { browseEntries } from "./browse";
 import { deviceNodes } from "./device-map";
 import { homeFromActivity, latestLine, newestCovers, newestImages } from "./home-data";
 import { ActivityStrip, AwayBanner, DayGroup } from "./HistoryActivity";
+import { FilePreview, RowThumb } from "./FilePreview";
 import { awayDue, daySummary, localDay, stripBars } from "./history-activity";
 // Keep the native launch surface until fonts and local startup are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -207,6 +208,7 @@ export default function App() {
     [pickedDevice, setPickedDevice] = useState(""),
     [historyDays, setHistoryDays] = useState(null),
     [home, setHome] = useState({ arrivals: [], last: {}, previews: {} }),
+    [previewEntry, setPreviewEntry] = useState(null),
     [awayNotice, setAwayNotice] = useState(null),
     [landingDay, setLandingDay] = useState(""),
     [landingReady, setLandingReady] = useState(false),
@@ -1005,6 +1007,9 @@ export default function App() {
     stopLanding();
     setSelectedRev("");
   }, [screen, historyFilter, historyVolume]);
+  useEffect(() => {
+    setPreviewEntry(null);
+  }, [folder?.id, directory, search, screen]);
   useEffect(() => {
     if (screen !== "Folders" || !connected || !replica || folder) return;
     let live = true;
@@ -2334,17 +2339,24 @@ export default function App() {
                                             if (e.directory) {
                                               setDirectory(e.path + "/");
                                               setVisibleCount(100);
-                                            } else openFileDetail(e);
+                                            } else if (wide && !compact) setPreviewEntry(e);
+                                            else openFileDetail(e);
                                           }}
-                                          style={[s.settingRow, s.separator]}
+                                          onLongPress={() => {
+                                            if (!e.directory) setSheet({ kind: "peek", entry: e });
+                                          }}
+                                          accessibilityActions={e.directory ? undefined : [{ name: "preview", label: "Preview" }]}
+                                          onAccessibilityAction={() => {
+                                            if (!e.directory) setSheet({ kind: "peek", entry: e });
+                                          }}
+                                          style={[
+                                            s.settingRow,
+                                            s.separator,
+                                            previewEntry?.path === e.path && wide && !compact && s.historyRowChosen,
+                                          ]}
                                         >
                                           <View style={s.row}>
-                                            <Icon
-                                              name={fileIcon(
-                                                e.path,
-                                                e.directory,
-                                              )}
-                                            />
+                                            <RowThumb entry={e} enabled={index < 30} />
                                             <View style={s.flex}>
                                               <Text style={s.heading}>
                                                 {e.label}
@@ -2399,6 +2411,17 @@ export default function App() {
                             </View>
                             {wide && (
                               <StickyDetailSide>
+                                {!compact && !!previewEntry && entries.some((x) => x.path === previewEntry.path) && (
+                                  <Section>
+                                    <Text style={s.eyebrow}>PREVIEW</Text>
+                                    <Card>
+                                      <FilePreview entry={previewEntry} files={engine.current?.files} />
+                                      <Text style={s.heading}>{previewEntry.path.split("/").pop()}</Text>
+                                      <Text style={s.caption}>{bytes(previewEntry.size || 0)}</Text>
+                                      <Button label="Open" onPress={() => openFileDetail(previewEntry)} />
+                                    </Card>
+                                  </Section>
+                                )}
                                 <Section>
                                   <Text style={s.eyebrow}>LOCAL COPY</Text>
                                   <Card>
@@ -2602,6 +2625,7 @@ export default function App() {
                       loading={detailLoading}
                       error={detailError}
                       localEntry={sheet.localEntry}
+                      files={engine.current?.files}
                       retry={() => {
                         reconnect();
                         getHistory(sheet).catch((e) =>
@@ -3431,7 +3455,13 @@ export default function App() {
                     icon: "edit",
                     subtitle: shownSheet.path.split("/").at(-1),
                   }
-                : shownSheet.kind === "gallery"
+                : shownSheet.kind === "peek"
+                  ? {
+                      title: shownSheet.entry.path.split("/").pop(),
+                      icon: fileIcon(shownSheet.entry.path),
+                      subtitle: bytes(shownSheet.entry.size || 0),
+                    }
+                  : shownSheet.kind === "gallery"
                   ? { title: "Photo uploads", icon: "gallery", subtitle: folder?.name }
                   : shownSheet.kind === "now-playing"
                     ? { title: "Now playing", icon: "music" }
@@ -3469,6 +3499,33 @@ export default function App() {
             >
               {!!error && shownSheet.kind !== "folder-actions" && (
                 <ErrorNotice error={error} retry={retryAction.current} />
+              )}
+              {shownSheet.kind === "peek" && (
+                <View style={s.stack}>
+                  <FilePreview entry={shownSheet.entry} files={engine.current?.files} />
+                  <Button
+                    label="Open"
+                    onPress={() => {
+                      const entry = shownSheet.entry;
+                      setSheet(null);
+                      openFileDetail(entry);
+                    }}
+                  />
+                  {!!shownSheet.entry.uri && (
+                    <Button
+                      quiet
+                      icon="export"
+                      label="Share this file"
+                      onPress={() =>
+                        runLocal(async () => {
+                          if (!(await Sharing.isAvailableAsync()))
+                            throw new Error("Sharing is unavailable on this device.");
+                          await Sharing.shareAsync(shownSheet.entry.uri);
+                        })
+                      }
+                    />
+                  )}
+                </View>
               )}
               {shownSheet.kind === "rename-file" && (
                 <View style={s.group}>

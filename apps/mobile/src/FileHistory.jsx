@@ -6,6 +6,7 @@ import React from "react";
 import { Text, View } from "react-native";
 import { Badge, Button, Card, EmptyState, Icon, OfflineEmpty, useDesign } from "./components";
 import { bytes } from "./format";
+import { FilePreview } from "./FilePreview";
 
 export function FileHistory({
   target,
@@ -23,6 +24,7 @@ export function FileHistory({
   loading = false,
   error = "",
   localEntry,
+  files,
   retry,
   author,
 }) {
@@ -42,6 +44,7 @@ export function FileHistory({
           Showing saved versions. Reconnect to restore or resolve.
         </Text>
       )}
+      {!!localEntry && <FilePreview entry={localEntry} files={files} />}
       {target.path.includes(".conflict-") &&
         current &&
         !current.local &&

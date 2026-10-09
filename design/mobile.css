@@ -1688,3 +1688,75 @@
   border: 2px solid var(--m-warning);
   border-radius: var(--m-card-radius);
 }
+.m-fp-slot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+}
+.m-fp-slot .m-photo {
+  width: 44px;
+}
+.m-fp-icon {
+  color: var(--m-soft);
+}
+.m-fp-selected {
+  background: var(--m-tint);
+}
+.m-fp-art {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--m-control-radius);
+  background: linear-gradient(145deg, var(--m-tint), var(--m-ok-fg));
+  color: var(--m-soft);
+}
+.m-fp-art.m-fp-warm {
+  background: linear-gradient(160deg, var(--m-warning-bg), var(--m-warning));
+}
+.m-fp-art.m-fp-wide {
+  aspect-ratio: 16 / 9;
+}
+.m-fp-art.m-fp-short {
+  aspect-ratio: 5 / 2;
+}
+.m-fp-actions {
+  display: flex;
+  gap: 8px;
+}
+.m-fp-actions .m-button {
+  flex: 1;
+  min-width: 0;
+}
+.m-fp-split {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.m-fp-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-section-gap);
+  min-width: 0;
+}
+.m-fp-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--m-divider);
+  border-radius: var(--m-card-radius);
+  background: var(--m-surface);
+}
+.m-fp-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.m-fp-keys {
+  font: 12px/18px var(--font-mono);
+  color: var(--m-mute);
+}

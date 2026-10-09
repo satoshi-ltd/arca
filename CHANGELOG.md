@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.23 — 2026-10-09
+
+- On the phone, image rows in Files show a thumbnail and a long press on any file opens a peek with the photo, or the first lines of a text or Markdown file, plus Open and Share. File detail shows the same preview above its stats.
+- On a wide Fold, tapping a file fills a preview card in the side column instead of leaving the list, with an Open button. HEIC photos keep their icon because the phone cannot draw them, and audio and video keep theirs.
+
+Needs: native build
+
 ## 0.7.22 — 2026-10-09
 
 - Command-K (Control-K on Windows, Linux and the web) or the new Search field in the sidebar opens a palette that finds folders, files, photos and music tracks by name from any page, with All, Files, Photos and Music scopes, arrow keys and Enter, and your recent searches. Typing a short action name such as "sync" offers Sync now, Pause sync, Choose folders and Open Settings.

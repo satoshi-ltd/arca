@@ -26,14 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-FILES-PREVIEW** — The phone previews local files
-  `feature · agent · normal`
-  accept: thumbnails for local images and videos and the first lines of text files are produced on the phone from its complete copy and cached with the working copy; tests cover generation and eviction; the interface follows board UI-MOB-FILES-PREVIEW.
-
-- **UI-MOB-FILES-PREVIEW** — The phone and the Fold preview files
-  `ui · agent · normal · depends: MOB-FILES-PREVIEW`
-  accept: the board.
-
 - **MOB-SEARCH** — The phone searches names across its folders
   `feature · agent · normal`
   accept: the phone keeps a local name index of its working copies and answers a ranked query by scope (All, Files, Photos, Music); tests cover ranking, scopes and deleted files; the interface follows board UI-MOB-SEARCH.
