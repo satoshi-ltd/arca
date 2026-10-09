@@ -14,13 +14,16 @@ test("mobile motion tokens match the desktop motion tokens", () => {
   assert.equal(token("fast"), `${motion.fast}ms`);
   assert.equal(token("enter"), `${motion.enter}ms`);
   assert.equal(token("exit"), `${motion.exit}ms`);
+  assert.equal(token("shared"), `${motion.shared}ms`);
+  assert.equal(token("stagger"), `${motion.stagger}ms`);
+  assert.equal(token("settle"), `${motion.settle}ms`);
   assert.equal(token("touch-push"), `${motion.push}px`);
   assert.equal(token("touch-dialog-scale"), String(motion.dialogScale));
   assert.equal(token("ease"), `cubic-bezier(${motion.ease.join(", ")})`);
   const reduced = tokens.slice(
     tokens.indexOf("@media (prefers-reduced-motion: reduce)"),
   );
-  for (const name of ["fast", "enter", "exit"])
+  for (const name of ["fast", "enter", "exit", "shared", "stagger", "settle"])
     assert.match(reduced, new RegExp(`--motion-${name}:\\s*0ms;`));
   assert.match(reduced, /--motion-touch-push:\s*0px;/);
   assert.match(reduced, /--motion-touch-dialog-scale:\s*1;/);

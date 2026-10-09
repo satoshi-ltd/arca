@@ -5504,3 +5504,23 @@ dialog.palette:not([open]) {
     flex-direction: column;
   }
 }
+.row-arrived {
+  position: relative;
+}
+.row-arrived::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--tint);
+  pointer-events: none;
+  animation: arrival-settle var(--motion-settle) var(--motion-ease) forwards;
+}
+@keyframes arrival-settle {
+  from {
+    opacity: 0.7;
+  }
+  to {
+    opacity: 0;
+  }
+}

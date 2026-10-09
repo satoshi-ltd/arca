@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.7.27 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.7.28 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -764,6 +764,9 @@ Secondary text uses `--mute` (light `#627168`, dark `#8B9A90`). Status always pa
 | `--motion-fast`               | 120ms — hover, toggles, determinate progress               |
 | `--motion-enter`              | 200ms — notices, menus, dialogs, route content, Info entry |
 | `--motion-exit`               | 140ms — photo Info exit; mobile sheet exit                 |
+| `--motion-shared`             | 280ms — a thumbnail or folder tile travelling to its view  |
+| `--motion-stagger`            | 20ms — step between the first rows of a new route          |
+| `--motion-settle`             | 1800ms — tint of a row that just arrived                   |
 | `--motion-ease`               | cubic-bezier(.2,.8,.2,1)                                   |
 | `--motion-distance`           | 8px — entry translation                                    |
 | `--motion-dialog-scale`       | .985 — dialog entry scale                                  |
@@ -771,9 +774,9 @@ Secondary text uses `--mute` (light `#627168`, dark `#8B9A90`). Status always pa
 | `--motion-touch-dialog-scale` | 0.9 — mobile dialog entry scale                            |
 | `--motion-loop`               | 1200ms — pending indicators                                |
 
-`apps/mobile/src/design-tokens.js` mirrors them. Only opacity and transform animate; layout dimensions never do; no animation library is used; reduced motion collapses durations and movement to zero and makes activity indicators static. No decorative animation on polls or row updates.
+`apps/mobile/src/design-tokens.js` mirrors them. Only opacity and transform animate; layout dimensions never do; no animation library is used; reduced motion collapses durations and movement to zero and makes activity indicators static. No decorative animation on polls or row updates, except the single arrival settle below.
 
-- **Desktop and web.** A route change fades and lifts the content in over 200 ms (opacity .65 → 1, 6px); same-route refreshes never replay it. Dialogs, menus and notices animate their entrance only and dismiss immediately; closed dialogs never linger in the top layer. Updating an existing notice keeps expanded details and does not replay its entrance. The photo viewer fades only on opening, without scale; photo navigation and thumbnail-to-preview upgrades are immediate. Photo Info slides and fades in over 200 ms and out over 140 ms, disabling focus at once when closing; repeated toggles cancel the previous animation. Command-I or Control-I toggles Info only in the viewer, ignoring editable controls and key repeats.
+- **Desktop and web.** A route change fades and lifts the content in over 200 ms (opacity .65 → 1, 6px); same-route refreshes never replay it. On a new route the first six rows also rise 8px in turn, 20 ms apart (`--motion-stagger`); refreshes never replay that. A row that appears on the visible route after its first render (a file arriving through sync; at most six at once, never rows already there) rises once and holds an accent tint that fades over `--motion-settle`. Opening a photo animates the viewer image from its thumbnail's rectangle over `--motion-shared` (transform only, falling back to the fade when the thumbnail is off screen), and a folder card's tile travels into the detail header tile the same way; closing the viewer stays immediate. Dialogs, menus and notices animate their entrance only and dismiss immediately; closed dialogs never linger in the top layer. Updating an existing notice keeps expanded details and does not replay its entrance. The photo viewer fades only on opening, without scale; photo navigation and thumbnail-to-preview upgrades are immediate. Photo Info slides and fades in over 200 ms and out over 140 ms, disabling focus at once when closing; repeated toggles cancel the previous animation. Command-I or Control-I toggles Info only in the viewer, ignoring editable controls and key repeats.
 - **Mobile and Fold.** Bottom tabs cross with a plain fade. Opening a folder or file pushes the screen in from the right by 30 dp with a fade and back pushes from the left (`ScreenEnter` inside `KeyboardScrollView`; `App.jsx` derives the direction from screen depth). `Sheet` drives its own `Modal` with `animationType="none"`: on phones the panel slides up by its measured height while the backdrop fades; on the Fold and for centered dialogs it fades and scales from 0.9. Exits play before unmounting (`useRetained`), and Android Back and Close run the same exit; a closing modal takes no taps and a reopened sheet re-enters. The photo viewer opens with a fade and without its bar; dragging the photo down moves it and shrinks it toward 60% with the finger while the backdrop fades over half the screen height, releasing past a third of the height (or with a fast flick) closes it and releasing earlier (or a second finger or an interrupted gesture) eases it back over `--motion-enter`, and on the phone releasing an upward drag past an eighth of the height opens Info; a single tap fades the bar and a filmstrip in over `--motion-fast`. All of it moves only opacity and transform, and reduced motion makes it instant.
 
 ### Navigation and hierarchy

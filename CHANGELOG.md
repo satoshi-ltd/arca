@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.28 — 2026-10-09
+
+- On the desktop and the web, motion shows where things come from: a photo opens from its own thumbnail, a folder card's icon travels into the folder header, and the first rows of a new page rise in one after another.
+- A file that arrives through sync while you are looking at the list rises once and its row glows briefly; rows already there and refreshes stay still. Closing the photo viewer is still immediate.
+- Three new motion tokens (shared, stagger, settle) are zeroed under reduced motion and mirrored for the phone.
+
+Needs: desktop build
+
 ## 0.7.27 — 2026-10-09
 
 - Folder cards on the desktop and on the phone go back to the folder's type icon: Images for a photo folder, Music for a music library, Folder for the rest. The photo mosaic, the stack of covers and the line naming the last file touched are gone, along with the read the hub served for the covers. The Just arrived strip and the conflict ring stay.

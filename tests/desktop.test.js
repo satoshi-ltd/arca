@@ -6571,6 +6571,31 @@ test("the gallery groups days into blocks with a hero, a quiet run, On this day 
   await until(() => routes.some((route) => route.includes("month=2025-12")));
   assert.equal(w.document.querySelector("#photo-gallery").classList.contains("gallery-periods-view"), false, "choosing a year returns to the days at that period");
   assert.equal(w.document.querySelector('.gallery-zoom [data-id="days"]').getAttribute("aria-pressed"), "true");
+  const flights = [];
+  w.Element.prototype.animate = function (frames, options) {
+    flights.push({ element: this, frames, options });
+    return { cancel() {} };
+  };
+  w.Element.prototype.getBoundingClientRect = function () {
+    return this.matches?.(".photo-thumb") ? { left: 10, top: 20, width: 100, height: 50 } : this.matches?.(".photo-viewer-image") ? { left: 0, top: 0, width: 400, height: 200 } : { left: 0, top: 0, width: 0, height: 0 };
+  };
+  w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  w.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+  await until(() => w.document.querySelector(".photo-thumb .photo-open"));
+  w.document.querySelector(".photo-thumb .photo-open").click();
+  await until(() => flights.some((flight) => flight.element.matches?.(".photo-viewer-image")));
+  const opening = flights.find((flight) => flight.element.matches?.(".photo-viewer-image"));
+  assert.equal(opening.frames[0].transform, "translate(-140px, -55px) scale(0.25)", "a photo opens from its own thumbnail");
+  assert.equal(opening.frames[1].transform, "none");
+  w.document.querySelector("#cancel-dialog").click();
+  await until(() => !w.document.querySelector("#dialog").hasAttribute("open"));
+  const count = flights.length;
+  w.Element.prototype.getBoundingClientRect = function () {
+    return this.matches?.(".photo-thumb") ? { left: 10, top: 5000, right: 110, bottom: 5050, width: 100, height: 50 } : { left: 0, top: 0, width: 400, height: 200 };
+  };
+  w.document.querySelector(".photo-thumb .photo-open").click();
+  await until(() => w.document.querySelector(".photo-viewer-image"));
+  assert.equal(flights.length, count, "a thumbnail scrolled out of view opens with the plain fade");
 });
 
 test("Space opens a Quick Look with the file's preview, arrows move through the folder and Space closes", async (t) => {
@@ -6746,6 +6771,82 @@ test("Command-K opens a palette that searches by scope, walks results with the k
   press("k", { ctrlKey: true });
   press("k", { ctrlKey: true });
   assert.equal(dialog.open, false, "the shortcut toggles it");
+});
+
+test("rows cascade in on a new route, a new arrival settles once and a folder's tile travels into its header", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-motion-"));
+  init(home, { port: 0, name: "Motion" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost", pretendToBeVisual: true });
+  const w = dom.window;
+  let poll;
+  w.setInterval = (callback, ms) => {
+    if (ms === 5000) poll = callback;
+    return 0;
+  };
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const base = { selected: 1, sync: { state: "idle", lastCompleted: new Date().toISOString() }, conflicts: 0, files: 1, bytes: 1, path: "/x" };
+  const volumes = Array.from({ length: 8 }, (_, i) => ({ ...base, id: `v${i}`, name: `folder-${i}` }));
+  const animations = [];
+  w.Element.prototype.animate = function (frames, options) {
+    animations.push({ element: this, frames, options });
+    return { cancel() {} };
+  };
+  w.Element.prototype.getBoundingClientRect = function () {
+    return this.matches?.(".home-lead, .tile") && this.closest?.(".folder-card")
+      ? { left: 100, top: 200, width: 40, height: 40 }
+      : this.matches?.(".detail-title .tile")
+        ? { left: 20, top: 40, width: 80, height: 80 }
+        : { left: 0, top: 0, width: 0, height: 0 };
+  };
+  w.document.documentElement.style.setProperty("--motion-enter", "200ms");
+  w.document.documentElement.style.setProperty("--motion-stagger", "20ms");
+  w.document.documentElement.style.setProperty("--motion-shared", "280ms");
+  w.document.documentElement.style.setProperty("--motion-settle", "1800ms");
+  w.document.documentElement.style.setProperty("--motion-distance", "8px");
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: "idle", hubId: "hub", hubName: "Casa", hub: "http://127.0.0.1:49999", volumes };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes };
+        if (args.route === "/v1/machines") return { machines: [] };
+        if (args.route.startsWith("/v1/activity")) return { versions: [], next: null };
+        if (args.route.startsWith("/v1/browse")) return { entries: [], next: null };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelectorAll(".folder-card").length === 8 && w.document.body.getAttribute("aria-busy") === "false");
+  const rise = animations.filter((a) => a.element.matches?.(".folder-card") && a.options.fill === "backwards");
+  assert.equal(rise.length, 6, "at most six rows cascade");
+  assert.deepEqual(rise.map((a) => a.options.delay), [0, 20, 40, 60, 80, 100], "a 20 ms step");
+  assert.equal(JSON.stringify(rise[0].frames[0]), JSON.stringify({ opacity: 0, transform: "translateY(8px)" }));
+  assert.equal(w.document.querySelector(".row-arrived"), null, "rows present at first paint are not arrivals");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  volumes.push({ ...base, id: "v8", name: "folder-8" });
+  await poll();
+  await until(() => w.document.querySelectorAll(".folder-card").length === 9);
+  await until(() => w.document.querySelector(".folder-card.row-arrived"));
+  assert.equal(w.document.querySelectorAll(".row-arrived").length, 1, "only the new row settles");
+  assert.match(w.document.querySelector(".row-arrived").textContent, /folder-8/);
+  const before = animations.length;
+  w.document.querySelector('.folder-card[data-id="v0"]').click();
+  await until(() => w.document.querySelector(".detail-title .tile"));
+  await until(() => animations.some((a, i) => i >= before && a.element.matches?.(".detail-title .tile")));
+  const travel = animations.find((a, i) => i >= before && a.element.matches?.(".detail-title .tile"));
+  assert.equal(travel.options.duration, 280);
+  assert.equal(travel.frames[0].transform, "translate(80px, 160px) scale(0.5, 0.5)", "the header tile starts where the card's tile was");
+  assert.equal(travel.frames[1].transform, "none");
 });
 
 test("the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons", async (t) => {

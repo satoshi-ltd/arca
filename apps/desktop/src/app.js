@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.27";
+const APP_VERSION = "0.7.28";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1859,6 +1859,100 @@ function motionDuration(token) {
     ) || 0
   );
 }
+const reducedMotion = () =>
+  Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+const MOTION_EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+const ROW_SELECTOR =
+  "#content :is(.folder-card, .history-row, .browser-file-row)[data-id], #content .device-row[data-device]";
+function staggerRows() {
+  if (reducedMotion()) return;
+  const enter = motionDuration("--motion-enter");
+  const step = motionDuration("--motion-stagger");
+  const rise = tokenPixels("--motion-distance", 8);
+  [...document.querySelectorAll(ROW_SELECTOR)].slice(0, 6).forEach((row, index) =>
+    row.animate?.(
+      [
+        { opacity: 0, transform: `translateY(${rise}px)` },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: enter, delay: index * step, easing: MOTION_EASE, fill: "backwards" },
+    ),
+  );
+}
+function flip(element, from, { uniform = false } = {}) {
+  if (!element || !from || reducedMotion()) return;
+  const to = element.getBoundingClientRect();
+  if (!to.width || !to.height || !from.width || !from.height) return;
+  if (
+    from.right <= 0 ||
+    from.bottom <= 0 ||
+    from.left >= window.innerWidth ||
+    from.top >= window.innerHeight
+  )
+    return;
+  const scaleX = from.width / to.width;
+  const scaleY = from.height / to.height;
+  const scale = uniform ? `scale(${Math.min(scaleX, scaleY)})` : `scale(${scaleX}, ${scaleY})`;
+  const shift = uniform
+    ? `translate(${from.left + from.width / 2 - to.left - to.width / 2}px, ${from.top + from.height / 2 - to.top - to.height / 2}px)`
+    : `translate(${from.left - to.left}px, ${from.top - to.top}px)`;
+  element.animate?.(
+    [
+      { transformOrigin: uniform ? "center" : "top left", transform: `${shift} ${scale}` },
+      { transformOrigin: uniform ? "center" : "top left", transform: "none" },
+    ],
+    { duration: motionDuration("--motion-shared"), easing: MOTION_EASE },
+  );
+}
+const rowKey = (row) => row.dataset.id || row.dataset.device;
+let notePending = false;
+const settleTimers = new WeakMap();
+let seenRows = { route: "", keys: new Set() };
+function noteRows() {
+  const route = routeURL();
+  const rows = [...document.querySelectorAll(ROW_SELECTOR)];
+  const keys = new Set(rows.map(rowKey));
+  if (!keys.size && seenRows.route === route) return;
+  if (seenRows.route === route && seenRows.keys.size && !document.hidden && !reducedMotion()) {
+    const lastSeen = rows.findLastIndex((row) => seenRows.keys.has(rowKey(row)));
+    const fresh = rows.filter(
+      (row, index) =>
+        !seenRows.keys.has(rowKey(row)) &&
+        (index < lastSeen || row.matches(".folder-card, .device-row")),
+    );
+    if (fresh.length && fresh.length <= 6)
+      for (const row of fresh) {
+        row.classList.add("row-arrived");
+        row.animate?.(
+          [
+            { opacity: 0, transform: `translateY(${tokenPixels("--motion-distance", 8)}px)` },
+            { opacity: 1, transform: "none" },
+          ],
+          { duration: motionDuration("--motion-enter"), easing: MOTION_EASE },
+        );
+        clearTimeout(settleTimers.get(row));
+        settleTimers.set(
+          row,
+          setTimeout(() => row.classList.remove("row-arrived"), motionDuration("--motion-settle")),
+        );
+      }
+  }
+  seenRows = { route, keys };
+}
+if (typeof MutationObserver === "function" && document.querySelector("#content"))
+  new MutationObserver(() => {
+    if (notePending) return;
+    notePending = true;
+    const run = () => {
+      notePending = false;
+      noteRows();
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  }).observe(
+    document.querySelector("#content"),
+    { childList: true, subtree: true },
+  );
 async function render({ refreshStatus = false } = {}) {
   if (daemonStopped) return renderDaemonStopped();
   if (view !== "devices") pickedDevice = "";
@@ -1894,6 +1988,7 @@ async function render({ refreshStatus = false } = {}) {
   try {
     const painted = status;
     const page = renderView(true, undefined, refreshStatus);
+    const cascade = animatedRoute !== route;
     if (animatedRoute !== route) {
       navigationAnimation?.cancel();
       navigationAnimation = $("#content").animate?.(
@@ -1923,6 +2018,7 @@ async function render({ refreshStatus = false } = {}) {
         })
       : null;
     const results = await Promise.allSettled([page, state]);
+    if (cascade && serial === renderSerial) staggerRows();
     const failed = results.find((result) => result.status === "rejected");
     // The view just painted is current; the next poll repaints only if status really changes.
     if (!failed && serial === renderSerial && status === painted)
@@ -3552,6 +3648,13 @@ async function openGalleryPhoto(index) {
     true,
   );
   $("#dialog").className = "photo-viewer";
+  flip(
+    $(".photo-viewer-image"),
+    [...document.querySelectorAll(".photo-thumb[data-photo]")]
+      .find((tile) => Number(tile.dataset.photo) === index)
+      ?.getBoundingClientRect(),
+    { uniform: true },
+  );
   $("#submit-dialog").hidden = true;
   $("#cancel-dialog").innerHTML = icon("arrow-left");
   $("#cancel-dialog").setAttribute("aria-label", "Back to gallery");
@@ -6944,7 +7047,12 @@ async function handle(name, id, control) {
       folderPageCount = 1;
     }
     detailId = id;
+    const from = [...document.querySelectorAll(".folder-card[data-id]")]
+      .find((card) => card.dataset.id === id)
+      ?.querySelector(".home-lead, .tile")
+      ?.getBoundingClientRect();
     await render();
+    flip(document.querySelector(".detail-title .tile"), from);
     return;
   }
   if (name === "folder-history" || name === "folder-conflicts") {

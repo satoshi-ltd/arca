@@ -30,12 +30,8 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
   `ui · agent · normal`
   accept: the board.
 
-- **UI-MOTION-SYSTEM** — Desktop and web get shared-element and arrival motion
-  `ui · agent · low`
-  accept: the board with SPEC's Motion section rewritten and the new tokens added.
-
 - **UI-MOB-MOTION-SYSTEM** — The phone and the Fold get the same motion language
-  `ui · agent · low · depends: UI-MOTION-SYSTEM`
+  `ui · agent · low`
   accept: the board with SPEC's mobile Motion section rewritten.
 
 
