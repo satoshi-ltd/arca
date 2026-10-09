@@ -546,6 +546,7 @@ export function styles(
       justifyContent: "center",
       borderRadius: g.segmentRadius,
     },
+    segmentThumb: { position: "absolute", top: 3, left: 0, borderRadius: g.segmentRadius },
     segmentText: { color: c.soft },
     segmentTextSelected: { color: c.ink },
     segmentSelected: {

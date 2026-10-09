@@ -732,6 +732,25 @@ main {
   color: var(--ink);
   box-shadow: 0 1px 2px #00000014;
 }
+.segmented {
+  position: relative;
+}
+.segmented-thumb {
+  position: absolute;
+  background: var(--segmentSelected);
+  border-radius: var(--r-tag);
+  box-shadow: 0 1px 2px #00000014;
+  pointer-events: none;
+}
+.segmented.has-thumb > button {
+  position: relative;
+}
+.segmented.has-thumb > button.active {
+  background: none;
+}
+.segmented.has-thumb > button.active:not(:focus-visible) {
+  box-shadow: none;
+}
 .segmented svg {
   width: 13px;
   height: 13px;
@@ -2356,6 +2375,16 @@ dialog[open]::backdrop {
 /* Full-screen media must not scale, or fade again when its preview upgrades. */
 dialog.photo-viewer[open] {
   animation-name: overlay-enter;
+}
+@keyframes palette-enter {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--motion-distance) * -1.5)) scale(0.97);
+  }
+  to { opacity: 1; transform: none; }
+}
+dialog.palette[open] {
+  animation-name: palette-enter;
 }
 
 button,

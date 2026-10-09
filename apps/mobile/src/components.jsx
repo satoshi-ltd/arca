@@ -1308,15 +1308,56 @@ export function SettingsGroup({ children }) {
 
 export function SegmentedControl({ options, value, onChange }) {
   const { s } = useDesign();
+  const { duration, easing } = useMotion();
+  const [boxes, setBoxes] = useState({});
+  const slide = useRef(new Animated.Value(0)).current;
+  const placed = useRef(false);
+  const [settled, setSettled] = useState(false);
+  const box = boxes[value];
+  useEffect(() => {
+    if (!box) return;
+    if (!placed.current) {
+      placed.current = true;
+      slide.setValue(box.x);
+      setSettled(true);
+    } else
+      Animated.timing(slide, {
+        toValue: box.x,
+        duration: duration(motion.fast),
+        easing,
+        useNativeDriver: true,
+      }).start();
+  }, [box?.x]);
   return (
     <View style={s.segments}>
+      {!!box && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            s.segmentSelected,
+            s.segmentThumb,
+            { width: box.width, height: box.height, opacity: settled ? 1 : 0, transform: [{ translateX: slide }] },
+          ]}
+        />
+      )}
       {options.map((option) => (
         <Pressable
           key={option.value}
           accessibilityRole="button"
           accessibilityState={{ selected: value === option.value }}
           onPress={() => onChange(option.value)}
-          style={[s.segment, value === option.value && s.segmentSelected]}
+          onLayout={({ nativeEvent: { layout } }) =>
+            setBoxes((boxes) => {
+              const known = boxes[option.value];
+              return known &&
+                known.x === layout.x &&
+                known.width === layout.width &&
+                known.height === layout.height
+                ? boxes
+                : { ...boxes, [option.value]: layout };
+            })
+          }
+          style={[s.segment, value === option.value && !box && s.segmentSelected]}
         >
           <Text
             style={[

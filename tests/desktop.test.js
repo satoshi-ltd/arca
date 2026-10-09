@@ -2211,12 +2211,14 @@ test("share web routes survive reload and history navigation; hub edits use real
     "false",
   );
   assert.equal(historyWindow.document.activeElement.id, "history-share");
+  const filtersBefore = historyQuery(".history-filters");
   historyQuery('[data-action="history-filter"][data-id="conflicts"]').click();
   await until(
     () =>
       historyQuery('[data-id="conflicts"]').getAttribute("aria-pressed") ===
         "true" && historyIdle(),
   );
+  assert.equal(historyQuery(".history-filters"), filtersBefore, "a filter changes the list in place, without redrawing the page");
   historyQuery("#history-share").click();
   historyQuery(`[role="option"][data-id="${v.id}"]`).click();
   await until(
@@ -6670,11 +6672,36 @@ test("Command-K opens a palette that searches by scope, walks results with the k
   press("ArrowUp");
   press("ArrowUp");
   assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("Blue in Green"), true, "the selection wraps");
+  const flights = [];
+  w.Element.prototype.animate = function (frames, options) {
+    flights.push({ element: this, frames, options });
+    return { cancel() {} };
+  };
+  const place = (node) => [...node.parentNode.children].filter((n) => n.matches("button")).indexOf(node);
+  const originals = ["offsetWidth", "offsetLeft"].map((name) => [name, Object.getOwnPropertyDescriptor(w.HTMLElement.prototype, name)]);
+  Object.defineProperty(w.HTMLElement.prototype, "offsetWidth", { configurable: true, get() { return this.matches("button") ? 60 : this.matches(".segmented") ? 240 : 0; } });
+  Object.defineProperty(w.HTMLElement.prototype, "offsetLeft", { configurable: true, get() { return this.matches("button") ? place(this) * 60 : 0; } });
+  w.document.documentElement.style.setProperty("--motion-fast", "120ms");
+  dialog.querySelector('[data-pal-scope="files"]').click();
+  await until(() => dialog.querySelector(".segmented-thumb"));
+  assert.ok(dialog.querySelector(".segmented").classList.contains("has-thumb"));
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  let churn = 0;
+  const probe = new w.MutationObserver((records) => (churn += records.length));
+  probe.observe(dialog, { attributes: true, subtree: true, attributeFilter: ["class"] });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  probe.disconnect();
+  assert.equal(churn, 0, "placing the pill does not retrigger itself");
   dialog.querySelector('[data-pal-scope="music"]').click();
+  await until(() => flights.some((flight) => flight.element.matches?.(".segmented-thumb")));
+  assert.equal(flights.find((flight) => flight.element.matches(".segmented-thumb")).frames[0].transform, "translate(-120px, 0px) scale(1, 1)", "the selected pill slides to the new segment");
+  for (const [name, descriptor] of originals) Object.defineProperty(w.HTMLElement.prototype, name, descriptor);
+  delete w.Element.prototype.animate;
   await until(() => searches.some((route) => route.includes("scope=music")));
   assert.equal(dialog.querySelector('[data-pal-scope="music"]').getAttribute("aria-pressed"), "true");
   dialog.querySelector('[data-pal-scope="all"]').click();
   await until(() => searches.filter((route) => route.includes("scope=all")).length >= 2);
+  await until(() => dialog.querySelector('[role="option"][aria-selected="true"]')?.textContent.includes("blueprints"));
   press("ArrowDown");
   press("Enter");
   await until(() => !dialog.open);

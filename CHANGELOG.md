@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.33 — 2026-10-09
+
+- On the desktop, choosing Conflicts or Deleted in History no longer redraws the page, so the shake is gone: the buttons and the list update in place with a short fade.
+- The search palette now drops in with its first results rising one after another, and the selected pill of every segmented control, like Artists, Albums, Playlists and Recent, slides to the new choice, on the desktop and on the phone.
+
+Needs: desktop build · native build
+
 ## 0.7.32 — 2026-10-09
 
 - A device that backs up the hub, like the umbrel server, now carries a Backs up hub tag in the Devices list on a desktop that is not the hub, and a Backs up hub tag on the phone and the Fold.

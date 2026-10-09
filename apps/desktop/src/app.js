@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.32";
+const APP_VERSION = "0.7.33";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -350,6 +350,7 @@ function openPalette() {
   icons();
   dialog.querySelector(".pal-input").focus();
   paintPalette(null);
+  if (typeof staggerRows === "function") staggerRows("#palette .pal-row");
 }
 async function activatePalette(index) {
   const row = palette?.rows[index];
@@ -1862,12 +1863,12 @@ const reducedMotion = () =>
 const MOTION_EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 const ROW_SELECTOR =
   "#content :is(.folder-card, .history-row, .browser-file-row)[data-id], #content .device-row[data-device]";
-function staggerRows() {
+function staggerRows(selector = ROW_SELECTOR) {
   if (reducedMotion()) return;
   const enter = motionDuration("--motion-enter");
   const step = motionDuration("--motion-stagger");
   const rise = tokenPixels("--motion-distance", 8);
-  [...document.querySelectorAll(ROW_SELECTOR)].slice(0, 6).forEach((row, index) =>
+  [...document.querySelectorAll(selector)].slice(0, 6).forEach((row, index) =>
     row.animate?.(
       [
         { opacity: 0, transform: `translateY(${rise}px)` },
@@ -1901,6 +1902,81 @@ function flip(element, from, { uniform = false } = {}) {
     ],
     { duration: motionDuration("--motion-shared"), easing: MOTION_EASE },
   );
+}
+const segmentedPlaces = new Map();
+function syncSegmented(settle = false) {
+  for (const group of document.querySelectorAll(".segmented")) {
+    let thumb = group.querySelector(":scope > .segmented-thumb");
+    const active = group.querySelector(':scope > button.active, :scope > button[aria-pressed="true"]');
+    if (!active || !group.offsetWidth) {
+      thumb?.remove();
+      if (group.classList.contains("has-thumb")) group.classList.remove("has-thumb");
+      continue;
+    }
+    if (!thumb) {
+      thumb = document.createElement("span");
+      thumb.className = "segmented-thumb";
+      thumb.setAttribute("aria-hidden", "true");
+      group.prepend(thumb);
+    }
+    if (!group.classList.contains("has-thumb")) group.classList.add("has-thumb");
+    const place = {
+      left: active.offsetLeft,
+      top: active.offsetTop,
+      width: active.offsetWidth,
+      height: active.offsetHeight,
+    };
+    thumb.style.left = `${place.left}px`;
+    thumb.style.top = `${place.top}px`;
+    thumb.style.width = `${place.width}px`;
+    thumb.style.height = `${place.height}px`;
+    const key = group.getAttribute("aria-label") || group.className;
+    const memory = segmentedPlaces.get(key);
+    const before =
+      memory && (memory.group === group || Date.now() - memory.at < 800) ? memory.place : null;
+    segmentedPlaces.set(key, { group, place, at: Date.now() });
+    if (
+      before &&
+      !settle &&
+      !reducedMotion() &&
+      (before.left !== place.left || before.top !== place.top || before.width !== place.width)
+    )
+      thumb.animate?.(
+        [
+          {
+            transformOrigin: "top left",
+            transform: `translate(${before.left - place.left}px, ${before.top - place.top}px) scale(${before.width / place.width}, 1)`,
+          },
+          { transformOrigin: "top left", transform: "none" },
+        ],
+        { duration: motionDuration("--motion-fast"), easing: MOTION_EASE },
+      );
+  }
+}
+let segmentedPending = false;
+const segmentedObserver =
+  typeof MutationObserver === "function"
+    ? new MutationObserver(() => {
+    if (segmentedPending) return;
+    segmentedPending = true;
+    const run = () => {
+      segmentedPending = false;
+      if (typeof document === "undefined" || !document.defaultView) return;
+      syncSegmented();
+      segmentedObserver.takeRecords();
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  })
+    : null;
+if (segmentedObserver) {
+  segmentedObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "aria-pressed"],
+  });
+  window.addEventListener("resize", () => syncSegmented(true));
 }
 const rowKey = (row) => row.dataset.id || row.dataset.device;
 let notePending = false;
@@ -6853,7 +6929,28 @@ async function handle(name, id, control) {
   if (name === "history-filter") {
     historyFilter = historyFilter === id ? "revisions" : id;
     historyPath = null;
-    await render();
+    if (!$("#history-list")) {
+      await render();
+      return;
+    }
+    for (const button of document.querySelectorAll('[data-action="history-filter"]')) {
+      const on = button.dataset.id === historyFilter;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-pressed", String(on));
+    }
+    const list = $("#history-list");
+    const mine = ++renderSerial;
+    list.style.minHeight = `${list.offsetHeight}px`;
+    try {
+      await renderHistory();
+    } finally {
+      if (mine === renderSerial) list.style.minHeight = "";
+    }
+    if (mine === renderSerial && !reducedMotion())
+      list.animate?.(
+        [{ opacity: 0.55 }, { opacity: 1 }],
+        { duration: motionDuration("--motion-fast"), easing: MOTION_EASE },
+      );
     return;
   }
   if (name === "history-page") {

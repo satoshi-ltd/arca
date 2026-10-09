@@ -10,6 +10,14 @@ const app = read("../apps/desktop/src/app.js");
 const token = (name) =>
   tokens.match(new RegExp(`--motion-${name}:\\s*([^;]+);`))[1].trim();
 
+test("the palette enters with its own keyframes and the selected segment slides", () => {
+  assert.match(style, /dialog\.palette\[open\] \{\s*animation-name: palette-enter;/);
+  assert.match(style, /@keyframes palette-enter \{[^}]*opacity: 0;[^}]*transform: translateY\(calc\(var\(--motion-distance\) \* -1\.5\)\) scale\(0\.97\)/);
+  assert.match(style, /\.segmented-thumb \{\s*position: absolute;/);
+  assert.doesNotMatch(style, /@keyframes palette-enter \{[^}]*(width|height|top|left)/);
+  assert.match(app, /staggerRows\("#palette \.pal-row"\)/);
+});
+
 test("mobile motion tokens match the desktop motion tokens", () => {
   assert.equal(token("fast"), `${motion.fast}ms`);
   assert.equal(token("enter"), `${motion.enter}ms`);
