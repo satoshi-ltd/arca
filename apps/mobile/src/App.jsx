@@ -72,6 +72,7 @@ import {
   FolderRow,
   Navigation,
   MachineRow,
+  ArrivalsStrip,
   DeviceBranch,
   DeviceMapSide,
   ActionRow,
@@ -132,6 +133,7 @@ import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize } from "./format";
 import { browseEntries } from "./browse";
 import { deviceNodes } from "./device-map";
+import { homeFromActivity, latestLine, newestCovers, newestImages } from "./home-data";
 import { ActivityStrip, AwayBanner, DayGroup } from "./HistoryActivity";
 import { awayDue, daySummary, localDay, stripBars } from "./history-activity";
 // Keep the native launch surface until fonts and local startup are ready.
@@ -204,6 +206,7 @@ export default function App() {
     [machinesLoaded, setMachinesLoaded] = useState(false),
     [pickedDevice, setPickedDevice] = useState(""),
     [historyDays, setHistoryDays] = useState(null),
+    [home, setHome] = useState({ arrivals: [], last: {}, previews: {} }),
     [awayNotice, setAwayNotice] = useState(null),
     [landingDay, setLandingDay] = useState(""),
     [landingReady, setLandingReady] = useState(false),
@@ -1002,6 +1005,42 @@ export default function App() {
     stopLanding();
     setSelectedRev("");
   }, [screen, historyFilter, historyVolume]);
+  useEffect(() => {
+    if (screen !== "Folders" || !connected || !replica || folder) return;
+    let live = true;
+    (async () => {
+      const r = engine.current;
+      const selected = locals.filter((f) => f.selected);
+      if (!r?.scope || !selected.length) return;
+      let derived = { arrivals: [], last: {} };
+      try {
+        const page = await r.remoteView("/v1/activity?limit=50&filter=revisions", { silent: true });
+        derived = homeFromActivity(page.versions, selected.map((f) => f.id));
+      } catch {}
+      const previews = {};
+      for (const f of selected) {
+        if (!live) return;
+        try {
+          const isGallery = galleryConfig(f) || f.gallery || catalog?.volumes?.find((v) => v.id === f.id)?.gallery;
+          if (isGallery) {
+            const rows = await r.store.recentRows(r.scope, f.id);
+            const uris = newestImages(rows)
+              .map((path) => r.files.work(r.scope, f.id, path))
+              .filter((uri) => !r.files.present || r.files.present(uri));
+            if (uris.length) previews[f.id] = { kind: "photos", uris };
+          } else if (isMusicFolder(catalog, f.id)) {
+            const library = await r.store.musicLibrary(r.scope, f.id);
+            const uris = newestCovers(library?.value).map((key) => musicCover(key, "small"));
+            if (uris.some(Boolean)) previews[f.id] = { kind: "covers", uris };
+          }
+        } catch {}
+      }
+      if (live) setHome({ ...derived, previews });
+    })();
+    return () => {
+      live = false;
+    };
+  }, [screen, connected, replica, folder, catalog?.volumes?.length, locals.map((f) => `${f.id}:${f.files}:${f.completed ? 1 : 0}:${f.selected ? 1 : 0}`).join(",")]);
   const actionLocked = busy || !engine.current;
   async function openFolder(f) {
     setEntries(
@@ -2446,6 +2485,16 @@ export default function App() {
                         )
                       ) : (
                         <>
+                          {!!home.arrivals.length && !!connection && (
+                            <ArrivalsStrip
+                              arrivals={home.arrivals}
+                              nameOf={authorName}
+                              relative={relative}
+                              onOpen={(row) =>
+                                getHistory({ volume: row.volume, path: row.path }).catch((e) => setError(e.message))
+                              }
+                            />
+                          )}
                           {!!locals.length && (
                             <Section>
                               <Text style={s.eyebrow}>
@@ -2468,6 +2517,9 @@ export default function App() {
                                           : "folders"
                                     }
                                     description={`${f.files} files · ${bytes(f.bytes)} local`}
+                                    preview={home.previews[f.id]}
+                                    latest={latestLine(home.last[f.id], authorName, relative)}
+                                    conflict={!!catalog?.volumes?.find((v) => v.id === f.id)?.conflicts}
                                     status={
                                       status.paused
                                         ? "Paused"

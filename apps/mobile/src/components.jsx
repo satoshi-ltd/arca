@@ -1,4 +1,5 @@
 import { brandMark } from "./palette.js";
+import { fileIcon } from "../../desktop/src/file-icons.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g, motion } from "./design-tokens.js";
 import { useMotion } from "./motion";
@@ -12,6 +13,7 @@ import React, {
 import {
   Animated,
   AccessibilityInfo,
+  Image,
   StyleSheet,
   View,
   Text,
@@ -230,6 +232,41 @@ export function BrandActivity() {
         </View>
       )}
     </View>
+  );
+}
+export function ArrivalsStrip({ arrivals, nameOf, relative, onOpen }) {
+  const { s } = useDesign();
+  return (
+    <Section>
+      <Text style={s.eyebrow}>JUST ARRIVED</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={s.arrivals}
+      >
+        {arrivals.map((row) => (
+          <Pressable
+            key={`${row.volume}:${row.rev}`}
+            accessibilityRole="button"
+            accessibilityLabel={`${row.path.split("/").pop()}, ${nameOf(row.author)}, ${relative(row.created)}`}
+            onPress={() => onOpen(row)}
+            style={s.arrival}
+          >
+            <View style={s.tile}>
+              <Icon name={fileIcon(row.path)} size={16} />
+            </View>
+            <View style={s.stack}>
+              <Text numberOfLines={1} style={s.rowTitle}>
+                {row.path.split("/").pop()}
+              </Text>
+              <Text numberOfLines={1} style={s.caption}>
+                {`${nameOf(row.author)} · ${relative(row.created)}`}
+              </Text>
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </Section>
   );
 }
 export function Section({ children }) {
@@ -925,23 +962,57 @@ export function FolderRow({
   available,
   onPress,
   disabled,
+  preview,
+  latest,
+  conflict,
 }) {
   const { s, c, wide } = useDesign();
+  const syncing = status === "Syncing";
+  const tile = (
+    <View
+      style={[s.tile, available && s.tileAvailable]}
+      accessibilityLabel={syncing ? "Syncing" : undefined}
+    >
+      {syncing ? (
+        <Busy color={c.accent} />
+      ) : (
+        <Icon name={icon} size={16} color={available ? c.mute : c.accent} />
+      )}
+    </View>
+  );
+  const images = preview?.uris?.filter(Boolean) || [];
+  const lead =
+    !syncing && images.length ? (
+      preview.kind === "photos" && images.length < 4 ? (
+        <Image source={{ uri: images[0] }} resizeMethod="resize" style={s.homeSingle} />
+      ) : preview.kind === "photos" ? (
+        <View style={s.homeMosaic} accessible={false}>
+          {images.slice(0, 4).map((uri) => (
+            <Image key={uri} source={{ uri }} resizeMethod="resize" style={s.homeMosaicCell} />
+          ))}
+        </View>
+      ) : (
+        <View style={s.homeStack} accessible={false}>
+          {images.slice(0, 3).map((uri, index) => (
+            <Image
+              key={uri}
+              source={{ uri }}
+              resizeMethod="resize"
+              style={[s.homeStackCover, { left: index * 8, top: index * 8 }]}
+            />
+          ))}
+        </View>
+      )
+    ) : (
+      tile
+    );
   const contents = (
     <>
-      <View
-        style={[s.tile, available && s.tileAvailable]}
-        accessibilityLabel={status === "Syncing" ? "Syncing" : undefined}
-      >
-        {status === "Syncing" ? (
-          <Busy color={c.accent} />
-        ) : (
-          <Icon name={icon} size={16} color={available ? c.mute : c.accent} />
-        )}
-      </View>
+      <View style={[s.homeLead, conflict && s.homeConflict]}>{lead}</View>
       <View style={[s.flex, s.stack]}>
         <Text style={s.rowTitle}>{name}</Text>
         {!!description && <Text style={s.caption}>{description}</Text>}
+        {!!latest && <Text style={s.homeLatest}>{latest}</Text>}
       </View>
       {selectable ? (
         selected ? (
@@ -973,7 +1044,7 @@ export function FolderRow({
   ) : (
     <Pressable
       accessibilityRole={selectable ? "checkbox" : "button"}
-      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${description ? `, ${description}` : ""}${status ? `, ${status}` : ""}`}
+      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${description ? `, ${description}` : ""}${latest ? `, latest change ${latest}` : ""}${conflict ? ", conflict" : ""}${status ? `, ${status}` : ""}`}
       accessibilityState={{
         disabled: !!disabled,
         ...(selectable ? { checked: selected } : {}),

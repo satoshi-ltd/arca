@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.20 — 2026-10-09
+
+- The phone's Folders opens with a Just arrived row of the three newest changes, and each folder row shows its newest photos or covers, a line with its latest change and its device, and no longer the path. A folder with a conflict draws its tile in the warning colour.
+- The phone draws no progress ring on a syncing folder: it does not report per-folder file counts, so the nine-dot stays.
+
+Needs: native build
+
 ## 0.7.19 — 2026-10-09
 
 - Folders opens with a Just arrived strip of the three newest changes across your folders, each with the device that made it, and every folder card now shows what is inside: a photo folder a 2×2 mosaic of its newest photos, a music folder a stack of its newest covers, and a line with its latest change. The path moved to the folder's detail.

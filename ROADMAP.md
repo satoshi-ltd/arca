@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-MOB-HOME-LIVE** — The phone and the Fold show what just changed
-  `ui · agent · normal`
-  accept: the board.
-
 - **FILES-PREVIEW** — Local previews for images, video, text and audio
   `feature · agent · normal`
   accept: a local preview cache (image and video thumbnails, the first lines of text and Markdown) is generated on demand from the complete local copy and served by the daemon for desktop and web; nothing is generated for files a device does not hold; daemon tests cover each kind and cache invalidation on a new revision; the interface follows board UI-FILES-PREVIEW.
