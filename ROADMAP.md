@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-MOB-NOW-PLAYING** — Android gets a full-screen Now Playing
-  `ui · agent · normal`
-  accept: the board.
-
 - **UI-MOB-GALLERY-MOMENTS** — The phone and the Fold group days into moments
   `ui · agent · normal`
   accept: the board.

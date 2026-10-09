@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.26 — 2026-10-09
+
+- On Android, tapping the mini player opens Now playing as a full page that slides up: Playing from the album or playlist, the cover, the title with the artist and the album as links to their screens, the scrubber, the transport and an Up next row that lifts the queue; tap a track there to play it. On a wide Fold the page fills the window with the queue beside the player.
+- The page uses the accent tint, not a tint taken from the cover, and the cover does not travel from the mini player; both need your validation before they are built. While shuffling, Up next says the order is chosen as you go.
+
+Needs: native build
+
 ## 0.7.25 — 2026-10-09
 
 - The phone's photo viewer opens without its bar: tap once to show it with a filmstrip of neighbouring photos and your position, and tap a thumbnail to jump there. Drag the photo down to close it (it shrinks and the background fades; let go early and it springs back), and swipe up to open Info as a sheet; swiping the sheet's header down closes it.

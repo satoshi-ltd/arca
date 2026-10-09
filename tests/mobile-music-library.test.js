@@ -447,3 +447,31 @@ test("untagged discs take their album folder's name, and disc folders at the roo
     [["CD 2", 1], ["CD1", 1], ["Kind of Blue", 2], ["Unknown album", 1]],
   );
 });
+
+test("Up next lists the tracks after the playing one in its album or playlist, none while shuffling", async () => {
+  const { upNext, artistFor, trackNodeId } = await import("../apps/mobile/src/music-library.js");
+  const track = (id, title, artist = "Miles") => ({ id, title, artist, albumArtist: artist, album: "A" });
+  const tracks = new Map(["a", "b", "c", "d"].map((id, i) => [id, track(id, `T${i}`)]));
+  const library = {
+    tracks,
+    albums: new Map([["album:1", { title: "Kind of Blue", tracks: ["a", "b", "x", "c", "d"] }]]),
+    playlists: new Map([["playlist:1", { name: "Mix", tracks: ["d", "b"] }]]),
+    albumOrder: ["album:1"],
+    artists: [{ id: "ar1", name: "Miles" }],
+  };
+  const at = (context, id, position = null, extra = {}) => ({ id: trackNodeId(context, id, position), ...extra });
+  const album = upNext(library, at("in:f:album:1", "b", 1));
+  assert.equal(album.name, "Kind of Blue");
+  assert.deepEqual(album.rows.map((r) => [r.track.id, r.position]), [["c", 2], ["d", 3]], "a track still downloading is never listed and each row keeps its position");
+  assert.deepEqual(upNext(library, at("in:f:playlist:1", "d")).rows.map((r) => r.track.id), ["b"]);
+  assert.equal(upNext(library, at("in:f:playlist:1", "d")).name, "Mix");
+  assert.deepEqual(upNext(library, at("in:f:album:1", "b", 1, { shuffle: true })).rows, []);
+  assert.equal(upNext(library, at("in:f:album:1", "b", 1, { shuffle: true })).shuffled, true);
+  assert.deepEqual(upNext(library, at("in:f:albums", "c")).rows.map((r) => r.track.id), ["d"], "the whole library follows album order");
+  assert.deepEqual(upNext(library, { id: "garbage" }).rows, []);
+  assert.deepEqual(upNext(null, at("in:f:album:1", "a")).rows, []);
+  assert.equal(artistFor(library, track("a", "T")).id, "ar1");
+  const various = { ...library, artists: [{ id: "va", name: "Various artists" }, { id: "x", name: "X" }] };
+  assert.equal(artistFor(various, { artist: "X", albumArtist: "Various artists" }).id, "x", "the link opens the artist shown, not the album artist");
+  assert.equal(artistFor(library, { artist: "Nobody" }), null);
+});

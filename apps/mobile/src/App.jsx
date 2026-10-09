@@ -111,7 +111,6 @@ import {
   MiniPlayer,
   MusicLibrary,
   MusicSheet,
-  NowPlaying,
 } from "./MusicLibrary";
 import { player, playerAvailable, usePlayingId } from "./music-player";
 import { baseContext, musicSheet, playlistKey } from "./music-library.js";
@@ -137,6 +136,7 @@ import { homeFromActivity, latestLine, newestCovers, newestImages } from "./home
 import { ActivityStrip, AwayBanner, DayGroup } from "./HistoryActivity";
 import { FilePreview, RowThumb } from "./FilePreview";
 import { GlobalSearch } from "./GlobalSearch";
+import { NowPlayingPage } from "./NowPlayingPage";
 import { buildResults, forgetSearch, rememberSearch, searchTokens } from "./search-local";
 import { awayDue, daySummary, localDay, stripBars } from "./history-activity";
 // Keep the native launch surface until fonts and local startup are ready.
@@ -212,6 +212,7 @@ export default function App() {
     [home, setHome] = useState({ arrivals: [], last: {}, previews: {} }),
     [previewEntry, setPreviewEntry] = useState(null),
     [globalSearch, setGlobalSearch] = useState(false),
+    [nowPlayingOpen, setNowPlayingOpen] = useState(false),
     [searchRecents, setSearchRecents] = useState([]),
     [awayNotice, setAwayNotice] = useState(null),
     [landingDay, setLandingDay] = useState(""),
@@ -3451,7 +3452,7 @@ export default function App() {
                   <MiniPlayer
                     library={shownMusic?.library}
                     cover={musicCover}
-                    open={() => setSheet({ kind: "now-playing" })}
+                    open={() => setNowPlayingOpen(true)}
                     command={musicCommand}
                   />
                 )}
@@ -3509,6 +3510,26 @@ export default function App() {
               onExited={releaseApproval}
             />
           )}
+          <NowPlayingPage
+            visible={nowPlayingOpen}
+            library={shownMusic?.library}
+            cover={musicCover}
+            command={musicCommand}
+            play={(context, track, position) => playMusic(context, track, false, position)}
+            onClose={() => setNowPlayingOpen(false)}
+            openAlbum={(track) => {
+              setNowPlayingOpen(false);
+              setFileView("music");
+              setMusicSearch(null);
+              setMusicRoute([{ kind: "albums" }, { kind: "album", id: track.albumId }]);
+            }}
+            openArtist={(artist) => {
+              setNowPlayingOpen(false);
+              setFileView("music");
+              setMusicSearch(null);
+              setMusicRoute([{ kind: "artists" }, { kind: "artist", id: artist.id }]);
+            }}
+          />
           <GlobalSearch
             visible={globalSearch}
             twoPane={wide && !compact}
@@ -3558,8 +3579,6 @@ export default function App() {
                     }
                   : shownSheet.kind === "gallery"
                   ? { title: "Photo uploads", icon: "gallery", subtitle: folder?.name }
-                  : shownSheet.kind === "now-playing"
-                    ? { title: "Now playing", icon: "music" }
                   : shownSheet.kind === "history-filter"
                     ? { title: "Shared folder", icon: "folders" }
                     : shownSheet.kind === "folder-actions"
@@ -3672,22 +3691,6 @@ export default function App() {
                   open={setSheet}
                   change={changePlaylist}
                   remove={deletePlaylist}
-                />
-              )}
-              {shownSheet.kind === "now-playing" && (
-                <NowPlaying
-                  library={shownMusic?.library}
-                  cover={musicCover}
-                  command={musicCommand}
-                  openAlbum={(track) => {
-                    setSheet(null);
-                    setFileView("music");
-                    setMusicSearch(null);
-                    setMusicRoute([
-                      { kind: "albums" },
-                      { kind: "album", id: track.albumId },
-                    ]);
-                  }}
                 />
               )}
               {shownSheet.kind === "gallery" && (
