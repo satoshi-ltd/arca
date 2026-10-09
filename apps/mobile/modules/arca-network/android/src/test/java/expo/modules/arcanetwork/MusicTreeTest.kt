@@ -312,6 +312,126 @@ class MusicTreeTest {
     assertNull(MusicLibraryData.insideRoot("content://x/y", root.canonicalPath + File.separator))
   }
 
+  private fun large(artists: List<String>, albumsEach: Int = 1, title: (Int, Int) -> String = { a, b -> "Album $a $b" }): MusicTree {
+    val tracks = mutableListOf<String>()
+    val albums = mutableListOf<String>()
+    val people = mutableListOf<String>()
+    artists.forEachIndexed { a, name ->
+      val ids = (0 until albumsEach).map { b ->
+        val track = "v:$a/$b.mp3"
+        tracks += """{"id":"$track","uri":"${uri("hub-1/folders/v/$a/$b.mp3")}","title":"T$a-$b","artist":"$name","album":"${title(a, b)}","duration":1,"cover":null}"""
+        albums += """{"id":"album:$a:$b","title":"${title(a, b)}","artist":"$name","cover":null,"tracks":["$track"]}"""
+        "album:$a:$b"
+      }
+      people += """{"id":"artist:$a","name":"$name","letter":"${MusicTree.sortKey(name, 1)}","cover":null,"albums":[${ids.joinToString(",") { "\"$it\"" }}]}"""
+    }
+    val data = MusicLibraryData.parse(
+      """{"format":1,"scope":"hub-1","tracks":[${tracks.joinToString(",")}],"albums":[${albums.joinToString(",")}],"artists":[${people.joinToString(",")}],"recent":[]}""",
+      root.path,
+    )
+    return MusicTree(data)
+  }
+
+  private fun everyArtistBelow(tree: MusicTree, parent: String): List<String> =
+    tree.children(parent)!!.flatMap { node ->
+      if (MusicTree.parseGroupNodeId(node.id) != null) everyArtistBelow(tree, node.id) else listOf(node.id)
+    }
+
+  @Test fun anArtistListLongerThanACarAnswerOpensOnLettersAndEveryArtistStaysReachable() {
+    val names = ('A'..'I').flatMap { letter -> (0 until 30).map { "$letter%02d".format(it) } } + listOf("1 Hour", "9 Lives", "\u00D1and\u00FA", "\u00E9cole")
+    val tree = large(names)
+    val top = tree.children(MusicTree.ARTISTS)!!
+    assertEquals("accents fold into their letter and digits sort last", listOf("A", "B", "C", "D", "E", "F", "G", "H", "I", "N", "#"), top.map { it.title })
+    assertTrue(top.all { !it.playable && MusicTree.parseGroupNodeId(it.id) != null })
+    assertEquals("30 artists", top.first().subtitle)
+    assertEquals(listOf("31 artists", "1 artist", "2 artists"), listOf(top[4], top[9], top[10]).map { it.subtitle })
+    assertEquals(names.size, everyArtistBelow(tree, MusicTree.ARTISTS).size)
+    assertEquals(names.size, everyArtistBelow(tree, MusicTree.ARTISTS).toSet().size)
+    for (group in top) assertEquals(group, tree.node(group.id))
+    assertEquals(listOf("A00", "A01"), tree.children(top.first().id)!!.take(2).map { it.title })
+    assertNull(tree.children(MusicTree.groupNodeId(MusicTree.ARTISTS, "Q")))
+    assertNull(tree.node(MusicTree.groupNodeId(MusicTree.ARTISTS, "Q")))
+    assertFalse(top.any { it.grid })
+  }
+
+  @Test fun aLetterThatIsStillTooLongSplitsOnItsNextLetter() {
+    val names = (0 until 270).map { "S${"ABC"[it % 3]}%03d".format(it) } + (0 until 10).map { "B%02d".format(it) }
+    val tree = large(names)
+    val top = tree.children(MusicTree.ARTISTS)!!
+    assertEquals(listOf("B", "S"), top.map { it.title })
+    assertEquals(listOf("10 artists", "270 artists"), top.map { it.subtitle })
+    assertEquals(10, tree.children(top[0].id)!!.size)
+    val second = tree.children(top[1].id)!!
+    assertEquals(listOf("SA", "SB", "SC"), second.map { it.title })
+    assertEquals(listOf("90 artists", "90 artists", "90 artists"), second.map { it.subtitle })
+    for (group in second) assertEquals(group, tree.node(group.id))
+    assertEquals(listOf(90, 90, 90), second.map { tree.children(it.id)!!.size })
+    assertEquals(names.size, everyArtistBelow(tree, MusicTree.ARTISTS).size)
+  }
+
+  @Test fun namesThatShareTheirFirstLettersAreCutIntoNumberedRangesInsteadOfDeadLevels() {
+    val names = (0..MusicTree.GROUP_LIMIT).map { "Artist %03d".format(it) }
+    val tree = large(names)
+    val top = tree.children(MusicTree.ARTISTS)!!
+    assertEquals(listOf("1\u2013${MusicTree.GROUP_LIMIT}", "${MusicTree.GROUP_LIMIT + 1}\u2013${MusicTree.GROUP_LIMIT + 1}"), top.map { it.title })
+    assertEquals(listOf(MusicTree.GROUP_LIMIT, 1), top.map { tree.children(it.id)!!.size })
+    for (group in top) assertEquals(group, tree.node(group.id))
+    assertEquals("Artist 000", tree.children(top.first().id)!!.first().title)
+    assertEquals("Artist ${"%03d".format(MusicTree.GROUP_LIMIT)}", tree.children(top.last().id)!!.single().title)
+    assertEquals(names.size, everyArtistBelow(tree, MusicTree.ARTISTS).size)
+    assertNull(tree.children(MusicTree.groupNodeId(MusicTree.ARTISTS, "@9")))
+    assertNull(tree.children(MusicTree.groupNodeId(MusicTree.ARTISTS, "@x")))
+  }
+
+  @Test fun aChunkUnderALetterResolvesAndNoOtherChunkIdDoes() {
+    val tree = large((0 until 130).map { "S%03d".format(it) } + (0 until 5).map { "B%02d".format(it) })
+    val top = tree.children(MusicTree.ARTISTS)!!
+    assertEquals(listOf("B", "S"), top.map { it.title })
+    val ranges = tree.children(top[1].id)!!
+    assertEquals(listOf("S 1\u2013${MusicTree.GROUP_LIMIT}", "S ${MusicTree.GROUP_LIMIT + 1}\u2013130"), ranges.map { it.title })
+    assertEquals(listOf(MusicTree.GROUP_LIMIT, 130 - MusicTree.GROUP_LIMIT), ranges.map { tree.children(it.id)!!.size })
+    for (range in ranges) assertEquals(range, tree.node(range.id))
+    for (id in listOf("S@2147483647", "S@+1", "S@01", "S@-1", "S@10000", "S@"))
+      assertNull(id, tree.children(MusicTree.groupNodeId(MusicTree.ARTISTS, id)))
+  }
+
+  @Test fun aShortListStaysFlatAsBefore() {
+    val tree = large((0 until MusicTree.GROUP_LIMIT).map { "Artist %03d".format(it) })
+    assertEquals(MusicTree.GROUP_LIMIT, tree.children(MusicTree.ARTISTS)!!.size)
+    assertTrue(tree.children(MusicTree.ARTISTS)!!.all { MusicTree.parseGroupNodeId(it.id) == null })
+    assertTrue(tree.node(MusicTree.ALBUMS)!!.grid)
+    assertTrue(tree.children(MusicTree.ARTISTS)!!.all { it.grid })
+  }
+
+  @Test fun albumsAndAnArtistsAlbumsGroupByTitleLetterWhenTheyAreTooMany() {
+    val tree = large(listOf("Solo"), 260) { _, b -> "${"MNOPQ"[b % 5]} title %03d".format(b) }
+    val albums = tree.children(MusicTree.ALBUMS)!!
+    assertEquals(listOf("M", "N", "O", "P", "Q"), albums.map { it.title })
+    assertEquals("52 albums", albums.first().subtitle)
+    assertEquals(52, tree.children(albums.first().id)!!.size)
+    assertFalse(tree.node(MusicTree.ALBUMS)!!.grid)
+    assertTrue(albums.all { it.grid })
+    val byArtist = tree.children("artist:0")!!
+    assertEquals(listOf("M", "N", "O", "P", "Q"), byArtist.map { it.title })
+    assertFalse(tree.node("artist:0")!!.grid)
+    assertEquals(52, tree.children(byArtist.first().id)!!.size)
+    val album = tree.children(byArtist.first().id)!!.first()
+    assertEquals(listOf("v:0/0.mp3"), tree.queue(album.id)!!.map { it.id })
+    assertEquals(album, tree.node(album.id))
+  }
+
+  @Test fun theFolderKeyFollowsTheLetterTheLibraryFileCarries() {
+    assertEquals("O", MusicTree.sortKey("\u00D8ystein", 1))
+    assertEquals("L", MusicTree.sortKey("\u0141\u00F3d\u017A", 1))
+    assertEquals("A", MusicTree.sortKey("  \u00C6on", 1))
+    assertEquals("S", MusicTree.sortKey("\u00DFeta", 1))
+    assertEquals("A", MusicTree.sortKey("\uFF21rt", 1))
+    assertEquals("N", MusicTree.sortKey("\u00D1and\u00FA", 1))
+    assertEquals("#", MusicTree.sortKey("9 Lives", 1))
+    assertEquals("#", MusicTree.sortKey("", 1))
+    assertEquals("AB#", MusicTree.sortKey("Ab", 3))
+  }
+
   @Test fun shuffleOrdersStartWithTheChosenTrackAndKeepEveryOther() {
     val random = java.util.Random(7)
     for (start in 0 until 10) {

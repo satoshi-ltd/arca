@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.12 — 2026-10-09
+
+- In Android Auto, a long list of artists or albums, or an artist with many albums, now opens on letter folders (A, B, … and # for digits and symbols, splitting further, or into numbered ranges, when a letter is still long), so every artist and album is reachable instead of only the first few hundred.
+
+Needs: native build
+
 ## 0.7.11 — 2026-10-09
 
 - In the web interface of a server replica, the conflict dialog's download links now work: they download the copy the server holds, and a version the server does not hold has no link instead of a link that failed.

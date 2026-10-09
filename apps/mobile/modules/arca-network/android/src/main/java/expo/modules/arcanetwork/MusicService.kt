@@ -217,6 +217,7 @@ class MusicService : MediaLibraryService() {
     id == MusicTree.ARTISTS -> MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS
     id == MusicTree.ALBUMS || id == MusicTree.RECENT -> MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS
     id == MusicTree.PLAYLISTS -> MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
+    MusicTree.parseGroupNodeId(id) != null -> MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
     id.startsWith("artist:") -> MediaMetadata.MEDIA_TYPE_ARTIST
     id.startsWith("album:") -> MediaMetadata.MEDIA_TYPE_ALBUM
     id.startsWith("playlist:") -> MediaMetadata.MEDIA_TYPE_PLAYLIST

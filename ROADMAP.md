@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MUSIC-CAR-AZ** — Long car lists are grouped A–Z
-  `feature · agent · normal`
-  accept: Artists, Albums and an artist's albums with more items than one car answer carries (Media3 cuts each list at 256 KiB, roughly 300 items) open on letter groups in Android Auto, so every album, artist and track is reachable (the # artists sort last, so the cut drops them first today); JVM tests in `MusicTreeTest.kt` cover a library past the limit. The maintainer approved the grouping when queueing it.
+_None._
 
 ## In progress
 

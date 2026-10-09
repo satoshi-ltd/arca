@@ -1,5 +1,6 @@
 package expo.modules.arcanetwork
 
+import java.text.Normalizer
 import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
@@ -193,6 +194,42 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
       else String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
     }
     private const val FOLDER = "in:"
+    private const val GROUP = "group"
+    const val GROUP_LIMIT = 120
+    private const val GROUP_DEPTH = 3
+    private const val CHUNK = '@'
+    private val MARKS = Regex("\\p{M}+")
+    private val LETTER_BASE = mapOf('\u00C6' to 'A', '\u00D0' to 'D', '\u0110' to 'D', '\u0141' to 'L', '\u00D8' to 'O', '\u0152' to 'O', '\u00DE' to 'T')
+    fun groupNodeId(parent: String, prefix: String) = "$GROUP$SEPARATOR$parent$SEPARATOR$prefix"
+    fun parseGroupNodeId(id: String): Pair<String, String>? {
+      val parts = id.split(SEPARATOR)
+      return if (parts.size == 3 && parts[0] == GROUP && parts[1].isNotEmpty() && parts[2].isNotEmpty()) parts[1] to parts[2] else null
+    }
+    fun sortKey(name: String, depth: Int): String =
+      Normalizer.normalize(name, Normalizer.Form.NFKD)
+        .replace(MARKS, "")
+        .trim()
+        .uppercase(Locale.ROOT)
+        .take(depth)
+        .map { LETTER_BASE[it] ?: it }
+        .map { if (it in 'A'..'Z') it else '#' }
+        .joinToString("")
+        .padEnd(depth, '#')
+    private val GROUP_ORDER = Comparator<String> { a, b ->
+      val left = a.map { if (it == '#') '\u007F' else it }.joinToString("")
+      val right = b.map { if (it == '#') '\u007F' else it }.joinToString("")
+      left.compareTo(right)
+    }
+    private fun splitPrefix(prefix: String): Pair<String, Int?>? {
+      val at = prefix.indexOf(CHUNK)
+      if (at < 0) return prefix to null
+      val text = prefix.substring(at + 1)
+      val index = text.toIntOrNull()?.takeIf { it in 0..9999 && it.toString() == text } ?: return null
+      return prefix.substring(0, at) to index
+    }
+    private fun chunkPrefix(key: String, index: Int) = "$key$CHUNK$index"
+    private fun chunkTitle(key: String, from: Int, size: Int) =
+      listOf(key, "${from + 1}\u2013${from + size}").filter { it.isNotEmpty() }.joinToString(" ")
     const val PLAYED = "Recently played"
     const val ADDED = "Recently added"
     val rootNode = MusicNode(ROOT, "Arca", null, null, false)
@@ -200,7 +237,7 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
 
   val roots = listOfNotNull(
     MusicNode(ARTISTS, "Artists", null, null, false),
-    MusicNode(ALBUMS, "Albums", null, null, false, grid = true),
+    MusicNode(ALBUMS, "Albums", null, null, false, grid = library.albumOrder.size <= GROUP_LIMIT),
     MusicNode(PLAYLISTS, "Playlists", null, null, false).takeIf { library.playlists.isNotEmpty() },
     MusicNode(RECENT, "Recent", null, null, false),
   )
@@ -208,7 +245,7 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
   private fun albumNode(album: MusicAlbum) =
     MusicNode(album.id, album.title, album.artist, album.cover, false)
   private fun artistNode(artist: MusicArtist) =
-    MusicNode(artist.id, artist.name, count(artist.albums.size, "album", "albums"), artist.cover, false, grid = true, group = artist.letter)
+    MusicNode(artist.id, artist.name, count(artist.albums.size, "album", "albums"), artist.cover, false, grid = artist.albums.size <= GROUP_LIMIT, group = artist.letter)
   private fun playlistNode(playlist: MusicPlaylist) =
     MusicNode(playlist.id, playlist.name, count(playlist.tracks.size, "track", "tracks"), playlist.cover, false)
   private fun trackNode(context: String, track: MusicTrack, position: Int?): MusicNode {
@@ -243,13 +280,52 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
     return if (next == history) null else MusicTree(library, next)
   }
 
+  private class Entry(val name: String, val node: MusicNode)
+
+  private fun entries(parent: String): List<Entry>? = when {
+    parent == ARTISTS -> library.artists.map { Entry(it.name, artistNode(it)) }
+    parent == ALBUMS -> library.albumOrder.mapNotNull { library.albums[it] }.map { Entry(it.title, albumNode(it)) }
+    else -> library.artists.firstOrNull { it.id == parent }?.albums?.mapNotNull { library.albums[it] }?.map { Entry(it.title, albumNode(it)) }
+  }
+
+  private fun groupNode(parent: String, prefix: String, title: String, size: Int, leaf: Boolean): MusicNode {
+    val unit = if (parent == ARTISTS) ("artist" to "artists") else ("album" to "albums")
+    return MusicNode(groupNodeId(parent, prefix), title, count(size, unit.first, unit.second), null, false, grid = leaf && parent != ARTISTS)
+  }
+
+  private fun folder(parent: String, prefix: String): MusicNode? {
+    val all = entries(parent) ?: return null
+    val (key, chunk) = splitPrefix(prefix) ?: return null
+    val matching = all.count { sortKey(it.name, key.length) == key }
+    if (chunk == null) return if (matching > 0) groupNode(parent, prefix, key, matching, matching <= GROUP_LIMIT) else null
+    val from = chunk * GROUP_LIMIT
+    val size = (matching - from).coerceAtMost(GROUP_LIMIT)
+    return if (size > 0) groupNode(parent, prefix, chunkTitle(key, from, size), size, true) else null
+  }
+
+  private fun listing(parent: String, prefix: String): List<MusicNode>? {
+    val all = entries(parent) ?: return null
+    val (key, chunk) = splitPrefix(prefix) ?: return null
+    val matching = all.filter { sortKey(it.name, key.length) == key }
+    if (chunk != null) return matching.drop(chunk * GROUP_LIMIT).take(GROUP_LIMIT).map { it.node }
+    if (matching.size <= GROUP_LIMIT) return matching.map { it.node }
+    val deeper = (key.length + 1..GROUP_DEPTH)
+      .map { depth -> matching.groupBy { sortKey(it.name, depth) } }
+      .firstOrNull { it.size > 1 }
+    if (deeper != null)
+      return deeper.toSortedMap(GROUP_ORDER).map { (name, members) -> groupNode(parent, name, name, members.size, members.size <= GROUP_LIMIT) }
+    return (0 until (matching.size + GROUP_LIMIT - 1) / GROUP_LIMIT).map { index ->
+      val from = index * GROUP_LIMIT
+      groupNode(parent, chunkPrefix(key, index), chunkTitle(key, from, (matching.size - from).coerceAtMost(GROUP_LIMIT)), (matching.size - from).coerceAtMost(GROUP_LIMIT), true)
+    }
+  }
+
   fun children(parent: String): List<MusicNode>? = when {
     parent == ROOT -> roots
-    parent == ARTISTS -> library.artists.map(::artistNode)
-    parent == ALBUMS -> library.albumOrder.mapNotNull { library.albums[it] }.map(::albumNode)
     parent == PLAYLISTS -> library.playlists.values.map(::playlistNode)
     parent == RECENT -> recent()
-    else -> library.artists.firstOrNull { it.id == parent }?.albums?.mapNotNull { library.albums[it] }?.map(::albumNode)
+    else -> parseGroupNodeId(parent)?.let { (base, prefix) -> listing(base, prefix)?.takeIf { it.isNotEmpty() } }
+      ?: listing(parent, "")
       ?: queue(parent)?.mapIndexed { index, track -> trackNode(parent, track, index) }
   }
 
@@ -275,6 +351,7 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
       val item = library.tracks[track] ?: return null
       return trackNode(context, item, position)
     }
+    parseGroupNodeId(id)?.let { (base, prefix) -> return folder(base, prefix) }
     library.albums[id]?.let { return albumNode(it) }
     library.playlists[id]?.let { return playlistNode(it) }
     library.artists.firstOrNull { it.id == id }?.let { return artistNode(it) }
