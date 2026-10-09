@@ -2826,6 +2826,7 @@ export default function App() {
                                       name={m.name}
                                       description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[m.platform] || m.platform || "Platform not reported"}${m.lastAddress ? ` · ${m.lastAddress}` : ""}`}
                                       role={m.role || "Replica"}
+                                      backup={!!m.backup?.enabled}
                                       state={m.revoked ? "Removed" : "Linked"}
                                     />
                                   ))

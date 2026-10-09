@@ -1807,7 +1807,7 @@ test("a paused replica stays Paused and a live list while the hub is unavailable
           return { ...daemon.engine.status(), role: "replica", phase, hubUnavailable: true, hubName: "Casa", hub: "http://127.0.0.1:49999" };
         if (args.route === "/v1/remote") return { name: "Casa", volumes: [] };
         if (args.route === "/v1/machines")
-          return { machines: [{ name: "phone-fold", role: "replica", platform: "android", machineId: "fold", lastAddress: "192.168.1.144", isHub: false }] };
+          return { machines: [{ name: "phone-fold", role: "replica", platform: "android", machineId: "fold", lastAddress: "192.168.1.144", isHub: false }, { name: "umbrel", role: "replica", platform: "linux", machineId: "umbrel", lastAddress: "192.168.1.150", isHub: false, backup: { enabled: true } }] };
         return {};
       },
     },
@@ -1815,13 +1815,15 @@ test("a paused replica stays Paused and a live list while the hub is unavailable
   w.eval(`(async()=>{${script}\n})()`);
   await until(() => w.document.querySelector(".folder-card"));
   w.document.querySelector('[data-view="devices"]').click();
-  await until(() => w.document.querySelectorAll(".device-row").length >= 3);
+  await until(() => w.document.querySelectorAll(".device-row").length >= 4);
   const rows = [...w.document.querySelectorAll(".device-row")];
   assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").textContent.trim(), "Paused", "pausing is a choice that outranks Offline");
   assert.ok(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").classList.contains("wa"), "Paused is a warning on the Devices row too");
   const other = rows.find((row) => /phone-fold/.test(row.textContent));
   assert.equal(other.querySelector(".pill").textContent.trim(), "Linked", "a live list is never marked Offline just because the hub is");
   assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
+  assert.doesNotMatch(other.textContent, /Backs up hub/, "a device that is not a backup carries no tag");
+  assert.match(rows.find((row) => /umbrel/.test(row.textContent)).querySelector(".row-tags").textContent, /Backs up hub/, "the hub's backup server is tagged in a replica's list");
 });
 
 test("offline, an empty saved History reads its normal empty state and Copies say they are last known", async (t) => {

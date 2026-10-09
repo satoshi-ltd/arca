@@ -1244,6 +1244,7 @@ export function MachineRow({
   totals,
   self,
   hub,
+  backup,
   state,
   actions,
 }) {
@@ -1252,7 +1253,7 @@ export function MachineRow({
   return (
     <View
       style={[s.card, s.machineRow]}
-      accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}, ${description}${state ? `, ${state}` : ""}`}
+      accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}${backup ? ", backs up the hub" : ""}, ${description}${state ? `, ${state}` : ""}`}
     >
       <View style={s.row}>
         <View style={[s.tile, s.machineTile, hub && s.hubTile]}>
@@ -1276,6 +1277,7 @@ export function MachineRow({
               <Tag variant={hub ? "hub" : undefined}>{shownRole.toUpperCase()}</Tag>
             )}
             {self && <Tag variant="self">THIS DEVICE</Tag>}
+            {backup && <Tag>BACKS UP HUB</Tag>}
           </View>
           <Text numberOfLines={1} style={wide ? s.mono : s.caption}>
             {description}

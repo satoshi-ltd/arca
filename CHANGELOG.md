@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.32 — 2026-10-09
+
+- A device that backs up the hub, like the umbrel server, now carries a Backs up hub tag in the Devices list on a desktop that is not the hub, and a Backs up hub tag on the phone and the Fold.
+
+Needs: desktop build · native build
+
 ## 0.7.31 — 2026-10-09
 
 - On the phone and the Fold, a photo grows out of the tile you tapped and shrinks back into it on Back; on the Fold a folder's icon travels into the folder header.
