@@ -26,7 +26,102 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **DESK-REPLICA-AUTHOR** — A replica shows its own changes as "Device xxxxxxxx"
+  `bug · agent · high`
+  accept: History, Recent and file detail on a desktop or server replica name the replica's own changes with its device name, as the hub does, although the replica does not know its hub device id today (`authorName` in `app.js`, empty `status.devices`); a desktop test covers it. Found while investigating offline replicas on 2026-10-08.
+
+- **UI-DEVICES-TOPOLOGY** — Devices opens on a map of the hub and its devices
+  `ui · agent · normal`
+  accept: the board.
+
+- **UI-MOB-DEVICES-TOPOLOGY** — The phone and the Fold draw the same device map
+  `ui · agent · normal · depends: UI-DEVICES-TOPOLOGY`
+  accept: the board.
+
+- **HISTORY-ACTIVITY** — History reports per-day activity and the author device
+  `feature · agent · normal · depends: DESK-REPLICA-AUTHOR`
+  accept: the daemon's history read returns, for the last 30 days, a count of changes per day with deletion and conflict flags and the changes per author device, on hubs and replicas alike, and a first-open marker for "changed while you were away"; daemon tests cover hub and replica; the interface follows board UI-HISTORY-ACTIVITY.
+
+- **UI-HISTORY-ACTIVITY** — History shows a 30-day activity strip and who changed what
+  `ui · agent · normal · depends: HISTORY-ACTIVITY`
+  accept: the board.
+
+- **UI-MOB-HISTORY-ACTIVITY** — The phone and the Fold show the activity strip
+  `ui · agent · normal · depends: UI-HISTORY-ACTIVITY`
+  accept: the board.
+
+- **GALLERY-MOMENTS** — The gallery reports photo counts per day and earlier years' photos for a date
+  `feature · agent · normal`
+  accept: the gallery index answers a per-day count and a same-date-in-earlier-years query over capture dates (added date for undated photos) on the hub and replicas, with daemon tests; no place or face data is read; the interface follows board UI-GALLERY-MOMENTS.
+
+- **UI-GALLERY-MOMENTS** — The desktop gallery groups days into moments
+  `ui · agent · normal · depends: GALLERY-MOMENTS`
+  accept: the board.
+
+- **UI-MOB-GALLERY-MOMENTS** — The phone and the Fold group days into moments
+  `ui · agent · normal · depends: UI-GALLERY-MOMENTS`
+  accept: the board.
+
+- **HOME-LIVE** — Folders reports recent arrivals and up to four content previews per folder
+  `feature · agent · normal · depends: DESK-REPLICA-AUTHOR`
+  accept: the daemon returns, for each selected folder, its latest change with the originating device and up to four local thumbnails or covers, and the three newest changes across folders, from local data only; daemon tests cover a photo, a music and a documents folder; the interface follows board UI-HOME-LIVE.
+
+- **UI-HOME-LIVE** — Folders shows what is inside and what just changed
+  `ui · agent · normal · depends: HOME-LIVE`
+  accept: the board.
+
+- **UI-MOB-HOME-LIVE** — The phone and the Fold show what just changed
+  `ui · agent · normal · depends: UI-HOME-LIVE`
+  accept: the board.
+
+- **FILES-PREVIEW** — Local previews for images, video, text and audio
+  `feature · agent · normal`
+  accept: a local preview cache (image and video thumbnails, the first lines of text and Markdown) is generated on demand from the complete local copy and served by the daemon for desktop and web; nothing is generated for files a device does not hold; daemon tests cover each kind and cache invalidation on a new revision; the interface follows board UI-FILES-PREVIEW.
+
+- **UI-FILES-PREVIEW** — Files show thumbnails and open a Quick Look
+  `ui · agent · normal · depends: FILES-PREVIEW`
+  accept: the board.
+
+- **MOB-FILES-PREVIEW** — The phone previews local files
+  `feature · agent · normal`
+  accept: thumbnails for local images and videos and the first lines of text files are produced on the phone from its complete copy and cached with the working copy; tests cover generation and eviction; the interface follows board UI-MOB-FILES-PREVIEW.
+
+- **UI-MOB-FILES-PREVIEW** — The phone and the Fold preview files
+  `ui · agent · normal · depends: MOB-FILES-PREVIEW, UI-FILES-PREVIEW`
+  accept: the board.
+
+- **COMMAND-PALETTE** — A local index searches names across folders, photos and music
+  `feature · agent · normal · depends: FILES-PREVIEW`
+  accept: each desktop or server replica keeps a local name index of its complete copies (files, photos, tracks with artist and album) and the daemon answers a ranked cross-folder query; the hub answers for what it holds; daemon tests cover ranking, scopes, deleted files and ignored paths; the interface follows board UI-COMMAND-PALETTE.
+
+- **UI-COMMAND-PALETTE** — Command-K finds anything and runs an action
+  `ui · agent · normal · depends: COMMAND-PALETTE`
+  accept: the board.
+
+- **MOB-SEARCH** — The phone searches names across its folders
+  `feature · agent · normal`
+  accept: the phone keeps a local name index of its working copies and answers a ranked query by scope (All, Files, Photos, Music); tests cover ranking, scopes and deleted files; the interface follows board UI-MOB-SEARCH.
+
+- **UI-MOB-SEARCH** — The phone and the Fold get a search screen
+  `ui · agent · normal · depends: MOB-SEARCH, UI-COMMAND-PALETTE`
+  accept: the board.
+
+- **UI-MOB-VIEWER-GESTURES** — The photo viewer opens, zooms and dismisses by gesture
+  `ui · agent · normal`
+  accept: the board (supersedes MOB-VIEWER-CHROME-TAP); device evidence follows from the maintainer.
+
+- **UI-MOB-NOW-PLAYING** — Android gets a full-screen Now Playing
+  `ui · agent · normal`
+  accept: the board.
+
+- **UI-MOTION-SYSTEM** — Desktop and web get shared-element and arrival motion
+  `ui · agent · low`
+  accept: the board with SPEC's Motion section rewritten and the new tokens added.
+
+- **UI-MOB-MOTION-SYSTEM** — The phone and the Fold get the same motion language
+  `ui · agent · low · depends: UI-MOTION-SYSTEM`
+  accept: the board with SPEC's mobile Motion section rewritten.
+
 
 ## In progress
 
@@ -198,9 +293,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **DESK-FORCED-POLL-DROPPED** — An event that arrives while a status poll is running can leave the window stale for 20–30 seconds
   `bug · agent · low`
   accept: `pollStatus(true)` (`apps/desktop/src/app.js`) no longer returns at once when a poll is already in flight; it runs once more right after that poll ends, so a connectivity event consumed during a slow `/v1/status` still updates the window within seconds; a JSDOM test holds one status read open, delivers an event cursor change and sees the second read follow. Suspected by the review of 0.7.5, not reproduced.
-- **DESK-REPLICA-AUTHOR** — A replica shows its own changes as "Device xxxxxxxx"
-  `bug · agent · low`
-  accept: History, Recent and file detail on a desktop or server replica name the replica's own changes with its device name, as the hub does, although the replica does not know its hub device id today (`authorName` in `app.js`, empty `status.devices`); a desktop test covers it. Found while investigating offline replicas on 2026-10-08.
 - **REPLICA-GALLERY-ADDED-DATE** — Photos the hub dates by when they were added may read Date unknown on a replica
   `bug · agent · low`
   accept: first confirm with the hub's indexing finished; then a replica dates photos without capture metadata by their added date like the hub (SPEC "replicas date undated photos like the hub"), with a gallery test. Seen once on 2026-10-08 while the hub was still indexing.
@@ -220,9 +312,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **MOB-VIDEO-SAFE-AREA** — The photo viewer's video surface uses safe-area insets
   `bug · agent · low`
   accept: the video surface in the phone viewer uses the safe-area insets instead of the fixed 90 and 110 margins in `theme.js`; a layout test covers a device with a cutout.
-- **MOB-VIEWER-CHROME-TAP** — A tap hides the photo viewer's chrome
-  `feature · agent · low`
-  accept: a single tap on the photo viewer fades its top bar over `--motion-enter` (a single tap waits 300 ms to be told from the double tap), Back still works and reduced motion makes the change instant; this adds a gesture, so the maintainer validates it before it enters Queue.
 
 - **DESIGN-COVERAGE** — Draw the few shipped views the design kit still lacks
   `chore · agent · low`
