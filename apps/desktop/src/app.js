@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.17";
+const APP_VERSION = "0.7.18";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1447,6 +1447,7 @@ async function render({ refreshStatus = false } = {}) {
       dates: galleryView.dates,
       undated: galleryView.undated,
       month: galleryView.month,
+      days: galleryView.days,
       scroll: galleryView.root.closest(".page")?.scrollTop || 0,
     };
   }
@@ -1912,6 +1913,20 @@ let galleryReturn = null;
 let galleryView = null,
   folderViewId = null,
   folderReturn = { tab: "files", scroll: 0 };
+const GALLERY_HERO_AT = 8;
+const GALLERY_QUIET_BELOW = 4;
+const GALLERY_SIDE_TILES = 4;
+const galleryDayHeading = (key) => {
+  const d = new Date(`${key}T12:00:00`);
+  const part = (options) => d.toLocaleDateString("en", options);
+  return `${part({ weekday: "long" })} ${d.getDate()} ${part({ month: "long" })}`;
+};
+const galleryRange = (days) => {
+  const sorted = [...days].sort();
+  const first = new Date(`${sorted[0]}T12:00:00`);
+  const last = new Date(`${sorted.at(-1)}T12:00:00`);
+  return `${first.getDate()}–${last.getDate()} ${last.toLocaleDateString("en", { month: "long" })}`;
+};
 function mountGallery(volume) {
   galleryView?.observer?.disconnect();
   galleryView?.moreObserver?.disconnect();
@@ -1934,6 +1949,8 @@ function mountGallery(volume) {
     poll: null,
     queue: [],
     workers: 0,
+    days: {},
+    plans: {},
   });
   const current = () => galleryView === state && root.isConnected;
   let hoverVideo = null;
@@ -1950,6 +1967,90 @@ function mountGallery(volume) {
     }
   };
   state.stopHover = stopHover;
+  const tileImage = async (button, item) => {
+    try {
+      const result = await cachedPhoto(previewRoute(item));
+      if (!current() || !button.isConnected || !result.data) return;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = result.data;
+      button.prepend(img);
+    } catch {
+      /* A missing preview leaves the placeholder. */
+    }
+  };
+  const periodLabel = (period) =>
+    period.length === 4
+      ? period
+      : new Date(`${period}-01T12:00:00`).toLocaleDateString("en", { month: "short", year: "numeric" });
+  async function showPeriods(level) {
+    const box = root.querySelector(".photo-periods");
+    const seek = state.seek;
+    let data;
+    try {
+      data = await api(`/v1/gallery/periods?${new URLSearchParams({ volume, level: level === "years" ? "year" : "month" })}`);
+    } catch {
+      if (current() && galleryZoom === level) box.textContent = "Could not load this view.";
+      return;
+    }
+    if (!current() || galleryZoom !== level || state.seek !== seek) return;
+    box.innerHTML = `<div class="period-grid period-${level}">${data.periods
+      .map(
+        (p) =>
+          `<button type="button" class="period-tile" data-period="${escape(p.period)}" aria-label="${escape(`${periodLabel(p.period)}, ${countLabel(p.count, "photo")}`)}"><span class="period-name">${escape(periodLabel(p.period))}</span><span class="period-count">${p.count.toLocaleString("en")}</span></button>`,
+      )
+      .join("")}</div>`;
+    box.querySelectorAll(".period-tile").forEach((tile, index) => {
+      const p = data.periods[index];
+      tileImage(tile, p);
+      tile.onclick = () => {
+        galleryZoom = "days";
+        state.setZoom();
+        seekMonth(level === "years" ? p.latest || `${p.period}-12` : p.period);
+      };
+    });
+  }
+  state.setZoom = () => {
+    const periods = galleryZoom !== "days";
+    root.classList.toggle("gallery-periods-view", periods);
+    root.querySelector(".photo-periods").hidden = !periods;
+    document
+      .querySelectorAll('.gallery-zoom button[data-action="gallery-zoom"]')
+      .forEach((control) => {
+        const on = control.dataset.id === galleryZoom;
+        control.classList.toggle("active", on);
+        control.setAttribute("aria-pressed", String(on));
+      });
+    if (periods) showPeriods(galleryZoom);
+    else root.querySelector(".photo-periods").replaceChildren();
+  };
+  const showMemories = async () => {
+    const box = root.querySelector(".photo-memories");
+    const now = new Date();
+    const day = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    try {
+      const data = await api(`/v1/gallery/memories?${new URLSearchParams({ volume, day, year: String(now.getFullYear()) })}`);
+      if (!current() || !data.memories.length) {
+        if (current()) box.hidden = true;
+        return;
+      }
+      box.hidden = Boolean(state.month);
+      box.innerHTML = `<div class="section-label">On this day</div><div class="memory-grid">${data.memories
+        .slice(0, 4)
+        .map((m) => {
+          const ago = now.getFullYear() - Number(m.year);
+          return `<button type="button" class="memory-card" data-year="${escape(m.year)}"><span class="memory-title">${escape(new Date(`${m.year}-${day}T12:00:00`).toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric" }))}</span><span class="memory-sub">${ago === 1 ? "1 year ago" : `${ago} years ago`} · ${escape(countLabel(m.count, "photo"))}</span></button>`;
+        })
+        .join("")}</div>`;
+      box.querySelectorAll(".memory-card").forEach((card, index) => {
+        tileImage(card, data.memories[index]);
+        card.onclick = () => seekMonth(`${data.memories[index].year}-${day.slice(0, 2)}`);
+      });
+    } catch {
+      if (current()) box.hidden = true;
+    }
+  };
+  state.showMemories = showMemories;
   const previewVideo = (tile, item, event) => {
     if (
       event.pointerType !== "mouse" ||
@@ -2111,6 +2212,8 @@ function mountGallery(volume) {
       state.queue = state.queue.filter((queued) => queued !== tile);
       tile.remove();
     }
+    for (const block of root.querySelectorAll(".photo-block"))
+      if (!block.querySelector(".photo-thumb")) block.remove();
     for (const group of root.querySelectorAll(".photo-day"))
       if (!group.querySelector(".photo-thumb")) group.remove();
     updateSelection();
@@ -2158,12 +2261,66 @@ function mountGallery(volume) {
       if (row.length) place(false);
     }
   }
+  const monthPlan = (month) => {
+    const days = Object.keys(state.days)
+      .filter((key) => key.length === 10 && key.startsWith(month))
+      .sort()
+      .reverse();
+    if (!days.length) return null;
+    const blocks = [];
+    for (const key of days) {
+      const count = state.days[key];
+      const last = blocks.at(-1);
+      if (count < GALLERY_QUIET_BELOW && last?.kind === "quiet") {
+        last.days.push(key);
+        last.count += count;
+      } else
+        blocks.push({
+          kind: count >= GALLERY_HERO_AT ? "hero" : count < GALLERY_QUIET_BELOW ? "quiet" : "day",
+          days: [key],
+          count,
+        });
+    }
+    for (const block of blocks)
+      if (block.kind === "quiet" && block.days.length === 1) block.kind = "day";
+    return { blocks, of: new Map(blocks.flatMap((block) => block.days.map((key) => [key, block]))) };
+  };
+  const blockHeading = (block) => {
+    const label =
+      block.kind === "quiet"
+        ? galleryRange(block.days)
+        : galleryDayHeading(block.days[0]);
+    return `<h3>${escape(label)}<span class="photo-count">${escape(countLabel(block.count, "photo"))}</span></h3>`;
+  };
+  function gridFor(group, month, dayKey) {
+    const plan = (state.plans[month] ||= monthPlan(month) || false);
+    const block = plan && dayKey.length === 10 && plan.of.get(dayKey);
+    if (!block) return group.querySelector(".photo-grid");
+    let element = [...group.querySelectorAll(".photo-block")].find(
+      (el) => el.dataset.block === block.days[0],
+    );
+    if (!element) {
+      element = document.createElement("div");
+      element.className = `photo-block photo-block-${block.kind}`;
+      element.dataset.block = block.days[0];
+      element.innerHTML = `${blockHeading(block)}${block.kind === "hero" ? '<div class="photo-mosaic"><div class="photo-hero"></div><div class="photo-side"></div></div>' : ""}<div class="photo-grid"></div>`;
+      group.append(element);
+    }
+    const placed = Number(element.dataset.placed || 0);
+    element.dataset.placed = String(placed + 1);
+    if (block.kind === "hero" && placed === 0)
+      return element.querySelector(".photo-hero");
+    if (block.kind === "hero" && placed <= GALLERY_SIDE_TILES)
+      return element.querySelector(".photo-side");
+    return element.querySelector(".photo-grid");
+  }
   function addItems(items) {
     for (const item of items) {
       if (state.paths.has(item.path)) continue;
       state.paths.add(item.path);
       const index = state.items.push(item) - 1;
-      const day = (item.date || item.captured)?.slice(0, 7) || "unknown";
+      const dayKey = (item.date || item.captured)?.slice(0, 10) || "";
+      const day = dayKey.slice(0, 7) || "unknown";
       let group = [...root.querySelectorAll(".photo-day")].find(
         (el) => el.dataset.day === day,
       );
@@ -2197,7 +2354,7 @@ function mountGallery(volume) {
       tile.querySelector(".photo-open").onclick = () =>
         state.selection.size ? togglePhoto(item) : openGalleryPhoto(index);
       tile.querySelector(".photo-select").onclick = () => togglePhoto(item);
-      group.querySelector(".photo-grid").append(tile);
+      gridFor(group, day, dayKey).append(tile);
       if (item.kind === "image" || item.kind === "video") {
         if (state.observer) state.observer.observe(tile);
         else {
@@ -2435,6 +2592,8 @@ function mountGallery(volume) {
         root.querySelector(".photo-timeline").replaceChildren();
       }
       updateTimeline(data);
+      Object.assign(state.days, data.days);
+      state.plans = {};
       addItems(data.items);
       if (first) state.previous = data.previous ?? null;
       state.next = data.next;
@@ -2531,6 +2690,8 @@ function mountGallery(volume) {
         state.previous = null;
         return;
       }
+      Object.assign(state.days, data.days);
+      state.plans = {};
       replaceItems([...data.items, ...state.items]);
       state.range = { from: data.items[0].cursor };
       state.previous = data.previous ?? null;
@@ -2577,6 +2738,8 @@ function mountGallery(volume) {
         )
           return;
         items.push(...data.items);
+        Object.assign(state.days, data.days);
+        state.plans = {};
         after = data.next;
         if (!after) break;
       }
@@ -2719,12 +2882,15 @@ function mountGallery(volume) {
       previous: saved.previous,
       range: saved.range,
       month: saved.month,
+      days: saved.days || {},
     });
     updateTimeline({ timeline: saved.dates, undated: saved.undated });
     addItems(saved.items.filter((item) => !item.deleted));
     root.querySelector(".photo-more").hidden = !state.next;
     page.scrollTop = saved.scroll;
   } else state.load();
+  state.setZoom();
+  state.showMemories();
 }
 function galleryCanDelete() {
   return (
@@ -3203,9 +3369,27 @@ function folderActionsMenu(volume) {
     button(".arcaignore…", "edit-ignore", volume.id, "secondary", "file-pen-line");
   return `<details class="details-menu folder-actions-menu"><summary class="icon-button" aria-label="Folder actions">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
 }
-function galleryModeButton(volume) {
+let galleryZoom = "days";
+const galleryZooms = [
+  ["years", "Years"],
+  ["months", "Months"],
+  ["days", "Days"],
+];
+function galleryZoomControl() {
+  return segmented(
+    "Gallery zoom",
+    galleryZooms.map(([id, label]) => ({
+      action: "gallery-zoom",
+      id,
+      label,
+      active: galleryZoom === id,
+    })),
+    "gallery-zoom",
+  );
+}
+function galleryModeButton(volume, withZoom = true) {
   if (!volume.gallery) return "";
-  return button(
+  return (withZoom && folderTab === "gallery" ? galleryZoomControl() : "") + button(
     folderTab === "gallery" ? "View folder" : "Gallery",
     "gallery-mode",
     volume.id,
@@ -3232,7 +3416,7 @@ async function folderBrowser(v, recent, pending = false) {
     ],
   )}<div>${folderTab === "files" ? `<button class="icon-button" data-action="folder-search-toggle" aria-label="${folderSearchOpen ? "Close search" : "Search files"}">${icon(folderSearchOpen ? "x" : "search")}</button>` : folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
   if (folderTab === "gallery")
-    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
+    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v, false)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-memories" hidden></div><div class="photo-periods" hidden></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
   if (folderTab === "recent" && !recent) return tools + scaffoldRow("history");
   if (folderTab === "recent")
     return (
@@ -6224,6 +6408,12 @@ async function handle(name, id, control) {
     );
     return;
   }
+  if (name === "gallery-zoom") {
+    if (galleryZoom === id || !galleryView) return;
+    galleryZoom = id;
+    galleryView.setZoom();
+    return;
+  }
   if (name === "gallery-mode") {
     const volume = status.volumes.find((v) => v.id === detailId);
     if (!volume?.gallery) return;
@@ -6238,6 +6428,7 @@ async function handle(name, id, control) {
         dates: galleryView.dates,
         undated: galleryView.undated,
         month: galleryView.month,
+        days: galleryView.days,
         scroll: $(".page")?.scrollTop || 0,
       };
       folderTab = folderReturn.tab;

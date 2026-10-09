@@ -320,9 +320,21 @@ export class Gallery {
       .all(volume);
     const timeline = months.filter((row) => row.month !== null);
     const undated = months.find((row) => row.month === null);
+    const shownMonths = [
+      ...new Set(rows.map((row) => row.date?.slice(0, 7)).filter(Boolean)),
+    ];
+    const dayCounts = shownMonths.length
+      ? s.db
+          .prepare(
+            source +
+              ` SELECT substr(date,1,10) AS day,count(*) AS count FROM dated WHERE substr(date,1,7) IN (${shownMonths.map(() => "?").join(",")}) GROUP BY day`,
+          )
+          .all(volume, ...shownMonths)
+      : [];
     return {
       indexing,
       timeline,
+      days: Object.fromEntries(dayCounts.map((row) => [row.day, row.count])),
       undated: {
         count: undated?.count || 0,
         videos: undated?.videos || 0,
@@ -337,6 +349,57 @@ export class Gallery {
       next,
       previous,
     };
+  }
+
+  datedSource(volume) {
+    const s = this.s;
+    s.volume(volume);
+    const excluded = s.visibleRules(volume);
+    s.db.function("arca_gallery_visible", (name) =>
+      mediaKind(name) && !excluded(name, false) ? 1 : 0,
+    );
+    s.db.function(
+      "arca_gallery_date",
+      (name, captured, added, modified) =>
+        galleryDate(name, captured, added, modified).date,
+    );
+    const files = s.fileSource();
+    return `WITH media AS (
+      SELECT f.path,f.hash,f.size,f.rev,m.captured,m.modified,
+        (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash) AS added
+      FROM ${files} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
+      WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_gallery_visible(f.path)=1
+      AND NOT EXISTS (SELECT 1 FROM gallery_members gm JOIN gallery_assets ga USING(volume,source,asset)
+        WHERE gm.volume=f.volume AND gm.path=f.path AND ga.deleted=0 AND f.path<>json_extract(ga.resources,'$[0].path')
+        AND EXISTS (SELECT 1 FROM ${files} primary_file WHERE primary_file.volume=f.volume AND primary_file.path=json_extract(ga.resources,'$[0].path') AND primary_file.deleted=0 AND arca_gallery_visible(primary_file.path)=1))
+    ), dated AS (SELECT *,arca_gallery_date(path,captured,added,modified) AS date FROM media)`;
+  }
+  periods(volume, query) {
+    const level = query.get("level") || "year";
+    if (!["year", "month"].includes(level)) fail("Invalid gallery level");
+    const size = level === "year" ? 4 : 7;
+    const rows = this.s.db
+      .prepare(
+        this.datedSource(volume) +
+          `, ranked AS (SELECT path,hash,rev,date,substr(date,1,${size}) AS period,count(*) OVER (PARTITION BY substr(date,1,${size})) AS count,row_number() OVER (PARTITION BY substr(date,1,${size}) ORDER BY date DESC,path DESC) AS n FROM dated WHERE date IS NOT NULL)
+          SELECT period,substr(date,1,7) AS latest,count,path,hash,rev,arca_media_kind(path) AS kind FROM ranked WHERE n=1 ORDER BY period DESC`,
+      )
+      .all(volume);
+    return { level, periods: rows };
+  }
+  memories(volume, query) {
+    const day = query.get("day") || "";
+    const year = query.get("year") || "";
+    if (!/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(day) || !/^\d{4}$/.test(year))
+      fail("Invalid gallery day");
+    const rows = this.s.db
+      .prepare(
+        this.datedSource(volume) +
+          `, ranked AS (SELECT path,hash,rev,date,substr(date,1,4) AS year,count(*) OVER (PARTITION BY substr(date,1,4)) AS count,row_number() OVER (PARTITION BY substr(date,1,4) ORDER BY date ASC,path ASC) AS n FROM dated WHERE substr(date,6,5)=? AND substr(date,1,4)<?)
+          SELECT year,count,path,hash,rev,arca_media_kind(path) AS kind FROM ranked WHERE n=1 ORDER BY year DESC LIMIT 12`,
+      )
+      .all(volume, day, year);
+    return { day, memories: rows };
   }
 
   async info(volume, name, hash) {

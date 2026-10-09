@@ -26,16 +26,8 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **GALLERY-MOMENTS** — The gallery reports photo counts per day and earlier years' photos for a date
-  `feature · agent · normal`
-  accept: the gallery index answers a per-day count and a same-date-in-earlier-years query over capture dates (added date for undated photos) on the hub and replicas, with daemon tests; no place or face data is read; the interface follows board UI-GALLERY-MOMENTS.
-
-- **UI-GALLERY-MOMENTS** — The desktop gallery groups days into moments
-  `ui · agent · normal · depends: GALLERY-MOMENTS`
-  accept: the board.
-
 - **UI-MOB-GALLERY-MOMENTS** — The phone and the Fold group days into moments
-  `ui · agent · normal · depends: UI-GALLERY-MOMENTS`
+  `ui · agent · normal`
   accept: the board.
 
 - **HOME-LIVE** — Folders reports recent arrivals and up to four content previews per folder

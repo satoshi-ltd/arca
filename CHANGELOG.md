@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.18 — 2026-10-09
+
+- The desktop and web gallery now reads as days: each month is split by day with headings like "Saturday 12 September · 12 photos", a busy day opens on a large photo beside the next four, and runs of quiet days share one block under their date range. Above the first month, On this day brings back photos taken on today's date in earlier years.
+- A Years / Months / Days control in the gallery header switches density: Years and Months show one representative photo per period with its count and open the days at that period. The default is Days, the photo wall.
+- The hub and replicas answer three new gallery reads (per-day counts, year and month periods, photos from earlier years on a date); only capture dates are used.
+
+Needs: Casa redeploy · desktop build
+
 ## 0.7.17 — 2026-10-09
 
 - The phone's History gets the same Last 30 days strip: touch and hold a bar to read its day, lift to jump the list there. Each day heading counts the changes and the devices behind them, and a banner "Changed while you were away" appears when you come back after four hours or more. On a wide Fold the day groups sit beside the selected revision, with its device, time and File history.

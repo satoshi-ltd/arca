@@ -788,6 +788,8 @@ export async function start(home, options = {}) {
       }
       if (
         route === "/v1/gallery" ||
+        route === "/v1/gallery/periods" ||
+        route === "/v1/gallery/memories" ||
         route === "/v1/gallery/preview" ||
         route === "/v1/gallery/info"
       ) {
@@ -824,7 +826,11 @@ export async function start(home, options = {}) {
                 url.searchParams.get("path"),
                 url.searchParams.get("hash"),
               )
-            : route.endsWith("/preview")
+            : route.endsWith("/periods")
+              ? engine.gallery.periods(volume, url.searchParams)
+              : route.endsWith("/memories")
+                ? engine.gallery.memories(volume, url.searchParams)
+                : route.endsWith("/preview")
               ? await engine.gallery.preview(
                   volume,
                   url.searchParams.get("path"),

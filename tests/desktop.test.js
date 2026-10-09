@@ -6425,6 +6425,88 @@ test("the photo timeline appears and seeks while the gallery is still indexing",
   );
 });
 
+test("the gallery groups days into blocks with a hero, a quiet run, On this day and Years and Months views", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-moments-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  daemon.engine.store.db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const item = (day, n) => ({ path: `${day}-${n}.jpg`, hash: `h${day}${n}`, kind: "image", date: `${day}T10:00:00.000Z`, cursor: `${day}T10:00:00.000Z|${day}-${n}.jpg`, size: 1, rev: 1, dateSource: "capture date" });
+  const plan = [["2026-09-12", 9], ["2026-09-10", 2], ["2026-09-09", 1], ["2026-09-05", 5]];
+  const items = plan.flatMap(([day, n]) => Array.from({ length: n }, (_, i) => item(day, i)));
+  const days = Object.fromEntries(plan);
+  const routes = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          routes.push(args.route);
+          if (args.route.startsWith("/v1/gallery?"))
+            return { indexing: false, timeline: [{ month: "2026-09", count: 17, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, items, days, next: null, previous: null };
+          if (args.route.startsWith("/v1/gallery/memories"))
+            return { memories: [{ year: String(new Date().getFullYear() - 1), count: 21, path: "m.jpg", hash: "mh", kind: "image" }, { year: String(new Date().getFullYear() - 2), count: 1, path: "n.jpg", hash: "nh", kind: "image" }] };
+          if (args.route.startsWith("/v1/gallery/periods"))
+            return { level: args.route.includes("level=year") ? "year" : "month", periods: args.route.includes("level=year") ? [{ period: "2026", latest: "2026-09", count: 17, path: "p.jpg", hash: "ph", kind: "image" }, { period: "2025", latest: "2025-12", count: 4, path: "q.jpg", hash: "qh", kind: "image" }] : [{ period: "2026-09", count: 17, path: "p.jpg", hash: "ph", kind: "image" }] };
+          if (args.route.startsWith("/v1/gallery/preview")) return { unavailable: true };
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${args.route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  if (!w.document.querySelector(".photo-timeline")) w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 17);
+  const blocks = [...w.document.querySelectorAll(".photo-day .photo-block")];
+  assert.deepEqual(blocks.map((b) => b.querySelector("h3").textContent), ["Saturday 12 September9 photos", "9–10 September3 photos", "Saturday 5 September5 photos"], "a quiet run shares one block under its date range");
+  assert.deepEqual(blocks.map((b) => b.className.replace("photo-block ", "")), ["photo-block-hero", "photo-block-quiet", "photo-block-day"]);
+  assert.equal(blocks[0].querySelectorAll(".photo-hero .photo-thumb").length, 1);
+  assert.equal(blocks[0].querySelectorAll(".photo-side .photo-thumb").length, 4);
+  assert.equal(blocks[0].querySelectorAll(".photo-grid .photo-thumb").length, 4, "a busy day puts its remaining photos in ordinary rows");
+  assert.equal(blocks[1].querySelectorAll(".photo-grid .photo-thumb").length, 3);
+  await until(() => !w.document.querySelector(".photo-memories").hidden);
+  const memories = [...w.document.querySelectorAll(".memory-card")].map((c) => c.textContent);
+  assert.equal(memories.length, 2);
+  assert.match(memories[0], /1 year ago · 21 photos/);
+  assert.match(memories[1], /2 years ago · 1 photo/);
+  assert.ok(routes.some((route) => /memories\?.*day=\d\d-\d\d.*year=\d{4}/.test(route) || /memories\?.*year=\d{4}.*day=\d\d-\d\d/.test(route)));
+  const zoom = w.document.querySelector(".gallery-zoom");
+  assert.deepEqual([...zoom.querySelectorAll("button")].map((b) => [b.textContent, b.getAttribute("aria-pressed")]), [["Years", "false"], ["Months", "false"], ["Days", "true"]]);
+  zoom.querySelector('[data-id="years"]').click();
+  await until(() => w.document.querySelectorAll(".period-tile").length === 2);
+  assert.ok(w.document.querySelector("#photo-gallery").classList.contains("gallery-periods-view"));
+  assert.match(w.document.querySelector(".period-tile").textContent, /2026\s*17/);
+  assert.equal(w.document.querySelector('.gallery-zoom [data-id="years"]').getAttribute("aria-pressed"), "true");
+  w.document.querySelectorAll(".period-tile")[1].click();
+  await until(() => routes.some((route) => route.includes("month=2025-12")));
+  assert.equal(w.document.querySelector("#photo-gallery").classList.contains("gallery-periods-view"), false, "choosing a year returns to the days at that period");
+  assert.equal(w.document.querySelector('.gallery-zoom [data-id="days"]').getAttribute("aria-pressed"), "true");
+});
+
 test("the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-gallery-more-"));
   init(home, { port: 0, name: "Gallery" });
