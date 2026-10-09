@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **WEB-REPLICA-CONFLICT-LINKS** — Conflict download links on a replica's web view
-  `bug · agent · normal`
-  accept: the conflict dialog's download links on a server replica's web view use a route the replica serves and its local hash (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409), and the link is hidden when there is no local copy; DOM and API tests.
 - **MUSIC-CAR-AZ** — Long car lists are grouped A–Z
   `feature · agent · normal`
   accept: Artists, Albums and an artist's albums with more items than one car answer carries (Media3 cuts each list at 256 KiB, roughly 300 items) open on letter groups in Android Auto, so every album, artist and track is reachable (the # artists sort last, so the cut drops them first today); JVM tests in `MusicTreeTest.kt` cover a library past the limit. The maintainer approved the grouping when queueing it.

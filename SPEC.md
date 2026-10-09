@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.7.10 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.7.11 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -232,7 +232,7 @@ Catalog paths use NFC identity. Composed and decomposed filenames are accepted w
 
 ### Conflicts
 
-Concurrent content is kept as a conflict copy next to the original, both with their histories. `POST /v1/conflict-choice` restores the chosen version as a new revision only when both reviewed revision IDs still match, and atomically records a `conflict_resolutions` row. Catalog counts and history filters then show the copy as resolved instead of pending; editing the conflict copy again reopens it. Conflict-copy revisions are excluded from the default activity list. Replicas resolve only folders selected locally and included in their hub report; stale choices change nothing. Keep both and Cancel record nothing.
+Concurrent content is kept as a conflict copy next to the original, both with their histories. `POST /v1/conflict-choice` restores the chosen version as a new revision only when both reviewed revision IDs still match, and atomically records a `conflict_resolutions` row. Catalog counts and history filters then show the copy as resolved instead of pending; editing the conflict copy again reopens it. Conflict-copy revisions are excluded from the default activity list. Replicas resolve only folders selected locally and included in their hub report; stale choices change nothing. Keep both and Cancel record nothing. In the web interface the dialog offers a download link for each version: the hub serves its own objects (`/v1/blobs/<hash>`), a server replica serves the copy it holds (`/v1/gallery/download?volume&path&hash`) and shows the link only when its local file is that version, and the native app opens both files instead.
 
 ### File operations
 

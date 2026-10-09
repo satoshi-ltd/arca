@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.11 — 2026-10-09
+
+- In the web interface of a server replica, the conflict dialog's download links now work: they download the copy the server holds, and a version the server does not hold has no link instead of a link that failed.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.10 — 2026-10-09
 
 - Two automated tests that failed intermittently on slow build machines now wait with margins that do not depend on the machine's speed, so a release is no longer held back by them.

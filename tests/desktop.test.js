@@ -6011,6 +6011,74 @@ test("a file only this replica holds is renamed and deleted with revision 0, not
   assert.deepEqual(JSON.parse(JSON.stringify(posted[0])), ["/v1/rename-file", { volume: v.id, path: "note.txt", rev: 0, name: "renamed.txt" }]);
 });
 
+test("a replica's web conflict dialog downloads the local copies it holds and hides the link for a copy it does not", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-web-conflict-links-"));
+  init(home, { port: 0, name: "Server" });
+  const daemon = await start(home, { timer: false });
+  const volume = daemon.engine.store.addVolume("Documents");
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: base });
+  const w = dom.window;
+  const pending = new Set();
+  let role = "replica";
+  let conflictLocal = { rev: 3, hash: "h-conflict", size: 5 };
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  let poll;
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) poll = fn;
+    return 0;
+  };
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  const version = (path, hash, rev) => ({ volume: volume.id, path, hash, rev, size: 5, deleted: 0, created: Date.now(), author: "device" });
+  const json = (value) => new Response(JSON.stringify(value), { status: 200, headers: { "Content-Type": "application/json" } });
+  w.fetch = async (route, options = {}) => {
+    const url = new URL(route, base);
+    if (url.pathname === "/v1/status")
+      return json({ ...daemon.engine.status(), role, hubUnavailable: false, volumes: daemon.engine.status().volumes.map((v) => ({ ...v, selected: 1 })) });
+    if (url.pathname === "/v1/history") {
+      const name = url.searchParams.get("path");
+      return json(name.includes(".conflict-")
+        ? { versions: [version(name, "h-conflict", 3)], ...(conflictLocal ? { local: conflictLocal } : {}) }
+        : { versions: [version(name, "h-original", 2)], local: { rev: 2, hash: "h-original", size: 5 } });
+    }
+    const work = fetch(new URL(route, base), { ...nodeInit(options), headers: { ...options.headers, Authorization: `Bearer ${daemon.engine.config.adminToken}` } });
+    pending.add(work);
+    void work.finally(() => pending.delete(work));
+    return work;
+  };
+  const q = (selector) => w.document.querySelector(selector);
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => q(".folder-card"));
+  const open = async () => {
+    const button = w.document.createElement("button");
+    button.dataset.action = "review-conflict";
+    button.dataset.id = JSON.stringify({ volume: volume.id, path: "note.txt.conflict-device-1" });
+    w.document.body.append(button);
+    button.click();
+    await until(() => q("#dialog[open] .conflict-options"));
+    const links = [...w.document.querySelectorAll("#dialog a[download]")].map((a) => [a.textContent.trim(), a.getAttribute("href")]);
+    q("#dialog").removeAttribute("open");
+    return links;
+  };
+  const original = `/v1/gallery/download?${new URLSearchParams({ volume: volume.id, path: "note.txt", hash: "h-original" })}`;
+  const conflict = `/v1/gallery/download?${new URLSearchParams({ volume: volume.id, path: "note.txt.conflict-device-1", hash: "h-conflict" })}`;
+  assert.deepEqual(await open(), [["Download original", original], ["Download conflict copy", conflict]], "a replica links the routes it serves, with its local hashes");
+  conflictLocal = null;
+  assert.deepEqual(await open(), [["Download original", original]], "a copy with no local file has no link");
+  conflictLocal = { rev: 3, hash: "an-older-local-hash", size: 5 };
+  assert.deepEqual(await open(), [["Download original", original]], "a local copy that is not that version has no link either");
+  role = "hub";
+  await poll();
+  assert.deepEqual(await open(), [["Download original", "/v1/blobs/h-original"], ["Download conflict copy", "/v1/blobs/h-conflict"]], "the hub still serves its own objects");
+});
+
 test("web admin reports gateway failures as an unreachable machine and keeps the daemon's own 503 readable", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-web-gateway-"));
   init(home, { port: 0, name: "Casa" });

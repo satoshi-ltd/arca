@@ -936,6 +936,21 @@ test("a foreground sync with the hub away answers in plain words and never waits
   assert.ok(Date.now() - started < 5000);
 });
 
+test("a replica's file history reports its local copy of a conflict path, which is what the web conflict dialog links to", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  write(hub, volume, "note.txt", "original");
+  await hub.sync();
+  const replica = await connect("conflict-local");
+  await replica.sync();
+  replica.engine.config.hub.url = "http://127.0.0.1:1";
+  write(replica, volume, "note.txt.conflict-device-1", "the other edit");
+  await replica.engine.reconcileLocal(volume.id, ["note.txt.conflict-device-1"]);
+  const history = await replica.api(`/v1/history?volume=${volume.id}&path=${encodeURIComponent("note.txt.conflict-device-1")}&limit=1`);
+  assert.equal(history.local.hash, digest(Buffer.from("the other edit")));
+  const download = await fetch(`http://127.0.0.1:${replica.port}/v1/gallery/download?${new URLSearchParams({ volume: volume.id, path: "note.txt.conflict-device-1", hash: history.local.hash })}`, { headers: { Authorization: `Bearer ${replica.engine.config.adminToken}`, Connection: "close" } });
+  assert.equal(await download.text(), "the other edit", "the route the dialog links to serves exactly that copy");
+});
+
 test("a cycle that fails, and a paused replica, still show what changed locally", async (t) => {
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "a.txt", "alpha");

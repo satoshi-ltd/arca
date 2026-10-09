@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.10";
+const APP_VERSION = "0.7.11";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5809,12 +5809,22 @@ async function reviewConflict(item) {
               "external-link",
             )
           : !native
-            ? [original, conflict]
-                .filter((v) => !v.deleted)
-                .map(
-                  (v) =>
-                    `<a class="secondary" href="/v1/blobs/${escape(v.hash)}" download="${escape(v.path.split("/").at(-1))}">${icon("download")}Download ${v === original ? "original" : "conflict copy"}</a>`,
-                )
+            ? [
+                [original, originalData],
+                [conflict, conflictData],
+              ]
+                .filter(([v]) => !v.deleted)
+                .map(([v, data]) => {
+                  const href =
+                    status.role === "hub"
+                      ? `/v1/blobs/${v.hash}`
+                      : data.local?.hash === v.hash
+                        ? `/v1/gallery/download?${new URLSearchParams({ volume: item.volume, path: v.path, hash: v.hash })}`
+                        : null;
+                  return href
+                    ? `<a class="secondary" href="${escape(href)}" download="${escape(v.path.split("/").at(-1))}">${icon("download")}Download ${v === original ? "original" : "conflict copy"}</a>`
+                    : "";
+                })
                 .join("")
             : ""
       }${button("Keep both as they are", "keep-conflict", "", "text-button")}</div>`,
