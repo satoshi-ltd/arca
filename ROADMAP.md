@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-MOB-DEVICES-TOPOLOGY** — The phone and the Fold draw the same device map
-  `ui · agent · normal · depends: UI-DEVICES-TOPOLOGY`
-  accept: the board.
-
 - **HISTORY-ACTIVITY** — History reports per-day activity and the author device
   `feature · agent · normal · depends: DESK-REPLICA-AUTHOR`
   accept: the daemon's history read returns, for the last 30 days, a count of changes per day with deletion and conflict flags and the changes per author device, on hubs and replicas alike, and a first-open marker for "changed while you were away"; daemon tests cover hub and replica; the interface follows board UI-HISTORY-ACTIVITY.

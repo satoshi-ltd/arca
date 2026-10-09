@@ -7,6 +7,7 @@ export function HubConnection({
   busy,
   disconnect,
   retry,
+  away = false,
 }) {
   const { wide } = useDesign();
   const address = new URL(connection.url);
@@ -16,11 +17,13 @@ export function HubConnection({
   return (
     <MachineRow
       hub
+      away={away}
       role="Hub"
       name={name || "Hub"}
       description={[
         platform,
         address.host,
+        away ? "Unavailable" : "",
         connection.leaving ? "Disconnection pending" : "",
       ]
         .filter(Boolean)

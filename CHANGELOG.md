@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.15 — 2026-10-09
+
+- The phone's Devices screen now shows the same network map: the hub row with a branch to each device, solid when it reported in the last five minutes, dashed when older and absent when it never did, with "Reported 2 min ago" under each name. With the hub away the branches disappear and rows read as last known. On the Fold the map sits in the side column beside the device list and choosing a device highlights its row.
+
+Needs: native build
+
 ## 0.7.14 — 2026-10-09
 
 - Devices opens on a Network map: the hub on top and every authorized device under it with the time of its last report. A solid line means a report in the last five minutes, a dashed one an older report and no line that the device never reported. Choosing a device highlights its row below; with the hub away the lines disappear and the times read as last known. The line says when the hub last heard from a device, never that it is synced.

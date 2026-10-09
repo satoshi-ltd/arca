@@ -72,6 +72,8 @@ import {
   FolderRow,
   Navigation,
   MachineRow,
+  DeviceBranch,
+  DeviceMapSide,
   ActionRow,
   SettingsGroup,
   SegmentedControl,
@@ -129,6 +131,7 @@ import {
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize } from "./format";
 import { browseEntries } from "./browse";
+import { deviceNodes } from "./device-map";
 // Keep the native launch surface until fonts and local startup are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 const relative = (value) => {
@@ -197,6 +200,7 @@ export default function App() {
     [machines, setMachines] = useState(null),
     [machinesSaved, setMachinesSaved] = useState(false),
     [machinesLoaded, setMachinesLoaded] = useState(false),
+    [pickedDevice, setPickedDevice] = useState(""),
     [lastChange, setLastChange] = useState(undefined),
     [status, setStatus] = useState({}),
     [busy, setBusy] = useState(false),
@@ -2561,11 +2565,41 @@ export default function App() {
                       }
                     />
                   )}
-                  {screen === "Devices" && (
-                    <>
+                  {screen === "Devices" && (() => {
+                    const hubAway = !!status.offline;
+                    const nodes = deviceNodes(machines, {
+                      selfId: connection?.id,
+                      hubAway,
+                    });
+                    const tree = !wide && !!connection && nodes.length > 0;
+                    const pick = (key) =>
+                      setPickedDevice((now) => (now === key ? "" : key));
+                    const selfState = status.paused
+                                    ? "Paused"
+                                    : status.offline
+                                      ? "Offline"
+                                      : status.error ||
+                                          locals.some(
+                                            (f) => f.selected && f.issue,
+                                          )
+                                        ? "Needs attention"
+                                        : status.busy
+                                          ? "Syncing"
+                                          : locals.some(
+                                                (f) =>
+                                                  f.selected && !f.completed,
+                                              )
+                                            ? "Incomplete"
+                                            : status.last
+                                              ? "Up to date"
+                                              : "Not yet synced";
+                    const sideMap = wide && !!connection && nodes.length > 0;
+                    return (
+                    <View style={sideMap ? s.deviceMapRow : s.deviceMapPlain}>
+                    <View style={sideMap ? s.deviceMapMain : s.deviceMapPlain}>
                       {connection ? (
                         <Section>
-                          <Text style={s.eyebrow}>HUB CONNECTION</Text>
+                          <Text style={s.eyebrow}>{tree ? "NETWORK" : "HUB CONNECTION"}</Text>
                           {machinesSaved && !!machines?.length && (
                             <Text style={s.caption}>
                               Showing saved device information.
@@ -2580,8 +2614,32 @@ export default function App() {
                             machine={machines?.find((m) => m.isHub)}
                             busy={actionLocked}
                             disconnect={disconnect}
+                            away={tree && hubAway}
                             retry={() => run(() => client.refresh(), { hubOnly: true })}
                           />
+                          {tree && (
+                            <View style={s.deviceTree}>
+                              {nodes.map((node) => (
+                                <DeviceBranch key={node.key} line={node.line}>
+                                  <MachineRow
+                                    name={node.machine.name}
+                                    description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[node.machine.platform] || node.machine.platform || "Platform not reported"}${node.machine.lastAddress ? ` · ${node.machine.lastAddress}` : ""}`}
+                                    role={node.machine.role || "Replica"}
+                                    self={node.self}
+                                    report={node.report}
+                                    state={node.self ? selfState : undefined}
+                                    away={hubAway || node.state === "none"}
+                                  />
+                                </DeviceBranch>
+                              ))}
+                            </View>
+                          )}
+                          {tree && !hubAway && (
+                            <Text style={s.caption}>
+                              Solid line: report under 5 min · Dashed: older ·
+                              No line: never reported
+                            </Text>
+                          )}
                         </Section>
                       ) : (
                         <PairingForm
@@ -2616,38 +2674,19 @@ export default function App() {
                           credential is stored securely on this device.
                         </Text>
                       )}
-                      {connection && (
+                      {connection && !tree && (
                         <>
                           <Section>
                             <Text style={s.eyebrow}>DEVICES</Text>
                             <View style={s.folderList}>
                               <MachineRow
+                                chosen={!!connection?.id && pickedDevice === connection.id}
                                 name={name}
                                 self
                                 role="Replica"
                                 totals={`${locals.filter((f) => f.selected).length} folders · ${bytes(locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0))} local`}
                                 description={`${Platform.OS === "ios" ? "iOS" : "Android"}${machines?.find((m) => m.credentialId === connection.id)?.lastAddress ? ` · ${machines.find((m) => m.credentialId === connection.id).lastAddress}` : ""}`}
-                                state={
-                                  status.paused
-                                    ? "Paused"
-                                    : status.offline
-                                      ? "Offline"
-                                      : status.error ||
-                                          locals.some(
-                                            (f) => f.selected && f.issue,
-                                          )
-                                        ? "Needs attention"
-                                        : status.busy
-                                          ? "Syncing"
-                                          : locals.some(
-                                                (f) =>
-                                                  f.selected && !f.completed,
-                                              )
-                                            ? "Incomplete"
-                                            : status.last
-                                              ? "Up to date"
-                                              : "Not yet synced"
-                                }
+                                state={selfState}
                               />
                               {machines?.length ? (
                                 machines
@@ -2659,6 +2698,7 @@ export default function App() {
                                   .map((m) => (
                                     <MachineRow
                                       key={m.credentialId}
+                                      chosen={pickedDevice === m.credentialId}
                                       name={m.name}
                                       description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[m.platform] || m.platform || "Platform not reported"}${m.lastAddress ? ` · ${m.lastAddress}` : ""}`}
                                       role={m.role || "Replica"}
@@ -2678,8 +2718,19 @@ export default function App() {
                           </Section>
                         </>
                       )}
-                    </>
-                  )}
+                    </View>
+                    {sideMap && (
+                      <DeviceMapSide
+                        nodes={nodes}
+                        hubName={catalog?.name}
+                        away={hubAway}
+                        picked={pickedDevice}
+                        onPick={pick}
+                      />
+                    )}
+                    </View>
+                    );
+                  })()}
                   {screen === "History" && (
                     <>
                       {!connected && (
