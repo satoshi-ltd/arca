@@ -99,7 +99,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.18";
+const APP_VERSION = "0.7.19";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1136,24 +1136,32 @@ async function refresh(renderView = true) {
         volume.policyError ||
         (p
           ? progressLabel(p)
-          : `${countLabel(volume.files || 0, "file")} · ${bytes(volume.bytes)} · ${volume.path || "Not on this device"}`);
-      let progress = row.querySelector("progress");
-      if (!p) {
-        progress?.remove();
+          : `${countLabel(volume.files || 0, "file")} · ${bytes(volume.bytes)}`);
+      const lead = row.querySelector(".home-lead");
+      if (!lead) continue;
+      let ring = lead.querySelector(".home-ring");
+      const determinate = p && Number.isFinite(p.filesTotal) && p.filesTotal > 0;
+      if (!determinate) {
+        if (!volume.conflicts) ring?.remove();
+        else ring?.querySelector(".home-ring-fill")?.removeAttribute("stroke-dasharray");
+        lead.removeAttribute("aria-label");
+        lead.removeAttribute("role");
         continue;
       }
-      if (!progress) {
-        progress = document.createElement("progress");
-        row.querySelector(".row-main").append(progress);
+      if (!ring) {
+        lead.insertAdjacentHTML(
+          "afterbegin",
+          '<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="home-ring-track" cx="24" cy="24" r="22" /><circle class="home-ring-fill" cx="24" cy="24" r="22" pathLength="100" /></svg>',
+        );
+        ring = lead.querySelector(".home-ring");
       }
-      progress.setAttribute(
-        "aria-label",
-        p.stage === "upload" ? "Files sent" : "Files checked",
+      lead.setAttribute("role", "status");
+      lead.setAttribute("aria-label", ringLabel(p));
+      const fill = ring.querySelector(".home-ring-fill");
+      fill.setAttribute(
+        "stroke-dasharray",
+        `${Math.min(100, Math.round((100 * (p.filesDone || 0)) / p.filesTotal))} 100`,
       );
-      if (Number.isFinite(p.filesTotal) && p.filesTotal > 0) {
-        progress.max = p.filesTotal;
-        progress.value = p.filesDone || 0;
-      } else progress.removeAttribute("value");
     }
   }
   if (!renderView && view === "folders" && detailId) {
@@ -1310,6 +1318,100 @@ function progressLabel(p) {
       : "";
   return `${count}${size} · ${p.path || (sending ? "Preparing upload" : "Checking hub files")}${transfer}`;
 }
+let homeData = { arrivals: [], last: {}, previews: {}, at: 0 };
+const homeImages = new Map();
+const baseName = (path) => path.split("/").pop();
+function homeStrip() {
+  if (!homeData.arrivals.length || (status.role !== "hub" && !status.hub)) return "";
+  return section(
+    "Just arrived",
+    `<div class="home-arrivals">${homeData.arrivals
+      .map(
+        (row) =>
+          `<button type="button" class="home-arrival" data-action="activity-file" data-id="${escape(JSON.stringify({ volume: row.volume, path: row.path, rev: row.rev, deleted: false }))}"><span class="tile">${icon(fileIcon(row.path))}</span><span class="home-arrival-text"><strong>${escape(baseName(row.path))}</strong><span>${escape(authorName(row.author))} · ${escape(relative(row.created))}</span></span></button>`,
+      )
+      .join("")}</div>`,
+  );
+}
+const ringLabel = (p) =>
+  `${p.stage === "upload" || p.direction === "upload" ? "Files sent" : "Files checked"}: ${(p.filesDone || 0).toLocaleString("en")} of ${p.filesTotal.toLocaleString("en")}`;
+function homeLead(v, state, p) {
+  const preview = status.role === "hub" || status.hub ? homeData.previews[v.id] : null;
+  const busy = state[2] === "busy";
+  const ring =
+    p?.filesTotal > 0
+      ? Math.min(100, Math.round((100 * (Number(p.filesDone) || 0)) / p.filesTotal))
+      : null;
+  const conflict = Boolean(v.conflicts);
+  const tile = `<div class="tile large"${busy ? ` role="status" aria-label="${escape(state[0])}"` : ""}>${busy ? busyIcon() : icon(folderSymbol(v))}</div>`;
+  const content = preview?.kind === "photos"
+    ? `<div class="home-mosaic" aria-hidden="true">${preview.photos.slice(0, 4).map((x) => `<span data-home-photo="${escape(x.path)}" data-hash="${escape(x.hash)}" data-volume="${escape(v.id)}"></span>`).join("")}</div>`
+    : preview?.kind === "covers"
+      ? `<div class="home-stack" aria-hidden="true">${preview.covers.slice(0, 3).map((key) => `<span data-home-cover="${escape(key)}" data-volume="${escape(v.id)}"></span>`).join("")}</div>`
+      : tile;
+  const svg =
+    ring !== null || conflict
+      ? `<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true">${conflict ? "" : '<circle class="home-ring-track" cx="24" cy="24" r="22" />'}<circle class="home-ring-fill" cx="24" cy="24" r="22" pathLength="100"${conflict ? "" : ` stroke-dasharray="${ring} 100"`} /></svg>`
+      : "";
+  const wrapped = busy && content !== tile ? tile : content;
+  return `<div class="home-lead${conflict ? " home-conflict" : ""}"${ring !== null ? ` role="status" aria-label="${escape(ringLabel(p))}"` : ""}>${svg}${wrapped}</div>`;
+}
+function homeLatest(v) {
+  const row = status.role === "hub" || status.hub ? homeData.last[v.id] : null;
+  if (!row) return "";
+  return `<p class="home-latest">${icon(fileIcon(row.path))}<span class="home-latest-text">${escape(baseName(row.path))} · ${escape(authorName(row.author))} · ${escape(relative(row.created))}</span></p>`;
+}
+async function hydrateHome() {
+  for (const node of document.querySelectorAll("[data-home-photo]:not(:has(img)), [data-home-cover]:not(:has(img))")) {
+    const volume = node.dataset.volume;
+    const route = node.dataset.homePhoto
+      ? "/v1/gallery/preview?" + new URLSearchParams({ volume, path: node.dataset.homePhoto, hash: node.dataset.hash })
+      : "/v1/music/cover?" + new URLSearchParams({ volume, key: node.dataset.homeCover, size: "small" });
+    try {
+      const result = node.dataset.homePhoto
+        ? await cachedPhoto(route)
+        : homeImages.get(route) || (homeImages.set(route, await api(route)), homeImages.get(route));
+      if (!node.isConnected || !result?.data || node.querySelector("img")) continue;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = result.data;
+      node.append(img);
+    } catch {
+      /* A missing preview keeps its placeholder. */
+    }
+  }
+}
+let homeHub = "";
+async function loadHome(serial) {
+  const hub = status.hubId || status.id;
+  if (hub !== homeHub) {
+    homeHub = hub;
+    homeData = { arrivals: [], last: {}, previews: {}, at: 0 };
+    homeImages.clear();
+  }
+  if (Date.now() - homeData.at < 15000) return;
+  const ids = status.volumes.filter((v) => status.role === "hub" || v.selected).map((v) => v.id);
+  if (!ids.length) return;
+  homeData.at = Date.now();
+  const [activity, previews] = await Promise.allSettled([
+    viewRead("/v1/activity?limit=50&filter=revisions"),
+    api(`/v1/folder-previews?volumes=${ids.join(",")}`),
+  ]);
+  if (hub !== (status.hubId || status.id)) return;
+  const rows = activity.status === "fulfilled" && Array.isArray(activity.value?.versions) ? activity.value.versions : [];
+  const next = {
+    arrivals: rows.filter((r) => !r.deleted).slice(0, 3).map(({ volume, path, rev, created, author }) => ({ volume, path, rev, created, author })),
+    last: {},
+    previews: previews.status === "fulfilled" ? previews.value.previews || {} : homeData.previews,
+    at: Date.now(),
+  };
+  for (const r of rows)
+    if (!r.deleted && !next.last[r.volume])
+      next.last[r.volume] = { path: r.path, created: r.created, author: r.author };
+  const changed = JSON.stringify([next.arrivals, next.last, next.previews]) !== JSON.stringify([homeData.arrivals, homeData.last, homeData.previews]);
+  homeData = next;
+  if (changed && view === "folders" && !detailId && !$("#dialog").open) await renderView(false);
+}
 function folderRow(v, available = false) {
   const p =
     status.phase !== "paused" &&
@@ -1348,11 +1450,14 @@ function folderRow(v, available = false) {
     ? Number.isFinite(v.files)
       ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`
       : "Not counted yet"
-    : `${countLabel(v.files, "file")} · ${bytes(v.bytes)} · ${escape(v.path || "Not on this device")}`;
+    : `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`;
   if (p) meta = escape(progressLabel(p));
   if (v.sync?.error || v.policyError)
     meta = escape(v.sync?.error || v.policyError);
-  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}><div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div><div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p>${p ? `<progress aria-label="${p.stage === "upload" ? "Files sent" : "Files checked"}" ${p.filesTotal > 0 ? `value="${Number(p.filesDone) || 0}" max="${Number(p.filesTotal)}"` : ""}></progress>` : ""}</div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || ["Up to date", "Offline"].includes(state[0]) ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
+  const lead = available
+    ? `<div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
+    : homeLead(v, state, p);
+  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p>${available ? "" : homeLatest(v)}</div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || ["Up to date", "Offline"].includes(state[0]) ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
 }
 async function loadCatalog() {
   if (status.role !== "hub" && !status.hub) {
@@ -1549,6 +1654,7 @@ async function renderView(
     html += '<div class="page">';
     if (status.role !== "hub" && !status.hub)
       html += section("Hub connection", hubConnection());
+    else html += homeStrip();
     const shown = status.role === "hub" ? status.volumes : selected;
     html += section(
       status.role === "hub"
@@ -1578,6 +1684,8 @@ async function renderView(
     )
       html += section("On hub · not selected", scaffoldRow("card", true));
     content.innerHTML = html + "</div>";
+    void hydrateHome();
+    if (status.role === "hub" || status.hub) void loadHome(serial);
     if (refreshCatalog && status.role !== "hub") {
       icons();
       const previous = JSON.stringify([catalog, catalogHubName, catalogLoaded]);

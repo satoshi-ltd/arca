@@ -190,6 +190,11 @@ test("the library lists each track's tags with embedded or folder covers, newest
     assert.equal(meta.width, pixels);
     assert.equal(meta.height, pixels);
   }
+  const previews = await f.api(`/v1/folder-previews?volumes=${f.v.id}`);
+  assert.equal(previews.previews[f.v.id].kind, "covers");
+  assert.ok(previews.previews[f.v.id].covers.length >= 1 && previews.previews[f.v.id].covers.length <= 3);
+  assert.ok(previews.previews[f.v.id].covers.every((key) => /^[a-f0-9]{64}$/.test(key)));
+  assert.equal(new Set(previews.previews[f.v.id].covers).size, previews.previews[f.v.id].covers.length, "one cover per album");
   const latest = await f.library();
   assert.notEqual(latest.version, library.version, "a new track changes the version");
   const unchanged = await f.library(`&version=${latest.version}`);

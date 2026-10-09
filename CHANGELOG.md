@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.19 — 2026-10-09
+
+- Folders opens with a Just arrived strip of the three newest changes across your folders, each with the device that made it, and every folder card now shows what is inside: a photo folder a 2×2 mosaic of its newest photos, a music folder a stack of its newest covers, and a line with its latest change. The path moved to the folder's detail.
+- While a folder syncs, a ring around its tile fills with the files checked or sent, replacing the thin bar; a conflict draws the ring in the warning colour.
+
+Needs: Casa redeploy · desktop build
+
 ## 0.7.18 — 2026-10-09
 
 - The desktop and web gallery now reads as days: each month is split by day with headings like "Saturday 12 September · 12 photos", a busy day opens on a large photo beside the next four, and runs of quiet days share one block under their date range. Above the first month, On this day brings back photos taken on today's date in earlier years.

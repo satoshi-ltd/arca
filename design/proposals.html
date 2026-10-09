@@ -24,7 +24,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html" aria-current="page">Proposals</a>
       </nav>
-      <span class="kit-version">v0.7.18 · proposals</span>
+      <span class="kit-version">v0.7.19 · proposals</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -38,42 +38,7 @@
 
       <section class="kit-section" id="boards">
         <h2>Boards <span>01</span></h2>
-        <article class="kit-board" data-board="UI-HOME-LIVE">
-          <header><code>UI-HOME-LIVE</code><h3>Folders shows what is inside and what just changed</h3><span>Desktop</span></header>
-          <p class="kit-note"><strong>Why.</strong> Folders is where everyone lands and every row looks the same: a generic icon, a count and a path. Nothing says what a folder holds or that something just arrived, so the app feels still while it works. The proposal adds a Just arrived strip (the three latest changes and the device they came from), lets photo and music folders show their own content on the tile, replaces the card's progress bar with a ring around the tile, and leaves the path to the folder detail, which already shows Local destination. It needs the originating device on replica history rows and up to four local thumbnails or covers per folder (the gallery and music derivatives already exist). The phone's Folders list takes the same strip, tile and ring.</p>
-          <div class="kit-board-pair kit-board-stack">
-            <figure><figcaption>Now</figcaption><div class="kit-draw">
-<div class="heading"><div><h1>Folders</h1></div><div class="heading-actions"><button type="button" class="primary"><span data-icon="folder-plus"></span>Choose folders</button></div></div>
-<div class="page"><section><div class="section-label">Selected on this device</div>
-<div class="folder-list">
-<article class="folder-card" role="button" tabindex="0"><div class="tile"><span data-icon="images"></span></div><div class="row-main"><strong>photos</strong><p class="meta">3,598 files · 26.0 GB · /Users/javi/Pictures</p></div><span data-icon="chevron-right" class="chevron"></span></article>
-<article class="folder-card" role="button" tabindex="0"><div class="tile" role="status" aria-label="Syncing"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div><div class="row-main"><strong>alpi-workspace</strong><p class="meta">184 / 233 files checked · 3.1 MB / 3.9 MB · notes/plan.md</p><progress aria-label="Files checked" value="184" max="233"></progress></div><span data-icon="chevron-right" class="chevron"></span></article>
-<article class="folder-card" role="button" tabindex="0"><div class="tile"><span data-icon="folder"></span></div><div class="row-main"><strong>documents</strong><p class="meta">20 files · 14.2 MB · /Users/javi/arca/documents</p></div><button type="button" class="secondary small-button" data-action="folder-conflicts">Review</button><span class="pill wa"><span data-icon="triangle-alert"></span>Conflict</span><span data-icon="chevron-right" class="chevron"></span></article>
-<article class="folder-card" role="button" tabindex="0"><div class="tile"><span data-icon="music"></span></div><div class="row-main"><strong>music</strong><p class="meta">1,284 files · 9.6 GB · /Users/javi/arca/music</p></div><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span><span data-icon="chevron-right" class="chevron"></span></article>
-</div></section></div>
-              <p class="kit-caption">Every row is an icon, counts and a path; progress is a thin bar under the text.</p>
-            </div></figure>
-            <figure><figcaption>Proposed</figcaption><div class="kit-draw">
-<div class="heading"><div><h1>Folders</h1></div><div class="heading-actions"><button type="button" class="primary"><span data-icon="folder-plus"></span>Choose folders</button></div></div>
-<div class="page"><section><div class="section-label">Just arrived</div>
-<div class="kit-home-arrivals">
-<button type="button" class="kit-home-arrival"><span class="tile"><span data-icon="image"></span></span><span class="kit-home-arrival-text"><strong>IMG_4412.jpg</strong><span>phone-fold · 2 min ago</span></span></button>
-<button type="button" class="kit-home-arrival"><span class="tile"><span data-icon="file-text"></span></span><span class="kit-home-arrival-text"><strong>brief.md</strong><span>macbook-pro · 2 h ago</span></span></button>
-<button type="button" class="kit-home-arrival"><span class="tile"><span data-icon="music"></span></span><span class="kit-home-arrival-text"><strong>So What.flac</strong><span>macbook-pro · Yesterday</span></span></button>
-</div></section>
-<section><div class="section-label">Selected on this device</div>
-<div class="folder-list">
-<article class="folder-card" role="button" tabindex="0"><div class="kit-home-lead"><div class="kit-home-mosaic" aria-hidden="true"><span></span><span></span><span></span><span></span></div></div><div class="row-main"><strong>photos</strong><p class="meta">3,598 files · 26.0 GB</p><p class="kit-home-latest"><span data-icon="image"></span><span class="kit-home-latest-text">IMG_4412.jpg · phone-fold · 2 min ago</span></p></div><span data-icon="chevron-right" class="chevron"></span></article>
-<article class="folder-card" role="button" tabindex="0"><div class="kit-home-lead" role="status" aria-label="Syncing, 184 of 233 files checked"><svg class="kit-home-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="kit-home-ring-track" cx="24" cy="24" r="22" /><circle class="kit-home-ring-fill" cx="24" cy="24" r="22" pathLength="100" stroke-dasharray="79 100" /></svg><div class="tile large"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div></div><div class="row-main"><strong>alpi-workspace</strong><p class="meta">184 / 233 files checked · 3.1 MB / 3.9 MB</p><p class="kit-home-latest"><span data-icon="file-text"></span><span class="kit-home-latest-text">notes/plan.md</span></p></div><span data-icon="chevron-right" class="chevron"></span></article>
-<article class="folder-card" role="button" tabindex="0"><div class="kit-home-lead kit-home-conflict"><svg class="kit-home-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="kit-home-ring-fill" cx="24" cy="24" r="22" /></svg><div class="tile large"><span data-icon="folder"></span></div></div><div class="row-main"><strong>documents</strong><p class="meta">20 files · 14.2 MB</p><p class="kit-home-latest"><span data-icon="file-text"></span><span class="kit-home-latest-text">brief.md · macbook-pro · 2 h ago</span></p></div><button type="button" class="secondary small-button" data-action="folder-conflicts">Review</button><span class="pill wa"><span data-icon="triangle-alert"></span>Conflict</span><span data-icon="chevron-right" class="chevron"></span></article>
-<article class="folder-card" role="button" tabindex="0"><div class="kit-home-lead"><div class="kit-home-stack" aria-hidden="true"><span></span><span></span><span></span></div></div><div class="row-main"><strong>music</strong><p class="meta">1,284 files · 9.6 GB</p><p class="kit-home-latest"><span data-icon="disc-3"></span><span class="kit-home-latest-text">Kind of Blue · macbook-pro · Yesterday</span></p></div><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span><span data-icon="chevron-right" class="chevron"></span></article>
-</div></section></div>
-              <p class="kit-caption">Photo and music tiles show their content, a ring replaces the bar, the path lives in the detail. A new arrival fades and lifts in over 200 ms (opacity and transform only); polls never replay it.</p>
-            </div></figure>
-          </div>
-          <div class="kit-rules"><div><strong>Accept</strong><p>Folders opens with a Just arrived strip of the three newest changes across selected folders (file, originating device, relative time), hidden when empty; each opens its file detail. A photo folder's tile is a 2×2 mosaic of up to four local thumbnails and a music folder's a stack of up to three local covers, falling back to the icon tile when none is local; nothing loads from the hub. Each card ends with a caption line for its latest change and no longer shows the path. While syncing, a ring around the tile fills with files checked and the nine-dot sits inside it; a conflict draws the ring in the warning colour; an indeterminate cycle draws no ring. The card stays one focusable row with the status in its accessible name. Only opacity and transform animate, reduced motion removes the entrance, and light, dark and 760 px layouts do not clip.</p></div></div>
-        </article>
-        <article class="kit-board" data-board="UI-MOB-HOME-LIVE">
+                <article class="kit-board" data-board="UI-MOB-HOME-LIVE">
           <header><code>UI-MOB-HOME-LIVE</code><h3>The phone's Folders shows what is inside and what just arrived</h3><span>Phone · Fold</span></header>
           <p class="kit-note"><strong>Why.</strong> The phone is where photos and music arrive, and its Folders list is the same icon, count and caption on every row, so a sync that brought new things looks like a sync that did nothing. This is the touch version of UI-HOME-LIVE, with the same three ideas: a Just arrived strip, tiles that show content (a 2×2 photo mosaic, a stack of up to three covers) and a ring around the tile while syncing. What differs from desktop: the strip is one row of 48 dp chips that scrolls sideways and cuts the third chip at the edge, so there is nothing to hover and no list of buttons; a phone row has no path to drop (it never shows one) and instead gains a third line for the latest change; the badge stays an icon on the phone, as SPEC says, and becomes text on the Fold, where the strip shows all three chips at once and the rail replaces the bottom tabs. It needs the originating device on replica history rows (DESK-REPLICA-AUTHOR) and up to four local thumbnails or covers per folder, which the phone keeps in app storage already.</p>
           <div class="kit-board-pair">

@@ -1722,6 +1722,75 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   await new Promise((resolve) => setTimeout(resolve, 50));
 });
 
+test("Folders opens with Just arrived, content tiles, a latest-change line and no path", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-home-live-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const base = { selected: 1, sync: { state: "idle", lastCompleted: new Date().toISOString() }, conflicts: 0, files: 12, bytes: 2048, path: "/Users/javi/arca/x" };
+  const volumes = [
+    { ...base, id: "photos", name: "photos", gallery: true },
+    { ...base, id: "music", name: "music", music: true },
+    { ...base, id: "docs", name: "documents", conflicts: 1 },
+  ];
+  const ago = (ms) => new Date(Date.now() - ms).toISOString();
+  const versions = [
+    { rev: 9, volume: "photos", path: "2026/IMG_4412.jpg", created: ago(120000), author: "fold", deleted: 0 },
+    { rev: 8, volume: "docs", path: "notes/brief.md", created: ago(2 * 3600000), author: "mac", deleted: 0 },
+    { rev: 7, volume: "docs", path: "gone.md", created: ago(3 * 3600000), author: "mac", deleted: 1 },
+    { rev: 6, volume: "music", path: "Kind of Blue/So What.flac", created: ago(86400000), author: "mac", deleted: 0 },
+    { rev: 5, volume: "photos", path: "2026/IMG_1.jpg", created: ago(90000000), author: "fold", deleted: 0 },
+  ];
+  const routes = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false };
+        routes.push(args.route);
+        if (args.route === "/v1/status")
+          return { ...daemon.engine.status(), role: "replica", phase: "idle", hubId: "hub", hubName: "Casa", hub: "http://127.0.0.1:49999", deviceId: "mac", hubDevices: [{ id: "mac", name: "Local Mac" }, { id: "fold", name: "phone-fold" }], volumes };
+        if (args.route === "/v1/remote") return { name: "Casa", volumes };
+        if (args.route === "/v1/machines") return { machines: [] };
+        if (args.route.startsWith("/v1/activity")) return { versions, next: null };
+        if (args.route.startsWith("/v1/folder-previews"))
+          return { previews: { photos: { kind: "photos", photos: [1, 2, 3, 4, 5].map((n) => ({ path: `p${n}.jpg`, hash: `h${n}` })) }, music: { kind: "covers", covers: ["a".repeat(64), "b".repeat(64)] } } };
+        if (args.route.startsWith("/v1/gallery/preview")) return { data: "data:image/png;base64,AAAA" };
+        if (args.route.startsWith("/v1/music/cover")) return { data: "data:image/jpeg;base64,BBBB" };
+        return {};
+      },
+    },
+  };
+  trackInvoke(w, requests);
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelectorAll(".home-arrival").length === 3);
+  const arrivals = [...w.document.querySelectorAll(".home-arrival")].map((a) => a.textContent.replace(/\s+/g, " "));
+  assert.match(arrivals[0], /IMG_4412\.jpg.*phone-fold · 2 min ago/);
+  assert.match(arrivals[1], /brief\.md.*Local Mac · 2 h ago/);
+  assert.match(arrivals[2], /So What\.flac/, "deletions are not arrivals");
+  assert.equal(JSON.parse(w.document.querySelector(".home-arrival").dataset.id).rev, 9, "an arrival opens its file");
+  const cards = [...w.document.querySelectorAll(".folder-card")];
+  assert.equal(cards[0].querySelectorAll(".home-mosaic span").length, 4, "a photo folder shows at most four photos");
+  await until(() => cards[0].querySelectorAll(".home-mosaic img").length === 4);
+  assert.equal(cards[1].querySelectorAll(".home-stack span").length, 2);
+  await until(() => cards[1].querySelectorAll(".home-stack img").length === 2);
+  assert.equal(cards[2].querySelector(".home-mosaic, .home-stack"), null, "an ordinary folder keeps its icon tile");
+  assert.ok(cards[2].querySelector(".home-conflict .home-ring"), "a conflict draws the ring in the warning colour");
+  assert.match(cards[0].querySelector(".home-latest").textContent, /IMG_4412\.jpg · phone-fold · 2 min ago/);
+  assert.match(cards[2].querySelector(".home-latest").textContent, /brief\.md · Local Mac · 2 h ago/, "the latest change skips a deletion");
+  for (const card of cards) assert.doesNotMatch(card.textContent, /\/Users\/javi/, "the path lives in the folder detail");
+  assert.equal(routes.filter((route) => route.startsWith("/v1/folder-previews")).length, 1);
+  assert.match(routes.find((route) => route.startsWith("/v1/folder-previews")), /volumes=photos,music,docs/);
+});
+
 test("a paused replica stays Paused and a live list while the hub is unavailable stays Linked", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-paused-labels-"));
   init(home, { port: 0, name: "Local Mac" });
@@ -2597,14 +2666,17 @@ test("folder progress shows files and bytes for the current phase", async (t) =>
   });
   await w.eval(`(async()=>{${script}\n})()`);
   const q = (selector) => w.document.querySelector(selector);
-  await until(() => q(".folder-card progress"));
+  await until(() => q(".folder-card .home-ring"));
   assert.equal(q(".folder-card .meta").textContent, "402 / 1,269 files sent · 4.0 GB / 14.0 GB · IMG_0042.jpg");
-  assert.equal(q(".folder-card progress").getAttribute("aria-label"), "Files sent");
+  assert.equal(q(".folder-card .home-lead").getAttribute("aria-label"), "Files sent: 402 of 1,269");
+  assert.equal(q(".folder-card .home-ring-fill").getAttribute("stroke-dasharray"), "32 100", "a ring around the tile fills with files sent");
+  assert.equal(q(".folder-card progress"), null, "the ring replaces the bar");
   progress = { volume: volume.id, stage: "receive", direction: "download", path: "IMG_0100.jpg", filesDone: 3, filesTotal: null, sizeDone: 0, sizeTotal: 0, bytesDone: 1024, bytesTotal: 2048 };
   await poll();
   await until(() => /checked/.test(q(".folder-card .meta").textContent));
   assert.equal(q(".folder-card .meta").textContent, "3 files checked · IMG_0100.jpg · 1.0 KB / 2.0 KB");
-  assert.equal(q(".folder-card progress").getAttribute("aria-label"), "Files checked");
+  assert.equal(q(".folder-card .home-ring"), null, "an indeterminate cycle draws no ring");
+  assert.equal(q(".folder-card progress"), null);
 });
 
 test("unlink can also delete the replica files the hub already has", async (t) => {

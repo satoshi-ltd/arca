@@ -351,6 +351,27 @@ export class Gallery {
     };
   }
 
+  latest(volume, limit = 4) {
+    const s = this.s;
+    s.volume(volume);
+    const generation =
+      s.db.prepare("SELECT generation FROM file_generations WHERE volume=?").get(volume)?.generation || 0;
+    const key = `${generation}:${limit}`;
+    this.latestCache ||= new Map();
+    const hit = this.latestCache.get(volume);
+    if (hit?.key === key) return hit.rows;
+    const excluded = s.visibleRules(volume);
+    s.db.function("arca_gallery_visible", (name) =>
+      mediaKind(name) && !excluded(name, false) ? 1 : 0,
+    );
+    const rows = s.db
+      .prepare(
+        `SELECT f.path,f.hash FROM ${s.fileSource()} f WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_media_kind(f.path)='image' AND arca_gallery_visible(f.path)=1 ORDER BY f.rev DESC LIMIT ?`,
+      )
+      .all(volume, limit);
+    this.latestCache.set(volume, { key, rows });
+    return rows;
+  }
   datedSource(volume) {
     const s = this.s;
     s.volume(volume);

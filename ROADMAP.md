@@ -26,20 +26,8 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **UI-MOB-GALLERY-MOMENTS** — The phone and the Fold group days into moments
-  `ui · agent · normal`
-  accept: the board.
-
-- **HOME-LIVE** — Folders reports recent arrivals and up to four content previews per folder
-  `feature · agent · normal · depends: DESK-REPLICA-AUTHOR`
-  accept: the daemon returns, for each selected folder, its latest change with the originating device and up to four local thumbnails or covers, and the three newest changes across folders, from local data only; daemon tests cover a photo, a music and a documents folder; the interface follows board UI-HOME-LIVE.
-
-- **UI-HOME-LIVE** — Folders shows what is inside and what just changed
-  `ui · agent · normal · depends: HOME-LIVE`
-  accept: the board.
-
 - **UI-MOB-HOME-LIVE** — The phone and the Fold show what just changed
-  `ui · agent · normal · depends: UI-HOME-LIVE`
+  `ui · agent · normal`
   accept: the board.
 
 - **FILES-PREVIEW** — Local previews for images, video, text and audio
@@ -79,6 +67,10 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
   accept: the board (supersedes MOB-VIEWER-CHROME-TAP); device evidence follows from the maintainer.
 
 - **UI-MOB-NOW-PLAYING** — Android gets a full-screen Now Playing
+  `ui · agent · normal`
+  accept: the board.
+
+- **UI-MOB-GALLERY-MOMENTS** — The phone and the Fold group days into moments
   `ui · agent · normal`
   accept: the board.
 

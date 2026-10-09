@@ -841,6 +841,29 @@ export async function start(home, options = {}) {
               : await engine.gallery.page(volume, url.searchParams),
         );
       }
+      if (req.method === "GET" && route === "/v1/folder-previews") {
+        requireAdmin();
+        const ids = [...new Set((url.searchParams.get("volumes") || "").split(",").filter(Boolean))];
+        if (!ids.length || ids.length > 50) fail("Invalid folder list", 400);
+        const flag = (table, key, id) =>
+          config.role === "hub"
+            ? !!s.db.prepare(`SELECT 1 FROM ${table} WHERE volume=?`).get(id)
+            : !!config.catalog?.find((row) => row.id === id)?.[key];
+        const previews = {};
+        for (const id of ids) {
+          const folder = s.volumes().find((v) => v.id === id);
+          if (!folder || (config.role !== "hub" && !folder.selected)) continue;
+          if (flag("gallery_folders", "gallery", id)) {
+            engine.gallery ||= new Gallery(s);
+            const photos = engine.gallery.latest(id, 4);
+            if (photos.length) previews[id] = { kind: "photos", photos };
+          } else if (flag("music_folders", "music", id)) {
+            const covers = music().latestCovers(id, 3);
+            if (covers.length) previews[id] = { kind: "covers", covers };
+          }
+        }
+        return send(200, { previews });
+      }
       if (
         req.method === "GET" &&
         ["/v1/music/library", "/v1/music/cover"].includes(route)
