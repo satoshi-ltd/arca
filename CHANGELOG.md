@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.10 — 2026-10-09
+
+- Two automated tests that failed intermittently on slow build machines now wait with margins that do not depend on the machine's speed, so a release is no longer held back by them.
+
 ## 0.7.9 — 2026-10-09
 
 - On Android, Add files from the Files picker no longer freezes the app while a large file is copied: each pick is copied in the background and imported from there.

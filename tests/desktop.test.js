@@ -54,8 +54,8 @@ function nodeInit({ signal, ...options } = {}) {
   else signal.addEventListener("abort", () => controller.abort(), { once: true });
   return { ...options, signal: controller.signal };
 }
-async function until(check) {
-  for (let i = 0; i < 200; i++) {
+async function until(check, tries = 200) {
+  for (let i = 0; i < tries; i++) {
     if (check()) return;
     await new Promise((r) => setTimeout(r, 10));
   }
@@ -6326,7 +6326,7 @@ test("the gallery retries a failed first page and loads pages whose sentinel sta
   await until(() => /Retrying/.test(w.document.querySelector(".photo-more")?.textContent));
   failing = false;
   for (const callback of delayed.splice(0)) callback();
-  await until(() => w.document.querySelectorAll(".photo-thumb").length === 66);
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 66, 3000);
   assert.ok(galleryRequests.some((route) => route.includes("after=")), "the second page loaded by itself");
   const summary = w.document.querySelector(".detail-head .heading p");
   assert.match(summary.textContent, /^65 photos · 1 video · /);

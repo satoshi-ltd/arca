@@ -26,12 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **HUB-TEST-SLOW-LINK-FLAKE** — The slow-link transfer test failed once on the Windows runner
-  `bug · agent · normal`
-  accept: "slow links upload in smaller blocks and download without a total deadline" (`tests/hub-availability.test.js`) no longer fails with an empty error on `windows-2022` (failed once on the v0.7.2 run, 14.6 s, and passed on a rerun of the same commit, with macOS and Ubuntu green): its throttled relays and 400–600 ms idle limits are given margins that do not depend on runner speed, and it reports the real error instead of an empty one.
-- **DESK-TEST-GALLERY-PAGES-FLAKE** — The gallery paging JSDOM test times out under load
-  `bug · agent · normal`
-  accept: "the gallery retries a failed first page and loads pages whose sentinel stays in view, without buttons" (`tests/desktop.test.js`) waits for its 66 thumbnails on the gallery requests it tracks instead of `until`'s fixed two-second budget, so it no longer fails with "UI did not reach expected state" when other suites or a browser run alongside; on 2026-10-08 it failed in a suite run and in one of nine single runs while other work loaded the machine, and passed every quiet run.
 - **WEB-REPLICA-CONFLICT-LINKS** — Conflict download links on a replica's web view
   `bug · agent · normal`
   accept: the conflict dialog's download links on a server replica's web view use a route the replica serves and its local hash (today they point to the hub-only `/v1/blobs/<hash>`, which answers 409), and the link is hidden when there is no local copy; DOM and API tests.

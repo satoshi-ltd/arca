@@ -535,12 +535,12 @@ test("a slow optional view keeps the replica online", async (t) => {
 
 test("slow links upload in smaller blocks and download without a total deadline", async (t) => {
   const { hub, volume, connect } = await setup(t);
-  const replica = await connect("slow-link", { transferIdleMs: 600 });
+  const replica = await connect("slow-link", { transferIdleMs: 1500 });
   await replica.sync();
   const url = replica.engine.config.hub.url;
-  const upload = crypto.randomBytes(2 * 1024 * 1024);
+  const upload = crypto.randomBytes(1024 * 1024);
   write(replica, volume, "upload.bin", upload);
-  const slowUp = await relay(t, url, { up: 2 * 1024 * 1024 });
+  const slowUp = await relay(t, url, { up: 512 * 1024 });
   replica.engine.config.hub.url = slowUp.url;
   const phases = new Set();
   const sample = setInterval(
@@ -549,6 +549,8 @@ test("slow links upload in smaller blocks and download without a total deadline"
   );
   try {
     await replica.sync();
+  } catch (error) {
+    throw new Error(`upload sync failed: ${error?.name} ${error?.message} (engine error: ${replica.engine.error})`, { cause: error });
   } finally {
     clearInterval(sample);
   }
@@ -565,9 +567,13 @@ test("slow links upload in smaller blocks and download without a total deadline"
   write(hub, volume, "download.bin", download);
   await hub.sync();
   const slowDown = await relay(t, url, { down: 768 * 1024 });
-  replica.engine.transferIdleMs = 400;
+  replica.engine.transferIdleMs = 1500;
   replica.engine.config.hub.url = slowDown.url;
-  await replica.sync();
+  try {
+    await replica.sync();
+  } catch (error) {
+    throw new Error(`download sync failed: ${error?.name} ${error?.message} (engine error: ${replica.engine.error})`, { cause: error });
+  }
   assert.equal(replica.engine.error, null);
   assert.equal(
     digest(
