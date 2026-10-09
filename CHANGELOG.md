@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.24 — 2026-10-09
+
+- The phone's Folders has a Search Arca field that opens a full-screen search of file names, photos, folders and music tracks (title, artist, album) across every folder on the phone, with All, Files, Photos and Music scopes, your last searches and quick actions. It reads only what the phone holds, so it works offline.
+- On a wide Fold the search opens as a centred dialog with a preview of the selected result beside the list. Tapping a result opens the folder or the file's detail, not the photo viewer or the album.
+
+Needs: native build
+
 ## 0.7.23 — 2026-10-09
 
 - On the phone, image rows in Files show a thumbnail and a long press on any file opens a peek with the photo, or the first lines of a text or Markdown file, plus Open and Share. File detail shows the same preview above its stats.

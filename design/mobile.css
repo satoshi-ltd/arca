@@ -1760,3 +1760,127 @@
   font: 12px/18px var(--font-mono);
   color: var(--m-mute);
 }
+.m-srch-entry {
+  flex: none;
+}
+.m-srch-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.m-srch-bar .m-field {
+  flex: 1;
+  min-width: 0;
+}
+.m-srch-query .m-grow {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.m-srch-ph {
+  color: var(--m-mute);
+}
+.m-srch-clear {
+  display: inline-flex;
+  color: var(--m-mute);
+}
+.m-srch-cancel {
+  flex: none;
+}
+.m-srch-eyebrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.m-srch-photos {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+.m-srch-dialog {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.m-fold .m-sheet.m-srch-dialog {
+  max-width: none;
+  max-height: calc(var(--space-6) * 20);
+}
+.m-srch-dhead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--m-divider);
+}
+.m-srch-dhead .m-field {
+  flex: 1;
+  min-width: 0;
+}
+.m-srch-panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.m-srch-left {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) 0;
+  border-right: 1px solid var(--m-divider);
+  overflow: hidden;
+}
+.m-srch-scope .m-segments {
+  width: 100%;
+}
+.m-srch-hits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow: hidden;
+}
+.m-srch-hit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--m-touch-control-height);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--m-control-radius);
+}
+.m-srch-sel {
+  background: var(--m-tint);
+}
+.m-srch-mini {
+  width: var(--detail-tile);
+  flex: none;
+}
+.m-srch-hit .m-tile,
+.m-srch-hit .m-cover {
+  width: var(--detail-tile);
+  flex: none;
+}
+.m-srch-right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.m-srch-preview {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--m-control-radius);
+}
+.m-srch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.m-srch-idle {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}

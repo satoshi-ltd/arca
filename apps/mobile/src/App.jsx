@@ -136,6 +136,8 @@ import { deviceNodes } from "./device-map";
 import { homeFromActivity, latestLine, newestCovers, newestImages } from "./home-data";
 import { ActivityStrip, AwayBanner, DayGroup } from "./HistoryActivity";
 import { FilePreview, RowThumb } from "./FilePreview";
+import { GlobalSearch } from "./GlobalSearch";
+import { buildResults, forgetSearch, rememberSearch, searchTokens } from "./search-local";
 import { awayDue, daySummary, localDay, stripBars } from "./history-activity";
 // Keep the native launch surface until fonts and local startup are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -209,6 +211,8 @@ export default function App() {
     [historyDays, setHistoryDays] = useState(null),
     [home, setHome] = useState({ arrivals: [], last: {}, previews: {} }),
     [previewEntry, setPreviewEntry] = useState(null),
+    [globalSearch, setGlobalSearch] = useState(false),
+    [searchRecents, setSearchRecents] = useState([]),
     [awayNotice, setAwayNotice] = useState(null),
     [landingDay, setLandingDay] = useState(""),
     [landingReady, setLandingReady] = useState(false),
@@ -1046,6 +1050,63 @@ export default function App() {
       live = false;
     };
   }, [screen, connected, replica, folder, catalog?.volumes?.length, locals.map((f) => `${f.id}:${f.files}:${f.completed ? 1 : 0}:${f.selected ? 1 : 0}`).join(",")]);
+  useEffect(() => {
+    if (!globalSearch) return;
+    engine.current?.store.get("searchRecents", []).then((list) => Array.isArray(list) && setSearchRecents(list)).catch(() => {});
+  }, [globalSearch]);
+  const searchLibraries = useRef(new Map());
+  useEffect(() => {
+    if (!globalSearch) searchLibraries.current.clear();
+  }, [globalSearch]);
+  async function searchAll(query, scope) {
+    const r = engine.current;
+    const volumes = locals.filter((f) => f.selected).map(({ id, name }) => ({ id, name }));
+    const { tokens } = searchTokens(query);
+    const rows = {};
+    const tracks = {};
+    if (tokens.length)
+      for (const v of volumes) {
+        rows[v.id] = await r.store.searchRows(r.scope, v.id, tokens[0]);
+        if (scope === "all" || scope === "music") {
+          if (!searchLibraries.current.has(v.id)) {
+            const library = await r.store.musicLibrary(r.scope, v.id).catch(() => null);
+            searchLibraries.current.set(v.id, Array.isArray(library?.value?.tracks) ? library.value.tracks : []);
+          }
+          tracks[v.id] = searchLibraries.current.get(v.id);
+        }
+      }
+    return buildResults({ query, scope, volumes, rows, tracks });
+  }
+  const persistRecents = (list) => {
+    setSearchRecents(list);
+    engine.current?.store.set("searchRecents", list).catch(() => {});
+  };
+  function openSearchResult(item, query) {
+    setGlobalSearch(false);
+    if (item.type === "action") {
+      if (item.name === "sync") startSync(true);
+      else if (item.name === "pause")
+        run(async () => {
+          await engine.current.pause(!status.paused);
+          if (status.paused) startSync();
+        });
+      else {
+        setFolder(null);
+        setView(item.name === "settings" ? "Settings" : "Folders");
+      }
+      return;
+    }
+    persistRecents(rememberSearch(searchRecents, query));
+    if (item.type === "folder") {
+      const target = locals.find((f) => f.id === item.id);
+      if (target) {
+        setView("Folders");
+        openFolder(target).catch((e) => setError(e.message));
+      }
+      return;
+    }
+    getHistory({ volume: item.volume, path: item.path }).catch((e) => setError(e.message));
+  }
   const actionLocked = busy || !engine.current;
   async function openFolder(f) {
     setEntries(
@@ -2508,6 +2569,17 @@ export default function App() {
                         )
                       ) : (
                         <>
+                          {!!connection && locals.some((f) => f.selected) && (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="Search Arca"
+                              onPress={() => setGlobalSearch(true)}
+                              style={s.searchFieldRow}
+                            >
+                              <Icon name="search" color={c.mute} />
+                              <Text style={[s.caption, s.flex]}>Search Arca</Text>
+                            </Pressable>
+                          )}
                           {!!home.arrivals.length && !!connection && (
                             <ArrivalsStrip
                               arrivals={home.arrivals}
@@ -3437,6 +3509,29 @@ export default function App() {
               onExited={releaseApproval}
             />
           )}
+          <GlobalSearch
+            visible={globalSearch}
+            twoPane={wide && !compact}
+            search={searchAll}
+            recents={searchRecents}
+            onForget={(text) => persistRecents(forgetSearch(searchRecents, text))}
+            actions={[
+              ...(status.paused ? [] : [{ name: "sync", label: "Sync now", icon: "refresh" }]),
+              { name: "pause", label: status.paused ? "Resume sync" : "Pause sync", icon: status.paused ? "play" : "pause" },
+              { name: "choose", label: "Open Folders", icon: "folders" },
+              { name: "settings", label: "Open Settings", icon: "settings" },
+            ]}
+            onOpen={openSearchResult}
+            onClose={() => setGlobalSearch(false)}
+            uri={(r) => {
+              const e = engine.current;
+              if (!e?.scope) return null;
+              const uri = e.files.work(e.scope, r.volume, r.path);
+              return !e.files.present || e.files.present(uri) ? uri : null;
+            }}
+            cover={(key) => musicCover(key, "small")}
+            files={engine.current?.files}
+          />
           {shownSheet && (
             <Sheet
               closing={!sheet || detail}

@@ -26,14 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-SEARCH** — The phone searches names across its folders
-  `feature · agent · normal`
-  accept: the phone keeps a local name index of its working copies and answers a ranked query by scope (All, Files, Photos, Music); tests cover ranking, scopes and deleted files; the interface follows board UI-MOB-SEARCH.
-
-- **UI-MOB-SEARCH** — The phone and the Fold get a search screen
-  `ui · agent · normal · depends: MOB-SEARCH`
-  accept: the board.
-
 - **UI-MOB-VIEWER-GESTURES** — The photo viewer opens, zooms and dismisses by gesture
   `ui · agent · normal`
   accept: the board (supersedes MOB-VIEWER-CHROME-TAP); device evidence follows from the maintainer.
