@@ -247,6 +247,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS gallery_derivatives(key TEXT PRIMARY KEY,size INTEGER NOT NULL,used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS gallery_folders(volume TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS music_folders(volume TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS audio_positions(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,position REAL NOT NULL,duration REAL NOT NULL,device TEXT NOT NULL,name TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS audio_outbox(volume TEXT NOT NULL,path TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS music_tracks(hash TEXT PRIMARY KEY,title TEXT,artist TEXT,album_artist TEXT,album TEXT,track INTEGER,disc INTEGER,year INTEGER,genre TEXT,duration REAL,codec TEXT,cover TEXT,checked INTEGER NOT NULL,retry INTEGER NOT NULL DEFAULT 0,release TEXT);
       CREATE INDEX IF NOT EXISTS music_tracks_cover ON music_tracks(cover);
       CREATE TABLE IF NOT EXISTS gallery_assets(volume TEXT,source TEXT,asset TEXT,resources TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(volume,source,asset));
@@ -449,6 +451,8 @@ export class Store {
         "files",
         "local_files",
         "revisions",
+        "audio_positions",
+        "audio_outbox",
       ])
         this.db.prepare(`DELETE FROM ${table} WHERE volume=?`).run(id);
       this.db

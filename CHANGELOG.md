@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.35 — 2026-10-09
+
+- Podcasts are recognised on their own (Podcast genre, dated downloads without an album or track number, long untagged audio) and get their own shows, newest first, with lengths like "1 h 10 min"; a folder of only podcasts opens straight on its shows with the podcast glyph, and search finds shows and episodes.
+- Long episodes and tracks remember where you stopped, on every device through the hub: a "Pick up where you left off" card, progress and time left on each row, and Delete… removes an episode from every device while History keeps it.
+- A sleep timer (30 minutes, 1 hour or end of the episode or track) pauses playback, fading out over 5 s on the desktop; episodes play without shuffle or repeat and music gets its choice back.
+- Audio libraries have one way back: a single trail on the desktop and one back arrow on the phone, tabs only when there are two or more, and on the Fold the show or album opens beside the list.
+- Lists share two row heights; Folders groups Folders, Photos and Audio and Devices is one list with the hub first; hover changes only the fill, and long names end with an ellipsis instead of wrapping.
+
+Needs: desktop build · native build · Casa redeploy
+
 ## 0.7.34 — 2026-10-09
 
 - The phone's and the Fold's gallery reads as days: each day has a heading and count, a busy day opens with a large tile, quiet days share one group, a pill names the level while you pinch, the Fold has a Years / Months / Days control and On this day shows earlier years from the hub.

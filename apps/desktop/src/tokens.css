@@ -69,6 +69,8 @@
   --touch-input-line: 24px;
   --row-padding-y: 12px;
   --row-padding-x: 16px;
+  --row-height: 66px;
+  --row-height-compact: 48px;
   --section-label-gap: 8px;
   --section-gap: 24px;
   --header-bottom-gap: 16px;
@@ -109,6 +111,7 @@
   --button-small-icon: 16px;
   --button-icon: 20px;
   --detail-tile: 40px;
+  --row-icon: 16px;
   --control-height: 32px;
   --touch-control-height: 48px;
   --touch-target-min: 44px;

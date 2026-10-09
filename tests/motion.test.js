@@ -11,15 +11,16 @@ const token = (name) =>
   tokens.match(new RegExp(`--motion-${name}:\\s*([^;]+);`))[1].trim();
 
 test("the palette enters with its own keyframes and the selected segment slides", () => {
-  assert.match(style, /dialog\.palette\[open\] \{\s*animation-name: palette-enter;/);
-  assert.match(style, /@keyframes palette-enter \{[^}]*opacity: 0;[^}]*transform: translateY\(calc\(var\(--motion-distance\) \* -1\.5\)\) scale\(0\.97\)/);
+  assert.match(style, /dialog\.palette\[open\] \{\s*animation-name: palette-enter;\s*animation-duration: var\(--motion-shared\);/);
+  assert.match(style, /@keyframes palette-enter \{[^}]*opacity: 0;[^}]*transform: translateY\(calc\(var\(--motion-distance\) \* -2\)\) scale\(0\.94\)/);
   assert.match(style, /\.segmented-thumb \{\s*position: absolute;/);
   assert.doesNotMatch(style, /@keyframes palette-enter \{[^}]*(width|height|top|left)/);
   assert.match(app, /staggerRows\("#palette \.pal-row"\)/);
 });
 
 test("small controls animate only opacity and transform with the motion tokens", () => {
-  assert.match(style, /\.folder-card \{\s*transition:\s*transform var\(--motion-fast\) var\(--motion-ease\),\s*border-color var\(--motion-fast\)/);
+  assert.match(style, /\.folder-card \{\s*transition: background-color var\(--motion-fast\) var\(--motion-ease\);\s*\}\s*\.folder-card:hover \{\s*background: var\(--hover\);\s*\}/);
+  assert.doesNotMatch(style, /\.folder-card:hover \{[^}]*transform/);
   assert.match(style, /\.menu-items \{\s*animation: menu-enter var\(--motion-fast\)/);
   assert.match(style, /\.dropdown-menu \{[^}]*animation: menu-enter var\(--motion-fast\)/);
   assert.match(style, /\.copy-confirmed > \.icon \{\s*animation: tick-in var\(--motion-fast\)/);

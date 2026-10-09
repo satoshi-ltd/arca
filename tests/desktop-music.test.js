@@ -254,7 +254,13 @@ async function open(t, { role = "hub", selected = true, folders = ["Music"], man
     $(selector).click();
     await until(() => ready() && idle());
   };
-  return Object.assign(ui, { w, daemon, volume, volumes, plain, routes, played, status, $, $$, idle, text, tabs, cards, artists, click });
+  const crumbs = () => $$("#content .music-trail :is(button, [aria-current])").map((el) => el.textContent.trim());
+  const up = (label, ready) => {
+    const crumb = $$("#content .music-trail button").find((el) => el.textContent.trim() === label);
+    crumb.click();
+    return until(() => ready() && idle());
+  };
+  return Object.assign(ui, { w, daemon, volume, volumes, plain, routes, played, status, $, $$, idle, text, tabs, cards, artists, click, crumbs, up });
 }
 
 test("music grouping matches the phone: album keys, untagged names, sort orders and recent additions", () => {
@@ -327,7 +333,7 @@ test("a music folder opens on its Artists tab; Albums is a grid; Recent falls ba
   await ui.click('.music-card[data-action="music-album"]:nth-child(2)', () => $(".music-head"));
   assert.equal(ui.text(".music-head h2"), "Kind of Blue");
   assert.equal(ui.text(".music-head-info p"), "Miles Davis · 1959 · 2 tracks · 19:08");
-  assert.equal(ui.text('.music-head [data-action="music-back"]'), "Albums");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Kind of Blue"]);
   assert.deepEqual($$(".music-head .heading-actions button").map((el) => el.textContent.trim()), ["Play", "Shuffle"]);
   const rows = () => $$(".music-tracks .music-track[data-path]");
   assert.deepEqual(
@@ -369,7 +375,7 @@ test("a music folder opens on its Artists tab; Albums is a grid; Recent falls ba
   assert.equal(audio.paused, true);
   assert.equal($('#music-player [data-player="toggle"]').getAttribute("aria-label"), "Play");
 
-  await ui.click('[data-action="music-back"]', () => ui.cards().length === 3);
+  await ui.up("Music", () => ui.cards().length === 3);
   await ui.click('[data-action="music-tab"][data-id="recent"]', () => ui.tabs().length && $('.music-page .segmented button[aria-pressed="true"]').textContent.trim() === "Recent");
   assert.equal($(".music-caption"), null);
   assert.deepEqual(ui.cards(), ["Kind of Blue"]);
@@ -394,13 +400,13 @@ test("Artists open the artist's albums and then the album, and an album plays sh
   await ui.click('.music-artist-row[data-id*="miles davis"]', () => $('.music-head [data-action="music-shuffle-artist"]'));
   assert.equal(ui.text(".music-head h2"), "Miles Davis");
   assert.equal(ui.text(".music-head-info p"), "1 album · 2 tracks");
-  assert.equal(ui.text('.music-head [data-action="music-back"]'), "Artists");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Miles Davis"]);
   assert.deepEqual([...$(".music-head > .music-cover").classList].filter((name) => name !== "has-cover"), ["music-cover", "large"]);
   assert.deepEqual(ui.cards(), ["Kind of Blue"]);
   await ui.click('.music-card[data-action="music-album"]', () => $('.music-head [data-action="music-play"]'));
-  assert.equal(ui.text('.music-head [data-action="music-back"]'), "Miles Davis");
-  await ui.click('[data-action="music-back"]', () => $('.music-head [data-action="music-shuffle-artist"]'));
-  await ui.click('[data-action="music-back"]', () => $(".music-artist-row") && !$(".music-head"));
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Miles Davis", "Kind of Blue"]);
+  await ui.up("Miles Davis", () => $('.music-head [data-action="music-shuffle-artist"]'));
+  await ui.up("Music", () => $(".music-artist-row") && !$(".music-head"));
 
   await ui.click('.music-artist-row[data-id*="miles davis"]', () => $('.music-head [data-action="music-shuffle-artist"]'));
   await ui.click('.music-card[data-action="music-album"]', () => $('.music-head [data-action="music-play"]'));
@@ -413,6 +419,7 @@ test("Artists open the artist's albums and then the album, and an album plays sh
   const saved = JSON.parse(w.localStorage.getItem(key));
   assert.deepEqual(saved.map((entry) => entry.kind), ["album"]);
   w.localStorage.setItem(key, JSON.stringify([{ kind: "playlist", id: "Lists/road.m3u8" }, ...saved]));
+  await ui.up("Music", () => $(".music-artist-row"));
   await ui.click('[data-action="music-tab"][data-id="recent"]', () => ui.cards().length === 1 && !$(".music-caption"));
   assert.deepEqual(ui.cards(), ["Kind of Blue"]);
 });
@@ -641,7 +648,7 @@ test("the library and player work when this browser refuses local storage", asyn
   level.value = "0.3";
   level.dispatchEvent(new w.Event("input", { bubbles: true }));
   assert.equal($("audio").volume, 0.3);
-  await ui.click('[data-action="music-back"]', () => ui.cards().length === 3);
+  await ui.up("Music", () => ui.cards().length === 3);
   await ui.click('[data-action="music-tab"][data-id="recent"]', () => $(".music-caption"));
 });
 
@@ -651,7 +658,7 @@ test("only the playing track's cover rebuilds the media session metadata", async
   await grid(ui);
   await playAlbum(ui);
   const built = ui.metadata;
-  await ui.click('[data-action="music-back"]', () => ui.cards().length === 3);
+  await ui.up("Music", () => ui.cards().length === 3);
   const before = ui.routes.length;
   ui.reveal();
   await until(() => ui.$$(".music-card .music-cover img").length === 2 && ui.idle());
@@ -914,18 +921,17 @@ test("the player bar opens the playing album from its cover, title and album nam
   await away();
   artist.click();
   await until(() => ui.text(".music-head h2") === "Miles Davis" && ui.idle());
-  assert.equal(ui.text(".detail-title h1"), "Music");
-  assert.equal(ui.text('.music-head [data-action="music-back"]'), "Artists");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Miles Davis"]);
   assert.equal(w.document.activeElement, $('#music-player [data-player="toggle"]'), "focus moves to the bar's Play/Pause");
   album.click();
   await until(() => ui.text(".music-head h2") === "Kind of Blue" && ui.idle());
-  assert.equal(ui.text('.music-head [data-action="music-back"]'), "Albums");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Kind of Blue"]);
   await away();
   title.click();
-  await until(() => ui.text(".music-head h2") === "Kind of Blue" && ui.text(".detail-title h1") === "Music" && ui.idle());
+  await until(() => ui.text(".music-head h2") === "Kind of Blue" && ui.crumbs()[1] === "Music" && ui.idle());
   await away();
   cover.click();
-  await until(() => ui.text(".music-head h2") === "Kind of Blue" && ui.text(".detail-title h1") === "Music" && ui.idle());
+  await until(() => ui.text(".music-head h2") === "Kind of Blue" && ui.crumbs()[1] === "Music" && ui.idle());
   $('#music-player [data-player="next"]').click();
   await until(() => ui.played.length === 2 && ui.idle());
   assert.equal($("#music-player .music-player-title"), title, "the bar is patched in place");
@@ -1014,8 +1020,8 @@ test("search shows grouped results instead of the tab, plays a song within its a
   assert.deepEqual(rows(), ["Björk"]);
   await ui.click('[data-action="music-search-more"]', () => songs().length === 125);
   await ui.click('.music-row[data-action="music-artist"]', () => $('.music-head [data-action="music-shuffle-artist"]'));
-  assert.equal(ui.text('.music-head [data-action="music-back"]'), "Results");
-  await ui.click('[data-action="music-back"]', () => groups().length === 3);
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Results", "Björk"]);
+  await ui.up("Results", () => groups().length === 3);
   await type("zzz");
   assert.equal(ui.text(".music-view .empty h2"), "No results for “zzz”");
   await type("freddie");
@@ -1075,6 +1081,7 @@ test("Shuffle plays the whole library or an artist's tracks in shuffled order an
   await until(() => ui.played.length === before + 1 && ui.idle());
   assert.deepEqual((await titles()).sort(), ["Freddie Freeloader", "So What"]);
   assert.equal(w.localStorage.getItem(`arca-music-recent:${ui.status().id}:${ui.volume.id}`), null);
+  await ui.up("Music", () => $(".music-artist-row"));
   await ui.click('[data-action="music-tab"][data-id="recent"]', () => $(".music-caption"));
 });
 
@@ -1124,9 +1131,10 @@ test("the library Shuffle beside the tabs shows only at a tab root, not on artis
   assert.ok(shuffle(), "Artists list");
   await ui.click('.music-artist-row[data-id*="miles davis"]', () => $('[data-action="music-shuffle-artist"]'));
   assert.equal(shuffle(), null, "artist page");
-  assert.ok($(".music-tools .segmented"), "the tabs stay");
+  assert.equal($(".music-tools"), null, "an artist page opens on its own header");
   await ui.click('.music-card[data-action="music-album"]', () => $('[data-action="music-play"]'));
   assert.equal(shuffle(), null, "album page");
+  await ui.up("Music", () => !$(".music-head") && shuffle());
   await ui.click('[data-action="music-tab"][data-id="albums"]', () => !$(".music-head") && shuffle());
   await ui.click('[data-action="music-tab"][data-id="recent"]', () => $(".music-caption") && shuffle());
   await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
@@ -1178,6 +1186,7 @@ test("off an audio library the sidebar card replaces the bar while a track is lo
   await playAlbum(ui);
   assert.deepEqual([bar(), card()], [true, false], "the library shows the bar");
   assert.equal($("#music-mini").nextElementSibling, $(".status-card"));
+  await ui.up("Music", () => $('[data-action="music-mode"]'));
   await ui.click('[data-action="music-mode"]', () => $(".folder-stats"));
   assert.deepEqual([bar(), card()], [false, true], "the music folder's files view");
   await ui.click('[data-action="music-mode"]', () => $(".music-page"));
@@ -1214,13 +1223,13 @@ test("off an audio library the sidebar card replaces the bar while a track is lo
   assert.equal(ui.text("#music-mini .music-mini-text strong"), "Freddie Freeloader");
   assert.equal(w.document.activeElement, next, "focus stays across track changes");
   assert.equal(next.disabled, true, "the last track has no Next without repeat");
-  assert.equal($("#music-mini progress"), null, "the card carries no progress line");
+  assert.ok($("#music-mini progress.music-mini-progress"), "the card carries a 2 px progress edge");
   opener.focus();
   opener.click();
   await until(() => $(".music-head h2") && ui.idle());
   assert.equal(ui.text(".music-head h2"), "Kind of Blue");
   assert.equal(w.document.activeElement, $('#music-player [data-player="toggle"]'), "focus moves to the bar's Play/Pause");
-  assert.equal(ui.text(".detail-title h1"), "Music");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Kind of Blue"]);
   assert.deepEqual([bar(), card()], [true, false]);
   ui.patch = (value) => ({ ...value, hubId: "another-hub" });
   await ui.poll();
@@ -1288,7 +1297,7 @@ test("under 761px the sidebar card hides and the bar shows everywhere; notices r
   assert.doesNotMatch(css, /min-width: 761px/, "one query decides both, so fractional widths never show both");
   assert.match(css, /body:has\(#music-player:not\(\[hidden\]\):not\(\.music-elsewhere\)\) #notice \{/);
   assert.match(css, /\.music-mini-play \{\n  width: calc\(var\(--space-6\) \+ var\(--space-1\)\);/);
-  assert.doesNotMatch(css, /music-mini-progress/);
+  assert.match(css, /\.music-mini-progress \{\s*position: absolute;/);
 });
 
 const SO_WHAT = "Miles Davis/Kind of Blue/01 So What.mp3";
@@ -1311,7 +1320,7 @@ test("the Playlists tab appears between Albums and Recent once a playlist exists
   await ui.click('.music-card[data-id="Playlists/Road trip.m3u8"]', () => $(".music-head"));
   assert.equal(ui.text(".music-head h2"), "Road trip");
   assert.equal(ui.text(".music-head-info p"), "5 tracks · 29:27");
-  assert.equal(ui.text('.music-head [data-action="music-back"]'), "Playlists");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Road trip"]);
   assert.match($(".music-head > .music-cover").dataset.musicCover, new RegExp(`key=${COVER}`));
   assert.deepEqual(
     $$('.music-head [aria-label="Playlist actions"] + .menu-items button').map((el) => el.textContent.trim()),
@@ -1333,7 +1342,7 @@ test("the Playlists tab appears between Albums and Recent once a playlist exists
   assert.ok(rows()[3].classList.contains("music-track-missing"));
   assert.deepEqual(
     [...rows()[0].querySelectorAll(".menu-items button")].map((el) => el.textContent.trim()),
-    ["Add to playlist…", "Remove from playlist"],
+    ["Add to playlist…", "Remove from playlist", "Delete…"],
   );
   $('[data-action="music-play"]').click();
   await until(() => ui.played.length === 1 && ui.idle());
@@ -1348,10 +1357,11 @@ test("the Playlists tab appears between Albums and Recent once a playlist exists
   assert.deepEqual(rows().map((row) => row.classList.contains("playing")), [false, false, true, false, false], "the playing appearance is marked by position");
   const saved = JSON.parse(w.localStorage.getItem(`arca-music-recent:${ui.status().id}:${ui.volume.id}`));
   assert.deepEqual(saved.map((entry) => [entry.kind, entry.id]), [["playlist", "Playlists/Road trip.m3u8"]]);
-  await ui.click('[data-action="music-back"]', () => ui.cards().length === 2);
+  await ui.up("Music", () => ui.cards().length === 2);
   await ui.click('.music-card[data-id="Playlists/Hand.m3u"]', () => ui.text(".music-head h2") === "Hand");
   assert.equal($('.music-head [aria-label="Playlist actions"]'), null, "a hand-made .m3u is read only");
-  assert.deepEqual([...$$(".music-tracks .music-track:not(.music-track-head) .menu-items button")].map((el) => el.textContent.trim()), ["Add to playlist…"]);
+  assert.deepEqual([...$$(".music-tracks .music-track:not(.music-track-head) .menu-items button")].map((el) => el.textContent.trim()), ["Add to playlist…", "Delete…"]);
+  await ui.up("Music", () => ui.cards().length === 2);
   await ui.click('[data-action="music-tab"][data-id="recent"]', () => ui.cards().length);
   assert.deepEqual(ui.cards(), ["Road trip"], "Recent lists played playlists");
   await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
@@ -1456,4 +1466,278 @@ test("on a replica still syncing, an entry naming a file it does not have yet re
     $$(".music-track-missing strong + span").map((el) => el.textContent),
     ["Not on this device yet", "Not in this folder"],
   );
+});
+
+test("a long track shows its progress, offers to pick it up and asks before it is deleted", async (t) => {
+  const episode = track("Show/2026-10-06 Episode.mp3", { title: "Episode 412", artist: "Show", albumArtist: "Show", album: "Show", track: 1, duration: 18612 });
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [episode] }) });
+  const { $, w } = ui;
+  const saved = await fetch(`http://127.0.0.1:${ui.daemon.port}/v1/audio-position`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${ui.daemon.engine.config.adminToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ volume: ui.volume.id, path: episode.path, hash: episode.hash, position: 3730, duration: 18612, at: Date.now() - 240000 }),
+  });
+  assert.equal(saved.status, 200);
+  await until(() => $(".music-page .music-artist-row") && ui.idle());
+  await until(() => $(".resume-card"));
+  assert.match($(".resume-card").textContent, /Episode 412.*Pick up where you left off.*1:02:10.*this device/s);
+  await ui.click('[data-action="music-tab"][data-id="albums"]', () => $('.music-card[data-action="music-album"]'));
+  await ui.click('.music-card[data-action="music-album"]', () => $(".music-tracks .music-track[data-path]"));
+  assert.equal($(".music-track[data-path] .music-progress").getAttribute("value"), "20");
+  assert.match($(".music-track[data-path] .music-track-play").textContent, /4 h 8 min left/);
+  assert.equal($(".music-track[data-path] .music-left").textContent, "4 h 8 min left", "time left reads in the body face");
+  assert.match(source("style.css"), /\n\.music-track-play > \.music-left,\n\.music-track-play > \.music-length \{\s*font-family: var\(--font-ui\);\s*font-size: var\(--text-body\);/);
+  $(".music-track[data-path] .music-track-menu summary").click();
+  w.document.querySelector('[data-action="music-delete"]').click();
+  await until(() => w.document.querySelector("#dialog").hasAttribute("open"));
+  assert.match(w.document.querySelector("#dialog").textContent, /Delete Episode 412\?.*removed from every device.*History keeps it/s);
+});
+
+test("podcast episodes get their own tab with shows and episodes newest first, and stay out of the music tabs", async (t) => {
+  const old = track("The Wild Project/2026-10-01 Salud mental.mp3", { title: "Salud mental", album: "The Wild Project", genre: "Podcast", duration: 7500 });
+  const fresh = track("The Wild Project/2026-10-08 Episodio 386.mp3", { title: "Episodio 386", album: "The Wild Project", genre: "Podcast", duration: 18606 });
+  const song = track("Miles/01 So What.mp3", { title: "So What", artist: "Miles Davis", album: "Kind of Blue", duration: 562 });
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [old, song, fresh] }) });
+  const { $, $$ } = ui;
+  await until(() => $(".music-page .music-artist-row") && ui.idle());
+  assert.deepEqual(ui.tabs(), ["Artists", "Albums", "Recent", "Podcasts"]);
+  assert.deepEqual(ui.artists(), ["Miles Davis"], "episodes are not artists");
+  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-row[data-action="music-show"]'));
+  assert.match($('.music-row[data-action="music-show"]').textContent, /The Wild Project.*2 episodes · Oct 8, 2026/s);
+  await ui.click('.music-row[data-action="music-show"]', () => $(".music-head h2"));
+  assert.equal(ui.text(".music-head h2"), "The Wild Project");
+  assert.match(ui.text(".music-head-info p"), /^2 episodes · 7 h 15 min$/);
+  const titles = [...$$(".music-tracks .music-track[data-path] strong")].map((el) => el.textContent);
+  assert.deepEqual(titles, ["Episodio 386", "Salud mental"], "newest first");
+  assert.match($(".music-tracks .music-track[data-path] .music-track-play").textContent, /Oct 8, 2026/);
+  assert.deepEqual($$(".music-tracks .music-track[data-path] .music-track-number").map((el) => el.textContent.trim()), ["", ""], "episodes are not numbered");
+  assert.ok($(".music-tracks .music-track[data-path] .music-track-number [data-icon='play'], .music-tracks .music-track[data-path] .music-track-number svg"));
+  assert.equal($(".music-track-head .music-track-play > span").textContent, "", "the header has no # either");
+  assert.deepEqual($$(".music-tracks .music-track[data-path] .music-length").map((el) => el.textContent), ["5 h 10 min", "2 h 5 min"], "episode lengths read in hours and minutes");
+  assert.equal($(".music-tracks .music-track[data-path] .music-track-play > .mono:last-child"), null);
+});
+
+test("a folder of only podcasts opens on its shows and offers no music tabs", async (t) => {
+  const episode = track("Show/2026-10-08 Episode.mp3", { title: "Episode", album: "Show", genre: "Podcast", duration: 3000 });
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [episode] }) });
+  const { $ } = ui;
+  await until(() => $('.music-row[data-action="music-show"]') && ui.idle());
+  assert.deepEqual(ui.tabs(), [], "a lone Podcasts tab is never drawn");
+  assert.equal($(".music-page .segmented"), null);
+  assert.equal($(".music-page .folder-browser-tools"), null, "no tools row is left without tabs");
+  const search = () => $('.heading-actions [data-action="music-search-toggle"]');
+  assert.deepEqual(
+    [...$(".heading-actions").children].slice(0, 2).map((el) => el.dataset.action),
+    ["music-search-toggle", "music-mode"],
+    "search sits in the folder header, left of View folder",
+  );
+  assert.ok(search().classList.contains("ghost") && search().classList.contains("icon-button"));
+  assert.match(ui.text(".detail-title p"), /^1 episode · 1 show · /);
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music"]);
+  await ui.click('.heading-actions [data-action="music-search-toggle"]', () => $("#music-search-input"));
+  assert.equal(ui.w.document.activeElement.id, "music-search-input");
+  assert.equal(search().getAttribute("aria-label"), "Close search");
+  assert.equal($(".music-page > .folder-browser-search + .music-view") !== null, true, "the field opens above the list");
+  $("#music-search-input").dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await until(() => !$("#music-search-input") && $('.music-row[data-action="music-show"]') && ui.idle());
+  assert.equal(ui.w.document.activeElement, search(), "Escape closes the field and returns to the button");
+  assert.equal(search().getAttribute("aria-label"), "Search podcasts");
+});
+
+test("long audio with no artist and no genre counts as a podcast episode, short untagged audio stays music", async (t) => {
+  const spoken = track("Charla/2026-10-03 Episodio sin etiquetas.mp3", { title: "Episodio sin etiquetas", duration: 4200 });
+  const loose = track("Loose/clip.mp3", { title: "Clip", duration: 180 });
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [spoken, loose] }) });
+  const { $ } = ui;
+  await until(() => $(".music-page .music-artist-row") && ui.idle());
+  assert.deepEqual(ui.artists(), ["Unknown artist"]);
+  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-row[data-action="music-show"]'));
+  assert.match($('.music-row[data-action="music-show"]').textContent, /Charla.*1 episode · Oct 3, 2026/s);
+});
+
+test("the sleep menu closes on a choice, Escape and an outside click, and its tooltip never covers it", async (t) => {
+  const ui = await open(t);
+  const { $, w } = ui;
+  await grid(ui);
+  await playAlbum(ui);
+  const menu = () => $("#music-player .sleep-menu");
+  const summary = () => $("#music-player .sleep-button");
+  summary().click();
+  assert.equal(menu().open, true);
+  summary().focus();
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  assert.equal(w.document.querySelector(".tooltip"), null, "no tooltip over the open menu");
+  summary().dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(menu().open, false, "Escape closes it");
+  summary().click();
+  $(".music-head h2").click();
+  assert.equal(menu().open, false, "an outside click closes it");
+  summary().click();
+  $('#music-player [data-sleep="30"]').click();
+  assert.equal(menu().open, false, "a choice closes it");
+  assert.ok(menu().classList.contains("sleep-active"));
+  const css = source("style.css");
+  assert.match(css, /\n\.sleep-menu > \.sleep-button\.ghost\.icon-button \{[^}]*width: auto;/, "the running label widens the button instead of overlapping mute");
+  assert.match(css, /\n\.sleep-active > \.sleep-button\.ghost\.icon-button \{\s*color: var\(--green\);/, "a running timer is accent");
+});
+
+test("an audio library has one trail from Folders: the folder header and tabs only at its root, each crumb but the last opens its level", async (t) => {
+  const episode = track("Show/2026-10-08 Episode.mp3", { title: "Episode", album: "Show", genre: "Podcast", duration: 3000 });
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [...TRACKS, episode] }) });
+  const { $, $$, w } = ui;
+  await grid(ui);
+  const links = () => $$("#content .music-trail button").map((el) => el.textContent.trim());
+  const root = () => !!$(".detail-title h1") && !!$(".music-page .segmented");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music"]);
+  assert.deepEqual(links(), ["Folders"]);
+  assert.ok(root(), "the root keeps the folder header and its tabs");
+  assert.equal($("#content .back"), null, "no back link besides the trail");
+  await ui.click('.music-artist-row[data-id*="miles davis"]', () => $('[data-action="music-shuffle-artist"]'));
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Miles Davis"]);
+  assert.deepEqual(links(), ["Folders", "Music"]);
+  assert.equal($$("#content .music-trail").length, 1);
+  assert.equal($("#content .back"), null);
+  assert.equal($(".detail-title"), null, "the artist header is the page header");
+  assert.equal($(".music-page .segmented"), null);
+  await ui.click('.music-card[data-action="music-album"]', () => $('[data-action="music-play"]'));
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Miles Davis", "Kind of Blue"]);
+  assert.equal($("#content .back"), null);
+  $("#content").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await until(() => ui.text(".music-head h2") === "Miles Davis" && ui.idle());
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Miles Davis"], "Escape goes up one level");
+  await ui.click('.music-card[data-action="music-album"]', () => $('[data-action="music-play"]'));
+  w.history.back();
+  await until(() => ui.text(".music-head h2") === "Miles Davis" && ui.idle());
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Miles Davis"], "browser Back goes up one level");
+  w.history.back();
+  await until(() => root() && !$(".music-head") && ui.idle());
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music"], "going up never leaves a page to replay on Back");
+  await ui.click('.music-artist-row[data-id*="miles davis"]', () => $('[data-action="music-shuffle-artist"]'));
+  await ui.click('.music-card[data-action="music-album"]', () => $('[data-action="music-play"]'));
+  await ui.up("Music", () => root() && !$(".music-head"));
+  w.history.forward();
+  await until(() => ui.text(".music-head h2") === "Miles Davis" && ui.idle());
+  w.history.back();
+  await until(() => root() && !$(".music-head") && ui.idle());
+  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-row[data-action="music-show"]'));
+  await ui.click('.music-row[data-action="music-show"]', () => ui.text(".music-head h2") === "Show");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Show"]);
+  assert.equal($("#content .back"), null);
+  assert.equal($(".detail-title"), null);
+  await ui.up("Folders", () => $(".folder-card"));
+});
+
+test("the library trail reuses the breadcrumb at body size with accent links", () => {
+  const css = source("style.css");
+  assert.match(css, /\n\.folder-breadcrumb\.music-trail \{[^}]*height: auto;[^}]*padding: 0;[^}]*border-bottom: 0;[^}]*font-size: var\(--text-body\);/);
+  assert.match(css, /\n\.folder-breadcrumb\.music-trail \.text-button \{\s*color: var\(--green\);/);
+});
+
+test("library search finds shows by name and episodes by title or show; an episode resumes, a show opens under Results", async (t) => {
+  const wild = track("The Wild Project/2026-10-08 Episodio 386.mp3", { title: "Episodio 386", album: "The Wild Project", genre: "Podcast", duration: 5400 });
+  const older = track("The Wild Project/2026-10-01 Salud mental.mp3", { title: "Salud mental", album: "The Wild Project", genre: "Podcast", duration: 4200 });
+  const cast = track("Worldcast/2026-10-07 Wild weather.mp3", { title: "Wild weather", album: "Worldcast", genre: "Podcast", duration: 3600 });
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [...TRACKS, wild, older, cast] }) });
+  const { $, $$, w } = ui;
+  await fetch(`http://127.0.0.1:${ui.daemon.port}/v1/audio-position`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${ui.daemon.engine.config.adminToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ volume: ui.volume.id, path: older.path, hash: older.hash, position: 1200, duration: 4200, at: Date.now() }),
+  });
+  await grid(ui);
+  await until(() => $(".resume-card") && ui.idle());
+  assert.equal($('[data-action="music-search-toggle"]').getAttribute("aria-label"), "Search", "a mixed library searches both");
+  await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
+  assert.equal($("#music-search-input").placeholder, "Search");
+  const type = async (value) => {
+    const field = $("#music-search-input");
+    field.value = value;
+    field.dispatchEvent(new w.Event("input", { bubbles: true }));
+    await until(() => ui.idle());
+  };
+  const groups = () => $$(".music-view .section-label").map((el) => el.textContent);
+  const episodes = () => $$('.music-view .music-episodes .music-track[data-path] .music-track-play[data-action="music-episode"] strong').map((el) => el.textContent);
+  await type("wild");
+  assert.deepEqual(groups(), ["Shows", "Episodes"]);
+  assert.deepEqual($$('.music-view .music-row[data-action="music-show"] strong').map((el) => el.textContent), ["The Wild Project"]);
+  assert.deepEqual(episodes(), ["Episodio 386", "Salud mental", "Wild weather"], "titles and show names both match");
+  assert.equal($(".music-view .music-episodes .music-track[data-path] .music-sub-text").textContent, "The Wild Project · Oct 8, 2026");
+  assert.equal($(".music-view .music-episodes .music-track[data-path] .music-track-number").textContent.trim(), "", "search results do not number episodes");
+  assert.equal($(".music-view .music-episodes .music-track[data-path] .music-length").textContent, "1 h 30 min");
+  const resumed = $$(".music-view .music-episodes .music-track[data-path]")[1];
+  assert.ok(resumed.querySelector(".music-progress"), "a saved place shows its progress");
+  assert.match(resumed.querySelector(".music-left").textContent, /left$/);
+  resumed.querySelector(".music-track-play").click();
+  await until(() => ui.played.length === 1 && ui.idle());
+  assert.equal(ui.text(".music-player-track strong"), "Salud mental");
+  $("audio").dispatchEvent(new w.Event("loadedmetadata"));
+  assert.equal($("audio").currentTime, 1200, "the episode resumes where it was left");
+  await type("Wild Project");
+  await ui.click('.music-view .music-row[data-action="music-show"]', () => ui.text(".music-head h2") === "The Wild Project");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Results", "The Wild Project"]);
+  await ui.up("Results", () => groups().includes("Shows"));
+});
+
+test("the search names what a library holds: music, podcasts, or both", async (t) => {
+  const episode = track("Show/2026-10-08 Episode.mp3", { title: "Episode", album: "Show", genre: "Podcast", duration: 3000 });
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [episode] }) });
+  const { $ } = ui;
+  await until(() => $('.music-row[data-action="music-show"]') && ui.idle());
+  await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
+  assert.equal($("#music-search-input").placeholder, "Search podcasts");
+  assert.equal($("#music-search-input").getAttribute("aria-label"), "Search podcasts");
+});
+
+test("the resume card is one section gap above the library, not more", () => {
+  const css = source("style.css");
+  const card = /\n\.resume-card \{[^}]*\}/.exec(css)[0];
+  assert.match(card, /margin-bottom: calc\(var\(--section-gap\) - var\(--space-4\)\);/);
+  assert.match(css, /\n\.music-page \{[^}]*gap: var\(--space-4\);/);
+});
+
+test("an episode's play glyph shows only on hover or focus, and its length reads in the body face", () => {
+  const css = source("style.css");
+  assert.match(css, /\n\.music-episodes \.music-track-number > \* \{[^}]*visibility: hidden;/);
+  assert.match(css, /\n\.music-episodes \.music-track-play:is\(:hover, :focus-visible\) > \.music-track-number > \* \{\s*visibility: visible;/);
+  assert.match(css, /\n\.music-track-play > \.music-left,\n\.music-track-play > \.music-length \{\s*font-family: var\(--font-ui\);/);
+});
+
+test("an episode row keeps room for its time left beside the show and date", () => {
+  assert.match(source("style.css"), /\n\.music-episodes \.music-track-play \{\s*grid-template-columns: var\(--space-6\) minmax\(0, 2fr\) minmax\(0, 1fr\) calc\(var\(--space-6\) \* 4\);/);
+});
+
+test("an episode never inherits music's shuffle or repeat, music gets them back, and End of episode ends with the item it was set on", async (t) => {
+  const old = track("Show/2026-10-01 Older.mp3", { title: "Older", album: "Show", genre: "Podcast", duration: 3000 });
+  const fresh = track("Show/2026-10-08 Newer.mp3", { title: "Newer", album: "Show", genre: "Podcast", duration: 3000 });
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [...TRACKS, old, fresh] }) });
+  const { $, $$, w } = ui;
+  await grid(ui);
+  await playAlbum(ui);
+  $('#music-player [data-player="repeat"]').click();
+  $('#music-player [data-player="repeat"]').click();
+  $('#music-player [data-player="shuffle"]').click();
+  assert.equal($('#music-player [data-player="repeat"]').getAttribute("aria-label"), "Repeat one");
+  await ui.up("Music", () => $(".music-page .segmented"));
+  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-row[data-action="music-show"]'));
+  await ui.click('.music-row[data-action="music-show"]', () => $(".music-head h2"));
+  let before = ui.played.length;
+  $$(".music-tracks .music-track[data-path] .music-track-play")[0].click();
+  await until(() => ui.played.length === before + 1 && ui.idle());
+  assert.equal(ui.text(".music-player-track strong"), "Newer");
+  before = ui.played.length;
+  $("audio").dispatchEvent(new w.Event("ended"));
+  await until(() => ui.played.length === before + 1 && ui.idle());
+  assert.equal(ui.text(".music-player-track strong"), "Older", "the show plays on in order instead of repeating or shuffling");
+  $("#music-player .sleep-button").click();
+  $('#music-player [data-sleep="end"]').click();
+  assert.ok($("#music-player .sleep-menu").classList.contains("sleep-active"));
+  before = ui.played.length;
+  $$(".music-tracks .music-track[data-path] .music-track-play")[0].click();
+  await until(() => ui.played.length === before + 1 && ui.idle());
+  assert.equal(ui.text(".music-player-track strong"), "Newer");
+  assert.equal($("#music-player .sleep-menu").classList.contains("sleep-active"), false, "leaving the episode turns End of episode off");
+  await ui.up("Music", () => $(".music-page .segmented"));
+  await playAlbum(ui);
+  assert.equal($('#music-player [data-player="repeat"]').getAttribute("aria-label"), "Repeat one", "music keeps its repeat");
+  assert.equal($('#music-player [data-player="shuffle"]').getAttribute("aria-pressed"), "true", "and its shuffle");
 });

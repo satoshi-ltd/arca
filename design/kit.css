@@ -335,6 +335,11 @@ body.kit {
 .kit-draw.menu-open {
   padding-bottom: 164px;
 }
+.kit-draw.kit-menu-up {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 176px;
+}
 .kit-board-pair .m-device {
   width: 100%;
   max-width: 392px;
@@ -456,10 +461,6 @@ body.kit {
 .kit-board-pair.kit-board-stack {
   grid-template-columns: minmax(0, 1fr);
 }
-.kit-board-pair .kit-menu-float[open] .menu-items {
-  position: absolute;
-  margin-top: 0;
-}
 .kit-board-pair .kit-dialog-stage dialog {
   max-width: 100%;
 }
@@ -493,10 +494,6 @@ body.kit {
   flex-wrap: wrap;
 }
 @media (max-width: 480px) {
-  .kit-board-pair .music-head-info .kit-menu-float[open] .menu-items {
-    left: 0;
-    right: auto;
-  }
   .kit-board-pair .a-unit {
     zoom: 0.6;
   }
@@ -861,98 +858,13 @@ body.kit {
     zoom: 0.42;
   }
 }
-.kit-pod .shell {
+.kit-ap-window .shell {
   height: auto;
+  min-height: calc(var(--space-6) * 18);
 }
-.kit-pod-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+.music-range.kit-fill-17 {
+  --music-fill: 17%;
 }
-.kit-pod-dot {
-  flex: none;
-  width: var(--space-2);
-  height: var(--space-2);
-  border-radius: 50%;
-  background: var(--green);
-}
-.kit-pod-dot.read {
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--control);
-}
-.m-device .kit-pod-dot {
-  background: var(--m-accent);
-}
-.m-device .kit-pod-dot.read {
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--m-line);
-}
-.kit-pod-ep {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--row-padding-y) var(--row-padding-x);
-}
-.kit-pod-ep + .kit-pod-ep {
-  border-top: 1px solid var(--div);
-}
-.kit-pod-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  flex: 1;
-  min-width: 0;
-}
-.kit-pod-text > span:not(.kit-pod-bar) {
-  font-size: var(--text-caption);
-  color: var(--mute);
-}
-.kit-pod-bar {
-  display: block;
-  height: var(--space-1);
-  border-radius: var(--space-1);
-  background: var(--track);
-  overflow: hidden;
-}
-.kit-pod-bar i {
-  display: block;
-  height: 100%;
-  background: var(--green);
-}
-.kit-pod-bar i.w60 {
-  width: 60%;
-}
-.m-device .kit-pod-bar {
-  background: var(--m-line);
-}
-.m-device .kit-pod-bar i {
-  background: var(--m-accent);
-}
-.kit-pod-speed {
-  display: inline-flex;
-  gap: var(--space-1);
-}
-.kit-pod-speed span {
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--r-segment);
-  border: 1px solid var(--div);
-  font: var(--text-caption) var(--font-mono);
-  color: var(--soft);
-}
-.kit-pod-speed span.on {
-  border-color: transparent;
-  background: var(--tint);
-  color: var(--deep);
-}
-.m-device .kit-pod-speed {
-  align-self: center;
-}
-.m-device .kit-pod-speed span {
-  border-color: var(--m-line);
-  color: var(--m-mute);
-}
-.m-device .kit-pod-speed span.on {
-  border-color: transparent;
-  background: var(--m-accent);
-  color: var(--m-on-accent);
+.music-range.kit-fill-70 {
+  --music-fill: 70%;
 }

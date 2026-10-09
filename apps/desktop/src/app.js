@@ -5,6 +5,7 @@ import {
   buildLibrary,
   formatDuration,
   nextRepeat,
+  showId,
   playedItems,
   rememberPlayed,
   searchText,
@@ -99,7 +100,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.34";
+const APP_VERSION = "0.7.35";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1693,7 +1694,7 @@ function homeStrip() {
     `<div class="home-arrivals">${homeData.arrivals
       .map(
         (row) =>
-          `<button type="button" class="home-arrival" data-action="activity-file" data-id="${escape(JSON.stringify({ volume: row.volume, path: row.path, rev: row.rev, deleted: false }))}"><span class="tile">${icon(fileIcon(row.path))}</span><span class="home-arrival-text"><strong>${escape(baseName(row.path))}</strong><span>${escape(authorName(row.author))} · ${escape(relative(row.created))}</span></span></button>`,
+          `<button type="button" class="home-arrival" data-action="activity-file" data-id="${escape(JSON.stringify({ volume: row.volume, path: row.path, rev: row.rev, deleted: false }))}"><span class="tile large">${icon(fileIcon(row.path))}</span><span class="home-arrival-text"><strong>${escape(baseName(row.path))}</strong><span>${escape(authorName(row.author))} · ${escape(relative(row.created))}</span></span></button>`,
       )
       .join("")}</div>`,
   );
@@ -1779,7 +1780,7 @@ function folderRow(v, available = false) {
   if (v.sync?.error || v.policyError)
     meta = escape(v.sync?.error || v.policyError);
   const lead = available
-    ? `<div class="tile"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
+    ? `<div class="tile large"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
     : homeLead(v, state, p);
   return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p></div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || ["Up to date", "Offline"].includes(state[0]) ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
 }
@@ -1863,7 +1864,9 @@ const reducedMotion = () =>
 const MOTION_EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 const ROW_SELECTOR =
   "#content :is(.folder-card, .history-row, .browser-file-row)[data-id], #content .device-row[data-device]";
-function staggerRows(selector = ROW_SELECTOR) {
+const CASCADE_SELECTOR =
+  "#content :is(.folder-card, .history-row, .browser-file-row, .device-row, .setting-row, .music-row, .music-track:not(.music-track-head))";
+function staggerRows(selector = CASCADE_SELECTOR) {
   if (reducedMotion()) return;
   const enter = motionDuration("--motion-enter");
   const step = motionDuration("--motion-stagger");
@@ -2018,7 +2021,7 @@ function noteMicro() {
     const text = element.textContent;
     const before = microMemory.get(key);
     microMemory.set(key, text);
-    if (before !== undefined && before !== text)
+    if (before !== undefined && before !== text && Date.now() >= cascadeUntil)
       element.animate?.(
         [
           { opacity: 0.4, transform: `translateY(${tokenPixels("--motion-distance", 8) / 2}px)` },
@@ -2032,7 +2035,7 @@ function noteMicro() {
     const state = `${element.className}|${element.textContent}`;
     const before = microMemory.get(key);
     microMemory.set(key, state);
-    if (before !== undefined && before !== state)
+    if (before !== undefined && before !== state && Date.now() >= cascadeUntil)
       element.animate?.(
         [{ opacity: 0.35 }, { opacity: 1 }],
         { duration: motionDuration("--motion-enter"), easing: MOTION_EASE },
@@ -2043,10 +2046,17 @@ function noteMicro() {
 const rowKey = (row) => row.dataset.id || row.dataset.device;
 let notePending = false;
 const settleTimers = new WeakMap();
+let cascadeUntil = 0,
+  cascadeFirst = null;
 let seenRows = { route: "", keys: new Set() };
 function noteRows() {
   const route = routeURL();
   const rows = [...document.querySelectorAll(ROW_SELECTOR)];
+  const first = document.querySelector(CASCADE_SELECTOR);
+  if (Date.now() < cascadeUntil && first && first !== cascadeFirst) {
+    cascadeFirst = first;
+    staggerRows();
+  }
   const keys = new Set(rows.map(rowKey));
   if (!keys.size && seenRows.route === route) return;
   if (seenRows.route === route && seenRows.keys.size && !document.hidden && !reducedMotion()) {
@@ -2138,6 +2148,8 @@ async function render({ refreshStatus = false } = {}) {
         },
       );
       animatedRoute = route;
+      cascadeUntil = Date.now() + 1500;
+      cascadeFirst = null;
     }
     const serial = renderSerial;
     const request = statusRequestSerial + 1;
@@ -2154,7 +2166,10 @@ async function render({ refreshStatus = false } = {}) {
         })
       : null;
     const results = await Promise.allSettled([page, state]);
-    if (cascade && serial === renderSerial) staggerRows();
+    if (cascade && serial === renderSerial) {
+      staggerRows();
+      cascadeFirst = document.querySelector(CASCADE_SELECTOR);
+    }
     const failed = results.find((result) => result.status === "rejected");
     // The view just painted is current; the next poll repaints only if status really changes.
     if (!failed && serial === renderSerial && status === painted)
@@ -2213,13 +2228,19 @@ async function renderView(
       html += section("Hub connection", hubConnection());
     else html += homeStrip();
     const shown = status.role === "hub" ? status.volumes : selected;
-    html += section(
+    const kinds = [
+      ["Folders", shown.filter((v) => !v.gallery && !v.music)],
+      ["Photos", shown.filter((v) => v.gallery)],
+      ["Audio", shown.filter((v) => v.music && !v.gallery)],
+    ].filter(([, list]) => list.length);
+    if (shown.length)
+      for (const [label, list] of kinds)
+        html += section(label, `<div class="folder-list">${list.map((v) => folderRow(v)).join("")}</div>`);
+    else html += section(
       status.role === "hub"
         ? "Shared folders"
         : `Selected on ${machineLabel()}`,
-      shown.length
-        ? `<div class="folder-list">${shown.map((v) => folderRow(v)).join("")}</div>`
-        : empty(
+      empty(
             status.role === "hub"
               ? "No shared folders yet"
               : `No folders on ${machineLabel()} yet`,
@@ -4030,7 +4051,10 @@ document.addEventListener("keydown", (event) => {
 });
 
 function folderSymbol(volume) {
-  return volume.gallery ? "images" : volume.music ? "music" : "folder";
+  if (volume.gallery) return "images";
+  if (!volume.music) return "folder";
+  const library = musicLibraries.get(musicKey(volume.id))?.library;
+  return library && library.shows.length && !library.albumList.length ? "podcast" : "music";
 }
 function folderActionsMenu(volume) {
   if (status.role !== "hub") return "";
@@ -4175,7 +4199,7 @@ async function folderBrowser(v, recent, pending = false) {
 
 const MUSIC_GRID_PAGE = 60;
 const MUSIC_LIST_PAGE = 120;
-const MUSIC_TABS = { artists: "Artists", albums: "Albums", playlists: "Playlists", recent: "Recent" };
+const MUSIC_TABS = { artists: "Artists", albums: "Albums", playlists: "Playlists", recent: "Recent", podcasts: "Podcasts" };
 const musicLibraries = new Map();
 const musicFailures = new Map();
 const musicLoading = new Map();
@@ -4192,9 +4216,46 @@ let musicCoverObserver,
   musicSessionReady = false,
   musicView = { tab: "artists", artist: null, album: null, playlist: null, pages: 1, trail: [] },
   musicQuery = musicSearch(),
-  musicPicking = null;
+  musicPicking = null,
+  audioPositions = new Map(),
+  audioSavedAt = 0;
+const RESUME_MIN_SECONDS = 1200;
+const positionKey = (volume, path) => `${volume}\0${path}`;
+const timeLeft = (seconds) => {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min left` : `${minutes} min left`;
+};
+async function loadAudioPositions(volume) {
+  try {
+    const { positions } = await api("/v1/audio-positions");
+    const before = audioSignature(volume);
+    audioPositions = new Map(positions.map((row) => [positionKey(row.volume, row.path), row]));
+    if (before !== audioSignature(volume) && musicShowing(volume))
+      renderMusic(status.volumes.find((v) => v.id === volume));
+  } catch {}
+}
+const audioSignature = (volume) =>
+  [...audioPositions.values()]
+    .filter((row) => row.volume === volume)
+    .map((row) => `${row.path}:${Math.floor(row.position / 60)}`)
+    .join("|");
+function saveAudioPosition(force = false) {
+  const loaded = musicPlayer?.loadedTrack;
+  const audio = musicElement;
+  if (!loaded || musicPlayer.seeking || !audio || !(audio.duration >= RESUME_MIN_SECONDS)) return;
+  if ((audio.currentTime || 0) < 10) return;
+  const now = Date.now();
+  if (!force && now - audioSavedAt < 15000) return;
+  audioSavedAt = now;
+  const position = audio.currentTime || 0;
+  const body = { volume: musicPlayer.volume, path: loaded.path, hash: loaded.hash, position, duration: audio.duration };
+  const key = positionKey(body.volume, body.path);
+  if (position >= audio.duration - 60) audioPositions.delete(key);
+  else audioPositions.set(key, { ...body, device: status.id, name: status.name, updated: now });
+  api("/v1/audio-position", body).catch(() => {});
+}
 function musicSearch(open = false) {
-  return { open, text: "", songs: 1, albums: 1, artists: 1 };
+  return { open, text: "", songs: 1, albums: 1, artists: 1, episodes: 1 };
 }
 const musicSearching = () => searchText(musicQuery.text).trim() !== "";
 const musicCount = (n, word) => `${n.toLocaleString("en")} ${word}${n === 1 ? "" : "s"}`;
@@ -4292,6 +4353,7 @@ async function readMusic(volume, key, known) {
   const indexing = known?.indexing;
   try {
     const entry = await loadMusicLibrary(volume);
+    void loadAudioPositions(volume);
     musicFailures.delete(key);
     if (entry.indexing) armMusicIndex(volume);
     if ((entry !== known || entry.indexing !== indexing) && musicShowing(volume))
@@ -4318,49 +4380,91 @@ const playlistCard = (volume, list) =>
 const musicEditable = (v) => !!v.selected;
 const musicMenu = (items, label = "Track actions") =>
   `<details class="details-menu file-actions-menu music-track-menu"><summary class="ghost icon-button" aria-label="${label}">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
-const musicHeadRow = (album = false) =>
-  `<div class="music-track music-track-head" aria-hidden="true"><div class="music-track-play"><span>#</span><span>Title</span><span>Artist</span>${album ? "<span>Album</span>" : ""}${icon("clock")}</div><span></span></div>`;
+const musicHeadRow = (album = false, who = "Artist", numbered = true) =>
+  `<div class="music-track music-track-head" aria-hidden="true"><div class="music-track-play"><span>${numbered ? "#" : ""}</span><span>Title</span><span>${who}</span>${album ? "<span>Album</span>" : ""}${icon("clock")}</div><span></span></div>`;
 function musicGrid(cards, size = Infinity, more = "") {
   const shown = cards.slice(0, size);
   return `<div class="music-grid">${shown.join("")}</div>${cards.length > shown.length ? `<div class="pagination">${button("Show more", more ? "music-search-more" : "music-more", more, "secondary")}</div>` : ""}`;
 }
 const musicMore = (label, more) => `<div class="pagination">${button(label, "music-search-more", more, "secondary")}</div>`;
 const musicShuffleAll = () =>
-  musicView.album || musicView.playlist || musicView.artist || musicSearching()
+  musicView.album || musicView.playlist || musicView.artist || musicView.show || musicView.tab === "podcasts" || musicSearching()
     ? ""
     : button("Shuffle", "music-shuffle-all", "", "secondary", "shuffle");
+const musicOnly = (library) => library.artists.length > 0 || !library.shows.length;
+function musicTabList(library) {
+  return [
+    ...(musicOnly(library)
+      ? [
+          { id: "artists", symbol: "mic-vocal" },
+          { id: "albums", symbol: "disc-3" },
+          ...(library.playlists.length ? [{ id: "playlists", symbol: "list-music" }] : []),
+          { id: "recent", symbol: "clock" },
+        ]
+      : []),
+    ...(library.shows.length ? [{ id: "podcasts", symbol: "podcast" }] : []),
+  ];
+}
+const musicSearchLabel = (library) =>
+  !library.shows.length ? "Search music" : library.albumList.length ? "Search" : "Search podcasts";
+const musicSearchButton = (library, cls = "icon-button") =>
+  `<button class="${cls}" data-action="music-search-toggle" aria-label="${musicQuery.open ? "Close search" : musicSearchLabel(library)}">${icon(musicQuery.open ? "x" : "search")}</button>`;
 function musicTabs(library) {
+  const tabs = musicTabList(library);
+  const field = musicQuery.open
+    ? `<div class="folder-browser-search"><input id="music-search-input" type="search" aria-label="${musicSearchLabel(library)}" placeholder="${musicSearchLabel(library)}" value="${escape(musicQuery.text)}" maxlength="256">${button("Search", "music-search-apply", "", "secondary")}</div>`
+    : "";
+  if (tabs.length < 2) return field;
   return `<div class="folder-browser-tools"><div class="music-tools">${segmented(
     "Library",
-    [
-      { id: "artists", symbol: "mic-vocal" },
-      { id: "albums", symbol: "disc-3" },
-      ...(library.playlists.length ? [{ id: "playlists", symbol: "list-music" }] : []),
-      { id: "recent", symbol: "clock" },
-    ].map((item) => ({
-      ...item,
-      label: MUSIC_TABS[item.id],
-      action: "music-tab",
-      active: musicView.tab === item.id,
-    })),
-  )}${musicShuffleAll()}</div><div><button class="icon-button" data-action="music-search-toggle" aria-label="${musicQuery.open ? "Close search" : "Search music"}">${icon(musicQuery.open ? "x" : "search")}</button></div></div>${
-    musicQuery.open
-      ? `<div class="folder-browser-search"><input id="music-search-input" type="search" aria-label="Search music" placeholder="Search music" value="${escape(musicQuery.text)}" maxlength="256">${button("Search", "music-search-apply", "", "secondary")}</div>`
-      : ""
-  }`;
+    tabs.map((item) => ({ ...item, label: MUSIC_TABS[item.id], action: "music-tab", active: musicView.tab === item.id })),
+  )}${musicShuffleAll()}</div><div>${musicSearchButton(library)}</div></div>${field}`;
 }
-const musicBackLabel = () => (musicSearching() ? "Results" : MUSIC_TABS[musicView.tab]);
-function musicRows(v, rows, action, { head = "", songs = false, playlist = "", album = false } = {}) {
+const musicDeep = () => !!(musicView.artist || musicView.album || musicView.playlist || musicView.show);
+function musicTrail(v, library) {
+  const show = library && musicView.show && library.shows.find((item) => item.id === musicView.show);
+  const artist = library && !show && musicView.artist && library.artists.find((item) => item.id === musicView.artist);
+  const album = library && !show && musicView.album && library.albums.get(musicView.album);
+  const list = library && !show && !album && musicView.playlist && library.playlists.find((item) => item.id === musicView.playlist);
+  const levels = [show?.name, artist?.name, album?.title, list?.name].filter(Boolean);
+  const results = levels.length && musicSearching();
+  const crumbs = [
+    ["Folders", "back-folders", ""],
+    [v.name, "music-crumb", results ? "folder" : "0"],
+    ...(results ? [["Results", "music-crumb", "0"]] : []),
+    ...levels.map((label, index) => [label, "music-crumb", String(index + 1)]),
+  ];
+  return `<nav class="folder-breadcrumb music-trail" aria-label="Library location">${crumbs
+    .map(([label, action, id], index) =>
+      (index ? icon("chevron-right") : "") +
+      (index === crumbs.length - 1 ? `<span aria-current="location">${escape(label)}</span>` : button(escape(label), action, id, "text-button")),
+    )
+    .join("")}</nav>`;
+}
+function musicRows(v, rows, action, { head = "", songs = false, playlist = "", album = false, episodes = false } = {}) {
   const editable = musicEditable(v);
-  return `<div class="history-group music-tracks${songs ? " music-songs" : ""}${album ? " music-with-album" : ""}" data-volume="${escape(v.id)}"${playlist ? ` data-playlist="${escape(playlist)}"` : ""}>${head}${rows
+  return `<div class="history-group music-tracks${songs ? " music-songs" : ""}${album ? " music-with-album" : ""}${episodes ? " music-episodes" : ""}" data-volume="${escape(v.id)}"${playlist ? ` data-playlist="${escape(playlist)}"` : ""}>${head}${rows
     .map((row, index) => {
-      const number = `<span class="music-track-number mono">${index + 1}</span><span class="music-track-playing">${icon("music")}</span>`;
+      const number = `<span class="music-track-number mono">${episodes ? icon("play") : index + 1}</span><span class="music-track-playing"><span class="music-bars" aria-hidden="true"><i></i><i></i><i></i></span></span>`;
       const position = row.position === undefined ? "" : ` data-position="${row.position}"`;
       const remove = row.remove ? button("Remove from playlist", "music-remove", String(row.position), "secondary", "list-minus") : "";
       if (!row.track)
         return `<div class="music-track music-track-missing"${position}><div class="music-track-play">${number}<strong>${escape(row.title)}</strong><span>${escape(row.note)}</span>${album ? "<span></span>" : ""}<span class="mono"></span></div>${remove ? musicMenu(remove) : "<span></span>"}</div>`;
-      const items = (editable ? button("Add to playlist…", "music-add", row.track.path, "secondary", "list-plus") : "") + remove;
-      return `<div class="music-track" data-path="${escape(row.track.path)}"${position}><button type="button" class="music-track-play" data-action="${action}" data-id="${escape(row.id)}" aria-label="${escape(`Play ${row.track.title}`)}">${number}<strong>${escape(row.track.title)}</strong><span>${escape(row.subtitle)}</span>${album ? `<span>${escape(row.track.album)}</span>` : ""}<span class="mono">${formatDuration(row.track.duration)}</span></button>${items ? musicMenu(items) : "<span></span>"}</div>`;
+      const items =
+        (editable ? button("Add to playlist…", "music-add", row.track.path, "secondary", "list-plus") : "") +
+        remove +
+        (editable ? button("Delete…", "music-delete", row.track.path, "secondary danger menu-item-separated", "trash-2") : "");
+      const saved = audioPositions.get(positionKey(v.id, row.track.path));
+      const resume = saved && saved.hash === row.track.hash ? saved : null;
+      const length = resume
+        ? `<span class="mono music-left">${timeLeft(resume.duration - resume.position)}</span>`
+        : row.track.podcast
+          ? `<span class="music-length">${hoursLength(row.track.duration)}</span>`
+          : `<span class="mono">${formatDuration(row.track.duration)}</span>`;
+      const progress = resume
+        ? `<progress class="music-progress" max="100" value="${Math.round((resume.position / resume.duration) * 100)}" aria-label="Played"></progress>`
+        : "";
+      return `<div class="music-track" data-path="${escape(row.track.path)}"${position}><button type="button" class="music-track-play" data-action="${action}" data-id="${escape(row.id)}" aria-label="${escape(`Play ${row.track.title}`)}">${number}<strong>${escape(row.track.title)}</strong><span class="music-sub"><span class="music-sub-text">${escape(row.subtitle)}</span>${progress}</span>${album ? `<span>${escape(row.track.album)}</span>` : ""}${length}</button>${items ? musicMenu(items) : "<span></span>"}</div>`;
     })
     .join("")}</div>`;
 }
@@ -4377,8 +4481,11 @@ function musicResults(v, library) {
   const albums = library.albumList.filter((album) => has(album.title, album.artist));
   const artists = library.artists.filter((artist) => has(artist.name));
   const playlists = library.playlists.filter((list) => has(list.name));
-  if (!songs.length && !albums.length && !artists.length && !playlists.length)
+  const shows = library.shows.filter((show) => has(show.name));
+  const episodes = library.shows.flatMap((show) => show.tracks).filter((track) => has(track.title, track.album));
+  if (!songs.length && !albums.length && !artists.length && !playlists.length && !shows.length && !episodes.length)
     return empty(`No results for “${escape(text)}”`, "", "", "search");
+  const heard = episodes.slice(0, musicQuery.episodes * MUSIC_LIST_PAGE);
   const shown = songs.slice(0, musicQuery.songs * MUSIC_LIST_PAGE);
   const listed = artists.slice(0, musicQuery.artists * MUSIC_LIST_PAGE);
   return [
@@ -4405,6 +4512,17 @@ function musicResults(v, library) {
         "Playlists",
         `<div class="history-group">${playlists.map((list) => musicRow(v, "music-playlist", list.id, list.cover, list.name, musicCount(list.entries.length, "track"), "list-music")).join("")}</div>`,
       ),
+    shows.length && section("Shows", musicShows(v, { shows })),
+    episodes.length &&
+      section(
+        "Episodes",
+        musicRows(
+          v,
+          heard.map((track) => ({ track, id: track.path, subtitle: [track.album, episodeDay(track.date)].filter(Boolean).join(" · ") })),
+          "music-episode",
+          { songs: true, episodes: true },
+        ) + (episodes.length > heard.length ? musicMore("Show more episodes", "episodes") : ""),
+      ),
   ]
     .filter(Boolean)
     .join("");
@@ -4430,13 +4548,12 @@ function musicArtists(v, library) {
 }
 function musicArtist(v, artist) {
   const tracks = artist.albums.reduce((total, album) => total + album.tracks.length, 0);
-  return `<div class="music-head">${musicCover(v.id, artist.cover, "mic-vocal", " large")}<div class="music-head-info">${button(escape(musicSearching() ? "Results" : "Artists"), "music-back", "", "back", "chevron-left")}<div><h2>${escape(artist.name)}</h2><p>${musicCount(artist.albums.length, "album")} · ${musicCount(tracks, "track")}</p><div class="heading-actions">${button("Shuffle", "music-shuffle-artist", "", "secondary", "shuffle")}</div></div></div></div>${musicGrid(
+  return `<div class="music-head">${musicCover(v.id, artist.cover, "mic-vocal", " large")}<div class="music-head-info"><div><h2>${escape(artist.name)}</h2><p>${musicCount(artist.albums.length, "album")} · ${musicCount(tracks, "track")}</p><div class="heading-actions">${button("Shuffle", "music-shuffle-artist", "", "secondary", "shuffle")}</div></div></div></div>${musicGrid(
     artist.albums.map((item) => albumCard(v.id, item, item.year ? String(item.year) : musicCount(item.tracks.length, "track"))),
     musicView.pages * MUSIC_GRID_PAGE,
   )}`;
 }
 function musicTracks(v, album) {
-  const back = musicView.artist ? album.artist : musicBackLabel();
   const summary = [
     album.artist,
     album.year,
@@ -4444,7 +4561,7 @@ function musicTracks(v, album) {
     formatDuration(album.duration),
   ].filter(Boolean);
   const shown = album.tracks.slice(0, musicView.pages * MUSIC_LIST_PAGE);
-  return `<div class="music-head">${musicCover(v.id, album.cover, "disc-3", " large")}<div class="music-head-info">${button(escape(back), "music-back", "", "back", "chevron-left")}<div><h2>${escape(album.title)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${button("Play", "music-play", "", "primary", "play")}${button("Shuffle", "music-shuffle", "", "secondary", "shuffle")}</div></div></div></div>${musicRows(
+  return `<div class="music-head">${musicCover(v.id, album.cover, "disc-3", " large")}<div class="music-head-info"><div><h2>${escape(album.title)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${button("Play", "music-play", "", "primary", "play")}${button("Shuffle", "music-shuffle", "", "secondary", "shuffle")}</div></div></div></div>${musicRows(
     v,
     shown.map((track, index) => ({ track, id: index, subtitle: track.artist })),
     "music-track",
@@ -4473,7 +4590,7 @@ function musicPlaylist(v, list) {
           remove: editable,
         },
   );
-  return `<div class="music-head">${musicCover(v.id, list.cover, "list-music", " large")}<div class="music-head-info">${button(escape(musicBackLabel()), "music-back", "", "back", "chevron-left")}<div><h2>${escape(list.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${list.tracks.length ? button("Play", "music-play", "", "primary", "play") + button("Shuffle", "music-shuffle", "", "secondary", "shuffle") : ""}${menu}</div></div></div></div>${musicRows(v, rows, "music-track", { head: musicHeadRow(true), playlist: list.id, album: true })}${list.entries.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
+  return `<div class="music-head">${musicCover(v.id, list.cover, "list-music", " large")}<div class="music-head-info"><div><h2>${escape(list.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${list.tracks.length ? button("Play", "music-play", "", "primary", "play") + button("Shuffle", "music-shuffle", "", "secondary", "shuffle") : ""}${menu}</div></div></div></div>${musicRows(v, rows, "music-track", { head: musicHeadRow(true), playlist: list.id, album: true })}${list.entries.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
 }
 function musicRecent(v, library) {
   const played = playedItems(library, musicHistory(v.id));
@@ -4483,6 +4600,17 @@ function musicRecent(v, library) {
     return `<p class="music-caption">Recently added · Albums and playlists you play on this device appear here.</p>${musicGrid(library.recent.map((album) => albumCard(v.id, album)))}`;
   return empty("Nothing played yet", "Albums and playlists you play on this device appear here.", "", "clock");
 }
+function musicResumeCard(v, library) {
+  if (musicView.album || musicView.playlist || musicView.artist || musicView.show || musicSearching()) return "";
+  const loaded = musicPlayer?.loadedTrack;
+  const row = [...audioPositions.values()]
+    .filter((item) => item.volume === v.id && library.tracks.get(item.path)?.hash === item.hash)
+    .find((item) => !(loaded && loaded.path === item.path && musicPlayer.volume === item.volume));
+  if (!row) return "";
+  const track = library.tracks.get(row.path);
+  const where = row.device === status.id ? "this device" : escape(row.name);
+  return `<div class="resume-card" role="status" data-path="${escape(row.path)}">${musicCover(v.id, track.cover, track.podcast ? "podcast" : "music")}<div class="resume-text"><strong>${escape(track.title)}</strong><p>Pick up where you left off · <span class="mono">${musicClock(row.position)}</span> · ${where}, ${escape(relative(new Date(row.updated).toISOString()))}</p></div>${button("Continue", "music-resume", row.path, "primary small-button")}${button("Start over", "music-resume-start", row.path, "secondary small-button")}</div>`;
+}
 function musicBody(v, entry) {
   const library = entry.library;
   if (!library.tracks.size)
@@ -4491,10 +4619,42 @@ function musicBody(v, entry) {
       : empty("No music yet", "Audio files added to this folder appear here.", "", "music");
   if (musicView.tab === "playlists" && !library.playlists.length)
     musicView = { tab: "artists", artist: null, album: null, playlist: null, pages: 1, trail: [] };
+  if (!musicOnly(library) && !["podcasts"].includes(musicView.tab))
+    musicView = { ...musicView, tab: "podcasts", artist: null, album: null, playlist: null };
   const content = musicContent(v, library);
-  return `${musicTabs(library)}<div class="music-view">${content}</div>`;
+  return `${musicDeep() ? "" : musicResumeCard(v, library) + musicTabs(library)}<div class="music-view">${content}</div>`;
+}
+const episodeDay = (date) =>
+  date ? new Date(`${date}T12:00:00Z`).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "";
+function musicShows(v, library) {
+  return `<div class="history-group">${library.shows
+    .map((show) =>
+      musicRow(v, "music-show", show.id, show.cover, show.name, [musicCount(show.tracks.length, "episode"), episodeDay(show.latest)].filter(Boolean).join(" · "), "podcast"),
+    )
+    .join("")}</div>`;
+}
+const hoursLength = (seconds) => {
+  const minutes = Math.round((seconds || 0) / 60);
+  return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : minutes ? `${minutes} min` : "";
+};
+function musicShow(v, show) {
+  const summary = [musicCount(show.tracks.length, "episode"), hoursLength(show.duration)].filter(Boolean);
+  const saved = show.tracks.find((track) => audioPositions.get(positionKey(v.id, track.path))?.hash === track.hash);
+  const play = saved
+    ? button("Continue", "music-resume", saved.path, "primary", "play")
+    : button("Play", "music-play", "", "primary", "play");
+  const shown = show.tracks.slice(0, musicView.pages * MUSIC_LIST_PAGE);
+  return `<div class="music-head">${musicCover(v.id, show.cover, "podcast", " large")}<div class="music-head-info"><div><h2>${escape(show.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${play}</div></div></div></div>${musicRows(
+    v,
+    shown.map((track, index) => ({ track, id: index, subtitle: episodeDay(track.date) })),
+    "music-track",
+    { head: musicHeadRow(false, "Published", false), episodes: true },
+  )}${show.tracks.length > shown.length ? `<div class="pagination">${button("Show more episodes", "music-more", "", "secondary")}</div>` : ""}`;
 }
 function musicContent(v, library) {
+  const show = musicView.show && library.shows.find((item) => item.id === musicView.show);
+  if (show) return musicShow(v, show);
+  musicView.show = null;
   const album = musicView.album && library.albums.get(musicView.album);
   if (album) return musicTracks(v, album);
   const list = musicView.playlist && library.playlists.find((item) => item.id === musicView.playlist);
@@ -4506,6 +4666,7 @@ function musicContent(v, library) {
   if (musicSearching()) return musicResults(v, library);
   const size = musicView.pages * MUSIC_GRID_PAGE;
   if (musicView.tab === "artists") return musicArtists(v, library);
+  if (musicView.tab === "podcasts") return musicShows(v, library);
   if (musicView.tab === "recent") return musicRecent(v, library);
   if (musicView.tab === "playlists") return musicGrid(library.playlists.map((item) => playlistCard(v.id, item)), size);
   return musicGrid(library.albumList.map((item) => albumCard(v.id, item)), size);
@@ -4528,15 +4689,17 @@ function musicSearchInput(value) {
   mountMusicCovers();
   markMusicPlaying();
 }
-const musicPlace = (v) => JSON.stringify([v.id, musicView.tab, musicView.artist, musicView.album, musicView.playlist]);
+const musicPlace = (v) => JSON.stringify([v.id, musicView.tab, musicView.artist, musicView.album, musicView.playlist, musicView.show]);
 const musicState = (v, entry, failure) =>
-  JSON.stringify([musicPlace(v), musicView.pages, entry?.version, entry?.indexing, failure, musicQuery]);
+  JSON.stringify([musicPlace(v), musicView.pages, entry?.version, entry?.indexing, failure, musicQuery, audioSignature(v.id)]);
 function musicHeading(v, entry) {
   const library = entry?.library;
   const summary = library
-    ? `${musicCount(library.tracks.size, "track")} · ${musicCount(library.albumList.length, "album")} · ${bytes(v.bytes || 0)}`
+    ? library.shows.length && !library.albumList.length
+      ? `${musicCount(library.tracks.size, "episode")} · ${musicCount(library.shows.length, "show")} · ${bytes(v.bytes || 0)}`
+      : `${musicCount(library.tracks.size, "track")} · ${musicCount(library.albumList.length, "album")} · ${bytes(v.bytes || 0)}`
     : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)}`;
-  return `<div class="heading"><div class="detail-title"><div class="tile large">${icon("music")}</div><div><h1>${escape(v.name)}</h1><p>${summary}</p></div></div><div class="heading-actions">${musicModeButton(v)}${folderActionsMenu(v)}</div></div>`;
+  return `<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${summary}</p></div></div><div class="heading-actions">${library?.tracks.size && musicTabList(library).length < 2 ? musicSearchButton(library, "ghost icon-button") : ""}${musicModeButton(v)}${folderActionsMenu(v)}</div></div>`;
 }
 function renderMusic(v, scroll = null) {
   if (!v) return;
@@ -4548,8 +4711,9 @@ function renderMusic(v, scroll = null) {
   const typing = document.activeElement?.id === "music-search-input";
   const place = () => musicPlace(v);
   const state = () => musicState(v, entry, failure);
-  const head = button("Folders", "back-folders", "", "back", "chevron-left") + musicHeading(v, entry);
+  const heading = () => musicTrail(v, entry?.library) + (entry && musicDeep() ? "" : musicHeading(v, entry));
   if (scroll === null && page && content.dataset.detail === v.id && musicShown.state === state()) {
+    const head = heading();
     if (musicShown.head !== head) {
       content.querySelector(".detail-head").innerHTML = head;
       musicShown.head = head;
@@ -4563,7 +4727,14 @@ function renderMusic(v, scroll = null) {
     : failure
       ? empty("Library unavailable", "Arca could not read this audio library. Try again.", button("Retry", "music-retry", "", "secondary"), "music")
       : scaffoldRow("card");
+  const moved = !!page && musicShown.place !== place();
+  const head = heading();
   content.innerHTML = `<div class="detail-head">${head}</div><div class="page music-page">${body}</div>`;
+  if (moved && !reducedMotion())
+    $("#content .music-view")?.animate?.([{ opacity: 0 }, { opacity: 1 }], {
+      duration: motionDuration("--motion-fast"),
+      easing: MOTION_EASE,
+    });
   content.dataset.detail = v.id;
   musicShown = { place: place(), state: state(), head };
   icons();
@@ -4656,7 +4827,10 @@ function musicAudio() {
   musicElement.addEventListener("timeupdate", musicProgress);
   musicElement.addEventListener("durationchange", musicProgress);
   musicElement.addEventListener("play", musicControls);
-  musicElement.addEventListener("pause", musicControls);
+  musicElement.addEventListener("pause", () => {
+    musicControls();
+    saveAudioPosition(true);
+  });
   musicElement.addEventListener("ended", musicEnded);
   musicElement.addEventListener("error", musicFailed);
   document.body.append(musicElement);
@@ -4673,37 +4847,46 @@ function musicResume() {
     musicControls();
   }
 }
-function musicStart(volume, context, tracks, start, shuffle, positions = null) {
+const musicChoice = { shuffle: false, repeat: "off" };
+function musicStart(volume, context, tracks, start, shuffle, positions = null, at = 0) {
+  saveAudioPosition(true);
+  const spoken = !!tracks[start]?.podcast;
+  if (spoken) shuffle = false;
+  else musicChoice.shuffle = shuffle;
   musicPlayer = {
     volume,
     context,
     tracks,
     positions,
     shuffle,
-    repeat: musicPlayer?.repeat || "off",
+    repeat: spoken ? "off" : musicChoice.repeat,
     order: shuffle ? shuffleOrder(tracks.length, start) : tracks.map((_, index) => index),
     position: shuffle ? 0 : start,
     failed: false,
     scope: musicScope(),
   };
   if (["album", "playlist"].includes(context.kind)) rememberMusic(volume, context);
-  return musicLoad();
+  return musicLoad(at);
 }
 function musicSeekOnLoad(at) {
   if (!at) return;
   const serial = musicSerial;
   const src = musicElement.getAttribute("src");
+  if (musicPlayer) musicPlayer.seeking = true;
   musicElement.addEventListener(
     "loadedmetadata",
     () => {
       if (serial === musicSerial && musicElement.getAttribute("src") === src) musicElement.currentTime = at;
+      if (serial === musicSerial && musicPlayer) musicPlayer.seeking = false;
     },
     { once: true },
   );
 }
 function musicLoad(at = 0) {
+  saveAudioPosition(true);
   const state = musicPlayer;
   const track = musicCurrent();
+  if (sleepTimer?.mode === "end" && (sleepTimer.volume !== state.volume || sleepTimer.path !== track.path)) setSleep("off");
   const serial = ++musicSerial;
   const audio = musicAudio();
   state.failed = false;
@@ -4713,6 +4896,9 @@ function musicLoad(at = 0) {
   const query = new URLSearchParams({ volume: state.volume, path: track.path, hash: track.hash });
   const begin = (url) => {
     state.loading = false;
+    state.loadedTrack = track;
+    for (const card of document.querySelectorAll("#content .resume-card"))
+      if (card.dataset.path === track.path) card.remove();
     audio.src = url;
     musicSeekOnLoad(at);
     musicResume();
@@ -4827,6 +5013,11 @@ function musicStep(direction, ended = false) {
   void musicLoad();
 }
 function musicEnded() {
+  saveAudioPosition(true);
+  if (sleepTimer?.mode === "end") {
+    setSleep("off");
+    return musicControls();
+  }
   if (musicPlayer?.repeat !== "one") return musicStep(1, true);
   musicElement.currentTime = 0;
   musicResume();
@@ -4840,6 +5031,7 @@ function musicPlayerButton(action, label, symbol, pressed = null, disabled = fal
   return `<button type="button" class="${cls} icon-button" data-player="${action}" data-symbol="${symbol}" data-tooltip="${label}" aria-label="${label}"${pressed === null ? "" : ` aria-pressed="${pressed}"`}${disabled ? " disabled" : ""}>${icon(symbol)}</button>`;
 }
 function patchPlayerButtons(markup) {
+  const swapped = [];
   const fresh = document.createElement("div");
   fresh.innerHTML = markup;
   for (const next of fresh.children)
@@ -4850,9 +5042,16 @@ function patchPlayerButtons(markup) {
       if (old.dataset.symbol !== next.dataset.symbol) {
         old.dataset.symbol = next.dataset.symbol;
         old.innerHTML = icon(next.dataset.symbol);
+        swapped.push(old);
       }
     }
   icons();
+  if (!reducedMotion())
+    for (const control of swapped)
+      control.firstElementChild?.animate?.([{ opacity: 0 }, { opacity: 1 }], {
+        duration: motionDuration("--motion-fast"),
+        easing: MOTION_EASE,
+      });
 }
 function musicToggleButton(cls) {
   const playing = !musicAudio().paused && !musicPlayer.failed;
@@ -4864,35 +5063,140 @@ function musicNextButton() {
 }
 function musicControlButtons() {
   const state = musicPlayer;
+  const episode = !!musicCurrent()?.podcast;
   return (
-    musicPlayerButton("shuffle", "Shuffle", "shuffle", state.shuffle) +
+    (episode ? "" : musicPlayerButton("shuffle", "Shuffle", "shuffle", state.shuffle)) +
     musicPlayerButton("previous", "Previous", "skip-back") +
     musicToggleButton("primary music-play") +
     musicNextButton() +
-    musicPlayerButton(
-      "repeat",
-      { off: "Repeat", all: "Repeat all", one: "Repeat one" }[state.repeat],
-      state.repeat === "one" ? "repeat-1" : "repeat",
-      state.repeat !== "off",
-    )
+    (episode
+      ? ""
+      : musicPlayerButton(
+          "repeat",
+          { off: "Repeat", all: "Repeat all", one: "Repeat one" }[state.repeat],
+          state.repeat === "one" ? "repeat-1" : "repeat",
+          state.repeat !== "off",
+        ))
   );
+}
+let sleepTimer = null,
+  sleepTicker = 0,
+  sleepFading = false;
+const sleepOptions = () => [
+  ["30", "30 minutes"],
+  ["60", "1 hour"],
+  ["end", musicCurrent()?.podcast ? "End of episode" : "End of track"],
+];
+function sleepLeft() {
+  if (!sleepTimer) return "";
+  if (sleepTimer.mode === "end") return musicCurrent()?.podcast ? "Episode end" : "Track end";
+  return musicClock(Math.max(0, Math.ceil((sleepTimer.until - Date.now()) / 1000)));
+}
+function musicSleepMenu() {
+  const items = sleepOptions()
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="secondary" data-sleep="${id}" aria-checked="${sleepTimer?.choice === id}" role="menuitemradio">${icon(sleepTimer?.choice === id ? "check" : "moon")}${label}</button>`,
+    )
+    .join("");
+  const off = sleepTimer ? `<button type="button" class="secondary menu-item-separated" data-sleep="off" role="menuitem">${icon("x")}Off</button>` : "";
+  return `<details class="details-menu sleep-menu${sleepTimer ? " sleep-active" : ""}"><summary class="ghost icon-button sleep-button" aria-label="${sleepTimer ? `Sleep timer, stops in ${escape(sleepLeft())}` : "Sleep timer"}" data-tooltip="${sleepTimer ? `Stops at ${escape(sleepLeft())}` : "Sleep timer"}">${icon("moon")}<span class="sleep-left mono">${escape(sleepLeft())}</span></summary><div class="menu-items" role="menu">${items}${off}</div></details>`;
+}
+function paintSleep() {
+  const holder = document.querySelector("#music-player .sleep-slot");
+  if (holder) {
+    const open = holder.querySelector("details")?.open;
+    holder.innerHTML = musicSleepMenu();
+    if (open) holder.querySelector("details").open = true;
+  }
+  const line = document.querySelector("#music-mini .music-mini-text > span");
+  const track = musicCurrent();
+  if (line && track)
+    line.innerHTML = sleepTimer
+      ? `${icon("moon")}<span class="mono">${escape(sleepLeft())}</span>`
+      : escape(track.podcast ? track.album : track.artist);
+  icons();
+}
+function setSleep(choice) {
+  clearInterval(sleepTicker);
+  sleepTimer =
+    choice === "off" || !choice
+      ? null
+      : choice === "end"
+        ? { choice, mode: "end", volume: musicPlayer?.volume, path: musicCurrent()?.path }
+        : { choice, mode: "time", until: Date.now() + Number(choice) * 60000 };
+  if (sleepTimer?.mode === "time")
+    sleepTicker = setInterval(() => {
+      if (!sleepTimer) return clearInterval(sleepTicker);
+      if (Date.now() >= sleepTimer.until) return sleepNow();
+      paintSleep();
+    }, 1000);
+  paintSleep();
+}
+function sleepNow() {
+  clearInterval(sleepTicker);
+  sleepTimer = null;
+  const audio = musicAudio();
+  if (sleepFading || audio.paused) return paintSleep();
+  sleepFading = true;
+  const level = audio.volume;
+  let step = 0;
+  const fade = setInterval(() => {
+    step++;
+    audio.volume = Math.max(0, level * (1 - step / 25));
+    if (step < 25) return;
+    clearInterval(fade);
+    audio.pause();
+    saveAudioPosition(true);
+    audio.volume = level;
+    sleepFading = false;
+    paintSleep();
+  }, 200);
+  paintSleep();
 }
 function musicControls() {
   if (!musicPlayer) return;
   patchPlayerButtons(musicControlButtons());
+  markMusicPlaying();
   musicBroadcast();
   if (navigator.mediaSession)
     try {
       navigator.mediaSession.playbackState = musicAudio().paused ? "paused" : "playing";
     } catch {}
 }
+function paintPlaying(elapsed, total) {
+  const value = total ? Math.round((elapsed / total) * 1000) : 0;
+  const mini = $("#music-mini .music-mini-progress");
+  if (mini) mini.value = value;
+  if (!total) return;
+  for (const row of document.querySelectorAll(".music-tracks .music-track.playing")) {
+    const cell = row.querySelector(".music-sub");
+    if (!cell) continue;
+    let bar = cell.querySelector(".music-progress");
+    if (!bar) {
+      bar = document.createElement("progress");
+      bar.className = "music-progress";
+      bar.max = 100;
+      bar.setAttribute("aria-label", "Played");
+      cell.append(bar);
+    }
+    bar.value = Math.round((elapsed / total) * 100);
+    const length = row.querySelector(".music-track-play > .mono:last-child");
+    if (length) {
+      length.classList.add("music-left");
+      length.textContent = timeLeft(total - elapsed);
+    }
+  }
+}
 function musicProgress() {
+  saveAudioPosition();
   const root = $("#music-player");
   const track = musicCurrent();
   if (!root || !track) return;
   const audio = musicAudio();
   const total = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : track.duration || 0;
   const elapsed = Math.min(audio.currentTime || 0, total || Infinity);
+  paintPlaying(elapsed, total);
   const seek = root.querySelector('[data-player="seek"]');
   if (!seek) return;
   seek.max = String(total || 1);
@@ -4918,18 +5222,18 @@ function renderMini(track) {
   const card = $("#music-mini");
   if (!card) return;
   if (!track) return void (card.innerHTML = "");
-  const cover = musicCover(musicPlayer.volume, track.cover, "music");
+  const cover = musicCover(musicPlayer.volume, track.cover, track.podcast ? "podcast" : "music");
   if (card.querySelector(".music-mini-track")) {
     card.querySelector(".music-mini-track > .music-cover").outerHTML = cover;
     patchPlayerButtons(musicToggleButton() + musicNextButton());
   } else
-    card.innerHTML = `<button type="button" class="music-mini-track" data-player="show">${cover}<span class="music-mini-text"><strong></strong><span></span></span></button>${musicToggleButton("primary music-mini-play")}${musicNextButton()}`;
+    card.innerHTML = `<button type="button" class="music-mini-track" data-player="show">${cover}<span class="music-mini-text"><strong></strong><span></span></span></button>${musicToggleButton("primary music-mini-play")}${musicNextButton()}<progress class="music-mini-progress" max="1000" value="0" aria-hidden="true"></progress>`;
   const open = card.querySelector(".music-mini-track");
   open.setAttribute("aria-label", `${track.title} by ${track.artist}, open ${track.album}`);
   open.dataset.tooltip = `Open ${track.album}`;
   open.querySelector("strong").textContent = track.title;
-  open.querySelector(".music-mini-text > span").textContent = track.artist;
-  icons();
+  open.querySelector(".music-mini-text > span").textContent = track.podcast ? track.album : track.artist;
+  paintSleep();
 }
 const musicInLibrary = () =>
   view === "folders" && folderTab === "library" && musicAvailable(status?.volumes?.find((item) => item.id === detailId));
@@ -4969,7 +5273,10 @@ function musicPlayPause() {
 }
 async function musicShowAlbum() {
   const track = musicCurrent();
-  if (track) await musicReveal({ tab: "albums", artist: null, album: track.albumId, playlist: null, pages: 1, trail: [] });
+  if (!track) return;
+  if (track.podcast)
+    return musicReveal({ tab: "podcasts", artist: null, album: null, playlist: null, show: showId(track.album), pages: 1, trail: [] });
+  await musicReveal({ tab: "albums", artist: null, album: track.albumId, playlist: null, pages: 1, trail: [] });
 }
 async function musicShowArtist() {
   const track = musicCurrent();
@@ -4993,6 +5300,8 @@ async function musicReveal(next) {
   musicView = next;
   musicQuery = musicSearch();
   await render();
+  if (window.history.state?.music) window.history.pushState(musicEntry(musicPlayer.volume, 0), "", location.hash);
+  else window.history.replaceState(musicEntry(musicPlayer.volume, 0), "", location.hash);
   updateShell();
   $('#music-player [data-player="toggle"]')?.focus();
 }
@@ -5005,10 +5314,12 @@ function renderPlayer() {
   placeMusic();
   musicBroadcast();
   if (!track) return void (root.innerHTML = "");
-  const cover = musicCover(musicPlayer.volume, track.cover, "music");
-  const fresh = !root.querySelector(".music-player-track");
+  const cover = musicCover(musicPlayer.volume, track.cover, track.podcast ? "podcast" : "music");
+  const kind = track.podcast ? "episode" : "track";
+  const fresh = !root.querySelector(".music-player-track") || root.dataset.kind !== kind;
+  root.dataset.kind = kind;
   if (fresh)
-    root.innerHTML = `<div class="music-player-track"><button type="button" class="music-player-cover" data-player="show" tabindex="-1" aria-hidden="true">${cover}</button><div><button type="button" class="music-player-title" data-player="show"><strong></strong></button><p><button type="button" class="music-player-link" data-player="artist"></button> · <button type="button" class="music-player-link" data-player="show"></button></p></div></div><div class="music-player-center"><div class="music-player-controls">${musicControlButtons()}</div><div class="music-seek"><span class="mono" data-music-time="elapsed">0:00</span><input type="range" class="music-range" data-player="seek" aria-label="Seek" min="0" max="1" step="any" value="0"><span class="mono" data-music-time="total">0:00</span></div></div><div class="music-player-volume">${musicMuteButton(1)}<input type="range" class="music-range" data-player="volume" aria-label="Volume" min="0" max="1" step="0.01" value="1"></div>`;
+    root.innerHTML = `<div class="music-player-track"><button type="button" class="music-player-cover" data-player="show" tabindex="-1" aria-hidden="true">${cover}</button><div><button type="button" class="music-player-title" data-player="show"><strong></strong></button><p><button type="button" class="music-player-link" data-player="artist"></button> · <button type="button" class="music-player-link" data-player="show"></button></p></div></div><div class="music-player-center"><div class="music-player-controls">${musicControlButtons()}</div><div class="music-seek"><span class="mono" data-music-time="elapsed">0:00</span><input type="range" class="music-range" data-player="seek" aria-label="Seek" min="0" max="1" step="any" value="0"><span class="mono" data-music-time="total">0:00</span></div></div><div class="music-player-volume"><span class="sleep-slot">${musicSleepMenu()}</span>${musicMuteButton(1)}<input type="range" class="music-range" data-player="volume" aria-label="Volume" min="0" max="1" step="0.01" value="1"></div>`;
   else {
     root.querySelector(".music-player-cover > .music-cover").outerHTML = cover;
     patchPlayerButtons(musicControlButtons());
@@ -5018,10 +5329,19 @@ function renderPlayer() {
   title.setAttribute("aria-label", `${track.title}, open ${track.album}`);
   title.dataset.tooltip = `Open ${track.album}`;
   const [artist, album] = root.querySelectorAll(".music-player-link");
-  artist.textContent = track.artist;
-  artist.dataset.tooltip = `Open ${track.artist}`;
-  album.textContent = track.album;
-  album.dataset.tooltip = `Open ${track.album}`;
+  if (track.podcast) {
+    artist.textContent = track.album;
+    artist.dataset.player = "show";
+    artist.dataset.tooltip = `Open ${track.album}`;
+    album.textContent = episodeDay(track.date) || "";
+    album.dataset.tooltip = `Open ${track.album}`;
+  } else {
+    artist.textContent = track.artist;
+    artist.dataset.player = "artist";
+    artist.dataset.tooltip = `Open ${track.artist}`;
+    album.textContent = track.album;
+    album.dataset.tooltip = `Open ${track.album}`;
+  }
   if (fresh) icons();
   mountMusicCovers();
   musicProgress();
@@ -5036,6 +5356,7 @@ function markMusicPlaying() {
     for (const row of list.querySelectorAll(".music-track[data-path]")) {
       const playing = here && (ordered ? row.dataset.position === String(position) : row.dataset.path === track.path);
       row.classList.toggle("playing", playing);
+      row.classList.toggle("paused", playing && musicAudio().paused);
       if (playing) row.setAttribute("aria-current", "true");
       else row.removeAttribute("aria-current");
     }
@@ -5069,6 +5390,12 @@ function musicSession() {
     } catch {}
 }
 document.addEventListener("click", (event) => {
+  const sleep = event.target.closest?.("#music-player [data-sleep]");
+  if (sleep) {
+    sleep.closest("details").open = false;
+    setSleep(sleep.dataset.sleep);
+    return;
+  }
   const control = event.target.closest?.("#music-player [data-player], #music-mini [data-player]");
   if (!control || control.disabled || !musicPlayer) return;
   const audio = musicAudio();
@@ -5080,14 +5407,14 @@ document.addEventListener("click", (event) => {
   else if (name === "next") musicStep(1);
   else if (name === "shuffle") {
     const current = musicPlayer.order[musicPlayer.position];
-    musicPlayer.shuffle = !musicPlayer.shuffle;
+    musicPlayer.shuffle = musicChoice.shuffle = !musicPlayer.shuffle;
     musicPlayer.order = musicPlayer.shuffle
       ? shuffleOrder(musicPlayer.tracks.length, current)
       : musicPlayer.tracks.map((_, index) => index);
     musicPlayer.position = musicPlayer.shuffle ? 0 : current;
     musicControls();
   } else if (name === "repeat") {
-    musicPlayer.repeat = nextRepeat(musicPlayer.repeat);
+    musicPlayer.repeat = musicChoice.repeat = nextRepeat(musicPlayer.repeat);
     musicControls();
   } else if (name === "mute") {
     audio.muted = !audio.muted && audio.volume > 0;
@@ -5112,6 +5439,19 @@ document.addEventListener("input", (event) => {
     } catch {}
     musicLevel();
   }
+});
+const musicEntry = (volume, count, scroll = 0) => ({ music: volume, view: musicView, query: musicQuery, count, scroll });
+const musicStack = (volume) => (window.history.state?.music === volume ? window.history.state.count : 0);
+window.addEventListener("popstate", (event) => {
+  if (!ready) return;
+  const saved = event.state?.music === folderViewId ? event.state : null;
+  if (saved) {
+    musicView = saved.view;
+    musicQuery = saved.query;
+  }
+  if (location.hash !== routeURL() || !musicShowing(detailId)) return;
+  if (!saved) musicView = { ...musicView, artist: null, album: null, playlist: null, show: null, pages: 1, trail: [] };
+  renderMusic(status.volumes.find((item) => item.id === detailId), saved?.scroll || 0);
 });
 async function handleMusic(name, id) {
   const v = status.volumes.find((item) => item.id === detailId);
@@ -5148,7 +5488,22 @@ async function handleMusic(name, id) {
       { kind: "album", id: album.id, name: album.title },
       album.tracks,
       album.tracks.indexOf(track),
-      !!musicPlayer?.shuffle,
+      musicChoice.shuffle,
+    );
+  }
+  if (name === "music-episode") {
+    const track = library.tracks.get(id);
+    const show = track && library.shows.find((item) => item.tracks.includes(track));
+    if (!show) return;
+    const saved = audioPositions.get(positionKey(v.id, track.path));
+    return musicStart(
+      v.id,
+      { kind: "show", id: show.id, name: show.name },
+      show.tracks,
+      show.tracks.indexOf(track),
+      false,
+      null,
+      saved && saved.hash === track.hash ? saved.position : 0,
     );
   }
   if (name === "music-shuffle-all") {
@@ -5170,14 +5525,15 @@ async function handleMusic(name, id) {
   }
   if (name === "music-search-apply") return musicSearchInput($("#music-search-input")?.value || "");
   if (name === "music-search-more") {
-    if (["songs", "albums", "artists"].includes(id)) musicQuery = { ...musicQuery, [id]: musicQuery[id] + 1 };
+    if (["songs", "albums", "artists", "episodes"].includes(id)) musicQuery = { ...musicQuery, [id]: musicQuery[id] + 1 };
     renderMusic(v, page()?.scrollTop || 0);
     return;
   }
   if (["music-track", "music-play", "music-shuffle"].includes(name)) {
     const album = musicView.album && library.albums.get(musicView.album);
     const list = !album && musicView.playlist && library.playlists.find((item) => item.id === musicView.playlist);
-    const item = album || list;
+    const show = !album && !list && musicView.show && library.shows.find((item) => item.id === musicView.show);
+    const item = album || list || show;
     if (!item?.tracks.length) return;
     const start =
       name === "music-track"
@@ -5185,18 +5541,50 @@ async function handleMusic(name, id) {
         : name === "music-shuffle"
           ? random(item.tracks.length)
           : 0;
-    const shuffle = name === "music-shuffle" || (name === "music-track" && !!musicPlayer?.shuffle);
+    const shuffle = name === "music-shuffle" || (name === "music-track" && musicChoice.shuffle);
+    const picked = name === "music-track" ? item.tracks[start] : null;
+    const saved = picked && audioPositions.get(positionKey(v.id, picked.path));
     return musicStart(
       v.id,
-      album ? { kind: "album", id: album.id, name: album.title } : { kind: "playlist", id: list.id, name: list.name },
+      album
+        ? { kind: "album", id: album.id, name: album.title }
+        : show
+          ? { kind: "show", id: show.id, name: show.name }
+          : { kind: "playlist", id: list.id, name: list.name },
       item.tracks,
       start,
       shuffle,
       list ? list.positions : null,
+      saved && saved.hash === picked.hash ? saved.position : 0,
     );
   }
   const playlist = (path) => library.playlists.find((item) => item.id === path);
   const edit = (body) => api("/v1/music/playlist", { volume: v.id, ...body });
+  if (name === "music-resume" || name === "music-resume-start") {
+    const track = library.tracks.get(id);
+    if (!track) return;
+    const saved = audioPositions.get(positionKey(v.id, id));
+    $("#content .resume-card")?.remove();
+    return musicStart(v.id, { kind: "track", id, name: track.title }, [track], 0, false, null, name === "music-resume" ? saved?.position || 0 : 0);
+  }
+  if (name === "music-delete") {
+    const track = library.tracks.get(id);
+    if (!track) return;
+    modal(
+      modalHeader(`Delete ${escape(track.title)}?`, "It is removed from every device. History keeps it for the folder's retention and you can restore it from History.", "trash-2"),
+      async () => {
+        const history = await api(`/v1/history?${new URLSearchParams({ volume: v.id, path: id, limit: "1" })}`);
+        await api("/v1/delete-file", { volume: v.id, path: id, rev: history.versions[0]?.rev });
+        if (musicPlayer?.loadedTrack?.path === id && musicPlayer.volume === v.id) stopMusic();
+        audioPositions.delete(positionKey(v.id, id));
+        notice("Track deleted.");
+        await refreshMusic(v.id, true);
+      },
+      "Delete",
+    );
+    $("#submit-dialog").classList.add("danger");
+    return;
+  }
   if (name === "music-add") {
     const track = library.tracks.get(id);
     if (!track) return;
@@ -5279,29 +5667,38 @@ async function handleMusic(name, id) {
   }
   let scroll = 0;
   if (name === "music-tab") {
-    musicView = { tab: MUSIC_TABS[id] ? id : "artists", artist: null, album: null, playlist: null, pages: 1, trail: [] };
+    musicView = { tab: MUSIC_TABS[id] ? id : "artists", artist: null, album: null, playlist: null, show: null, pages: 1, trail: [] };
     musicQuery = musicSearch();
   }
   else if (name === "music-more") {
     musicView.pages++;
     scroll = page()?.scrollTop || 0;
-  } else if (name === "music-back") {
-    const previous = musicView.trail.at(-1) || { pages: 1, scroll: 0 };
+  } else if (name === "music-crumb") {
+    const depth = id === "folder" ? 0 : Number(id);
+    if (!Number.isSafeInteger(depth) || depth < 0) return;
+    const up = (musicView.show ? 1 : (musicView.artist ? 1 : 0) + (musicView.album || musicView.playlist ? 1 : 0)) - depth;
+    if (id !== "folder" && up > 0 && musicStack(v.id) >= up) return void window.history.go(-up);
+    if (id === "folder") musicQuery = musicSearch();
+    const level = (id !== "folder" && musicView.trail[depth]) || { pages: 1, scroll: 0 };
     musicView = {
       ...musicView,
-      ...(musicView.album || musicView.playlist ? { album: null, playlist: null } : { artist: null }),
-      pages: previous.pages,
-      trail: musicView.trail.slice(0, -1),
+      ...(depth ? { album: null, playlist: null, show: null } : { artist: null, album: null, playlist: null, show: null }),
+      pages: level.pages,
+      trail: musicView.trail.slice(0, depth),
     };
-    scroll = previous.scroll;
-  } else if (["music-album", "music-artist", "music-playlist"].includes(name))
+    scroll = level.scroll;
+  } else if (["music-album", "music-artist", "music-playlist", "music-show"].includes(name)) {
+    const count = musicStack(v.id);
+    window.history.replaceState(musicEntry(v.id, count, page()?.scrollTop || 0), "", location.hash);
     musicView = {
       ...musicView,
       [name.slice(6)]: id,
       pages: 1,
       trail: [...musicView.trail, { pages: musicView.pages, scroll: page()?.scrollTop || 0 }],
     };
-  else return;
+    window.history.pushState(musicEntry(v.id, count + 1), "", location.hash);
+  } else return;
+  if (name === "music-crumb") window.history.replaceState(musicEntry(v.id, 0, scroll), "", location.hash);
   renderMusic(v, scroll);
 }
 async function renderDetail(pending = false) {
@@ -5609,9 +6006,9 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
   const summary = roster?.offline
     ? '<p class="hint">Offline · showing saved device information · last known</p>'
     : "";
-  let machineRows = "";
+  let machineRows = status.role === "replica" && status.hub ? hubConnection() : "";
   let html =
-    status.role === "replica" ? section("Hub connection", hubConnection()) : "";
+    status.role === "replica" && !status.hub ? section("Hub connection", hubConnection()) : "";
   const selfAddress = discovered?.tailscale?.self?.addresses?.[0];
   if (status.role === "hub")
     machineRows += row(
@@ -5765,7 +6162,12 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
               "Reconnect to the hub to see its devices.",
             );
   }
-  html += section("Devices", machineRows);
+  html += section(
+    "Devices",
+    machineRows.includes("device-row")
+      ? `<div class="device-list">${machineRows}</div>`
+      : machineRows,
+  );
   if (!fetchData && !discovered)
     html += section("Discovery", scaffoldRow("card", true));
   const found = peers.filter(
@@ -7000,7 +7402,26 @@ async function handle(name, id, control) {
   if (name === "history-folder") {
     historyVolume = id;
     historyPath = null;
-    await render();
+    const list = $("#history-list");
+    const trigger = $("#history-share");
+    if (!list || !trigger) {
+      await render();
+      return;
+    }
+    const chosen = document.querySelector(`#history-share-options [data-id="${typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id}"]`);
+    for (const option of document.querySelectorAll("#history-share-options [role=option]"))
+      option.setAttribute("aria-selected", String(option === chosen));
+    if (chosen) trigger.querySelector("span").textContent = chosen.textContent.trim();
+    closeDropdown(trigger.closest(".dropdown"));
+    const mine = ++renderSerial;
+    list.style.minHeight = `${list.offsetHeight}px`;
+    try {
+      await renderHistory();
+    } finally {
+      if (mine === renderSerial) list.style.minHeight = "";
+    }
+    if (mine === renderSerial && !reducedMotion())
+      list.animate?.([{ opacity: 0.55 }, { opacity: 1 }], { duration: motionDuration("--motion-fast"), easing: MOTION_EASE });
     return;
   }
   if (name === "history-filter") {
@@ -7593,7 +8014,7 @@ async function handle(name, id, control) {
           "Files sync both ways between this folder and the hub. Existing local files are uploaded too.",
           "refresh-cw",
         ) +
-        `<div class="selection-summary"><div class="tile">${icon("folder")}</div><div class="row-main"><strong>${escape(remote.name)}</strong><p>${summary}</p></div><span class="mono">id ${escape(remote.id.slice(0, 4))}</span></div>` +
+        `<div class="selection-summary"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>${escape(remote.name)}</strong><p>${summary}</p></div><span class="mono">id ${escape(remote.id.slice(0, 4))}</span></div>` +
         '<label for="selection-path">Local destination</label>' +
         `<div class="field-with-icon selection-path">${native && !local?.path ? pathPicker("path", "local destination") : icon("folder")}<input id="selection-path" class="mono" name="path" value="${escape(destination)}" ${local?.path ? "readonly" : ""} required></div>` +
         (local?.path
@@ -7771,6 +8192,7 @@ const navigationActions = new Set([
   "music-tab",
   "music-artist",
   "music-album",
+  "music-show",
   "music-playlist",
   "music-add",
   "music-pick",
@@ -7778,13 +8200,17 @@ const navigationActions = new Set([
   "music-remove",
   "music-playlist-rename",
   "music-playlist-delete",
-  "music-back",
+  "music-resume",
+  "music-resume-start",
+  "music-delete",
+  "music-crumb",
   "music-more",
   "music-retry",
   "music-track",
   "music-play",
   "music-shuffle",
   "music-song",
+  "music-episode",
   "music-shuffle-all",
   "music-shuffle-artist",
   "music-search-toggle",
@@ -7829,7 +8255,7 @@ function dispatchControl(control) {
   return navigationActions.has(name) ? navigate(work) : action(work, control);
 }
 document.addEventListener("click", (e) => {
-  document.querySelectorAll(".file-actions-menu[open], .folder-actions-menu[open]").forEach((menu) => {
+  document.querySelectorAll(".details-menu[open]").forEach((menu) => {
     if (!menu.contains(e.target) || e.target.closest("[data-action]"))
       menu.open = false;
   });
@@ -8749,15 +9175,23 @@ document.addEventListener("keydown", (event) => {
 
 // File actions use a native disclosure, with keyboard dismissal and focus return.
 document.addEventListener("keydown", (event) => {
-  const menu = event.target.closest(".file-actions-menu[open], .folder-actions-menu[open]");
+  const menu = event.target.closest(".details-menu[open]");
   if (menu && event.key === "Escape") {
     event.preventDefault();
     menu.open = false;
     menu.querySelector("summary").focus();
   }
 });
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || event.defaultPrevented || !musicShowing(detailId) || !musicDeep()) return;
+  if (event.target.closest?.("input, textarea, select, [contenteditable], .details-menu, .dropdown") || document.querySelector("dialog[open]")) return;
+  const up = $("#content .music-trail .text-button:last-of-type");
+  if (!up) return;
+  event.preventDefault();
+  up.click();
+});
 document.addEventListener("focusin", (event) => {
-  document.querySelectorAll(".file-actions-menu[open], .folder-actions-menu[open]").forEach((menu) => {
+  document.querySelectorAll(".details-menu[open]").forEach((menu) => {
     if (!menu.contains(event.target)) menu.open = false;
   });
 });
@@ -8786,7 +9220,7 @@ function installTooltips() {
     if (!target || target.disabled) return;
     trigger = target;
     timer = setTimeout(() => {
-      if (!target.isConnected) return close();
+      if (!target.isConnected || target.matches("details[open] > summary")) return close();
       tip = document.createElement("span");
       tip.id = "arca-tooltip";
       tip.className = "tooltip";

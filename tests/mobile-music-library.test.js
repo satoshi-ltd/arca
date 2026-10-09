@@ -12,8 +12,17 @@ import {
   HISTORY_LIMIT,
   LIBRARY_CONTEXT,
   libraryTracks,
+  librarySummary,
+  librarySymbol,
+  musicBackLabel,
+  musicPane,
+  musicSearchLabel,
+  episodeRows,
+  formatLength,
   musicSheet,
   musicTabs,
+  playingFolder,
+  savedSymbol,
   searchLibrary,
   nativeLibrary,
   parseHistory,
@@ -143,7 +152,7 @@ test("a track whose copy is missing or older stays in its album as pending, out 
   );
   assert.deepEqual(library.artists.map((artist) => [artist.name, artist.tracks]), [["Ann", 2]]);
   assert.deepEqual(libraryTracks(library), ["m:X/1.mp3", "m:X/3.mp3"]);
-  assert.deepEqual(searchLibrary(library, "two"), { tracks: [], albums: [], artists: [], playlists: [] });
+  assert.deepEqual(searchLibrary(library, "two"), { tracks: [], albums: [], artists: [], playlists: [], shows: [], episodes: [] });
   const car = nativeLibrary(library, "hub");
   assert.deepEqual(car.tracks.map((track) => track.id), ["m:X/1.mp3", "m:X/3.mp3"]);
   assert.deepEqual(car.albums[0].tracks, ["m:X/1.mp3", "m:X/3.mp3"]);
@@ -404,7 +413,7 @@ test("search finds songs, albums and artists ignoring case and accents", () => {
   const metal = searchLibrary(library, "metal");
   assert.deepEqual(metal.artists.map((artist) => artist.name), ["Metallica"]);
   assert.deepEqual(metal.tracks.map((id) => library.tracks.get(id).title), ["Enter Sandman"]);
-  assert.deepEqual(searchLibrary(library, "zzz"), { tracks: [], albums: [], artists: [], playlists: [] });
+  assert.deepEqual(searchLibrary(library, "zzz"), { tracks: [], albums: [], artists: [], playlists: [], shows: [], episodes: [] });
 });
 
 test("shuffle queues the whole library or one artist in album order", () => {
@@ -474,4 +483,83 @@ test("Up next lists the tracks after the playing one in its album or playlist, n
   const various = { ...library, artists: [{ id: "va", name: "Various artists" }, { id: "x", name: "X" }] };
   assert.equal(artistFor(various, { artist: "X", albumArtist: "Various artists" }).id, "x", "the link opens the artist shown, not the album artist");
   assert.equal(artistFor(library, { artist: "Nobody" }), null);
+});
+
+const episode = (path, tags = {}) => row(path, { genre: "Podcast", duration: 1800, ...tags });
+
+test("a folder header counts episodes and shows like desktop, never zero albums, in the singular when there is one", () => {
+  const podcasts = buildLibrary([folder("p", [episode("Show A/2026-10-07 One.mp3", { album: "Show A" }), episode("Show B/2026-10-08 Two.mp3", { album: "Show B" })])]);
+  assert.equal(librarySummary(podcasts), "2 episodes · 2 shows");
+  const one = buildLibrary([folder("p", [episode("Show A/2026-10-07 One.mp3", { album: "Show A" })])]);
+  assert.equal(librarySummary(one), "1 episode · 1 show");
+  const music = buildLibrary([folder("m", [row("A/X/01.mp3", { artist: "A", album: "X", track: 1 })])]);
+  assert.equal(librarySummary(music), "1 track · 1 album");
+  const mixed = buildLibrary([folder("x", [row("A/X/01.mp3", { artist: "A", album: "X", track: 1 }), row("A/X/02.mp3", { artist: "A", album: "X", track: 2 }), episode("Show A/2026-10-07 One.mp3", { album: "Show A" })])]);
+  assert.equal(librarySummary(mixed), "2 tracks · 1 album · 1 show");
+  assert.equal(librarySummary(buildLibrary([])), "0 tracks");
+  assert.doesNotMatch(librarySummary(podcasts), /album/);
+});
+
+test("a podcasts-only library takes the podcast glyph, from the built library or the saved hub answer", () => {
+  const shows = [episode("Show A/2026-10-07 One.mp3", { album: "Show A" }), row("Show A/notes.mp3")];
+  assert.equal(librarySymbol(buildLibrary([folder("p", shows)])), "podcast");
+  assert.equal(librarySymbol(buildLibrary([folder("m", [row("A/X/01.mp3", { artist: "A", album: "X", track: 1 })])])), "music");
+  assert.equal(librarySymbol(null), "music");
+  assert.equal(savedSymbol({ tracks: shows }), "podcast", "a file in a show folder follows its episodes");
+  assert.equal(savedSymbol({ tracks: [...shows, row("A/X/01.mp3", { artist: "A", album: "X", track: 1 })] }), "music");
+  assert.equal(savedSymbol({ tracks: [] }), "music");
+  assert.equal(savedSymbol(null), "music");
+});
+
+test("one header back names the level it returns to, and the Fold splits a list from its selected detail", () => {
+  const library = buildLibrary([folder("m", [row("Extremoduro/La ley innata/01.mp3", { artist: "Extremoduro", album: "La ley innata", track: 1 }), episode("Show A/2026-10-07 One.mp3", { album: "Show A" })])]);
+  const artist = library.artists[0];
+  const album = library.albumOrder[0];
+  const show = library.showOrder[0];
+  assert.equal(musicBackLabel([{ kind: "podcasts" }], 0, library, "podcast-demo", false), "Folders");
+  assert.equal(musicBackLabel([{ kind: "podcasts" }, { kind: "show", id: show }], 1, library, "podcast-demo", false), "podcast-demo");
+  assert.equal(musicBackLabel([{ kind: "albums" }, { kind: "album", id: album }], 1, library, "music", true), "Search");
+  const deep = [{ kind: "artists" }, { kind: "artist", id: artist.id }, { kind: "album", id: album }];
+  assert.equal(musicBackLabel(deep, 2, library, "music", false), "Extremoduro");
+  assert.deepEqual(musicPane(deep, false), { level: 2, detail: null }, "the phone shows one level at a time");
+  assert.deepEqual(musicPane(deep, true), { level: 1, detail: deep[2] }, "the Fold keeps the artist's albums beside the album");
+  assert.equal(musicBackLabel(deep, 1, library, "music", false), "music");
+  assert.deepEqual(musicPane([{ kind: "podcasts" }, { kind: "show", id: show }], true), { level: 0, detail: { kind: "show", id: show } });
+  assert.deepEqual(musicPane([{ kind: "podcasts" }], true), { level: 0, detail: null });
+  assert.deepEqual(musicPane([{ kind: "albums" }, { kind: "album", id: album }], true), { level: 0, detail: { kind: "album", id: album } }, "search results stay beside what they open");
+});
+
+test("the playing track names its folder, so the mini player reads another folder's library", () => {
+  assert.equal(playingFolder(trackNodeId("in:music-demo:albums", "music-demo:ToteKing/01.mp3", 3)), "music-demo");
+  assert.equal(playingFolder(null), null);
+  assert.equal(playingFolder("bogus"), null);
+});
+
+test("search finds shows by name and episodes by title or show, and labels itself by what the library holds", () => {
+  const show = (path, album, title) => episode(path, { album, title });
+  const podcasts = buildLibrary([folder("p", [show("Al Corte/2026-09-25 Mikel.mp3", "Al Corte", "Mikel Azcona"), show("UPSB/2026-10-07 Ola.mp3", "Un Podcast Sobre Bitcoin", "Lo que la ola")])]);
+  const corte = searchLibrary(podcasts, "corte");
+  assert.deepEqual(corte.shows.map((item) => item.name), ["Al Corte"]);
+  assert.deepEqual(corte.episodes.map((id) => podcasts.tracks.get(id).title), ["Mikel Azcona"], "an episode matches its show's name");
+  assert.deepEqual(corte.tracks, [], "episodes never list as songs");
+  assert.deepEqual(searchLibrary(podcasts, "ola").episodes.map((id) => podcasts.tracks.get(id).title), ["Lo que la ola"]);
+  const rows = episodeRows(podcasts, corte.episodes);
+  assert.equal(rows[0].position, 0, "a found episode plays from its place in the show");
+  assert.equal(musicSearchLabel(podcasts), "Search podcasts");
+  const music = buildLibrary([folder("m", [row("A/X/01.mp3", { artist: "A", album: "X", track: 1 })])]);
+  assert.equal(musicSearchLabel(music), "Search music");
+  const mixed = buildLibrary([folder("x", [row("A/X/01.mp3", { artist: "A", album: "X", track: 1 }), show("S/2026-10-07 One.mp3", "S", "One")])]);
+  assert.equal(musicSearchLabel(mixed), "Search");
+});
+
+test("episode lengths read in hours and minutes like desktop", () => {
+  assert.equal(formatLength(3840), "1 h 4 min");
+  assert.equal(formatLength(2700), "45 min");
+  assert.equal(formatDuration(3840), "1:04:00", "music keeps m:ss");
+});
+
+test("captions keep each value whole so a wrap falls only between segments", async () => {
+  const { unbroken, folderSize } = await import("../apps/mobile/src/format.js");
+  assert.equal(unbroken("2 episodes · 2 shows · 80.6 MB local"), "2 episodes · 2 shows · 80.6 MB local");
+  assert.equal(folderSize({ files: 3, bytes: 1048576 * 2 }), "3 files · 2.0 MB");
 });

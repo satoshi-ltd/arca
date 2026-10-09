@@ -73,6 +73,11 @@ export const iconNames = {
   "list-plus": "ListPlus",
   "list-minus": "ListMinus",
   plus: "Plus",
+  moon: "Moon",
+  "audio-lines": "AudioLines",
+  podcast: "Podcast",
+  "rotate-ccw": "RotateCcw",
+  "rotate-cw": "RotateCw",
 };
 export const icons = {
   "map-pin": [
@@ -1008,5 +1013,28 @@ export const icons = {
   plus: [
     ["path", { d: "M5 12h14" }],
     ["path", { d: "M12 5v14" }],
+  ],
+  moon: [["path", { d: "M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" }]],
+  "audio-lines": [
+    ["path", { d: "M2 10v3" }],
+    ["path", { d: "M6 6v11" }],
+    ["path", { d: "M10 3v18" }],
+    ["path", { d: "M14 8v7" }],
+    ["path", { d: "M18 5v13" }],
+    ["path", { d: "M22 10v3" }],
+  ],
+  podcast: [
+    ["path", { d: "M16.85 18.58a9 9 0 1 0-9.7 0" }],
+    ["path", { d: "M8 14a5 5 0 1 1 8 0" }],
+    ["circle", { cx: "12", cy: "11", r: "1" }],
+    ["path", { d: "M13 17a1 1 0 1 0-2 0l.5 4.5a.5.5 0 1 0 1 0Z" }],
+  ],
+  "rotate-ccw": [
+    ["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" }],
+    ["path", { d: "M3 3v5h5" }],
+  ],
+  "rotate-cw": [
+    ["path", { d: "M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" }],
+    ["path", { d: "M21 3v5h-5" }],
   ],
 };

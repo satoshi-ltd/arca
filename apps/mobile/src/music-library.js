@@ -19,6 +19,49 @@ const base = (path) => path.slice(path.lastIndexOf("/") + 1);
 const directoryOf = (path) =>
   path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 const fold = (value) => value.trim().toLowerCase();
+const PODCAST_GENRE = /^podcast$/i;
+export const SPOKEN_SECONDS = 1200;
+const EPISODE_DATE = /^(\d{4}-\d{2}-\d{2})(?!\d)/;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function episodeDate(path) {
+  return EPISODE_DATE.exec(base(path))?.[1] || null;
+}
+export function episodeTitle(item, show) {
+  const tagged = typeof item?.title === "string" ? item.title.trim() : "";
+  const folder = item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")).split("/").pop() : "";
+  const fold = (value) => String(value || "").trim().toLowerCase();
+  if (tagged && fold(tagged) !== fold(show) && fold(tagged) !== fold(folder)) return tagged;
+  const name = item.path.slice(item.path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
+  return name.replace(/^\d{4}-\d{2}-\d{2}\s+/, "") || name;
+}
+export function isEpisode(item) {
+  return (
+    PODCAST_GENRE.test(item?.genre || "") ||
+    (!!episodeDate(item?.path || "") && (!item?.album || !Number.isSafeInteger(item?.track))) ||
+    (!item?.artist &&
+      !item?.albumArtist &&
+      Number.isFinite(item?.duration) &&
+      item.duration >= SPOKEN_SECONDS)
+  );
+}
+export function episodeFolders(items) {
+  const folders = new Set();
+  for (const item of items || [])
+    if (typeof item?.path === "string" && item.path.includes("/") && isEpisode(item))
+      folders.add(item.path.slice(0, item.path.lastIndexOf("/")));
+  return folders;
+}
+export function formatDay(date) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || "");
+  const month = match ? MONTHS[Number(match[2]) - 1] : null;
+  return month ? `${month} ${Number(match[3])}, ${match[1]}` : "";
+}
+export function formatLength(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  const hours = Math.floor(minutes / 60);
+  return hours ? `${hours} h ${minutes % 60} min` : `${minutes} min`;
+}
 
 export function trackTitle(track) {
   if (track.title) return track.title;
@@ -47,6 +90,10 @@ export function parseTrackNode(id) {
     ? { context: parts[1], track: parts[2], position }
     : null;
 }
+export function playingFolder(id) {
+  const track = parseTrackNode(id)?.track;
+  return track?.includes(":") ? track.slice(0, track.indexOf(":")) : null;
+}
 export function nextRepeat(mode) {
   return mode === "off" ? 2 : mode === "all" ? 1 : 0;
 }
@@ -66,6 +113,9 @@ function shortHash(text) {
     b = Math.imul(b ^ code, 0x5bd1e995);
   }
   return (a >>> 0).toString(16).padStart(8, "0") + (b >>> 0).toString(16).padStart(8, "0");
+}
+export function showKey(folder, name) {
+  return `show:${shortHash(JSON.stringify([folder, fold(name)]))}`;
 }
 export function playlistKey(folder, path) {
   return `playlist:${shortHash(JSON.stringify([folder, path]))}`;
@@ -156,23 +206,33 @@ export function buildLibrary(folders) {
   const albums = new Map();
   const waiting = new Map();
   const playlists = [];
+  const shows = new Map();
   for (const folder of folders) {
     const raw = folder.library;
     if (!raw?.tracks) continue;
+    const showFolders = episodeFolders(raw.tracks);
     for (const item of raw.tracks) {
       if (typeof item?.path !== "string") continue;
       const id = trackId(folder.id, item.path);
       const key = albumKey(folder.id, item);
+      const albumName = item.album || base(albumDirectory(item.path)) || UNKNOWN_ALBUM;
+      const podcast =
+        isEpisode(item) ||
+        (item.path.includes("/") && showFolders.has(item.path.slice(0, item.path.lastIndexOf("/"))));
       const track = {
         id,
         folder: folder.id,
         path: item.path,
+        hash: typeof item.hash === "string" ? item.hash : null,
         uri: folder.uri?.(item.path) ?? null,
-        title: trackTitle(item),
-        artist: item.artist || item.albumArtist || UNKNOWN_ARTIST,
+        title: podcast ? episodeTitle(item, albumName) : trackTitle(item),
+        artist: podcast ? albumName : item.artist || item.albumArtist || UNKNOWN_ARTIST,
         albumArtist: item.albumArtist || null,
-        album: item.album || base(albumDirectory(item.path)) || UNKNOWN_ALBUM,
-        albumId: key,
+        album: albumName,
+        albumId: podcast ? null : key,
+        podcast,
+        show: podcast ? showKey(folder.id, albumName) : null,
+        date: podcast ? episodeDate(item.path) : null,
         track: Number.isSafeInteger(item.track) ? item.track : null,
         disc: Number.isSafeInteger(item.disc) ? item.disc : null,
         year: Number.isSafeInteger(item.year) ? item.year : null,
@@ -180,6 +240,21 @@ export function buildLibrary(folders) {
         cover: typeof item.cover === "string" ? item.cover : null,
         added: item.added || null,
       };
+      if (podcast) {
+        let show = shows.get(track.show);
+        if (!show) {
+          show = { id: track.show, name: albumName, tracks: [], rows: [], cover: null, latest: null, duration: 0 };
+          shows.set(track.show, show);
+        }
+        show.rows.push(track);
+        if (folder.present.get(item.path) !== item.hash) pending.set(id, track);
+        else {
+          tracks.set(id, track);
+          show.tracks.push(track);
+          show.duration += track.duration || 0;
+        }
+        continue;
+      }
       if (folder.present.get(item.path) !== item.hash) {
         pending.set(id, track);
         if (!waiting.has(key)) waiting.set(key, []);
@@ -284,7 +359,30 @@ export function buildLibrary(folders) {
     .slice(0, RECENT_ALBUMS)
     .map((album) => album.id);
   playlists.sort((a, b) => compare(a.name, b.name) || compare(a.path, b.path));
+  const newest = (a, b) =>
+    (b.date || "").localeCompare(a.date || "") ||
+    (b.added || "").localeCompare(a.added || "") ||
+    compare(a.title, b.title);
+  const showList = [...shows.values()]
+    .map((show) => {
+      show.rows.sort(newest);
+      show.tracks.sort(newest);
+      show.cover = show.rows.find((episode) => episode.cover)?.cover || null;
+      show.latest = show.rows[0]?.date || null;
+      show.added = show.rows.reduce((last, episode) => (episode.added && (!last || episode.added > last) ? episode.added : last), null);
+      show.rows = show.rows.map((episode) => episode.id);
+      show.tracks = show.tracks.map((episode) => episode.id);
+      return show;
+    })
+    .sort(
+      (a, b) =>
+        (b.latest || "").localeCompare(a.latest || "") ||
+        (b.added || "").localeCompare(a.added || "") ||
+        compare(a.name, b.name),
+    );
   return {
+    shows: new Map(showList.map((show) => [show.id, show])),
+    showOrder: showList.map((show) => show.id),
     tracks,
     pending,
     albums: new Map(albumList.map((album) => [album.id, album])),
@@ -309,16 +407,28 @@ export function nativeLibrary(library, scope) {
       duration: track.duration,
       cover: track.cover,
     })),
-    albums: library.albumOrder.map((id) => {
-      const album = library.albums.get(id);
-      return {
-        id,
-        title: album.title,
-        artist: album.artist,
-        cover: album.cover,
-        tracks: album.tracks,
-      };
-    }),
+    albums: [
+      ...library.albumOrder.map((id) => {
+        const album = library.albums.get(id);
+        return {
+          id,
+          title: album.title,
+          artist: album.artist,
+          cover: album.cover,
+          tracks: album.tracks,
+        };
+      }),
+      ...(library.showOrder || [])
+        .map((id) => library.shows.get(id))
+        .filter((show) => show.tracks.length)
+        .map((show) => ({
+          id: show.id,
+          title: show.name,
+          artist: show.name,
+          cover: show.cover,
+          tracks: show.tracks,
+        })),
+    ],
     artists: library.artists.map((artist) => ({
       id: artist.id,
       name: artist.name,
@@ -377,9 +487,95 @@ export function recentPlayed(library, history) {
 }
 
 export function musicTabs(library) {
-  return library.playlistOrder.length
-    ? ["artists", "albums", "playlists", "recent"]
-    : ["artists", "albums", "recent"];
+  const podcasts = library.showOrder?.length ? ["podcasts"] : [];
+  if (!library.albumOrder.length && podcasts.length) return podcasts;
+  return [
+    "artists",
+    "albums",
+    ...(library.playlistOrder.length ? ["playlists"] : []),
+    "recent",
+    ...podcasts,
+  ];
+}
+
+export const TAB_LABELS = {
+  artists: "Artists",
+  albums: "Albums",
+  playlists: "Playlists",
+  recent: "Recent",
+  podcasts: "Podcasts",
+  artist: "Artist",
+};
+
+export function librarySummary(library) {
+  const episodes = [...library.tracks.values()].filter((track) => track.podcast).length;
+  const songs = library.tracks.size - episodes;
+  const shows = library.showOrder?.length || 0;
+  const parts = [
+    ...(songs || !episodes ? [plural(songs, "track", "tracks")] : []),
+    ...(library.albums.size ? [plural(library.albums.size, "album", "albums")] : []),
+    ...(!songs && episodes ? [plural(episodes, "episode", "episodes")] : []),
+    ...(shows ? [plural(shows, "show", "shows")] : []),
+  ];
+  return parts.join(" · ");
+}
+
+export function librarySymbol(library) {
+  return library?.showOrder?.length && !library.albums.size ? "podcast" : "music";
+}
+
+export function savedSymbol(saved) {
+  const items = Array.isArray(saved?.tracks) ? saved.tracks.filter((item) => typeof item?.path === "string") : [];
+  if (!items.length) return "music";
+  const shows = episodeFolders(items);
+  return items.every((item) => isEpisode(item) || shows.has(directoryOf(item.path))) ? "podcast" : "music";
+}
+
+export function musicPane(route, wide) {
+  if (!wide || route.length < 2) return { level: route.length - 1, detail: null };
+  const level = route.reduce((at, item, index) => (item.kind === "artist" ? index : at), 0);
+  return { level, detail: level < route.length - 1 ? route.at(-1) : null };
+}
+
+export function musicBackLabel(route, level, library, folderName, searching) {
+  if (level === 0) return "Folders";
+  if (level === 1) return searching ? "Search" : folderName;
+  const parent = route[level - 1];
+  if (parent.kind === "artist")
+    return library?.artists.find((item) => item.id === parent.id)?.name || TAB_LABELS.artist;
+  if (parent.kind === "show") return library?.shows.get(parent.id)?.name || folderName;
+  return TAB_LABELS[parent.kind] || folderName;
+}
+
+export function showSummary(show) {
+  return [plural(show.rows.length, "episode", "episodes"), formatLength(show.duration)]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export function showCaption(show) {
+  return [plural(show.rows.length, "episode", "episodes"), formatDay(show.latest)]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export function showRows(library, show) {
+  let ready = 0;
+  return show.rows.map((id, index) => {
+    const here = library.tracks.has(id);
+    const track = here ? library.tracks.get(id) : library.pending.get(id);
+    return {
+      track,
+      title: track.title,
+      state: here ? "ready" : "pending",
+      position: here ? ready++ : null,
+      number: index + 1,
+    };
+  });
+}
+
+export function trackContext(track) {
+  return track?.show || track?.albumId || null;
 }
 
 export const plural = (count, one, many) =>
@@ -407,9 +603,11 @@ export function musicSheet(sheet) {
   if (sheet?.kind === "track-actions")
     return {
       title: sheet.track?.title || sheet.title,
-      icon: "music",
+      icon: sheet.track?.podcast ? "podcast" : "music",
       subtitle: sheet.track
-        ? `${sheet.track.artist} · ${sheet.track.album}`
+        ? sheet.track.podcast
+          ? [sheet.track.artist, formatDay(sheet.track.date)].filter(Boolean).join(" · ")
+          : `${sheet.track.artist} · ${sheet.track.album}`
         : "Not in this folder",
       menu: true,
     };
@@ -501,6 +699,14 @@ export function libraryTracks(library, albumIds = library.albumOrder) {
   return ids;
 }
 
+export function showTracks(library) {
+  const ids = [];
+  for (const id of library.showOrder || [])
+    for (const track of library.shows.get(id)?.tracks || [])
+      if (library.tracks.has(track)) ids.push(track);
+  return ids;
+}
+
 const folded = new WeakMap();
 
 function searchIndex(library) {
@@ -510,6 +716,14 @@ function searchIndex(library) {
       tracks: libraryTracks(library).map((id) => {
         const track = library.tracks.get(id);
         return [id, [track.title, track.artist, track.albumArtist, track.album].map(plain)];
+      }),
+      shows: (library.showOrder || []).map((id) => {
+        const show = library.shows.get(id);
+        return [show, [plain(show.name)]];
+      }),
+      episodes: showTracks(library).map((id) => {
+        const track = library.tracks.get(id);
+        return [id, [track.title, track.album].map(plain)];
       }),
       albums: library.albumOrder.map((id) => {
         const album = library.albums.get(id);
@@ -537,7 +751,26 @@ export function searchLibrary(library, query) {
     albums: hits(index.albums),
     artists: hits(index.artists),
     playlists: hits(index.playlists),
+    shows: hits(index.shows),
+    episodes: hits(index.episodes),
   };
+}
+
+export function musicSearchLabel(library) {
+  return !library.showOrder?.length ? "Search music" : library.albums.size ? "Search" : "Search podcasts";
+}
+
+export function episodeRows(library, ids) {
+  return ids
+    .map((id) => library.tracks.get(id))
+    .filter(Boolean)
+    .map((track, index) => ({
+      track,
+      title: track.title,
+      state: "ready",
+      position: library.shows.get(track.show)?.tracks.indexOf(track.id) ?? null,
+      number: index + 1,
+    }));
 }
 
 export function upNext(library, state, limit = 30) {
@@ -546,12 +779,14 @@ export function upNext(library, state, limit = 30) {
   const base = baseContext(node.context);
   const album = library.albums.get(base);
   const playlist = library.playlists.get(base);
-  const ids = (album ? album.tracks : playlist ? playlist.tracks : libraryTracks(library)).filter((id) =>
+  const show = library.shows?.get(base);
+  const ids = (album ? album.tracks : playlist ? playlist.tracks : show ? show.tracks : libraryTracks(library)).filter((id) =>
     library.tracks.has(id),
   );
   const at = Number.isSafeInteger(node.position) && ids[node.position] === node.track ? node.position : ids.indexOf(node.track);
   return {
-    name: album?.title || playlist?.name || "Library",
+    name: album?.title || playlist?.name || show?.name || "Library",
+    show: show || null,
     context: node.context,
     current: node.track,
     shuffled: !!state.shuffle,
@@ -565,4 +800,16 @@ export function artistFor(library, track) {
     library?.artists.find((artist) => artist.name === track?.albumArtist) ||
     null
   );
+}
+
+export async function spokenRepeat(spoken, kept, control) {
+  const state = await control.command("state").catch(() => null);
+  const repeat = state?.repeat || "off";
+  if (spoken) {
+    if (repeat === "off") return kept;
+    await control.command("repeat", "off");
+    return repeat;
+  }
+  if (kept && repeat === "off") await control.command("repeat", kept);
+  return null;
 }

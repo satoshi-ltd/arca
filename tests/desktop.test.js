@@ -1775,7 +1775,10 @@ test("Folders opens with Just arrived, type icons and no path or last file", asy
   assert.match(arrivals[1], /brief\.md.*Local Mac · 2 h ago/);
   assert.match(arrivals[2], /So What\.flac/, "deletions are not arrivals");
   assert.equal(JSON.parse(w.document.querySelector(".home-arrival").dataset.id).rev, 9, "an arrival opens its file");
-  const cards = [...w.document.querySelectorAll(".folder-card")];
+  const sections = [...w.document.querySelectorAll("#content .section-label")].map((label) => label.textContent.trim());
+  assert.deepEqual(sections.filter((label) => ["Folders", "Photos", "Audio"].includes(label)), ["Folders", "Photos", "Audio"], "folders are grouped by kind");
+  const byId = (id) => w.document.querySelector(`.folder-card[data-id="${id}"]`);
+  const cards = [byId("photos"), byId("music"), byId("docs")];
   assert.ok(cards[0].querySelector('.home-lead .tile [data-icon="images"], .home-lead .tile svg'), "a photo folder keeps its Images icon");
   assert.ok(cards[1].querySelector('.home-lead .tile [data-icon="music"], .home-lead .tile svg'), "a music folder keeps its Music icon");
   assert.equal(cards[0].querySelector("img"), null, "a folder card never shows file content");
@@ -6703,6 +6706,7 @@ test("Command-K opens a palette that searches by scope, walks results with the k
   assert.equal(flights.find((flight) => flight.element.matches(".segmented-thumb")).frames[0].transform, "translate(-120px, 0px) scale(1, 1)", "the selected pill slides to the new segment");
   Object.defineProperty(w.document, "hidden", { configurable: true, get: () => false });
   const content = w.document.querySelector("#content");
+  await new Promise((resolve) => setTimeout(resolve, 1600));
   content.insertAdjacentHTML("beforeend", '<span class="pill ok probe">Up to date</span><span class="filter-count">3</span>');
   await new Promise((resolve) => setTimeout(resolve, 80));
   const quiet = flights.filter((flight) => flight.element.matches?.(".probe, .filter-count")).length;

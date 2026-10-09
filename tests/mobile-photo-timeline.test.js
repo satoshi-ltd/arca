@@ -128,8 +128,8 @@ test("timeline orders newest first from hub dates, fills local copies and leads 
 
 test("folder sizes read naturally for one file, many files and no count yet", async () => {
   const { folderSize } = await import("../apps/mobile/src/format.js");
-  assert.equal(folderSize({ files: 1, bytes: 512 }), "1 file · 512 B");
-  assert.equal(folderSize({ files: 3598, bytes: 27946137488 }), "3,598 files · 26.0 GB");
+  assert.equal(folderSize({ files: 1, bytes: 512 }), "1\u00a0file · 512\u00a0B");
+  assert.equal(folderSize({ files: 3598, bytes: 27946137488 }), "3,598\u00a0files · 26.0\u00a0GB");
   assert.equal(folderSize({ files: null, bytes: null }), "Not counted yet");
   assert.equal(folderSize({}), "Not counted yet");
 });

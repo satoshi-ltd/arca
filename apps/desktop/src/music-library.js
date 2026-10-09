@@ -14,6 +14,35 @@ const musicDirectory = (path) =>
   path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 const musicFold = (value) => value.trim().toLowerCase();
 
+const PODCAST_GENRE = /^podcast$/i;
+const SPOKEN_SECONDS = 1200;
+const EPISODE_DATE = /^(\d{4}-\d{2}-\d{2})(?![\d])/;
+export function episodeDate(path) {
+  return EPISODE_DATE.exec(musicBase(path))?.[1] || null;
+}
+export function episodeTitle(item, show) {
+  const tagged = typeof item?.title === "string" ? item.title.trim() : "";
+  const folder = item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")).split("/").pop() : "";
+  const fold = (value) => String(value || "").trim().toLowerCase();
+  if (tagged && fold(tagged) !== fold(show) && fold(tagged) !== fold(folder)) return tagged;
+  const name = item.path.slice(item.path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
+  return name.replace(/^\d{4}-\d{2}-\d{2}\s+/, "") || name;
+}
+export function isEpisode(item) {
+  return (
+    PODCAST_GENRE.test(item?.genre || "") ||
+    (!!episodeDate(item?.path || "") && (!item?.album || !Number.isSafeInteger(item?.track))) ||
+    (!item?.artist && !item?.albumArtist && Number.isFinite(item?.duration) && item.duration >= SPOKEN_SECONDS)
+  );
+}
+export function episodeFolders(items) {
+  const folders = new Set();
+  for (const item of items || [])
+    if (typeof item?.path === "string" && item.path.includes("/") && isEpisode(item))
+      folders.add(musicDirectory(item.path));
+  return folders;
+}
+export const showId = (name) => `show:${JSON.stringify(musicFold(name))}`;
 export const artistId = (name) => `artist:${JSON.stringify(musicFold(name))}`;
 
 export function trackTitle(track) {
@@ -110,13 +139,18 @@ export function playedItems(library, history) {
 export function buildLibrary(raw) {
   const tracks = new Map();
   const albums = new Map();
+  const episodes = [];
+  const showFolders = episodeFolders(raw?.tracks);
   for (const item of raw?.tracks || []) {
     if (typeof item?.path !== "string" || tracks.has(item.path)) continue;
     const key = albumKey(item);
+    const spoken = isEpisode(item) || (item.path.includes("/") && showFolders.has(musicDirectory(item.path)));
     const track = {
       path: item.path,
       hash: item.hash,
-      title: trackTitle(item),
+      title: spoken
+        ? episodeTitle(item, item.album || musicBase(albumDirectory(item.path)))
+        : trackTitle(item),
       artist: item.artist || item.albumArtist || UNKNOWN_ARTIST,
       albumArtist: item.albumArtist || null,
       album:
@@ -128,8 +162,14 @@ export function buildLibrary(raw) {
       duration: Number.isFinite(item.duration) ? item.duration : null,
       cover: typeof item.cover === "string" ? item.cover : null,
       added: item.added || null,
+      podcast: spoken,
+      date: episodeDate(item.path),
     };
     tracks.set(track.path, track);
+    if (track.podcast) {
+      episodes.push(track);
+      continue;
+    }
     let album = albums.get(key);
     if (!album) {
       album = {
@@ -218,6 +258,31 @@ export function buildLibrary(raw) {
     .filter((album) => album.added)
     .sort((a, b) => (a.added < b.added ? 1 : a.added > b.added ? -1 : 0))
     .slice(0, RECENTLY_ADDED);
+  const showMap = new Map();
+  for (const episode of episodes) {
+    const name = episode.album;
+    const key = showId(name);
+    let show = showMap.get(key);
+    if (!show) {
+      show = { id: key, name, tracks: [], cover: null, latest: null, duration: 0 };
+      showMap.set(key, show);
+    }
+    show.tracks.push(episode);
+    show.duration += episode.duration || 0;
+  }
+  const newest = (a, b) =>
+    (b.date || "").localeCompare(a.date || "") ||
+    (b.added || "").localeCompare(a.added || "") ||
+    musicCompare(a.title, b.title);
+  const shows = [...showMap.values()].map((show) => {
+    show.tracks.sort(newest);
+    show.cover = show.tracks.find((episode) => episode.cover)?.cover || null;
+    show.latest = show.tracks[0].date;
+    return show;
+  });
+  shows.sort(
+    (a, b) => (b.latest || "").localeCompare(a.latest || "") || musicCompare(a.name, b.name),
+  );
   const playlists = [];
   for (const list of raw?.playlists || []) {
     if (typeof list?.path !== "string" || !Array.isArray(list.entries)) continue;
@@ -246,6 +311,7 @@ export function buildLibrary(raw) {
     albumList,
     artists,
     recent,
+    shows,
     playlists,
   };
 }

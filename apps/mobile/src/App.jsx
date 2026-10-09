@@ -114,7 +114,23 @@ import {
   MusicSheet,
 } from "./MusicLibrary";
 import { player, playerAvailable, usePlayingId } from "./music-player";
-import { baseContext, musicSheet, playlistKey } from "./music-library.js";
+import { useAudioSession } from "./audio-session.js";
+import {
+  baseContext,
+  librarySummary,
+  librarySymbol,
+  musicBackLabel,
+  musicPane,
+  musicSearchLabel,
+  musicSheet,
+  musicTabs,
+  parseTrackNode,
+  playingFolder,
+  playlistKey,
+  plural,
+  savedSymbol,
+  spokenRepeat,
+} from "./music-library.js";
 import {
   folderLibrary,
   isMusicFolder,
@@ -130,9 +146,9 @@ import {
   shortName,
 } from "./recent-cache";
 import { sidebarLayout, fileMenuPosition } from "./layout";
-import { bytes, folderSize } from "./format";
+import { bytes, folderSize, unbroken } from "./format";
 import { browseEntries } from "./browse";
-import { homeFromActivity } from "./home-data";
+import { folderSections, homeFromActivity } from "./home-data";
 import { FilePreview, RowThumb } from "./FilePreview";
 import { GlobalSearch } from "./GlobalSearch";
 import { NowPlayingPage } from "./NowPlayingPage";
@@ -175,6 +191,7 @@ export default function App() {
   const openSheet = useRef(null);
   const layout = useRef(false);
   const fileMenuTrigger = useRef(null);
+  const musicRepeat = useRef(null);
   const pageRoot = useRef(null);
   layout.current = sidebarLayout(
     layout.current,
@@ -853,6 +870,65 @@ export default function App() {
   }, [musicFolder, musicTab, replica, playingId, historyTick]);
   const shownMusic =
     musicData?.key === `${replica?.scope}:${folder?.id}` ? musicData : null;
+  const shownLibrary = useRef(null);
+  shownLibrary.current = shownMusic?.library || null;
+  const playingVolume = playingFolder(playingId);
+  const [playingMusic, setPlayingMusic] = useState(null);
+  useEffect(() => {
+    if (!replica || !playingVolume || playingVolume === folder?.id) return undefined;
+    let active = true;
+    const key = `${replica.scope}:${playingVolume}`;
+    folderLibrary(replica, playingVolume).then(
+      (value) => active && setPlayingMusic({ key, library: value.library }),
+      () => {},
+    );
+    return () => {
+      active = false;
+    };
+  }, [replica, playingVolume, folder?.id, status.musicTick]);
+  const playingLibrary =
+    playingVolume && playingVolume !== folder?.id
+      ? playingMusic?.key === `${replica?.scope}:${playingVolume}`
+        ? playingMusic.library
+        : null
+      : shownMusic?.library;
+  const [audioSymbols, setAudioSymbols] = useState({});
+  const audioIds = locals
+    .filter((f) => isMusicFolder(catalog, f.id))
+    .map((f) => f.id)
+    .join("\n");
+  useEffect(() => {
+    if (!replica?.scope || !audioIds || screen !== "Folders" || folder) return undefined;
+    let active = true;
+    (async () => {
+      const symbols = {};
+      for (const id of audioIds.split("\n")) {
+        const saved = await replica.store.musicLibrary(replica.scope, id).catch(() => null);
+        if (saved) symbols[id] = savedSymbol(saved.value);
+      }
+      if (active) setAudioSymbols(symbols);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [replica, audioIds, screen, folder, status.musicTick]);
+  const audio = useAudioSession({
+    enabled: !!connected,
+    api: (route, body) => client.api(route, body),
+    device: { id: connection?.id ?? null, name },
+    lookup: async (id) => {
+      const known = shownLibrary.current?.tracks.get(id);
+      if (known?.hash) return known;
+      const r = engine.current;
+      const volume = id.slice(0, id.indexOf(":"));
+      const path = id.slice(id.indexOf(":") + 1);
+      const saved = await r.store.musicLibrary(r.scope, volume);
+      return (saved?.value?.tracks || []).find((item) => item?.path === path) || null;
+    },
+  });
+  useEffect(() => {
+    if (musicFolder && connected) audio.refresh();
+  }, [musicFolder, folder?.id, connected]);
   const musicCover = (key, size) => {
     if (!key || !replica?.scope) return null;
     try {
@@ -865,10 +941,21 @@ export default function App() {
     }
     return null;
   };
+  function openPlaying(route) {
+    setNowPlayingOpen(false);
+    const other =
+      playingVolume && playingVolume !== folder?.id
+        ? locals.find((f) => f.id === playingVolume)
+        : null;
+    if (other) openFolder(other).catch((e) => setError(e.message));
+    setFileView("music");
+    setMusicSearch(null);
+    setMusicRoute(route);
+  }
   function musicCommand(name, value) {
     player.command(name, value).catch((e) => setError(e.message));
   }
-  function playMusic(context, track, shuffle = false, position = -1) {
+  function playMusic(context, track, shuffle = false, position = -1, at = 0) {
     if (!track) return;
     if (!playerAvailable) {
       if (engine.current)
@@ -882,13 +969,39 @@ export default function App() {
     }
     runLocal(async () => {
       await publishMusic(engine.current).catch(() => {});
+      musicRepeat.current = await spokenRepeat(!!track.podcast, musicRepeat.current, player);
       await player.play(
         context,
         track.id,
         shuffle,
         Number.isSafeInteger(position) ? position : -1,
       );
+      if (at > 0) {
+        audio.seeked();
+        await player.command("seek", at * 1000);
+      }
     });
+  }
+  function deleteTrack(track) {
+    confirm(
+      `Delete “${track.title}”?`,
+      "It is removed from every device. History keeps it for the folder's retention and you can restore it from History." +
+        (!connected || status.paused
+          ? " Deletion will sync when connected and resumed."
+          : ""),
+      () =>
+        run(
+          async () => {
+            if (parseTrackNode(playingId)?.track === track.id)
+              await player.command("stop").catch(() => {});
+            await engine.current.removeFile(track.folder, track.path);
+            setSheet(null);
+            musicChanged();
+          },
+          { success: "Track deleted" },
+        ),
+      "Delete",
+    );
   }
   function musicChanged() {
     setMusicEdits((count) => count + 1);
@@ -1489,7 +1602,16 @@ export default function App() {
     }),
     [entries],
   );
-  const folderSubtitle = `${photoFolder ? `${photoCount ?? "—"} photos` : musicView && shownMusic ? `${shownMusic.library.tracks.size.toLocaleString("en")} tracks · ${shownMusic.library.albums.size.toLocaleString("en")} albums` : `${entrySummary.files} files`} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`;
+  const folderSubtitle = unbroken(`${photoFolder ? `${photoCount ?? "—"} photos` : musicView && shownMusic ? librarySummary(shownMusic.library) : `${entrySummary.files} files`} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`);
+  const musicShown = musicView && shownMusic?.library?.tracks.size ? shownMusic.library : null;
+  const musicSearching = typeof musicSearch === "string";
+  const musicAt = musicShown ? musicPane(musicRoute, wide) : null;
+  const musicDeep = !!musicAt && musicAt.level > 0;
+  const musicArtist =
+    musicDeep && wide && musicRoute[musicAt.level].kind === "artist"
+      ? musicShown.artists.find((item) => item.id === musicRoute[musicAt.level].id) || null
+      : null;
+  const musicHeaderSearch = !!musicShown && !musicDeep && musicTabs(musicShown).length < 2;
   const timelineNotice =
     sourceConfig?.mode === "damaged"
       ? sourceConfig.issue
@@ -1915,13 +2037,27 @@ export default function App() {
                       <View style={s.compactActions}>
                         <Button
                           quiet
-                          label="Folders"
+                          label={
+                            musicDeep
+                              ? musicBackLabel(
+                                  musicRoute,
+                                  musicAt.level,
+                                  musicShown,
+                                  folder.name,
+                                  musicSearching,
+                                )
+                              : "Folders"
+                          }
                           icon="back"
-                          onPress={() => setFolder(null)}
+                          onPress={() =>
+                            musicDeep
+                              ? setMusicRoute(musicRoute.slice(0, musicAt.level))
+                              : setFolder(null)
+                          }
                         />
                       </View>
                     )}
-                    {!onboarding && (
+                    {!onboarding && (detail || !(musicDeep && !musicArtist)) && (
                       <View
                         style={[
                           s.row,
@@ -1950,6 +2086,13 @@ export default function App() {
                                 </Text>
                               </View>
                             </View>
+                          ) : musicArtist ? (
+                            <ScreenTitle
+                              contentIcon="artist"
+                              subtitle={`${plural(musicArtist.albums.length, "album", "albums")} · ${plural(musicArtist.tracks, "track", "tracks")}`}
+                            >
+                              {musicArtist.name}
+                            </ScreenTitle>
                           ) : folder && view === "Folders" ? (
                             <ScreenTitle
                               detail={compactAndroid}
@@ -1958,7 +2101,7 @@ export default function App() {
                                   ? folder.gallery || source
                                     ? "gallery"
                                     : musicFolder
-                                      ? "music"
+                                      ? librarySymbol(shownMusic?.library)
                                       : "folder"
                                   : undefined
                               }
@@ -2026,6 +2169,14 @@ export default function App() {
                         )}
                         {folder && screen === "Folders" && (
                           <View style={s.rowAction}>
+                            {musicHeaderSearch && (
+                              <Button
+                                iconOnly
+                                label={musicSearching ? "Close search" : musicSearchLabel(musicShown)}
+                                icon={musicSearching ? "close" : "search"}
+                                onPress={() => setMusicSearch(musicSearching ? null : "")}
+                              />
+                            )}
                             {!wide && !photoFolder && fileView === "files" && (
                               <Button
                                 iconOnly
@@ -2235,7 +2386,7 @@ export default function App() {
                             offline={!!status.offline}
                             route={musicRoute}
                             push={(next) => setMusicRoute([...musicRoute, next])}
-                            pop={() => setMusicRoute(musicRoute.slice(0, -1))}
+                            go={setMusicRoute}
                             select={(kind) => setMusicRoute([{ kind }])}
                             history={musicHistory}
                             search={musicSearch}
@@ -2253,6 +2404,9 @@ export default function App() {
                             playlistActions={(playlist) =>
                               setSheet({ kind: "playlist-actions", playlist })
                             }
+                            positions={audio.positions}
+                            deviceId={connection?.id}
+                            relative={relative}
                           />
                         ) : (
                           <View style={s.detailGrid}>
@@ -2552,32 +2706,36 @@ export default function App() {
                               }
                             />
                           )}
-                          {!!locals.length && (
-                            <Section>
-                              <Text style={s.eyebrow}>
-                                SELECTED ON THIS DEVICE
-                              </Text>
-                              <View style={s.folderList}>
-                                {locals.map((f) => (
+                          {folderSections(locals, (f) =>
+                            galleryConfig(f) ||
+                            f.gallery ||
+                            catalog?.volumes?.find((v) => v.id === f.id)?.gallery
+                              ? "photos"
+                              : isMusicFolder(catalog, f.id)
+                                ? "audio"
+                                : "folders",
+                          ).map((section) => (
+                            <Section key={section.kind}>
+                              <Text style={s.eyebrow}>{section.label}</Text>
+                              <View style={s.group}>
+                                {section.folders.map((f, index) => (
                                   <Rise
                                     key={f.id}
                                     tint={c.tint}
                                     {...folderMotion(f.id)}
                                   >
                                   <FolderRow
+                                    grouped
+                                    divider={index > 0}
                                     name={f.name}
                                     icon={
-                                      galleryConfig(f) ||
-                                      f.gallery ||
-                                      catalog?.volumes?.find(
-                                        (v) => v.id === f.id,
-                                      )?.gallery
+                                      section.kind === "photos"
                                         ? "gallery"
-                                        : isMusicFolder(catalog, f.id)
-                                          ? "music"
+                                        : section.kind === "audio"
+                                          ? audioSymbols[f.id] || "music"
                                           : "folders"
                                     }
-                                    description={`${f.files} files · ${bytes(f.bytes)} local`}
+                                    description={unbroken(`${f.files} files · ${bytes(f.bytes)} local`)}
                                     conflict={!!catalog?.volumes?.find((v) => v.id === f.id)?.conflicts}
                                     progress={
                                       status.busy &&
@@ -2620,7 +2778,7 @@ export default function App() {
                                 ))}
                               </View>
                             </Section>
-                          )}
+                          ))}
                           {volumes.some(
                             (v) => !locals.some((f) => f.id === v.id),
                           ) && (
@@ -2628,14 +2786,16 @@ export default function App() {
                               <Text style={s.eyebrow}>
                                 ON HUB · NOT SELECTED
                               </Text>
-                              <View style={s.folderList}>
+                              <View style={s.availableGroup}>
                                 {volumes
                                   .filter(
                                     (v) => !locals.some((f) => f.id === v.id),
                                   )
-                                  .map((v) => (
+                                  .map((v, index) => (
                                     <FolderRow
                                       key={v.id}
+                                      grouped
+                                      dashedDivider={index > 0}
                                       name={v.name}
                                       available
                                       icon={v.gallery ? "gallery" : v.music && catalog?.music ? "music" : "folders"}
@@ -2778,27 +2938,7 @@ export default function App() {
                   )}
                   {screen === "Devices" && (
                     <>
-                      {connection ? (
-                        <Section>
-                          <Text style={s.eyebrow}>HUB CONNECTION</Text>
-                          {machinesSaved && !!machines?.length && (
-                            <Text style={s.caption}>
-                              Showing saved device information.
-                            </Text>
-                          )}
-                          {!machines && !status.offline && (
-                            <Scaffold label="Loading devices" />
-                          )}
-                          <HubConnection
-                            connection={connection}
-                            name={catalog?.name}
-                            machine={machines?.find((m) => m.isHub)}
-                            busy={actionLocked}
-                            disconnect={disconnect}
-                            retry={() => run(() => client.refresh(), { hubOnly: true })}
-                          />
-                        </Section>
-                      ) : (
+                      {connection ? null : (
                         <PairingForm
                           name={name}
                           setName={setName}
@@ -2835,12 +2975,31 @@ export default function App() {
                         <>
                           <Section>
                             <Text style={s.eyebrow}>DEVICES</Text>
-                            <View style={s.folderList}>
+                            {machinesSaved && !!machines?.length && (
+                              <Text style={s.caption}>
+                                Showing saved device information.
+                              </Text>
+                            )}
+                            {!machines && !status.offline && (
+                              <Scaffold label="Loading devices" />
+                            )}
+                            <View style={s.group}>
+                              <HubConnection
+                                grouped
+                                connection={connection}
+                                name={catalog?.name}
+                                machine={machines?.find((m) => m.isHub)}
+                                busy={actionLocked}
+                                disconnect={disconnect}
+                                retry={() => run(() => client.refresh(), { hubOnly: true })}
+                              />
                               <MachineRow
+                                grouped
+                                divider
                                 name={name}
                                 self
                                 role="Replica"
-                                totals={`${locals.filter((f) => f.selected).length} folders · ${bytes(locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0))} local`}
+                                totals={unbroken(`${locals.filter((f) => f.selected).length} folders · ${bytes(locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0))} local`)}
                                 description={`${Platform.OS === "ios" ? "iOS" : "Android"}${machines?.find((m) => m.credentialId === connection.id)?.lastAddress ? ` · ${machines.find((m) => m.credentialId === connection.id).lastAddress}` : ""}`}
                                 state={
                                   status.paused
@@ -2874,6 +3033,8 @@ export default function App() {
                                   .map((m) => (
                                     <MachineRow
                                       key={m.credentialId}
+                                      grouped
+                                      divider
                                       name={m.name}
                                       description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[m.platform] || m.platform || "Platform not reported"}${m.lastAddress ? ` · ${m.lastAddress}` : ""}`}
                                       role={m.role || "Replica"}
@@ -3341,10 +3502,11 @@ export default function App() {
                 )}
                 {folder && screen === "Folders" && musicFolder && !sheet && (
                   <MiniPlayer
-                    library={shownMusic?.library}
+                    library={playingLibrary}
                     cover={musicCover}
                     open={() => setNowPlayingOpen(true)}
                     command={musicCommand}
+                    sleep={audio.sleep}
                   />
                 )}
                 {!onboarding && !wide && !keyboardVisible && (
@@ -3403,23 +3565,18 @@ export default function App() {
           )}
           <NowPlayingPage
             visible={nowPlayingOpen}
-            library={shownMusic?.library}
+            library={playingLibrary}
             cover={musicCover}
             command={musicCommand}
-            play={(context, track, position) => playMusic(context, track, false, position)}
+            play={(context, track, position, at) => playMusic(context, track, false, position, at)}
             onClose={() => setNowPlayingOpen(false)}
-            openAlbum={(track) => {
-              setNowPlayingOpen(false);
-              setFileView("music");
-              setMusicSearch(null);
-              setMusicRoute([{ kind: "albums" }, { kind: "album", id: track.albumId }]);
-            }}
-            openArtist={(artist) => {
-              setNowPlayingOpen(false);
-              setFileView("music");
-              setMusicSearch(null);
-              setMusicRoute([{ kind: "artists" }, { kind: "artist", id: artist.id }]);
-            }}
+            sleep={audio.sleep}
+            setSleep={audio.setSleep}
+            seeked={audio.seeked}
+            positions={audio.positions}
+            openShow={(track) => openPlaying([{ kind: "podcasts" }, { kind: "show", id: track.show }])}
+            openAlbum={(track) => openPlaying([{ kind: "albums" }, { kind: "album", id: track.albumId }])}
+            openArtist={(artist) => openPlaying([{ kind: "artists" }, { kind: "artist", id: artist.id }])}
           />
           <GlobalSearch
             visible={globalSearch}
@@ -3582,6 +3739,7 @@ export default function App() {
                   open={setSheet}
                   change={changePlaylist}
                   remove={deletePlaylist}
+                  removeTrack={deleteTrack}
                 />
               )}
               {shownSheet.kind === "gallery" && (

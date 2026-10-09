@@ -31,6 +31,7 @@ import {
   readIgnore,
 } from "./exclusions.js";
 import { machineReport } from "./machines.js";
+import { RESUME_MIN_SECONDS } from "./audio-positions.js";
 import {
   cleanupTransfers,
   applyFolderRetention,
@@ -821,6 +822,7 @@ export class Engine {
     if (this.paused) {
       await this.reconcileLocal();
       if (!this.hubUnavailable) await this.reportMachine();
+      void this.flushPositions();
       return;
     }
     if (this.config.role === "hub" && !this.store.volumes().length) {
@@ -1383,6 +1385,7 @@ export class Engine {
       }
       if (!this.syncAbort.signal.aborted && !this.hubUnavailable)
         await this.reportMachine();
+      void this.flushPositions();
       this.syncAbort = null;
     }
   }
@@ -1462,6 +1465,61 @@ export class Engine {
         .then((response) => response.body?.cancel())
         .catch(() => {}),
     );
+  }
+  queuedPositions() {
+    return this.store.db
+      .prepare("SELECT body FROM audio_outbox")
+      .all()
+      .map(({ body }) => {
+        const row = JSON.parse(body);
+        return {
+          volume: row.volume,
+          path: row.path,
+          hash: row.hash,
+          position: row.position,
+          duration: row.duration,
+          device: this.config.hub?.deviceId || this.config.id,
+          name: this.config.name,
+          updated: row.at,
+        };
+      })
+      .filter((row) => row.duration >= RESUME_MIN_SECONDS);
+  }
+  async audioPosition(body) {
+    const row = {
+      volume: body.volume,
+      path: body.path,
+      hash: body.hash,
+      position: Number(body.position),
+      duration: Number(body.duration),
+      at: Date.now(),
+    };
+    if (!(row.duration >= RESUME_MIN_SECONDS)) return { kept: false };
+    this.store.db
+      .prepare("INSERT OR REPLACE INTO audio_outbox VALUES(?,?,?)")
+      .run(row.volume, row.path, JSON.stringify(row));
+    await this.flushPositions();
+    return { kept: true };
+  }
+  async flushPositions() {
+    if (this.config.role === "hub" || !this.config.hub || this.hubUnavailable) return;
+    const rows = this.store.db.prepare("SELECT volume,path,body FROM audio_outbox").all();
+    for (const { volume, path, body } of rows) {
+      try {
+        await this.json("/v1/audio-position", JSON.parse(body), {
+          signal: AbortSignal.timeout(5000),
+          trackConnection: false,
+        });
+        this.store.db
+          .prepare("DELETE FROM audio_outbox WHERE volume=? AND path=? AND body=?")
+          .run(volume, path, body);
+      } catch (error) {
+        if (!(error.status >= 400 && error.status < 500) || [401, 408, 429].includes(error.status)) return;
+        this.store.db
+          .prepare("DELETE FROM audio_outbox WHERE volume=? AND path=? AND body=?")
+          .run(volume, path, body);
+      }
+    }
   }
   async reportMachine(force = false, signal = AbortSignal.timeout(10000)) {
     if (this.config.role === "hub" || !this.config.hub) return;

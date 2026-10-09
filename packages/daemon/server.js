@@ -18,6 +18,7 @@ import { folderPreview } from "./folder-preview.js";
 import { filePreview } from "./file-preview.js";
 import { searchLocal } from "./search.js";
 import { acceptReport, machines } from "./machines.js";
+import { listPositions, mergePositions, savePosition } from "./audio-positions.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
 import { listPage, browsePage } from "./pages.js";
 import http from "node:http";
@@ -616,6 +617,17 @@ export async function start(home, options = {}) {
           );
         }
         return send(200, machines(engine));
+      }
+      if (req.method === "GET" && route === "/v1/audio-positions") {
+        if (config.role === "hub") return send(200, listPositions(s));
+        requireAdmin();
+        return send(
+          200,
+          mergePositions(
+            await remoteView("/v1/audio-positions", () => ({ positions: [] })),
+            engine.queuedPositions(),
+          ),
+        );
       }
       if (req.method === "GET" && route === "/v1/network") {
         requireAdmin();
@@ -1419,6 +1431,15 @@ export async function start(home, options = {}) {
           if (admin) fail("Use a linked device credential to disconnect", 403);
           await authorizedWork(() => s.forgetDevice(device.id));
           return send(200, { disconnected: true });
+        }
+        if (route === "/v1/audio-position") {
+          if (config.role === "hub")
+            return send(
+              200,
+              savePosition(s, admin ? { id: config.id, name: config.name } : device, b),
+            );
+          requireAdmin();
+          return send(200, await engine.audioPosition(b));
         }
         if (route === "/v1/machine-report") {
           requireHub();

@@ -26,6 +26,7 @@ const COVER_NAMES = ["cover", "folder", "front", "album"];
 const COVER_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
 export const COVER_SIZES = { small: 360, large: 1024 };
 const INDEX_VERSION = 2;
+const PODCAST = /^podcast$/i;
 const RELEASE = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const BATCH = 32;
 const PICTURE_BYTES = 16 * 1024 ** 2;
@@ -544,7 +545,7 @@ export class Music {
         hash: row.hash,
         size: row.size,
         title: row.title,
-        artist: row.artist,
+        artist: row.artist || (PODCAST.test(row.genre || "") ? row.album : null),
         albumArtist: row.album_artist,
         album: row.album,
         track: row.track,

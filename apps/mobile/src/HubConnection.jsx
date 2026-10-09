@@ -7,6 +7,7 @@ export function HubConnection({
   busy,
   disconnect,
   retry,
+  grouped = false,
 }) {
   const { wide } = useDesign();
   const address = new URL(connection.url);
@@ -15,6 +16,7 @@ export function HubConnection({
     machine?.platform;
   return (
     <MachineRow
+      grouped={grouped}
       hub
       role="Hub"
       name={name || "Hub"}

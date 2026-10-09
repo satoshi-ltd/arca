@@ -52,7 +52,8 @@
   --m-row-padding-x: 16px;
   --m-section-label-gap: 8px;
   --m-section-gap: 24px;
-  --m-row-min-height: 48px;
+  --m-row-min-height: 74px;
+  --m-row-min-height-compact: 48px;
   --m-header-bottom-gap: 16px;
   --m-detail-navigation-gap: 4px;
   --m-detail-header-top: 8px;

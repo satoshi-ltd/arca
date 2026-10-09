@@ -256,7 +256,7 @@ export function ArrivalsStrip({ arrivals, nameOf, relative, onOpen }) {
             <View style={s.tile}>
               <Icon name={fileIcon(row.path)} size={16} />
             </View>
-            <View style={s.stack}>
+            <View style={[s.stack, s.arrivalText]}>
               <Text numberOfLines={1} style={s.rowTitle}>
                 {row.path.split("/").pop()}
               </Text>
@@ -308,7 +308,7 @@ export function ScreenTitle({
     </View>
   );
 }
-const pressScale = (pressed, reduce) =>
+export const pressScale = (pressed, reduce) =>
   pressed && !reduce && { transform: [{ scale: motion.pressScale }] };
 export function Button({
   label,
@@ -522,10 +522,15 @@ export function Card({
   divider = false,
 }) {
   const { s } = useDesign();
+  const content = React.Children.toArray(children);
+  const tall =
+    grouped &&
+    (title ? content.length > 0 : content.some((child) => !!child?.props?.description));
   return (
     <View
       style={[
         grouped ? s.settingRow : s.card,
+        tall && s.settingRowTall,
         available && s.available,
         danger && s.dangerCard,
         divider && s.separator,
@@ -1059,6 +1064,7 @@ export function FolderRow({
   disabled,
   conflict,
   progress,
+  dashedDivider = false,
 }) {
   const { s, c, wide } = useDesign();
   const { reduce } = useMotion();
@@ -1085,7 +1091,7 @@ export function FolderRow({
         {tile}
       </View>
       <View style={[s.flex, s.stack]}>
-        <Text style={s.rowTitle}>{name}</Text>
+        <Text style={s.rowTitle} numberOfLines={1}>{name}</Text>
         {!!description && <RollText style={s.caption}>{description}</RollText>}
       </View>
       {selectable ? (
@@ -1114,7 +1120,15 @@ export function FolderRow({
     </>
   );
   return available ? (
-    <View style={[s.card, s.available, s.folderRow]}>{contents}</View>
+    <View
+      style={
+        grouped
+          ? [s.folderRow, s.availableRow, dashedDivider && s.dashedSeparator]
+          : [s.card, s.available, s.folderRow]
+      }
+    >
+      {contents}
+    </View>
   ) : (
     <Pressable
       accessibilityRole={selectable ? "checkbox" : "button"}
@@ -1276,12 +1290,14 @@ export function MachineRow({
   backup,
   state,
   actions,
+  grouped = false,
+  divider = false,
 }) {
   const { s, c, wide } = useDesign();
   const shownRole = role.toLowerCase() === "replica" ? "" : role;
   return (
     <View
-      style={[s.card, s.machineRow]}
+      style={[s.card, s.machineRow, grouped && s.groupedMachineRow, divider && s.separator]}
       accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}${backup ? ", backs up the hub" : ""}, ${description}${state ? `, ${state}` : ""}`}
     >
       <View style={s.row}>

@@ -13,3 +13,16 @@ export function homeFromActivity(rows, selected) {
     })),
   };
 }
+
+export const FOLDER_SECTIONS = [
+  { kind: "folders", label: "FOLDERS" },
+  { kind: "photos", label: "PHOTOS" },
+  { kind: "audio", label: "AUDIO" },
+];
+
+export function folderSections(folders, kindOf) {
+  return FOLDER_SECTIONS.map((section) => ({
+    ...section,
+    folders: folders.filter((folder) => kindOf(folder) === section.kind),
+  })).filter((section) => section.folders.length);
+}

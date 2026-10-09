@@ -260,7 +260,7 @@ export function RollText({ children, style, ...props }) {
     </Animated.Text>
   );
 }
-export function ChangeFade({ token, children, style }) {
+export function ChangeFade({ token, children, style, ms = motion.enter }) {
   const { duration, easing } = useMotion();
   const progress = useRef(new Animated.Value(1)).current;
   const last = useRef(token);
@@ -270,10 +270,38 @@ export function ChangeFade({ token, children, style }) {
     progress.setValue(0.35);
     Animated.timing(progress, {
       toValue: 1,
-      duration: duration(motion.enter),
+      duration: duration(ms),
       easing,
       useNativeDriver: true,
     }).start();
   }, [token]);
   return <Animated.View style={[style, { opacity: progress }]}>{children}</Animated.View>;
+}
+export function RiseOnce({ seen, children, style }) {
+  const { duration, easing, reduce } = useMotion();
+  const first = useRef(!seen.current && !reduce).current;
+  const progress = useRef(new Animated.Value(first ? 0 : 1)).current;
+  useEffect(() => {
+    seen.current = true;
+    if (!first) return;
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: duration(motion.enter),
+      easing,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: progress,
+          transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [motion.distance, 0] }) }],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
 }

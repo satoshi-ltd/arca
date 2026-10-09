@@ -84,6 +84,9 @@ _None._
 - **VERIFY-ANDROID-AUTO** — Arca plays in the car
   `verify · maintainer · normal`
   accept: a sideloaded build on the Fold with Unknown sources enabled in Android Auto's developer settings appears on the Desktop Head Unit on the Mac and in the car; Arca opens on Artists with a heading per letter and each artist's newest album cover, Albums browse as a cover grid with covers, an album's and a playlist's tracks show their length (and the album in a playlist), the queue button reads the playing album's or playlist's name, the phone's Now playing opens the album with Go to album, and Recent lists what this phone played under Recently played; a track plays with lock-screen and steering-wheel controls; the car starts Arca cold with the phone locked and offline; a navigation prompt ducks the music and a phone call pauses and resumes it; disconnecting Bluetooth pauses; nothing auto-plays on connection; a playlist made on the phone or the desktop shows under Playlists in the car, read-only, and a song repeated in it plays from the entry picked; an MP3, an AAC (M4A), a FLAC, a WAV and an Ogg/Opus file each play on the Fold; `./gradlew :arca-network:testDebugUnitTest` passes.
+- **VERIFY-PODCASTS** — Podcasts, resume and sleep on real devices
+  `verify · maintainer · normal`
+  accept: after a Casa redeploy, a desktop build and a native build, a folder of podcast episodes shows Podcasts with shows newest first on the web admin, the Mac and the Fold; an episode paused on one device offers "Pick up where you left off" on the others and Continue starts within 15 s of where it stopped, also after the Mac replica saved it offline and reconnected; rows show their progress and time left; Delete… removes a track from every device and History restores it; the sleep timer's 30 minutes and End of episode stop playback on the web (with the fade), the Mac and the Fold (also with the screen off and while Android Auto plays) and the next session resumes there; an episode's player has no shuffle or repeat and the phone's −15/+30 work; one trail on desktop and one header back on the phone, and a podcasts-only folder shows no tabs.
 
 ### Phase 1 qualification
 
@@ -137,8 +140,17 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   `decision · maintainer · low`
   accept: a decision on Windows signing; optionally one signed macOS run with `sign_macos` checked and `publish` unchecked.
 
+### Music
+
+- **MOB-SLEEP-FADE** — The phone's sleep timer fades out before pausing
+  `feature · maintainer · low`
+  accept: `MusicService` gains a volume command (or a timed fade) and the phone's sleep timer ramps the player volume to silence over about 5 s before pausing and restoring it, as desktop does; reduced motion keeps the fade because it is audio. Needs a native build, so the JavaScript and contract tests land as an agent task once the maintainer schedules the build.
+
 ### Decisions
 
+- **DEC-AUTO-ALBUMS-SHOWS** — Should Android Auto's Albums list keep podcast shows?
+  `decision · maintainer · normal`
+  accept: keep or filter. The phone's car library file lists every show after the albums (title and artist the show's name), so Albums in the car mixes shows with albums while the phone and desktop keep them under Podcasts; filtering them leaves shows unreachable in the car until MUSIC-AUTO-PODCASTS.
 - **DEC-LAN-PERMISSION** — Cache LAN permission?
   `decision · maintainer · normal`
 - **DEC-FIRST-PAGE** — Serve the first snapshot page without a hub scan?
@@ -232,6 +244,18 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Music
 
+- **MUSIC-AUTO-PODCASTS** — Podcasts and Continue in Android Auto
+  `feature · agent · normal`
+  accept: the car library file and `MusicService` add a Podcasts root (shows, then each show's episodes newest first), episode items carry their completion status from the hub's positions so the car draws its partly played badge, and a Continue item comes first and starts the newest saved position at its hub offset; the car adds no controls and never deletes; JVM and library-file tests cover the tree. Device evidence follows under VERIFY-ANDROID-AUTO after a native build.
+- **MOB-SLEEP-NATIVE** — Sleep timer and position saving inside the playback service
+  `feature · agent · normal`
+  accept: the sleep timer and the 15-second position saves run in `MusicService` instead of the app's JavaScript, so they keep working after a JavaScript reload or with the app process asleep; the app only sets and shows the timer, and queued positions reach the hub when the app next runs; JVM tests cover expiry and End of episode. Needs a native build for device evidence.
+- **MOB-POSITIONS-REFRESH** — The phone refreshes saved positions while a library is open
+  `feature · agent · low`
+  accept: an open music library re-reads `/v1/audio-positions` periodically while connected and in the foreground (and on returning to the app), so a position saved on another device appears in the resume card and rows without leaving the folder; a test with a mocked api covers the refresh and its stop when the screen leaves.
+- **MUSIC-REMOVE-CONTINUE** — Remove an item from Continue
+  `feature · agent · low`
+  accept: a hub route clears one file's saved position (linked or admin, forwarded through a replica's outbox like a save), and the resume card's ⋯ offers Remove from Continue on desktop and the phone; route and client tests cover it, and the next newest position takes the card.
 - **MUSIC-CAR-SEARCH** — Search and voice requests in the car
   `feature · agent · low · depends: VERIFY-ANDROID-AUTO`
   accept: `MusicService` answers library search and "play … on Arca" voice requests by title, artist and album over the published library, and plays the best match; JVM tests cover the matching. Today search commands are not offered.

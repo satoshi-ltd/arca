@@ -1122,3 +1122,14 @@ test("a device credential cannot edit playlists", async (t) => {
   const invite = await f.api("/v1/devices", { name: "Phone", role: "replica" });
   await assert.rejects(f.api("/v1/music/playlist", { volume: f.v.id, action: "create", name: "Mine" }, invite.token), { status: 403 });
 });
+
+test("a podcast episode with no artist takes its show as the artist", async (t) => {
+  const f = await fixture(t);
+  await f.track("The Wild Project/2026-10-08 Episode.mp3", { title: "Episode 386", album: "The Wild Project", genre: "Podcast" });
+  await f.track("Loose/song.mp3", { title: "Song", album: "Loose Album", genre: "Rock" });
+  await f.api("/v1/music/mark", { volume: f.v.id });
+  const { tracks } = await f.indexed();
+  const byTitle = Object.fromEntries(tracks.map((row) => [row.title, row]));
+  assert.equal(byTitle["Episode 386"].artist, "The Wild Project");
+  assert.equal(byTitle.Song.artist, null, "music with no artist keeps its unknown artist");
+});

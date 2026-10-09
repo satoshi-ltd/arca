@@ -1,39 +1,104 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Modal, PanResponder, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { EmptyState, Icon, useDesign } from "./components";
-import { Cover } from "./MusicLibrary";
-import { artistFor, formatDuration, nextRepeat, parseTrackNode, upNext } from "./music-library.js";
-import { useFlight, useMotion } from "./motion";
+import { EmptyState, Icon, pressScale, Sheet, useDesign } from "./components";
+import { Cover, NowGlyph, RowMeta } from "./MusicLibrary";
+import { artistFor, formatDay, formatDuration, nextRepeat, parseTrackNode, upNext } from "./music-library.js";
+import { ChangeFade, useFlight, useMotion, useRetained } from "./motion";
+import { motion } from "./design-tokens.js";
 import { hasFlight } from "./flight.js";
 import { useMusicPlayer } from "./music-player";
+import { savedPosition } from "./audio-positions.js";
+import { sleepLabel, sleepOptions } from "./sleep-timer.js";
+import { useNow } from "./audio-session.js";
 
 const isPlaying = (state) => !!state && (state.playing || (state.playWhenReady && !state.ended && !state.error));
+const clock = (ms) =>
+  new Date(ms).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
-function Row({ track, current, onPress }) {
+function Row({ track, current, saved, onPress }) {
   const { s, c } = useDesign();
+  const { reduce } = useMotion();
+  const caption = track.podcast ? formatDay(track.date) || track.artist : track.artist;
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${track.title}, ${track.artist}${current ? ", playing" : ""}`}
-      accessibilityState={{ selected: current }}
-      onPress={onPress}
-      style={[s.searchRow, current && s.historyRowChosen]}
-    >
-      <Icon name={current ? "play" : "music"} size={16} color={current ? c.accent : c.mute} />
-      <View style={[s.flex, s.stack]}>
-        <Text numberOfLines={1} style={s.rowTitle}>
-          {track.title}
-        </Text>
-        <Text numberOfLines={1} style={s.caption}>
-          {track.artist}
-        </Text>
-      </View>
+    <ChangeFade token={current ? track.id : "row"} ms={motion.fast}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${track.title}, ${track.artist}${current ? ", playing" : ""}`}
+        accessibilityState={{ selected: current }}
+        onPress={onPress}
+        style={({ pressed }) => [s.musicTrack, s.musicTrackTall, current && s.historyRowChosen, pressed && s.pressed, pressScale(pressed, reduce)]}
+      >
+        {current ? <NowGlyph /> : <Icon name={track.podcast ? "podcast" : "music"} size={16} color={c.mute} />}
+        <View style={[s.flex, s.stack]}>
+          <Text numberOfLines={1} style={[s.rowTitle, current && s.active]}>
+            {track.title}
+          </Text>
+          <RowMeta track={track} caption={caption} saved={saved} live={current} style={s.caption} />
+        </View>
+        {!current && !saved && !!track.duration && <Text style={s.caption}>{formatDuration(track.duration)}</Text>}
+      </Pressable>
+    </ChangeFade>
+  );
+}
+
+function SleepButton({ sleep, podcast, onPress }) {
+  const { s, c } = useDesign();
+  const active = !!sleep && sleep.mode !== "off";
+  const now = useNow(sleep?.mode === "duration");
+  if (!active)
+    return (
+      <Pressable accessibilityRole="button" accessibilityLabel="Sleep timer" onPress={onPress} style={s.viewerIconButtonDark}>
+        <Icon name="moon" color={c.ink} />
+      </Pressable>
+    );
+  const label = sleepLabel(sleep, now, podcast);
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`Sleep timer, ${label}`} onPress={onPress} style={s.sleepChip}>
+      <Icon name="moon" size={14} color={c.onAccent} />
+      <Text style={s.sleepChipText}>{label}</Text>
     </Pressable>
   );
 }
 
-export function NowPlayingPage({ visible, library, cover, command, play, openAlbum, openArtist, onClose }) {
+function SleepSheet({ sleep, podcast, choose, closing, onClose, onExited }) {
+  const { s, c } = useDesign();
+  const { reduce } = useMotion();
+  const active = !!sleep && sleep.mode !== "off";
+  const options = [...sleepOptions(podcast), ...(active ? [{ value: "off", label: "Off" }] : [])];
+  return (
+    <Sheet
+      title="Sleep timer"
+      icon="moon"
+      subtitle={sleep?.mode === "duration" ? `Stops at ${clock(sleep.endsAt)}` : "Stops playback on this device"}
+      menu
+      closing={closing}
+      onClose={onClose}
+      onExited={onExited}
+    >
+      <View style={s.actionGroup}>
+        {options.map((option, index) => {
+          const checked = active ? option.value === sleep.value : false;
+          return (
+            <Pressable
+              key={option.value}
+              accessibilityRole="radio"
+              accessibilityLabel={option.label}
+              accessibilityState={{ checked }}
+              onPress={() => choose(option.value)}
+              style={({ pressed }) => [s.sleepRow, index > 0 && s.separator, pressed && s.pressed, pressScale(pressed, reduce)]}
+            >
+              <Text style={[s.buttonLabel, s.flex]}>{option.label}</Text>
+              {checked && <Icon name="check" size={20} color={c.accent} />}
+            </Pressable>
+          );
+        })}
+      </View>
+    </Sheet>
+  );
+}
+
+export function NowPlayingPage({ visible, library, cover, command, play, openAlbum, openArtist, openShow, onClose, sleep, setSleep, seeked, positions }) {
   const { s, c, wide } = useDesign();
   const { width, height } = useWindowDimensions();
   const { duration: ms } = useMotion();
@@ -41,6 +106,8 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   const [state] = useMusicPlayer(visible);
   const [trackWidth, setTrackWidth] = useState(0);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [sleepOpen, setSleepOpen] = useState(false);
+  const [shownSleep, releaseSleep] = useRetained(sleepOpen ? "open" : null);
   const slide = useRef(new Animated.Value(0)).current;
   const lastVisible = useRef(visible);
   const flying = useRef(false);
@@ -55,6 +122,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   closeRef.current = onClose;
   useEffect(() => {
     setQueueOpen(false);
+    setSleepOpen(false);
     if (visible) {
       setMounted(true);
       slide.setValue(0);
@@ -81,6 +149,11 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   const position = Math.min(state?.position || 0, total || Infinity);
   const progress = total ? Math.max(0, Math.min(1, position / total)) : 0;
   const artist = artistFor(library, track);
+  const podcast = !!track?.podcast;
+  const seek = (ms) => {
+    seeked?.();
+    command("seek", Math.max(0, Math.min(total || Infinity, ms)));
+  };
   const control = (label, icon, onPress, active = false, primary = false) => (
     <Pressable
       accessibilityRole="button"
@@ -93,9 +166,18 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
       <Icon name={icon} size={primary ? 28 : 24} color={primary ? c.onAccent : active ? c.accent : c.ink} />
     </Pressable>
   );
-  const rows = queue.rows.map((entry) => (
-    <Row key={`${entry.position}:${entry.track.id}`} track={entry.track} current={false} onPress={() => play(queue.context, entry.track, entry.position)} />
-  ));
+  const rows = queue.rows.map((entry) => {
+    const saved = savedPosition(positions, entry.track);
+    return (
+      <Row
+        key={`${entry.position}:${entry.track.id}`}
+        track={entry.track}
+        current={false}
+        saved={saved}
+        onPress={() => play(queue.context, entry.track, entry.position, saved?.position || 0)}
+      />
+    );
+  });
   const list = (
     <ScrollView style={s.flex} contentContainerStyle={s.searchBody}>
       {!!track && <Row track={track} current onPress={() => {}} />}
@@ -117,14 +199,21 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
           {track?.title || state.title || "Unknown track"}
         </Text>
         <View style={s.nowLinks}>
-          {!!(track?.artist || state.artist) && (
+          {podcast && (
+            <Pressable accessibilityRole="link" accessibilityLabel={`Show ${track.artist}`} onPress={() => openShow(track)}>
+              <Text numberOfLines={1} style={[s.text, s.nowLink]}>
+                {[track.artist, formatDay(track.date)].filter(Boolean).join(" · ")}
+              </Text>
+            </Pressable>
+          )}
+          {!podcast && !!(track?.artist || state.artist) && (
             <Pressable accessibilityRole="link" accessibilityLabel={`Artist ${track?.artist || state.artist}`} disabled={!artist} onPress={() => artist && openArtist(artist)}>
               <Text numberOfLines={1} style={[s.text, artist && s.nowLink]}>
                 {track?.artist || state.artist}
               </Text>
             </Pressable>
           )}
-          {!!(track?.album || state.album) && (
+          {!podcast && !!(track?.album || state.album) && (
             <Pressable accessibilityRole="link" accessibilityLabel={`Album ${track?.album || state.album}`} disabled={!track} onPress={() => track && openAlbum(track)}>
               <Text numberOfLines={1} style={[s.text, track && s.nowLink]}>
                 {track?.album || state.album}
@@ -145,10 +234,10 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
           accessibilityValue={{ min: 0, max: Math.round(total / 1000), now: Math.round(position / 1000), text: `${formatDuration(position / 1000) || "0:00"} of ${formatDuration(total / 1000) || "unknown"}` }}
           accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
           onAccessibilityAction={(event) =>
-            command("seek", Math.max(0, Math.min(total, position + (event.nativeEvent.actionName === "increment" ? 15000 : -15000))))
+            seek(position + (event.nativeEvent.actionName === "increment" ? 15000 : -15000))
           }
           onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
-          onPress={(event) => total && trackWidth && command("seek", (event.nativeEvent.locationX / trackWidth) * total)}
+          onPress={(event) => total && trackWidth && seek((event.nativeEvent.locationX / trackWidth) * total)}
           style={s.playerTrackArea}
         >
           <View style={s.playerTrack}>
@@ -161,16 +250,20 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
         </View>
       </View>
       <View style={s.playerControls}>
-        {control("Shuffle", "shuffle", () => command("shuffle", state.shuffle ? 0 : 1), state.shuffle)}
+        {podcast
+          ? control("Back 15 seconds", "rotate-ccw", () => seek(position - 15000))
+          : control("Shuffle", "shuffle", () => command("shuffle", state.shuffle ? 0 : 1), state.shuffle)}
         {control("Previous track", "skip-back", () => command("previous"))}
         {control(playing ? "Pause" : "Play", playing ? "pause" : "play", () => command("toggle"), false, true)}
         {control("Next track", "skip-forward", () => command("next"))}
-        {control(
-          state.repeat === "one" ? "Repeat one" : state.repeat === "all" ? "Repeat all" : "Repeat off",
-          state.repeat === "one" ? "repeat-one" : "repeat",
-          () => command("repeat", nextRepeat(state.repeat)),
-          state.repeat !== "off",
-        )}
+        {podcast
+          ? control("Forward 30 seconds", "rotate-cw", () => seek(position + 30000))
+          : control(
+              state.repeat === "one" ? "Repeat one" : state.repeat === "all" ? "Repeat all" : "Repeat off",
+              state.repeat === "one" ? "repeat-one" : "repeat",
+              () => command("repeat", nextRepeat(state.repeat)),
+              state.repeat !== "off",
+            )}
       </View>
       {!twoPane && (
         <Pressable accessibilityRole="button" accessibilityLabel="Up next" accessibilityState={{ expanded: queueOpen }} onPress={() => setQueueOpen((open) => !open)} style={s.nowUpNext}>
@@ -202,9 +295,10 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
             <View style={[s.flex, s.stack]}>
               <Text style={s.eyebrow}>PLAYING FROM</Text>
               <Text numberOfLines={1} style={s.rowTitle}>
-                {queue.name || "Music"}
+                {queue.name && queue.name !== "Library" ? queue.name : podcast ? "Podcast" : queue.name || "Music"}
               </Text>
             </View>
+            {!!state?.id && <SleepButton sleep={sleep} podcast={podcast} onPress={() => setSleepOpen(true)} />}
           </View>
           <View style={twoPane ? s.nowSplit : s.flex}>
             <ScrollView style={s.flex} contentContainerStyle={s.nowScroll}>
@@ -228,6 +322,19 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
           )}
         </SafeAreaView>
       </Animated.View>
+      {shownSleep && (
+        <SleepSheet
+          sleep={sleep}
+          podcast={podcast}
+          closing={!sleepOpen}
+          onClose={() => setSleepOpen(false)}
+          onExited={releaseSleep}
+          choose={(value) => {
+            setSleep(value);
+            setSleepOpen(false);
+          }}
+        />
+      )}
     </Modal>
   );
 }

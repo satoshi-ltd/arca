@@ -414,7 +414,7 @@ test("sheets share the desktop dialog header anatomy and menus stay compact", ()
   assert.doesNotMatch(sheet, /!menu && \(\s*<Button/);
   assert.match(sheet, /contentContainerStyle=\{menu \? s\.sheetMenu : s\.content\}/);
   assert.match(theme, /sheetHeader: \{[^}]*paddingHorizontal: wide \? g\.workspaceInset : 16,[^}]*borderBottomWidth: 1/);
-  assert.match(theme, /actionRow: \{[^}]*minHeight: g\.rowMinHeight,[^}]*paddingHorizontal: wide \? g\.workspaceInset : g\.rowPaddingX,/, "action rows align with the sheet title");
+  assert.match(theme, /actionRow: \{[^}]*minHeight: g\.rowMinHeightCompact,[^}]*paddingHorizontal: wide \? g\.workspaceInset : g\.rowPaddingX,/, "action rows align with the sheet title");
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   const header = app.slice(app.indexOf("{shownSheet && (")).match(/\{\.\.\.(\(shownSheet\.kind === "rename-file"[\s\S]*?\))\}\s+busy=/)[1];
   for (const kind of ["rename-file", "gallery", "history-filter", "folder-actions", "select", "conflict"]) {
@@ -561,7 +561,7 @@ test("every gallery surface shares one placeholder: the token fill and a soft im
 
 test("folder rows show the gallery icon the hub assigns and selection states the space it needs", () => {
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
-  const selected = app.slice(app.indexOf("{locals.map((f) => ("), app.indexOf("description={`${f.files} files"));
+  const selected = app.slice(app.indexOf("folderSections(locals"), app.indexOf("description={`${f.files} files"));
   assert.match(selected, /galleryConfig\(f\) \|\|\s*f\.gallery \|\|\s*catalog\?\.volumes\?\.find\(/);
   assert.match(app, /available\s+icon=\{v\.gallery \? "gallery" : v\.music && catalog\?\.music \? "music" : "folders"\}/);
   assert.match(app, /`Needs \$\{bytes\(shownSheet\.volume\.bytes\)\} · `/);
