@@ -26,13 +26,15 @@ try {
         data ? resolve(data.data) : reject(new Error("HEIC decoding failed")),
     );
   });
-  const size = workerData.large ? 2048 : 360;
   // libheif applies the container's orientation during decoding.
   const jpeg = await sharp(Buffer.from(pixels), {
     raw: { width, height, channels: 4 },
   })
-    .resize(size, size, { fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: workerData.large ? 85 : 75 })
+    .resize(workerData.edge, workerData.edge, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: workerData.quality })
     .toBuffer();
   parentPort.postMessage({ jpeg, width, height });
 } catch (error) {

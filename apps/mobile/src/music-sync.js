@@ -17,6 +17,7 @@ import { folderIgnored } from "./hub-gallery.js";
 
 export const COVERS_PER_CYCLE = 120;
 export const PARTIAL_REFRESH_MS = 60000;
+export const COVERS_PER_PARTIAL = 12;
 const SIZES = ["small", "large"];
 
 const stopped = (error) =>
@@ -127,6 +128,16 @@ export async function folderLibrary(replica, id) {
   };
 }
 
+export async function hubFolderLibrary(replica, id) {
+  const saved = await replica.store.musicLibrary(replica.scope, id);
+  if (!saved) return { saved: false, indexing: false, pending: 0, library: buildLibrary([]) };
+  const folder = await source(replica, id, saved);
+  const tracks = Array.isArray(folder.library.tracks) ? folder.library.tracks : [];
+  const pending = tracks.filter((item) => folder.present.get(item?.path) !== item?.hash).length;
+  const present = new Map(tracks.map((item) => [item?.path, item?.hash]));
+  return { saved: true, indexing: !!saved.indexing, pending, library: buildLibrary([{ ...folder, present }]) };
+}
+
 async function fetchLibraries(replica, folders) {
   let changed = false;
   const fresh = [];
@@ -155,7 +166,7 @@ async function fetchLibraries(replica, folders) {
   return { changed, fresh };
 }
 
-async function fetchCovers(replica, library) {
+async function fetchCovers(replica, library, limit = COVERS_PER_CYCLE) {
   replica.coverMisses ||= new Set();
   const owners = new Map();
   for (const track of library.tracks.values())
@@ -168,7 +179,7 @@ async function fetchCovers(replica, library) {
       const target = replica.files.musicCover(replica.scope, key, size);
       if (replica.coverMisses.has(`${key}-${size}`) || (await replica.files.exists(target)))
         continue;
-      if (requested >= COVERS_PER_CYCLE) return { complete: false, fetched };
+      if (requested >= limit) return { complete: false, fetched };
       replica.check();
       requested++;
       let value;
@@ -256,11 +267,11 @@ export async function refreshMusic(replica, { covers = true } = {}) {
     if (replica.musicReady !== undefined && ready !== replica.musicReady) changed = true;
     replica.musicReady = ready;
     await publishMusic(replica, library);
-    if (covers) {
-      const result = folders.length ? await fetchCovers(replica, library) : { complete: true, fetched: 0 };
-      if (result.fetched) changed = true;
-      if (result.complete) await pruneCovers(replica, library);
-    }
+    const result = folders.length
+      ? await fetchCovers(replica, library, covers ? COVERS_PER_CYCLE : COVERS_PER_PARTIAL)
+      : { complete: true, fetched: 0 };
+    if (result.fetched) changed = true;
+    if (covers && result.complete) await pruneCovers(replica, library);
   } catch (error) {
     if (isHubUnreachable(error)) throw error;
   } finally {

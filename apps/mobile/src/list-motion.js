@@ -26,3 +26,27 @@ export function createListMotion() {
     },
   };
 }
+
+export function createLeaving(keyOf) {
+  let last = [];
+  const gone = new Map();
+  return {
+    rows(items) {
+      const present = new Set(items.map(keyOf));
+      if (items !== last) {
+        last.forEach((item, index) => {
+          const key = keyOf(item);
+          if (!present.has(key) && !gone.has(key)) gone.set(key, { item, index });
+        });
+        last = items;
+      }
+      for (const key of [...gone.keys()]) if (present.has(key)) gone.delete(key);
+      const list = items.map((item) => ({ item, key: keyOf(item), leaving: false }));
+      for (const [key, { item, index }] of gone) list.splice(Math.min(index, list.length), 0, { item, key, leaving: true });
+      return list;
+    },
+    left(key) {
+      return gone.delete(key);
+    },
+  };
+}

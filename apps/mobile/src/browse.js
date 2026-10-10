@@ -1,15 +1,4 @@
-export function browseEntries(entries, directory, search) {
-  if (search)
-    return entries
-      .filter(
-        (e) =>
-          e.path.startsWith(directory) &&
-          e.path
-            .slice(directory.length)
-            .toLowerCase()
-            .includes(search.toLowerCase()),
-      )
-      .map((e) => ({ ...e, label: e.path }));
+export function browseEntries(entries, directory) {
   const result = new Map();
   for (const entry of entries) {
     if (!entry.path.startsWith(directory)) continue;
@@ -40,4 +29,16 @@ export function browseEntries(entries, directory, search) {
       Number(!!b.directory) - Number(!!a.directory) ||
       a.label.localeCompare(b.label),
   );
+}
+
+export const FIRST_ROWS = { start: 0, end: 100 };
+export const REVEAL_ROWS = 500;
+
+export function revealWindow(entries, path, shown, page = 100, cap = REVEAL_ROWS) {
+  const index = path ? entries.findIndex((entry) => entry.path === path) : -1;
+  if (index < 0 || (index >= shown.start && index < shown.end)) return shown;
+  if (index < cap)
+    return { start: 0, end: Math.max(shown.start ? page : shown.end, Math.ceil((index + 1) / page) * page) };
+  const start = Math.floor(index / page) * page;
+  return { start, end: start + page };
 }

@@ -4,10 +4,11 @@ import * as Application from "expo-application";
 import { textSizes, textScale } from "./text-size.js";
 import { coalescedRefresh, retainSnapshot } from "./ui-refresh.js";
 import { fileIcon } from "../../desktop/src/file-icons.js";
+import { mediaSummary } from "./gallery-days";
 import { native } from "./private-network.js";
 import { copyPicked } from "./incoming-files.js";
 import { canContinueInBackground } from "./runtime";
-import { BrandActivity, Busy, Logo, Scaffold } from "./components";
+import { BrandActivity, Busy, LaunchHold, PullArch, Scaffold } from "./components";
 import { GallerySetup } from "./GallerySource";
 import { galleryConfig } from "./gallery.js";
 import { allPhotosNote, sourceAlbums } from "./validation.js";
@@ -15,7 +16,8 @@ import { historyEmpty } from "./history-empty.js";
 import { clockTime, dayLabel } from "./history-days.js";
 import { Section } from "./components";
 import { ConfirmDialog } from "./components";
-import { Rise, useListMotion, useMotion, useRetained } from "./motion";
+import { Rise, useLeaving, useListMotion, useMotion, useRetained } from "./motion";
+import { motion } from "./design-tokens.js";
 import { subscribeNotificationResponse } from "./runtime";
 import { NoticeStack, ErrorNotice } from "./Notice";
 import { crashRecord } from "./crash";
@@ -36,11 +38,13 @@ import {
 } from "../../../packages/core/scoped-activity.js";
 import {
   KeyboardPane,
+  Reveal,
   KeyboardScrollView,
   useKeyboardVisible,
 } from "./KeyboardPane";
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
+  AccessibilityInfo,
   View,
   Text,
   ScrollView,
@@ -57,6 +61,7 @@ import {
   useWindowDimensions,
   Dimensions,
   Linking,
+  findNodeHandle,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
@@ -75,7 +80,6 @@ import {
   FolderRow,
   Navigation,
   MachineRow,
-  ArrivalsStrip,
   ActionRow,
   SettingsGroup,
   SegmentedControl,
@@ -117,13 +121,14 @@ import { player, playerAvailable, usePlayingId } from "./music-player";
 import { useAudioSession } from "./audio-session.js";
 import {
   baseContext,
+  folderContext,
+  formatDuration,
+  formatLength,
   librarySummary,
   librarySymbol,
   musicBackLabel,
   musicPane,
-  musicSearchLabel,
   musicSheet,
-  musicTabs,
   parseTrackNode,
   playingFolder,
   playlistKey,
@@ -133,6 +138,7 @@ import {
 } from "./music-library.js";
 import {
   folderLibrary,
+  hubFolderLibrary,
   isMusicFolder,
   publishMusic,
   readMusicHistory,
@@ -147,12 +153,31 @@ import {
 } from "./recent-cache";
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize, unbroken } from "./format";
-import { browseEntries } from "./browse";
-import { folderSections, homeFromActivity } from "./home-data";
+import { FIRST_ROWS, browseEntries, revealWindow } from "./browse";
+import { folderSections, historyTone } from "./home-data";
+import { FavoritesDrawer, FavoritesSection } from "./Favorites";
+import {
+  FAVORITE_ICONS,
+  emptyFavorites,
+  favoriteCaption,
+  favoriteKey,
+  favoriteRoute,
+  isFavorite,
+  readFavorites,
+  reconcileFavorites,
+  sortFavorites,
+  favoritesSettled,
+  staleFavorites,
+  toggleFavorite,
+  withoutFavorites,
+} from "./favorites.js";
 import { FilePreview, RowThumb } from "./FilePreview";
 import { GlobalSearch } from "./GlobalSearch";
 import { NowPlayingPage } from "./NowPlayingPage";
-import { buildResults, forgetSearch, rememberSearch, searchTokens } from "./search-local";
+import { SEARCH_PAGE, SEARCH_PHOTOS, buildResults, forgetSearch, rememberSearch, searchLanding } from "./search-local";
+import { searchTokens } from "../../../packages/core/search.js";
+import { cachedGalleryItems } from "./hub-gallery.js";
+import { savedPosition, timeLeft as leftLabel } from "./audio-positions.js";
 // Keep the native launch surface until fonts and local startup are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 const relative = (value) => {
@@ -222,7 +247,6 @@ export default function App() {
     [machines, setMachines] = useState(null),
     [machinesSaved, setMachinesSaved] = useState(false),
     [machinesLoaded, setMachinesLoaded] = useState(false),
-    [home, setHome] = useState({ arrivals: [] }),
     [previewEntry, setPreviewEntry] = useState(null),
     [globalSearch, setGlobalSearch] = useState(false),
     [nowPlayingOpen, setNowPlayingOpen] = useState(false),
@@ -239,8 +263,8 @@ export default function App() {
   const [folder, setFolder] = useState(null),
     [entries, setEntries] = useState([]),
     [ignorePolicy, setIgnorePolicy] = useState({ id: null, text: "" }),
-    [search, setSearch] = useState(""),
-    [searchOpen, setSearchOpen] = useState(false),
+    [focusPath, setFocusPath] = useState(null),
+    [galleryFocus, setGalleryFocus] = useState(null),
     [fileView, setFileView] = useState("files"),
     [sheet, setSheet] = useState(null),
     [renameName, setRenameName] = useState(""),
@@ -255,7 +279,6 @@ export default function App() {
   const historyRequest = useRef(0);
   const [detailLoading, setDetailLoading] = useState(false);
   const [musicRoute, setMusicRoute] = useState([{ kind: "artists" }]);
-  const [musicSearch, setMusicSearch] = useState(null);
   const [musicHistory, setMusicHistory] = useState([]);
   const [historyTick, setHistoryTick] = useState(0);
   const [musicData, setMusicData] = useState(null);
@@ -306,6 +329,11 @@ export default function App() {
         : folder;
     });
     setLocals((old) => retainSnapshot(old, visibleFolders));
+    if (r.scope)
+      changeFavorites(
+        (value) => reconcileFavorites(value, folders.filter((f) => f.selected)),
+        r,
+      );
     setStatus((old) =>
       retainSnapshot(old, {
         busy: r.busy,
@@ -342,6 +370,19 @@ export default function App() {
   }
   function reconnect() {
     if (status.offline) startSync();
+  }
+  function changeFavorites(change, r = engine.current) {
+    if (!r?.scope) return Promise.resolve();
+    const key = `favorites:${r.scope}`;
+    const job = favoriteQueue.current.then(async () => {
+      const before = readFavorites(await r.store.get(key, null));
+      const after = change(before);
+      if (after !== before) await r.store.set(key, after);
+      if (mounted.current && engine.current === r)
+        setFavorites((old) => retainSnapshot(old, after));
+    });
+    favoriteQueue.current = job.catch(() => {});
+    return job;
   }
   function listFiles(id = folder?.id) {
     if (!id || !engine.current) return Promise.resolve();
@@ -391,7 +432,7 @@ export default function App() {
     );
   }
   const notices = useMemo(() => createNoticeStore(), []);
-  const [photoCount, setPhotoCount] = useState(null);
+  const [mediaCounts, setMediaCounts] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [shownConfirmation, releaseConfirmation] = useRetained(confirmation);
   function ask(title, message, label = title, icon) {
@@ -549,16 +590,19 @@ export default function App() {
   shownFolder.current =
     folder && engine.current ? `${engine.current.scope}:${folder.id}` : null;
   const folderMotion = useListMotion(locals.map((f) => f.id));
+  const [folderRows, folderLeft] = useLeaving(locals, (f) => f.id);
+  const folderLeaving = new Set(folderRows.filter((row) => row.leaving).map((row) => row.key));
   const [pulling, setPulling] = useState(false);
-  const { duration: motionMs } = useMotion();
+  const [launchShown, setLaunchShown] = useState(true);
+  const { duration: motionMs, easing: motionEase } = useMotion();
   const edge = useRef(new Animated.Value(0)).current;
   const pull = useRef(new Animated.Value(0)).current;
   const backRef = useRef(null);
   useEffect(() => {
     pull.setValue(0);
   }, [screen, folder]);
-  const edgeState = useRef({ ready: false, width: 0, ms: motionMs });
-  edgeState.current = { ready: !!folder && view === "Folders" && !sheet && !fileActionsOpen, width, ms: motionMs };
+  const edgeState = useRef({ ready: false, width: 0, ms: motionMs, easing: motionEase });
+  edgeState.current = { ready: !!folder && view === "Folders" && !sheet && !fileActionsOpen, width, ms: motionMs, easing: motionEase };
   const edgeSwipe = useMemo(
     () =>
       PanResponder.create({
@@ -567,21 +611,51 @@ export default function App() {
           edgeState.current.ready && g.dx > 8 && Math.abs(g.dx) > Math.abs(g.dy),
         onPanResponderMove: (_, g) => edge.setValue(Math.max(0, g.dx)),
         onPanResponderRelease: (_, g) => {
-          const { width: span, ms } = edgeState.current;
+          const { width: span, ms, easing } = edgeState.current;
           if (g.dx > span / 3 || g.vx > 0.6)
-            Animated.timing(edge, { toValue: span, duration: ms(160), useNativeDriver: true }).start(({ finished }) => {
+            Animated.timing(edge, { toValue: span, duration: ms(motion.exit), easing, useNativeDriver: true }).start(({ finished }) => {
               if (!finished) return;
               backRef.current?.();
-              setTimeout(() => edge.setValue(0), 120);
+              setTimeout(() => edge.setValue(0), motion.fast);
             });
-          else Animated.timing(edge, { toValue: 0, duration: ms(200), useNativeDriver: true }).start();
+          else Animated.timing(edge, { toValue: 0, duration: ms(motion.enter), easing, useNativeDriver: true }).start();
         },
         onPanResponderTerminate: () =>
-          Animated.timing(edge, { toValue: 0, duration: edgeState.current.ms(200), useNativeDriver: true }).start(),
+          Animated.timing(edge, {
+            toValue: 0,
+            duration: edgeState.current.ms(motion.enter),
+            easing: edgeState.current.easing,
+            useNativeDriver: true,
+          }).start(),
       }),
     [],
   );
+  const [fileMenuShown, releaseFileMenu] = useRetained(fileActionsOpen ? "open" : null);
+  const fileMenuFade = useRef(new Animated.Value(0)).current;
+  const fileMenuRise = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (fileActionsOpen) {
+      fileMenuRise.setValue(0);
+      Animated.parallel([fileMenuFade, fileMenuRise].map((value) =>
+        Animated.timing(value, { toValue: 1, duration: motionMs(motion.fast), easing: motionEase, useNativeDriver: true }),
+      )).start();
+    } else if (fileMenuShown)
+      Animated.timing(fileMenuFade, { toValue: 0, duration: motionMs(motion.exitFast), easing: motionEase, useNativeDriver: true }).start(
+        ({ finished }) => finished && releaseFileMenu(),
+      );
+  }, [fileActionsOpen]);
+  function dismissFileMenu() {
+    setFileActionsOpen(false);
+    const trigger = fileMenuTrigger.current && findNodeHandle(fileMenuTrigger.current);
+    if (trigger) AccessibilityInfo.setAccessibilityFocus(trigger);
+  }
   const [syncDone, setSyncDone] = useState(false);
+  const [favorites, setFavorites] = useState(emptyFavorites);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
+  useEffect(() => {
+    if (!wide) setFavoritesOpen(false);
+  }, [wide]);
+  const favoriteQueue = useRef(Promise.resolve());
   const wasBusy = useRef(false);
   useEffect(() => {
     const finished = wasBusy.current && !status.busy && !status.offline && !status.error;
@@ -780,6 +854,7 @@ export default function App() {
     sheet && !detail ? sheet : null,
   );
   const screen = onboarding ? "Onboarding" : detail ? "File detail" : view;
+  const pullSync = screen === "Folders" && !folder && connected && !!replica;
   const screenDepth = detail ? 2 : folder && screen === "Folders" ? 1 : 0;
   const lastDepth = useRef(screenDepth);
   const screenEnter =
@@ -870,6 +945,7 @@ export default function App() {
   }, [musicFolder, musicTab, replica, playingId, historyTick]);
   const shownMusic =
     musicData?.key === `${replica?.scope}:${folder?.id}` ? musicData : null;
+  const folderIcon = photoFolder ? "gallery" : musicFolder ? librarySymbol(shownMusic?.library) : "folder";
   const shownLibrary = useRef(null);
   shownLibrary.current = shownMusic?.library || null;
   const playingVolume = playingFolder(playingId);
@@ -949,7 +1025,6 @@ export default function App() {
         : null;
     if (other) openFolder(other).catch((e) => setError(e.message));
     setFileView("music");
-    setMusicSearch(null);
     setMusicRoute(route);
   }
   function musicCommand(name, value) {
@@ -1100,57 +1175,65 @@ export default function App() {
   ]);
   useEffect(() => {
     setPreviewEntry(null);
-  }, [folder?.id, directory, search, screen]);
-  useEffect(() => {
-    if (screen !== "Folders" || !connected || !replica || folder) return;
-    let live = true;
-    (async () => {
-      const r = engine.current;
-      const selected = locals.filter((f) => f.selected);
-      if (!r?.scope || !selected.length) return;
-      let derived = { arrivals: [] };
-      try {
-        const page = await r.remoteView("/v1/activity?limit=50&filter=revisions", { silent: true });
-        derived = homeFromActivity(page.versions, selected.map((f) => f.id));
-      } catch {}
-      if (live) setHome(derived);
-    })();
-    return () => {
-      live = false;
-    };
-  }, [screen, connected, replica, folder, catalog?.volumes?.length, locals.map((f) => `${f.id}:${f.files}:${f.completed ? 1 : 0}:${f.selected ? 1 : 0}`).join(",")]);
+  }, [folder?.id, directory, screen]);
   useEffect(() => {
     if (!globalSearch) return;
     engine.current?.store.get("searchRecents", []).then((list) => Array.isArray(list) && setSearchRecents(list)).catch(() => {});
   }, [globalSearch]);
   const searchLibraries = useRef(new Map());
+  const searchPhotos = useRef(new Map());
   useEffect(() => {
-    if (!globalSearch) searchLibraries.current.clear();
+    if (globalSearch) return;
+    searchLibraries.current.clear();
+    searchPhotos.current.clear();
   }, [globalSearch]);
-  async function searchAll(query, scope) {
+  const galleryFolder = (f) => !!(galleryConfig(f) || f.gallery || catalog?.volumes?.find((v) => v.id === f.id)?.gallery);
+  async function searchAll(query, type = "", offset = 0) {
     const r = engine.current;
-    const volumes = locals.filter((f) => f.selected).map(({ id, name }) => ({ id, name }));
+    const volumes = locals.filter((f) => f.selected).map((f) => ({ id: f.id, name: f.name, gallery: galleryFolder(f) }));
     const { tokens } = searchTokens(query);
     const rows = {};
-    const tracks = {};
+    const libraries = {};
+    const photos = {};
     if (tokens.length)
       for (const v of volumes) {
         rows[v.id] = await r.store.searchRows(r.scope, v.id, tokens[0]);
-        if (scope === "all" || scope === "music") {
-          if (!searchLibraries.current.has(v.id)) {
-            const library = await r.store.musicLibrary(r.scope, v.id).catch(() => null);
-            searchLibraries.current.set(v.id, Array.isArray(library?.value?.tracks) ? library.value.tracks : []);
-          }
-          tracks[v.id] = searchLibraries.current.get(v.id);
+        if (isMusicFolder(catalog, v.id) && !v.gallery) {
+          if (!searchLibraries.current.has(v.id))
+            searchLibraries.current.set(v.id, await folderLibrary(r, v.id).then((value) => value.library, () => null));
+          libraries[v.id] = searchLibraries.current.get(v.id);
+        }
+        if (v.gallery) {
+          if (!searchPhotos.current.has(v.id)) searchPhotos.current.set(v.id, await cachedGalleryItems(r.store, r.scope, v.id));
+          photos[v.id] = searchPhotos.current.get(v.id);
         }
       }
-    return buildResults({ query, scope, volumes, rows, tracks });
+    return buildResults({ query, type, volumes, rows, libraries, photos, limit: type ? SEARCH_PAGE : SEARCH_PHOTOS, offset });
   }
   const persistRecents = (list) => {
     setSearchRecents(list);
     engine.current?.store.set("searchRecents", list).catch(() => {});
   };
-  function openSearchResult(item, query) {
+  function playFound(library, folderId, item) {
+    const track = item.type === "song" || item.type === "episode" ? library?.tracks.get(item.id) : null;
+    const list =
+      item.type === "song"
+        ? library?.albums.get(track?.albumId)
+        : item.type === "episode"
+          ? library?.shows.get(track?.show)
+          : item.type === "album"
+            ? library?.albums.get(item.id)
+            : item.type === "show"
+              ? library?.shows.get(item.id)
+              : item.type === "playlist"
+                ? library?.playlists.get(item.id)
+                : null;
+    const first = track || library?.tracks.get(list?.tracks[0]);
+    if (!list || !first) return;
+    const at = first.podcast ? savedPosition(audio.positions, first)?.position || 0 : 0;
+    playMusic(folderContext(folderId, list.id), first, false, list.tracks.indexOf(first.id), at);
+  }
+  function openSearchResult(item, query, mode = "default") {
     setGlobalSearch(false);
     if (item.type === "action") {
       if (item.name === "sync") startSync(true);
@@ -1166,15 +1249,122 @@ export default function App() {
       return;
     }
     persistRecents(rememberSearch(searchRecents, query));
-    if (item.type === "folder") {
-      const target = locals.find((f) => f.id === item.id);
-      if (target) {
-        setView("Folders");
-        openFolder(target).catch((e) => setError(e.message));
-      }
+    const target = locals.find((f) => f.id === (item.type === "folder" ? item.id : item.volume));
+    if (!target) return;
+    const cached = searchLibraries.current.get(target.id);
+    const landing = searchLanding(item, mode);
+    if (!landing) return;
+    if (landing.to === "history") return void getHistory({ volume: item.volume, path: item.path }).catch((e) => setError(e.message));
+    setView("Folders");
+    openFolder(target)
+      .then(async () => {
+        if (landing.to === "files") {
+          setFileView("files");
+          setDirectory(landing.directory);
+          setFocusPath(landing.focus);
+        } else if (landing.to === "gallery") {
+          setFileView("gallery");
+          setGalleryFocus(landing.focus);
+        } else if (landing.to === "music") {
+          setFileView("music");
+          setMusicRoute(landing.route);
+          if (landing.play) playFound(cached || (await folderLibrary(engine.current, target.id)).library, target.id, item);
+        }
+      })
+      .catch((e) => setError(e.message));
+  }
+  function describeFound(item) {
+    const library = searchLibraries.current.get(item.volume);
+    const list =
+      item.type === "album"
+        ? library?.albums.get(item.id)
+        : item.type === "show"
+          ? library?.shows.get(item.id)
+          : item.type === "playlist"
+            ? library?.playlists.get(item.id)
+            : null;
+    if (item.type === "artist") {
+      const artist = library?.artists.find((entry) => entry.id === item.id);
+      return artist && { cover: musicCover(artist.cover, "large"), rows: artist.albums.map((id, index) => ({ key: id, number: index + 1, title: library.albums.get(id)?.title || "", length: "" })) };
+    }
+    if (!list) return null;
+    return {
+      cover: musicCover(list.cover, "large"),
+      rows: list.tracks.map((id, index) => {
+        const track = library.tracks.get(id);
+        return { key: id, number: track?.track ?? index + 1, title: track?.title || "", length: track?.podcast ? formatLength(track.duration) : formatDuration(track?.duration) };
+      }),
+    };
+  }
+  const favoriteSignature = favorites.items.map(favoriteKey).join("\n");
+  const completedSignature = locals.map((f) => `${f.id}:${f.completed || ""}`).join("\n");
+  useEffect(() => {
+    const r = engine.current;
+    if (!r?.scope || !favorites.items.some((entry) => entry.kind !== "folder")) return undefined;
+    let active = true;
+    (async () => {
+      while (r.active) await r.active.catch(() => {});
+      if (!active || !favoritesSettled(r)) return;
+      const missing = await staleFavorites(favorites.items, locals, {
+        hasPath: (folder, target) => r.store.hasPath(r.scope, folder, target),
+        library: (folder) => hubFolderLibrary(r, folder),
+      });
+      if (active && missing.length && favoritesSettled(r)) await changeFavorites((value) => withoutFavorites(value, missing), r);
+    })().catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [favoriteSignature, completedSignature, status.musicTick, status.busy, replica]);
+  const favoriteFolderIcon = (f) =>
+    galleryFolder(f) ? "gallery" : isMusicFolder(catalog, f.id) ? audioSymbols[f.id] || "music" : "folders";
+  const describeFavorite = (entry) => {
+    const f = locals.find((item) => item.id === entry.folder);
+    const volume = catalog?.volumes?.find((v) => v.id === entry.folder);
+    return {
+      label: entry.kind === "folder" ? f?.name || entry.label : entry.label,
+      caption: favoriteCaption(entry, f?.name || ""),
+      cover: ["directory", "folder"].includes(entry.kind) ? undefined : musicCover(entry.cover || null, "small"),
+      icon: entry.kind === "folder" && f ? favoriteFolderIcon(f) : FAVORITE_ICONS[entry.kind],
+      state:
+        entry.kind !== "folder"
+          ? null
+          : status.busy && status.syncingVolume === entry.folder
+            ? "Syncing"
+            : volume?.conflicts
+              ? "Conflict"
+              : null,
+    };
+  };
+  const folderKind = (f) => (galleryFolder(f) ? "photos" : isMusicFolder(catalog, f.id) ? "audio" : "folders");
+  const shownFavorites = sortFavorites(
+    favorites.items,
+    (entry) => {
+      const f = locals.find((item) => item.id === entry.folder);
+      return f ? folderKind(f) : "folders";
+    },
+    (entry) => describeFavorite(entry).label,
+  );
+  const toggleFavoriteEntry = (entry) => changeFavorites((value) => toggleFavorite(value, entry)).catch((e) => setError(e.message));
+  const favoriteSheet = (entry, extra = {}) => setSheet({ kind: "favorite", entry, ...extra });
+  function openFavorite(entry) {
+    const target = locals.find((f) => f.id === entry.folder && f.selected);
+    if (!target) {
+      changeFavorites((value) => withoutFavorites(value, [favoriteKey(entry)])).catch(() => {});
       return;
     }
-    getHistory({ volume: item.volume, path: item.path }).catch((e) => setError(e.message));
+    const landing = favoriteRoute(entry);
+    setView("Folders");
+    openFolder(target)
+      .then(() => {
+        if (landing.to === "files") {
+          setFileView("files");
+          setDirectory(landing.directory);
+        } else if (landing.to === "music") {
+          setFileView("music");
+          setMusicRoute(landing.route);
+        }
+      })
+      .catch((e) => setError(e.message));
   }
   const actionLocked = busy || !engine.current;
   async function openFolder(f) {
@@ -1182,8 +1372,9 @@ export default function App() {
       folderLists.current.get(`${engine.current?.scope}:${f.id}`) || [],
     );
     setFolder(f);
-    setPhotoCount(null);
-    setSearchOpen(false);
+    setMediaCounts(null);
+    setFocusPath(null);
+    setGalleryFocus(null);
     setFileView(
       (f.gallery || catalog?.volumes?.find((v) => v.id === f.id)?.gallery) &&
         !galleryConfig(f)
@@ -1193,10 +1384,8 @@ export default function App() {
           : "files",
     );
     setMusicRoute([{ kind: "artists" }]);
-    setMusicSearch(null);
     setDirectory("");
-    setVisibleCount(100);
-    setSearch("");
+    setShownRows(FIRST_ROWS);
   }
   async function getHistory(target = null, more = false, quiet = false) {
     const selectedIds = historyFolderIds(
@@ -1590,11 +1779,14 @@ export default function App() {
     );
   }
   const [directory, setDirectory] = useState(""),
-    [visibleCount, setVisibleCount] = useState(100);
+    [shownRows, setShownRows] = useState(FIRST_ROWS);
   const visibleEntries = useMemo(
-    () => browseEntries(entries, directory, search),
-    [entries, directory, search],
+    () => browseEntries(entries, directory),
+    [entries, directory],
   );
+  useEffect(() => {
+    setShownRows((shown) => revealWindow(visibleEntries, focusPath, shown));
+  }, [focusPath, visibleEntries]);
   const entrySummary = useMemo(
     () => ({
       files: entries.filter((entry) => !entry.directory).length,
@@ -1602,16 +1794,15 @@ export default function App() {
     }),
     [entries],
   );
-  const folderSubtitle = unbroken(`${photoFolder ? `${photoCount ?? "—"} photos` : musicView && shownMusic ? librarySummary(shownMusic.library) : `${entrySummary.files} files`} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`);
+  const folderSubtitle = unbroken(`${photoFolder ? (mediaCounts ? mediaSummary(mediaCounts.photos, mediaCounts.videos) : "— photos") : musicView && shownMusic ? librarySummary(shownMusic.library) : `${entrySummary.files} files`} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`);
   const musicShown = musicView && shownMusic?.library?.tracks.size ? shownMusic.library : null;
-  const musicSearching = typeof musicSearch === "string";
+  const searchable = !!connection && locals.some((f) => f.selected);
   const musicAt = musicShown ? musicPane(musicRoute, wide) : null;
   const musicDeep = !!musicAt && musicAt.level > 0;
   const musicArtist =
     musicDeep && wide && musicRoute[musicAt.level].kind === "artist"
       ? musicShown.artists.find((item) => item.id === musicRoute[musicAt.level].id) || null
       : null;
-  const musicHeaderSearch = !!musicShown && !musicDeep && musicTabs(musicShown).length < 2;
   const timelineNotice =
     sourceConfig?.mode === "damaged"
       ? sourceConfig.issue
@@ -1636,7 +1827,7 @@ export default function App() {
         onRail={setGalleryRailModel}
         scrollRef={galleryScroll}
         railRef={galleryRail}
-        onSummary={({ count }) => setPhotoCount(count)}
+        onSummary={setMediaCounts}
         uploads={
           source
             ? {
@@ -1656,6 +1847,8 @@ export default function App() {
         history={(item) => openFileDetail(item)}
         share={(item) => shareMedia(item).catch((e) => setError(e.message))}
         remove={currentFolder?.selected ? deleteMedia : null}
+        focus={galleryFocus}
+        onFocused={() => setGalleryFocus(null)}
       />
     ) : null;
   async function resolveConflict(entry, volume = folder?.id) {
@@ -1745,7 +1938,7 @@ export default function App() {
   useEffect(() => {
     const handler = () => {
       if (fileActionsOpen) {
-        setFileActionsOpen(false);
+        dismissFileMenu();
         return true;
       }
       if (sheet) {
@@ -1755,17 +1948,6 @@ export default function App() {
             ? sheet.returnTo || null
             : null,
         );
-        return true;
-      }
-      if (
-        folder &&
-        view === "Folders" &&
-        musicView &&
-        musicRoute.length === 1 &&
-        typeof musicSearch === "string" &&
-        shownMusic?.library?.tracks.size
-      ) {
-        setMusicSearch(null);
         return true;
       }
       if (
@@ -1795,7 +1977,6 @@ export default function App() {
     musicView,
     musicRoute,
     shownMusic,
-    musicSearch,
   ]);
   const selectTab = (tab) => {
     historyRequest.current++;
@@ -1895,12 +2076,9 @@ export default function App() {
               !!(folder && (filesLoading || recentLoading)),
           }}
         >
-          <SafeAreaView style={s.root}>
-            <View style={s.content}>
-              <Text style={s.heading}>Arca</Text>
-              <Scaffold label="Opening Arca" />
-            </View>
-          </SafeAreaView>
+          <View style={s.root}>
+            <LaunchHold />
+          </View>
         </Design.Provider>
       </SafeAreaProvider>
     );
@@ -1979,6 +2157,7 @@ export default function App() {
           s,
           c,
           wide,
+          fontScale: fontScale * textScale(prefs.textSize),
           active:
             busy ||
             (status.busy && !status.offline) ||
@@ -1997,6 +2176,7 @@ export default function App() {
                 onSelect={selectTab}
                 name={name}
                 hub={catalog?.name}
+                onFavorites={onboarding ? undefined : () => setFavoritesOpen(true)}
               />
             )}
             <SafeAreaView
@@ -2044,7 +2224,6 @@ export default function App() {
                                   musicAt.level,
                                   musicShown,
                                   folder.name,
-                                  musicSearching,
                                 )
                               : "Folders"
                           }
@@ -2096,15 +2275,7 @@ export default function App() {
                           ) : folder && view === "Folders" ? (
                             <ScreenTitle
                               detail={compactAndroid}
-                              contentIcon={
-                                wide
-                                  ? folder.gallery || source
-                                    ? "gallery"
-                                    : musicFolder
-                                      ? librarySymbol(shownMusic?.library)
-                                      : "folder"
-                                  : undefined
-                              }
+                              contentIcon={folderIcon}
                               subtitle={folderSubtitle}
                             >
                               {folder.name}
@@ -2169,26 +2340,13 @@ export default function App() {
                         )}
                         {folder && screen === "Folders" && (
                           <View style={s.rowAction}>
-                            {musicHeaderSearch && (
+                            {searchable && (
                               <Button
                                 iconOnly
-                                label={musicSearching ? "Close search" : musicSearchLabel(musicShown)}
-                                icon={musicSearching ? "close" : "search"}
-                                onPress={() => setMusicSearch(musicSearching ? null : "")}
-                              />
-                            )}
-                            {!wide && !photoFolder && fileView === "files" && (
-                              <Button
-                                iconOnly
-                                label={
-                                  searchOpen ? "Close search" : "Search files"
-                                }
-                                icon={searchOpen ? "close" : "search"}
-                                onPress={() => {
-                                  setSearchOpen(!searchOpen);
-                                  setSearch("");
-                                  setVisibleCount(100);
-                                }}
+                                ghost
+                                label="Search Arca"
+                                icon="search"
+                                onPress={() => setGlobalSearch(true)}
                               />
                             )}
                             <Button
@@ -2205,9 +2363,18 @@ export default function App() {
                           </View>
                         )}
                         {screen === "History" && wide && historyControls}
-                        {connected && screen === "Folders" && (
+                        {searchable && !folder && !detail && (
                           <Button
-                            iconOnly={!!folder}
+                            iconOnly
+                            ghost
+                            label="Search Arca"
+                            icon="search"
+                            onPress={() => setGlobalSearch(true)}
+                          />
+                        )}
+                        {connected && screen === "Folders" && folder && (
+                          <Button
+                            iconOnly
                             label="Sync now"
                             swap
                             icon={syncDone ? "check" : "refresh"}
@@ -2257,15 +2424,16 @@ export default function App() {
                   ]}
                   keyboardShouldPersistTaps="handled"
                   refreshControl={
-                    screen === "Folders" && !folder && connected && replica ? (
+                    pullSync ? (
                       <RefreshControl
                         refreshing={pulling}
-                        tintColor={c.accent}
+                        tintColor={Platform.OS === "ios" ? "transparent" : c.accent}
                         colors={[c.accent]}
                         progressBackgroundColor={c.paper}
                         onRefresh={() => {
+                          if (status.paused) return;
                           setPulling(true);
-                          startSync();
+                          startSync(true);
                         }}
                       />
                     ) : undefined
@@ -2389,8 +2557,6 @@ export default function App() {
                             go={setMusicRoute}
                             select={(kind) => setMusicRoute([{ kind }])}
                             history={musicHistory}
-                            search={musicSearch}
-                            setSearch={setMusicSearch}
                             folderId={folder.id}
                             cover={musicCover}
                             canPlay={playerAvailable}
@@ -2404,7 +2570,17 @@ export default function App() {
                             playlistActions={(playlist) =>
                               setSheet({ kind: "playlist-actions", playlist })
                             }
+                            resumeActions={(value) =>
+                              setSheet({ kind: "resume-actions", ...value })
+                            }
+                            favorite={{
+                              has: (entry) => isFavorite(favorites, entry),
+                              hold: (entry) => favoriteSheet(entry),
+                              toggle: toggleFavoriteEntry,
+                            }}
                             positions={audio.positions}
+                            loaded={audio.loaded}
+                            command={musicCommand}
                             deviceId={connection?.id}
                             relative={relative}
                           />
@@ -2422,27 +2598,10 @@ export default function App() {
                                     value={fileView}
                                     onChange={(value) => {
                                       setFileView(value);
-                                      setVisibleCount(100);
+                                      setShownRows(FIRST_ROWS);
                                     }}
                                   />
                                 </View>
-                                {wide && !source && fileView === "files" && (
-                                  <Button
-                                    size="small"
-                                    iconOnly
-                                    label={
-                                      searchOpen
-                                        ? "Close search"
-                                        : "Search files"
-                                    }
-                                    icon={searchOpen ? "close" : "search"}
-                                    onPress={() => {
-                                      setSearchOpen(!searchOpen);
-                                      setSearch("");
-                                      setVisibleCount(100);
-                                    }}
-                                  />
-                                )}
                                 {fileView === "recent" && (
                                   <Button
                                     quiet
@@ -2456,19 +2615,6 @@ export default function App() {
                                   />
                                 )}
                               </View>
-                              {searchOpen && fileView === "files" && (
-                                <Field
-                                  label="Search files"
-                                  autoFocus
-                                  placeholder="Search this folder"
-                                  returnKeyType="search"
-                                  value={search}
-                                  onChangeText={(value) => {
-                                    setSearch(value);
-                                    setVisibleCount(100);
-                                  }}
-                                />
-                              )}
                               {fileView === "gallery" ? (
                                 timeline
                               ) : fileView === "recent" ? (
@@ -2497,15 +2643,21 @@ export default function App() {
                                       directory={directory}
                                       onChange={(path) => {
                                         setDirectory(path);
-                                        setSearch("");
-                                        setVisibleCount(100);
+                                        setFocusPath(null);
+                                        setShownRows(FIRST_ROWS);
                                       }}
                                     />
+                                    {shownRows.start > 0 && (
+                                      <Button
+                                        label="Show earlier files"
+                                        onPress={() => setShownRows((shown) => ({ ...shown, start: Math.max(0, shown.start - 100) }))}
+                                      />
+                                    )}
                                     {visibleEntries
-                                      .slice(0, visibleCount)
+                                      .slice(shownRows.start, shownRows.end)
                                       .map((e, index) => (
+                                        <Reveal key={e.path} active={focusPath === e.path}>
                                         <Pressable
-                                          key={e.path}
                                           accessibilityRole="button"
                                           accessibilityLabel={
                                             e.directory
@@ -2515,21 +2667,40 @@ export default function App() {
                                           onPress={() => {
                                             if (e.directory) {
                                               setDirectory(e.path + "/");
-                                              setVisibleCount(100);
+                                              setShownRows(FIRST_ROWS);
                                             } else if (wide && !compact) setPreviewEntry(e);
                                             else openFileDetail(e);
                                           }}
                                           onLongPress={() => {
                                             if (!e.directory) setSheet({ kind: "peek", entry: e });
+                                            else
+                                              favoriteSheet(
+                                                { folder: folder.id, kind: "directory", target: e.path, label: e.label },
+                                                { detail: `${e.count} ${e.count === 1 ? "file" : "files"}`, open: () => setDirectory(e.path + "/") },
+                                              );
                                           }}
-                                          accessibilityActions={e.directory ? undefined : [{ name: "preview", label: "Preview" }]}
-                                          onAccessibilityAction={() => {
-                                            if (!e.directory) setSheet({ kind: "peek", entry: e });
+                                          accessibilityActions={
+                                            e.directory
+                                              ? [
+                                                  {
+                                                    name: "favorite",
+                                                    label: isFavorite(favorites, { folder: folder.id, kind: "directory", target: e.path })
+                                                      ? "Remove from Favorites"
+                                                      : "Add to Favorites",
+                                                  },
+                                                ]
+                                              : [{ name: "preview", label: "Preview" }]
+                                          }
+                                          onAccessibilityAction={(event) => {
+                                            const action = event.nativeEvent.actionName;
+                                            if (action === "preview" && !e.directory) setSheet({ kind: "peek", entry: e });
+                                            else if (action === "favorite" && e.directory)
+                                              toggleFavoriteEntry({ folder: folder.id, kind: "directory", target: e.path, label: e.label });
                                           }}
                                           style={[
                                             s.settingRow,
                                             s.separator,
-                                            previewEntry?.path === e.path && wide && !compact && s.historyRowChosen,
+                                            ((previewEntry?.path === e.path && wide && !compact) || focusPath === e.path) && s.historyRowChosen,
                                           ]}
                                         >
                                           <View style={s.row}>
@@ -2550,6 +2721,7 @@ export default function App() {
                                             />
                                           </View>
                                         </Pressable>
+                                        </Reveal>
                                       ))}
                                     {filesLoading && !entries.length && (
                                       <Scaffold label="Loading files" />
@@ -2558,28 +2730,24 @@ export default function App() {
                                   {!filesLoading &&
                                     !visibleEntries.length && (
                                       <EmptyState
-                                        icon="folders"
+                                        icon="arca"
                                         title={
-                                          search
-                                            ? "No matching files"
-                                            : currentFolder?.completed
-                                              ? "This folder is empty"
-                                              : "No local files yet"
+                                          currentFolder?.completed
+                                            ? "This folder is empty"
+                                            : "No local files yet"
                                         }
                                         text={
-                                          search
-                                            ? "Try another name."
-                                            : currentFolder?.completed
-                                              ? "Files appear here as they arrive from your hub."
-                                              : "Files appear here as they download from your hub."
+                                          currentFolder?.completed
+                                            ? "Files appear here as they arrive from your hub."
+                                            : "Files appear here as they download from your hub."
                                         }
                                       />
                                     )}
-                                  {visibleEntries.length > visibleCount && (
+                                  {visibleEntries.length > shownRows.end && (
                                     <Button
                                       label="Show more files"
                                       onPress={() =>
-                                        setVisibleCount((n) => n + 100)
+                                        setShownRows((shown) => ({ ...shown, end: shown.end + 100 }))
                                       }
                                     />
                                   )}
@@ -2685,36 +2853,15 @@ export default function App() {
                         )
                       ) : (
                         <>
-                          {!!connection && locals.some((f) => f.selected) && (
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel="Search Arca"
-                              onPress={() => setGlobalSearch(true)}
-                              style={s.searchFieldRow}
-                            >
-                              <Icon name="search" color={c.mute} />
-                              <Text style={[s.caption, s.flex]}>Search Arca</Text>
-                            </Pressable>
-                          )}
-                          {!!home.arrivals.length && !!connection && (
-                            <ArrivalsStrip
-                              arrivals={home.arrivals}
-                              nameOf={authorName}
-                              relative={relative}
-                              onOpen={(row) =>
-                                getHistory({ volume: row.volume, path: row.path }).catch((e) => setError(e.message))
-                              }
-                            />
-                          )}
-                          {folderSections(locals, (f) =>
-                            galleryConfig(f) ||
-                            f.gallery ||
-                            catalog?.volumes?.find((v) => v.id === f.id)?.gallery
-                              ? "photos"
-                              : isMusicFolder(catalog, f.id)
-                                ? "audio"
-                                : "folders",
-                          ).map((section) => (
+                          <FavoritesSection
+                            items={shownFavorites}
+                            describe={describeFavorite}
+                            open={openFavorite}
+                            remove={(entry) =>
+                              changeFavorites((value) => withoutFavorites(value, [favoriteKey(entry)])).catch((e) => setError(e.message))
+                            }
+                          />
+                          {folderSections(folderRows.map((row) => row.item), folderKind).map((section) => (
                             <Section key={section.kind}>
                               <Text style={s.eyebrow}>{section.label}</Text>
                               <View style={s.group}>
@@ -2722,6 +2869,8 @@ export default function App() {
                                   <Rise
                                     key={f.id}
                                     tint={c.tint}
+                                    leaving={folderLeaving.has(f.id)}
+                                    onLeft={() => folderLeft(f.id)}
                                     {...folderMotion(f.id)}
                                   >
                                   <FolderRow
@@ -2752,6 +2901,8 @@ export default function App() {
                                           ? "Needs attention"
                                           : status.offline
                                             ? "Offline"
+                                            : !connected
+                                              ? "Disconnected"
                                             : status.busy &&
                                                 status.syncingVolume === f.id
                                               ? "Syncing"
@@ -2773,6 +2924,14 @@ export default function App() {
                                         setError(e.message),
                                       )
                                     }
+                                    onLongPress={() =>
+                                      favoriteSheet(
+                                        { folder: f.id, kind: "folder", target: "", label: f.name },
+                                        { open: () => openFolder(f).catch((e) => setError(e.message)) },
+                                      )
+                                    }
+                                    favorite={isFavorite(favorites, { folder: f.id, kind: "folder", target: "" })}
+                                    onFavorite={() => toggleFavoriteEntry({ folder: f.id, kind: "folder", target: "", label: f.name })}
                                   />
                                   </Rise>
                                 ))}
@@ -2814,7 +2973,7 @@ export default function App() {
                             !volumes.length &&
                             (!connected || catalog || status.offline) && (
                               <EmptyState
-                                icon="folder-open"
+                                icon="arca"
                                 title="No folders yet"
                                 text="Shared folders from your hub appear here."
                               />
@@ -3123,23 +3282,30 @@ export default function App() {
                                       s.row,
                                     ]}
                                   >
-                                    <Icon
-                                      name={
-                                        row.deleted
-                                          ? "trash"
-                                          : row.path.includes(".conflict-")
-                                            ? "conflict"
-                                            : "revision"
-                                      }
-                                      color={
-                                        row.deleted
-                                          ? c.mute
-                                          : row.path.includes(".conflict-") &&
-                                              !row.resolved
-                                            ? c.warning
-                                            : c.accent
-                                      }
-                                    />
+                                    <View
+                                      style={[
+                                        s.historyGlyph,
+                                        historyTone(row) === "warning" && s.tileWarning,
+                                        historyTone(row) === "neutral" && s.tileNeutral,
+                                      ]}
+                                    >
+                                      <Icon
+                                        name={
+                                          row.deleted
+                                            ? "trash"
+                                            : row.path.includes(".conflict-")
+                                              ? "conflict"
+                                              : "revision"
+                                        }
+                                        color={
+                                          row.deleted
+                                            ? c.soft
+                                            : historyTone(row) === "warning"
+                                              ? c.warning
+                                              : c.accent
+                                        }
+                                      />
+                                    </View>
                                     <View style={[s.flex, s.stack]}>
                                       <Text
                                         numberOfLines={1}
@@ -3478,18 +3644,15 @@ export default function App() {
                 {!!folder && view === "Folders" && !sheet && !fileActionsOpen && (
                   <View style={s.edgeStrip} {...edgeSwipe.panHandlers} />
                 )}
-                {Platform.OS === "ios" && screen === "Folders" && !folder && (
+                {Platform.OS === "ios" && pullSync && (
                   <Animated.View
                     pointerEvents="none"
                     style={[
                       s.pullMark,
-                      {
-                        opacity: pulling ? 1 : pull,
-                        transform: [{ scale: pull.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }],
-                      },
+                      { opacity: pulling ? 1 : pull.interpolate({ inputRange: [0, 0.01, 1], outputRange: [0, 1, 1] }) },
                     ]}
                   >
-                    <Logo size={28} />
+                    <PullArch pull={pull} refreshing={pulling} />
                   </Animated.View>
                 )}
                 {folder && screen === "Folders" && photoFolder && (
@@ -3520,6 +3683,20 @@ export default function App() {
               </KeyboardPane>
             </SafeAreaView>
           </View>
+          {wide && (
+            <FavoritesDrawer
+              visible={favoritesOpen}
+              onClose={() => setFavoritesOpen(false)}
+              view={view}
+              select={selectTab}
+              items={shownFavorites}
+              describe={describeFavorite}
+              open={openFavorite}
+              remove={(entry) =>
+                changeFavorites((value) => withoutFavorites(value, [favoriteKey(entry)])).catch((e) => setError(e.message))
+              }
+            />
+          )}
           {(!sheet || detail) && (
             <NoticeStack
               items={noticeItems}
@@ -3600,6 +3777,12 @@ export default function App() {
             }}
             cover={(key) => musicCover(key, "small")}
             files={engine.current?.files}
+            folderFiles={(id) => locals.find((f) => f.id === id)?.files || 0}
+            timeLeft={(item) => {
+              const saved = item.type === "episode" ? savedPosition(audio.positions, { folder: item.volume, path: item.path }) : null;
+              return saved ? leftLabel(saved.duration - saved.position) : null;
+            }}
+            describe={describeFound}
           />
           {shownSheet && (
             <Sheet
@@ -3632,7 +3815,7 @@ export default function App() {
                     : shownSheet.kind === "folder-actions"
                       ? {
                           title: shownSheet.volume.name,
-                          icon: photoFolder ? "gallery" : musicFolder ? "music" : "folder",
+                          icon: folderIcon,
                           subtitle: folderSubtitle,
                           menu: true,
                         }
@@ -3648,7 +3831,14 @@ export default function App() {
                               icon: "conflict",
                               subtitle: shownSheet.original.path.split("/").at(-1),
                             }
-                          : musicSheet(shownSheet))}
+                          : shownSheet.kind === "favorite"
+                            ? {
+                                title: describeFavorite(shownSheet.entry).label,
+                                icon: describeFavorite(shownSheet.entry).icon,
+                                subtitle: [describeFavorite(shownSheet.entry).caption, shownSheet.detail].filter(Boolean).join(" · "),
+                                menu: true,
+                              }
+                            : musicSheet(shownSheet))}
               busy={busy}
               busyLabel={actionLabel}
               onClose={() =>
@@ -3740,6 +3930,10 @@ export default function App() {
                   change={changePlaylist}
                   remove={deletePlaylist}
                   removeTrack={deleteTrack}
+                  favorite={{
+                    has: (entry) => isFavorite(favorites, entry),
+                    toggle: toggleFavoriteEntry,
+                  }}
                 />
               )}
               {shownSheet.kind === "gallery" && (
@@ -3749,6 +3943,29 @@ export default function App() {
                   locked={actionLocked}
                   enable={configureGallery}
                 />
+              )}
+              {shownSheet.kind === "favorite" && (
+                <View style={s.actionGroup}>
+                  {!!shownSheet.open && (
+                    <ActionRow
+                      label="Open"
+                      icon="folder-open"
+                      onPress={() => {
+                        setSheet(null);
+                        shownSheet.open();
+                      }}
+                    />
+                  )}
+                  <ActionRow
+                    label={isFavorite(favorites, shownSheet.entry) ? "Remove from Favorites" : "Add to Favorites"}
+                    icon={isFavorite(favorites, shownSheet.entry) ? "star-off" : "star"}
+                    divider={!!shownSheet.open}
+                    onPress={() => {
+                      setSheet(null);
+                      toggleFavoriteEntry(shownSheet.entry);
+                    }}
+                  />
+                </View>
               )}
               {shownSheet.kind === "history-filter" && (
                 <View style={s.group}>
@@ -3794,8 +4011,7 @@ export default function App() {
                             setSheet(null);
                             setFileView(musicView ? "files" : "music");
                             setMusicRoute([{ kind: "artists" }]);
-                            setMusicSearch(null);
-                            setVisibleCount(100);
+                            setShownRows(FIRST_ROWS);
                           }}
                         />
                       )}
@@ -3981,15 +4197,31 @@ export default function App() {
               )}
             </Sheet>
           )}
-          {fileActionsOpen && historyDetail && (
-            <View style={s.fileMenuOverlay} pointerEvents="box-none">
+          {!!fileMenuShown && historyDetail && (
+            <View style={s.fileMenuOverlay} pointerEvents={fileActionsOpen ? "box-none" : "none"}>
               <Pressable
                 style={s.fileMenuDismiss}
                 accessibilityRole="button"
                 accessibilityLabel="Close file actions"
-                onPress={() => setFileActionsOpen(false)}
+                onPress={dismissFileMenu}
               />
-              <View style={[s.fileActionMenu, fileMenuStyle]}>
+              <Animated.View
+                style={[
+                  s.fileActionMenu,
+                  fileMenuStyle,
+                  {
+                    opacity: fileMenuFade,
+                    transform: [
+                      {
+                        translateY: fileMenuRise.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [-motion.distance / 2, 0],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
                 <ActionRow
                   label="Share"
                   icon="export"
@@ -4027,10 +4259,11 @@ export default function App() {
                     deleteCurrentFile?.();
                   }}
                 />
-              </View>
+              </Animated.View>
             </View>
           )}
         </View>
+        {launchShown && <LaunchHold leaving onLeft={() => setLaunchShown(false)} />}
       </Design.Provider>
     </SafeAreaProvider>
   );

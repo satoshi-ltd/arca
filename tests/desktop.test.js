@@ -33,6 +33,13 @@ const script =
   "\n" +
   fs
     .readFileSync(
+      new URL("../apps/desktop/src/favorite-order.js", import.meta.url),
+      "utf8",
+    )
+    .replace(/export /g, "") +
+  "\n" +
+  fs
+    .readFileSync(
       new URL("../apps/desktop/src/notice-contract.js", import.meta.url),
       "utf8",
     )
@@ -1058,10 +1065,13 @@ test("local folders render while the hub catalog is still pending", async (t) =>
   await until(() => w.document.querySelector(".folder-card"));
   assert.equal(remoteRequested, true);
   assert.match(w.document.querySelector("#connection").textContent, /Offline/);
-  assert.doesNotMatch(
-    w.document.querySelector(".folder-card").textContent,
-    /Offline/,
+  assert.match(
+    w.document.querySelector(".folder-card .meta").textContent,
+    /^Offline · /,
+    "the row says Offline once, in its subtitle",
   );
+  assert.ok(w.document.querySelector(".folder-card .home-lead > .tile.id"), "offline draws the neutral tile");
+  assert.equal(w.document.querySelector(".folder-card .pill"), null);
   assert.match(
     w.document.querySelector("#content").textContent,
     /Local documents/,
@@ -1109,8 +1119,10 @@ test("hub-only actions are disabled with a reason while the hub is unavailable a
   await until(() => w.document.querySelector(".folder-card"));
   const choose = w.document.querySelector('#content [data-action="add"]');
   assert.ok(choose, "Choose folders is present");
-  assert.equal(choose.disabled, true);
-  assert.match(choose.title, /Needs the hub/);
+  assert.equal(choose.getAttribute("aria-disabled"), "true", "it stays focusable so its reason can be read");
+  assert.equal(choose.disabled, false);
+  assert.equal(choose.hasAttribute("title"), false, "no native tooltip");
+  assert.match(choose.dataset.tooltip, /Needs the hub/);
   const before = routes.length;
   const forced = w.document.createElement("button");
   forced.dataset.action = "review-conflict";
@@ -1239,7 +1251,7 @@ test("a replica's folder header offers Open in Finder alone: no Enable gallery a
   w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
   await until(() => w.document.querySelector(".detail-head .heading-actions") && w.document.body.getAttribute("aria-busy") === "false");
   const actions = w.document.querySelector(".detail-head .heading-actions");
-  assert.deepEqual([...actions.querySelectorAll("[data-action]")].map((el) => el.dataset.action), ["open"]);
+  assert.deepEqual([...actions.querySelectorAll("[data-action]")].map((el) => el.dataset.action), ["favorite-toggle", "open"]);
   assert.match(actions.textContent, /Open in Finder/);
   assert.equal(actions.querySelector("details"), null, "only the hub decides that a folder is a gallery");
   assert.equal(w.document.querySelector('[data-action="enable-gallery"]'), null);
@@ -1667,7 +1679,8 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   };
   const { own, other } = await machines();
   assert.equal(own.querySelector(".pill").textContent.trim(), "Offline");
-  assert.ok(own.querySelector(".pill.wa"), "a warning pill, never Syncing or a green state");
+  assert.ok(own.querySelector(".pill.id"), "a neutral pill, never Syncing or a green state");
+  assert.ok(own.querySelector(".tile.large.id"), "the device tile takes its pill's neutral tone");
   assert.equal(other.querySelector(".pill").textContent.trim(), "Offline");
   assert.match(other.querySelector(".connection-line").textContent, / · last known$/);
   assert.match(w.document.querySelector("#content").textContent, /Offline · showing saved device information · last known/);
@@ -1722,7 +1735,7 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   await new Promise((resolve) => setTimeout(resolve, 50));
 });
 
-test("Folders opens with Just arrived, type icons and no path or last file", async (t) => {
+test("Folders has no Just arrived row, keeps type icons and shows no path or last file", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-home-live-"));
   init(home, { port: 0, name: "Local Mac" });
   const daemon = await start(home, { timer: false });
@@ -1769,12 +1782,11 @@ test("Folders opens with Just arrived, type icons and no path or last file", asy
   };
   trackInvoke(w, requests);
   w.eval(`(async()=>{${script}\n})()`);
-  await until(() => w.document.querySelectorAll(".home-arrival").length === 3);
-  const arrivals = [...w.document.querySelectorAll(".home-arrival")].map((a) => a.textContent.replace(/\s+/g, " "));
-  assert.match(arrivals[0], /IMG_4412\.jpg.*phone-fold · 2 min ago/);
-  assert.match(arrivals[1], /brief\.md.*Local Mac · 2 h ago/);
-  assert.match(arrivals[2], /So What\.flac/, "deletions are not arrivals");
-  assert.equal(JSON.parse(w.document.querySelector(".home-arrival").dataset.id).rev, 9, "an arrival opens its file");
+  await until(() => w.document.querySelectorAll(".folder-card").length === 3);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(w.document.querySelector(".home-arrival, .home-arrivals"), null, "Folders has no Just arrived row");
+  assert.doesNotMatch(w.document.querySelector("#content").textContent, /Just arrived/);
+  assert.equal(routes.some((route) => route.startsWith("/v1/activity")), false, "Folders does not fetch history");
   const sections = [...w.document.querySelectorAll("#content .section-label")].map((label) => label.textContent.trim());
   assert.deepEqual(sections.filter((label) => ["Folders", "Photos", "Audio"].includes(label)), ["Folders", "Photos", "Audio"], "folders are grouped by kind");
   const byId = (id) => w.document.querySelector(`.folder-card[data-id="${id}"]`);
@@ -1782,7 +1794,11 @@ test("Folders opens with Just arrived, type icons and no path or last file", asy
   assert.ok(cards[0].querySelector('.home-lead .tile [data-icon="images"], .home-lead .tile svg'), "a photo folder keeps its Images icon");
   assert.ok(cards[1].querySelector('.home-lead .tile [data-icon="music"], .home-lead .tile svg'), "a music folder keeps its Music icon");
   assert.equal(cards[0].querySelector("img"), null, "a folder card never shows file content");
-  assert.ok(cards[2].querySelector(".home-conflict .home-ring"), "a conflict draws the ring in the warning colour");
+  assert.equal(cards[2].querySelector(".home-ring"), null, "a ring only ever means progress");
+  assert.ok(cards[2].querySelector('.home-lead .tile.wa [data-icon="triangle-alert"], .home-lead .tile.wa svg'), "a conflict tints the tile and shows the warning glyph");
+  assert.equal(cards[2].querySelector(".meta .state-word.state-wa").textContent, "1 conflict");
+  assert.equal(cards[2].querySelector(".pill"), null, "the folder row carries no state pill");
+  assert.match(cards[2].getAttribute("aria-label"), /, 1 conflict$/);
   assert.equal(w.document.querySelector(".home-latest"), null, "a card does not name the last file touched");
   for (const card of cards) assert.doesNotMatch(card.textContent, /\/Users\/javi/, "the path lives in the folder detail");
   assert.equal(routes.some((route) => route.startsWith("/v1/folder-previews")), false);
@@ -1821,7 +1837,7 @@ test("a paused replica stays Paused and a live list while the hub is unavailable
   await until(() => w.document.querySelectorAll(".device-row").length >= 4);
   const rows = [...w.document.querySelectorAll(".device-row")];
   assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").textContent.trim(), "Paused", "pausing is a choice that outranks Offline");
-  assert.ok(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").classList.contains("wa"), "Paused is a warning on the Devices row too");
+  assert.ok(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").classList.contains("id"), "Paused is neutral on the Devices row too");
   const other = rows.find((row) => /phone-fold/.test(row.textContent));
   assert.equal(other.querySelector(".pill").textContent.trim(), "Linked", "a live list is never marked Offline just because the hub is");
   assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
@@ -1958,11 +1974,12 @@ test("hub-only controls follow the hub's availability and a status-less 'Hub una
   w.document.body.append(gallery);
   offline = false;
   w.document.querySelector('[data-action="refresh"], [data-view="folders"]').click();
-  await until(() => extra.every((control) => !control.disabled) && !gallery.disabled);
+  const blocked = (control) => control.getAttribute("aria-disabled") === "true";
+  await until(() => extra.every((control) => !blocked(control)) && !blocked(gallery));
   offline = true;
   w.document.querySelector('[data-view="folders"]').click();
-  await until(() => extra.every((control) => control.disabled) && gallery.disabled);
-  assert.ok(extra.every((control) => /Needs the hub/.test(control.title)));
+  await until(() => extra.every(blocked) && blocked(gallery));
+  assert.ok(extra.every((control) => /Needs the hub/.test(control.dataset.tooltip) && !control.disabled && !control.title));
   failStatus = true;
   const retry = w.document.createElement("button");
   retry.dataset.action = "refresh";
@@ -2952,7 +2969,7 @@ test("desktop connection confirms disconnect, retains files and offers a fresh p
   const disconnected = [
     ...w.document.querySelectorAll("#devices-list .pill"),
   ].find((el) => el.textContent.includes("Disconnected"));
-  assert.ok(disconnected.classList.contains("wa"));
+  assert.ok(disconnected.classList.contains("id"));
   w.document.querySelector('[data-action="connect"]').click();
   await until(() => w.document.querySelector("#dialog").hasAttribute("open"));
   assert.match(
@@ -4119,8 +4136,8 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   );
   assert.deepEqual(
     [...w.document.querySelectorAll(".heading-actions > [data-action]")].map((el) => el.dataset.action),
-    ["open"],
-    "the header keeps the daily action alone",
+    ["favorite-toggle", "open"],
+    "the header keeps the Favorites star and the daily action alone",
   );
   folderMenu.open = true;
   folderMenu.querySelector('[data-action="rename-share"]').dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -5025,7 +5042,8 @@ test("folder reentry keeps known files and revision while the brand shows refres
     w.document.querySelectorAll(".detail-revisions .scaffold-row").length,
     0,
   );
-  await until(() => w.document.querySelector(".brand-mark.is-busy .busy-grid"));
+  await until(() => w.document.querySelector(".brand-mark.is-busy .brand-door"));
+  assert.equal(w.document.querySelector(".brand-mark .busy-grid"), null, "the mark stays whole; only its door breathes");
   assert.equal(
     w.document.querySelector(".brand-mark").getAttribute("aria-busy"),
     "true",
@@ -5291,11 +5309,8 @@ test("a late Recent answer patches the open folder without rebuilding it, and a 
     1,
     "a poll right after opening does not restart Recent",
   );
-  w.document.querySelector('[data-action="folder-search-toggle"]').click();
-  await until(() => w.document.querySelector("#folder-search-input"));
   const page = w.document.querySelector("#content .page");
-  const input = w.document.querySelector("#folder-search-input");
-  input.value = "file-3";
+  const row = w.document.querySelector(".browser-file-row");
   for (const release of releases.splice(0)) release();
   await until(() =>
     /^(just now|\d+ min ago|\d+ h ago)$/.test(
@@ -5304,8 +5319,7 @@ test("a late Recent answer patches the open folder without rebuilding it, and a 
     ),
   );
   assert.equal(w.document.querySelector("#content .page"), page);
-  assert.equal(w.document.querySelector("#folder-search-input"), input);
-  assert.equal(input.value, "file-3");
+  assert.equal(w.document.querySelector(".browser-file-row"), row, "the file list is not rebuilt");
 });
 
 test("a late Recent answer fills the open Recent tab in place", async (t) => {
@@ -6420,7 +6434,7 @@ test("the photo timeline appears and seeks while the gallery is still indexing",
   );
 });
 
-test("the gallery groups days into blocks with a hero, a quiet run, On this day and Years and Months views", async (t) => {
+test("the gallery heads every day on its own, with On this day and Years and Months views", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-moments-"));
   init(home, { port: 0, name: "Gallery" });
   const daemon = await start(home, { timer: false });
@@ -6477,12 +6491,15 @@ test("the gallery groups days into blocks with a hero, a quiet run, On this day 
   if (!w.document.querySelector(".photo-timeline")) w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => w.document.querySelectorAll(".photo-thumb").length === 17);
   const blocks = [...w.document.querySelectorAll(".photo-day .photo-block")];
-  assert.deepEqual(blocks.map((b) => b.querySelector("h3").textContent), ["Saturday 12 September9 photos", "9–10 September3 photos", "Saturday 5 September5 photos"], "a quiet run shares one block under its date range");
-  assert.deepEqual(blocks.map((b) => b.className.replace("photo-block ", "")), ["photo-block-hero", "photo-block-quiet", "photo-block-day"]);
-  assert.equal(blocks[0].querySelectorAll(".photo-hero .photo-thumb").length, 1);
-  assert.equal(blocks[0].querySelectorAll(".photo-side .photo-thumb").length, 4);
-  assert.equal(blocks[0].querySelectorAll(".photo-grid .photo-thumb").length, 4, "a busy day puts its remaining photos in ordinary rows");
-  assert.equal(blocks[1].querySelectorAll(".photo-grid .photo-thumb").length, 3);
+  const year = new Date().getFullYear() === 2026 ? "" : " 2026";
+  assert.deepEqual(
+    blocks.map((b) => b.querySelector("h3").textContent),
+    [`Saturday 12 September${year}9 photos`, `Thursday 10 September${year}2 photos`, `Wednesday 9 September${year}1 photo`, `Saturday 5 September${year}5 photos`],
+    "sparse neighbouring days keep their own headings",
+  );
+  assert.deepEqual(blocks.map((b) => b.className), ["photo-block", "photo-block", "photo-block", "photo-block"]);
+  assert.deepEqual(blocks.map((b) => b.querySelectorAll(":scope > .photo-grid > .photo-thumb").length), [9, 2, 1, 5]);
+  assert.equal(w.document.querySelector(".photo-mosaic, .photo-hero, .photo-side"), null);
   await until(() => !w.document.querySelector(".photo-memories").hidden);
   const memories = [...w.document.querySelectorAll(".memory-card")].map((c) => c.textContent);
   assert.equal(memories.length, 2);
@@ -6531,6 +6548,580 @@ test("the gallery groups days into blocks with a hero, a quiet run, On this day 
   w.document.querySelector(".photo-thumb .photo-open").click();
   await until(() => w.document.querySelector(".photo-viewer-image"));
   assert.equal(flights.length, count, "a thumbnail scrolled out of view opens with the plain fade");
+});
+
+test("the wall files each photo under the local day its date names, sharpens tiles and lays out only what changed", async (t) => {
+  const zone = process.env.TZ;
+  process.env.TZ = "Asia/Bangkok";
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-wall-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  daemon.engine.store.db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.devicePixelRatio = 2;
+  Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("photo-flow") ? 1000 : 0; } });
+  Object.defineProperty(w.HTMLImageElement.prototype, "naturalWidth", { configurable: true, get: () => 360 });
+  Object.defineProperty(w.HTMLImageElement.prototype, "naturalHeight", { configurable: true, get: () => 270 });
+  w.HTMLImageElement.prototype.decode = () => Promise.resolve();
+  w.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback;
+    }
+    observe(target) {
+      queueMicrotask(() => this.callback([{ target, isIntersecting: true }]));
+    }
+    unobserve() {}
+    disconnect() {}
+  };
+  const requests = new Set();
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  });
+  const item = (path, date) => ({ path, hash: `h-${path}`, kind: "image", date, cursor: `${date || "!"}|${path}`, size: 1, rev: 1, dateSource: date ? "capture date" : "date added" });
+  const first = [item("night.jpg", "2026-09-27T22:30:00.000Z"), item("a.jpg", "2026-09-26T10:00:00"), item("b.jpg", "2026-09-26T09:00:00"), item("c.jpg", "2026-09-25T10:00:00")];
+  const second = [item("d.jpg", "2026-09-20T11:06:00"), item("unknown.jpg", null), item("none.jpg", null)];
+  let releaseSecond;
+  const secondReady = new Promise((resolve) => (releaseSecond = resolve));
+  const timeline = [{ month: "2026-09", count: 5, videos: 0 }];
+  const large = [];
+  const medium = [];
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          const route = args.route;
+          if (route.startsWith("/v1/gallery?")) {
+            const base = { indexing: false, timeline, undated: { count: 2, videos: 0, rev: 0 } };
+            if (!route.includes("after=") || /after=(&|$)/.test(route))
+              return { ...base, items: first, days: { "2026-09-27": 1, "2026-09-26": 2, "2026-09-25": 1 }, next: "cursor-1", previous: null };
+            await secondReady;
+            return { ...base, items: second, days: { "2026-09-26": 2 }, next: null, previous: null };
+          }
+          if (route.startsWith("/v1/gallery/memories")) return { memories: [] };
+          if (route.startsWith("/v1/gallery/preview-url")) {
+            large.push(route);
+            return { url: `http://127.0.0.1:9/large/${new URLSearchParams(route.split("?")[1]).get("path")}`, expires: Date.now() + 3600000 };
+          }
+          if (route.startsWith("/v1/gallery/preview")) {
+            if (route.includes("size=medium")) {
+              medium.push(route);
+              return { data: "data:image/jpeg;base64,TUVE" };
+            }
+            return { data: "data:image/jpeg;base64,AAAA" };
+          }
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  if (!w.document.querySelector(".photo-timeline")) w.document.querySelector('[data-action="gallery-mode"]').click();
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 4);
+  const earlier = [...w.document.querySelectorAll('.photo-block[data-block="2026-09-26"] .photo-thumb')];
+  assert.equal(earlier.length, 2);
+  const writes = [];
+  for (const tile of earlier) {
+    const set = tile.style.setProperty.bind(tile.style);
+    tile.style.setProperty = (...args) => {
+      writes.push(args[0]);
+      return set(...args);
+    };
+  }
+  releaseSecond();
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 7);
+  assert.ok(earlier.every((tile) => tile.isConnected));
+  assert.ok(earlier.every((tile) => tile.style.getPropertyValue("--photo-height")));
+  assert.deepEqual(writes, [], "a new page leaves the days already laid out alone");
+  const year = new Date().getFullYear() === 2026 ? "" : " 2026";
+  assert.deepEqual(
+    [...w.document.querySelectorAll(".photo-block h3")].map((h) => h.textContent),
+    [`Monday 28 September${year}1 photo`, `Saturday 26 September${year}2 photos`, `Friday 25 September${year}1 photo`, `Sunday 20 September${year}1 photo`],
+    "a UTC capture falls on its local day and a day missing from the page's day counts still gets its own heading",
+  );
+  const night = w.document.querySelector('.photo-block[data-block="2026-09-28"] .photo-thumb');
+  assert.match(night.dataset.tooltip, /^September 28, 2026/);
+  assert.equal(night.hasAttribute("title"), false);
+  assert.match(w.document.querySelector('.photo-block[data-block="2026-09-20"] .photo-thumb').dataset.tooltip, /^September 20, 2026 at 11:06/);
+  const groups = [...w.document.querySelectorAll(".photo-day")];
+  assert.deepEqual(groups.map((g) => g.querySelector("h2").textContent), ["September 2026", "Date unknown"]);
+  assert.equal(groups[1].querySelectorAll(".photo-thumb").length, 2);
+  assert.equal(groups[1].querySelectorAll(".photo-thumb")[0].dataset.tooltip, "Date unknown", "an undated photo names no date source");
+  assert.deepEqual([...w.document.querySelectorAll(".photo-timeline button")].map((b) => b.dataset.month), ["2026-09"]);
+  for (const img of w.document.querySelectorAll(".photo-thumb img")) img.dispatchEvent(new w.Event("load"));
+  await until(() => [...w.document.querySelectorAll(".photo-thumb img")].every((img) => img.src === "data:image/jpeg;base64,TUVE"));
+  assert.equal(medium.length, 7, "tiles up to 720 device pixels load the medium preview");
+  assert.deepEqual(large, [], "no wall tile at this size pulls the 2048 px preview");
+});
+
+async function mountWall(t, { zone, page, preview, prepare = () => {} }) {
+  const previousZone = process.env.TZ;
+  if (zone) process.env.TZ = zone;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-wall-"));
+  init(home, { port: 0, name: "Gallery" });
+  const daemon = await start(home, { timer: false });
+  const v = daemon.engine.store.addVolume("Photos");
+  daemon.engine.store.db.prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)").run(v.id);
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  w.devicePixelRatio = 2;
+  Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("photo-flow") ? 1000 : 0; } });
+  Object.defineProperty(w.HTMLImageElement.prototype, "naturalWidth", { configurable: true, get: () => 360 });
+  Object.defineProperty(w.HTMLImageElement.prototype, "naturalHeight", { configurable: true, get: () => 270 });
+  w.HTMLImageElement.prototype.decode = () => Promise.resolve();
+  w.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  w.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback;
+    }
+    observe(target) {
+      queueMicrotask(() => this.callback([{ target, isIntersecting: true }]));
+    }
+    unobserve() {}
+    disconnect() {}
+  };
+  prepare(w);
+  const requests = new Set();
+  const log = [];
+  t.after(async () => {
+    await drainRequests(requests);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+    if (previousZone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousZone;
+  });
+  w.__TAURI__ = {
+    core: {
+      invoke: (command, args) => {
+        const request = (async () => {
+          if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
+          if (command !== "api") throw new Error(command);
+          const route = args.route;
+          if (route.startsWith("/v1/gallery?")) return { indexing: false, previous: null, next: null, ...(await page(new URLSearchParams(route.split("?")[1]))) };
+          if (route.startsWith("/v1/gallery/memories")) return { memories: [] };
+          if (route.startsWith("/v1/gallery/preview")) {
+            const query = new URLSearchParams(route.split("?")[1]);
+            const size = route.startsWith("/v1/gallery/preview-url") ? "large" : query.get("size") || "thumb";
+            log.push(`${size}:${query.get("path")}`);
+            return await preview(size, query.get("path"));
+          }
+          const r = await fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+            method: args.method || "GET",
+            headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+            ...(args.body ? { body: JSON.stringify(args.body) } : {}),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error);
+          return data;
+        })();
+        requests.add(request);
+        request.then(() => requests.delete(request), () => requests.delete(request));
+        return request;
+      },
+    },
+  };
+  await w.eval(`(async()=>{${script}\n})()`);
+  w.location.hash = `#/folders/${v.id}`;
+  w.dispatchEvent(new w.HashChangeEvent("hashchange"));
+  await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
+  if (!w.document.querySelector(".photo-timeline")) w.document.querySelector('[data-action="gallery-mode"]').click();
+  const loadThumbs = () => {
+    for (const img of w.document.querySelectorAll(".photo-thumb img"))
+      if (!img.loaded) {
+        img.loaded = true;
+        img.dispatchEvent(new w.Event("load"));
+      }
+  };
+  return { w, log, loadThumbs };
+}
+const wallItem = (path, date) => ({ path, hash: `h-${path}`, kind: "image", date, cursor: `${date || "!"}|${path}`, size: 1, rev: 1, dateSource: date ? "metadata" : "date added" });
+const pathsOf = (w, selector) => [...w.document.querySelectorAll(`${selector} .photo-thumb`)].map((tile) => tile.querySelector(".photo-open").getAttribute("aria-label").replace("Open ", ""));
+
+test("a day that lost or gained photos to the local time zone counts what it shows, in time order, and the viewer follows the screen", async (t) => {
+  const items = [
+    wallItem("a.jpg", "2026-09-27T10:00:00"),
+    wallItem("b.jpg", "2026-09-27T09:00:00"),
+    wallItem("night.jpg", "2026-09-27T02:30:00.000Z"),
+    wallItem("late.jpg", "2026-09-26T23:00:00"),
+    wallItem("c.jpg", "2026-09-26T10:00:00"),
+    wallItem("east.jpg", "2026-09-25T23:30:00-09:00"),
+    wallItem("g.jpg", "2026-09-25T10:00:00"),
+  ];
+  const { w } = await mountWall(t, {
+    zone: "America/New_York",
+    page: () => ({ items, timeline: [{ month: "2026-09", count: 7, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: { "2026-09-27": 3, "2026-09-26": 2, "2026-09-25": 2 } }),
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+  });
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 7);
+  const year = new Date().getFullYear() === 2026 ? "" : " 2026";
+  assert.deepEqual(
+    [...w.document.querySelectorAll(".photo-block h3")].map((h) => h.textContent),
+    [`Sunday 27 September${year}2 photos`, `Saturday 26 September${year}4 photos`, `Friday 25 September${year}1 photo`],
+    "days that sent a photo to a neighbouring local day count the photos they show",
+  );
+  assert.deepEqual(pathsOf(w, '.photo-block[data-block="2026-09-26"]'), ["late.jpg", "night.jpg", "c.jpg", "east.jpg"], "a day's photos run newest first by instant");
+  w.document.querySelector('.photo-thumb .photo-open[aria-label="Open late.jpg"]').click();
+  await until(() => w.document.querySelector("#dialog-title")?.textContent === "late.jpg");
+  w.document.querySelector(".photo-next").click();
+  await until(() => w.document.querySelector("#dialog-title")?.textContent === "night.jpg");
+  w.document.querySelector(".photo-previous").click();
+  await until(() => w.document.querySelector("#dialog-title")?.textContent === "late.jpg");
+  w.document.querySelector(".photo-previous").click();
+  await until(() => w.document.querySelector("#dialog-title")?.textContent === "b.jpg");
+});
+
+test("sparse days share rows in one flow per month, each labelled above its own first tile", async (t) => {
+  const items = [
+    wallItem("a.jpg", "2026-09-27T10:00:00"),
+    wallItem("b.jpg", "2026-09-26T10:00:00"),
+    wallItem("c.jpg", "2026-09-25T10:00:00"),
+    ...Array.from({ length: 40 }, (_, i) => wallItem(`long${String(i).padStart(2, "0")}.jpg`, `2026-09-20T${String(20 - Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "00" : "30"}:00`)),
+  ];
+  const { w, loadThumbs } = await mountWall(t, {
+    page: () => ({ items, timeline: [{ month: "2026-09", count: 43, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: { "2026-09-27": 1, "2026-09-26": 1, "2026-09-25": 1, "2026-09-20": 40 } }),
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+    prepare: (w) => Object.defineProperty(w.HTMLImageElement.prototype, "naturalWidth", { configurable: true, get: () => 135 }),
+  });
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 43);
+  const flows = w.document.querySelectorAll('.photo-day[data-day="2026-09"] > .photo-flow');
+  assert.equal(flows.length, 1);
+  assert.equal(flows[0].querySelectorAll(".photo-thumb").length, 43);
+  const px = (element, name) => parseFloat(element.style.getPropertyValue(name));
+  const first = (day) => w.document.querySelector(`.photo-block[data-block="${day}"] .photo-thumb`);
+  const settled = () => [...w.document.querySelectorAll(".photo-thumb")].every((tile) => px(tile, "--photo-width") < px(tile, "--photo-height"));
+  await until(() => {
+    loadThumbs();
+    return settled();
+  });
+  const top = px(first("2026-09-27"), "--photo-top");
+  for (const day of ["2026-09-26", "2026-09-25", "2026-09-20"]) assert.equal(px(first(day), "--photo-top"), top, `${day} starts in the first row`);
+  const lefts = ["2026-09-27", "2026-09-26", "2026-09-25", "2026-09-20"].map((day) => px(first(day), "--photo-left"));
+  assert.deepEqual([...lefts].sort((a, b) => a - b), lefts, "days run left to right in the row");
+  for (const block of w.document.querySelectorAll(".photo-block")) {
+    const heading = block.querySelector("h3");
+    const tile = block.querySelector(".photo-thumb");
+    assert.equal(px(heading, "--label-left"), px(tile, "--photo-left"));
+    assert.equal(px(heading, "--label-top"), px(tile, "--photo-top") - 24);
+  }
+  const long = w.document.querySelector('.photo-block[data-block="2026-09-20"]');
+  const rows = new Set([...long.querySelectorAll(".photo-thumb")].map((tile) => px(tile, "--photo-top")));
+  assert.ok(rows.size > 3, "the long day continues on the next rows");
+  assert.equal(long.querySelectorAll("h3").length, 1);
+  const narrow = first("2026-09-27").closest(".photo-block").querySelector("h3");
+  assert.equal(narrow.querySelector(".photo-day-name").textContent, "Sun 27 Sep", "a one-photo day's label fits above its tile");
+  assert.equal(narrow.querySelector(".photo-count").hidden, true);
+  const wide = long.querySelector("h3");
+  assert.match(wide.querySelector(".photo-day-name").textContent, /^Sunday 20 September/);
+  assert.equal(wide.querySelector(".photo-count").textContent, "40 photos");
+  assert.equal(wide.querySelector(".photo-count").hidden, false);
+  const bottom = Math.max(...[...w.document.querySelectorAll(".photo-thumb")].map((tile) => px(tile, "--photo-top") + px(tile, "--photo-height")));
+  assert.ok(Math.abs(px(flows[0], "--flow-height") - bottom) < 0.05, "the month is as tall as its rows");
+});
+
+const tilePx = (element, name) => parseFloat(element.style.getPropertyValue(name));
+const frames = () => new Promise((resolve) => setTimeout(resolve, 80));
+const noUndated = { count: 0, videos: 0, rev: 0 };
+
+test("a page whose first new day closes the row above re-lays that whole row", async (t) => {
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  const timeline = [{ month: "2026-09", count: 5, videos: 0 }];
+  const { w, loadThumbs } = await mountWall(t, {
+    page: async (query) =>
+      query.get("after")
+        ? (await gate, { items: [wallItem("e.jpg", "2026-09-26T10:00:00")], timeline, undated: noUndated, days: { "2026-09-26": 1 } })
+        : { items: ["a", "b", "c", "d"].map((name, i) => wallItem(`${name}.jpg`, `2026-09-27T1${5 - i}:00:00`)), next: "cursor-1", timeline, undated: noUndated, days: { "2026-09-27": 4 } },
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+  });
+  const tiles = (day) => [...w.document.querySelectorAll(`.photo-block[data-block="${day}"] .photo-thumb`)];
+  const settled = (day) => tiles(day).every((tile) => Math.abs(tilePx(tile, "--photo-width") / tilePx(tile, "--photo-height") - 4 / 3) < 0.01);
+  await until(() => {
+    loadThumbs();
+    return tiles("2026-09-27").length === 4 && settled("2026-09-27");
+  });
+  assert.equal(tilePx(tiles("2026-09-27")[0], "--photo-height"), 180, "the month's last row keeps the target height");
+  release();
+  await until(() => {
+    loadThumbs();
+    return tiles("2026-09-26").length === 1 && settled("2026-09-26");
+  });
+  await frames();
+  const row = tiles("2026-09-27");
+  const next = tiles("2026-09-26")[0];
+  assert.ok(tilePx(next, "--photo-top") > tilePx(row[0], "--photo-top"), "the new day starts the next row");
+  for (const tile of row) assert.ok(Math.abs(tilePx(tile, "--photo-height") - 184.17) < 0.05, `the closed row takes its new height, not ${tilePx(tile, "--photo-height")}`);
+  const last = row.at(-1);
+  assert.ok(Math.abs(tilePx(last, "--photo-left") + tilePx(last, "--photo-width") - 1000) < 0.5, "the closed row fills the wall with no blank strip");
+  assert.ok(tilePx(next, "--photo-top") >= tilePx(row[0], "--photo-top") + 184.17 + 6 + 24 - 0.05);
+});
+
+test("a one-photo day too narrow for its short label shows the date and month, then the day number", async (t) => {
+  const b64 = (text) => Buffer.from(text).toString("base64");
+  const { w, loadThumbs } = await mountWall(t, {
+    page: () => ({ items: [wallItem("thin.jpg", "2026-09-27T10:00:00"), wallItem("slim.jpg", "2026-09-26T10:00:00"), wallItem("wide.jpg", "2026-09-25T10:00:00")], timeline: [{ month: "2026-09", count: 3, videos: 0 }], undated: noUndated, days: { "2026-09-27": 1, "2026-09-26": 1, "2026-09-25": 1 } }),
+    preview: (size, path) => ({ data: `data:image/jpeg;base64,${b64(path)}` }),
+    prepare: (w) =>
+      Object.defineProperty(w.HTMLImageElement.prototype, "naturalWidth", {
+        configurable: true,
+        get() {
+          return this.src.includes(b64("thin.jpg")) ? 30 : this.src.includes(b64("slim.jpg")) ? 68 : 360;
+        },
+      }),
+  });
+  const name = (day) => w.document.querySelector(`.photo-block[data-block="${day}"] .photo-day-name`)?.textContent;
+  await until(() => {
+    loadThumbs();
+    return name("2026-09-27") === "27" && name("2026-09-26") === "26 Sep";
+  });
+  assert.match(name("2026-09-25"), /^Friday 25 September/);
+});
+
+test("day labels refit once the label font finishes loading", async (t) => {
+  const state = { loaded: false };
+  let fonts;
+  const { w, loadThumbs } = await mountWall(t, {
+    page: () => ({ items: ["a", "b", "c", "d"].map((name, i) => wallItem(`${name}.jpg`, `2026-09-27T1${5 - i}:00:00`)), timeline: [{ month: "2026-09", count: 4, videos: 0 }], undated: noUndated, days: { "2026-09-27": 4 } }),
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+    prepare: (w) => {
+      const style = w.document.createElement("style");
+      style.textContent = ".photo-day-name, .photo-count { font: 600 13px Label; }";
+      w.document.head.append(style);
+      w.OffscreenCanvas = class {
+        getContext() {
+          return { font: "", measureText: (text) => ({ width: text.length * (state.loaded ? 60 : 1) }) };
+        }
+      };
+      fonts = new w.EventTarget();
+      fonts.ready = new Promise(() => {});
+      Object.defineProperty(w.document, "fonts", { configurable: true, value: fonts });
+    },
+  });
+  const heading = () => w.document.querySelector('.photo-block[data-block="2026-09-27"] h3');
+  await until(() => {
+    loadThumbs();
+    return heading() && tilePx(heading(), "--label-width") > 900;
+  });
+  assert.match(heading().querySelector(".photo-day-name").textContent, /^Sunday 27 September/);
+  assert.equal(heading().querySelector(".photo-count").hidden, false);
+  state.loaded = true;
+  fonts.dispatchEvent(new w.Event("loadingdone"));
+  assert.equal(heading().querySelector(".photo-day-name").textContent, "Sun 27 Sep", "widths measured with the fallback font are dropped");
+  assert.equal(heading().querySelector(".photo-count").hidden, true);
+});
+
+test("a day whose count changes outside a relayout refits its label", async (t) => {
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  const timeline = [{ month: "2026-10", count: 3, videos: 0 }, { month: "2026-09", count: 1, videos: 0 }];
+  const { w, loadThumbs } = await mountWall(t, {
+    zone: "America/New_York",
+    page: async (query) =>
+      query.get("after")
+        ? (await gate, { items: [wallItem("night.jpg", "2026-10-01T02:00:00.000Z")], timeline, undated: noUndated, days: {} })
+        : { items: ["a", "b", "c"].map((name, i) => wallItem(`${name}.jpg`, `2026-10-01T1${5 - i}:00:00`)), next: "cursor-1", timeline, undated: noUndated, days: { "2026-10-01": 1000000 } },
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+    prepare: (w) => Object.defineProperty(w.HTMLImageElement.prototype, "naturalWidth", { configurable: true, get: () => 108 }),
+  });
+  const heading = () => w.document.querySelector('.photo-block[data-block="2026-10-01"] h3');
+  await until(() => {
+    loadThumbs();
+    return heading() && Math.abs(tilePx(heading(), "--label-width") - 228) < 0.05;
+  });
+  assert.equal(heading().querySelector(".photo-count").textContent, "1,000,000 photos");
+  assert.equal(heading().querySelector(".photo-count").hidden, true, "a long count does not fit above three slim photos");
+  release();
+  await until(() => w.document.querySelector('.photo-block[data-block="2026-09-30"]'));
+  assert.equal(heading().querySelector(".photo-count").textContent, "3 photos", "a day that lost a photo to the local time zone counts what it shows");
+  assert.equal(heading().querySelector(".photo-count").hidden, false, "the shorter count now fits beside the name");
+});
+
+test("moving to a screen with another pixel density sharpens the tiles without a resize", async (t) => {
+  const queries = [];
+  const { w, log, loadThumbs } = await mountWall(t, {
+    page: () => ({ items: ["a", "b", "c", "d"].map((name, i) => wallItem(`${name}.jpg`, `2026-09-27T1${5 - i}:00:00`)), timeline: [{ month: "2026-09", count: 4, videos: 0 }], undated: noUndated, days: { "2026-09-27": 4 } }),
+    preview: (size) => (size === "large" ? { url: "http://127.0.0.1:9/large", expires: Date.now() + 3600000 } : { data: "data:image/jpeg;base64,AAAA" }),
+    prepare: (w) => {
+      w.matchMedia = (media) => {
+        const query = new w.EventTarget();
+        query.media = media;
+        query.matches = false;
+        queries.push(query);
+        return query;
+      };
+    },
+  });
+  await until(() => {
+    loadThumbs();
+    return log.filter((entry) => entry.startsWith("medium:")).length === 4;
+  });
+  await frames();
+  assert.ok(!log.some((entry) => entry.startsWith("large:")));
+  const density = queries.findLast((query) => query.media === "(resolution: 2dppx)");
+  assert.ok(density, "the gallery watches the current pixel density");
+  w.devicePixelRatio = 4;
+  density.dispatchEvent(new w.Event("change"));
+  await until(() => log.some((entry) => entry.startsWith("large:")));
+  assert.ok(queries.some((query) => query.media === "(resolution: 4dppx)"), "and keeps watching at the new density");
+});
+
+test("a raw epoch capture time never files a photo under 1970, and a tile scrolled out keeps its placeholder", async (t) => {
+  const observers = [];
+  const { w, loadThumbs } = await mountWall(t, {
+    page: () => ({
+      items: [
+        wallItem("a.jpg", "2026-09-27T10:00:00"),
+        { ...wallItem("clip.mp4", "2026-09-27T09:00:00"), kind: "video" },
+        { ...wallItem("epoch.jpg", null), captured: "1970-01-01T00:00:00.000Z" },
+      ],
+      timeline: [{ month: "2026-09", count: 2, videos: 1 }],
+      undated: { count: 1, videos: 0, rev: 0 },
+      days: { "2026-09-27": 2 },
+    }),
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+    prepare: (w) => {
+      w.IntersectionObserver = class {
+        constructor(callback) {
+          this.callback = callback;
+          observers.push(this);
+        }
+        observe(target) {
+          queueMicrotask(() => this.callback([{ target, isIntersecting: true }]));
+        }
+        unobserve() {}
+        disconnect() {}
+      };
+    },
+  });
+  await until(() => {
+    loadThumbs();
+    return w.document.querySelectorAll(".photo-thumb img").length === 3;
+  });
+  assert.deepEqual([...w.document.querySelectorAll(".photo-day")].map((group) => group.dataset.day), ["2026-09", "unknown"]);
+  const epoch = [...w.document.querySelectorAll(".photo-thumb")].find((tile) => tile.querySelector('[aria-label="Open epoch.jpg"]'));
+  assert.equal(epoch.closest(".photo-day").dataset.day, "unknown");
+  assert.equal(epoch.dataset.tooltip, "Date unknown");
+  const tile = (name) => w.document.querySelector(`.photo-open[aria-label="Open ${name}"]`).closest(".photo-thumb");
+  const tiles = [tile("a.jpg"), tile("clip.mp4")];
+  for (const target of tiles) for (const each of observers) each.callback([{ target, isIntersecting: false }]);
+  assert.ok(tile("a.jpg").querySelector(".photo-open svg.brand-arch"), "a photo scrolled out shows the arch placeholder");
+  assert.ok(!tile("a.jpg").querySelector(".photo-open img"));
+  assert.ok(tile("clip.mp4").querySelector('.photo-open [data-icon="play"], .photo-open svg'), "a video scrolled out shows its play glyph");
+  assert.ok(!tile("clip.mp4").querySelector(".photo-open svg.brand-arch"));
+});
+
+test("seeking a month opens on that month, not on a neighbour holding one shifted photo", async (t) => {
+  const { w } = await mountWall(t, {
+    zone: "Asia/Bangkok",
+    page: (query) =>
+      query.get("month") === "2026-09"
+        ? { items: [wallItem("night.jpg", "2026-09-30T22:30:00.000Z"), wallItem("s.jpg", "2026-09-20T10:00:00")], timeline: [{ month: "2026-09", count: 2, videos: 0 }, { month: "2026-08", count: 1, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: { "2026-09-30": 1, "2026-09-20": 1 } }
+        : { items: [wallItem("aug.jpg", "2026-08-10T10:00:00")], timeline: [{ month: "2026-09", count: 2, videos: 0 }, { month: "2026-08", count: 1, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: { "2026-08-10": 1 } },
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+    prepare: (w) => {
+      const rect = w.HTMLElement.prototype.getBoundingClientRect;
+      w.HTMLElement.prototype.getBoundingClientRect = function () {
+        if (this.matches('.photo-day[data-day="2026-09"]')) return { top: 300, bottom: 600, left: 0, right: 0, width: 0, height: 300 };
+        return rect.call(this);
+      };
+    },
+  });
+  await until(() => w.document.querySelector(".photo-timeline button"));
+  w.document.querySelector('.photo-timeline button[data-month="2026-09"]').click();
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 2);
+  assert.deepEqual([...w.document.querySelectorAll(".photo-day")].map((group) => group.dataset.day), ["2026-10", "2026-09"]);
+  assert.equal(w.document.querySelector(".page").scrollTop, 300, "the requested month sits at the top of the view");
+});
+
+test("busy previews are retried, and tiles sharpen only once every thumbnail is in", async (t) => {
+  const busy = new Map();
+  const items = Array.from({ length: 5 }, (_, i) => wallItem(`p${i}.jpg`, `2026-09-2${i}T10:00:00`));
+  const { w, log, loadThumbs } = await mountWall(t, {
+    page: () => ({ items, timeline: [{ month: "2026-09", count: 5, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: {} }),
+    preview: (size, file) => {
+      const key = `${size}:${file}`;
+      const refusals = busy.get(key) ?? (size === "thumb" ? (file === "p0.jpg" || file === "p3.jpg" ? 2 : 0) : file === "p1.jpg" ? 1 : 0);
+      if (refusals) {
+        busy.set(key, refusals - 1);
+        throw new Error("Previews are busy. Try again.");
+      }
+      busy.set(key, 0);
+      return { data: size === "thumb" ? "data:image/jpeg;base64,AAAA" : "data:image/jpeg;base64,TUVE" };
+    },
+  });
+  await until(() => {
+    loadThumbs();
+    return [...w.document.querySelectorAll(".photo-thumb img")].length === 5 && [...w.document.querySelectorAll(".photo-thumb img")].every((img) => img.src === "data:image/jpeg;base64,TUVE");
+  }, 600);
+  assert.equal(w.document.querySelector(".photo-thumb [data-lucide='image-off'], .photo-thumb .lucide-image-off"), null);
+  const lastThumb = log.findLastIndex((entry) => entry.startsWith("thumb:"));
+  const firstMedium = log.findIndex((entry) => entry.startsWith("medium:"));
+  assert.ok(lastThumb < firstMedium, log.join(" "));
+});
+
+test("medium previews that fail to decode free their cache share, and tiles upgrade when the screen needs more pixels", async (t) => {
+  const items = ["bad0.jpg", "bad1.jpg", "bad2.jpg", "good.jpg"].map((file, i) => wallItem(file, `2026-09-20T1${9 - i}:00:00`));
+  const filler = "A".repeat(1200000);
+  const frames = [];
+  const { w, log, loadThumbs } = await mountWall(t, {
+    page: () => ({ items, timeline: [{ month: "2026-09", count: 4, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: {} }),
+    preview: (size, file) =>
+      size === "thumb"
+        ? { data: "data:image/jpeg;base64,AAAA" }
+        : size === "large"
+          ? { url: `http://127.0.0.1:9/large/${file}`, expires: Date.now() + 3600000 }
+          : { data: `data:image/jpeg;base64,${file.startsWith("bad") ? "QkFE" : "R09P"}${filler}` },
+    prepare: (w) => {
+      w.HTMLImageElement.prototype.decode = function () {
+        return this.src.includes("QkFE") ? Promise.reject(new Error("bad")) : Promise.resolve();
+      };
+      w.requestAnimationFrame = (callback) => frames.push(callback);
+    },
+  });
+  await until(() => w.document.querySelectorAll(".photo-thumb img").length === 4);
+  frames.length = 0;
+  loadThumbs();
+  assert.equal(frames.length, 1, "tiles of one day changing ratio in a frame schedule one layout");
+  const page = w.document.querySelector(".page");
+  let writes = 0;
+  const descriptor = Object.getOwnPropertyDescriptor(w.Element.prototype, "scrollTop");
+  Object.defineProperty(page, "scrollTop", { configurable: true, get: () => descriptor.get.call(page), set: (value) => { writes++; descriptor.set.call(page, value); } });
+  frames.splice(0).forEach((frame) => frame());
+  assert.equal(writes, 0, "a layout that leaves the first photo in place does not touch the scroll position");
+  const good = () => w.document.querySelector('.photo-thumb .photo-open[aria-label="Open good.jpg"] img');
+  await until(() => good().src.startsWith("data:image/jpeg;base64,R09P"));
+  w.devicePixelRatio = 4;
+  w.dispatchEvent(new w.Event("resize"));
+  await until(() => good().src === "http://127.0.0.1:9/large/good.jpg");
+  assert.ok(log.includes("large:good.jpg"));
 });
 
 test("Space opens a Quick Look with the file's preview, arrows move through the folder and Space closes", async (t) => {
@@ -6611,7 +7202,7 @@ test("Space opens a Quick Look with the file's preview, arrows move through the 
   assert.ok(w.document.querySelector(".file-history-summary .stats"), "the preview heads File detail above its stats");
 });
 
-test("Command-K opens a palette that searches by scope, walks results with the keyboard, runs actions and remembers searches", async (t) => {
+test("Command-K opens one palette with typed groups and no scopes, walks results with the keyboard, runs actions and remembers searches", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-palette-"));
   init(home, { port: 0, name: "Palette" });
   const daemon = await start(home, { timer: false });
@@ -6640,13 +7231,13 @@ test("Command-K opens a palette that searches by scope, walks results with the k
         if (args.route.startsWith("/v1/search")) {
           searches.push(args.route);
           const q = new URL(args.route, "http://x").searchParams;
-          if (q.get("q") === "zzzz") return { folders: [], files: [], photos: [], music: [], counts: {} };
+          if (q.get("q") === "zzzz") return { groups: [] };
           return {
-            folders: q.get("scope") === "all" ? [{ id: "docs", name: "blueprints" }] : [],
-            files: [{ volume: "docs", folder: "documents", path: "plans/blueprint-v3.pdf", name: "blueprint-v3.pdf", hash: "h1", size: 2400, rev: 7 }],
-            photos: [{ volume: "docs", folder: "documents", path: "blue-door.jpg", name: "blue-door.jpg", hash: "h2", size: 10, rev: 6, kind: "image" }],
-            music: [{ volume: "docs", folder: "documents", path: "Blue in Green.flac", name: "Blue in Green.flac", hash: "h3", size: 10, rev: 5, title: "Blue in Green", artist: "Miles Davis", album: "Kind of Blue", cover: null }],
-            counts: { folders: 1, files: 1, photos: 1, music: 1 },
+            groups: [
+              { type: "folders", count: 1, rows: [{ id: "docs", name: "blueprints" }] },
+              { type: "photos", count: 1, rows: [{ volume: "docs", folder: "documents", gallery: false, path: "blue-door.jpg", name: "blue-door.jpg", hash: "h2", size: 10, rev: 6, kind: "image", date: "2026-09-14", cursor: "2026-09-14|blue-door.jpg" }] },
+              { type: "files", count: 1, rows: [{ volume: "docs", folder: "documents", path: "plans/blueprint-v3.pdf", name: "blueprint-v3.pdf", hash: "h1", size: 2400, rev: 7 }] },
+            ],
           };
         }
         if (args.route.startsWith("/v1/gallery/preview")) return { data: "data:image/png;base64,AAAA" };
@@ -6671,16 +7262,20 @@ test("Command-K opens a palette that searches by scope, walks results with the k
   };
   type("blue");
   await until(() => dialog.querySelector('[aria-label="Files"]'));
-  assert.deepEqual([...dialog.querySelectorAll(".pal-group")].map((g) => g.getAttribute("aria-label")), ["Folders", "Files", "Photos", "Music"]);
+  assert.equal(dialog.querySelector(".pal-scopes, [data-pal-scope]"), null, "the groups separate the kinds; there are no scopes");
+  assert.equal(dialog.querySelector(".pal-input").placeholder, "Search Arca");
+  assert.deepEqual([...dialog.querySelectorAll(".pal-group")].map((g) => g.getAttribute("aria-label")), ["Folders", "Photos", "Files"]);
   assert.equal(dialog.querySelectorAll(".pal-thumbs .pal-cell").length, 1, "photos are a thumbnail row");
   await until(() => dialog.querySelector(".pal-thumb img"));
-  assert.match(dialog.querySelector('[aria-label="Music"]').textContent, /Blue in Green.*Miles Davis · Kind of Blue/s);
+  assert.match(dialog.querySelector('[aria-label="Folders"]').textContent, /blueprints\s*Folder · 3 files\s*Open/);
+  assert.match(dialog.querySelector('[aria-label="Files"]').textContent, /blueprint-v3\.pdf\s*plans · 2\.3 KB\s*Details/);
+  assert.match(dialog.querySelector(".pal-foot").textContent, /Open.*Ctrl↵Show in folder/, "the foot names Show in folder");
   assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("blueprints"), true, "the first row is selected");
   press("ArrowDown");
-  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("blueprint-v3.pdf"), true);
+  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("Sep 14, 2026"), true, "arrows walk into the photo cells");
   press("ArrowUp");
   press("ArrowUp");
-  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("Blue in Green"), true, "the selection wraps");
+  assert.equal(dialog.querySelector('[role="option"][aria-selected="true"]').textContent.includes("blueprint-v3.pdf"), true, "the selection wraps");
   const flights = [];
   w.Element.prototype.animate = function (frames, options) {
     flights.push({ element: this, frames, options });
@@ -6691,7 +7286,13 @@ test("Command-K opens a palette that searches by scope, walks results with the k
   Object.defineProperty(w.HTMLElement.prototype, "offsetWidth", { configurable: true, get() { return this.matches("button") ? 60 : this.matches(".segmented") ? 240 : 0; } });
   Object.defineProperty(w.HTMLElement.prototype, "offsetLeft", { configurable: true, get() { return this.matches("button") ? place(this) * 60 : 0; } });
   w.document.documentElement.style.setProperty("--motion-fast", "120ms");
-  dialog.querySelector('[data-pal-scope="files"]').click();
+  dialog.insertAdjacentHTML("beforeend", '<div class="segmented" role="group" aria-label="Probe"><button type="button" class="active" aria-pressed="true">All</button><button type="button" aria-pressed="false">Files</button><button type="button" aria-pressed="false">Photos</button><button type="button" aria-pressed="false">Music</button></div>');
+  const segments = [...dialog.querySelectorAll('.segmented[aria-label="Probe"] button')];
+  const pick = (index) => segments.forEach((button, i) => {
+    button.classList.toggle("active", i === index);
+    button.setAttribute("aria-pressed", String(i === index));
+  });
+  pick(1);
   await until(() => dialog.querySelector(".segmented-thumb"));
   assert.ok(dialog.querySelector(".segmented").classList.contains("has-thumb"));
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -6701,7 +7302,7 @@ test("Command-K opens a palette that searches by scope, walks results with the k
   await new Promise((resolve) => setTimeout(resolve, 150));
   probe.disconnect();
   assert.equal(churn, 0, "placing the pill does not retrigger itself");
-  dialog.querySelector('[data-pal-scope="music"]').click();
+  pick(3);
   await until(() => flights.some((flight) => flight.element.matches?.(".segmented-thumb")));
   assert.equal(flights.find((flight) => flight.element.matches(".segmented-thumb")).frames[0].transform, "translate(-120px, 0px) scale(1, 1)", "the selected pill slides to the new segment");
   Object.defineProperty(w.document, "hidden", { configurable: true, get: () => false });
@@ -6722,12 +7323,8 @@ test("Command-K opens a palette that searches by scope, walks results with the k
   content.querySelector(".filter-count").remove();
   for (const [name, descriptor] of originals) Object.defineProperty(w.HTMLElement.prototype, name, descriptor);
   delete w.Element.prototype.animate;
-  await until(() => searches.some((route) => route.includes("scope=music")));
-  assert.equal(dialog.querySelector('[data-pal-scope="music"]').getAttribute("aria-pressed"), "true");
-  dialog.querySelector('[data-pal-scope="all"]').click();
-  await until(() => searches.filter((route) => route.includes("scope=all")).length >= 2);
-  await until(() => dialog.querySelector('[role="option"][aria-selected="true"]')?.textContent.includes("blueprints"));
-  press("ArrowDown");
+  dialog.querySelector('.segmented[aria-label="Probe"]').remove();
+  assert.ok(searches.every((route) => !route.includes("scope=")), "no scope is ever sent");
   press("Enter");
   await until(() => !dialog.open);
   await until(() => /Device|History|blueprint/i.test(w.document.querySelector("#content h1")?.textContent || ""));
@@ -7334,16 +7931,16 @@ test("offline file history shows only the saved rows, says they are recent entri
   assert.equal(restores.length, 2);
   for (const restore of restores) {
     assert.match(restore.textContent, /Restore/);
-    assert.equal(restore.disabled, true, "Restore needs the hub");
-    assert.match(restore.title, /Needs the hub, which is unavailable\./);
+    assert.equal(restore.getAttribute("aria-disabled"), "true", "Restore needs the hub");
+    assert.match(restore.dataset.tooltip, /Needs the hub, which is unavailable\./);
     assert.equal(restore.dataset.action, "restore", "it is the same control the hub-only sync re-enables");
   }
   hubDown = false;
   await poll();
-  await until(() => restores.every((restore) => !restore.disabled && !restore.title));
+  await until(() => restores.every((restore) => !restore.hasAttribute("aria-disabled") && !restore.dataset.tooltip));
   hubDown = true;
   await poll();
-  await until(() => restores.every((restore) => restore.disabled));
+  await until(() => restores.every((restore) => restore.getAttribute("aria-disabled") === "true"));
   const quiet = w.document.createElement("button");
   quiet.dataset.action = "activity-file";
   quiet.dataset.id = JSON.stringify({ volume: volume.id, path: "quiet.md" });
@@ -7353,7 +7950,7 @@ test("offline file history shows only the saved rows, says they are recent entri
   assert.equal(w.document.querySelector("#history-list .hint").textContent, "Showing saved history. Connect to the hub for updated retention.", "a complete saved history does not claim to be recent entries only");
 });
 
-test("the Files list appends pages under one Show more files button, keeps the applied search and stops at 500 rows", async (t) => {
+test("the Files list appends pages under one Show more files button, has no search of its own and stops at 500 rows", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-files-more-"));
   init(home, { port: 0, name: "Local Mac" });
   const daemon = await start(home, { timer: false });
@@ -7420,16 +8017,9 @@ test("the Files list appends pages under one Show more files button, keeps the a
     await until(() => rows() === rowsAfter && w.document.body.getAttribute("aria-busy") === "false");
   }
   assert.equal(more(), null, "the list stops growing at 500 rows");
-  assert.match(w.document.querySelector(".hint").textContent, /Showing the first 500 files\. Search to narrow the list\./);
-  w.document.querySelector('[data-action="folder-search-toggle"]').click();
-  await until(() => w.document.querySelector("#folder-search-input"));
-  w.document.querySelector("#folder-search-input").value = "f1";
-  w.document.querySelector('[data-action="folder-search-apply"]').click();
-  await until(() => rows() === 100 && w.document.body.getAttribute("aria-busy") === "false");
-  assert.equal(browsed.at(-1).search, "f1");
-  more().click();
-  await until(() => rows() === 200 && w.document.body.getAttribute("aria-busy") === "false");
-  assert.deepEqual(browsed.at(-1), { after: "p1", search: "f1" }, "Show more keeps the applied search");
+  assert.match(w.document.querySelector(".hint").textContent, /Showing the first 500 files\. Search Arca to find the rest\./);
+  assert.ok(browsed.every((request) => request.search === null), "the folder browser never filters by itself");
+  assert.equal(w.document.querySelector('[data-action="folder-search-toggle"], #folder-search-input'), null, "the one search is the palette");
 });
 
 test("Show more still lists every file when the folder gained one at the top meanwhile", async (t) => {

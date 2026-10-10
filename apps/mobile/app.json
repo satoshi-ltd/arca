@@ -2,11 +2,16 @@
   "expo": {
     "name": "arca",
     "slug": "arca",
-    "version": "0.7.35",
+    "version": "0.7.36",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.satoshilimited.arca",
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon-dark.png",
+        "tinted": "./assets/icon-tinted.png"
+      },
       "buildNumber": "28",
       "supportsTablet": true,
       "infoPlist": {

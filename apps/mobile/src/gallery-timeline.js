@@ -77,8 +77,9 @@ export function previewCandidates(entries, excluded = () => false) {
     .sort((a, b) => (a.kind === "video") - (b.kind === "video"))
     .slice(0, PREVIEW_LIMIT);
 }
+export const datedMonth = (month) => /^\d{4}-\d{2}$/.test(month);
 export function monthLabel(month) {
-  if (!/^\d{4}-\d{2}$/.test(month)) return "Undated";
+  if (!datedMonth(month)) return "Date unknown";
   return new Date(month + "-01T12:00:00").toLocaleDateString("en", {
     month: "long",
     year: "numeric",
@@ -102,7 +103,7 @@ export function pendingUploadLabel(items, summary = {}) {
     .join(" · ");
 }
 export const railMonthLabel = (month) =>
-  /^\d{4}-\d{2}$/.test(month)
+  datedMonth(month)
     ? new Date(month + "-01T12:00:00").toLocaleDateString("en", {
         month: "short",
         year: "numeric",

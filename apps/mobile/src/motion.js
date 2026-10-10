@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { AccessibilityInfo, Animated, Easing } from "react-native";
 import { geometry, motion, motionDurations } from "./design-tokens.js";
-import { createListMotion } from "./list-motion.js";
+import { createLeaving, createListMotion } from "./list-motion.js";
 import { flightTransform, hasFlight, takeFlight } from "./flight.js";
 
 export function useReduceMotion() {
@@ -27,6 +27,28 @@ export function useReduceMotion() {
     };
   }, []);
   return reduce;
+}
+export function useBreathe(on) {
+  const reduce = useReduceMotion();
+  const value = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    value.setValue(1);
+    if (!on || reduce) return;
+    const half = motion.loop / 2;
+    const easing = Easing.inOut(Easing.ease);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(value, { toValue: motion.breatheLow, duration: half, easing, useNativeDriver: true }),
+        Animated.timing(value, { toValue: 1, duration: half, easing, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      value.setValue(1);
+    };
+  }, [on, reduce]);
+  return value;
 }
 export function useMotion() {
   const reduce = useReduceMotion();
@@ -86,12 +108,27 @@ export function useListMotion(ids) {
   note.current.note(ids);
   return note.current.take;
 }
-export function Rise({ mode: entering, index: slot = 0, tint: tintColor, children }) {
+export function useLeaving(items, keyOf) {
+  const leaving = useRef(null);
+  if (!leaving.current) leaving.current = createLeaving(keyOf);
+  const [, settle] = useState(0);
+  const left = useCallback((key) => {
+    if (leaving.current.left(key)) settle((tick) => tick + 1);
+  }, []);
+  return [leaving.current.rows(items), left];
+}
+export function Rise({ mode: entering, index: slot = 0, tint: tintColor, leaving = false, onLeft, children }) {
   const first = useRef({ mode: entering, index: slot }).current;
   const { mode, index } = first;
   const { duration, easing, reduce } = useMotion();
   const progress = useRef(new Animated.Value(mode && !reduce ? 0 : 1)).current;
   const tint = useRef(new Animated.Value(mode === "arrival" && !reduce ? 0.7 : 0)).current;
+  const fade = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(Animated.multiply(progress, fade)).current;
+  const height = useRef(new Animated.Value(0)).current;
+  const measured = useRef(0);
+  const unseen = useRef(leaving).current;
+  const [collapsing, setCollapsing] = useState(false);
   useEffect(() => {
     if (!mode || reduce) return;
     Animated.timing(progress, {
@@ -105,39 +142,71 @@ export function Rise({ mode: entering, index: slot = 0, tint: tintColor, childre
       Animated.timing(tint, {
         toValue: 0,
         duration: duration(motion.settle),
+        easing,
         useNativeDriver: true,
       }).start();
   }, []);
+  useEffect(() => {
+    if (!leaving) {
+      fade.setValue(1);
+      setCollapsing(false);
+      return;
+    }
+    if (reduce || !measured.current) return void onLeft?.();
+    let active = true;
+    Animated.timing(fade, { toValue: 0, duration: duration(motion.exit), easing, useNativeDriver: true }).start(({ finished }) => {
+      if (!finished || !active) return;
+      height.setValue(measured.current);
+      setCollapsing(true);
+      Animated.timing(height, { toValue: 0, duration: duration(motion.exit), easing, useNativeDriver: false }).start(
+        () => active && onLeft?.(),
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [leaving]);
+  if (unseen && leaving) return null;
   return (
     <Animated.View
-      style={{
-        opacity: progress,
-        transform: [
-          {
-            translateY: progress.interpolate({
-              inputRange: [0, 1],
-              outputRange: [motion.distance, 0],
-            }),
-          },
-        ],
+      pointerEvents={leaving ? "none" : "auto"}
+      importantForAccessibility={leaving ? "no-hide-descendants" : "auto"}
+      accessibilityElementsHidden={leaving}
+      onLayout={(event) => {
+        if (!leaving) measured.current = event.nativeEvent.layout.height;
       }}
+      style={collapsing ? { height, overflow: "hidden" } : null}
     >
-      {children}
-      {mode === "arrival" && (
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: 0,
-            borderRadius: geometry.cardRadius,
-            backgroundColor: tintColor,
-            opacity: tint,
-          }}
-        />
-      )}
+      <Animated.View
+        style={{
+          opacity,
+          transform: [
+            {
+              translateY: progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [motion.distance, 0],
+              }),
+            },
+          ],
+        }}
+      >
+        {children}
+        {mode === "arrival" && (
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              borderRadius: geometry.cardRadius,
+              backgroundColor: tintColor,
+              opacity: tint,
+            }}
+          />
+        )}
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -228,13 +297,13 @@ export function Pop({ children, style }) {
     </Animated.View>
   );
 }
-export function RollText({ children, style, ...props }) {
+export function RollText({ children, style, token = children, ...props }) {
   const { duration, easing } = useMotion();
   const progress = useRef(new Animated.Value(1)).current;
-  const last = useRef(children);
+  const last = useRef(token);
   useEffect(() => {
-    if (last.current === children) return;
-    last.current = children;
+    if (last.current === token) return;
+    last.current = token;
     progress.setValue(0);
     Animated.timing(progress, {
       toValue: 1,
@@ -242,7 +311,7 @@ export function RollText({ children, style, ...props }) {
       easing,
       useNativeDriver: true,
     }).start();
-  }, [children]);
+  }, [token]);
   return (
     <Animated.Text
       {...props}

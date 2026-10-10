@@ -2,7 +2,23 @@ import { parseGallery } from "./validation.js";
 
 export class ReplicaStore {
   constructor(db) {
-    this.db = db;
+    this.writes = 0;
+    const store = this;
+    this.db = new Proxy(db, {
+      get(target, key) {
+        const value = target[key];
+        if (key !== "runAsync" && key !== "execAsync")
+          return typeof value === "function" ? value.bind(target) : value;
+        return async (...args) => {
+          store.writes++;
+          try {
+            return await value.apply(target, args);
+          } finally {
+            store.writes++;
+          }
+        };
+      },
+    });
   }
   async init() {
     await this.db.execAsync(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
@@ -12,6 +28,7 @@ export class ReplicaStore {
       CREATE INDEX IF NOT EXISTS gallery_work ON gallery_assets(scope,volume,state,retryAt);
       CREATE TABLE IF NOT EXISTS gallery_corrupt (scope TEXT, volume TEXT, asset TEXT, state TEXT, retryAt INTEGER, row TEXT, at INTEGER, PRIMARY KEY(scope,volume,asset));
       CREATE TABLE IF NOT EXISTS scan_cache (uri TEXT PRIMARY KEY, row TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS scan_due ON scan_cache(json_extract(row,'$.volume'), json_extract(row,'$.due'));
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS folders (scope TEXT, id TEXT, name TEXT, selected INTEGER DEFAULT 1, cursor INTEGER DEFAULT 0, initialized INTEGER DEFAULT 0, completed TEXT, issue TEXT, PRIMARY KEY(scope,id));
       CREATE TABLE IF NOT EXISTS files (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
@@ -120,6 +137,31 @@ export class ReplicaStore {
       JSON.stringify(value),
     );
   }
+  async forgetHash(uri) {
+    await this.db.runAsync("DELETE FROM scan_cache WHERE uri=?", uri);
+  }
+  async pruneHashes(scope, roots = []) {
+    const legacy = roots.length
+      ? ` AND NOT (json_extract(row,'$.scope') IS NULL AND json_extract(row,'$.path') IS NULL AND (${roots.map(() => "substr(uri,1,length(?))=?").join(" OR ")}))`
+      : "";
+    await this.db.runAsync(
+      `DELETE FROM scan_cache WHERE (json_extract(row,'$.scope') IS NOT ? OR json_extract(row,'$.path') IS NULL OR coalesce(json_extract(row,'$.volume'),'') NOT IN (SELECT id FROM folders WHERE scope=?))${legacy}`,
+      scope,
+      scope,
+      ...roots.flatMap((root) => [root, root]),
+    );
+  }
+  async dueHashes(scope, volume, now, limit) {
+    return (
+      await this.db.getAllAsync(
+        "SELECT uri,row FROM scan_cache WHERE json_extract(row,'$.volume')=? AND json_extract(row,'$.due')<=? AND json_extract(row,'$.scope')=? ORDER BY json_extract(row,'$.due') LIMIT ?",
+        volume,
+        now,
+        scope,
+        limit,
+      )
+    ).map((entry) => ({ key: entry.uri, record: JSON.parse(entry.row) }));
+  }
   async get(key, fallback = null) {
     const row = await this.db.getFirstAsync(
       "SELECT value FROM settings WHERE key=?",
@@ -134,8 +176,12 @@ export class ReplicaStore {
       JSON.stringify(value),
     );
   }
-  folders(scope) {
-    return this.db.getAllAsync(
+  async folders(scope) {
+    const writes = this.writes;
+    const cached = this.folderTotals;
+    if (cached?.scope === scope && cached.writes === writes)
+      return cached.rows.map((row) => ({ ...row }));
+    const rows = await this.db.getAllAsync(
       `SELECT f.*, g.config AS gallery, COUNT(x.path) AS files,
        COALESCE(SUM(json_extract(x.row, '$.size')), 0) AS bytes,
        COALESCE(SUM(CASE WHEN instr(x.path, '.conflict-') > 0 AND COALESCE(json_extract(x.row, '$.resolved'), 0)=0 THEN 1 ELSE 0 END),0) AS conflicts
@@ -144,6 +190,9 @@ export class ReplicaStore {
        WHERE f.scope=? GROUP BY f.scope,f.id ORDER BY f.name`,
       scope,
     );
+    if (this.writes === writes)
+      this.folderTotals = { scope, writes, rows: rows.map((row) => ({ ...row })) };
+    return rows;
   }
   folder(scope, id) {
     return this.db.getFirstAsync(
@@ -199,6 +248,11 @@ export class ReplicaStore {
           "DELETE FROM settings WHERE key=?",
           `gallery-deletions:${scope}:${id}:${kind}`,
         );
+      await this.db.runAsync(
+        "DELETE FROM scan_cache WHERE json_extract(row,'$.volume')=? AND json_extract(row,'$.scope')=?",
+        id,
+        scope,
+      );
       await this.db.runAsync(
         "DELETE FROM folders WHERE scope=? AND id=?",
         scope,
@@ -511,15 +565,29 @@ export class ReplicaStore {
     ).map((r) => JSON.parse(r.row));
   }
   async searchRows(scope, volume, token, limit = 2000) {
-    const ascii = /^[\x20-\x7e]+$/.test(token);
-    return (
-      await this.db.getAllAsync(
-        ascii
-          ? "SELECT row FROM files WHERE scope=? AND volume=? AND instr(lower(path),?)>0 AND json_extract(row,'$.deleted') IS NOT 1 AND json_extract(row,'$.directory') IS NOT 1 ORDER BY CAST(json_extract(row,'$.rev') AS INTEGER) DESC LIMIT ?"
-          : "SELECT row FROM files WHERE scope=? AND volume=? AND json_extract(row,'$.deleted') IS NOT 1 AND json_extract(row,'$.directory') IS NOT 1 ORDER BY CAST(json_extract(row,'$.rev') AS INTEGER) DESC LIMIT ?",
-        ...(ascii ? [scope, volume, token.toLowerCase(), limit] : [scope, volume, limit * 5]),
-      )
-    ).map((r) => JSON.parse(r.row));
+    const live =
+      "json_extract(row,'$.deleted') IS NOT 1 AND json_extract(row,'$.directory') IS NOT 1";
+    const newest = "ORDER BY CAST(json_extract(row,'$.rev') AS INTEGER) DESC LIMIT ?";
+    const read = async (where, ...values) =>
+      (
+        await this.db.getAllAsync(
+          `SELECT row FROM files WHERE scope=? AND volume=? AND ${where} AND ${live} ${newest}`,
+          scope,
+          volume,
+          ...values,
+        )
+      ).map((r) => JSON.parse(r.row));
+    if (!/^[\x20-\x7e]+$/.test(token)) return read("1", limit * 5);
+    const needle = token.toLowerCase();
+    const matches = await read("instr(lower(path),?)>0", needle, limit);
+    const accented = await read(
+      "instr(lower(path),?)=0 AND path GLOB '*[^ -~]*'",
+      needle,
+      limit * 5,
+    );
+    return [...matches, ...accented].sort(
+      (a, b) => Number(b.rev ?? 0) - Number(a.rev ?? 0),
+    );
   }
   async knownFiles(scope, volume) {
     return new Map(
@@ -539,6 +607,16 @@ export class ReplicaStore {
         },
       ]),
     );
+  }
+  async hasPath(scope, volume, path) {
+    return !!(await this.db.getFirstAsync(
+      "SELECT 1 AS found FROM files WHERE scope=? AND volume=? AND (path=? OR (path>=? AND path<?)) AND json_extract(row,'$.deleted') IS NOT 1 LIMIT 1",
+      scope,
+      volume,
+      path,
+      `${path}/`,
+      `${path}0`,
+    ));
   }
   async current(scope, volume, path) {
     const r = await this.db.getFirstAsync(

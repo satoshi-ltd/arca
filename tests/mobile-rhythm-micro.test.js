@@ -22,7 +22,7 @@ test("covered and two-line music rows take the 74 row height, numbered album row
 
 test("Folders and Devices are grouped surfaces: sections for folders, one list with the hub first for devices", () => {
   const app = read("App.jsx");
-  const folders = app.slice(app.indexOf("folderSections(locals"), app.indexOf("ON HUB · NOT SELECTED"));
+  const folders = app.slice(app.indexOf("folderSections(folderRows"), app.indexOf("ON HUB · NOT SELECTED"));
   assert.match(folders, /<View style=\{s\.group\}>\s+\{section\.folders\.map\(\(f, index\) =>/);
   assert.match(folders, /<FolderRow\s+grouped\s+divider=\{index > 0\}/);
   assert.match(app, /<View style=\{s\.availableGroup\}>[\s\S]*?<FolderRow\s+key=\{v\.id\}\s+grouped\s+dashedDivider=\{index > 0\}/);
@@ -52,10 +52,10 @@ test("settings rows centre their content at 48, grow to 74 with a hint, and cont
 
 test("music presses share the .98 scale, album tiles dim to 85 % and the playing glyph cross-fades", () => {
   const library = read("MusicLibrary.jsx");
-  assert.match(library, /import \{[^}]*\bpressScale,[^}]*\} from "\.\/components";/);
-  assert.match(read("components.jsx"), /export const pressScale = \(pressed, reduce\) =>/);
-  assert.match(library, /style=\{\(\{ pressed \}\) => \[\.\.\.style, pressed && s\.pressed, pressScale\(pressed, reduce\)\]\}/, "track rows");
-  assert.match(library, /style=\{\(\{ pressed \}\) => \[s\.miniPlayer, pressed && s\.pressed, pressScale\(pressed, reduce\)\]\}/, "mini player");
+  assert.match(library, /import \{[^}]*\bPressScale,[^}]*\} from "\.\/components";/);
+  assert.match(read("components.jsx"), /export function PressScale\(/);
+  assert.match(library, /<PressScale[\s\S]{0,900}?style=\{\(\{ pressed \}\) => \[\.\.\.style, pressed && s\.pressed\]\}/, "track rows");
+  assert.match(library, /<PressScale[\s\S]{0,900}?style=\{\(\{ pressed \}\) => \[s\.miniPlayer, pressed && s\.pressed\]\}/, "mini player");
   assert.match(library, /style=\{\(\{ pressed \}\) => \[s\.musicAlbum, pressed && s\.musicTilePressed\]\}/, "album tiles");
   assert.match(rule("musicTilePressed"), /opacity: 0\.85/);
   assert.match(library, /<ChangeFade token=\{playing \? "playing" : "paused"\} ms=\{motion\.fast\} style=\{s\.musicGlyph\}>\s+<Icon name=\{playing \? "audio-lines" : "music"\}/);
@@ -77,8 +77,8 @@ test("the mini player and resume card rise once per session, and covers fly into
   assert.match(library, /<RiseOnce seen=\{miniSeen\}>/);
   assert.match(library, /<RiseOnce seen=\{resumeSeen\}>/);
   assert.match(library, /const flight = useFlight\("collection", true\);/);
-  assert.equal((library.match(/putFlight\("collection"/g) || []).length, 2, "show rows and album tiles hand the cover over");
-  assert.match(library, /flight && wide && art\.current\?\.measureInWindow/, "only the Fold flies");
+  assert.equal((library.match(/putFlight\("collection"/g) || []).length, 2, "show and album tiles hand the cover over");
+  assert.match(library, /wide && !split && art\.current\?\.measureInWindow/, "only the Fold root flies; the split keeps its pane");
   assert.match(read("NowPlayingPage.jsx"), /<ChangeFade token=\{current \? track\.id : "row"\} ms=\{motion\.fast\}>/, "the Up next highlight follows the track in 120 ms");
 });
 

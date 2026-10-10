@@ -136,10 +136,10 @@ test("the UX review's wording and tones hold across desktop, phone and site", ()
   const components = read("apps/mobile/src/components.jsx");
   const gallery = read("apps/mobile/src/FolderGallery.jsx");
   const site = read("site/index.html");
-  for (const phrase of ["Daemon stopped", "Start the local daemon", "managing this daemon", "Daemon is still starting", "No visible copy selected", "in catalog`", 'pill("Revoked"', '"Paused", "id"', '"unlink")', "Cancel selection"])
+  for (const phrase of ["Daemon stopped", "Start the local daemon", "managing this daemon", "Daemon is still starting", "No visible copy selected", "in catalog`", 'pill("Revoked"', '"unlink")', "Cancel selection"])
     assert.equal(desktop.includes(phrase) || mobile.includes(phrase) || gallery.includes(phrase), false, `still says ${phrase}`);
-  assert.match(desktop, /\["Paused", "wa", "pause"\]/);
-  assert.match(desktop, /pill\("Disconnected", "wa", "unplug"\)/);
+  assert.match(desktop, /\["Paused", "id", "pause"\]/);
+  assert.match(desktop, /pill\("Disconnected", "id", "unplug"\)/);
   assert.match(desktop, /pill\("Removed", "er", "unplug"\)/);
   assert.match(mobile, /`Stop syncing “\$\{target\.name\}”\?`/, "the phone names the folder it stops syncing");
   assert.match(mobile, /"Stop syncing and delete",\n\s+\);/, "the phone button says the copy is deleted");
@@ -173,7 +173,8 @@ test("every literal icon name used by the phone screens resolves", () => {
   const icons = read("apps/mobile/src/icons.js");
   for (const file of ["apps/mobile/src/App.jsx", "apps/mobile/src/components.jsx"])
     for (const [, name] of read(file).matchAll(/\bicon="([\w-]+)"/g))
-      assert.match(icons, new RegExp(`\\n  (?:"${name}"|${name}): "`), `${file} uses icon "${name}" with no Lucide name`);
+      if (name !== "arca")
+        assert.match(icons, new RegExp(`\\n  (?:"${name}"|${name}): "`), `${file} uses icon "${name}" with no Lucide name`);
 });
 
 test("History explains why it is empty, on desktop and on the phone", async () => {
@@ -189,7 +190,7 @@ test("History explains why it is empty, on desktop and on the phone", async () =
   assert.deepEqual(run("conflicts", ""), { heading: "No conflicts", text: "Clear Conflicts to see every change.", symbol: "triangle-alert" });
   assert.deepEqual(run("deleted", "docs"), { heading: "No deleted files", text: "Clear Deleted to see every change.", symbol: "trash-2" });
   assert.deepEqual(run("revisions", "docs"), { heading: "No changes in this folder", text: "Set Shared folder to All to see every change.", symbol: "history" });
-  assert.deepEqual(run("revisions", ""), { heading: "No history yet", text: "Changes to your files appear here.", symbol: "history" });
+  assert.deepEqual(run("revisions", ""), { heading: "No history yet", text: "Changes to your files appear here.", symbol: "arca" });
   const { historyEmpty } = await import("../apps/mobile/src/history-empty.js");
   const titles = [
     historyEmpty({ offline: true, filter: "revisions", hasFolder: false }),
@@ -199,7 +200,7 @@ test("History explains why it is empty, on desktop and on the phone", async () =
     historyEmpty({ offline: false, filter: "revisions", hasFolder: false }),
   ];
   assert.equal(new Set(titles.map((state) => state.text)).size, titles.length, "no two phone states share a line");
-  assert.deepEqual(titles.map((state) => state.icon), ["wifi-off", "conflict", "trash", "history", "history"]);
+  assert.deepEqual(titles.map((state) => state.icon), ["wifi-off", "conflict", "trash", "history", "arca"]);
   assert.equal(titles[1].title, "No conflicts");
   assert.equal(titles[0].text, "Connect to the hub to load history.");
   for (const [filter, volume, hasFolder] of [["conflicts", "", false], ["deleted", "docs", true], ["revisions", "docs", true], ["revisions", "", false]]) {

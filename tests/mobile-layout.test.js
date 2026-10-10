@@ -81,7 +81,7 @@ test("mobile surface and text colors match the desktop light and dark tokens", a
       );
 });
 
-test("folder browsing groups directories and searches nested paths", async () => {
+test("folder browsing groups directories and has no filter of its own", async () => {
   const { browseEntries } = await import("../apps/mobile/src/browse.js");
   const entries = [
     { path: "old.txt", mtime: 10 },
@@ -89,19 +89,19 @@ test("folder browsing groups directories and searches nested paths", async () =>
     { path: "notes/other.txt", mtime: 20 },
   ];
   assert.deepEqual(
-    browseEntries(entries, "", "").map((e) => e.label),
+    browseEntries(entries, "").map((e) => e.label),
     ["notes", "old.txt"],
   );
-  assert.equal(browseEntries(entries, "", "")[0].count, 2);
+  assert.equal(browseEntries(entries, "")[0].count, 2);
   assert.deepEqual(
-    browseEntries(entries, "", "NEW").map((e) => e.path),
-    ["notes/new.txt"],
+    browseEntries(entries, "", "NEW").map((e) => e.label),
+    ["notes", "old.txt"],
+    "a stray filter argument changes nothing: the global search finds files",
   );
   assert.deepEqual(
-    browseEntries(entries, "notes/", "").map((e) => e.label),
+    browseEntries(entries, "notes/").map((e) => e.label),
     ["new.txt", "other.txt"],
   );
-  assert.equal(browseEntries(entries, "", "missing").length, 0);
   assert.equal(entries[0].path, "old.txt");
 });
 
@@ -164,17 +164,13 @@ test("shared chip, badge and surface geometry matches desktop tokens", async () 
   }
 });
 
-test("file search stays under the current breadcrumb and folder totals include nested bytes", () => {
+test("folder totals include nested bytes", () => {
   const entries = [
     { path: "outside/note.txt", size: 100 },
     { path: "inside/note.txt", size: 3 },
     { path: "inside/nested/note.txt", size: 7 },
   ];
-  assert.deepEqual(
-    browseEntries(entries, "inside/", "note").map((e) => e.path),
-    ["inside/note.txt", "inside/nested/note.txt"],
-  );
-  const inside = browseEntries(entries, "", "").find(
+  const inside = browseEntries(entries, "").find(
     (e) => e.path === "inside",
   );
   assert.equal(inside.count, 2);
@@ -187,13 +183,13 @@ test("empty directory entries remain navigable without inflating recursive file 
     { path: "doc/Coros", directory: true, size: 0 },
     { path: "doc/notes.txt", size: 12 },
   ];
-  assert.equal(browseEntries(entries, "", "")[0].count, 1);
-  assert.equal(browseEntries(entries, "", "")[0].size, 12);
+  assert.equal(browseEntries(entries, "")[0].count, 1);
+  assert.equal(browseEntries(entries, "")[0].size, 12);
   assert.deepEqual(
-    browseEntries(entries, "doc/", "").map((e) => e.label),
+    browseEntries(entries, "doc/").map((e) => e.label),
     ["Coros", "notes.txt"],
   );
-  assert.equal(browseEntries(entries, "doc/Coros/", "").length, 0);
+  assert.equal(browseEntries(entries, "doc/Coros/").length, 0);
 });
 
 test("mobile single-line fields reserve stable geometry and grow only for accessibility scaling", async () => {
@@ -386,8 +382,7 @@ test("closing folder actions retain their title after local removal without rend
   const shown = vm.runInNewContext(header, {
     shownSheet,
     folder: null,
-    photoFolder: false,
-    musicFolder: false,
+    folderIcon: "folder",
     folderSubtitle: "",
     bytes: () => "",
   });
@@ -395,8 +390,8 @@ test("closing folder actions retain their title after local removal without rend
   assert.equal(shown.menu, true, "folder actions are a compact menu");
   assert.equal(shown.icon, "folder");
   assert.equal(
-    vm.runInNewContext(header, { shownSheet, folder: null, photoFolder: false, musicFolder: true, folderSubtitle: "", bytes: () => "" }).icon,
-    "music",
+    vm.runInNewContext(header, { shownSheet, folder: null, folderIcon: "podcast", folderSubtitle: "", bytes: () => "" }).icon,
+    "podcast",
   );
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: volume }), true);
   assert.equal(vm.runInNewContext(actions, { shownSheet, folder: null }), false);
@@ -421,7 +416,7 @@ test("sheets share the desktop dialog header anatomy and menus stay compact", ()
     const shown = vm.runInNewContext(header, {
       shownSheet: { kind, path: "a/b.jpg", volume: { name: "photos", bytes: 1 }, original: { path: "a/c.jpg" } },
       folder: { name: "photos" },
-      photoFolder: true,
+      folderIcon: "gallery",
       folderSubtitle: "3598 photos · 13 GB local",
       bytes: () => "1 B",
       folderSize: () => "1 file · 1 B",
@@ -536,13 +531,14 @@ test("the gallery windows rows over the whole timeline and only ever loads by sc
   assert.match(app, /ignoreText=\{ignorePolicy\.id === folder\.id \? ignorePolicy\.text : ""\}/, "another folder's policy is never applied");
   assert.match(gallery, /online\s*\?\s*NO_LOCAL_GALLERY\s*:\s*localGallery\(entries, \{ cached: gallery, rows: known \}\)/, "offline photos keep the cached dates and the phone index revisions, and online never builds the local gallery");
   assert.doesNotMatch(gallery, /current\.source !== current\.gallery/, "a merged source is a new object; remote mode is online with a hub gallery");
-  assert.match(gallery, /neededMonth\(\s*current\.layout,\s*current\.source\.months/, "paging reads the merged months so local-only months never ask the hub");
+  assert.match(gallery, /neededMonth\(\s*current\.layout,\s*current\.shownMonths/, "paging reads the merged months so local-only months never ask the hub");
+  assert.match(gallery, /shownMonths\(source, months\)/, "the months paging reads start from the merged source");
   assert.match(gallery, /!current\.online \|\|/);
   assert.match(gallery, /\[\s*onRail,\s*railShape,/, "the rail model republishes on shape changes, not on every loaded page");
   assert.match(rail, /onResponderMove[\s\S]*place\(next\)[\s\S]*requestAnimationFrame/);
 });
 
-test("every gallery surface shares one placeholder: the token fill and a soft image or play glyph", () => {
+test("every gallery surface shares one placeholder: the token fill and the line arch or the play glyph", () => {
   const read = (file) => fs.readFileSync(new URL(`../apps/${file}`, import.meta.url), "utf8");
   const theme = read("mobile/src/theme.js");
   const components = read("mobile/src/components.jsx");
@@ -552,7 +548,9 @@ test("every gallery surface shares one placeholder: the token fill and a soft im
     assert.match(source, /<MediaPlaceholder/, file);
     assert.doesNotMatch(source, /galleryPlaceholder/, file);
   }
-  assert.match(components, /size >= PLACEHOLDER_GLYPH_MIN[\s\S]*video \? "play" : "image"[\s\S]*color=\{c\.line\}/);
+  const placeholder = components.match(/export function MediaPlaceholder[\s\S]*?\n\}\n/)[0];
+  assert.match(placeholder, /size >= PLACEHOLDER_GLYPH_MIN &&\s+\(video \? \(\s+<Icon name="play" size=\{20\} color=\{c\.line\} \/>\s+\) : \(\s+<BrandArch size=\{20\} band=\{c\.line\} \/>/);
+  assert.doesNotMatch(placeholder, /"image"/);
   for (const name of ["photoTile", "yearTile", "mediaPlaceholder"])
     assert.match(theme, new RegExp(`${name}: \\{[^}]*backgroundColor: c\\.placeholder`), name);
   assert.match(css, /\.photo-thumb \{[^}]*background: var\(--placeholder\);/);
@@ -561,8 +559,9 @@ test("every gallery surface shares one placeholder: the token fill and a soft im
 
 test("folder rows show the gallery icon the hub assigns and selection states the space it needs", () => {
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
-  const selected = app.slice(app.indexOf("folderSections(locals"), app.indexOf("description={`${f.files} files"));
-  assert.match(selected, /galleryConfig\(f\) \|\|\s*f\.gallery \|\|\s*catalog\?\.volumes\?\.find\(/);
+  assert.match(app, /const galleryFolder = \(f\) => !!\(galleryConfig\(f\) \|\| f\.gallery \|\| catalog\?\.volumes\?\.find\(/);
+  assert.match(app, /const folderKind = \(f\) => \(galleryFolder\(f\) \? "photos"/);
+  assert.match(app, /\{folderSections\(folderRows\.map\(\(row\) => row\.item\), folderKind\)\.map/);
   assert.match(app, /available\s+icon=\{v\.gallery \? "gallery" : v\.music && catalog\?\.music \? "music" : "folders"\}/);
   assert.match(app, /`Needs \$\{bytes\(shownSheet\.volume\.bytes\)\} · `/);
   assert.match(app, /shownSheet\.kind === "select"\s*\?\s*\{\s*title: shownSheet\.volume\.name,\s*icon: shownSheet\.volume\.gallery \? "gallery" : shownSheet\.volume\.music && catalog\?\.music \? "music" : "folder",/);
@@ -574,7 +573,7 @@ test("the mobile gallery renders from local files first and asks the hub only fo
   assert.doesNotMatch(gallery, /hub-previews|hubPreview\(/, "the removed browsing previews stay removed");
   assert.match(gallery, /render: withHub\(\(item\) =>\s*item\.kind === "video"\s*\? thumbnailFiles\.poster\(item\)\s*: displayRef\.current\(item\),\s*\),/);
   assert.match(gallery, /hashOf: \(item, large\) =>\s*accepted\(hubContext\.current\.known, item, large\),/, "hub previews verify the local content through the memo");
-  assert.match(gallery, /createAccepted\(\{ hashFile: \(uri\) => files\.hash\(uri\) \}\)/);
+  assert.match(gallery, /createAccepted\(\{\s+hashFile: \(uri\) => files\.hash\(uri\),\s+verifiedHash: replicaHash\(\{\s+cachedHash: \(key\) => store\.cachedHash\(key\),\s+keysOf: \(item\) => \[files\.work\(scope, volume, item\.path\), item\.uri\],/, "a photo the replica verified is not hashed again");
   assert.match(gallery, /previews\.clear\(\);\s+accepted\.clear\(\);/, "forgetting refusals forgets verifications");
   assert.match(gallery, /busy: \(error\) => \[409, 429\]\.includes\(error\.status\),/);
   assert.match(gallery, /linked: hubContext\.current\.linked,/);
@@ -777,7 +776,7 @@ test("offline empty states say nothing is saved, end in Retry that probes the hu
   assert.match(offline[1], /title="Nothing saved on this phone"/);
   assert.match(offline[1], /text="You are offline\. Photos from this folder appear here once they have downloaded\."/);
   assert.match(offline[1], /reconnect\?\.\(\);\s+setError\(""\);\s+setRetry\(\(value\) => value \+ 1\);/);
-  assert.match(gallery, /<EmptyState\s+icon="image"\s+title="No photos yet"/, "a hub that answered empty keeps its own copy");
+  assert.match(gallery, /<EmptyState\s+icon="arca"\s+title="No photos yet"/, "a hub that answered empty keeps its own copy");
 
   const recent = read("FolderRecent.jsx");
   const empty = recent.match(/if \(!page\.versions\.length && unreachable\)\s+return \(\s+<OfflineEmpty([\s\S]*?)\/>/);
@@ -801,10 +800,10 @@ test("every empty list on the phone uses the one EmptyState: icon, heading, one 
   const state = components.match(/export function EmptyState\(\{ icon, title, text, action \}\) \{[\s\S]*?\n\}\n/);
   assert.ok(state, "one shared component");
   assert.match(state[0], /<View style=\{s\.empty\}>/);
-  assert.match(state[0], /<Icon name=\{icon\} size=\{24\} color=\{c\.mute\} \/>/);
+  assert.match(state[0], /\{icon === "arca" \? \(\s+<BrandArch size=\{40\} band=\{c\.line\} door=\{c\.accent\} \/>\s+\) : \(\s+<Icon name=\{icon\} size=\{24\} color=\{c\.mute\} \/>/);
   assert.match(state[0], /\{action\}/);
   const sites = {
-    "App.jsx": ["No folders yet", "No matching files", "This folder is empty", "No local files yet", "No saved devices"],
+    "App.jsx": ["No folders yet", "This folder is empty", "No local files yet", "No saved devices"],
     "FolderRecent.jsx": ["No versions yet", "No saved versions"],
     "FileHistory.jsx": ["No retained versions", "No saved versions for this file"],
     "FolderGallery.jsx": ["No photos yet", "Nothing saved on this phone"],
@@ -815,8 +814,8 @@ test("every empty list on the phone uses the one EmptyState: icon, heading, one 
     assert.doesNotMatch(source, /explorerEmpty/, `${file} has no private empty layout`);
   }
   const app = read("App.jsx");
-  assert.match(app, /<EmptyState\s+icon="folder-open"\s+title="No folders yet"/);
-  assert.match(app, /<\/View>\s+\{!filesLoading &&\s+!visibleEntries\.length && \(\s+<EmptyState\s+icon="folders"\s+title=\{/, "Files draws its frame under the bordered breadcrumb group, never inside it");
+  assert.match(app, /<EmptyState\s+icon="arca"\s+title="No folders yet"/);
+  assert.match(app, /<\/View>\s+\{!filesLoading &&\s+!visibleEntries\.length && \(\s+<EmptyState\s+icon="arca"\s+title=\{/, "Files draws its frame under the bordered breadcrumb group, never inside it");
   assert.match(app, /<EmptyState\s+\{\.\.\.historyEmpty\(\{\s+offline: history\.offline,\s+filter: historyFilter,\s+hasFolder: !!historyVolume,/);
   assert.match(app, /machinesLoaded && \(\s+<EmptyState/, "Machines waits for its answer before saying nothing is saved");
   assert.match(read("FolderRecent.jsx"), /\{!!page\.versions\.length && \(\s+<View style=\{s\.group\}>/, "no bordered box without rows");
@@ -876,14 +875,15 @@ test("an open photo folder prepares every local preview in the background and sa
   const components = read("components.jsx");
   const has = (source, ...pieces) => pieces.forEach((piece) => assert.ok(source.includes(piece), piece));
   has(gallery, "const candidates = useMemo(", "(path) => builtinExcluded(path) || (online && !!ignored?.(path))");
-  has(gallery, "await prepareThumbnails( candidates, thumbnailProgress.current.value, backgroundIo,", "candidates, 3, (entry) => { if (active) { failedPaths.current.add(entry.path); queueFlush(); } }, true, );");
-  assert.match(gallery, /\}, \[candidateKey, store, scope, volume, density, attempt, knownLoaded, online\]\);/, "a scroll never restarts the background pass, and it waits for the phone index");
-  has(gallery, "if (density === \"years\" || !candidates.length || !knownLoaded) {");
-  has(gallery, 'render: withHub((item) => item.kind === "video" ? thumbnailFiles.poster(item, true) : thumbnailFiles.render(item, false, true), ),');
+  has(gallery, "const backgroundIo = useMemo(() => localPreviewIo(thumbnailFiles), []);", "const queue = createPreviewQueue({ io: backgroundIo,");
+  has(gallery, "failed: (entry) => { if (!active) return; failedPaths.current.add(entry.path); queueFlush(); },");
+  assert.match(gallery, /\}, \[store, scope, volume, density, backgroundIo\]\);/, "one long-lived queue per open folder");
+  has(gallery, "useEffect(() => { previewQueue.current?.update(candidates); }, [candidateKey]);", "useEffect(() => { if (attempt) previewQueue.current?.retry(); }, [attempt]);");
   assert.match(gallery, /\}, \[visibleKey, store, scope, volume, io, density\]\);/, "the visible pass keeps its own dependencies");
-  has(gallery, "(delta) => { if (!active) return; commit(key, delta); },", "} finally { if (active) setPreparing(false); }", "if (completeRef.current && !loadingRef.current) { const kept = pruneSaved(", "if (!dirty.current || loadingRef.current) return Promise.resolve();", "else if (flusher.current.pending) flusher.current.now();");
+  has(gallery, "(delta) => { if (!active) return; commit(key, delta); },", "setPreparing(!idle);", "if (completeRef.current && !loadingRef.current) { const kept = pruneSaved(", "if (!dirty.current || loadingRef.current) return Promise.resolve();", "else if (flusher.current.pending) flusher.current.now();");
   has(gallery, 'AppState.addEventListener("change", (state) => { if (state === "active") { previews.clear(); accepted.clear(); } if (state === "active" && failedPaths.current.size) setAttempt((value) => value + 1); });', "queueFlush(seen ? 250 : 2000);");
-  has(gallery, 'preparing && progress.waiting > 0 && ( <StatusRow busy title="Preparing previews"', '${progress.done.toLocaleString("en")} of ${progress.total.toLocaleString("en")}');
+  has(gallery, 'preparing && progress.waiting > 0 && ( <StatusRow busy title="Preparing previews"', '${progress.done.toLocaleString("en")} of ${progress.total.toLocaleString("en")}', "on this phone`}");
+  has(gallery, '{downloading > 0 && density !== "years" && ( <StatusRow icon="download"', "still downloading`}", 'caption="Previews appear as each one reaches this phone."');
   has(gallery, 'progress.failed > 0 && ( <StatusRow icon="image"', "could not be made", 'caption="The photos are on this phone."', '<Button label="Retry" icon="refresh" onPress={retryPreviews} />');
   has(gallery, "const retryPreviews = () => { thumbnailFiles.retry(); previews.clear(); accepted.clear(); failedPaths.current = new Set(); setFailedCount(0); setAttempt((value) => value + 1); };");
   has(thumbnails, "const limiter = createLimiter(3, 30000);", "limiter.run(() => produce(target), !background)", "const hubLimiter = createLimiter(2, 60000);");
@@ -929,7 +929,7 @@ test("phone buttons, rows, tabs and photo tiles show a pressed state", () => {
   const components = read("components.jsx");
   assert.match(read("theme.js"), /pressed: \{ backgroundColor: c\.hover \},\s+pressedFade: \{ opacity: 0\.85 \},/);
   assert.match(components, /pressed && !disabled && !busy && \(primary \? s\.pressedFade : s\.pressed\)/, "primary buttons fade, the others fill");
-  assert.match(components, /pressed && !disabled && s\.pressed,\s+!disabled && pressScale\(pressed, reduce\),\s+disabled && s\.disabled/, "action rows fill");
+  assert.match(components, /pressed && !disabled && s\.pressed,\s+disabled && s\.disabled/, "action rows fill");
   assert.match(components, /divider && s\.separator,\s+pressed && !disabled && s\.pressed,/, "folder rows fill");
   assert.match(components, /pressed && s\.pressed,\s+view === tab && !box && s\.navSelected/, "tabs fill without hiding the selection");
   assert.match(read("FolderGallery.jsx"), /pressed && s\.pressedFade,/, "photo tiles fade");
@@ -957,4 +957,31 @@ test("the phone's selected segment and floating panel follow the same dark depth
   assert.equal(palettes.light.raised, palettes.light.paper, "light sheets are unchanged");
   assert.equal(palettes.light.raisedEdge, "transparent");
   assert.ok(luminance(palettes.dark.raised) > luminance(palettes.dark.paper), "a dark sheet is lighter than the page");
+});
+
+test("folder headers show the folder's kind glyph on phone and Fold; only tab screens show the logo", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const components = fs.readFileSync(new URL("../apps/mobile/src/components.jsx", import.meta.url), "utf8");
+  const glyph = app.match(/const folderIcon = ([^;]+);/)[1];
+  const librarySymbol = (library) => (library?.shows ? "podcast" : "music");
+  const icon = (context) => vm.runInNewContext(glyph, { librarySymbol, shownMusic: null, ...context });
+  assert.equal(icon({ photoFolder: true, musicFolder: false }), "gallery", "a catalog gallery without a local gallery flag still reads as a gallery");
+  assert.equal(icon({ photoFolder: false, musicFolder: true, shownMusic: { library: { shows: 2 } } }), "podcast");
+  assert.equal(icon({ photoFolder: false, musicFolder: true }), "music");
+  assert.equal(icon({ photoFolder: false, musicFolder: false }), "folder");
+  assert.match(app, /\) : folder && view === "Folders" \? \(\s+<ScreenTitle\s+detail=\{compactAndroid\}\s+contentIcon=\{folderIcon\}/);
+  assert.match(app, /kind === "folder-actions"\s+\? \{\s+title: shownSheet\.volume\.name,\s+icon: folderIcon,/);
+  const title = components.slice(components.indexOf("export function ScreenTitle("), components.indexOf("const AnimatedPressable"));
+  assert.match(title, /\{contentIcon \? \(\s+<Animated\.View ref=\{flight\.frame\} style=\{\[s\.tile, wide && s\.detailTile, flight\.style\]\}>\s+<Icon name=\{contentIcon\} \/>\s+<\/Animated\.View>\s+\) : \(\s+!wide && <BrandActivity \/>\s+\)\}/);
+  assert.match(app, /<ScreenTitle>\{view\}<\/ScreenTitle>/, "tab screens keep the logo");
+});
+
+test("a gallery header names its photos and videos as desktop does", () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  assert.match(app, /import \{ mediaSummary \} from "\.\/gallery-days";/);
+  assert.match(app, /photoFolder \? \(mediaCounts \? mediaSummary\(mediaCounts\.photos, mediaCounts\.videos\) : "— photos"\)/);
+  assert.match(app, /onSummary=\{setMediaCounts\}/);
+  assert.match(gallery, /const counts = useMemo\(\(\) => galleryCounts\(source, loaded\), \[source, loaded\]\);/);
+  assert.match(gallery, /onSummary\?\.\(\{ photos: counts\.photos, videos: counts\.videos \}\);/);
 });

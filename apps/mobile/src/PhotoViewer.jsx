@@ -47,6 +47,7 @@ const begin = (touches, state, gesture) =>
 
 function ZoomableImage({ uri, preview, width, height, onZoomed, onError, onTap, onDrag, onDragEnd, onAction }) {
   const { s } = useDesign();
+  const { duration, easing } = useMotion();
   const [loaded, setLoaded] = useState(false);
   useEffect(() => setLoaded(false), [uri]);
   const state = useRef(rest);
@@ -66,12 +67,14 @@ function ZoomableImage({ uri, preview, width, height, onZoomed, onError, onTap, 
     Animated.parallel([
       Animated.timing(scale, {
         toValue: next.scale,
-        duration: 180,
+        duration: duration(motion.enter),
+        easing,
         useNativeDriver: true,
       }),
       Animated.timing(offset, {
         toValue: { x: next.x, y: next.y },
-        duration: 180,
+        duration: duration(motion.enter),
+        easing,
         useNativeDriver: true,
       }),
     ]).start();
@@ -485,9 +488,21 @@ export function PhotoViewer({
   const sameWindow = origin?.window?.width === width && origin?.window?.height === height;
   const from = sameWindow ? originTransform(origin?.rect, width, height) : null;
   const travels = !!from && duration(motion.shared) > 0;
+  const appear = useRef(new Animated.Value(1)).current;
   useLayoutEffect(() => {
     if (index === null) return;
-    if (!travels) return grow.setValue(1);
+    if (!travels) {
+      grow.setValue(1);
+      appear.setValue(0);
+      Animated.timing(appear, {
+        toValue: 1,
+        duration: duration(motion.enter),
+        easing,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+    appear.setValue(1);
     grow.setValue(0);
     Animated.timing(grow, {
       toValue: 1,
@@ -496,8 +511,19 @@ export function PhotoViewer({
       useNativeDriver: true,
     }).start();
   }, [index === null]);
+  const closingRef = useRef(false);
+  const [closing, setClosing] = useState(false);
   const closeToOrigin = () => {
-    if (!travels || items[index]?.path !== origin.path) return onClose();
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    if (!travels || items[index]?.path !== origin.path)
+      return Animated.timing(appear, {
+        toValue: 0,
+        duration: duration(motion.exit),
+        easing,
+        useNativeDriver: true,
+      }).start(() => onClose());
     Animated.timing(grow, {
       toValue: 0,
       duration: duration(motion.shared),
@@ -507,11 +533,12 @@ export function PhotoViewer({
   };
   const chrome = useRef(new Animated.Value(0)).current;
   const live = useRef({});
-  live.current = { height, wide, onClose, duration };
+  live.current = { height, wide, onClose, duration, easing };
   useEffect(() => {
     Animated.timing(chrome, {
       toValue: chromeOn ? 1 : 0,
-      duration: duration(120),
+      duration: duration(motion.fast),
+      easing,
       useNativeDriver: true,
     }).start();
   }, [chromeOn]);
@@ -527,12 +554,12 @@ export function PhotoViewer({
     else if (name === "dismiss") live.current.onClose();
   }).current;
   const onDragEnd = useRef((dy, vy) => {
-    const { height: h, wide: fold, onClose: close, duration: ms } = live.current;
+    const { height: h, wide: fold, onClose: close, duration: ms, easing: ease } = live.current;
     const action = decideRelease({ dy, vy, height: h, wide: fold });
     const back = () =>
-      Animated.timing(drag, { toValue: 0, duration: ms(200), useNativeDriver: true }).start();
+      Animated.timing(drag, { toValue: 0, duration: ms(motion.enter), easing: ease, useNativeDriver: true }).start();
     if (action === "close")
-      Animated.timing(drag, { toValue: h, duration: ms(200), useNativeDriver: true }).start(
+      Animated.timing(drag, { toValue: h, duration: ms(motion.exit), easing: ease, useNativeDriver: true }).start(
         () => {
           close();
           drag.setValue(0);
@@ -553,6 +580,8 @@ export function PhotoViewer({
     deletable && Number.isSafeInteger(item?.rev) && !item?.upload && !!remove;
   useEffect(() => {
     if (visible) {
+      closingRef.current = false;
+      setClosing(false);
       setZoomed(false);
       setInfoOpen(false);
       setChromeOn(false);
@@ -626,13 +655,16 @@ export function PhotoViewer({
     <Modal
       visible={visible}
       onRequestClose={() => (infoOpen ? setInfoOpen(false) : closeToOrigin())}
-      animationType="fade"
+      animationType="none"
       transparent
       statusBarTranslucent
       supportedOrientations={["portrait", "landscape"]}
     >
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <View style={[s.viewerRoot, s.viewerTransparent]}>
+      <Animated.View
+        style={[s.viewerRoot, s.viewerTransparent, { opacity: appear }]}
+        pointerEvents={closing ? "none" : "auto"}
+      >
         <Animated.View
           pointerEvents="none"
           style={[
@@ -818,7 +850,7 @@ export function PhotoViewer({
             history={history}
           />
         )}
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

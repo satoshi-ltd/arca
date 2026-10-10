@@ -6,7 +6,8 @@ import path from "node:path";
 import sharp from "sharp";
 import { init, digest } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
-import { Gallery } from "../packages/daemon/gallery.js";
+import { Gallery, galleryDate } from "../packages/daemon/gallery.js";
+import { realDate } from "../packages/core/gallery-date.js";
 
 async function fixture(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-gallery-"));
@@ -182,6 +183,162 @@ test("every photo keeps a thumbnail while large previews fill only their own bud
   );
 });
 
+test("medium previews render at 720 px on their own disk budget and scale down a cached large preview", async (t) => {
+  const f = await fixture(t);
+  const { hash } = await f.photo("wide.jpg", "2025-01-02T03:04:05.000Z");
+  const gallery = f.daemon.engine.gallery;
+  await gallery.background;
+  const stored = (key) =>
+    f.s.db.prepare("SELECT 1 FROM gallery_derivatives WHERE key=?").get(key);
+  f.s.db
+    .prepare("INSERT INTO gallery_derivatives VALUES('filler-medium.jpg',?,0)")
+    .run(512 * 1024 ** 2);
+  f.s.db
+    .prepare("INSERT INTO gallery_derivatives VALUES('filler-large.jpg',1,0)")
+    .run();
+  const medium = await f.api(f.preview("wide.jpg", hash) + "&size=medium");
+  const meta = await sharp(
+    Buffer.from(medium.data.split(",")[1], "base64"),
+  ).metadata();
+  assert.deepEqual([meta.width, meta.height], [720, 360]);
+  assert.ok(fs.existsSync(path.join(f.home, "previews", `${hash}-medium.jpg`)));
+  assert.ok(stored(`${hash}-medium.jpg`));
+  assert.equal(stored("filler-medium.jpg"), undefined, "a medium preview evicts only medium previews");
+  assert.ok(stored("filler-large.jpg"));
+  assert.ok(stored(`${hash}-thumb.jpg`), "medium previews never evict thumbnails");
+  await gallery.discard(hash, "medium");
+  assert.equal(stored(`${hash}-medium.jpg`), undefined);
+  assert.equal(fs.existsSync(path.join(f.home, "previews", `${hash}-medium.jpg`)), false);
+  await f.api(f.preview("wide.jpg", hash) + "&size=large");
+  fs.rmSync(f.s.blob(hash));
+  const scaled = await f.api(f.preview("wide.jpg", hash) + "&size=medium");
+  assert.equal((await sharp(Buffer.from(scaled.data.split(",")[1], "base64")).metadata()).width, 720, "the cached large preview is the source, not the original");
+  await assert.rejects(gallery.derivative(f.v.id, "wide.jpg", hash, "huge"), { status: 400 });
+});
+
+test("a medium preview renders from the original when the cached large preview cannot be read", async (t) => {
+  const f = await fixture(t);
+  const { hash } = await f.photo("wide.jpg", "2025-01-02T03:04:05.000Z");
+  await f.daemon.engine.gallery.background;
+  const larger = path.join(f.home, "previews", `${hash}-large.jpg`);
+  fs.writeFileSync(larger, Buffer.from("not a jpeg"));
+  const width = async () => {
+    const medium = await f.api(f.preview("wide.jpg", hash) + "&size=medium");
+    assert.ok(medium.data, "the medium preview is never unavailable while the original exists");
+    return (await sharp(Buffer.from(medium.data.split(",")[1], "base64")).metadata()).width;
+  };
+  assert.equal(await width(), 720);
+  await f.daemon.engine.gallery.discard(hash, "medium");
+  await sharp({ create: { width: 2048, height: 1024, channels: 3, background: "red" } }).jpeg().toFile(larger);
+  const read = fs.readFileSync;
+  fs.readFileSync = function (file, ...rest) {
+    if (String(file) === larger) throw Object.assign(new Error("busy"), { code: "EBUSY" });
+    return read.call(this, file, ...rest);
+  };
+  t.after(() => (fs.readFileSync = read));
+  assert.equal(await width(), 720);
+});
+
+test("regenerating previews drops medium previews and a video's large poster, so medium never comes from a stale poster", async (t) => {
+  const { default: ffmpeg } = await import("ffmpeg-static");
+  const { execFileSync } = await import("node:child_process");
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id, enabled: true });
+  const { hash } = await f.photo("one.jpg", "2025-01-02T03:04:05.000Z");
+  const clip = path.join(f.home, "sample.mp4");
+  execFileSync(ffmpeg, ["-v", "error", "-f", "lavfi", "-i", "color=c=blue:s=1280x720:d=0.1", "-c:v", "mpeg4", "-y", clip]);
+  const original = fs.readFileSync(clip);
+  const video = digest(original);
+  fs.writeFileSync(f.s.blob(video), original);
+  await f.api("/v1/propose", { volume: f.v.id, path: "clip.mp4", hash: video, size: original.length });
+  await f.daemon.engine.gallery.background;
+  await f.api(f.preview("one.jpg", hash) + "&size=medium");
+  const previews = path.join(f.home, "previews");
+  assert.ok(fs.existsSync(path.join(previews, `${hash}-medium.jpg`)));
+  await sharp({ create: { width: 2048, height: 1152, channels: 3, background: "red" } }).jpeg().toFile(path.join(previews, `${video}-large.jpg`));
+  await f.api("/v1/images", { action: "regenerate" });
+  let status;
+  for (let i = 0; i < 500; i++) {
+    status = await f.api("/v1/images");
+    if (status.job.state !== "running") break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(status.job.state, "complete");
+  assert.equal(fs.existsSync(path.join(previews, `${hash}-medium.jpg`)), false, "regenerate drops the medium preview");
+  assert.equal(fs.existsSync(path.join(previews, `${video}-large.jpg`)), false, "regenerate drops the video's stale large poster");
+  const medium = await f.api(f.preview("clip.mp4", video) + "&size=medium");
+  const { dominant } = await sharp(Buffer.from(medium.data.split(",")[1], "base64")).stats();
+  assert.ok(dominant.b > dominant.r, "the medium poster comes from the video, not the stale poster");
+});
+
+test("an epoch capture date falls back to the date added in pages and counts", async (t) => {
+  const f = await fixture(t);
+  await f.photo("epoch.jpg", "1970-01-01T00:00:00.000Z", "olive");
+  const data = await f.api(f.route);
+  const item = data.items.find((row) => row.path === "epoch.jpg");
+  assert.equal(item.dateSource, "date added");
+  assert.ok(Number(item.date.slice(0, 4)) > 1970);
+  assert.deepEqual(data.timeline.map((row) => row.month), [item.date.slice(0, 7)]);
+  assert.deepEqual(data.days, { [item.date.slice(0, 10)]: 1 });
+  assert.equal(data.undated.count, 0);
+  const zeroed = await sharp({
+    create: { width: 300, height: 200, channels: 3, background: "teal" },
+  })
+    .withExif({ IFD2: { DateTimeOriginal: "0000:00:00 00:00:00" } })
+    .jpeg()
+    .toBuffer();
+  const hash = digest(zeroed);
+  fs.writeFileSync(f.s.blob(hash), zeroed);
+  await f.api("/v1/propose", { volume: f.v.id, path: "zeroed.jpg", hash, size: zeroed.length });
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  await f.daemon.engine.gallery.background;
+  const again = await f.api(f.route);
+  assert.equal(again.items.find((row) => row.path === "zeroed.jpg").dateSource, "date added");
+  assert.equal(again.undated.count, 0);
+  const info = await f.api("/v1/gallery/info?" + new URLSearchParams({ volume: f.v.id, path: "zeroed.jpg", hash }));
+  assert.equal(info.captured, undefined, "photo info shows no capture time either");
+});
+
+test("a zeroed or epoch DateTimeOriginal falls through to a valid CreateDate", async (t) => {
+  const f = await fixture(t);
+  const buffer = await sharp({ create: { width: 300, height: 200, channels: 3, background: "khaki" } })
+    .withExif({ IFD2: { DateTimeOriginal: "1970:01:01 00:00:00", DateTimeDigitized: "2019:05:06 07:08:09" } })
+    .jpeg()
+    .toBuffer();
+  const hash = digest(buffer);
+  fs.writeFileSync(f.s.blob(hash), buffer);
+  await f.api("/v1/propose", { volume: f.v.id, path: "digitized.jpg", hash, size: buffer.length });
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  await f.daemon.engine.gallery.background;
+  const item = (await f.api(f.route)).items.find((row) => row.path === "digitized.jpg");
+  assert.equal(item.dateSource, "metadata");
+  assert.equal(item.date.slice(0, 19), "2019-05-06T07:08:09");
+});
+
+test("zeroed and unparseable dates and any time on 1969-12-31, 1970-01-01 or in month 1970-01 are missing, so other dates from before 1971 keep their place", async (t) => {
+  for (const missing of ["1970-01-01T00:00:00", "1970-01-01T05:30:00+05:30", "1969-12-31T19:00:00-05:00", "1970-01-01", "1970-01", "0000-01-01T00:00:00", "0000-00-00T00:00:00", "2024-02-30T10:00:00", "2023-02-29", "2024-04-31T00:00:00", "2024-13", "2024-00", "garbage", "", null])
+    assert.equal(realDate(missing), null, String(missing));
+  for (const real of ["1956-07-14T10:00:00", "1970-06-01T00:00:00", "1970-01-02T00:00:00", "1969-12-30T23:00:00", "1956-07", "1970-02", "2024-02-29T10:00:00"])
+    assert.equal(realDate(real), real);
+  assert.deepEqual(galleryDate("scan.jpg", "1956-07-14T10:00:00", "2026-04-02T10:00:00.000Z"), { date: "1956-07-14T10:00:00", source: "metadata" });
+  assert.deepEqual(galleryDate("VID_19700101_000012.mp4", null, "2026-04-02T10:00:00.000Z"), { date: "2026-04-02T10:00:00.000Z", source: "date added" }, "an epoch filename is no date");
+  assert.deepEqual(galleryDate("IMG_19560714_101500.jpg", null, "2026-04-02T10:00:00.000Z"), { date: "1956-07-14", source: "filename" });
+  assert.deepEqual(galleryDate("Phone-ab12/1970/01/x-1.jpg", null, "2026-04-02T10:00:00.000Z"), { date: "2026-04-02T10:00:00.000Z", source: "date added" }, "an epoch album folder is no date");
+  assert.deepEqual(galleryDate("Phone-ab12/1970/02/x-1.jpg", null, "2026-04-02T10:00:00.000Z"), { date: "1970-02", source: "album folder" });
+  const f = await fixture(t);
+  await f.photo("scan.jpg", "1956-07-14T10:00:00.000Z", "navy");
+  await f.photo("VID_19700101_000012.jpg", null, "maroon");
+  await f.photo("Phone-ab12/1970/01/epoch-1.jpg", null, "purple");
+  const data = await f.api(f.route);
+  const scan = data.items.find((row) => row.path === "scan.jpg");
+  assert.equal(scan.date, "1956-07-14T10:00:00.000Z");
+  assert.equal(scan.dateSource, "metadata");
+  for (const name of ["VID_19700101_000012.jpg", "Phone-ab12/1970/01/epoch-1.jpg"])
+    assert.equal(data.items.find((row) => row.path === name).dateSource, "date added", name);
+  assert.ok(data.timeline.some((row) => row.month === "1956-07"));
+  assert.ok(!data.timeline.some((row) => row.month.startsWith("1970")), "no epoch month reaches the rail");
+});
+
 test("photos without any date still page through the whole gallery", async (t) => {
   const f = await fixture(t);
   await f.api("/v1/gallery/link", { volume: f.v.id });
@@ -202,6 +359,28 @@ test("photos without any date still page through the whole gallery", async (t) =
   assert.equal(second.items.length, 2);
   assert.deepEqual(first.timeline, [], "no dated month exists");
   assert.deepEqual(first.undated, { count: 62, videos: 0, rev: 62 }, "the undated photos are counted for the header and carry the newest revision");
+});
+
+test("undated photos page after every dated photo, also across month seeks and newer pages", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  for (let i = 0; i < 61; i++) await f.photo(`undated-${String(i).padStart(2, "0")}.jpg`, null, `rgb(${i},0,0)`);
+  await f.photo("2026-03.jpg", "2026-03-10T12:00:00.000Z", "blue");
+  await f.photo("2024-05.jpg", "2024-05-10T12:00:00.000Z", "green");
+  await f.daemon.engine.gallery.background;
+  f.s.db.prepare("DELETE FROM revisions").run();
+  const first = await f.api(f.route);
+  assert.deepEqual(first.items.slice(0, 2).map((row) => row.path), ["2026-03.jpg", "2024-05.jpg"]);
+  assert.ok(first.items.slice(2).every((row) => row.date === null));
+  const second = await f.api(f.route + "&after=" + encodeURIComponent(first.next));
+  assert.equal(second.items.length, 3);
+  assert.ok(second.items.every((row) => row.date === null));
+  assert.equal(second.next, null);
+  const jump = await f.api(f.route + "&month=2024-05");
+  assert.equal(jump.items[0].path, "2024-05.jpg");
+  assert.ok(jump.items.slice(1).every((row) => row.date === null), "undated photos follow the oldest month");
+  const newer = await f.api(f.route + "&before=" + encodeURIComponent(jump.previous));
+  assert.deepEqual(newer.items.map((row) => row.path), ["2026-03.jpg"]);
 });
 
 test("gallery is explicit, chronological, scoped and respects exclusions even for cached previews", async (t) => {
@@ -1005,7 +1184,7 @@ test("marking an existing gallery prepares both preview sizes without requests a
     /^data:image\/jpeg/,
   );
   assert.ok(
-    (await next.derivative(f.v.id, "0.png", row.hash, true)).bytes.length,
+    (await next.derivative(f.v.id, "0.png", row.hash, "large")).bytes.length,
   );
 });
 
@@ -1102,6 +1281,30 @@ test("binary photo previews are prepared before opening and keep native tickets 
     rev: f.s.current(f.v.id, "one.jpg").rev,
   });
   assert.equal((await fetch(descriptor.url)).status, 404);
+});
+
+test("wall preview tickets never evict a playing video's ticket and one photo reuses its ticket", async (t) => {
+  const f = await fixture(t);
+  const clip = Buffer.from("0123456789-video-fixture");
+  const video = digest(clip);
+  fs.writeFileSync(f.s.blob(video), clip);
+  await f.api("/v1/propose", { volume: f.v.id, path: "clip.mp4", hash: video, size: clip.length });
+  const { url } = await f.api("/v1/gallery/playback?" + new URLSearchParams({ volume: f.v.id, path: "clip.mp4", hash: video }));
+  const buffer = await sharp({ create: { width: 40, height: 30, channels: 3, background: "red" } }).jpeg().toBuffer();
+  const hash = digest(buffer);
+  fs.writeFileSync(f.s.blob(hash), buffer);
+  const tickets = [];
+  for (let i = 0; i < 40; i++) {
+    await f.api("/v1/propose", { volume: f.v.id, path: `wall-${i}.jpg`, hash, size: buffer.length });
+    tickets.push((await f.api(f.preview(`wall-${i}.jpg`, hash).replace("/preview?", "/preview-url?"))).url);
+  }
+  assert.equal(new Set(tickets).size, 40);
+  const again = await f.api(f.preview("wall-0.jpg", hash).replace("/preview?", "/preview-url?"));
+  assert.equal(again.url, tickets[0], "the same photo keeps its ticket");
+  const r = await fetch(url, { headers: { Range: "bytes=2-5" } });
+  assert.equal(r.status, 206, "the playing video's ticket survives forty wall previews");
+  assert.equal(await r.text(), "2345");
+  assert.equal((await fetch(tickets[0])).status, 200);
 });
 
 test("binary web previews require the browser session on every image request", async (t) => {

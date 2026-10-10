@@ -1,6 +1,7 @@
 import { ScreenEnter } from "./motion";
 import React, {
   createContext,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -27,6 +28,28 @@ export function useKeyboardVisible() {
     };
   }, []);
   return visible;
+}
+
+export function Reveal({ active, children }) {
+  const position = useContext(ScrollPosition);
+  const node = useRef(null);
+  const shown = useRef(false);
+  const show = () => {
+    if (!active || shown.current || !position || !node.current) return;
+    shown.current = true;
+    position.measure(node.current, ({ top, height }) =>
+      position.scrollTo(Math.max(0, top - Math.max(0, position.viewport.height - height) / 2)),
+    );
+  };
+  useEffect(() => {
+    if (!active) shown.current = false;
+    else show();
+  }, [active]);
+  return (
+    <View ref={node} collapsable={false} onLayout={show}>
+      {children}
+    </View>
+  );
 }
 
 export function KeyboardPane({ children, style }) {
@@ -89,7 +112,9 @@ export function KeyboardScrollView({
   const [contentSize, setContentSize] = useState({ width: 0, height: 0 });
   const scroll = useRef(null),
     focused = useRef(null),
-    offset = useRef(0);
+    offset = useRef(0),
+    scrollable = useRef(true);
+  scrollable.current = props.scrollEnabled !== false;
   const frame = useRef(null);
   const reveal = () => {
     cancelAnimationFrame(frame.current);
@@ -119,7 +144,12 @@ export function KeyboardScrollView({
   const position = useMemo(
     () => ({
       scrollY,
-      setGestureActive,
+      setGestureActive: (active) => {
+        scroll.current?.setNativeProps?.({
+          scrollEnabled: scrollable.current && !active,
+        });
+        setGestureActive(active);
+      },
       scrollTo: (y) => scroll.current?.scrollTo({ y, animated: false }),
       viewport,
       contentSize,

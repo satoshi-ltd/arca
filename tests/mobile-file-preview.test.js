@@ -42,7 +42,7 @@ test("the phone Files list shows thumbnails, a long-press peek sheet, File detai
   assert.match(app, /wide && !compact\) setPreviewEntry\(e\)/);
   assert.match(app, /PREVIEW/);
   assert.match(app, /enabled=\{index < 30\}/, "only the first thirty rows decode thumbnails");
-  assert.match(app, /setPreviewEntry\(null\);\s*\}, \[folder\?\.id, directory, search, screen\]\)/, "the Fold card never outlives its folder");
-  assert.match(app, /accessibilityActions=\{e\.directory \? undefined : \[\{ name: "preview"/, "TalkBack reaches the peek");
+  assert.match(app, /setPreviewEntry\(null\);\s*\}, \[folder\?\.id, directory, screen\]\)/, "the Fold card never outlives its folder");
+  assert.match(app, /: \[\{ name: "preview", label: "Preview" \}\]/, "TalkBack reaches the peek");
   assert.match(history, /<FilePreview entry=\{localEntry\}/);
 });

@@ -26,6 +26,14 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
+- **TRAY-WIN-POSITION** — The tray popover opens inside the screen's work area
+  `bug · agent · high`
+  accept: the popover position comes from one pure function of the click point, the popover size and the monitor's work area (`apps/desktop/src-tauri/src/main.rs`, today 14 px below the click and 160 px left of it); with a bottom taskbar it opens above the click, with a top menu bar or taskbar below it, and it never crosses any edge of the work area, including a click near a corner and on a scaled secondary monitor. Rust unit tests in the `rust-tests` job cover bottom, top, left and right taskbars, both corners and a scale factor of 1.5.
+
+- **UI-SIDEBAR-IDENTITY** — The device name and its role live in the status card
+  `ui · agent · normal`
+  accept: the board UI-SIDEBAR-IDENTITY (option B) on desktop, web, phone and Fold
+
 ## In progress
 
 _None._
@@ -52,6 +60,9 @@ _None._
 - **FOLD-THUMBNAILS** — Gallery thumbnails, posters and viewer
   `verify · maintainer · high`
   accept: on the candidate, grid thumbnails and video posters fill in while folders sync; HEIC photos open and the viewer shows the thumbnail immediately. Offline, downloaded photos remain viewable, unavailable originals are identified and failed derivatives can recover. Record timings and native errors for persistent grey tiles or crashes, including after suspension and cold start.
+- **VERIFY-TRAY-WIN-POSITION** — The tray popover on a real Windows desktop
+  `verify · maintainer · normal · depends: TRAY-WIN-POSITION`
+  accept: on a Windows desktop build, clicking the tray icon with the taskbar at the bottom, top, left and right opens the whole popover on screen next to the icon, also on a second monitor with different scaling; macOS still opens it under the menu-bar icon.
 - **WIN-UPDATE-WATCHER** — A failed Windows update gets the daemon back
   `verify · maintainer · high`
   accept: on a real Windows machine, with an update that fails after Arca closes (for example a locked installation file), the daemon is running again within about a minute without opening Arca, `update-watch.log` in the state directory says `restored` and `%TEMP%\arca-update-watch-*` is gone; a successful update logs `relaunched` and starts no second daemon.
@@ -79,7 +90,7 @@ _None._
 
 - **VERIFY-DESK-MUSIC** — Music plays on desktop and web
   `verify · maintainer · normal`
-  accept: after a Casa redeploy, the hub's web admin opens the music folder on its Artists tab, an A–Z index with a heading per letter, square covers and, on a wide window, a strip of each artist's other album covers, plays an album with the player bar through seeking, next, shuffle and repeat, the bar's title, artist and album open the album and the artist page from another folder, a playlist's table shows the Album column, search finds songs, albums and artists, Shuffle plays the whole library and an artist, and Recent lists what that browser played; on the Mac build, off the library the sidebar card plays, pauses, skips and opens the album, the tray's Previous, Play/Pause and Next drive the player with the main window hidden, the tray's track brings the window forward on the album, and Quit Arca stops the music; after a desktop build, the Mac app as a replica that selected the folder does the same from its own copy with the hub unreachable; View folder and Library switch both ways; a playlist made from a track's Add to playlist… on the web admin and on the Mac replica appears in `Playlists/` as an `.m3u8` file on every selected device, plays in order, refuses to add the same track twice, renames, loses a track and deletes into History, and a track renamed in Arca keeps its place in the playlist; a hand-edited list that repeats a song plays it in order.
+  accept: after a Casa redeploy, the hub's web admin opens the music folder on its Artists tab, an A–Z index with a heading per letter, square covers and, on a wide window, a strip of each artist's other album covers, plays an album with the player bar through seeking, next, shuffle and repeat, the bar's title, artist and album open the album and the artist page from another folder, a playlist's table shows the Album column, Search Arca finds songs, albums and artists and opens them in the library, Shuffle plays the whole library and an artist, and Recent lists what that browser played; on the Mac build, off the library the sidebar card plays, pauses, skips and opens the album, the tray's Previous, Play/Pause and Next drive the player with the main window hidden, the tray's track brings the window forward on the album, and Quit Arca stops the music; after a desktop build, the Mac app as a replica that selected the folder does the same from its own copy with the hub unreachable; View folder and Library switch both ways; a playlist made from a track's Add to playlist… on the web admin and on the Mac replica appears in `Playlists/` as an `.m3u8` file on every selected device, plays in order, refuses to add the same track twice, renames, loses a track and deletes into History, and a track renamed in Arca keeps its place in the playlist; a hand-edited list that repeats a song plays it in order.
 
 - **VERIFY-ANDROID-AUTO** — Arca plays in the car
   `verify · maintainer · normal`
@@ -87,6 +98,35 @@ _None._
 - **VERIFY-PODCASTS** — Podcasts, resume and sleep on real devices
   `verify · maintainer · normal`
   accept: after a Casa redeploy, a desktop build and a native build, a folder of podcast episodes shows Podcasts with shows newest first on the web admin, the Mac and the Fold; an episode paused on one device offers "Pick up where you left off" on the others and Continue starts within 15 s of where it stopped, also after the Mac replica saved it offline and reconnected; rows show their progress and time left; Delete… removes a track from every device and History restores it; the sleep timer's 30 minutes and End of episode stop playback on the web (with the fade), the Mac and the Fold (also with the screen off and while Android Auto plays) and the next session resumes there; an episode's player has no shuffle or repeat and the phone's −15/+30 work; one trail on desktop and one header back on the phone, and a podcasts-only folder shows no tabs.
+
+### Phone sync (native follow-ups)
+
+The JavaScript side of the phone sync audit shipped (per-file verification, no re-hash of downloads, one inventory per run, deferred download recovery, outage hold, 1 Hz progress, the long-lived preview queue). What remains needs native code; the loop writes it with JS and contract tests, a maintainer build proves it.
+
+- **VERIFY-PHONE-SYNC** — Phone sync cadence on the Fold and an iPhone
+  `verify · maintainer · high`
+  accept: after reloading the JavaScript on the Fold and an iPhone, a podcast folder of several 100 MB episodes downloads to the end with the app open and through a Wi-Fi drop of a minute (one Android notification throughout), an open photo folder that is still downloading shows "N photos still downloading" and its Preparing previews row reaches its total and disappears, Sync now on a large folder returns in seconds instead of re-reading every file, and the app stays responsive while it syncs.
+- **NAT-IOS-HASH** — Native hashing on iOS
+  `feature · agent · high`
+  accept: a Swift `hashFile` using CryptoKit reads 1 MiB at a time off the main thread with the same storage check as Android's, and a JS test shows the native path is used instead of the JavaScript SHA-256 fallback in `files.js` (today every download verification, scan and preview check on iOS hashes in JavaScript and blocks the UI); device evidence under VERIFY-NAT-IOS-HASH.
+- **VERIFY-NAT-IOS-HASH** — Native hashing on a real iPhone
+  `verify · maintainer · high · depends: NAT-IOS-HASH`
+  accept: on an iOS build, downloading a 1 GB file and opening a large photo folder keep scrolling smooth, and the hash of a downloaded file matches the hub's.
+- **NAT-TRANSFER-STREAM** — Phone transfers stream over one connection
+  `feature · agent · high`
+  accept: `ArcaNetwork` downloads and uploads an object as a resumable stream (or windows up to the hub's `maxChunkBytes`) over a kept-alive connection, writes blocks without an fsync each and fsyncs once before the hash check; `replica.js` uses it when the binary has it and keeps 1 MiB blocks otherwise; contract tests with a mocked native module cover resume offsets, cancellation, the yield between turns and a failed verification. Device evidence under VERIFY-NAT-TRANSFER-STREAM.
+- **VERIFY-NAT-TRANSFER-STREAM** — Phone transfer throughput on real devices
+  `verify · maintainer · high · depends: NAT-TRANSFER-STREAM`
+  accept: on the Fold and an iPhone over LAN and Tailscale, record MB/s for a 1 GB download and upload before and after; an interrupted transfer resumes without corruption and the battery cost is recorded.
+- **NAT-IOS-BACKGROUND-DOWNLOAD** — iPhone downloads continue in the background
+  `feature · agent · normal`
+  accept: an iOS background `URLSession` keeps fetching a pending download into its partial file while the app is suspended; the next cycle verifies the hash before materializing, pause, Stop syncing and Erase cancel it, and no file reaches the working copy without the journal; JS tests cover the hand-off contract. Device evidence under VERIFY-NAT-IOS-BACKGROUND-DOWNLOAD.
+- **VERIFY-NAT-IOS-BACKGROUND-DOWNLOAD** — Background downloads on a real iPhone
+  `verify · maintainer · normal · depends: NAT-IOS-BACKGROUND-DOWNLOAD`
+  accept: a large episode started with the app open finishes with the phone locked and Arca in the background, and is playable at the next launch.
+- **NAT-REPLACE-ASYNC** — `replaceFile` leaves the JavaScript thread
+  `feature · agent · low`
+  accept: `replaceFile` runs its fsyncs and rename as an async native function on Android and iOS, `files.js` awaits it, and the recovery contract (a failure before the rename leaves the destination untouched) keeps its tests; device evidence rides on VERIFY-NAT-TRANSFER-STREAM.
 
 ### Phase 1 qualification
 
@@ -193,6 +233,9 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **DESK-VIEWER-DRAG** — The window cannot be dragged while the gallery viewer is open
   `bug · agent · low`
   accept: in the native app, pressing and dragging an empty strip of the full-window viewer moves the window, without starting a drag on the viewer's buttons, video controls or the Info panel; the existing titlebar drag rule (`app.js` mousedown handler returns whenever a dialog is open) is narrowed instead of removed; a JSDOM test covers it. Found by the review of 0.6.111. Needs a desktop build.
+- **DESK-TRAY-UNUSED-COMMAND** — Remove the unused `main_window_open` Tauri command
+  `chore · agent · low`
+  accept: `main_window_open` (`apps/desktop/src-tauri/src/main.rs`, its function and its `invoke_handler` entry) is deleted now that the tray keeps Open Arca in its footer and never calls it; `tests/tray.test.js` keeps asserting the tray never invokes it, and a source test asserts `main.rs` no longer defines or registers it. Needs a desktop build to prove it compiles and the tray still opens the main window.
 - **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
   `bug · agent · high`
   accept: `publish-docker.yml` pushes `latest` only for the current eligible release at publication time; older, delayed or forced runs still publish their version tag without moving `latest` backwards. Tests cover out-of-order completion, reruns and a newer release arriving during a build; checking only at job start is insufficient.
@@ -237,10 +280,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **MOB-GALLERY-ALBUM-RELEASE** — Changing the selected albums while photos are pending is allowed
   `feature · agent · low`
   accept: changing the albums or the videos setting while uploads are pending or failed no longer fails with "Finish pending uploads…" (`gallery.js:102-116`); after the maintainer chooses whether queued photos of an unticked album keep uploading (simplest, no new state) or are dropped, a replica test covers adding and removing an album with pending uploads; uploaded files are never touched.
-
-- **NAT-IOS-HASH** — Native hashing on iOS
-  `feature · agent · low`
-  accept: a Swift `hashFile` using CryptoKit reads 1 MiB at a time off the main thread with the same storage check as Android's, and a JS test shows the native path is used instead of the JavaScript SHA-256 fallback in `files.js`; device evidence follows.
 
 ### Music
 

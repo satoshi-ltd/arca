@@ -33,23 +33,30 @@ export function savePosition(store, owner, body) {
 }
 
 export function listPositions(store) {
+  const rows = store.db
+    .prepare("SELECT volume,path,hash,position,duration,device,name,updated FROM audio_positions ORDER BY updated DESC")
+    .all();
   return {
-    positions: store.db
-      .prepare(
-        "SELECT volume,path,hash,position,duration,device,name,updated FROM audio_positions WHERE position>0 ORDER BY updated DESC",
-      )
-      .all(),
+    positions: rows.filter((row) => row.position > 0),
+    finished: rows.filter((row) => row.position === 0).map(({ volume, path, hash, updated }) => ({ volume, path, hash, updated })),
   };
 }
 
 export function mergePositions(hub, queued) {
   const byFile = new Map();
-  for (const row of [...(hub.positions || []), ...queued])
+  const rows = [
+    ...(hub.positions || []),
+    ...(hub.finished || []).map((row) => ({ ...row, finished: true })),
+    ...queued.map((row) => (row.position >= row.duration - RESUME_TAIL_SECONDS ? { ...row, finished: true } : row)),
+  ];
+  for (const row of rows)
     if (!byFile.has(`${row.volume}\0${row.path}`) || byFile.get(`${row.volume}\0${row.path}`).updated < row.updated)
       byFile.set(`${row.volume}\0${row.path}`, row);
+  const newest = [...byFile.values()].sort((a, b) => b.updated - a.updated);
   return {
-    positions: [...byFile.values()]
-      .filter((row) => row.position >= RESUME_HEAD_SECONDS && row.position < row.duration - RESUME_TAIL_SECONDS)
-      .sort((a, b) => b.updated - a.updated),
+    positions: newest.filter(
+      (row) => !row.finished && row.position >= RESUME_HEAD_SECONDS && row.position < row.duration - RESUME_TAIL_SECONDS,
+    ),
+    finished: newest.filter((row) => row.finished).map(({ volume, path, hash, updated }) => ({ volume, path, hash, updated })),
   };
 }

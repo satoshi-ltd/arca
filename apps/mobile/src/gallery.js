@@ -2,6 +2,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
+import { realDate } from "../../../packages/core/gallery-date.js";
 import {
   gallerySettingsChanged,
   parseGallery,
@@ -18,9 +19,10 @@ export function galleryConfig(folder) {
 }
 export function galleryPath(prefix, asset, resource) {
   const date = new Date(asset.creationTime ?? NaN);
-  const month = Number.isFinite(date.getTime())
-    ? date.toISOString().slice(0, 7).replace("-", "/")
-    : "Undated";
+  const month =
+    Number.isFinite(date.getTime()) && realDate(date.toISOString())
+      ? date.toISOString().slice(0, 7).replace("-", "/")
+      : "Undated";
   const original = (resource.name || "photo").normalize("NFC");
   const match = original.match(/\.([a-zA-Z0-9]{1,12})$/);
   const extension = match ? `.${match[1]}` : "";

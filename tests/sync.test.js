@@ -2709,8 +2709,8 @@ test("ignore changes forget excluded files from browse and totals, keep history 
     `/v1/browse?volume=${volume.id}&prefix=smith/repos`,
   );
   assert.equal(browse.entries.length, 0);
-  const search = await hub.api(`/v1/browse?volume=${volume.id}&search=a.txt`);
-  assert.equal(search.entries.length, 0);
+  const search = await hub.api(`/v1/search?q=a.txt&type=files`);
+  assert.equal(search.groups.length, 0, "the one search never finds an excluded file");
   assert.equal(read(hub, volume, "smith/repos/core/a.txt"), "retained");
   assert.equal(hub.engine.store.current(volume.id, original.path), undefined);
   assert.equal(hub.engine.store.history(volume.id, original.path).length, 1);

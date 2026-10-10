@@ -48,6 +48,9 @@ test("the shared moments are wired into the screens", () => {
   assert.match(viewer, /originTransform\(origin\?\.rect, width, height\)/);
   assert.match(viewer, /items\[index\]\?\.path !== origin\.path/);
   assert.match(viewer, /onPress=\{closeToOrigin\}/);
+  assert.match(viewer, /const closeToOrigin = \(\) => \{\s+if \(closingRef\.current\) return;\s+closingRef\.current = true;\s+setClosing\(true\);/, "a second Close while the viewer leaves closes it once");
+  assert.match(viewer, /style=\{\[s\.viewerRoot, s\.viewerTransparent, \{ opacity: appear \}\]\}\s+pointerEvents=\{closing \? "none" : "auto"\}/, "the fading viewer takes no touches");
+  assert.match(viewer, /if \(visible\) \{\s+closingRef\.current = false;\s+setClosing\(false\);/, "the next photo opens interactive");
   const gallery = read("../apps/mobile/src/FolderGallery.jsx");
   assert.match(gallery, /measureInWindow\(\(x, y, width, height\) =>\s+onPress\(item, \{ x, y, width, height \}\)/);
   assert.match(gallery, /origin=\{viewer\?\.origin\}/);
@@ -56,7 +59,7 @@ test("the shared moments are wired into the screens", () => {
   assert.match(components, /useFlight\(detail && wide && contentIcon \? "folder" : null\)/);
   assert.match(components, /<Animated\.View\s+pointerEvents="none"\s+style=\{\[\s+s\.navIndicator/);
   assert.match(components, /<ProgressRing fraction=\{Math\.min\(1, progress\)\} \/>/);
-  assert.match(components, /!disabled && !busy && pressScale\(pressed, reduce\)/);
+  assert.match(components, /<PressScale\s+scale=\{!disabled && !busy && !ghost\}/);
   assert.match(components, /s\.segmentSelected,\s+s\.segmentThumb/);
   const app = read("../apps/mobile/src/App.jsx");
   assert.match(app, /<RefreshControl\s+refreshing=\{pulling\}/);

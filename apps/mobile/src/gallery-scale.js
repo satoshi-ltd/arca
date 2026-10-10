@@ -4,6 +4,40 @@ export function pinchLevel(level, ratio) {
   if (ratio < 1 / 1.35) return level === "base" ? "compact" : "years";
   return level;
 }
+const spread = (touches) =>
+  Math.hypot(
+    touches[0].pageX - touches[1].pageX,
+    touches[0].pageY - touches[1].pageY,
+  );
+export function pinchTracker({ lock, level, change }) {
+  let gesture = null;
+  const pair = (event) => event.nativeEvent.touches.length === 2;
+  return {
+    claims: pair,
+    current: () => gesture,
+    begin(event) {
+      if (!pair(event)) return null;
+      lock(true);
+      gesture = { distance: spread(event.nativeEvent.touches) };
+      return gesture;
+    },
+    move(event) {
+      if (!gesture || gesture.changed || !pair(event)) return;
+      const from = level();
+      const next = pinchLevel(
+        from,
+        spread(event.nativeEvent.touches) / Math.max(1, gesture.distance),
+      );
+      if (next === from) return;
+      gesture.changed = true;
+      change(next, gesture, from);
+    },
+    end() {
+      gesture = null;
+      lock(false);
+    },
+  };
+}
 export const levelColumns = (level, base) =>
   level === "years"
     ? "years"

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { browsePage } from "../packages/daemon/pages.js";
-test("browse groups directories, scopes search and paginates without including deleted files", () => {
+test("browse groups directories, ignores a search parameter and paginates without including deleted files", () => {
   const db = new DatabaseSync(":memory:");
   try {
     db.exec(
@@ -33,7 +33,7 @@ test("browse groups directories, scopes search and paginates without including d
     assert.equal(first.entries[0].size, 30);
     assert.ok(first.next);
     assert.equal(first.entries[0].hash, undefined);
-    assert.equal(browse({ search: "root.txt" }).entries[0].hash, "content-hash");
+    assert.equal(browse().entries.find((r) => r.name === "root.txt").hash, "content-hash");
     assert.equal(
       browse({ limit: "1", after: first.next }).entries[0].name,
       "notes b",
@@ -43,12 +43,13 @@ test("browse groups directories, scopes search and paginates without including d
       ["deep", "a.md"],
     );
     assert.equal(browse({ prefix: "📁" }).entries[0].name, "hello.txt");
-    assert.equal(
-      browse({ prefix: "notes", search: "B.MD" }).entries[0].path,
-      "notes/deep/b.md",
+    assert.deepEqual(
+      browse({ prefix: "notes", search: "B.MD" }).entries.map((r) => r.path),
+      ["notes/deep", "notes/a.md"],
+      "the folder browser has no search of its own; the global search finds files",
     );
     assert.deepEqual(browse({ prefix: "../" }).entries, []);
-    assert.equal(browse({ search: "removed" }).entries.length, 0);
+    assert.ok(!browse({ prefix: "notes" }).entries.some((r) => r.name === "removed.md"));
     assert.throws(() => browse({ limit: "100000" }));
   } finally {
     db.close();

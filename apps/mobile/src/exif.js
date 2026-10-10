@@ -1,3 +1,5 @@
+import { realDate } from "../../../packages/core/gallery-date.js";
+
 const TAGS = {
   0x010f: "make",
   0x0110: "model",
@@ -142,11 +144,13 @@ function normalize(raw) {
     if (Number.isFinite(number) && number > 0) result[key] = number;
   }
   if (Number.isFinite(raw.orientation)) result.orientation = raw.orientation;
-  if (/^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw.captured || "")) {
-    result.captured =
-      raw.captured.slice(0, 10).replaceAll(":", "-") +
-      "T" +
-      raw.captured.slice(11);
+  const captured =
+    /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw.captured || "") &&
+    realDate(
+      raw.captured.slice(0, 10).replaceAll(":", "-") + "T" + raw.captured.slice(11),
+    );
+  if (captured) {
+    result.captured = captured;
     if (/^[+-]\d{2}:\d{2}$/.test(raw.offset || "")) result.offset = raw.offset;
   }
   const latitude = degrees(raw.latitude, raw.latitudeRef);

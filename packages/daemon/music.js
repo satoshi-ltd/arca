@@ -495,6 +495,20 @@ export class Music {
       (a, b) => playlistOrder.compare(a.name, b.name) || (a.path < b.path ? -1 : 1),
     );
   }
+  heldContent(volume) {
+    const v = this.s.volume(volume);
+    if (this.s.config.role === "hub" || !v.selected) return null;
+    const root = path.resolve(v.path);
+    const prefix = root + path.sep;
+    const held = new Map(
+      this.s.db
+        .prepare("SELECT path,hash FROM scan_cache WHERE substr(path,1,length(?))=?")
+        .all(prefix, prefix)
+        .map((row) => [row.path, row.hash]),
+    );
+    held.root = root;
+    return held;
+  }
   build(volume, excluded) {
     if (!this.revisionIndex && this.s.config.role === "hub") {
       this.s.db.exec(
@@ -531,6 +545,7 @@ export class Music {
         null
       );
     };
+    const held = this.heldContent(volume);
     let indexing = false;
     let retryAt = 0;
     const tracks = [];
@@ -557,6 +572,9 @@ export class Music {
         release: row.release,
         cover: row.cover || folderCover(row.path),
         added: row.added,
+        ...(held && held.get(path.join(held.root, ...row.path.split("/"))) !== row.hash
+          ? { pending: true }
+          : {}),
       });
     }
     const version = crypto

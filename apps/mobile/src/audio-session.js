@@ -6,6 +6,7 @@ import {
   SAVE_INTERVAL,
   positionToSave,
   positionMap,
+  positionSignature,
   remember,
   shouldSave,
   trackFile,
@@ -16,6 +17,7 @@ const SEEK_SETTLE = 2000;
 
 export function useAudioSession({ enabled, api, device, lookup }) {
   const [positions, setPositions] = useState(() => new Map());
+  const [loaded, setLoaded] = useState("");
   const [sleep, setSleepState] = useState(SLEEP_OFF);
   const live = useRef({ id: null, position: 0, duration: 0, playing: false });
   const lastSaved = useRef(0);
@@ -27,8 +29,10 @@ export function useAudioSession({ enabled, api, device, lookup }) {
   const refresh = useCallback(async () => {
     if (!enabled) return;
     try {
-      const { positions: rows } = await deps.current.api("/v1/audio-positions");
-      setPositions(positionMap(rows));
+      const { positions: rows, finished } = await deps.current.api("/v1/audio-positions");
+      const next = positionMap(rows, finished);
+      setPositions(next);
+      setLoaded(positionSignature(next));
     } catch {}
   }, [enabled]);
 
@@ -115,7 +119,7 @@ export function useAudioSession({ enabled, api, device, lookup }) {
     lastSaved.current = Date.now() - SAVE_INTERVAL + SEEK_SETTLE;
   }, []);
 
-  return { positions, refresh, sleep, setSleep, seeked };
+  return { positions, loaded, refresh, sleep, setSleep, seeked };
 }
 
 export function useNow(active, every = 1000) {

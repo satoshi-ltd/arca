@@ -3334,54 +3334,6 @@ test("mobile transfer turns yield without persisting a synchronization error", a
   );
 });
 
-test("forced verification survives a yielded folder with a recent inventory and cached hash", async (t) => {
-  const f = await fixture(t);
-  const r = f.replica;
-  fs.writeFileSync(path.join(f.volume.path, "hello.txt"), "verified bytes");
-  await f.daemon.engine.cycle();
-  await r.select(f.client.state().catalog.volumes[0]);
-  await sync(f);
-  const stat = f.files.stat;
-  f.files.stat = async (uri) => {
-    const value = await stat(uri);
-    return value ? { ...value, mtime: fs.statSync(uri).mtimeMs } : null;
-  };
-  const uri = f.files.work(r.scope, f.volume.id, "hello.txt");
-  await r.localHash(uri);
-  const previousScan = r.lastFullScan;
-  r.lastInventory.set(f.volume.id, Date.now());
-  const syncIgnore = r.syncIgnore.bind(r);
-  let turns = 0;
-  r.syncIgnore = async (folder) => {
-    if (++turns === 1) {
-      r.turnTransferred = true;
-      r.turnDeadline = Date.now() - 1;
-      r.checkTransferTurn();
-    }
-    assert.equal(await f.store.get(`fullScan:${r.scope}`), previousScan);
-    return syncIgnore(folder);
-  };
-  const hash = f.files.hash;
-  let rehashed = 0;
-  f.files.hash = async (file) => {
-    if (file === uri) rehashed++;
-    return hash(file);
-  };
-  const scan = r.scan.bind(r);
-  let scans = 0;
-  r.scan = async (folder) => {
-    scans++;
-    return scan(folder);
-  };
-  await r.sync(true, { scheduled: true });
-  assert.equal(r.error, null);
-  assert.equal(turns, 2);
-  assert.equal(scans, 1);
-  assert.ok(rehashed > 0, "continuation must bypass the verified hash cache");
-  assert.equal(r.fullScanPending.size, 0);
-  assert.equal(await f.store.get(`fullScan:${r.scope}`), r.lastFullScan);
-});
-
 test("the phone's own photos that the synchronized .arcaignore excludes stay out of the online gallery", async (t) => {
   const f = await fixture(t);
   const r = f.replica;

@@ -78,6 +78,11 @@ export const iconNames = {
   podcast: "Podcast",
   "rotate-ccw": "RotateCcw",
   "rotate-cw": "RotateCw",
+  star: "Star",
+  "star-off": "StarOff",
+  "circle-minus": "CircleMinus",
+  cloud: "Cloud",
+  "panel-left-open": "PanelLeftOpen",
 };
 export const icons = {
   "map-pin": [
@@ -1036,5 +1041,28 @@ export const icons = {
   "rotate-cw": [
     ["path", { d: "M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" }],
     ["path", { d: "M21 3v5h-5" }],
+  ],
+  star: [
+    [
+      "path",
+      {
+        d: "M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z",
+      },
+    ],
+  ],
+  "star-off": [
+    ["path", { d: "M8.34 8.34 2 9.27l5 4.87L5.82 21 12 17.77 18.18 21l-.59-3.43" }],
+    ["path", { d: "M18.42 12.76 22 9.27l-6.91-1L12 2l-1.44 2.91" }],
+    ["line", { x1: "2", x2: "22", y1: "2", y2: "22" }],
+  ],
+  "circle-minus": [
+    ["circle", { cx: "12", cy: "12", r: "10" }],
+    ["path", { d: "M8 12h8" }],
+  ],
+  cloud: [["path", { d: "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" }]],
+  "panel-left-open": [
+    ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }],
+    ["path", { d: "M9 3v18" }],
+    ["path", { d: "m14 9 3 3-3 3" }],
   ],
 };

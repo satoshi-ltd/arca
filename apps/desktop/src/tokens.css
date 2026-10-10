@@ -1,19 +1,29 @@
 /* Arca v0.1 design tokens. Light is the default; dark overrides on [data-theme="dark"]. */
 :root {
-  --tray-folders-max-height: 320px;
   /* motion and notification geometry */
   --motion-fast: 120ms;
   --motion-enter: 200ms;
   --motion-exit: 140ms;
+  --motion-exit-fast: 80ms;
+  --motion-hint-delay: 400ms;
   --motion-shared: 280ms;
   --motion-stagger: 20ms;
   --motion-settle: 1800ms;
   --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --motion-distance: 8px;
   --motion-dialog-scale: 0.985;
+  --motion-route-from: 0.65;
+  --motion-route-rise: 6px;
+  --motion-panel-shift: 24px;
   --motion-touch-push: 30px;
-  --motion-touch-dialog-scale: 0.9;
+  --motion-touch-dialog-scale: 0.985;
   --motion-touch-press-scale: 0.98;
+  --motion-draw: 560ms;
+  --motion-draw-door-delay: 360ms;
+  --motion-draw-door: 240ms;
+  --motion-draw-ease: cubic-bezier(0.45, 0, 0.2, 1);
+  --motion-door-rise: 4%;
+  --motion-breathe-low: 0.4;
   --notice-width: 360px;
   --toast-bg: #121a16;
   --toast-fg: #f4f6f1;
@@ -27,7 +37,6 @@
   --notice-body: 14px;
   --notice-line: 21px;
   --notice-details-height: 32px;
-  --notice-duration: 180ms;
   --notice-surface: #ffffff;
   --notice-info-bg: #2e6350;
   --notice-info-fg: #ffffff;
@@ -76,7 +85,14 @@
   --header-bottom-gap: 16px;
 
   --screen-title-logo: 32px;
-  --brand-mark-size: 28px;
+  --lockup-compact-mark: 28px;
+  --lockup-compact-font: 16px;
+  --lockup-compact-gap: 8px;
+  --lockup-display-mark: 48px;
+  --lockup-display-font: 28px;
+  --lockup-display-gap: 12px;
+  --launch-mark: 64px;
+  --brand-mark-size: var(--lockup-compact-mark);
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -84,7 +100,7 @@
   --space-5: 20px;
   --space-6: 24px;
   --onboarding-title: 24px;
-  --onboarding-brand: 18px;
+  --onboarding-brand: var(--lockup-compact-font);
   --onboarding-step-gap: 14px;
   --onboarding-welcome-title: 30px;
   --onboarding-padding: 32px;
@@ -100,8 +116,8 @@
   /* Access surfaces: CSS dimensions, independent of screenshot pixel density. */
   --access-width: 380px;
   --access-padding: 22px;
-  --access-mark: 38px;
-  --access-brand-font: 28px;
+  --access-mark: var(--lockup-display-mark);
+  --access-brand-font: var(--lockup-display-font);
   --access-code-width: 38px;
   --access-code-height: 46px;
   --access-reference-font: 30px;
@@ -126,6 +142,7 @@
   --surface: #ffffff; /* cards, rows, inputs */
   --side: #eef1ec; /* sidebar */
   --hover: #ecf0ec; /* hover fill, segmented track */
+  --press: #e3e8e2; /* pressed fill, one step past hover */
   --placeholder: #e4eae5; /* media not loaded yet, mirrored by mobile */
   --track: #ecf0ec; /* progress track */
   --desk: #e3e8e2; /* only behind the window in the prototype */
@@ -190,6 +207,7 @@
   --surface: #161e19;
   --side: #131a16;
   --hover: #1c2620;
+  --press: #2e3b34;
   --placeholder: #1f2a24;
   --track: #26332c;
   --desk: #080b09;
@@ -222,6 +240,33 @@
   --idBg: #1c2620;
   --idFg: #a3afa8;
 }
+@keyframes brand-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes brand-door-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-door-rise));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes brand-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: var(--motion-breathe-low);
+  }
+}
 @keyframes arca-busy {
   0%,
   100% {
@@ -237,13 +282,22 @@
     --motion-fast: 0ms;
     --motion-enter: 0ms;
     --motion-exit: 0ms;
+    --motion-exit-fast: 0ms;
     --motion-shared: 0ms;
     --motion-stagger: 0ms;
     --motion-settle: 0ms;
     --motion-distance: 0px;
     --motion-dialog-scale: 1;
+    --motion-route-from: 1;
+    --motion-route-rise: 0px;
+    --motion-panel-shift: 0px;
     --motion-touch-push: 0px;
     --motion-touch-dialog-scale: 1;
     --motion-touch-press-scale: 1;
+    --motion-draw: 0ms;
+    --motion-draw-door-delay: 0ms;
+    --motion-draw-door: 0ms;
+    --motion-door-rise: 0%;
+    --motion-breathe-low: 1;
   }
 }

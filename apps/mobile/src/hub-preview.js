@@ -13,11 +13,30 @@ export async function fetchHubPreview({ api, volume, item, hash, large }) {
   return result.data.slice(JPEG.length);
 }
 
-export async function acceptedHash(known, item, hashFile) {
+export function replicaHash({ cachedHash, keysOf }) {
+  return async (item) => {
+    for (const key of keysOf(item))
+      try {
+        const record = await cachedHash(key);
+        if (
+          record?.hash &&
+          record.size === item.size &&
+          item.mtime != null &&
+          record.mtime === item.mtime
+        )
+          return record.hash;
+      } catch {}
+    return null;
+  };
+}
+
+export async function acceptedHash(known, item, hashFile, verifiedHash) {
   const row = known?.get(item.path);
   if (!row || row.deleted || !row.hash || row.size !== item.size || !item.uri)
     return null;
   try {
+    const verified = verifiedHash ? await verifiedHash(item) : null;
+    if (verified) return verified === row.hash ? row.hash : null;
     return (await hashFile(item.uri)) === row.hash ? row.hash : null;
   } catch {
     return null;
@@ -26,6 +45,7 @@ export async function acceptedHash(known, item, hashFile) {
 
 export function createAccepted({
   hashFile,
+  verifiedHash,
   limiter = createLimiter(1, 600000),
   limit = 4096,
 }) {
@@ -37,7 +57,7 @@ export function createAccepted({
     const key = `${item.uri}:${item.size}:${item.mtime}:${row.hash}`;
     if (!memo.has(key)) {
       const task = limiter
-        .run(() => acceptedHash(known, item, hashFile), urgent)
+        .run(() => acceptedHash(known, item, hashFile, verifiedHash), urgent)
         .catch(() => {
           if (memo.get(key) === task) memo.delete(key);
           return null;

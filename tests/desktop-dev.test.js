@@ -44,15 +44,12 @@ test("desktop dev replaces its local daemon while retaining identity, pairing, p
   fs.cpSync(path.join(repo, "packages"), path.join(runtime, "packages"), {
     recursive: true,
   });
-  const noticeContract = path.join(
-    runtime,
-    "apps/desktop/src/notice-contract.js",
-  );
-  fs.mkdirSync(path.dirname(noticeContract), { recursive: true });
-  fs.copyFileSync(
-    path.join(repo, "apps/desktop/src/notice-contract.js"),
-    noticeContract,
-  );
+  fs.mkdirSync(path.join(runtime, "apps/desktop/src"), { recursive: true });
+  for (const shared of ["notice-contract.js", "music-library.js"])
+    fs.copyFileSync(
+      path.join(repo, "apps/desktop/src", shared),
+      path.join(runtime, "apps/desktop/src", shared),
+    );
   fs.writeFileSync(
     path.join(runtime, "package.json"),
     JSON.stringify({ type: "module", arcaInstallation: "desktop" }),

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { Worker } from "node:worker_threads";
+import { PREVIEW_SIZES } from "./preview-sizes.js";
 
 export const isHeic = (name) => /\.hei[cf]$/i.test(name);
 // Exports often keep a .HEIC name on JPEG bytes; only an ISO-BMFF ftyp box is HEIF.
@@ -13,12 +14,16 @@ export function isHeifContent(file) {
     fs.closeSync(fd);
   }
 }
-export function heicPreview(file, large = false, dimensions = false) {
+export function heicPreview(file, size = "thumb", dimensions = false) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
       new URL("./heic-preview-worker.js", import.meta.url),
       {
-        workerData: { file, large },
+        workerData: {
+          file,
+          edge: PREVIEW_SIZES[size].edge,
+          quality: PREVIEW_SIZES[size].quality,
+        },
         execArgv: [],
       },
     );

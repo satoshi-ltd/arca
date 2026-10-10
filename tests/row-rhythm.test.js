@@ -42,7 +42,7 @@ test("no phone row style declares its own vertical padding", () => {
 });
 
 const twoLine = [
-  ".folder-card", ".device-row", ".history-row", ".browser-file-row", ".music-row", ".home-arrival",
+  ".folder-card", ".device-row", ".history-row", ".browser-file-row", ".music-row",
   ".backup-card", ".scaffold-row", ".restore-version", ".setting-row:has(p)", ".music-episodes .music-track:not(.music-track-head)",
   ".resume-card", ".selection-summary",
 ];
@@ -98,7 +98,7 @@ const body = (selector) => rule(selector).join("\n");
 
 test("every list row pads 12/16 and leads with a 40 px tile or a 16 px icon, then 12", () => {
   assert.match(tokens, /--row-icon: 16px;/);
-  for (const selector of [".home-arrival", ".copy-row", ".backup-card", ".resume-card", ".restore-version", ".selection-summary"]) {
+  for (const selector of [".copy-row", ".backup-card", ".resume-card", ".restore-version", ".selection-summary"]) {
     assert.match(body(selector), /padding: var\(--row-padding-y\) var\(--row-padding-x\);/, selector);
     assert.match(body(selector), /gap: var\(--row-gap\);/, selector);
   }
@@ -106,19 +106,18 @@ test("every list row pads 12/16 and leads with a 40 px tile or a 16 px icon, the
   assert.match(body(".history-row"), /gap: var\(--space-2\) var\(--row-gap\);/);
   assert.match(body(".restore-version > .icon"), /width: var\(--row-icon\);/);
   assert.match(body(".resume-card > .music-cover"), /width: var\(--detail-tile\);/);
-  assert.match(app, /class="home-arrival"[^`]*<span class="tile large">/);
-  assert.match(app, /<div class="resume-card"[^`]*\$\{musicCover\(v\.id, track\.cover, track\.podcast \? "podcast" : "music"\)\}/);
+  assert.match(app, /<div class="resume-card"[^`]*\$\{musicCover\(v\.id, track\.cover\)\}/);
   assert.match(app, /<div class="selection-summary"><div class="tile large">/);
   assert.match(app, /\? `<div class="tile large"\$\{state\[2\] === "busy"/);
 });
 
 test("row titles are 14/600 and subtitles 12/400 on every list", () => {
-  for (const selector of [".home-arrival-text strong", ".resume-text strong", ".music-row strong", ".music-track-play > strong", ".restore-version strong", ".selection-summary strong", ".backup-card .row-main strong", ".copy-row strong"]) {
+  for (const selector of [".resume-text strong", ".music-row strong", ".music-track-play > strong", ".restore-version strong", ".selection-summary strong", ".backup-card .row-main strong", ".copy-row strong"]) {
     assert.match(body(selector), /font-size: var\(--text-row\);/, selector);
     assert.match(body(selector), /font-weight: 600;/, selector);
   }
   assert.match(style, /\n\.pal-row strong \{[^}]*font-size: var\(--text-row\);/);
-  for (const selector of [".home-arrival-text span", ".restore-version p", ".device-row .row-main p", ".setting-row .path"])
+  for (const selector of [".restore-version p", ".device-row .row-main p", ".setting-row .path"])
     assert.match(body(selector), /font-size: var\(--text-body\);/, selector);
   assert.match(style, /\n\.pal-row p \{[^}]*font-size: var\(--text-body\);/);
   assert.match(body(".music-row strong + span"), /margin-top: 2px;/);

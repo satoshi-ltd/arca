@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.36 — 2026-10-10
+
+- The photo wall is calm and sharp again: days keep their labels but flow together in full rows, tiles load a preview sized to the screen (a new 720 px hub preview), undated photos come after every month, and zeroed or epoch capture times fall back to the file date instead of "1970".
+- One search finds everything: Search Arca groups folders, songs, albums, artists, shows, episodes, playlists, photos and files and opens each where it lives (a song plays in its album, an episode resumes, a photo opens in its gallery); libraries and folders no longer have a search of their own, and the search entry is quieter on the desktop and the phone.
+- Podcasts open as a cover grid where shows in progress come first with their own play button and a finished episode no longer reads New, the sidebar and the Fold gain per-device Favorites ordered like Folders, folder states colour their tile instead of adding pills or rings, the tray popover only lists what needs attention, and the Just arrived row is gone.
+- A cleaner Arca mark (one refined arch, a calm draw-in at sign-in, a door that breathes while Arca works, the arch as the placeholder for unloaded photos, covers and empty folders, new desktop, tray and phone icons), and every menu, dialog, tooltip and notice now leaves as smoothly as it arrives.
+- The phone no longer re-reads every file each hour or on Sync now, trusts what it just downloaded, resumes interrupted downloads after local changes upload, keeps Android transfers through a brief Wi-Fi drop, and prepares each photo preview once; pull-to-refresh on Folders replaces the header Sync now.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.35 — 2026-10-09
 
 - Podcasts are recognised on their own (Podcast genre, dated downloads without an album or track number, long untagged audio) and get their own shows, newest first, with lengths like "1 h 10 min"; a folder of only podcasts opens straight on its shows with the podcast glyph, and search finds shows and episodes.

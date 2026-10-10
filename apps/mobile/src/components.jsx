@@ -1,9 +1,17 @@
-import { brandMark } from "./palette.js";
-import { fileIcon } from "../../desktop/src/file-icons.js";
+import { brandMark, palettes } from "./palette.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g, motion } from "./design-tokens.js";
-import { ChangeFade, Pop, RollText, useFlight, useMotion } from "./motion";
+import { ChangeFade, Pop, RollText, useBreathe, useFlight, useMotion } from "./motion";
+import {
+  brandDraw,
+  brandDrawLength,
+  brandDrawing,
+  brandDrawings,
+  brandGlyphBox,
+  brandSplashBox,
+} from "../../../packages/core/brand-mark.js";
 import { putFlight } from "./flight.js";
+import { folderState, machineTone } from "./home-data.js";
 import React, {
   createContext,
   useContext,
@@ -66,7 +74,7 @@ const busyStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  brandBusy: {
+  launch: {
     ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
@@ -176,14 +184,26 @@ export function Icon({ name, color, size = 20 }) {
   );
 }
 export const PLACEHOLDER_GLYPH_MIN = 48;
+const glyph = brandDrawings.display;
+export function BrandArch({ size, band, door, style }) {
+  return (
+    <Svg width={size} height={size} viewBox={brandGlyphBox} style={style}>
+      <Path d={glyph.arch} fill={band} />
+      <Rect {...glyph.door} fill={door || band} />
+    </Svg>
+  );
+}
 // The one "no image yet" look for every gallery surface; desktop mirrors it in .photo-open.
 export function MediaPlaceholder({ size, video = false, label }) {
   const { s, c } = useDesign();
   return (
     <View style={s.mediaPlaceholder}>
-      {size >= PLACEHOLDER_GLYPH_MIN && (
-        <Icon name={video ? "play" : "image"} size={20} color={c.line} />
-      )}
+      {size >= PLACEHOLDER_GLYPH_MIN &&
+        (video ? (
+          <Icon name="play" size={20} color={c.line} />
+        ) : (
+          <BrandArch size={20} band={c.line} />
+        ))}
       {!!label && (
         <Text numberOfLines={1} style={s.caption}>
           {label}
@@ -192,82 +212,115 @@ export function MediaPlaceholder({ size, video = false, label }) {
     </View>
   );
 }
-export function Logo({ size = 76, glyph = true }) {
+export function Logo({ size = 76, breathe = false }) {
+  const drawing = brandDrawing(size);
+  const door = useBreathe(breathe);
   return (
-    <Svg width={size} height={size} viewBox="0 0 512 512">
-      <Rect
-        x="8"
-        y="8"
-        width="496"
-        height="496"
-        rx="116"
-        fill={brandMark.tile}
-      />
-      {glyph && (
-        <>
-          <Path
-            d="M136 370V232a120 120 0 0 1 240 0v138h-58V232a62 62 0 0 0-124 0v138z"
-            fill={brandMark.arch}
-          />
-          <Rect
-            x="224"
-            y="276"
-            width="64"
-            height="94"
-            rx="8"
-            fill={brandMark.door}
-          />
-        </>
-      )}
-    </Svg>
+    <View style={{ width: size, height: size }}>
+      <Svg width={size} height={size} viewBox={drawing.viewBox}>
+        <Rect {...drawing.tile} fill={brandMark.tile} />
+        <Path d={drawing.arch} fill={brandMark.arch} />
+      </Svg>
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: door }]}>
+        <Svg width={size} height={size} viewBox={drawing.viewBox}>
+          <Rect {...drawing.door} fill={brandMark.door} />
+        </Svg>
+      </Animated.View>
+    </View>
   );
 }
 export function BrandActivity() {
   const { active } = useDesign();
   return (
-    <View style={busyStyles.brandSlot}>
-      <Logo size={g.screenTitleLogo} glyph={!active} />
-      {active && (
-        <View style={busyStyles.brandBusy}>
-          <Busy color={brandMark.arch} accessibilityLabel="Arca: updating" />
-        </View>
-      )}
+    <View
+      style={busyStyles.brandSlot}
+      accessible={!!active}
+      accessibilityRole={active ? "progressbar" : undefined}
+      accessibilityLabel={active ? "Arca: updating" : undefined}
+    >
+      <Logo size={g.screenTitleLogo} breathe={!!active} />
     </View>
   );
 }
-export function ArrivalsStrip({ arrivals, nameOf, relative, onOpen }) {
-  const { s } = useDesign();
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+function DrawnArch({ size, progress, door, band }) {
+  const offset = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [brandDrawLength, 0],
+    extrapolate: "clamp",
+  });
   return (
-    <Section>
-      <Text style={s.eyebrow}>JUST ARRIVED</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={s.arrivals}
-      >
-        {arrivals.map((row) => (
-          <Pressable
-            key={`${row.volume}:${row.rev}`}
-            accessibilityRole="button"
-            accessibilityLabel={`${row.path.split("/").pop()}, ${nameOf(row.author)}, ${relative(row.created)}`}
-            onPress={() => onOpen(row)}
-            style={s.arrival}
-          >
-            <View style={s.tile}>
-              <Icon name={fileIcon(row.path)} size={16} />
-            </View>
-            <View style={[s.stack, s.arrivalText]}>
-              <Text numberOfLines={1} style={s.rowTitle}>
-                {row.path.split("/").pop()}
-              </Text>
-              <Text numberOfLines={1} style={s.caption}>
-                {`${nameOf(row.author)} · ${relative(row.created)}`}
-              </Text>
-            </View>
-          </Pressable>
+    <View style={{ width: size, height: size }}>
+      <Svg width={size} height={size} viewBox={brandGlyphBox}>
+        {brandDraw.map((d) => (
+          <AnimatedPath
+            key={d}
+            d={d}
+            fill="none"
+            stroke={band}
+            strokeWidth={60}
+            strokeDasharray={[brandDrawLength, brandDrawLength]}
+            strokeDashoffset={offset}
+          />
         ))}
-      </ScrollView>
-    </Section>
+      </Svg>
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: door }]}>
+        <Svg width={size} height={size} viewBox={brandGlyphBox}>
+          <Rect {...glyph.door} fill={brandMark.door} />
+        </Svg>
+      </Animated.View>
+    </View>
+  );
+}
+export function PullArch({ pull, refreshing }) {
+  const { c } = useDesign();
+  const dark = c === palettes.dark;
+  const full = useRef(new Animated.Value(1)).current;
+  const breathing = useBreathe(refreshing);
+  const lit = pull.interpolate({
+    inputRange: [0, 0.999, 1],
+    outputRange: [0, 0, 1],
+    extrapolate: "clamp",
+  });
+  return (
+    <DrawnArch
+      size={28}
+      progress={refreshing ? full : pull}
+      door={refreshing ? breathing : lit}
+      band={dark ? brandMark.arch : brandMark.tile}
+    />
+  );
+}
+export function LaunchHold({ leaving = false, onLeft }) {
+  const { c } = useDesign();
+  const dark = c === palettes.dark;
+  const { exit, easing, reduce } = useMotion();
+  const door = useBreathe(!leaving);
+  const fade = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!leaving) return;
+    Animated.timing(fade, { toValue: 0, duration: exit, easing, useNativeDriver: true }).start(() => onLeft?.());
+  }, [leaving]);
+  return (
+    <Animated.View
+      pointerEvents="none"
+      accessible={!leaving}
+      importantForAccessibility={leaving ? "no-hide-descendants" : "auto"}
+      accessibilityRole="progressbar"
+      accessibilityLabel="Starting Arca"
+      style={[busyStyles.launch, { backgroundColor: c.paper, opacity: fade }]}
+    >
+      <View style={{ width: 160, height: 160 }}>
+        <Svg width={160} height={160} viewBox={brandSplashBox}>
+          <Path d={glyph.arch} fill={dark ? brandMark.arch : brandMark.tile} />
+        </Svg>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: reduce ? 1 : door }]}>
+          <Svg width={160} height={160} viewBox={brandSplashBox}>
+            <Rect {...glyph.door} fill={brandMark.door} />
+          </Svg>
+        </Animated.View>
+      </View>
+    </Animated.View>
   );
 }
 export function Section({ children }) {
@@ -284,11 +337,12 @@ export function ScreenTitle({
   const flight = useFlight(detail && wide && contentIcon ? "folder" : null);
   return (
     <View style={s.screenTitle}>
-      {!wide && <BrandActivity />}
-      {wide && contentIcon && (
-        <Animated.View ref={flight.frame} style={[s.tile, s.detailTile, flight.style]}>
+      {contentIcon ? (
+        <Animated.View ref={flight.frame} style={[s.tile, wide && s.detailTile, flight.style]}>
           <Icon name={contentIcon} />
         </Animated.View>
+      ) : (
+        !wide && <BrandActivity />
       )}
       {detail || subtitle != null ? (
         <View style={[s.flex, s.stack]}>
@@ -308,8 +362,34 @@ export function ScreenTitle({
     </View>
   );
 }
-export const pressScale = (pressed, reduce) =>
-  pressed && !reduce && { transform: [{ scale: motion.pressScale }] };
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+export function PressScale({ style, scale = true, onPressIn, onPressOut, ...props }) {
+  const { reduce, easing } = useMotion();
+  const value = useRef(new Animated.Value(1)).current;
+  const [pressed, setPressed] = useState(false);
+  return (
+    <AnimatedPressable
+      {...props}
+      onPressIn={(event) => {
+        setPressed(true);
+        value.stopAnimation();
+        value.setValue(scale && !reduce ? motion.pressScale : 1);
+        onPressIn?.(event);
+      }}
+      onPressOut={(event) => {
+        setPressed(false);
+        Animated.timing(value, {
+          toValue: 1,
+          duration: reduce ? 0 : motion.fast,
+          easing,
+          useNativeDriver: true,
+        }).start();
+        onPressOut?.(event);
+      }}
+      style={[typeof style === "function" ? style({ pressed }) : style, { transform: [{ scale: value }] }]}
+    />
+  );
+}
 export function Button({
   label,
   onPress,
@@ -323,11 +403,13 @@ export function Button({
   danger = false,
   activity = false,
   swap = false,
+  ghost = false,
 }) {
   const { s, c } = useDesign();
-  const { reduce } = useMotion();
+  const ink = primary ? c.onAccent : danger ? c.danger : ghost ? c.mute : c.ink;
   return (
-    <Pressable
+    <PressScale
+      scale={!disabled && !busy && !ghost}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{
@@ -346,8 +428,8 @@ export function Button({
         quiet && s.quietButton,
         danger && s.dangerButton,
         danger && primary && s.destructivePrimary,
+        ghost && s.ghostButton,
         pressed && !disabled && !busy && (primary ? s.pressedFade : s.pressed),
-        !disabled && !busy && pressScale(pressed, reduce),
         (disabled || busy) && s.disabled,
       ]}
     >
@@ -359,14 +441,14 @@ export function Button({
             <Icon
               name={icon}
               size={size === "small" ? g.buttonSmallIcon : g.buttonIcon}
-              color={primary ? c.onAccent : danger ? c.danger : c.ink}
+              color={ink}
             />
           </Pop>
         ) : (
           <Icon
             name={icon}
             size={size === "small" ? g.buttonSmallIcon : g.buttonIcon}
-            color={primary ? c.onAccent : danger ? c.danger : c.ink}
+            color={ink}
           />
         )
       ) : null}
@@ -382,7 +464,7 @@ export function Button({
           {label}
         </Text>
       )}
-    </Pressable>
+    </PressScale>
   );
 }
 export function Field({ label, icon, onFocus, onBlur, ...props }) {
@@ -558,7 +640,11 @@ export function EmptyState({ icon, title, text, action }) {
   const { s, c } = useDesign();
   return (
     <View style={s.empty}>
-      <Icon name={icon} size={24} color={c.mute} />
+      {icon === "arca" ? (
+        <BrandArch size={40} band={c.line} door={c.accent} />
+      ) : (
+        <Icon name={icon} size={24} color={c.mute} />
+      )}
       <Text style={[s.heading, s.centerText]}>{title}</Text>
       <Text style={[s.text, s.centerText]}>{text}</Text>
       {action}
@@ -934,9 +1020,9 @@ export function ActionRow({
   note,
 }) {
   const { s, c } = useDesign();
-  const { reduce } = useMotion();
   return (
-    <Pressable
+    <PressScale
+      scale={!disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={note}
@@ -947,7 +1033,6 @@ export function ActionRow({
         s.actionRow,
         divider && s.separator,
         pressed && !disabled && s.pressed,
-        !disabled && pressScale(pressed, reduce),
         disabled && s.disabled,
       ]}
     >
@@ -962,7 +1047,7 @@ export function ActionRow({
           {label}
         </Text>
       )}
-    </Pressable>
+    </PressScale>
   );
 }
 
@@ -1065,14 +1150,25 @@ export function FolderRow({
   conflict,
   progress,
   dashedDivider = false,
+  onLongPress,
+  favorite,
+  onFavorite,
 }) {
   const { s, c, wide } = useDesign();
-  const { reduce } = useMotion();
   const lead = useRef(null);
   const syncing = status === "Syncing";
+  const state = available ? folderState({}) : folderState({ status, conflict });
+  const ink = { warning: c.warning, danger: c.danger, neutral: c.soft }[state.tone];
   const tile = (
     <View
-      style={[s.tile, available && s.tileAvailable, syncing && progress > 0 && s.tileRound]}
+      style={[
+        s.tile,
+        available && s.tileAvailable,
+        syncing && progress > 0 && s.tileRound,
+        state.tone === "warning" && s.tileWarning,
+        state.tone === "danger" && s.tileDanger,
+        state.tone === "neutral" && s.tileNeutral,
+      ]}
       accessibilityLabel={syncing ? "Syncing" : undefined}
     >
       {syncing && !(progress > 0) ? (
@@ -1080,19 +1176,35 @@ export function FolderRow({
       ) : syncing ? (
         <Icon name={icon} size={16} color={c.accent} />
       ) : (
-        <Icon name={icon} size={16} color={available ? c.mute : c.accent} />
+        <Icon name={state.icon || icon} size={16} color={ink || (available ? c.mute : c.accent)} />
       )}
     </View>
   );
   const contents = (
     <>
-      <View ref={lead} style={[s.homeLead, conflict && s.homeConflict]}>
+      <View ref={lead} style={s.homeLead}>
         {syncing && progress > 0 && <ProgressRing fraction={Math.min(1, progress)} />}
         {tile}
       </View>
       <View style={[s.flex, s.stack]}>
         <Text style={s.rowTitle} numberOfLines={1}>{name}</Text>
-        {!!description && <RollText style={s.caption}>{description}</RollText>}
+        {!!(description || state.word) && (
+          <RollText style={s.caption} token={`${state.word || ""}|${description || ""}`}>
+            {!!state.word && (
+              <Text
+                style={[
+                  s.stateWord,
+                  state.tone === "warning" && s.stateWordWarning,
+                  state.tone === "danger" && s.stateWordDanger,
+                ]}
+              >
+                {state.word}
+              </Text>
+            )}
+            {!!state.word && !!description && " · "}
+            {description}
+          </RollText>
+        )}
       </View>
       {selectable ? (
         selected ? (
@@ -1111,9 +1223,6 @@ export function FolderRow({
         />
       ) : (
         <View style={s.rowAction}>
-          {status && !["Syncing", "Up to date"].includes(status) && (
-            <Badge iconOnly={!wide}>{status}</Badge>
-          )}
           <Icon name="chevron" color={c.mute} />
         </View>
       )}
@@ -1130,14 +1239,18 @@ export function FolderRow({
       {contents}
     </View>
   ) : (
-    <Pressable
+    <PressScale
+      scale={!disabled}
       accessibilityRole={selectable ? "checkbox" : "button"}
-      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${description ? `, ${description}` : ""}${conflict ? ", conflict" : ""}${status ? `, ${status}` : ""}`}
+      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${state.word || syncing ? `, ${state.word || status}` : ""}${description ? `, ${description.replaceAll(" · ", ", ")}` : ""}`}
       accessibilityState={{
         disabled: !!disabled,
         ...(selectable ? { checked: selected } : {}),
       }}
       disabled={disabled}
+      onLongPress={onLongPress}
+      accessibilityActions={onFavorite ? [{ name: "favorite", label: favorite ? "Remove from Favorites" : "Add to Favorites" }] : undefined}
+      onAccessibilityAction={onFavorite ? (event) => event.nativeEvent.actionName === "favorite" && onFavorite() : undefined}
       onPress={() =>
         wide && !selectable && lead.current?.measureInWindow
           ? lead.current.measureInWindow((x, y, width, height) => {
@@ -1153,15 +1266,14 @@ export function FolderRow({
         selectable && selected && s.selectedCard,
         divider && s.separator,
         pressed && !disabled && s.pressed,
-        !disabled && pressScale(pressed, reduce),
       ]}
     >
       {contents}
-    </Pressable>
+    </PressScale>
   );
 }
 const TABS = ["Folders", "Devices", "History", "Settings"];
-export function Navigation({ wide, compact, view, onSelect, name, hub }) {
+export function Navigation({ wide, compact, view, onSelect, name, hub, onFavorites }) {
   const { s, c } = useDesign();
   const { duration, easing } = useMotion();
   const [boxes, setBoxes] = useState({});
@@ -1198,6 +1310,17 @@ export function Navigation({ wide, compact, view, onSelect, name, hub }) {
             <BrandActivity />
             {!compact && <Text style={s.heading}>arca</Text>}
           </View>
+          {!!onFavorites && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Show favorites"
+              onPress={onFavorites}
+              style={({ pressed }) => [s.navItem, compact && s.compactNav, pressed && s.pressed]}
+            >
+              <Icon name="panel-left-open" color={c.mute} />
+              {!compact && <Text style={s.navLabel}>Favorites</Text>}
+            </Pressable>
+          )}
           {!compact && (
             <View style={s.identity}>
               <Icon name="phone" size={16} />
@@ -1295,15 +1418,24 @@ export function MachineRow({
 }) {
   const { s, c, wide } = useDesign();
   const shownRole = role.toLowerCase() === "replica" ? "" : role;
+  const tone = machineTone(state);
   return (
     <View
       style={[s.card, s.machineRow, grouped && s.groupedMachineRow, divider && s.separator]}
       accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}${backup ? ", backs up the hub" : ""}, ${description}${state ? `, ${state}` : ""}`}
     >
       <View style={s.row}>
-        <View style={[s.tile, s.machineTile, hub && s.hubTile]}>
+        <View
+          style={[
+            s.tile,
+            s.machineTile,
+            hub && !tone && s.hubTile,
+            tone === "danger" && s.tileDanger,
+            tone === "neutral" && s.tileNeutral,
+          ]}
+        >
           <Icon
-            color={hub ? c.onAccent : undefined}
+            color={tone === "danger" ? c.danger : tone === "neutral" ? c.soft : hub ? c.onAccent : undefined}
             name={
               hub
                 ? "server"

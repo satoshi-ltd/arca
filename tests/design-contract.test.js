@@ -149,6 +149,7 @@ test("design APIs: bounded filtered history, permissions, session revocation and
     ["/tokens.css", "text/css"],
     ["/vendor/lucide.js", "text/javascript"],
     ["/assets/arca-icon.svg", "image/svg+xml"],
+    ["/assets/arca-icon-small.svg", "image/svg+xml"],
     ["/assets/fonts/instrument-sans.woff2", "font/woff2"],
     ["/assets/fonts/fragment-mono.woff2", "font/woff2"],
   ]) {
@@ -483,7 +484,7 @@ test("control borders, destructive buttons, toggles and busy dots meet the acces
   assert.match(rule(".toggle span"), /background: var\(--control\);/);
   for (const selector of [".dropdown-trigger", ".field-with-icon", ".root-selection", ".photo-viewer .photo-info-footer button"])
     assert.match(rule(selector), /border: 1(\.5)?px solid var\(--control\);/, `${selector} draws the control border`);
-  assert.match(rule(".tray-tone-paused > svg"), /color: var\(--wa\);/, "the tray draws Paused as a warning");
+  assert.match(rule(".tray-tone-conflict > svg"), /color: var\(--waFg\);/, "the tray draws a conflict glyph in the warning ink");
   assert.match(rule(".primary.danger"), /color: var\(--onGreen\);/);
   assert.match(rule(".toggle input:focus-visible + span"), /outline: 2px solid var\(--green\);/);
   assert.match(rule(".busy-grid i"), /animation: arca-busy var\(--motion-loop\)/);
@@ -498,7 +499,8 @@ test("every control answers a press, the viewer keeps its own fills and icon but
   const active = tail.match(/\.secondary:active:not\(:disabled\),[^{]*\{([^}]*)\}/)[0];
   for (const selector of [".icon-button:active", ".nav-item:active:not(.active)", ".folder-card:active", ".history-row[role=\"button\"]:active", ".browser-file-row:active", ".dropdown-trigger:active"])
     assert.ok(active.includes(selector), `${selector} fills while pressed`);
-  assert.match(active, /background: var\(--hover\);/);
+  assert.match(active, /background: var\(--press\);\s+transition-duration: 0ms;/, "a press fills at once and releases over the fast transition");
+  assert.ok(active.includes(".menu-items button:active:not(:disabled)"));
   assert.match(tail, /\.primary:active:not\(:disabled\),\s+\.photo-thumb \.photo-open:active \{\s+opacity: 0\.85;/);
   assert.match(tail, /\.photo-viewer button:hover:not\(:disabled\),\s+\.photo-viewer button:active:not\(:disabled\) \{\s+background: #ffffff26;/, "viewer buttons keep their translucent fill");
   assert.match(tail, /\.photo-viewer \.photo-info button:hover:not\(:disabled\),\s+\.photo-viewer \.photo-info button:active:not\(:disabled\) \{\s+background: var\(--tint\);/, "the Info panel keeps its tint");
@@ -554,7 +556,11 @@ test("floating surfaces lift off the page in dark and the selected segment shows
   for (const theme of ["light", "dark"])
     assert.ok(ratio(pick(theme, "track"), pick(theme, "notice-surface")) >= 1.05, `${theme}: a menu row's hover fill reads on the menu`);
   assert.match(css, /\.menu-items button:hover:not\(:disabled\) \{\s+background: var\(--track\);/);
-  assert.match(css, /\.menu-items button:active:not\(:disabled\) \{\s+background: var\(--track\);/);
+  for (const theme of ["light", "dark"]) {
+    assert.ok(ratio(pick(theme, "press"), pick(theme, "hover")) >= 1.05, `${theme}: a press reads against hover`);
+    assert.ok(ratio(pick(theme, "press"), pick(theme, "track")) >= 1.05, `${theme}: a pressed menu row reads against its hover`);
+  }
+
   assert.ok(ratio(pick("dark", "segmentTrack"), pick("dark", "paper")) >= 1.04, "the dark segmented track shows on the page");
   const dropdown = css.match(/\n\.dropdown-menu \{([^}]*)\}/)[1];
   assert.match(dropdown, /background: var\(--notice-surface\);/);

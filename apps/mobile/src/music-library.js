@@ -3,6 +3,8 @@ import {
   isPlaylistPath,
   parsePlaylist,
 } from "../../../packages/core/playlist.js";
+import { searchFold as plain, searchTokens } from "../../../packages/core/search.js";
+import { fraction, playedRow, savedPosition, timeLeft } from "./audio-positions.js";
 
 export const UNKNOWN_ARTIST = "Unknown artist";
 export const UNKNOWN_ALBUM = "Unknown album";
@@ -537,9 +539,9 @@ export function musicPane(route, wide) {
   return { level, detail: level < route.length - 1 ? route.at(-1) : null };
 }
 
-export function musicBackLabel(route, level, library, folderName, searching) {
+export function musicBackLabel(route, level, library, folderName) {
   if (level === 0) return "Folders";
-  if (level === 1) return searching ? "Search" : folderName;
+  if (level === 1) return folderName;
   const parent = route[level - 1];
   if (parent.kind === "artist")
     return library?.artists.find((item) => item.id === parent.id)?.name || TAB_LABELS.artist;
@@ -553,10 +555,63 @@ export function showSummary(show) {
     .join(" · ");
 }
 
-export function showCaption(show) {
-  return [plural(show.rows.length, "episode", "episodes"), formatDay(show.latest)]
-    .filter(Boolean)
-    .join(" · ");
+export const NEW_EPISODE_DAYS = 7;
+export function shortDay(date, now = new Date()) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || "");
+  if (!match) return "";
+  const day = `${MONTHS[Number(match[2]) - 1]} ${Number(match[3])}`;
+  return Number(match[1]) === now.getFullYear() ? day : `${day}, ${match[1]}`;
+}
+const NEW_EPISODE_MS = NEW_EPISODE_DAYS * 86400000;
+const showEpisode = (library, id) => library.tracks.get(id) || library.pending.get(id);
+export function showResume(show, library, positions) {
+  let newest = null;
+  for (const id of show.rows) {
+    const track = library.tracks.get(id);
+    const row = savedPosition(positions, track);
+    if (row && (!newest || (row.updated || 0) > (newest.row.updated || 0))) newest = { track, row };
+  }
+  return newest;
+}
+export function showFresh(show, library, positions, now = new Date()) {
+  return (
+    !!show.latest &&
+    now - Date.parse(`${show.latest}T12:00:00Z`) < NEW_EPISODE_MS &&
+    !playedRow(positions, showEpisode(library, show.rows[0]))
+  );
+}
+export function showLastPlayed(show, library, positions) {
+  let last = 0;
+  for (const id of show.rows) last = Math.max(last, playedRow(positions, showEpisode(library, id))?.updated || 0);
+  return last;
+}
+export function orderShows(shows, library, positions, now = new Date()) {
+  const rank = (show) => (showResume(show, library, positions) ? 0 : showFresh(show, library, positions, now) ? 1 : 2);
+  const latest = (show) => show.latest || "";
+  return shows
+    .map((show) => ({ show, rank: rank(show), played: showLastPlayed(show, library, positions) }))
+    .sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        (a.rank === 0 ? b.played - a.played : 0) ||
+        latest(b.show).localeCompare(latest(a.show)) ||
+        a.show.name.localeCompare(b.show.name),
+    )
+    .map((item) => item.show);
+}
+export function showTile(show, library, positions, now = new Date()) {
+  const resume = showResume(show, library, positions);
+  const fresh = showFresh(show, library, positions, now);
+  const day = shortDay(show.latest, now);
+  const left = resume ? timeLeft(resume.row.duration - resume.row.position) : null;
+  return {
+    day,
+    fresh: !resume && fresh,
+    caption: left || (fresh ? ["New", day].filter(Boolean).join(" · ") : day),
+    progress: resume ? fraction(resume.row.position, resume.row.duration) : null,
+    resume,
+    left,
+  };
 }
 
 export function showRows(library, show) {
@@ -626,6 +681,15 @@ export function musicSheet(sheet) {
       subtitle: playlistSummary(sheet.playlist),
       menu: true,
     };
+  if (sheet?.kind === "resume-actions")
+    return {
+      title: sheet.show?.name || sheet.track.title,
+      icon: "podcast",
+      subtitle: [sheet.show ? sheet.track.title : sheet.track.artist, timeLeft(sheet.row.duration - sheet.row.position)]
+        .filter(Boolean)
+        .join(" · "),
+      menu: true,
+    };
   if (sheet?.kind === "rename-playlist")
     return { title: "Rename playlist", icon: "edit", subtitle: sheet.playlist.name };
   return null;
@@ -662,12 +726,6 @@ export function playlistRows(library, playlist) {
     };
   });
 }
-
-const plain = (value) =>
-  String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
 
 const LETTER_BASE = { Æ: "A", Ð: "D", Đ: "D", Ł: "L", Ø: "O", Œ: "O", Þ: "T" };
 export function artistLetter(name) {
@@ -741,11 +799,16 @@ function searchIndex(library) {
 }
 
 export function searchLibrary(library, query) {
-  const needle = plain(query).trim();
-  if (!needle) return null;
+  const { tokens } = searchTokens(query);
+  if (!tokens.length) return null;
   const index = searchIndex(library);
   const hits = (rows) =>
-    rows.filter(([, values]) => values.some((value) => value.includes(needle))).map(([item]) => item);
+    rows
+      .filter(([, values]) => {
+        const text = values.join(" ");
+        return tokens.every((token) => text.includes(token));
+      })
+      .map(([item]) => item);
   return {
     tracks: hits(index.tracks),
     albums: hits(index.albums),
@@ -754,23 +817,6 @@ export function searchLibrary(library, query) {
     shows: hits(index.shows),
     episodes: hits(index.episodes),
   };
-}
-
-export function musicSearchLabel(library) {
-  return !library.showOrder?.length ? "Search music" : library.albums.size ? "Search" : "Search podcasts";
-}
-
-export function episodeRows(library, ids) {
-  return ids
-    .map((id) => library.tracks.get(id))
-    .filter(Boolean)
-    .map((track, index) => ({
-      track,
-      title: track.title,
-      state: "ready",
-      position: library.shows.get(track.show)?.tracks.indexOf(track.id) ?? null,
-      number: index + 1,
-    }));
 }
 
 export function upNext(library, state, limit = 30) {

@@ -122,12 +122,12 @@ test("notice geometry and colors are tokenized consistently across renderers", a
     body: "body",
     line: "line",
     detailsHeight: "details-height",
-    duration: "duration",
   }))
     assert.equal(
       Number(css.match(new RegExp(`--notice-${token}:\\s*([\\d.]+)`))[1]),
       noticeMetrics[key],
     );
+  assert.doesNotMatch(css, /--notice-duration/, "desktop notices move with the motion tokens");
   const { palettes } = await import("../apps/mobile/src/palette.js");
   const [light, dark] = css.split('[data-theme="dark"] {');
   for (const [key, token] of Object.entries({

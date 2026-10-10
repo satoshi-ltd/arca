@@ -5,10 +5,13 @@ import { mergeTimeline, timelineItem } from "../apps/mobile/src/gallery-timeline
 import {
   createFlusher,
   createLimiter,
+  createPreviewQueue,
+  localPreviewIo,
   prepareThumbnails,
   previewProgress,
   pruneSaved,
   savedThumbnail,
+  stillDownloading,
 } from "../apps/mobile/src/thumbnail-cache.js";
 import { previewCandidates } from "../apps/mobile/src/gallery-timeline.js";
 import { rememberFailures } from "../apps/mobile/src/video-playback.js";
@@ -273,4 +276,149 @@ test("the flusher keeps the earliest deadline, flushes on demand and can be canc
   flusher.cancel();
   advance(5000);
   assert.equal(flushes, 4);
+});
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+const drain = async (queue) => {
+  for (let i = 0; i < 200 && queue.pending; i++) await settle();
+};
+
+test("the background preview queue renders each photo once while the listing keeps growing", async () => {
+  const rendered = [];
+  const saved = {};
+  const states = [];
+  const queue = createPreviewQueue({
+    io: {
+      exists: async (uri) => Object.values(saved).some((entry) => entry.uri === uri),
+      render: async (entry) => {
+        rendered.push(entry.path);
+        await settle();
+        return `thumb://${entry.path}`;
+      },
+    },
+    saved: () => saved,
+    changed: (delta) => Object.assign(saved, delta),
+    idle: (idle) => states.push(idle),
+  });
+  const photo = (n, signature = "s1") => ({ path: `IMG_${n}.jpg`, signature });
+  const listing = [];
+  queue.start();
+  for (let n = 0; n < 40; n++) {
+    listing.push(photo(n));
+    queue.update([...listing]);
+    await settle();
+  }
+  await drain(queue);
+  assert.equal(rendered.length, 40, "a growing listing never restarts preparation");
+  assert.equal(new Set(rendered).size, 40);
+  assert.equal(states.at(-1), true, "the queue settles once every photo has a preview");
+  const current = [...listing.slice(1), photo(0, "s2")];
+  queue.update(current);
+  await drain(queue);
+  assert.deepEqual(rendered.slice(40), ["IMG_0.jpg"], "only a changed photo is prepared again");
+  queue.update(current.slice(0, 10));
+  queue.update(current);
+  await drain(queue);
+  assert.equal(rendered.length, 41, "a photo that briefly left the listing reuses its saved preview");
+});
+
+test("photos removed from the listing leave the queue and a stopped queue reports nothing", async () => {
+  const rendered = [];
+  const changes = [];
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  const queue = createPreviewQueue({
+    io: {
+      exists: async () => false,
+      render: async (entry) => {
+        rendered.push(entry.path);
+        await gate;
+        return `thumb://${entry.path}`;
+      },
+    },
+    saved: () => ({}),
+    changed: (delta) => changes.push(delta),
+    concurrency: 1,
+  });
+  queue.update(["a.jpg", "b.jpg", "c.jpg"].map((path) => ({ path, signature: "1" })));
+  queue.start();
+  queue.update([{ path: "a.jpg", signature: "1" }]);
+  queue.stop();
+  release();
+  await settle();
+  await settle();
+  assert.deepEqual(rendered, ["a.jpg"]);
+  assert.deepEqual(changes, []);
+});
+
+test("a failed background preview is reported once and retried only on request", async () => {
+  let attempts = 0;
+  const failed = [];
+  const queue = createPreviewQueue({
+    io: {
+      exists: async () => false,
+      render: async () => {
+        attempts++;
+        throw new Error("Thumbnail unavailable");
+      },
+    },
+    saved: () => ({}),
+    failed: (entry) => failed.push(entry.path),
+  });
+  const listing = [{ path: "a.heic", signature: "1" }];
+  queue.start();
+  queue.update(listing);
+  await drain(queue);
+  queue.update([...listing, { path: "b.mov", signature: "2" }]);
+  await drain(queue);
+  assert.equal(attempts, 2);
+  assert.deepEqual(failed, ["a.heic", "b.mov"]);
+  queue.retry();
+  await drain(queue);
+  assert.equal(attempts, 4);
+});
+
+test("the background pass renders on the phone only and never hashes originals or asks the hub", async () => {
+  let hashed = 0;
+  let asked = 0;
+  const failures = [];
+  const local = {
+    exists: async () => false,
+    render: async () => {
+      throw new Error("Thumbnail unavailable");
+    },
+    poster: async () => {
+      throw new Error("Video thumbnail unavailable");
+    },
+    hash: async () => hashed++,
+    fromHub: async () => asked++,
+  };
+  const queue = createPreviewQueue({
+    io: localPreviewIo(local),
+    saved: () => ({}),
+    failed: (entry) => failures.push(entry.path),
+  });
+  queue.start();
+  queue.update([
+    { path: "a.heic", signature: "1", kind: "image", uri: "file:///a.heic" },
+    { path: "b.mov", signature: "2", kind: "video", uri: "file:///b.mov" },
+  ]);
+  await drain(queue);
+  assert.deepEqual(failures, ["a.heic", "b.mov"]);
+  assert.equal(hashed, 0);
+  assert.equal(asked, 0);
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  assert.match(gallery, /backgroundIo = useMemo\(\(\) => localPreviewIo\(thumbnailFiles\), \[\]\)/, "the gallery's background pass uses the local-only renderer");
+});
+
+test("photos the hub holds that have not reached the phone are counted apart from previews", () => {
+  const items = [
+    { path: "a.jpg", hash: "h1", uri: "file:///a.jpg" },
+    { path: "b.jpg", hash: "h2", uri: null },
+    { path: "c.jpg", hash: "h3", uri: null },
+    { path: "private/d.jpg", hash: "h4", uri: null },
+    { path: "e.jpg", hash: null, uri: "file:///e.jpg", upload: "pending" },
+  ];
+  assert.equal(stillDownloading(items), 3);
+  assert.equal(stillDownloading(items, (path) => path.startsWith("private/")), 2);
 });

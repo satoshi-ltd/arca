@@ -24,6 +24,12 @@ import ignore from "../../../packages/vendor/ignore/index.cjs";
 export const CHUNK = 1024 * 1024;
 export const HEADROOM = 256 * 1024 * 1024;
 export { validPath, validRow } from "./validation.js";
+export const VERIFY_MS = 3000;
+export const OFFLINE_HOLD_MS = 5 * 60000;
+export const PROGRESS_MS = 1000;
+const WEEK = 7 * 86400000;
+export const reverifyAfter = (hash) =>
+  WEEK + ((parseInt(String(hash).slice(0, 8), 16) || 0) % WEEK);
 const blockTimeout = (length) => 15000 + Math.ceil(length / 32768) * 1000;
 const transientSnapshot = (error) =>
   ["SNAPSHOT_BUSY", "SNAPSHOT_EXPIRED"].includes(error?.code);
@@ -77,6 +83,19 @@ export class Replica {
     this.verified = new Set();
     this.lastInventory = new Map();
     this.lastFullScan = 0;
+    this.offlineHoldMs = OFFLINE_HOLD_MS;
+    this.retryDelay = (attempt) => Math.min(30000, 2000 * 2 ** attempt);
+    this.progressAt = 0;
+  }
+  reportProgress(progress) {
+    this.progress = progress;
+    if (
+      progress.bytesDone < progress.bytesTotal &&
+      Date.now() - this.progressAt < PROGRESS_MS
+    )
+      return;
+    this.progressAt = Date.now();
+    this.changed();
   }
   remoteView(route, options) {
     return remoteView(this, route, options);
@@ -173,6 +192,20 @@ export class Replica {
         this.syncAbort,
         Object.assign(new Error("Sync paused"), { code: "SYNC_INTERRUPTED" }),
       );
+  }
+  waitToRetry(ms) {
+    const signal = this.syncAbort?.signal;
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", done);
+        this.retryNow = null;
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      signal?.addEventListener("abort", done);
+      this.retryNow = done;
+    });
   }
   suspend() {
     this.stop();
@@ -327,12 +360,11 @@ export class Replica {
         throw new Error("Incomplete download block");
       if (data) await this.files.write(tmp, data, offset);
       offset = end + 1;
-      this.progress = {
+      this.reportProgress({
         direction: "download",
         bytesDone: offset,
         bytesTotal: size,
-      };
-      this.changed();
+      });
     }
     if ((await this.files.hash(tmp)) !== hash) {
       await this.files.remove(tmp);
@@ -419,26 +451,103 @@ export class Replica {
       await this.store.set(key, policy);
     }
   }
-  async localHash(uri) {
-    const stat = await this.files.stat(uri),
-      cached = this.hashCache.get(uri) || (await this.store.cachedHash(uri));
-    if (
-      !this.force &&
-      !this.fullScanPending?.has(this.syncingVolume) &&
+  hashKey(uri, volume, path) {
+    return volume && path ? this.files.work(this.scope, volume, path) : uri;
+  }
+  async cachedRecord(key) {
+    return this.hashCache.get(key) || (await this.store.cachedHash(key));
+  }
+  async rememberHash(key, uri, stat, hash, volume = null, path = null, due) {
+    const record = {
+      size: stat.size,
+      mtime: stat.mtime,
+      hash,
+      due: due ?? Date.now() + reverifyAfter(hash),
+      ...(volume && path ? { scope: this.scope, volume, path, uri } : {}),
+    };
+    this.hashCache.set(key, record);
+    await this.store.cacheHash(key, record);
+  }
+  async forgetHash(key) {
+    this.hashCache.delete(key);
+    await this.store.forgetHash(key);
+  }
+  async localHash(uri, volume = null, path = null) {
+    const stat = await this.files.stat(uri);
+    const key = this.hashKey(uri, volume, path);
+    const fresh = (record) =>
       stat?.mtime != null &&
-      cached?.size === stat.size &&
-      cached.mtime === stat.mtime
-    )
+      record?.size === stat.size &&
+      record.mtime === stat.mtime;
+    const cached = await this.cachedRecord(key);
+    if (fresh(cached)) {
+      if (volume && path && (!cached.due || cached.uri !== uri))
+        await this.rememberHash(key, uri, stat, cached.hash, volume, path, cached.due);
       return cached.hash;
+    }
     if (stat?.directory) return "directory";
     const hash = await this.files.hash(uri);
     const after = await this.files.stat(uri);
     if (!after || after.size !== stat.size || after.mtime !== stat.mtime)
       throw new Error("File changed while being checked. Sync will retry.");
-    const record = { ...stat, hash };
-    this.hashCache.set(uri, record);
-    await this.store.cacheHash(uri, record);
+    await this.rememberHash(key, uri, stat, hash, volume, path);
     return hash;
+  }
+  async verifyHashes(folders, deadline) {
+    let changed = false;
+    for (const folder of folders)
+      try {
+        while (Date.now() < deadline) {
+          const due = await this.store.dueHashes(
+            this.scope,
+            folder.id,
+            Date.now(),
+            32,
+          );
+          if (!due.length) break;
+          for (const { key, record } of due) {
+            this.check();
+            if (Date.now() >= deadline) return changed;
+            if (!(await this.verifyHash(key, record))) {
+              this.lastInventory.delete(folder.id);
+              changed = true;
+            }
+          }
+        }
+      } catch (error) {
+        if (error.code === "SYNC_INTERRUPTED") throw error;
+        await this.store
+          .issue(this.scope, folder.id, `Could not check local files: ${error.message}`)
+          .catch(() => {});
+      }
+    return changed;
+  }
+  async verifyHash(key, record) {
+    const uri = record.uri || key;
+    const stat = await this.files.stat(uri);
+    if (
+      !stat ||
+      stat.directory ||
+      stat.size !== record.size ||
+      stat.mtime !== record.mtime
+    ) {
+      await this.forgetHash(key);
+      return false;
+    }
+    let hash;
+    try {
+      hash = await this.files.hash(uri);
+    } catch {
+      await this.forgetHash(key);
+      return false;
+    }
+    const after = await this.files.stat(uri);
+    if (!after || after.size !== stat.size || after.mtime !== stat.mtime) {
+      await this.forgetHash(key);
+      return false;
+    }
+    await this.rememberHash(key, uri, stat, hash, record.volume, record.path);
+    return hash === record.hash;
   }
   async scan(folder) {
     const root = this.files.folder(this.scope, folder.id);
@@ -488,7 +597,7 @@ export class Replica {
       if (previous?.unapplied) continue;
       const hash = entry.directory
         ? "directory"
-        : await this.localHash(entry.uri);
+        : await this.localHash(entry.uri, folder.id, entry.path);
       if (entry.directory) {
         if (
           previous?.path !== entry.path ||
@@ -586,12 +695,11 @@ export class Replica {
         throw new Error("Invalid upload progress");
       offset = next.offset;
       complete = next.complete;
-      this.progress = {
+      this.reportProgress({
         direction: "upload",
         bytesDone: offset,
         bytesTotal: op.size,
-      };
-      this.changed();
+      });
     }
   }
   async push(folder) {
@@ -725,7 +833,9 @@ export class Replica {
       throw new Error(
         "File conflicts with a local directory; reconcile it first.",
       );
-    let actual = exists ? await this.localHash(target) : null;
+    let actual = exists
+      ? await this.localHash(target, row.volume, row.path)
+      : null;
     // Recovery must rewrite its journal even when revision and bytes already match.
     if (
       !recovering &&
@@ -785,8 +895,45 @@ export class Replica {
       }
       await this.files.replace(temp, target);
       this.touch(row.volume);
+      const landed = await this.files.stat(target);
+      if (landed?.mtime != null)
+        await this.rememberHash(target, target, landed, row.hash, row.volume, row.path);
     }
     await this.store.applied(this.scope, row);
+  }
+  async recoverApplying(volume) {
+    const journaled = (await this.store.applying(this.scope, volume)).sort(
+      (a, b) => b.path.localeCompare(a.path),
+    );
+    if (!journaled.length) return false;
+    const rows = await this.store.rows(this.scope, volume);
+    let awaiting = false;
+    for (const row of journaled)
+      if (await this.awaitsDownload(row, rows)) awaiting = true;
+      else await this.apply(row, true);
+    return awaiting;
+  }
+  // Defer only when the working file still holds its acknowledged baseline, or is absent with no live row, so scan cannot propose an edit or deletion.
+  async awaitsDownload(row, rows) {
+    if (row.deleted || row.directory || builtinExcluded(row.path)) return false;
+    const folded = row.path.toLowerCase();
+    if (
+      rows.some(
+        (other) =>
+          other.path !== row.path && other.path.toLowerCase() === folded,
+      )
+    )
+      return false;
+    const target = this.files.work(this.scope, row.volume, row.path);
+    const info = await this.files.stat(target);
+    const current = rows.find((other) => other.path === row.path);
+    if (!info) return !current || !!current.deleted;
+    if (info.directory || !current || current.deleted || current.directory)
+      return false;
+    const actual = await this.localHash(target, row.volume, row.path);
+    return (
+      actual !== row.hash && actual === (current.localHash ?? current.hash)
+    );
   }
   touch(volume) {
     this.folderChanges.set(volume, (this.folderChanges.get(volume) || 0) + 1);
@@ -991,33 +1138,50 @@ export class Replica {
     if (this.active) {
       if (this.stopped && !this.paused)
         return this.active.then(() => this.sync(force, { scheduled }));
-      if (force) this.forceNext = true;
+      if (force) {
+        this.forceNext = true;
+        this.retryNow?.();
+      }
       return this.active;
     }
     this.lastScheduledAt = Date.now();
     this.scheduled = scheduled;
+    this.continuing = false;
     this.force =
       force || this.forceNext || Date.now() - this.lastFullScan > 3600000;
     this.forceNext = false;
-    // A transfer can yield before inventory. Keep that folder's full hash
-    // verification pending across turns without rescanning completed folders.
-    this.fullScanPending = new Set();
-    this.fullScanRequested = false;
     this.syncAbort = new AbortController();
     this.active = (async () => {
+      let offlineSince = 0;
+      let attempt = 0;
       try {
-        do {
+        for (;;) {
+          this.holdingOffline = !!offlineSince;
           await this.cycle();
-          // Continuation batches reuse the inventory cursor; a Sync now tap mid-cycle queues one full scan.
+          // Continuation turns reuse the 60 s inventory; a Sync now tap mid-run queues one scan of every folder.
+          this.continuing = true;
           this.force = this.forceNext;
           this.forceNext = false;
-        } while (
-          !this.stopped &&
-          !this.paused &&
-          (this.force ||
-            (this.transfer.active && this.moreGalleryWork && !this.error) ||
-            this.moreFolderWork)
-        );
+          if (this.stopped || this.paused) break;
+          if (
+            this.hubUnavailable &&
+            this.transfer.active &&
+            (this.cycleAnswered || offlineSince)
+          ) {
+            offlineSince ||= Date.now();
+            if (Date.now() - offlineSince >= this.offlineHoldMs) break;
+            await this.waitToRetry(this.retryDelay(attempt++));
+            continue;
+          }
+          offlineSince = 0;
+          attempt = 0;
+          if (
+            !this.force &&
+            !(this.transfer.active && this.moreGalleryWork && !this.error) &&
+            !this.moreFolderWork
+          )
+            break;
+        }
       } finally {
         await this.transfer.end();
       }
@@ -1065,6 +1229,7 @@ export class Replica {
     this.stopped = false;
     this.moreGalleryWork = false;
     this.moreFolderWork = false;
+    this.cycleAnswered = false;
     if (!this.hubUnavailable) this.error = null;
     this.changed();
     try {
@@ -1086,16 +1251,27 @@ export class Replica {
       try {
         await this.refreshCatalog();
       } catch (error) {
-        await this.transfer.end().catch(() => {});
+        if (!this.holdingOffline) await this.transfer.end().catch(() => {});
         throw error;
       }
       this.hubAnswered();
+      this.cycleAnswered = true;
       if (offline) await acquire();
       const connection = this.client.state().connection;
       if (!connection?.linked) return;
       if (this.scope !== connection.hubId) {
         this.scope = connection.hubId;
         await this.store.set("scope", this.scope);
+      }
+      if (this.hashesPruned !== this.scope) {
+        this.hashCache.clear();
+        await this.store.pruneHashes(
+          this.scope,
+          (await this.store.folders(this.scope)).map((folder) =>
+            this.files.folder(this.scope, folder.id),
+          ),
+        );
+        this.hashesPruned = this.scope;
       }
       // Publish identity before potentially long file/photo transfers.
       await this.report();
@@ -1112,8 +1288,8 @@ export class Replica {
         .filter((f) => f.selected)
         .sort((a, b) => Number(!!b.initialized) - Number(!!a.initialized));
       if (this.force) {
-        this.fullScanRequested = true;
-        for (const folder of folders) this.fullScanPending.add(folder.id);
+        this.lastFullScan = Date.now();
+        await this.store.set(`fullScan:${this.scope}`, this.lastFullScan);
       }
       for (const folder of folders) {
         this.check();
@@ -1159,24 +1335,19 @@ export class Replica {
             });
           }
           this.policy = null;
-          for (const row of (
-            await this.store.applying(this.scope, folder.id)
-          ).sort((a, b) => b.path.localeCompare(a.path)))
-            await this.apply(row, true);
+          const awaiting = await this.recoverApplying(folder.id);
           await this.syncIgnore(folder);
           const journal = (await this.store.get(this.journalKey(folder.id), [])) || [];
           let scanned = false;
           if (
-            !this.scheduled ||
+            (!this.scheduled && !this.continuing) ||
             this.force ||
-            this.fullScanPending?.has(folder.id) ||
             Date.now() - (this.lastInventory.get(folder.id) || 0) >= 60000 ||
             (await this.store.pending(this.scope, folder.id)).length
           ) {
             await this.scan(folder);
             scanned = true;
             this.lastInventory.set(folder.id, Date.now());
-            this.fullScanPending?.delete(folder.id);
           }
           this.turnDeadline = Date.now() + 10000;
           await this.push(folder);
@@ -1198,6 +1369,14 @@ export class Replica {
           }
           this.turnDeadline = Date.now() + 10000;
           this.turnTransferred = false;
+          if (awaiting) {
+            for (const row of (
+              await this.store.applying(this.scope, folder.id)
+            ).sort((a, b) => b.path.localeCompare(a.path)))
+              await this.apply(row, true);
+            this.turnDeadline = Date.now() + 10000;
+            this.turnTransferred = false;
+          }
           await this.pull(await this.store.folder(this.scope, folder.id));
           if (scanned && journal.length)
             if (isMusicFolder(catalog, folder.id))
@@ -1229,14 +1408,6 @@ export class Replica {
         }
       }
       await this.cleanTransferObjects(this.scope).catch(() => {});
-      if (
-        this.fullScanRequested &&
-        [...this.fullScanPending].every((id) => settled.has(id))
-      ) {
-        this.lastFullScan = Date.now();
-        await this.store.set(`fullScan:${this.scope}`, this.lastFullScan);
-        this.fullScanRequested = false;
-      }
       const complete = !errors.length && !this.moreFolderWork && !deferred;
       await refreshMusic(this, { covers: complete });
       if (errors.length) {
@@ -1248,6 +1419,17 @@ export class Replica {
       await warmViews(this, folders);
       await this.store.set(`lastSync:${this.scope}`, new Date().toISOString());
       await this.report();
+      try {
+        if (
+          await this.verifyHashes(
+            folders.filter((folder) => !settled.has(folder.id)),
+            Date.now() + VERIFY_MS,
+          )
+        )
+          this.moreFolderWork = true;
+      } catch (error) {
+        if (error.code !== "SYNC_INTERRUPTED") throw error;
+      }
     } catch (e) {
       this.hubFailed(e);
     } finally {
@@ -1360,7 +1542,7 @@ export class Replica {
     if (row && !row.deleted) {
       if (rev != null && row.rev !== Number(rev))
         throw new Error("File changed. Reload before renaming.");
-      if (!rewrites && (await this.localHash(file)) !== row.hash)
+      if (!rewrites && (await this.localHash(file, volume, name)) !== row.hash)
         throw new Error("Local file changed. Sync before renaming.");
     }
     if ([name, destination].some(await folderExclusion(this, volume)))
@@ -1433,9 +1615,8 @@ export class Replica {
       throw error;
     }
     // A same-size edit within one mtime tick would otherwise reuse the stale cached hash and never sync.
-    const record = { ...(await this.files.stat(target)), hash: await this.files.hash(target) };
-    this.hashCache.set(target, record);
-    await this.store.cacheHash(target, record);
+    const stat = await this.files.stat(target);
+    await this.rememberHash(target, target, stat, await this.files.hash(target), volume, path);
   }
   async playlistEdit(volume, path, work) {
     if (this.renaming || this.removing || this.importing || this.picking)
@@ -1563,7 +1744,7 @@ export class Replica {
     const file = this.files.work(this.scope, volume, name);
     const info = await this.files.stat(file);
     if (!info || info.directory) return false;
-    const hash = await this.localHash(file);
+    const hash = await this.localHash(file, volume, name);
     return !(await this.store.rows(this.scope, volume)).some(
       (row) => !row.deleted && !row.directory && row.hash === hash,
     );

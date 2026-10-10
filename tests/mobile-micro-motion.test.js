@@ -18,7 +18,7 @@ test("the switch knob slides and its track tints through opacity, not a colour a
 
 test("status pills cross-fade, counts roll, a selected tile settles and its tick grows in", () => {
   assert.match(components, /<ChangeFade token=\{children\}>/);
-  assert.match(components, /<RollText style=\{s\.caption\}>\{description\}<\/RollText>/);
+  assert.match(components, /<RollText style=\{s\.caption\} token=\{`\$\{state\.word \|\| ""\}\|\$\{description \|\| ""\}`\}>/);
   assert.match(gallery, /<Pop style=\{s\.photoBadge\}>/);
   assert.match(gallery, /toValue: selected \? 0\.94 : 1/);
 });

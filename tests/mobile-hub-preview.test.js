@@ -7,6 +7,7 @@ import {
   createHubPreviews,
   fetchHubPreview,
   hubFallback,
+  replicaHash,
 } from "../apps/mobile/src/hub-preview.js";
 
 const item = (extra = {}) => ({
@@ -403,4 +404,33 @@ test("a timeout that settles after a clear does not erase the newer verification
   assert.equal(await second, "h1");
   assert.equal(await third, "h1");
   assert.equal(calls, 2, "the third call joins the second instead of hashing again");
+});
+
+test("a photo the replica already verified needs no hashing before the hub is asked", async () => {
+  const records = new Map([
+    ["work/a.heic", { size: 10, mtime: 1, hash: "h1" }],
+    ["file:///b.heic", { size: 10, mtime: 1, hash: "h1" }],
+  ]);
+  const verifiedHash = replicaHash({
+    cachedHash: async (key) => records.get(key) || null,
+    keysOf: (entry) => [`work/${entry.path}`, entry.uri],
+  });
+  let hashed = 0;
+  const hashFile = async () => (hashed++, "h1");
+  const known = new Map([
+    ["a.heic", { hash: "h1", size: 10 }],
+    ["b.heic", { hash: "h1", size: 10 }],
+    ["c.heic", { hash: "h1", size: 10 }],
+  ]);
+  assert.equal(await acceptedHash(known, item(), hashFile, verifiedHash), "h1");
+  assert.equal(await acceptedHash(known, item({ path: "b.heic", uri: "file:///b.heic" }), hashFile, verifiedHash), "h1", "an older cache key still counts");
+  assert.equal(hashed, 0, "the replica's verification is reused");
+  assert.equal(await acceptedHash(known, item({ mtime: 2 }), hashFile, verifiedHash), "h1");
+  assert.equal(hashed, 1, "a file touched since its verification is hashed");
+  records.set("work/a.heic", { size: 10, mtime: 1, hash: "edited" });
+  assert.equal(await acceptedHash(known, item(), hashFile, verifiedHash), null, "a verified edit is not the accepted revision");
+  assert.equal(hashed, 1);
+  const accepted = createAccepted({ hashFile, verifiedHash });
+  assert.equal(await accepted(known, item({ path: "c.heic", uri: "file:///c.heic" })), "h1");
+  assert.equal(hashed, 2, "a photo without a replica record is hashed once");
 });

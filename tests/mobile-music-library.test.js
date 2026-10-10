@@ -16,8 +16,6 @@ import {
   librarySymbol,
   musicBackLabel,
   musicPane,
-  musicSearchLabel,
-  episodeRows,
   formatLength,
   musicSheet,
   musicTabs,
@@ -414,6 +412,8 @@ test("search finds songs, albums and artists ignoring case and accents", () => {
   assert.deepEqual(metal.artists.map((artist) => artist.name), ["Metallica"]);
   assert.deepEqual(metal.tracks.map((id) => library.tracks.get(id).title), ["Enter Sandman"]);
   assert.deepEqual(searchLibrary(library, "zzz"), { tracks: [], albums: [], artists: [], playlists: [], shows: [], episodes: [] });
+  assert.deepEqual(searchLibrary(library, "dassin ete").tracks.map((id) => library.tracks.get(id).title), ["Été Indien"], "every word must match, across title and artist");
+  assert.deepEqual(searchLibrary(library, "dassin metal").tracks, [], "a word that matches nothing excludes the song");
 });
 
 test("shuffle queues the whole library or one artist in album order", () => {
@@ -518,7 +518,7 @@ test("one header back names the level it returns to, and the Fold splits a list 
   const show = library.showOrder[0];
   assert.equal(musicBackLabel([{ kind: "podcasts" }], 0, library, "podcast-demo", false), "Folders");
   assert.equal(musicBackLabel([{ kind: "podcasts" }, { kind: "show", id: show }], 1, library, "podcast-demo", false), "podcast-demo");
-  assert.equal(musicBackLabel([{ kind: "albums" }, { kind: "album", id: album }], 1, library, "music", true), "Search");
+  assert.equal(musicBackLabel([{ kind: "albums" }, { kind: "album", id: album }], 1, library, "music"), "music", "an album opened from the search goes back to its library");
   const deep = [{ kind: "artists" }, { kind: "artist", id: artist.id }, { kind: "album", id: album }];
   assert.equal(musicBackLabel(deep, 2, library, "music", false), "Extremoduro");
   assert.deepEqual(musicPane(deep, false), { level: 2, detail: null }, "the phone shows one level at a time");
@@ -535,7 +535,7 @@ test("the playing track names its folder, so the mini player reads another folde
   assert.equal(playingFolder("bogus"), null);
 });
 
-test("search finds shows by name and episodes by title or show, and labels itself by what the library holds", () => {
+test("search finds shows by name and episodes by title or show", () => {
   const show = (path, album, title) => episode(path, { album, title });
   const podcasts = buildLibrary([folder("p", [show("Al Corte/2026-09-25 Mikel.mp3", "Al Corte", "Mikel Azcona"), show("UPSB/2026-10-07 Ola.mp3", "Un Podcast Sobre Bitcoin", "Lo que la ola")])]);
   const corte = searchLibrary(podcasts, "corte");
@@ -543,13 +543,6 @@ test("search finds shows by name and episodes by title or show, and labels itsel
   assert.deepEqual(corte.episodes.map((id) => podcasts.tracks.get(id).title), ["Mikel Azcona"], "an episode matches its show's name");
   assert.deepEqual(corte.tracks, [], "episodes never list as songs");
   assert.deepEqual(searchLibrary(podcasts, "ola").episodes.map((id) => podcasts.tracks.get(id).title), ["Lo que la ola"]);
-  const rows = episodeRows(podcasts, corte.episodes);
-  assert.equal(rows[0].position, 0, "a found episode plays from its place in the show");
-  assert.equal(musicSearchLabel(podcasts), "Search podcasts");
-  const music = buildLibrary([folder("m", [row("A/X/01.mp3", { artist: "A", album: "X", track: 1 })])]);
-  assert.equal(musicSearchLabel(music), "Search music");
-  const mixed = buildLibrary([folder("x", [row("A/X/01.mp3", { artist: "A", album: "X", track: 1 }), show("S/2026-10-07 One.mp3", "S", "One")])]);
-  assert.equal(musicSearchLabel(mixed), "Search");
 });
 
 test("episode lengths read in hours and minutes like desktop", () => {

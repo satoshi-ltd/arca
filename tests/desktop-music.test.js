@@ -14,7 +14,6 @@ import {
   nextRepeat,
   playedItems,
   rememberPlayed,
-  searchText,
   shuffleOrder,
 } from "../apps/desktop/src/music-library.js";
 import { artistLetter as phoneLetter, buildLibrary as buildPhoneLibrary } from "../apps/mobile/src/music-library.js";
@@ -26,6 +25,7 @@ const script = [
   source("gallery-timeline-layout.js").replace(/export /g, ""),
   source("file-icons.js").replace(/export /g, ""),
   source("music-library.js").replace(/export /g, ""),
+  source("favorite-order.js").replace(/export /g, ""),
   source("notice-contract.js").replace(/export /g, ""),
   source("app.js")
     .replace(/\r?\n/g, "\r\n")
@@ -91,7 +91,7 @@ async function open(t, { role = "hub", selected = true, folders = ["Music"], man
     fs.rmSync(home, { recursive: true, force: true });
   });
   const w = dom.window;
-  const ui = { patch: (value) => value, poll: null, timers: new Map(), observed: new Set(), listeners: {}, emitted: [], edits: [] };
+  const ui = { patch: (value) => value, poll: null, timers: new Map(), observed: new Set(), listeners: {}, emitted: [], edits: [], answers: {} };
   w.setInterval = (callback, ms) => {
     if (ms === 5000) ui.poll = callback;
     return 0;
@@ -181,6 +181,8 @@ async function open(t, { role = "hub", selected = true, folders = ["Music"], man
     if (command === "bootstrap") return { setup: false, status: status() };
     if (command !== "api") return {};
     routes.push(args.route);
+    for (const [prefix, answer] of Object.entries(ui.answers))
+      if (args.route.startsWith(prefix)) return answer(new URLSearchParams(args.route.split("?")[1] || ""), args);
     if (args.route === "/v1/status") {
       if (ui.expired) throw Object.assign(new Error("Unauthorized"), { status: 401 });
       return status();
@@ -320,7 +322,7 @@ test("a music folder opens on its Artists tab; Albums is a grid; Recent falls ba
   assert.match(ui.text(".detail-title p"), /^4 tracks · 3 albums · /);
   assert.equal(ui.text('.heading-actions [data-action="music-mode"]'), "View folder");
   assert.ok($(".heading-actions .folder-actions-menu"), "the hub keeps its Folder actions menu");
-  assert.equal($(".music-page input"), null, "the search field opens only on request");
+  assert.equal($(".music-page input"), null, "the library has no search field");
   await until(() => $(".music-card .music-cover img"));
   assert.equal($(".music-card .music-cover img").getAttribute("src"), "data:image/jpeg;base64,aaaa");
   assert.ok(ui.routes.some((route) => route.startsWith("/v1/music/cover?") && route.includes(`key=${COVER}`) && route.endsWith("size=small")));
@@ -334,7 +336,7 @@ test("a music folder opens on its Artists tab; Albums is a grid; Recent falls ba
   assert.equal(ui.text(".music-head h2"), "Kind of Blue");
   assert.equal(ui.text(".music-head-info p"), "Miles Davis · 1959 · 2 tracks · 19:08");
   assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Kind of Blue"]);
-  assert.deepEqual($$(".music-head .heading-actions button").map((el) => el.textContent.trim()), ["Play", "Shuffle"]);
+  assert.deepEqual($$(".music-head .heading-actions button:not(.favorite-star)").map((el) => el.textContent.trim()), ["Play", "Shuffle"]);
   const rows = () => $$(".music-tracks .music-track[data-path]");
   assert.deepEqual(
     rows().map((row) => [...row.querySelector(".music-track-play").children].filter((el) => el.className !== "music-track-playing").map((el) => el.textContent.trim())),
@@ -962,7 +964,7 @@ test("the bar's and the card's titles underline on hover, so they read as links"
   assert.match(css, /@media \(hover: hover\) \{\s*\.music-player-title:hover strong,\s*\.music-player-link:hover,\s*\.music-mini-track:hover strong \{\s*text-decoration: underline;/);
   assert.match(css, /\n\.music-tracks\.music-with-album \.music-track-play \{\s*grid-template-columns: var\(--space-6\) minmax\(0, 2fr\) minmax\(0, 1fr\) minmax\(0, 1fr\) calc\(var\(--space-6\) \* 2\);/);
   const narrow = css.slice(css.lastIndexOf("@media (max-width: 760px)"));
-  assert.match(narrow, /\.music-tracks:not\(\.music-songs\) \.music-track-play > :nth-last-child\(2\),\s*\.music-tracks\.music-with-album \.music-track-play > :nth-last-child\(3\) \{\s*display: none;/, "under 760px a playlist hides Artist and Album");
+  assert.match(narrow, /\.music-tracks \.music-track-play > :nth-last-child\(2\),\s*\.music-tracks\.music-with-album \.music-track-play > :nth-last-child\(3\) \{\s*display: none;/, "under 760px a playlist hides Artist and Album");
   assert.match(css, /\n\.music-player-link \{\s*max-width: 100%;\s*overflow: hidden;\s*white-space: nowrap;\s*text-overflow: ellipsis;/, "a long album name ellipsizes");
 });
 
@@ -975,79 +977,157 @@ test("no artist cover is round and the album strip hides under 760px", () => {
   assert.match(narrow, /\.music-row\.music-artist-row \{\s*grid-template-columns: var\(--detail-tile\) minmax\(0, 1fr\) var\(--space-4\);\s*\}\s*\.music-artist-albums \{\s*display: none;/);
 });
 
-test("search shows grouped results instead of the tab, plays a song within its album and returns on Escape", async (t) => {
-  const many = Array.from({ length: 125 }, (_, index) =>
-    track(`Bjork/Long Album/${String(index + 1).padStart(3, "0")} Song.mp3`, { title: `Song ${index + 1}`, artist: "Björk", albumArtist: "Björk", album: "Long Album", track: index + 1, duration: 60 }),
-  );
-  const ui = await open(t, {
-    folders: ["Music", "Records"],
-    library: () => ({
-      version: "v1",
-      indexing: false,
-      tracks: [...TRACKS, ...many, track("Night/01 Late.mp3", { title: "Late", artist: "Trio", album: "Café Nights" })],
-    }),
-  });
+test("the one search opens each result in its own view: a song plays in its album, a photo opens the gallery viewer, Command-Enter shows it in its folder", async (t) => {
+  const EPISODE = track("Podcasts/The Wild Project/2026-09-01 Blue zones.mp3", { title: "Blue zones", album: "The Wild Project", genre: "Podcast", duration: 3600 });
+  const LIST = { path: "Playlists/Blue mood.m3u8", name: "Blue mood", hash: "list", editable: true, entries: ["Coltrane/Blue Train/01 Blue Train.flac"] };
+  const ui = await open(t, { others: ["photos"], library: () => ({ version: "v1", indexing: false, tracks: [...TRACKS, EPISODE], playlists: [LIST] }) });
   const { $, $$, w } = ui;
-  await grid(ui);
-  const toggle = () => $('[data-action="music-search-toggle"]');
-  assert.equal(toggle().getAttribute("aria-label"), "Search music");
-  assert.equal($(".music-tools").nextElementSibling, toggle().parentElement);
-  await ui.click('[data-action="music-search-toggle"]', () => $(".folder-browser-search #music-search-input"));
-  assert.equal(w.document.activeElement.id, "music-search-input");
-  assert.equal(toggle().getAttribute("aria-label"), "Close search");
-  const type = async (value) => {
-    const field = $("#music-search-input");
-    field.value = value;
-    field.dispatchEvent(new w.Event("input", { bubbles: true }));
-    await until(() => ui.idle());
+  const music = ui.volume.id;
+  const photos = ui.plain[0].id;
+  ui.patch = (value) => ({ ...value, volumes: value.volumes.map((v) => (v.id === photos ? { ...v, gallery: true } : v)) });
+  const library = buildLibrary({ tracks: [...TRACKS, EPISODE], playlists: [LIST] });
+  const kind = library.albumList.find((album) => album.title === "Kind of Blue");
+  const show = library.shows[0];
+  const at = (rows) => rows.map((row) => ({ volume: music, folder: "Music", ...row }));
+  const groups = [
+    { type: "folders", count: 1, rows: [{ id: photos, name: "photos" }] },
+    { type: "songs", count: 2, rows: at([{ path: "Miles Davis/Kind of Blue/02 Freddie Freeloader.mp3", hash: "hash-Miles Davis/Kind of Blue/02 Freddie Freeloader.mp3", title: "Freddie Freeloader", artist: "Miles Davis", album: "Kind of Blue", albumId: kind.id, cover: COVER, duration: 586 }]) },
+    { type: "albums", count: 1, rows: at([{ id: kind.id, path: kind.tracks[0].path, title: "Kind of Blue", artist: "Miles Davis", cover: COVER, songs: 2 }]) },
+    { type: "artists", count: 1, rows: at([{ id: library.artists.find((a) => a.name === "Miles Davis").id, name: "Miles Davis", cover: COVER, albums: 1, songs: 2 }]) },
+    { type: "shows", count: 1, rows: at([{ id: show.id, path: EPISODE.path, name: "The Wild Project", cover: null, episodes: 1 }]) },
+    { type: "episodes", count: 1, rows: at([{ path: EPISODE.path, hash: EPISODE.hash, title: "Blue zones", show: "The Wild Project", showId: show.id, cover: null, duration: 3600, date: "2026-09-01" }]) },
+    { type: "playlists", count: 1, rows: at([{ id: LIST.path, name: "Blue mood", cover: null, songs: 1 }]) },
+    { type: "photos", count: 1, rows: [{ volume: photos, folder: "photos", gallery: true, path: "2025/09/blue-door.jpg", name: "blue-door.jpg", hash: "p1", size: 10, rev: 3, kind: "image", date: "2025-09-14T10:00:00", cursor: "2025-09-14T10:00:00|2025/09/blue-door.jpg" }] },
+    { type: "files", count: 1, rows: [{ volume: photos, folder: "photos", gallery: true, path: "plans/blueprint.pdf", name: "blueprint.pdf", hash: "f1", size: 2400, rev: 4 }] },
+  ];
+  const searches = [];
+  ui.answers["/v1/search?"] = (query) => {
+    searches.push(Object.fromEntries(query));
+    return { groups };
   };
-  const groups = () => $$(".music-view .section-label").map((el) => el.textContent);
-  const songs = () => $$(".music-view .music-songs .music-track strong").map((el) => el.textContent);
-  const rows = () => $$(".music-view .music-row strong").map((el) => el.textContent);
-  await type("blue");
-  assert.deepEqual(groups(), ["Songs", "Albums"]);
-  assert.deepEqual(songs(), ["Blue Train", "So What", "Freddie Freeloader"]);
-  assert.equal($(".music-view .music-songs .music-track-play > strong + span").textContent, "John Coltrane · Blue Train");
-  assert.deepEqual(ui.cards(), ["Blue Train", "Kind of Blue"]);
-  assert.equal(w.document.activeElement.id, "music-search-input");
-  await type("CAFE");
-  assert.deepEqual(groups(), ["Songs", "Albums"], "no Playlists group");
-  assert.deepEqual(songs(), ["Late"]);
-  assert.deepEqual(ui.cards(), ["Café Nights"]);
-  await type("bjork");
-  assert.deepEqual(groups(), ["Songs", "Albums", "Artists"]);
-  assert.equal(songs().length, 120);
-  assert.deepEqual(rows(), ["Björk"]);
-  await ui.click('[data-action="music-search-more"]', () => songs().length === 125);
-  await ui.click('.music-row[data-action="music-artist"]', () => $('.music-head [data-action="music-shuffle-artist"]'));
-  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Results", "Björk"]);
-  await ui.up("Results", () => groups().length === 3);
-  await type("zzz");
-  assert.equal(ui.text(".music-view .empty h2"), "No results for “zzz”");
-  await type("freddie");
-  $(".music-view .music-songs .music-track-play").click();
+  const galleries = [];
+  ui.answers["/v1/gallery?"] = (query) => {
+    galleries.push(Object.fromEntries(query));
+    return { indexing: false, timeline: [{ month: "2025-09", count: 1, rev: 3, videos: 0 }], days: { "2025-09-14": 1 }, undated: { count: 0, videos: 0, rev: 0 }, items: [{ path: "2025/09/blue-door.jpg", hash: "p1", size: 10, rev: 3, date: "2025-09-14T10:00:00", cursor: "2025-09-14T10:00:00|2025/09/blue-door.jpg", kind: "image", dateSource: "metadata" }], next: null, previous: null };
+  };
+  ui.answers["/v1/gallery/"] = () => ({});
+  ui.answers["/v1/browse?"] = (query) => ({
+    entries: query.get("prefix") === "plans" ? [{ name: "blueprint.pdf", path: "plans/blueprint.pdf", directory: 0, files: 1, size: 2400, rev: 4, hash: "f1" }, { name: "zz.txt", path: "plans/zz.txt", directory: 0, files: 1, size: 1, rev: 1, hash: "f2" }] : [],
+    next: null,
+  });
+  w.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+    this.dispatchEvent(new w.Event("close"));
+  };
+  await grid(ui);
+  assert.equal($('[data-action="music-search-toggle"]'), null, "the library has no search of its own");
+  assert.equal($(".music-page input"), null);
+  const press = (key, extra = {}) => w.document.body.dispatchEvent(new w.KeyboardEvent("keydown", { key, bubbles: true, ...extra }));
+  const dialog = () => w.document.getElementById("palette");
+  const search = async (query = "blue") => {
+    press("k", { metaKey: true });
+    const input = dialog().querySelector(".pal-input");
+    input.value = query;
+    input.dispatchEvent(new w.Event("input", { bubbles: true }));
+    await until(() => dialog().querySelector('[aria-label="Files"]'));
+  };
+  const choose = async (label, extra = {}) => {
+    const rows = [...dialog().querySelectorAll("[data-pal]")];
+    const index = rows.findIndex((row) => row.closest(".pal-group").getAttribute("aria-label") === label);
+    assert.ok(index >= 0, label);
+    for (let i = 0; i < index; i++) press("ArrowDown");
+    press("Enter", extra);
+    await until(() => !dialog().open && ui.idle());
+  };
+  await search();
+  assert.equal(dialog().querySelector(".pal-scopes"), null, "no scope segments");
+  assert.deepEqual([...dialog().querySelectorAll(".pal-group")].map((g) => g.getAttribute("aria-label")), ["Folders", "Songs", "Albums", "Artists", "Shows", "Episodes", "Playlists", "Photos", "Files"]);
+  assert.match(dialog().querySelector('[aria-label="Songs"]').textContent, /Freddie Freeloader\s*Miles Davis · Kind of Blue\s*Play in album/);
+  assert.match(dialog().querySelector('[aria-label="Episodes"]').textContent, /Blue zones\s*The Wild Project · 1 h 0 min\s*Play/);
+  assert.equal(dialog().querySelector('[aria-label="Photos"] .pal-cap').textContent, "Sep 14, 2025", "a photo is captioned with its capture date");
+  assert.equal(dialog().querySelector('[aria-label="Artists"] .pal-icon').classList.contains("pal-round"), true);
+  assert.equal(dialog().querySelector('[aria-label="Songs"] [data-music-cover]').dataset.musicCover, new URLSearchParams({ volume: music, key: COVER }).toString(), "song rows carry the library cover");
+  assert.equal(dialog().querySelector('[aria-label="Songs"] [data-pal]').getAttribute("aria-label"), "song, Freddie Freeloader, Miles Davis · Kind of Blue");
+  assert.equal(searches.at(-1).type, undefined);
+
+  await choose("Songs");
   await until(() => ui.played.length === 1 && ui.idle());
-  assert.equal(ui.text(".music-player-track strong"), "Freddie Freeloader");
-  assert.ok($(".music-view .music-songs .music-track").classList.contains("playing"));
-  assert.equal($('#music-player [data-player="next"]').disabled, true, "the song plays within its album");
-  $('#music-player [data-player="previous"]').click();
+  assert.equal(ui.text(".music-head h2"), "Kind of Blue", "a song opens its album");
+  assert.equal(ui.text(".music-player-track strong"), "Freddie Freeloader", "and plays from that song");
+  assert.equal($('#music-player [data-player="next"]').disabled, true, "within its album's queue");
+  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Kind of Blue"], "there is no Results crumb");
+
+  await search();
+  await choose("Artists");
+  assert.equal(ui.text(".music-head h2"), "Miles Davis");
+  assert.equal(ui.played.length, 1, "opening an artist plays nothing");
+  await search();
+  await choose("Albums");
+  assert.equal(ui.text(".music-head h2"), "Kind of Blue");
+  await search();
+  await choose("Playlists");
+  assert.equal(ui.text(".music-head h2"), "Blue mood");
+  await search();
+  await choose("Shows");
+  assert.equal(ui.text(".music-head h2"), "The Wild Project");
+  assert.equal(ui.played.length, 1);
+  await search();
+  await choose("Episodes");
   await until(() => ui.played.length === 2 && ui.idle());
-  assert.equal(ui.text(".music-player-track strong"), "So What");
-  const artists = ["Björk", "John Coltrane", "Miles Davis", "Trio", "Unknown artist"];
-  await type("");
-  assert.deepEqual(ui.artists(), artists);
-  assert.ok($("#music-search-input"));
-  await type("blue");
-  $("#music-search-input").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  await until(() => !$("#music-search-input") && ui.artists().length === artists.length && ui.idle());
-  assert.equal(w.document.activeElement, toggle());
-  const stored = Array.from({ length: w.localStorage.length }, (_, index) => w.localStorage.getItem(w.localStorage.key(index))).join(" ");
-  assert.doesNotMatch(stored, /zzz|bjork|cafe/i, "the query is never stored");
-  await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
-  await type("blue");
-  w.location.hash = `#/folders/${ui.volumes[1].id}`;
-  await until(() => ui.text(".detail-title h1") === "Records" && ui.$(".music-page .music-artist-row") && ui.idle());
-  assert.equal($("#music-search-input"), null, "each folder has its own search");
+  assert.equal(ui.text(".music-head h2"), "The Wild Project", "an episode opens its show");
+  assert.equal(ui.text(".music-player-track strong"), "Blue zones");
+
+  await search();
+  await choose("Photos");
+  await until(() => $("#dialog.photo-viewer[open]"));
+  assert.equal(galleries[0].from, "2025-09-14T10:00:00|2025/09/blue-door.jpg", "the gallery loads around the photo");
+  assert.equal(galleries[0].volume, photos);
+  $("#dialog").removeAttribute("open");
+
+  await search();
+  await choose("Files", { metaKey: true });
+  await until(() => $('.browser-file-row[aria-current="true"]'));
+  assert.equal($('.browser-file-row[aria-current="true"] strong').textContent, "blueprint.pdf", "Command-Enter shows the item selected in its folder");
+  assert.equal(w.document.activeElement, $('.browser-file-row[aria-current="true"]'));
+  assert.equal($('[data-action="folder-search-toggle"]'), null, "the file browser has no search of its own");
+
+  await search();
+  await choose("Files");
+  await until(() => ui.routes.some((route) => route.startsWith("/v1/history?") && route.includes("blueprint.pdf")));
+});
+
+test("Show all narrows the palette to one type behind a chip that Backspace removes", async (t) => {
+  const ui = await open(t);
+  const { w } = ui;
+  const rows = (n, offset = 0) => Array.from({ length: n }, (_, i) => ({ volume: ui.volume.id, folder: "Music", path: `s/${offset + i}.mp3`, hash: `h${offset + i}`, title: `Song ${offset + i}`, artist: "A", album: "B", albumId: "x", cover: null, duration: 60 }));
+  const searches = [];
+  ui.answers["/v1/search?"] = (query) => {
+    searches.push(Object.fromEntries(query));
+    if (query.get("type") === "songs") return { groups: [{ type: "songs", count: 25, rows: rows(Math.min(20, 25 - Number(query.get("offset"))), Number(query.get("offset"))) }] };
+    return { groups: [{ type: "songs", count: 25, rows: rows(4) }, { type: "files", count: 1, rows: [{ volume: ui.volume.id, folder: "Music", path: "a.txt", name: "a.txt", hash: "f", size: 1, rev: 1 }] }] };
+  };
+  await grid(ui);
+  w.document.body.dispatchEvent(new w.KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
+  const dialog = w.document.getElementById("palette");
+  const input = dialog.querySelector(".pal-input");
+  input.value = "song";
+  input.dispatchEvent(new w.Event("input", { bubbles: true }));
+  await until(() => dialog.querySelector(".pal-more"));
+  assert.equal(dialog.querySelectorAll('[aria-label="Songs"] .pal-row:not(.pal-more)').length, 3, "three rows per group");
+  assert.equal(dialog.querySelector(".pal-more").textContent, "Show all 25 songs");
+  dialog.querySelector(".pal-more").click();
+  await until(() => dialog.querySelector(".pal-chip") && dialog.querySelectorAll('[aria-label="Songs"] .pal-row:not(.pal-more)').length === 20);
+  assert.deepEqual(searches.at(-1), { q: "song", type: "songs", limit: "20", offset: "0" });
+  assert.equal(dialog.querySelector('[aria-label="Files"]'), null, "the chip narrows to one type");
+  assert.match(dialog.querySelector(".pal-chip").textContent, /Songs/);
+  assert.match(dialog.querySelector(".pal-foot").textContent, /Remove filter.*Show in folder.*25 songs/);
+  dialog.querySelector(".pal-more").click();
+  await until(() => dialog.querySelectorAll('[aria-label="Songs"] .pal-row:not(.pal-more)').length === 25 && !dialog.querySelector(".pal-more"));
+  assert.equal(searches.at(-1).offset, "20", "Show more pages with an offset");
+  input.value = "";
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Backspace", bubbles: true }));
+  await until(() => !dialog.querySelector(".pal-chip"));
+  assert.equal(w.document.activeElement, input);
 });
 
 test("Shuffle plays the whole library or an artist's tracks in shuffled order and records nothing in Recent", async (t) => {
@@ -1085,45 +1165,7 @@ test("Shuffle plays the whole library or an artist's tracks in shuffled order an
   await ui.click('[data-action="music-tab"][data-id="recent"]', () => $(".music-caption"));
 });
 
-test("search folds only combining accents like the phone, shows the tab for an empty query and pages every group", async (t) => {
-  assert.equal(searchText("Björk Café"), "bjork cafe");
-  assert.equal(searchText("^·ー`"), "^·ー`");
-  assert.equal(searchText("́"), "");
-  const many = Array.from({ length: 125 }, (_, index) => {
-    const n = String(index + 1).padStart(3, "0");
-    return track(`Zebra/${n}/01 Song.mp3`, { title: `Song ${n}`, artist: `Zebra ${n}`, albumArtist: `Zebra ${n}`, album: `Zebra Album ${n}`, track: 1 });
-  });
-  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [...TRACKS, ...many] }) });
-  const { $, $$, w } = ui;
-  await grid(ui);
-  await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
-  const type = async (value) => {
-    const field = $("#music-search-input");
-    field.value = value;
-    field.dispatchEvent(new w.Event("input", { bubbles: true }));
-    await until(() => ui.idle());
-  };
-  const tab = ["John Coltrane", "Miles Davis", "Unknown artist", "Zebra 001"];
-  await type("́");
-  assert.deepEqual(ui.artists().slice(0, 4), tab, "a query that folds to nothing shows the tab");
-  await type("  ");
-  assert.deepEqual(ui.artists().slice(0, 4), tab);
-  await type("^");
-  assert.equal(ui.text(".music-view .empty h2"), "No results for “^”");
-  await type("zebra");
-  const songs = () => $$(".music-view .music-songs .music-track").length;
-  const albums = () => $$('.music-view .music-card[data-action="music-album"]').length;
-  const artists = () => $$(".music-view .music-row").length;
-  assert.deepEqual([songs(), albums(), artists()], [120, 60, 120]);
-  await ui.click('[data-action="music-search-more"][data-id="albums"]', () => albums() === 120);
-  await ui.click('[data-action="music-search-more"][data-id="albums"]', () => albums() === 125);
-  assert.equal($('[data-action="music-search-more"][data-id="albums"]'), null);
-  await ui.click('[data-action="music-search-more"][data-id="artists"]', () => artists() === 125);
-  await ui.click('[data-action="music-search-more"][data-id="songs"]', () => songs() === 125);
-  assert.equal($('[data-action="music-search-more"]'), null);
-});
-
-test("the library Shuffle beside the tabs shows only at a tab root, not on artist or album pages or with search results", async (t) => {
+test("the library Shuffle beside the tabs shows only at a tab root, not on artist or album pages", async (t) => {
   const ui = await open(t);
   const { $, w } = ui;
   const shuffle = () => $('.music-tools [data-action="music-shuffle-all"]');
@@ -1137,16 +1179,6 @@ test("the library Shuffle beside the tabs shows only at a tab root, not on artis
   await ui.up("Music", () => !$(".music-head") && shuffle());
   await ui.click('[data-action="music-tab"][data-id="albums"]', () => !$(".music-head") && shuffle());
   await ui.click('[data-action="music-tab"][data-id="recent"]', () => $(".music-caption") && shuffle());
-  await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
-  assert.ok(shuffle(), "an empty search field keeps the tab");
-  const field = $("#music-search-input");
-  field.value = "blue";
-  field.dispatchEvent(new w.Event("input", { bubbles: true }));
-  await until(() => $(".music-view .section-label") && ui.idle());
-  assert.equal(shuffle(), null, "search results");
-  field.value = "";
-  field.dispatchEvent(new w.Event("input", { bubbles: true }));
-  await until(() => shuffle() && ui.idle());
 });
 
 test("desktop albums are their album directory, album artist and title, with disc folders joined and releases first", async () => {
@@ -1364,15 +1396,7 @@ test("the Playlists tab appears between Albums and Recent once a playlist exists
   await ui.up("Music", () => ui.cards().length === 2);
   await ui.click('[data-action="music-tab"][data-id="recent"]', () => ui.cards().length);
   assert.deepEqual(ui.cards(), ["Road trip"], "Recent lists played playlists");
-  await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
-  $("#music-search-input").value = "road";
-  $("#music-search-input").dispatchEvent(new w.Event("input", { bubbles: true }));
-  await until(() => $(".music-view .section-label") && ui.idle());
-  assert.deepEqual($$(".music-view .section-label").map((el) => el.textContent), ["Playlists"]);
-  assert.deepEqual($$(".music-view .music-row strong").map((el) => el.textContent), ["Road trip"]);
   playlists = [];
-  $('[data-action="music-search-toggle"]').click();
-  await until(() => !$("#music-search-input") && ui.idle());
   await ui.click('[data-action="back-folders"]', () => $(".folder-card"));
   await ui.click('.folder-card[data-action="folder-detail"]', () => $(".music-page .music-artist-row"));
   await until(() => !ui.tabs().includes("Playlists") && ui.idle());
@@ -1502,9 +1526,9 @@ test("podcast episodes get their own tab with shows and episodes newest first, a
   await until(() => $(".music-page .music-artist-row") && ui.idle());
   assert.deepEqual(ui.tabs(), ["Artists", "Albums", "Recent", "Podcasts"]);
   assert.deepEqual(ui.artists(), ["Miles Davis"], "episodes are not artists");
-  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-row[data-action="music-show"]'));
-  assert.match($('.music-row[data-action="music-show"]').textContent, /The Wild Project.*2 episodes · Oct 8, 2026/s);
-  await ui.click('.music-row[data-action="music-show"]', () => $(".music-head h2"));
+  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-card[data-action="music-show"]'));
+  assert.match($('.music-card[data-action="music-show"]').textContent, /The Wild Project.*Oct 8/s);
+  await ui.click('.music-card[data-action="music-show"]', () => $(".music-head h2"));
   assert.equal(ui.text(".music-head h2"), "The Wild Project");
   assert.match(ui.text(".music-head-info p"), /^2 episodes · 7 h 15 min$/);
   const titles = [...$$(".music-tracks .music-track[data-path] strong")].map((el) => el.textContent);
@@ -1521,27 +1545,98 @@ test("a folder of only podcasts opens on its shows and offers no music tabs", as
   const episode = track("Show/2026-10-08 Episode.mp3", { title: "Episode", album: "Show", genre: "Podcast", duration: 3000 });
   const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [episode] }) });
   const { $ } = ui;
-  await until(() => $('.music-row[data-action="music-show"]') && ui.idle());
+  await until(() => $('.music-card[data-action="music-show"]') && ui.idle());
   assert.deepEqual(ui.tabs(), [], "a lone Podcasts tab is never drawn");
   assert.equal($(".music-page .segmented"), null);
   assert.equal($(".music-page .folder-browser-tools"), null, "no tools row is left without tabs");
-  const search = () => $('.heading-actions [data-action="music-search-toggle"]');
   assert.deepEqual(
-    [...$(".heading-actions").children].slice(0, 2).map((el) => el.dataset.action),
-    ["music-search-toggle", "music-mode"],
-    "search sits in the folder header, left of View folder",
+    [...$(".heading-actions").children].map((el) => el.dataset.action || el.className),
+    ["favorite-toggle", "music-mode", "details-menu folder-actions-menu"],
+    "the header keeps the Favorites star, View folder and the actions menu, with no search button",
   );
-  assert.ok(search().classList.contains("ghost") && search().classList.contains("icon-button"));
+  assert.equal($('[data-action="music-search-toggle"]'), null);
   assert.match(ui.text(".detail-title p"), /^1 episode · 1 show · /);
   assert.deepEqual(ui.crumbs(), ["Folders", "Music"]);
-  await ui.click('.heading-actions [data-action="music-search-toggle"]', () => $("#music-search-input"));
-  assert.equal(ui.w.document.activeElement.id, "music-search-input");
-  assert.equal(search().getAttribute("aria-label"), "Close search");
-  assert.equal($(".music-page > .folder-browser-search + .music-view") !== null, true, "the field opens above the list");
-  $("#music-search-input").dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  await until(() => !$("#music-search-input") && $('.music-row[data-action="music-show"]') && ui.idle());
-  assert.equal(ui.w.document.activeElement, search(), "Escape closes the field and returns to the button");
-  assert.equal(search().getAttribute("aria-label"), "Search podcasts");
+});
+
+test("podcast shows resume from their own tile: in progress first, then New, then the rest, with no Continue tile", async (t) => {
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const episode = (show, n, title, duration = 4200) => track(`${show}/${day(n)} ${title}.mp3`, { title, album: show, genre: "Podcast", duration });
+  const wild = episode("The Wild Project", 30, "#385 · Salud mental y redes");
+  const radio = episode("Salud en la radio", 40, "Radio", 3000);
+  const lex = episode("Lex Fridman Podcast", 1, "Lex", 6000);
+  const corte = episode("Al Corte", 2, "Corte");
+  const julian = episode("Julian Dorey Podcast", 3, "Julian");
+  const old = episode("Hardcore History", 60, "History", 9000);
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [wild, radio, lex, corte, julian, old] }) });
+  const { $, $$, w } = ui;
+  const saved = (row, position, updated) => ({ volume: ui.volume.id, path: row.path, hash: row.hash, position, duration: row.duration, device: "other", name: "Laptop", updated });
+  const answer = { positions: [saved(radio, 1200, Date.now() - 60000), saved(wild, 1680, Date.now() - 600000)], finished: [{ volume: ui.volume.id, path: corte.path, hash: corte.hash, updated: Date.now() - 3600000 }] };
+  ui.answers["/v1/audio-positions"] = () => answer;
+  const names = () => [...$(".music-grid").children].map((el) => el.querySelector(".music-card strong").textContent);
+  await until(() => $$(".music-continue-play").length === 2 && ui.idle());
+  assert.equal($(".resume-card"), null);
+  assert.equal($('.music-card[data-action="music-resume"]'), null, "there is no Continue tile");
+  assert.deepEqual(names(), ["Salud en la radio", "The Wild Project", "Lex Fridman Podcast", "Julian Dorey Podcast", "Al Corte", "Hardcore History"]);
+  const tile = (name) => [...$(".music-grid").children].find((el) => el.querySelector(".music-card strong").textContent === name);
+  const wildTile = tile("The Wild Project");
+  assert.ok(wildTile.classList.contains("music-continue"));
+  const card = wildTile.querySelector(".music-card");
+  assert.equal(card.dataset.action, "music-show", "the cover and name open the show");
+  assert.equal(card.getAttribute("aria-label"), "The Wild Project, 42 min left");
+  assert.equal(card.querySelector("strong + span").textContent, "42 min left");
+  assert.equal(card.querySelector(".music-cover .music-cover-bar").getAttribute("value"), "40");
+  const play = wildTile.querySelector(":scope > .music-continue-play");
+  assert.ok(play, "the play button is a sibling of the card, not nested in it");
+  assert.equal(play.getAttribute("aria-label"), "Continue #385 · Salud mental y redes, 42 min left");
+  assert.equal(play.dataset.tooltip, "#385 · Salud mental y redes");
+  assert.equal(card.hasAttribute("title"), false);
+  assert.deepEqual(
+    [...wildTile.querySelectorAll(".music-continue-menu .menu-items button")].map((el) => [el.dataset.action, el.textContent.trim()]),
+    [["music-resume", "Continue"], ["music-resume-start", "Start over"], ["music-show", "Open show"]],
+  );
+  assert.equal(wildTile.querySelector(".music-continue-menu summary").getAttribute("aria-label"), "The Wild Project actions");
+  assert.equal(tile("Lex Fridman Podcast").querySelector(".music-continue-play"), null, "shows without progress have no play button");
+  assert.equal(tile("Lex Fridman Podcast").querySelector(".music-new").textContent, "New");
+  assert.equal(tile("Al Corte").querySelector(".music-new"), null, "a finished newest episode is played, not New");
+  assert.match(tile("Al Corte").querySelector("strong + span").textContent, /^1 episode · /);
+  await ui.click(".music-continue-play[data-id]", () => ui.played.length === 1);
+  $("audio").dispatchEvent(new w.Event("loadedmetadata"));
+  assert.equal($("audio").currentTime, 1200, "the first tile resumes its show's saved episode");
+  assert.ok($(".music-grid"), "the grid stays on screen");
+  await until(() => tile("Salud en la radio").querySelector(".music-continue-play").getAttribute("aria-label").startsWith("Pause "));
+  assert.equal(tile("Salud en la radio").querySelector(".music-continue-play").dataset.symbol, "pause", "the loaded tile mirrors the player");
+  Object.defineProperty($("audio"), "duration", { configurable: true, value: 3000 });
+  $("audio").currentTime = 2990;
+  await ui.click('.music-continue-play[data-symbol="pause"]', () => $("audio").paused);
+  assert.equal(ui.played.length, 1, "the loaded tile pauses instead of restarting");
+  await until(() => tile("Salud en la radio").querySelector(".music-continue-play")?.dataset.symbol === "play");
+  assert.deepEqual(names(), ["Salud en la radio", "The Wild Project", "Lex Fridman Podcast", "Julian Dorey Podcast", "Al Corte", "Hardcore History"], "the order never moves while the root is on screen");
+  await ui.click('.music-card[data-action="music-show"]', () => $(".music-head h2"));
+  await ui.up("Music", () => $(".music-grid"));
+  assert.deepEqual(names(), ["The Wild Project", "Lex Fridman Podcast", "Julian Dorey Podcast", "Al Corte", "Salud en la radio", "Hardcore History"], "reopening the root reorders: the finished show joins the rest");
+  const css = source("style.css");
+  assert.match(css, /\n\.music-card strong\.music-two \{[^}]*-webkit-line-clamp: 2;/);
+  assert.match(css, /\n\.music-continue-play \{[^}]*top: calc\(var\(--music-tile\) - var\(--control-height\) - var\(--space-2\) - var\(--space-3\)\);[^}]*width: calc\(var\(--control-height\) \+ var\(--space-2\)\);[^}]*background: var\(--green\);/);
+  assert.match(css, /\n\.music-continue:hover > \.music-continue-menu,\n\.music-continue:focus-within > \.music-continue-menu,/);
+});
+
+test("a desktop replica offers Continue only for episodes whose content it already holds", async (t) => {
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const episode = (show, n, title, extra = {}) => ({ ...track(`${show}/${day(n)} ${title}.mp3`, { title, album: show, genre: "Podcast", duration: 4200 }), ...extra });
+  const held = episode("The Wild Project", 30, "Held");
+  const arriving = episode("Al Corte", 2, "Arriving", { pending: true });
+  const ui = await open(t, { role: "replica", library: () => ({ version: "v1", indexing: false, tracks: [held, arriving] }) });
+  const { $, $$ } = ui;
+  const saved = (row, position) => ({ volume: ui.volume.id, path: row.path, hash: row.hash, position, duration: row.duration, device: "other", name: "Laptop", updated: Date.now() - 60000 });
+  ui.answers["/v1/audio-positions"] = () => ({ positions: [saved(arriving, 1200), saved(held, 600)], finished: [] });
+  await until(() => $$(".music-continue-play").length === 1 && ui.idle());
+  assert.deepEqual($$(".music-continue-play").map((el) => el.dataset.id), [held.path], "the episode still syncing has no play button");
+  const tile = [...$(".music-grid").children].find((el) => el.querySelector(".music-card strong").textContent === "Al Corte");
+  assert.equal(tile.classList.contains("music-continue"), false);
+  await ui.click('.music-card[data-action="music-show"][aria-label^="Al Corte"]', () => $(".music-head h2"));
+  assert.equal($('.music-head [data-action="music-resume"]'), null, "the show header offers Play, not Continue");
+  assert.ok($('.music-head [data-action="music-play"]'));
 });
 
 test("long audio with no artist and no genre counts as a podcast episode, short untagged audio stays music", async (t) => {
@@ -1551,8 +1646,8 @@ test("long audio with no artist and no genre counts as a podcast episode, short 
   const { $ } = ui;
   await until(() => $(".music-page .music-artist-row") && ui.idle());
   assert.deepEqual(ui.artists(), ["Unknown artist"]);
-  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-row[data-action="music-show"]'));
-  assert.match($('.music-row[data-action="music-show"]').textContent, /Charla.*1 episode · Oct 3, 2026/s);
+  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-card[data-action="music-show"]'));
+  assert.match($('.music-card[data-action="music-show"]').textContent, /Charla.*Oct 3/s);
 });
 
 test("the sleep menu closes on a choice, Escape and an outside click, and its tooltip never covers it", async (t) => {
@@ -1619,8 +1714,8 @@ test("an audio library has one trail from Folders: the folder header and tabs on
   await until(() => ui.text(".music-head h2") === "Miles Davis" && ui.idle());
   w.history.back();
   await until(() => root() && !$(".music-head") && ui.idle());
-  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-row[data-action="music-show"]'));
-  await ui.click('.music-row[data-action="music-show"]', () => ui.text(".music-head h2") === "Show");
+  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-card[data-action="music-show"]'));
+  await ui.click('.music-card[data-action="music-show"]', () => ui.text(".music-head h2") === "Show");
   assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Show"]);
   assert.equal($("#content .back"), null);
   assert.equal($(".detail-title"), null);
@@ -1633,59 +1728,34 @@ test("the library trail reuses the breadcrumb at body size with accent links", (
   assert.match(css, /\n\.folder-breadcrumb\.music-trail \.text-button \{\s*color: var\(--green\);/);
 });
 
-test("library search finds shows by name and episodes by title or show; an episode resumes, a show opens under Results", async (t) => {
-  const wild = track("The Wild Project/2026-10-08 Episodio 386.mp3", { title: "Episodio 386", album: "The Wild Project", genre: "Podcast", duration: 5400 });
+test("an episode chosen in the search resumes from its synced position, and its row says the time left", async (t) => {
   const older = track("The Wild Project/2026-10-01 Salud mental.mp3", { title: "Salud mental", album: "The Wild Project", genre: "Podcast", duration: 4200 });
-  const cast = track("Worldcast/2026-10-07 Wild weather.mp3", { title: "Wild weather", album: "Worldcast", genre: "Podcast", duration: 3600 });
-  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [...TRACKS, wild, older, cast] }) });
-  const { $, $$, w } = ui;
+  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [...TRACKS, older] }) });
+  const { $, w } = ui;
   await fetch(`http://127.0.0.1:${ui.daemon.port}/v1/audio-position`, {
     method: "POST",
     headers: { authorization: `Bearer ${ui.daemon.engine.config.adminToken}`, "content-type": "application/json" },
     body: JSON.stringify({ volume: ui.volume.id, path: older.path, hash: older.hash, position: 1200, duration: 4200, at: Date.now() }),
   });
+  const show = buildLibrary({ tracks: [older] }).shows[0];
+  ui.answers["/v1/search?"] = () => ({
+    groups: [{ type: "episodes", count: 1, rows: [{ volume: ui.volume.id, folder: "Music", path: older.path, hash: older.hash, title: "Salud mental", show: "The Wild Project", showId: show.id, cover: null, duration: 4200, date: "2026-10-01" }] }],
+  });
   await grid(ui);
   await until(() => $(".resume-card") && ui.idle());
-  assert.equal($('[data-action="music-search-toggle"]').getAttribute("aria-label"), "Search", "a mixed library searches both");
-  await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
-  assert.equal($("#music-search-input").placeholder, "Search");
-  const type = async (value) => {
-    const field = $("#music-search-input");
-    field.value = value;
-    field.dispatchEvent(new w.Event("input", { bubbles: true }));
-    await until(() => ui.idle());
-  };
-  const groups = () => $$(".music-view .section-label").map((el) => el.textContent);
-  const episodes = () => $$('.music-view .music-episodes .music-track[data-path] .music-track-play[data-action="music-episode"] strong').map((el) => el.textContent);
-  await type("wild");
-  assert.deepEqual(groups(), ["Shows", "Episodes"]);
-  assert.deepEqual($$('.music-view .music-row[data-action="music-show"] strong').map((el) => el.textContent), ["The Wild Project"]);
-  assert.deepEqual(episodes(), ["Episodio 386", "Salud mental", "Wild weather"], "titles and show names both match");
-  assert.equal($(".music-view .music-episodes .music-track[data-path] .music-sub-text").textContent, "The Wild Project · Oct 8, 2026");
-  assert.equal($(".music-view .music-episodes .music-track[data-path] .music-track-number").textContent.trim(), "", "search results do not number episodes");
-  assert.equal($(".music-view .music-episodes .music-track[data-path] .music-length").textContent, "1 h 30 min");
-  const resumed = $$(".music-view .music-episodes .music-track[data-path]")[1];
-  assert.ok(resumed.querySelector(".music-progress"), "a saved place shows its progress");
-  assert.match(resumed.querySelector(".music-left").textContent, /left$/);
-  resumed.querySelector(".music-track-play").click();
+  w.document.body.dispatchEvent(new w.KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+  const dialog = w.document.getElementById("palette");
+  const input = dialog.querySelector(".pal-input");
+  input.value = "salud";
+  input.dispatchEvent(new w.Event("input", { bubbles: true }));
+  await until(() => dialog.querySelector('[aria-label="Episodes"] [data-pal]'));
+  assert.match(dialog.querySelector('[aria-label="Episodes"] [data-pal]').textContent, /The Wild Project · 50 min left\s*Resume/);
+  w.document.body.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   await until(() => ui.played.length === 1 && ui.idle());
   assert.equal(ui.text(".music-player-track strong"), "Salud mental");
+  assert.equal(ui.text(".music-head h2"), "The Wild Project");
   $("audio").dispatchEvent(new w.Event("loadedmetadata"));
   assert.equal($("audio").currentTime, 1200, "the episode resumes where it was left");
-  await type("Wild Project");
-  await ui.click('.music-view .music-row[data-action="music-show"]', () => ui.text(".music-head h2") === "The Wild Project");
-  assert.deepEqual(ui.crumbs(), ["Folders", "Music", "Results", "The Wild Project"]);
-  await ui.up("Results", () => groups().includes("Shows"));
-});
-
-test("the search names what a library holds: music, podcasts, or both", async (t) => {
-  const episode = track("Show/2026-10-08 Episode.mp3", { title: "Episode", album: "Show", genre: "Podcast", duration: 3000 });
-  const ui = await open(t, { library: () => ({ version: "v1", indexing: false, tracks: [episode] }) });
-  const { $ } = ui;
-  await until(() => $('.music-row[data-action="music-show"]') && ui.idle());
-  await ui.click('[data-action="music-search-toggle"]', () => $("#music-search-input"));
-  assert.equal($("#music-search-input").placeholder, "Search podcasts");
-  assert.equal($("#music-search-input").getAttribute("aria-label"), "Search podcasts");
 });
 
 test("the resume card is one section gap above the library, not more", () => {
@@ -1718,8 +1788,8 @@ test("an episode never inherits music's shuffle or repeat, music gets them back,
   $('#music-player [data-player="shuffle"]').click();
   assert.equal($('#music-player [data-player="repeat"]').getAttribute("aria-label"), "Repeat one");
   await ui.up("Music", () => $(".music-page .segmented"));
-  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-row[data-action="music-show"]'));
-  await ui.click('.music-row[data-action="music-show"]', () => $(".music-head h2"));
+  await ui.click('[data-action="music-tab"][data-id="podcasts"]', () => $('.music-card[data-action="music-show"]'));
+  await ui.click('.music-card[data-action="music-show"]', () => $(".music-head h2"));
   let before = ui.played.length;
   $$(".music-tracks .music-track[data-path] .music-track-play")[0].click();
   await until(() => ui.played.length === before + 1 && ui.idle());

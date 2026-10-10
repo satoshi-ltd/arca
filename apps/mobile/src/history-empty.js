@@ -24,7 +24,7 @@ export function historyEmpty({ offline, filter, hasFolder }) {
       text: "Set Shared folder to All to see every change.",
     };
   return {
-    icon: "history",
+    icon: "arca",
     title: "No history yet",
     text: "Changes to your files appear here.",
   };

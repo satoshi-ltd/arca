@@ -6,7 +6,7 @@ export const GALLERY_SECTION_GAP = 20;
 export const SCRUB_THUMB = 48;
 const YEAR_SPACING = 28;
 
-export function galleryLayout(months, width, columns, days = null) {
+export function galleryLayout(months, width, columns, days = null, fontScale = 1) {
   const { gap, size: tile } = galleryTileSize(width, columns);
   const step = tile + gap;
   let top = 0;
@@ -15,7 +15,7 @@ export function galleryLayout(months, width, columns, days = null) {
     const items = days?.get(month);
     const plan =
       items && items.length === count && count
-        ? dayPlan(items, { columns, tile, gap })
+        ? dayPlan(items, { columns, tile, gap, fontScale })
         : null;
     const section = {
       month,

@@ -19,6 +19,7 @@ import { filePreview } from "./file-preview.js";
 import { searchLocal } from "./search.js";
 import { acceptReport, machines } from "./machines.js";
 import { listPositions, mergePositions, savePosition } from "./audio-positions.js";
+import { listFavorites, saveFavorites } from "./favorites.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
 import { listPage, browsePage } from "./pages.js";
 import http from "node:http";
@@ -63,6 +64,8 @@ async function body(req, limit = 1024 * 1024) {
   }
   return Buffer.concat(chunks);
 }
+const previewSize = (value) =>
+  value === "medium" || value === "large" ? value : "thumb";
 function equal(a, b) {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
@@ -124,6 +127,7 @@ export async function start(home, options = {}) {
     throw error;
   }
   const playbackTickets = new Map();
+  const previewTickets = new Map();
   const musicTickets = new Map();
   const snapshotReads = new Map();
   const readSnapshot = (volume) => {
@@ -217,14 +221,15 @@ export async function start(home, options = {}) {
   // Optional hub previews never decide connectivity and never wait on the 60 s transfer deadline.
   async function retainedPreview(route) {
     if (engine.hubUnavailable) fail(HUB_UNAVAILABLE, 503);
-    const large =
-      new URL(route, "http://hub").searchParams.get("size") === "large";
+    const thumb =
+      previewSize(new URL(route, "http://hub").searchParams.get("size")) ===
+      "thumb";
     try {
       return await engine.json(route, undefined, {
         signal: AbortSignal.timeout(
-          large
-            ? (engine.largePreviewTimeoutMs ?? 15000)
-            : (engine.previewTimeoutMs ?? 3000),
+          thumb
+            ? (engine.previewTimeoutMs ?? 3000)
+            : (engine.largePreviewTimeoutMs ?? 15000),
         ),
         trackConnection: false,
         timeoutUnavailable: false,
@@ -315,7 +320,11 @@ export async function start(home, options = {}) {
         playbackUrl.searchParams.has("ticket")
       ) {
         const ticket = (
-          pathname === "/v1/music/media" ? musicTickets : playbackTickets
+          pathname === "/v1/music/media"
+            ? musicTickets
+            : pathname === "/v1/gallery/preview-image"
+              ? previewTickets
+              : playbackTickets
         ).get(playbackUrl.searchParams.get("ticket"));
         if (
           !["GET", "HEAD"].includes(req.method) ||
@@ -629,6 +638,10 @@ export async function start(home, options = {}) {
           ),
         );
       }
+      if (req.method === "GET" && route === "/v1/favorites") {
+        requireAdmin();
+        return send(200, listFavorites(s, config));
+      }
       if (req.method === "GET" && route === "/v1/network") {
         requireAdmin();
         return send(200, await network.status());
@@ -676,7 +689,7 @@ export async function start(home, options = {}) {
           volume,
           name,
           hash,
-          true,
+          "large",
         );
         if (!result.bytes) fail("Preview unavailable", 404);
         res.writeHead(200, {
@@ -715,20 +728,31 @@ export async function start(home, options = {}) {
           return send(200, { url: "/v1/gallery/preview-image?" + query });
         if (!["127.0.0.1", "::1"].includes(remote))
           fail("Use the local desktop application", 403);
-        for (const [key, value] of playbackTickets)
-          if (value.expires < Date.now()) playbackTickets.delete(key);
-        while (playbackTickets.size >= 32)
-          playbackTickets.delete(playbackTickets.keys().next().value);
-        const ticket = token(),
-          expires = Date.now() + 2 * 3600000;
-        playbackTickets.set(ticket, {
-          volume,
-          name,
-          hash,
-          preview: true,
-          owner: config.adminToken,
-          expires,
-        });
+        for (const [key, value] of previewTickets)
+          if (value.expires < Date.now()) previewTickets.delete(key);
+        let [ticket, issued] = [...previewTickets].find(
+          ([, value]) =>
+            value.volume === volume &&
+            value.name === name &&
+            value.hash === hash &&
+            value.owner === config.adminToken &&
+            value.expires > Date.now() + 3600000,
+        ) || [token(), null];
+        if (!issued) {
+          while (previewTickets.size >= 64)
+            previewTickets.delete(previewTickets.keys().next().value);
+          issued = {
+            volume,
+            name,
+            hash,
+            preview: true,
+            owner: config.adminToken,
+            expires: Date.now() + 2 * 3600000,
+          };
+        }
+        previewTickets.delete(ticket);
+        previewTickets.set(ticket, issued);
+        const { expires } = issued;
         return send(200, {
           url: `http://127.0.0.1:${server.address().port}/v1/gallery/preview-image?ticket=${ticket}`,
           expires,
@@ -848,7 +872,7 @@ export async function start(home, options = {}) {
                   volume,
                   url.searchParams.get("path"),
                   url.searchParams.get("hash"),
-                  url.searchParams.get("size") === "large",
+                  previewSize(url.searchParams.get("size")),
                   url.searchParams.get("rev"),
                 )
               : await engine.gallery.page(volume, url.searchParams),
@@ -856,8 +880,7 @@ export async function start(home, options = {}) {
       }
       if (req.method === "GET" && route === "/v1/search") {
         requireAdmin();
-        music();
-        return send(200, searchLocal(s, url.searchParams));
+        return send(200, searchLocal(s, url.searchParams, music()));
       }
       if (req.method === "GET" && route === "/v1/file-preview") {
         requireAdmin();
@@ -1431,6 +1454,10 @@ export async function start(home, options = {}) {
           if (admin) fail("Use a linked device credential to disconnect", 403);
           await authorizedWork(() => s.forgetDevice(device.id));
           return send(200, { disconnected: true });
+        }
+        if (route === "/v1/favorites") {
+          requireAdmin();
+          return send(200, saveFavorites(s, config, b));
         }
         if (route === "/v1/audio-position") {
           if (config.role === "hub")

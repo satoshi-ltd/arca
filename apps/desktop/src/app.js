@@ -1,4 +1,14 @@
-import { timelineSegments } from "./gallery-timeline-layout.js";
+import {
+  galleryDay,
+  galleryMoment,
+  galleryZoomStep,
+  mediaSummary,
+  photoFlow,
+  pinchSteps,
+  rowTarget,
+  tilePreviewSize,
+  timelineSegments,
+} from "./gallery-timeline-layout.js";
 import {
   artistGroups,
   artistId,
@@ -8,9 +18,9 @@ import {
   showId,
   playedItems,
   rememberPlayed,
-  searchText,
   shuffleOrder,
 } from "./music-library.js";
+import { favoriteOrder, nameOrder } from "./favorite-order.js";
 import {
   createNoticeStore,
   errorNotice,
@@ -100,7 +110,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.35";
+const APP_VERSION = "0.7.36";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -198,6 +208,16 @@ const clockTime = (value) =>
     hourCycle: "h23",
   });
 const icon = (name) => `<span data-icon="${name}" aria-hidden="true"></span>`;
+const brandArch = () => brandArchFor(48);
+const brandArchFor = (size) =>
+  size >= 24 && size < 48
+    ? '<svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-68V242a52 52 0 0 0-104 0v138z"/><rect x="226" y="280" width="60" height="100" rx="4"/></svg>'
+    : '<svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z"/><rect x="226" y="284" width="60" height="96" rx="6"/></svg>';
+const EMPTY_ARCH = 40;
+const brandDraw = (tile) =>
+  `<svg viewBox="${tile ? "0 0 512 512" : "116 100 280 296"}" aria-hidden="true">${tile ? '<rect x="8" y="8" width="496" height="496" rx="116" fill="var(--mark-tile)"/>' : ""}<path class="brand-draw-band" pathLength="100" d="M166 380V242A90 90 0 0 1 256 152h2"/><path class="brand-draw-band" pathLength="100" d="M346 380V242A90 90 0 0 0 256 152h-2"/><rect class="brand-draw-door" x="226" y="284" width="60" height="96" rx="6"/></svg>`;
+const launchMark = () =>
+  `<div class="launch-mark" role="status" aria-label="Starting Arca">${brandDraw(false)}</div>`;
 const busyIcon = () =>
   '<span class="busy-grid" aria-hidden="true">' +
   "<i></i>".repeat(9) +
@@ -234,6 +254,7 @@ function paletteActions() {
     { type: "action", name: "settings", label: "Open Settings", symbol: "settings" },
   ];
 }
+let paletteClosing = Promise.resolve(true);
 function paletteDialog() {
   let dialog = document.getElementById("palette");
   if (!dialog) {
@@ -245,33 +266,97 @@ function paletteDialog() {
       const back = palette?.opener;
       clearTimeout(palette?.timer);
       palette = null;
-      if (back?.isConnected) back.focus();
+      if (back?.isConnected && (!document.activeElement || document.activeElement === document.body)) back.focus();
+    });
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      void closeDialog(dialog);
     });
     dialog.addEventListener("click", (event) => {
-      if (event.target === dialog) dialog.close();
+      if (event.target === dialog) void closeDialog(dialog);
     });
     document.body.append(dialog);
   }
   return dialog;
 }
+const PALETTE_GROUPS = {
+  folders: ["Folders", "folder", "folder"],
+  songs: ["Songs", "song", "song"],
+  albums: ["Albums", "album", "album"],
+  artists: ["Artists", "artist", "artist"],
+  shows: ["Shows", "show", "show"],
+  episodes: ["Episodes", "episode", "episode"],
+  playlists: ["Playlists", "playlist", "playlist"],
+  photos: ["Photos", "photo", "photo"],
+  files: ["Files", "file", "file"],
+};
+const PALETTE_SHOWN = 3;
+const PALETTE_PHOTOS = 4;
 function paletteRows(data) {
   const rows = [];
   const query = palette.query.trim();
   if (!query) {
+    if (palette.type) return rows;
     rows.push(...paletteRecent().map((text) => ({ type: "recent", text, group: "Recent searches" })));
     rows.push(...paletteActions().map((row) => ({ ...row, group: "Actions" })));
     return rows;
   }
-  if (data) {
-    rows.push(...data.folders.map((row) => ({ type: "folder", group: "Folders", count: data.counts.folders, ...row })));
-    rows.push(...data.files.map((row) => ({ type: "file", group: "Files", count: data.counts.files, ...row })));
-    rows.push(...data.photos.map((row) => ({ type: "photo", group: "Photos", count: data.counts.photos, ...row })));
-    rows.push(...data.music.map((row) => ({ type: "music", group: "Music", count: data.counts.music, ...row })));
+  for (const entry of data?.groups || []) {
+    const [label, type] = PALETTE_GROUPS[entry.type] || [];
+    if (!label) continue;
+    const base = { group: entry.label ? `${label} · taken in ${entry.label}` : label, count: entry.count, of: entry.type };
+    if (entry.type === "photos")
+      rows.push(...(entry.periods || []).map((period) => ({ ...period, ...base, type: "period" })));
+    const shown = palette.type ? entry.rows : entry.rows.slice(0, entry.type === "photos" ? PALETTE_PHOTOS : PALETTE_SHOWN);
+    rows.push(...shown.map((row) => ({ ...row, ...base, type })));
+    if (!palette.type && entry.count > shown.length) rows.push({ ...base, type: "more" });
+    if (palette.type && entry.count > entry.rows.length) rows.push({ ...base, type: "page" });
   }
-  if (query.length >= 2 && palette.scope === "all")
+  if (query.length >= 2 && !palette.type)
     rows.push(...paletteActions().filter((row) => row.label.toLowerCase().includes(query.toLowerCase())).map((row) => ({ ...row, group: "Actions" })));
   return rows;
 }
+function paletteEpisodeLeft(row) {
+  const saved = audioPositions.get(positionKey(row.volume, row.path));
+  return saved && saved.hash === row.hash ? saved : null;
+}
+function paletteVerb(row) {
+  if (row.type === "song") return "Play in album";
+  if (row.type === "episode") return paletteEpisodeLeft(row) ? "Resume" : "Play";
+  if (row.type === "file") return "Details";
+  if (row.type === "period") return "Open month";
+  return "Open";
+}
+function paletteSubtitle(row) {
+  if (row.type === "folder") return `Folder · ${countLabel(status.volumes.find((v) => v.id === row.id)?.files || 0, "file")}`;
+  if (row.type === "song") return [row.artist, row.album].filter(Boolean).join(" · ");
+  if (row.type === "album") return `${row.artist} · ${countLabel(row.songs, "song")}`;
+  if (row.type === "artist") return `${countLabel(row.albums, "album")} · ${countLabel(row.songs, "song")}`;
+  if (row.type === "show") return `${countLabel(row.episodes, "episode")} · ${row.folder}`;
+  if (row.type === "episode") {
+    const saved = paletteEpisodeLeft(row);
+    return [row.show, saved ? timeLeft(saved.duration - saved.position) : hoursLength(row.duration)].filter(Boolean).join(" · ");
+  }
+  if (row.type === "playlist") return `${countLabel(row.songs, "song")} · ${row.folder}`;
+  if (row.type === "period") return `${row.folder} · ${countLabel(row.count, "photo and video", "photos and videos")}`;
+  return `${row.path.includes("/") ? row.path.slice(0, row.path.lastIndexOf("/")) : row.folder} · ${bytes(row.size)}`;
+}
+function paletteLead(row) {
+  const cover = (symbol, cls = "") => `<span class="pal-icon pal-cover${cls}">${musicCover(row.volume, row.cover, symbol)}</span>`;
+  if (row.type === "song") return cover("music");
+  if (row.type === "album") return cover("disc-3");
+  if (row.type === "artist") return cover("mic-vocal", " pal-round");
+  if (row.type === "show" || row.type === "episode") return cover("podcast");
+  if (row.type === "playlist") return `<span class="pal-icon pal-plain">${icon("list-music")}</span>`;
+  if (row.type === "folder") return `<span class="pal-icon">${icon("folder")}</span>`;
+  if (row.type === "period") return `<span class="pal-icon">${icon("images")}</span>`;
+  if (row.type === "more" || row.type === "page") return `<span class="pal-icon pal-plain">${icon("list")}</span>`;
+  return `<span class="pal-icon">${icon(fileIcon(row.path))}</span>`;
+}
+const paletteDay = (date) =>
+  /^\d{4}-\d{2}-\d{2}/.test(date || "")
+    ? new Date(`${date.slice(0, 10)}T12:00:00Z`).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    : "";
 function paletteRowMarkup(row, index) {
   const active = index === palette.active ? " pal-active" : "";
   const option = `role="option" aria-selected="${index === palette.active}" id="pal-${index}" data-pal="${index}"`;
@@ -279,37 +364,53 @@ function paletteRowMarkup(row, index) {
     return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon("clock")}</span><div><strong>${escape(row.text)}</strong></div></div>`;
   if (row.type === "action")
     return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon(row.symbol)}</span><div><strong>${escape(row.label)}</strong></div></div>`;
-  if (row.type === "folder")
-    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon("folder")}</span><div><strong>${escape(row.name)}</strong></div></div>`;
   if (row.type === "photo")
-    return `<div class="pal-cell${active}" ${option}><span class="pal-thumb" data-pal-photo="${index}">${icon(row.kind === "video" ? "play" : "image")}</span><span class="pal-cap">${escape(row.name)}</span></div>`;
-  if (row.type === "music")
-    return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon("music")}</span><div><strong>${escape(row.title || row.name)}</strong><p>${escape([row.artist, row.album].filter(Boolean).join(" · ") || row.folder)}</p></div></div>`;
-  return `<div class="pal-row${active}" ${option}><span class="pal-icon">${icon(fileIcon(row.path))}</span><div><strong>${escape(row.name)}</strong><p>${escape(row.path.includes("/") ? row.path.slice(0, row.path.lastIndexOf("/")) : row.folder)} · ${escape(bytes(row.size))}</p></div></div>`;
+    return `<div class="pal-cell${active}" ${option} aria-label="${escape(`Photo, ${row.name}, ${paletteDay(row.date) || row.folder}`)}"><span class="pal-thumb" data-pal-photo="${index}">${icon(row.kind === "video" ? "play" : "image")}</span><span class="pal-cap">${escape(paletteDay(row.date) || row.name)}</span></div>`;
+  if (row.type === "more" || row.type === "page") {
+    const [, one] = PALETTE_GROUPS[row.of];
+    const text = row.type === "more" ? `Show all ${countLabel(row.count, one)}` : "Show more";
+    return `<div class="pal-row pal-more${active}" ${option}>${paletteLead(row)}<div><strong>${escape(text)}</strong></div><span></span></div>`;
+  }
+  const title = row.type === "folder" || row.type === "artist" || row.type === "show" || row.type === "playlist" ? row.name : row.type === "period" ? row.label : row.title || row.name;
+  const subtitle = paletteSubtitle(row);
+  return `<div class="pal-row${active}" ${option} aria-label="${escape(`${PALETTE_GROUPS[row.of]?.[2] || row.type}, ${title}, ${subtitle}`)}">${paletteLead(row)}<div><strong>${escape(title)}</strong><p>${escape(subtitle)}</p></div><span class="pal-go">${escape(paletteVerb(row))}<span class="tag">↵</span></span></div>`;
 }
 function paintPalette(data) {
   if (!palette) return;
+  palette.data = data;
   const rows = (palette.rows = paletteRows(data));
   palette.active = Math.min(palette.active, Math.max(0, rows.length - 1));
   const body = document.querySelector("#palette .pal-body");
   const query = palette.query.trim();
   if (query && data && !rows.length) {
-    body.innerHTML = empty(`No matches for “${escape(query)}”`, "Search covers file names, photos and music held on this device.", "", "search");
+    body.innerHTML = empty(`No matches for “${escape(query)}”`, "Search covers folders, files, photos, music and podcasts held on this device.", "", "search");
   } else {
     let html = "";
     let group = "";
-    const close = () => (group === "Photos" ? "</div></div>" : "</div>");
+    let cells = false;
+    const closeCells = () => {
+      if (cells) html += "</div>";
+      cells = false;
+    };
     rows.forEach((row, index) => {
       if (row.group !== group) {
-        if (group) html += close();
+        closeCells();
+        if (group) html += "</div>";
         group = row.group;
-        html += `<div class="pal-group" role="group" aria-label="${escape(group)}"><div class="pal-label"><span>${escape(group)}</span>${row.count ? `<span class="mono">${row.count}</span>` : ""}</div>${group === "Photos" ? '<div class="pal-thumbs">' : ""}`;
+        html += `<div class="pal-group" role="group" aria-label="${escape(group)}"><div class="pal-label"><span>${escape(group)}</span>${row.count ? `<span class="mono">${row.count.toLocaleString("en")}</span>` : ""}</div>`;
       }
+      if (row.type === "photo" && !cells) {
+        html += '<div class="pal-thumbs">';
+        cells = true;
+      } else if (row.type !== "photo") closeCells();
       html += paletteRowMarkup(row, index);
     });
-    body.innerHTML = html + (group ? close() : "");
+    closeCells();
+    body.innerHTML = html + (group ? "</div>" : "");
   }
+  paintPaletteField();
   icons();
+  mountMusicCovers();
   document.querySelector("#palette .pal-input")?.setAttribute("aria-activedescendant", rows.length ? `pal-${palette.active}` : "");
   document.querySelectorAll("#palette [data-pal-photo]").forEach(async (node) => {
     const row = rows[Number(node.dataset.palPhoto)];
@@ -325,35 +426,118 @@ function paintPalette(data) {
     }
   });
 }
-async function runPalette() {
+function paintPaletteField() {
+  const chip = document.querySelector("#palette .pal-chip");
+  const label = palette.type && PALETTE_GROUPS[palette.type][0];
+  if (!label) chip?.remove();
+  else if (!chip)
+    document.querySelector("#palette .pal-input")?.insertAdjacentHTML("beforebegin", `<span class="pal-chip">${escape(label)}<button type="button" class="pal-chip-remove" aria-label="Remove ${escape(label)} filter">${icon("x")}</button></span>`);
+  const typed = palette.type && palette.data?.groups?.[0];
+  const foot = document.querySelector("#palette .pal-foot");
+  if (foot) foot.innerHTML = paletteFoot(typed ? countLabel(typed.count, PALETTE_GROUPS[palette.type][1]) : null);
+}
+const paletteFoot = (counted = null) =>
+  (counted === null
+    ? `<span class="pal-hint"><span class="tag">↑</span><span class="tag">↓</span>Move</span><span class="pal-hint"><span class="tag">↵</span>Open</span>`
+    : `<span class="pal-hint"><span class="tag">⌫</span>Remove filter</span>`) +
+  `<span class="pal-hint"><span class="tag">${paletteKey.startsWith("⌘") ? "⌘" : "Ctrl"}</span><span class="tag">↵</span>Show in folder</span>` +
+  (counted === null ? `<span class="pal-hint"><span class="tag">esc</span>Close</span>` : "") +
+  `<span class="pal-end">${counted ?? `This device · ${countLabel(status.volumes.filter((v) => status.role === "hub" || v.selected).length, "folder")}`}</span>`;
+async function runPalette(more = false) {
   if (!palette) return;
   const query = palette.query.trim();
   const serial = ++palette.serial;
   if (!query) return paintPalette(null);
+  const loaded = more ? palette.data?.groups?.[0]?.rows || [] : [];
   let data = null;
   try {
-    data = await api(`/v1/search?${new URLSearchParams({ q: query, scope: palette.scope, limit: "6" })}`);
+    data = await api(
+      `/v1/search?${new URLSearchParams({ q: query, ...(palette.type ? { type: palette.type, limit: "20", offset: String(loaded.length) } : { limit: String(PALETTE_PHOTOS) }) })}`,
+    );
   } catch {
-    data = { folders: [], files: [], photos: [], music: [], counts: {} };
+    data = { groups: [] };
   }
   if (!palette || palette.serial !== serial) return;
+  if (more && data.groups[0]) data.groups[0].rows = [...loaded, ...data.groups[0].rows];
   paintPalette(data);
+}
+function setPaletteType(type) {
+  palette.type = type;
+  palette.active = 0;
+  void runPalette();
+  document.querySelector("#palette .pal-input")?.focus();
 }
 function openPalette() {
   if (!ready || $("#dialog").open) return;
-  if (palette) return void document.getElementById("palette")?.close();
+  if (palette) {
+    const open = document.getElementById("palette");
+    if (!revive(open)) return void closeDialog(open);
+    return void open.querySelector(".pal-input")?.focus();
+  }
   const looking = document.getElementById("quicklook");
   if (looking?.open) looking.close();
   const dialog = paletteDialog();
-  palette = { query: "", scope: "all", rows: [], active: 0, serial: 0, opener: document.activeElement };
-  dialog.innerHTML = `<div class="pal-field">${icon("search")}<input class="pal-input" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-label="Search Arca" placeholder="Search folders, files, photos and music" autocomplete="off" spellcheck="false"><span class="tag">esc</span></div><div class="pal-scopes"><div class="segmented" role="group" aria-label="Scope">${[["all", "All"], ["files", "Files"], ["photos", "Photos"], ["music", "Music"]].map(([id, label]) => `<button type="button" data-pal-scope="${id}" class="${id === "all" ? "active" : ""}" aria-pressed="${id === "all"}">${label}</button>`).join("")}</div></div><div class="pal-body" id="pal-list" role="listbox"></div><div class="pal-foot"><span class="pal-hint"><span class="tag">↑</span><span class="tag">↓</span>Move</span><span class="pal-hint"><span class="tag">↵</span>Open</span><span class="pal-hint"><span class="tag">esc</span>Close</span><span class="pal-end">This device · ${countLabel(status.volumes.filter((v) => status.role === "hub" || v.selected).length, "folder")}</span></div>`;
+  if (isLeaving(dialog)) settleLeave(dialog);
+  palette = { query: "", type: "", data: null, rows: [], active: 0, serial: 0, opener: document.activeElement };
+  dialog.innerHTML = `<div class="pal-field">${icon("search")}<input class="pal-input" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-label="Search Arca" placeholder="Search Arca" autocomplete="off" spellcheck="false"><span class="tag">esc</span></div><div class="pal-body" id="pal-list" role="listbox"></div><div class="pal-foot">${paletteFoot()}</div>`;
   dialog.showModal();
   icons();
   dialog.querySelector(".pal-input").focus();
   paintPalette(null);
   if (typeof staggerRows === "function") staggerRows("#palette .pal-row");
 }
-async function activatePalette(index) {
+async function paletteLibrary(row, next) {
+  await musicReveal({ tab: "artists", artist: null, album: null, playlist: null, show: null, pages: 1, trail: [], ...next }, row.volume, false);
+}
+async function paletteGallery(volume, cursor, path) {
+  galleryFocus = { volume, cursor, path };
+  view = "folders";
+  if (detailId !== volume || folderTab !== "gallery") {
+    folderViewId = volume;
+    folderTab = "gallery";
+    folderPrefix = "";
+    folderPageCount = 1;
+  }
+  detailId = volume;
+  galleryReturn = null;
+  await render();
+  updateShell();
+}
+function paletteTarget(row) {
+  if (row.type === "album" || row.type === "show") return row.path?.includes("/") ? row.path.slice(0, row.path.lastIndexOf("/")) : null;
+  if (row.type === "playlist") return row.id;
+  if (row.type === "folder" || row.type === "artist") return null;
+  return row.path || null;
+}
+async function paletteReveal(row) {
+  const target = paletteTarget(row);
+  view = "folders";
+  detailId = folderViewId = row.type === "folder" ? row.id : row.volume;
+  folderTab = "files";
+  folderPrefix = target?.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "";
+  folderPageCount = 1;
+  folderReturn = { tab: "files", scroll: 0 };
+  folderFocus = target;
+  await render();
+  updateShell();
+  const folder = detailId;
+  while (
+    target &&
+    folderFocus === target &&
+    detailId === folder &&
+    folderPageCount < MAX_FOLDER_PAGES &&
+    !$('.browser-file-row[aria-current="true"]') &&
+    $('#content [data-action="browse-more"]')
+  ) {
+    folderPageCount += 1;
+    await render();
+  }
+  await paletteClosing;
+  const focused = $('.browser-file-row[aria-current="true"]');
+  focused?.scrollIntoView?.({ block: "center" });
+  focused?.focus();
+}
+async function activatePalette(index, reveal = false) {
   const row = palette?.rows[index];
   if (!row) return;
   const query = palette.query;
@@ -364,7 +548,20 @@ async function activatePalette(index) {
     palette.active = 0;
     return void runPalette();
   }
-  document.getElementById("palette").close();
+  if (row.type === "more") return setPaletteType(row.of);
+  if (row.type === "page") return void runPalette(true);
+  if (reveal && row.type === "action") return;
+  const opener = palette.opener?.isConnected ? palette.opener : null;
+  if (opener) menuReturn = opener;
+  palette.opener = null;
+  paletteClosing = closeDialog(document.getElementById("palette"));
+  try {
+    await paletteRun(row, query, reveal);
+  } finally {
+    if (opener && menuReturn === opener) menuReturn = null;
+  }
+}
+async function paletteRun(row, query, reveal) {
   if (row.type === "action") {
     if (row.name === "settings") {
       view = "settings";
@@ -375,12 +572,29 @@ async function activatePalette(index) {
     return;
   }
   rememberPalette(query);
+  if (reveal && row.type !== "period") return paletteReveal(row);
+  const library = status.volumes.find((v) => v.id === row.volume);
   if (row.type === "folder") {
     view = "folders";
     await handle("folder-detail", row.id);
     updateShell();
     return;
   }
+  if (["song", "album", "artist", "show", "episode", "playlist"].includes(row.type) && !musicAvailable(library)) return paletteReveal(row);
+  if (row.type === "song") {
+    await paletteLibrary(row, { tab: "albums", album: row.albumId });
+    return handleMusic("music-song", row.path);
+  }
+  if (row.type === "episode") {
+    await paletteLibrary(row, { tab: "podcasts", show: row.showId });
+    return handleMusic("music-episode", row.path);
+  }
+  if (row.type === "album") return paletteLibrary(row, { tab: "albums", album: row.id });
+  if (row.type === "artist") return paletteLibrary(row, { tab: "artists", artist: row.id });
+  if (row.type === "show") return paletteLibrary(row, { tab: "podcasts", show: row.id });
+  if (row.type === "playlist") return paletteLibrary(row, { tab: "playlists", playlist: row.id });
+  if ((row.type === "photo" || row.type === "period") && library?.gallery) return paletteGallery(row.volume, row.cursor, row.type === "photo" ? row.path : null);
+  if (row.type === "period") return;
   await handle("activity-file", JSON.stringify({ volume: row.volume, path: row.path, rev: row.rev, deleted: false }));
 }
 document.addEventListener("input", (event) => {
@@ -391,21 +605,10 @@ document.addEventListener("input", (event) => {
   palette.timer = setTimeout(runPalette, event.target.value.trim() ? 120 : 0);
 });
 document.addEventListener("click", (event) => {
-  if (!palette) return;
-  const scope = event.target.closest?.("#palette [data-pal-scope]");
-  if (scope) {
-    palette.scope = scope.dataset.palScope;
-    document.querySelectorAll("#palette [data-pal-scope]").forEach((control) => {
-      const on = control === scope;
-      control.classList.toggle("active", on);
-      control.setAttribute("aria-pressed", String(on));
-    });
-    palette.active = 0;
-    void runPalette();
-    return;
-  }
+  if (!palette || isLeaving(document.getElementById("palette"))) return;
+  if (event.target.closest?.("#palette .pal-chip-remove")) return setPaletteType("");
   const row = event.target.closest?.("#palette [data-pal]");
-  if (row) void activatePalette(Number(row.dataset.pal));
+  if (row) void activatePalette(Number(row.dataset.pal), event.metaKey || event.ctrlKey);
 });
 document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
@@ -413,7 +616,8 @@ document.addEventListener("keydown", (event) => {
     openPalette();
     return;
   }
-  if (!palette || !document.getElementById("palette")?.open) return;
+  const open = document.getElementById("palette");
+  if (!palette || !open?.open || isLeaving(open)) return;
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
     const count = palette.rows.length;
@@ -427,7 +631,10 @@ document.addEventListener("keydown", (event) => {
     document.querySelector("#palette .pal-input")?.setAttribute("aria-activedescendant", `pal-${palette.active}`);
   } else if (event.key === "Enter") {
     event.preventDefault();
-    void activatePalette(palette.active);
+    void activatePalette(palette.active, event.metaKey || event.ctrlKey);
+  } else if (event.key === "Backspace" && palette.type && event.target.matches?.("#palette .pal-input") && !event.target.value) {
+    event.preventDefault();
+    setPaletteType("");
   }
 });
 const TEXT_NAME = /\.(txt|md|markdown|mdx|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|tsv|log|xml|html?|css|scss|js|mjs|cjs|jsx|ts|tsx|py|rb|go|rs|c|h|cc|cpp|hpp|java|kt|swift|sh|bash|zsh|sql|env|gitignore|arcaignore)$/i;
@@ -469,6 +676,10 @@ function quickDialog() {
     dialog = document.createElement("dialog");
     dialog.id = "quicklook";
     dialog.className = "quicklook";
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      void closeDialog(dialog);
+    });
     dialog.addEventListener("close", () => {
       const row = quick?.rows[quick.index]?.el;
       quick = null;
@@ -524,12 +735,12 @@ document.addEventListener("click", (event) => {
   if (!control || !quick) return;
   const dialog = document.getElementById("quicklook");
   const action = control.dataset.ql;
-  if (action === "close") dialog.close();
+  if (action === "close") void closeDialog(dialog);
   else if (action === "prev" && quick.index > 0) void showQuick(quick.index - 1);
   else if (action === "next" && quick.index < quick.rows.length - 1) void showQuick(quick.index + 1);
   else if (action === "open") {
     const row = quick.rows[quick.index];
-    dialog.close();
+    void closeDialog(dialog);
     void handle("activity-file", row.id);
   }
 });
@@ -544,11 +755,11 @@ document.addEventListener("keydown", (event) => {
     void showQuick(quick.index + 1);
   } else if (event.key === " ") {
     event.preventDefault();
-    if (!event.repeat) dialog.close();
+    if (!event.repeat) void closeDialog(dialog);
   } else if (event.key === "Enter" && !event.target.closest?.("button")) {
     event.preventDefault();
     const row = quick.rows[quick.index];
-    dialog.close();
+    void closeDialog(dialog);
     void handle("activity-file", row.id);
   }
 });
@@ -569,7 +780,7 @@ async function hydrateFileHeroes() {
     }
   }
 }
-function rowPreview(row, fallback, historical = false) {
+function rowPreview(row, fallback, historical = false, tone = "") {
   if (
     row.directory ||
     row.deleted ||
@@ -578,14 +789,14 @@ function rowPreview(row, fallback, historical = false) {
       row.path || "",
     )
   )
-    return icon(fallback);
+    return tone ? `<span class="row-preview ${tone}">${icon(fallback)}</span>` : icon(fallback);
   const query = new URLSearchParams({
     volume: row.volume,
     path: row.path,
     hash: row.hash,
     ...(historical ? { rev: String(row.rev) } : {}),
   });
-  return `<span class="row-preview" data-row-preview="${escape(query.toString())}">${icon(fallback)}${historical ? `<span class="row-preview-status">${icon(fallback)}</span>` : ""}</span>`;
+  return `<span class="row-preview${tone ? ` ${tone}` : ""}" data-row-preview="${escape(query.toString())}">${icon(fallback)}${historical ? `<span class="row-preview-status">${icon(fallback)}</span>` : ""}</span>`;
 }
 const HUB_PREVIEW_WAIT = /took too long|Hub unavailable/i;
 let rowPreviewObserver;
@@ -690,7 +901,7 @@ function hubOffline() {
 }
 function button(label, action, id = "", cls = "secondary", symbol = "") {
   const waiting = hubOnlyActions.has(action) && hubOffline();
-  return `<button type="button" class="${cls}" data-action="${action}" data-id="${escape(id)}"${waiting ? ` disabled title="${HUB_ONLY_REASON}"` : ""}>${symbol ? icon(symbol) : ""}${label}</button>`;
+  return `<button type="button" class="${cls}" data-action="${action}" data-id="${escape(id)}"${waiting ? ` aria-disabled="true" data-tooltip="${HUB_ONLY_REASON}"` : ""}>${symbol ? icon(symbol) : ""}${label}</button>`;
 }
 function roleTag(role) {
   return !role || role === "replica" ? "" : `<span class="tag">${escape(role)}</span>`;
@@ -727,15 +938,17 @@ function dropdown(id, label, items, selected, action) {
   return `<div class="dropdown"><button type="button" id="${id}" class="dropdown-trigger" aria-label="${escape(label)}: ${escape(current.name)}" aria-haspopup="listbox" aria-expanded="false" aria-controls="${id}-options" data-dropdown-trigger><span>${escape(current.name)}</span>${icon("chevron-down")}</button><div id="${id}-options" class="dropdown-menu" role="listbox" aria-label="${escape(label)}" hidden>${items.map((item) => `<button type="button" role="option" tabindex="-1" aria-selected="${item.id === current.id}" data-action="${action}" data-id="${escape(item.id)}"><span>${escape(item.name)}</span>${icon("check")}</button>`).join("")}</div></div>`;
 }
 function closeDropdown(root, restoreFocus = false) {
-  root.querySelector(".dropdown-menu").hidden = true;
+  const menu = root.querySelector(".dropdown-menu");
   const trigger = root.querySelector("[data-dropdown-trigger]");
   trigger.setAttribute("aria-expanded", "false");
   if (restoreFocus) trigger.focus();
+  if (!menu.hidden) void leave(menu, "popover", () => (menu.hidden = true));
 }
 function openDropdown(root, last = false) {
   document.querySelectorAll(".dropdown").forEach((other) => {
     if (other !== root) closeDropdown(other);
   });
+  revive(root.querySelector(".dropdown-menu"));
   root.querySelector(".dropdown-menu").hidden = false;
   root
     .querySelector("[data-dropdown-trigger]")
@@ -757,10 +970,10 @@ function historyEmpty() {
     return empty("No deleted files", "Clear Deleted to see every change.", "", "trash-2");
   if (historyVolume)
     return empty("No changes in this folder", "Set Shared folder to All to see every change.", "", "history");
-  return empty("No history yet", "Changes to your files appear here.", "", "history");
+  return empty("No history yet", "Changes to your files appear here.", "", "arca");
 }
 function empty(heading, text, control = "", symbol = "folder-open") {
-  return `<div class="empty">${icon(symbol)}<h2>${heading}</h2>${text ? `<p>${text}</p>` : ""}${control}</div>`;
+  return `<div class="empty">${symbol === "arca" ? brandArchFor(EMPTY_ARCH) : icon(symbol)}<h2>${heading}</h2>${text ? `<p>${text}</p>` : ""}${control}</div>`;
 }
 const section = (name, body) =>
   `<section><div class="section-label">${name}</div>${body}</section>`;
@@ -863,9 +1076,6 @@ function updateBrandActivity() {
     mark.classList.toggle("is-busy", visible);
     mark.setAttribute("aria-label", visible ? "Arca: updating" : "Arca");
     mark.setAttribute("aria-busy", String(visible));
-    const indicator = mark.querySelector(".brand-busy");
-    if (visible && indicator && !indicator.firstChild)
-      indicator.innerHTML = busyIcon();
   };
   if (active) {
     clearTimeout(brandHideTimer);
@@ -960,8 +1170,7 @@ let status,
   fileOriginFolder = null,
   folderTab = "files",
   folderPrefix = "",
-  folderSearch = "",
-  folderSearchOpen = false,
+  folderFocus = null,
   folderPageCount = 1,
   historyRows = [],
   historyNext = null,
@@ -1144,11 +1353,15 @@ function renderNotices() {
   const box = $("#notice"),
     items = noticeStore.snapshot();
   const ids = new Set(items.map((n) => n.id));
-  for (const card of box.children)
-    if (!ids.has(card.dataset.noticeId)) card.remove();
+  for (const card of [...box.children])
+    if (!ids.has(card.dataset.noticeId) && !isLeaving(card))
+      void leave(card, "toast", () => {
+        closeGap(card, [...box.children].filter((other) => other !== card));
+        box.hidden = !box.children.length;
+      });
   for (const item of items) {
     const old = Array.from(box.children).find(
-      (c) => c.dataset.noticeId === item.id,
+      (c) => c.dataset.noticeId === item.id && !isLeaving(c),
     );
     const markup = noticeMarkup(item);
     if (old?.dataset.markup === markup) continue;
@@ -1165,7 +1378,7 @@ function renderNotices() {
       box.append(card);
     }
   }
-  box.hidden = !items.length;
+  box.hidden = !box.children.length;
   icons();
 }
 noticeStore.subscribe(renderNotices);
@@ -1202,9 +1415,13 @@ function syncHubOnlyControls() {
     .join(",");
   for (const control of document.querySelectorAll(selector)) {
     if (pendingControls.has(control)) continue;
-    control.disabled = waiting;
-    if (waiting) control.title = HUB_ONLY_REASON;
-    else if (control.title === HUB_ONLY_REASON) control.removeAttribute("title");
+    if (waiting) {
+      control.setAttribute("aria-disabled", "true");
+      control.dataset.tooltip = HUB_ONLY_REASON;
+    } else if (control.dataset.tooltip === HUB_ONLY_REASON) {
+      control.removeAttribute("aria-disabled");
+      delete control.dataset.tooltip;
+    }
   }
 }
 let actionQueue = null;
@@ -1288,7 +1505,7 @@ function stateFor(v) {
   if (status.role !== "hub" && !status.hub)
     return ["Disconnected", "id", "unplug"];
   if (!v.selected) return ["Catalog only", "id", "circle-dashed"];
-  if (status.phase === "paused") return ["Paused", "wa", "pause"];
+  if (status.phase === "paused") return ["Paused", "id", "pause"];
   if (v.sync?.state === "error")
     return [
       /ENOENT|missing/i.test(v.sync.error || "")
@@ -1302,7 +1519,7 @@ function stateFor(v) {
       "circle-alert",
     ];
   if (v.conflicts) return ["Conflict", "wa", "triangle-alert"];
-  if (status.hubUnavailable) return ["Offline", "wa", "wifi-off"];
+  if (status.hubUnavailable) return ["Offline", "id", "wifi-off"];
   if (v.sync?.state === "scanning") return ["Scanning", "sy", "busy"];
   if (v.sync?.state === "syncing") return ["Syncing", "sy", "busy"];
   if (v.sync?.state === "synced") return ["Up to date", "ok", "circle-check"];
@@ -1326,6 +1543,304 @@ const hubName = () =>
     : status?.hub
       ? new URL(status.hub).hostname
       : "not linked");
+let favorites = null,
+  favoritesSelection = null,
+  favoritesShown = "",
+  contextMenu = null,
+  contextTarget = null;
+const FAVORITE_GLYPHS = { artist: "mic-vocal", album: "disc-3", playlist: "list-music", show: "podcast" };
+const favoriteKey = (item) => JSON.stringify([item.folder, item.kind, item.target]);
+async function loadFavorites() {
+  try {
+    const data = await api("/v1/favorites");
+    favorites = Array.isArray(data?.favorites) ? data.favorites : [];
+  } catch {
+    favorites ||= [];
+  }
+  if (!window.document) return;
+  renderFavorites();
+  updateFavoriteStars();
+  for (const folder of new Set(favorites.filter((item) => FAVORITE_GLYPHS[item.kind]).map((item) => item.folder)))
+    if (musicAvailable(status.volumes.find((v) => v.id === folder))) void refreshMusic(folder);
+}
+async function saveFavorites(list) {
+  const previous = favorites;
+  favorites = list;
+  renderFavorites();
+  updateFavoriteStars();
+  try {
+    favorites = (await api("/v1/favorites", { favorites: list })).favorites;
+  } catch (error) {
+    favorites = previous;
+    if (window.document) notice(error.message, true);
+  }
+  if (!window.document) return;
+  renderFavorites();
+  updateFavoriteStars();
+}
+function pruneFavorites(volume, library) {
+  const v = status?.volumes.find((item) => item.id === volume);
+  if (!favorites || !v || !library.tracks.size || (status.role !== "hub" && v.sync?.state !== "synced")) return;
+  const exists = {
+    artist: (id) => library.artists.some((item) => item.id === id),
+    album: (id) => library.albums.has(id),
+    playlist: (id) => library.playlists.some((item) => item.id === id),
+    show: (id) => library.shows.some((item) => item.id === id),
+  };
+  const kept = favorites.filter((item) => item.folder !== volume || !exists[item.kind] || exists[item.kind](item.target));
+  if (kept.length !== favorites.length) void saveFavorites(kept);
+}
+function favoriteHere() {
+  if (view !== "folders" || !detailId) return null;
+  const v = status.volumes.find((item) => item.id === detailId);
+  if (!v?.selected) return null;
+  if (folderTab === "library") {
+    const library = musicLibraries.get(musicKey(v.id))?.library;
+    const named = {
+      show: () => library?.shows.find((item) => item.id === musicView.show)?.name,
+      album: () => library?.albums.get(musicView.album)?.title,
+      playlist: () => library?.playlists.find((item) => item.id === musicView.playlist)?.name,
+      artist: () => library?.artists.find((item) => item.id === musicView.artist)?.name,
+    };
+    for (const kind of ["show", "album", "playlist", "artist"])
+      if (musicView[kind]) {
+        const label = named[kind]();
+        return label ? { folder: v.id, kind, target: musicView[kind], label } : null;
+      }
+  }
+  if (folderTab === "files" && folderPrefix)
+    return { folder: v.id, kind: "path", target: folderPrefix, label: folderPrefix.split("/").pop() };
+  return { folder: v.id, kind: "folder", target: "", label: v.name };
+}
+function activeFavorite() {
+  const here = favoriteHere();
+  if (!here || !favorites) return -1;
+  const exact = favorites.findIndex((item) => favoriteKey(item) === favoriteKey(here));
+  return exact >= 0 ? exact : favorites.findIndex((item) => item.folder === here.folder && item.kind === "folder");
+}
+function favoriteStar() {
+  const here = favoriteHere();
+  if (!here) return "";
+  const on = !!favorites?.some((item) => favoriteKey(item) === favoriteKey(here));
+  return `<button type="button" class="icon-button favorite-star" data-action="favorite-toggle" aria-pressed="${on}" aria-label="${on ? "Remove from Favorites" : "Add to Favorites"}" data-tooltip="${on ? "Remove from Favorites" : "Add to Favorites"}">${icon("star")}</button>`;
+}
+function updateFavoriteStars() {
+  const here = favoriteHere();
+  const on = !!here && !!favorites?.some((item) => favoriteKey(item) === favoriteKey(here));
+  for (const star of document.querySelectorAll(".favorite-star")) {
+    star.setAttribute("aria-pressed", String(on));
+    star.setAttribute("aria-label", on ? "Remove from Favorites" : "Add to Favorites");
+    star.dataset.tooltip = on ? "Remove from Favorites" : "Add to Favorites";
+  }
+}
+function favoriteRow(item, index, active) {
+  const v = status.volumes.find((volume) => volume.id === item.folder);
+  if (!v) return "";
+  const glyph = item.kind === "folder" ? folderSymbol(v) : item.kind === "path" ? (v.gallery ? "images" : "folder") : FAVORITE_GLYPHS[item.kind];
+  const state = item.kind === "folder" ? stateFor(v) : null;
+  const mark = !state
+    ? ""
+    : state[2] === "busy"
+      ? busyIcon()
+      : state[0] === "Conflict"
+        ? '<span class="favorite-dot"></span>'
+        : state[0] === "Paused"
+          ? icon("pause")
+          : "";
+  const label = item.kind === "folder" ? v.name : item.label;
+  const name = mark ? `${label}, ${state[0]}` : label;
+  return `<div class="favorite-row" data-index="${index}" data-key="${escape(favoriteKey(item))}"><button type="button" class="nav-item favorite${active ? " active" : ""}" data-action="favorite-open" data-id="${index}" data-tooltip="${escape(label)}" aria-label="${escape(name)}"${active ? ' aria-current="page"' : ""}>${icon(glyph)}<span class="favorite-name">${escape(label)}</span>${mark ? `<span class="favorite-state" aria-hidden="true">${mark}</span>` : ""}</button><button type="button" class="ghost icon-button favorite-actions" data-action="favorite-menu" data-id="${index}" aria-label="${escape(`${label} actions`)}">${icon("ellipsis")}</button></div>`;
+}
+function renderFavorites() {
+  const region = $("#favorites");
+  if (!region) return;
+  if (!ready || !status || !favorites) {
+    region.hidden = true;
+    return;
+  }
+  const active = activeFavorite();
+  const html = favoriteOrder(favorites, status.volumes)
+    .map((index) => favoriteRow(favorites[index], index, index === active))
+    .join("");
+  region.hidden = !html;
+  if (html !== favoritesShown) {
+    const list = region.querySelector(".favorites-list");
+    const rowKey = (row) => row.dataset.key;
+    const before = rowBoxes([...list.querySelectorAll(".favorite-row:not(.row-leaving)")], rowKey, list);
+    list.innerHTML = html;
+    favoritesShown = html;
+    icons();
+    leaveRemovedRows(before, [...list.querySelectorAll(".favorite-row:not(.row-leaving)")], rowKey, list);
+  }
+  fadeFavorites();
+}
+function fadeFavorites() {
+  const region = $("#favorites");
+  if (!region) return;
+  region.classList.toggle("fade-start", region.scrollTop > 0);
+  region.classList.toggle("fade-end", region.scrollTop + region.clientHeight < region.scrollHeight - 1);
+}
+function syncFavorites() {
+  const selection = (status?.volumes || []).filter((v) => v.selected).map((v) => v.id).join("|");
+  if (ready && selection !== favoritesSelection) {
+    favoritesSelection = selection;
+    void loadFavorites();
+  }
+  renderFavorites();
+}
+async function openFavorite(item) {
+  const v = status.volumes.find((volume) => volume.id === item.folder);
+  if (!v) return;
+  historyPath = null;
+  if (FAVORITE_GLYPHS[item.kind]) {
+    const tab = { artist: "artists", album: "albums", playlist: "playlists", show: "podcasts" }[item.kind];
+    return musicReveal({ tab, artist: null, album: null, playlist: null, show: null, [item.kind]: item.target, pages: 1, trail: [] }, v.id, false);
+  }
+  view = "folders";
+  if (item.kind === "folder") folderViewId = null;
+  else {
+    folderViewId = v.id;
+    folderTab = "files";
+    folderPrefix = item.target;
+    folderFocus = null;
+    folderPageCount = 1;
+  }
+  detailId = v.id;
+  updateShell();
+  await render();
+}
+function closeContextMenu(restoreFocus = false) {
+  const menu = contextMenu;
+  const target = contextTarget;
+  contextMenu = null;
+  contextTarget = null;
+  if (!menu) return;
+  if (restoreFocus)
+    (target?.remove !== undefined ? $(`#favorites .favorite[data-id="${target.remove}"]`) : target?.open)?.focus();
+  void leave(menu, "popover", () => menu.remove());
+}
+function contextFavorite(el) {
+  const row = el.closest(".favorite-row");
+  if (row) return { remove: Number(row.dataset.index) };
+  const pinned = (kind, target, label, open) => {
+    const v = status.volumes.find((item) => item.id === detailId);
+    return v?.selected ? { item: { folder: v.id, kind, target, label }, open } : null;
+  };
+  const directory = el.closest('.browser-file-row[data-action="browse-directory"]');
+  if (directory) return pinned("path", directory.dataset.id, directory.querySelector("strong").textContent, directory);
+  const artist = el.closest(".music-artist-row");
+  if (artist) return pinned("artist", artist.dataset.id, artist.querySelector("strong").textContent, artist);
+  const card = el.closest('.music-card[data-action="music-album"], .music-card[data-action="music-playlist"], .music-card[data-action="music-show"]');
+  if (card) return pinned(card.dataset.action.slice(6), card.dataset.id, card.querySelector("strong").textContent, card);
+  const folder = el.closest('.folder-card[data-action="folder-detail"]');
+  const v = folder && status.volumes.find((item) => item.id === folder.dataset.id);
+  if (v?.selected) return { item: { folder: v.id, kind: "folder", target: "", label: v.name }, open: folder };
+  return null;
+}
+function openContextMenu(target, x, y) {
+  closeContextMenu();
+  if (!favorites) return;
+  contextTarget = target;
+  const listed = target.item && favorites.some((item) => favoriteKey(item) === favoriteKey(target.item));
+  const menu = document.createElement("div");
+  menu.className = "menu-items context-menu";
+  menu.setAttribute("role", "menu");
+  menu.innerHTML =
+    target.remove !== undefined
+      ? button("Remove from Favorites", "favorite-remove", String(target.remove), "secondary", "star-off")
+      : button("Open", "context-open", "", "secondary", "folder-open") +
+        (listed
+          ? button("Remove from Favorites", "favorite-unpin", "", "secondary", "star-off")
+          : button("Add to Favorites", "favorite-pin", "", "secondary", "star"));
+  for (const item of menu.querySelectorAll("button")) item.setAttribute("role", "menuitem");
+  document.body.append(menu);
+  contextMenu = menu;
+  icons();
+  const { width, height } = menu.getBoundingClientRect();
+  const edge = tokenPixels("--space-2", 8);
+  const left = Math.max(edge, Math.min(x, window.innerWidth - width - edge));
+  const top = y + height + edge > window.innerHeight ? Math.max(edge, window.innerHeight - height - edge) : y;
+  menu.style.setProperty("--menu-x", `${Math.round(left)}px`);
+  menu.style.setProperty("--menu-y", `${Math.round(top)}px`);
+  menu.querySelector("button")?.focus();
+}
+document.addEventListener("contextmenu", (event) => {
+  if (!ready || !status) return;
+  const target = contextFavorite(event.target);
+  if (!target) return;
+  event.preventDefault();
+  openContextMenu(target, event.clientX, event.clientY);
+});
+document.addEventListener(
+  "pointerdown",
+  (event) => {
+    if (contextMenu && !contextMenu.contains(event.target)) closeContextMenu();
+  },
+  true,
+);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && contextMenu) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    closeContextMenu(true);
+    return;
+  }
+  if (event.key === "Tab" && contextMenu?.contains(event.target)) {
+    event.preventDefault();
+    closeContextMenu(true);
+  }
+});
+document.addEventListener("focusin", (event) => {
+  if (contextMenu && !contextMenu.contains(event.target)) closeContextMenu();
+});
+document.getElementById("favorites")?.addEventListener("scroll", fadeFavorites, { passive: true });
+window.addEventListener("focus", () => {
+  if (ready && favorites) void loadFavorites();
+});
+window.addEventListener("resize", () => {
+  fadeFavorites();
+  closeContextMenu();
+});
+document.addEventListener(
+  "scroll",
+  (event) => {
+    if (contextMenu && !contextMenu.contains(event.target)) closeContextMenu();
+  },
+  true,
+);
+async function handleFavorite(name, id, control) {
+  if (name === "favorite-open") return openFavorite(favorites?.[Number(id)]);
+  if (name === "favorite-menu") {
+    const rect = control.getBoundingClientRect();
+    return openContextMenu({ remove: Number(id) }, rect.left, rect.bottom);
+  }
+  if (name === "favorite-remove") {
+    closeContextMenu();
+    return saveFavorites(favorites.filter((_, index) => index !== Number(id)));
+  }
+  if (name === "favorite-toggle") {
+    const here = favoriteHere();
+    if (!here || !favorites) return;
+    const on = favorites.some((item) => favoriteKey(item) === favoriteKey(here));
+    return saveFavorites(on ? favorites.filter((item) => favoriteKey(item) !== favoriteKey(here)) : [...favorites, here]);
+  }
+  const target = contextTarget;
+  closeContextMenu();
+  if (name === "context-open") return target?.open?.click();
+  if (name === "favorite-pin" && target?.item) return saveFavorites([...favorites, target.item]);
+  if (name === "favorite-unpin" && target?.item)
+    return saveFavorites(favorites.filter((item) => favoriteKey(item) !== favoriteKey(target.item)));
+}
+function markNav() {
+  syncFavorites();
+  const pinned = view === "folders" && activeFavorite() >= 0;
+  document.querySelectorAll("nav [data-view]").forEach((el) => {
+    const active = el.dataset.view === view && !pinned;
+    el.classList.toggle("active", active);
+    if (active) el.setAttribute("aria-current", "page");
+    else el.removeAttribute("aria-current");
+  });
+}
 function updateShell() {
   const nav = document.querySelector('nav [data-view="devices"]');
   if (nav) nav.innerHTML = icon("monitor-smartphone") + "Devices";
@@ -1405,12 +1920,7 @@ function updateShell() {
       : "Manage this device’s additional full copy of the hub and its history";
   $("#conflict-count").textContent = conflicts;
   $("#conflict-count").hidden = !conflicts;
-  document.querySelectorAll("nav [data-view]").forEach((el) => {
-    const active = el.dataset.view === view;
-    el.classList.toggle("active", active);
-    if (active) el.setAttribute("aria-current", "page");
-    else el.removeAttribute("aria-current");
-  });
+  markNav();
   $(".sign-out").hidden = native;
   updateSyncControls();
   icons();
@@ -1498,19 +2008,13 @@ async function refresh(renderView = true) {
         status.progress?.path
           ? status.progress
           : null;
-      row.querySelector(".meta").textContent =
-        volume.sync?.error ||
-        volume.policyError ||
-        (p
-          ? progressLabel(p)
-          : `${countLabel(volume.files || 0, "file")} · ${bytes(volume.bytes)}`);
+      row.querySelector(".meta").innerHTML = folderMeta(volume, stateFor(volume), p);
       const lead = row.querySelector(".home-lead");
       if (!lead) continue;
       let ring = lead.querySelector(".home-ring");
       const determinate = p && Number.isFinite(p.filesTotal) && p.filesTotal > 0;
       if (!determinate) {
-        if (!volume.conflicts) ring?.remove();
-        else ring?.querySelector(".home-ring-fill")?.removeAttribute("stroke-dasharray");
+        ring?.remove();
         lead.removeAttribute("aria-label");
         lead.removeAttribute("role");
         continue;
@@ -1685,57 +2189,41 @@ function progressLabel(p) {
       : "";
   return `${count}${size} · ${p.path || (sending ? "Preparing upload" : "Checking hub files")}${transfer}`;
 }
-let homeData = { arrivals: [], at: 0 };
-const baseName = (path) => path.split("/").pop();
-function homeStrip() {
-  if (!homeData.arrivals.length || (status.role !== "hub" && !status.hub)) return "";
-  return section(
-    "Just arrived",
-    `<div class="home-arrivals">${homeData.arrivals
-      .map(
-        (row) =>
-          `<button type="button" class="home-arrival" data-action="activity-file" data-id="${escape(JSON.stringify({ volume: row.volume, path: row.path, rev: row.rev, deleted: false }))}"><span class="tile large">${icon(fileIcon(row.path))}</span><span class="home-arrival-text"><strong>${escape(baseName(row.path))}</strong><span>${escape(authorName(row.author))} · ${escape(relative(row.created))}</span></span></button>`,
-      )
-      .join("")}</div>`,
-  );
-}
 const ringLabel = (p) =>
   `${p.stage === "upload" || p.direction === "upload" ? "Files sent" : "Files checked"}: ${(p.filesDone || 0).toLocaleString("en")} of ${p.filesTotal.toLocaleString("en")}`;
+const NEUTRAL_STATES = new Set(["Paused", "Offline", "Disconnected"]);
+const stateTone = (state) =>
+  state[0] === "Conflict" ? "wa" : state[1] === "er" ? "er" : NEUTRAL_STATES.has(state[0]) ? "id" : "";
+function stateWord(v, state) {
+  if (state[0] === "Conflict") return countLabel(v.conflicts, "conflict");
+  return ["Up to date", "Syncing", "Scanning", "Catalog only"].includes(state[0]) ? "" : state[0];
+}
+function folderMeta(v, state, p) {
+  if (p) return escape(progressLabel(p));
+  const error = v.sync?.error || v.policyError;
+  const word = stateWord(v, state);
+  const rest =
+    state[0] === "Path missing" && v.path
+      ? v.path
+      : error || `${countLabel(v.files || 0, "file")} · ${bytes(v.bytes)}`;
+  if (!word) return escape(rest);
+  const tone = stateTone(state);
+  return `<span class="state-word${tone === "wa" || tone === "er" ? ` state-${tone}` : ""}">${escape(word)}</span> · ${escape(rest)}`;
+}
 function homeLead(v, state, p) {
   const busy = state[2] === "busy";
   const ring =
     p?.filesTotal > 0
       ? Math.min(100, Math.round((100 * (Number(p.filesDone) || 0)) / p.filesTotal))
       : null;
-  const conflict = Boolean(v.conflicts);
-  const tile = `<div class="tile large"${busy ? ` role="status" aria-label="${escape(state[0])}"` : ""}>${busy ? busyIcon() : icon(folderSymbol(v))}</div>`;
+  const tone = busy ? "" : stateTone(state);
+  const glyph = tone === "wa" || tone === "er" ? state[2] : folderSymbol(v);
+  const tile = `<div class="tile large${tone ? ` ${tone}` : ""}"${busy ? ` role="status" aria-label="${escape(state[0])}"` : ""}>${busy ? busyIcon() : icon(glyph)}</div>`;
   const svg =
-    ring !== null || conflict
-      ? `<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true">${conflict ? "" : '<circle class="home-ring-track" cx="24" cy="24" r="22" />'}<circle class="home-ring-fill" cx="24" cy="24" r="22" pathLength="100"${conflict ? "" : ` stroke-dasharray="${ring} 100"`} /></svg>`
+    ring !== null
+      ? `<svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="home-ring-track" cx="24" cy="24" r="22" /><circle class="home-ring-fill" cx="24" cy="24" r="22" pathLength="100" stroke-dasharray="${ring} 100" /></svg>`
       : "";
-  return `<div class="home-lead${conflict ? " home-conflict" : ""}"${ring !== null ? ` role="status" aria-label="${escape(ringLabel(p))}"` : ""}>${svg}${tile}</div>`;
-}
-let homeHub = "";
-async function loadHome(serial) {
-  const hub = status.hubId || status.id;
-  if (hub !== homeHub) {
-    homeHub = hub;
-    homeData = { arrivals: [], at: 0 };
-  }
-  if (Date.now() - homeData.at < 15000) return;
-  const ids = status.volumes.filter((v) => status.role === "hub" || v.selected).map((v) => v.id);
-  if (!ids.length) return;
-  homeData.at = Date.now();
-  const [activity] = await Promise.allSettled([api("/v1/activity?limit=50&filter=revisions")]);
-  if (hub !== (status.hubId || status.id)) return;
-  const rows = activity.status === "fulfilled" && Array.isArray(activity.value?.versions) ? activity.value.versions : [];
-  const next = {
-    arrivals: rows.filter((r) => !r.deleted).slice(0, 3).map(({ volume, path, rev, created, author }) => ({ volume, path, rev, created, author })),
-    at: Date.now(),
-  };
-  const changed = JSON.stringify(next.arrivals) !== JSON.stringify(homeData.arrivals);
-  homeData = next;
-  if (changed && view === "folders" && !detailId && !$("#dialog").open) await renderView(false);
+  return `<div class="home-lead"${ring !== null ? ` role="status" aria-label="${escape(ringLabel(p))}"` : ""}>${svg}${tile}</div>`;
 }
 function folderRow(v, available = false) {
   const p =
@@ -1771,18 +2259,16 @@ function folderRow(v, available = false) {
               "circle-alert",
             )
           : "";
-  let meta = available
+  const meta = available
     ? Number.isFinite(v.files)
       ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`
       : "Not counted yet"
-    : `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`;
-  if (p) meta = escape(progressLabel(p));
-  if (v.sync?.error || v.policyError)
-    meta = escape(v.sync?.error || v.policyError);
+    : folderMeta(v, state, p);
+  const word = available || p ? "" : stateWord(v, state);
   const lead = available
     ? `<div class="tile large"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
     : homeLead(v, state, p);
-  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details"`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p></div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${state[2] === "busy" || ["Up to date", "Offline"].includes(state[0]) ? "" : pill(...state)}${icon("chevron-right")}`}</article>`;
+  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details${word ? `, ${escape(word)}` : ""}"`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p></div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${icon("chevron-right")}`}</article>`;
 }
 async function loadCatalog() {
   if (status.role !== "hub" && !status.hub) {
@@ -1825,7 +2311,7 @@ function scaffoldLine(size = "medium") {
   return `<span class="scaffold-line scaffold-${size}" aria-hidden="true"></span>`;
 }
 function scaffoldRow(kind = "card", dashed = false) {
-  return `<div class="scaffold-row scaffold-${kind} ${dashed ? "scaffold-dashed" : ""}" role="status" aria-label="Loading content"><span class="scaffold-mark" aria-hidden="true"></span><div class="scaffold-copy">${scaffoldLine("medium")}${scaffoldLine("long")}</div>${scaffoldLine("short")}</div>`;
+  return `<div class="scaffold-row scaffold-${kind} ${dashed ? "scaffold-dashed" : ""}" role="status" aria-label="Loading content"><span class="scaffold-mark" aria-hidden="true">${kind === "card" ? brandArch() : ""}</span><div class="scaffold-copy">${scaffoldLine("medium")}${scaffoldLine("long")}</div>${scaffoldLine("short")}</div>`;
 }
 function scaffoldInfo(item) {
   return `<div role="status" aria-label="Loading photo information"><div class="photo-info-summary"><p class="mono">${escape(item.path.split("/").pop())}</p>${scaffoldLine("long")}</div><section class="photo-info-section"><h3 class="section-label">Capture</h3>${scaffoldLine("medium")}${scaffoldLine("long")}<div class="photo-capture-stats">${Array.from({ length: 4 }, () => `<div>${scaffoldLine("short")}</div>`).join("")}</div></section><section class="photo-info-section"><h3 class="section-label">In Arca</h3>${scaffoldLine("long")}${scaffoldLine("medium")}</section></div>`;
@@ -1861,7 +2347,77 @@ function motionDuration(token) {
 }
 const reducedMotion = () =>
   Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
-const MOTION_EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+const motionEase = () =>
+  getComputedStyle(document.documentElement).getPropertyValue("--motion-ease").trim() || "ease-out";
+const EXIT_ROLES = {
+  popover: () => ({ duration: motionDuration("--motion-exit-fast"), frames: [{ opacity: 1 }, { opacity: 0 }] }),
+  tooltip: () => ({ duration: motionDuration("--motion-exit-fast"), frames: [{ opacity: 1 }, { opacity: 0 }] }),
+  dialog: () => ({
+    duration: motionDuration("--motion-exit"),
+    frames: [
+      { opacity: 1, transform: "none" },
+      { opacity: 0, transform: `scale(${tokenPixels("--motion-dialog-scale", 1)})` },
+    ],
+  }),
+  toast: () => ({
+    duration: motionDuration("--motion-exit"),
+    frames: [
+      { opacity: 1, transform: "none" },
+      { opacity: 0, transform: `translateY(${tokenPixels("--motion-distance", 0)}px)` },
+    ],
+  }),
+  list: () => ({ duration: motionDuration("--motion-exit"), frames: [{ opacity: 1 }, { opacity: 0 }] }),
+};
+const leavingSurfaces = new Map();
+function leave(element, role, done) {
+  const current = leavingSurfaces.get(element);
+  if (current) return current.promise;
+  const { duration, frames } = EXIT_ROLES[role]();
+  if (!element?.isConnected || typeof element.animate !== "function" || !duration || reducedMotion()) {
+    done();
+    return Promise.resolve(true);
+  }
+  element.inert = true;
+  const animation = element.animate(frames, { duration, easing: motionEase(), fill: "forwards" });
+  const entry = { animation, done };
+  entry.promise = new Promise((resolve) => (entry.resolve = resolve));
+  leavingSurfaces.set(element, entry);
+  animation.finished.then(() => settleLeave(element), () => {});
+  return entry.promise;
+}
+const isLeaving = (element) => !!element && leavingSurfaces.has(element);
+function closeGap(element, followers) {
+  const before = followers.map((el) => [el, el.getBoundingClientRect()]);
+  element.remove();
+  const duration = motionDuration("--motion-exit");
+  if (!duration || reducedMotion()) return;
+  for (const [el, rect] of before) {
+    const now = el.getBoundingClientRect();
+    const dx = rect.left - now.left;
+    const dy = rect.top - now.top;
+    if (el.isConnected && (dx || dy))
+      el.animate?.([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration, easing: motionEase() });
+  }
+}
+function settleLeave(element) {
+  const entry = leavingSurfaces.get(element);
+  if (!entry) return;
+  leavingSurfaces.delete(element);
+  entry.done();
+  element.inert = false;
+  entry.animation.cancel();
+  entry.resolve(true);
+}
+function revive(element) {
+  const entry = leavingSurfaces.get(element);
+  if (!entry) return false;
+  leavingSurfaces.delete(element);
+  element.inert = false;
+  entry.animation.reverse();
+  entry.animation.finished.then(() => entry.animation.cancel(), () => {});
+  entry.resolve(false);
+  return true;
+}
 const ROW_SELECTOR =
   "#content :is(.folder-card, .history-row, .browser-file-row)[data-id], #content .device-row[data-device]";
 const CASCADE_SELECTOR =
@@ -1877,7 +2433,7 @@ function staggerRows(selector = CASCADE_SELECTOR) {
         { opacity: 0, transform: `translateY(${rise}px)` },
         { opacity: 1, transform: "none" },
       ],
-      { duration: enter, delay: index * step, easing: MOTION_EASE, fill: "backwards" },
+      { duration: enter, delay: index * step, easing: motionEase(), fill: "backwards" },
     ),
   );
 }
@@ -1909,7 +2465,7 @@ function flip(element, from, { uniform = false } = {}) {
   if (frames)
     element.animate?.(frames, {
       duration: motionDuration("--motion-shared"),
-      easing: MOTION_EASE,
+      easing: motionEase(),
     });
 }
 function viewerExit() {
@@ -1924,7 +2480,7 @@ function viewerExit() {
   if (!frames) return null;
   const animation = image.animate([...frames].reverse(), {
     duration: motionDuration("--motion-shared"),
-    easing: MOTION_EASE,
+    easing: motionEase(),
     fill: "forwards",
   });
   return animation.finished || new Promise((resolve) => setTimeout(resolve, motionDuration("--motion-shared")));
@@ -1975,7 +2531,7 @@ function syncSegmented(settle = false) {
           },
           { transformOrigin: "top left", transform: "none" },
         ],
-        { duration: motionDuration("--motion-fast"), easing: MOTION_EASE },
+        { duration: motionDuration("--motion-fast"), easing: motionEase() },
       );
   }
 }
@@ -2027,7 +2583,7 @@ function noteMicro() {
           { opacity: 0.4, transform: `translateY(${tokenPixels("--motion-distance", 8) / 2}px)` },
           { opacity: 1, transform: "none" },
         ],
-        { duration: motionDuration("--motion-fast"), easing: MOTION_EASE },
+        { duration: motionDuration("--motion-fast"), easing: motionEase() },
       );
   }
   for (const element of document.querySelectorAll("#content .pill")) {
@@ -2038,7 +2594,7 @@ function noteMicro() {
     if (before !== undefined && before !== state && Date.now() >= cascadeUntil)
       element.animate?.(
         [{ opacity: 0.35 }, { opacity: 1 }],
-        { duration: motionDuration("--motion-enter"), easing: MOTION_EASE },
+        { duration: motionDuration("--motion-enter"), easing: motionEase() },
       );
   }
   if (microMemory.size > 400) microMemory.delete(microMemory.keys().next().value);
@@ -2049,15 +2605,67 @@ const settleTimers = new WeakMap();
 let cascadeUntil = 0,
   cascadeFirst = null;
 let seenRows = { route: "", keys: new Set() };
+const listMotion = () =>
+  typeof Element.prototype.animate === "function" && motionDuration("--motion-exit") > 0 && !reducedMotion();
+function rowBoxes(rows, keyOf, scroller) {
+  if (!listMotion() || rows.length > 300) return null;
+  const shift = scroller?.scrollTop || 0;
+  return new Map(
+    rows.map((row) => {
+      const rect = row.getBoundingClientRect();
+      return [keyOf(row), { el: row, top: rect.top + shift, left: rect.left, width: rect.width, height: rect.height }];
+    }),
+  );
+}
+function leaveRemovedRows(boxes, rows, keyOf, scroller) {
+  if (!boxes?.size || !listMotion()) return;
+  const present = new Map(rows.map((row) => [keyOf(row), row]));
+  const order = [...boxes.keys()];
+  const gone = order.filter((key) => !present.has(key) && !boxes.get(key).el.isConnected);
+  if (!gone.length || gone.length > 6 || !present.size) return;
+  const duration = motionDuration("--motion-exit");
+  const shift = scroller?.scrollTop || 0;
+  for (const key of gone) {
+    const box = boxes.get(key);
+    const anchor = order.slice(order.indexOf(key)).map((other) => present.get(other)).find(Boolean) || [...present.values()].at(-1);
+    const ghost = box.el;
+    const list = anchor.parentElement;
+    const frame = list.getBoundingClientRect();
+    ghost.classList.add("row-leaving");
+    ghost.inert = true;
+    ghost.setAttribute("aria-hidden", "true");
+    for (const el of [ghost, ...ghost.querySelectorAll("[id]")]) el.removeAttribute("id");
+    ghost.style.setProperty("--ghost-x", `${box.left - frame.left - list.clientLeft}px`);
+    ghost.style.setProperty("--ghost-y", `${box.top - shift - frame.top - list.clientTop}px`);
+    ghost.style.setProperty("--ghost-w", `${box.width}px`);
+    ghost.style.setProperty("--ghost-h", `${box.height}px`);
+    list.append(ghost);
+    ghost
+      .animate([{ opacity: 1 }, { opacity: 0 }], { duration, easing: motionEase(), fill: "forwards" })
+      .finished.then(() => ghost.remove(), () => ghost.remove());
+  }
+  for (const [key, row] of present) {
+    const box = boxes.get(key);
+    if (!box) continue;
+    const now = row.getBoundingClientRect();
+    const moved = `translate(${box.left - now.left}px, ${box.top - shift - now.top}px)`;
+    if (box.left !== now.left || box.top - shift !== now.top)
+      row.animate([{ transform: moved }, { transform: moved, offset: 0.5 }, { transform: "none" }], { duration: duration * 2, easing: motionEase() });
+  }
+}
+const listingKey = () =>
+  [routeURL(), ...[...document.querySelectorAll("#content [data-listing]")].map((list) => list.dataset.listing)].join("|");
 function noteRows() {
-  const route = routeURL();
-  const rows = [...document.querySelectorAll(ROW_SELECTOR)];
+  const route = listingKey();
+  const rows = [...document.querySelectorAll(ROW_SELECTOR)].filter((row) => !row.classList.contains("row-leaving"));
+  const scroller = $("#content .page");
   const first = document.querySelector(CASCADE_SELECTOR);
   if (Date.now() < cascadeUntil && first && first !== cascadeFirst) {
     cascadeFirst = first;
     staggerRows();
   }
   const keys = new Set(rows.map(rowKey));
+  if (seenRows.route === route) leaveRemovedRows(seenRows.boxes, rows, rowKey, scroller);
   if (!keys.size && seenRows.route === route) return;
   if (seenRows.route === route && seenRows.keys.size && !document.hidden && !reducedMotion()) {
     const lastSeen = rows.findLastIndex((row) => seenRows.keys.has(rowKey(row)));
@@ -2074,7 +2682,7 @@ function noteRows() {
             { opacity: 0, transform: `translateY(${tokenPixels("--motion-distance", 8)}px)` },
             { opacity: 1, transform: "none" },
           ],
-          { duration: motionDuration("--motion-enter"), easing: MOTION_EASE },
+          { duration: motionDuration("--motion-enter"), easing: motionEase() },
         );
         clearTimeout(settleTimers.get(row));
         settleTimers.set(
@@ -2083,7 +2691,7 @@ function noteRows() {
         );
       }
   }
-  seenRows = { route, keys };
+  seenRows = { route, keys, boxes: rowBoxes(rows, rowKey, scroller) };
 }
 if (typeof MutationObserver === "function" && document.querySelector("#content"))
   new MutationObserver(() => {
@@ -2139,12 +2747,12 @@ async function render({ refreshStatus = false } = {}) {
       navigationAnimation?.cancel();
       navigationAnimation = $("#content").animate?.(
         [
-          { opacity: 0.65, transform: "translateY(6px)" },
+          { opacity: tokenPixels("--motion-route-from", 1), transform: `translateY(${tokenPixels("--motion-route-rise", 0)}px)` },
           { opacity: 1, transform: "translateY(0)" },
         ],
         {
           duration: motionDuration("--motion-enter"),
-          easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+          easing: motionEase(),
         },
       );
       animatedRoute = route;
@@ -2166,6 +2774,7 @@ async function render({ refreshStatus = false } = {}) {
         })
       : null;
     const results = await Promise.allSettled([page, state]);
+    if (ready) markNav();
     if (cascade && serial === renderSerial) {
       staggerRows();
       cascadeFirst = document.querySelector(CASCADE_SELECTOR);
@@ -2226,8 +2835,7 @@ async function renderView(
     html += '<div class="page">';
     if (status.role !== "hub" && !status.hub)
       html += section("Hub connection", hubConnection());
-    else html += homeStrip();
-    const shown = status.role === "hub" ? status.volumes : selected;
+    const shown = [...(status.role === "hub" ? status.volumes : selected)].sort((a, b) => nameOrder(a.name, b.name));
     const kinds = [
       ["Folders", shown.filter((v) => !v.gallery && !v.music)],
       ["Photos", shown.filter((v) => v.gallery)],
@@ -2247,6 +2855,8 @@ async function renderView(
             status.role === "hub"
               ? "Share an existing or new folder. Other devices choose where to sync it."
               : `Pick folders from your hub${status.hub && available.length ? ", or start syncing one below" : ""}. Full copies are kept on disk and work offline.`,
+            "",
+            "arca",
           ),
     );
     if (status.role !== "hub" && status.hub && available.length)
@@ -2262,7 +2872,6 @@ async function renderView(
     )
       html += section("On hub · not selected", scaffoldRow("card", true));
     content.innerHTML = html + "</div>";
-    if (status.role === "hub" || status.hub) void loadHome(serial);
     if (refreshCatalog && status.role !== "hub") {
       icons();
       const previous = JSON.stringify([catalog, catalogHubName, catalogLoaded]);
@@ -2361,7 +2970,7 @@ function revisionRow(v, compact = false) {
       status.volumes.find((x) => x.id === v.volume)?.selected)
       ? "review-conflict"
       : "activity-file";
-  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" title="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : conflict && !v.resolved ? "conflict" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "triangle-alert" : "git-commit-horizontal", true)}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${compact ? relative(v.created) : clockTime(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
+  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" data-tooltip="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "triangle-alert" : "git-commit-horizontal", true, deleted ? "id" : conflict && !v.resolved ? "wa" : "")}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${compact ? relative(v.created) : clockTime(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
 }
 function fileHistoryHeader() {
   const volume = status.volumes.find((v) => v.id === historyVolume);
@@ -2520,7 +3129,9 @@ function clearStoredGallery() {
 // Content-addressed session cache survives leaving a gallery; never persisted with credentials.
 const photoCaches = {
   thumb: { entries: new Map(), bytes: 0, limit: 48 * 1024 ** 2, count: 2000 },
+  medium: { entries: new Map(), bytes: 0, limit: 8 * 1024 ** 2, count: 48 },
   large: { entries: new Map(), bytes: 0, limit: 16 * 1024 ** 2, count: 8 },
+  tile: { entries: new Map(), bytes: 0, limit: 4 * 1024 ** 2, count: 24 },
 };
 const photoRequests = new Map();
 async function galleryPage(route, fresh = false) {
@@ -2552,10 +3163,13 @@ async function galleryPage(route, fresh = false) {
   }
   return visibleGalleryPage(route, await refresh());
 }
-async function cachedPhoto(route) {
-  const pool = photoCaches[route.includes("size=large") ? "large" : "thumb"];
+async function cachedPhoto(route, kind) {
+  const size =
+    new URLSearchParams(route.slice(route.indexOf("?") + 1)).get("size") ||
+    "thumb";
+  const pool = photoCaches[kind || size];
   const photoCache = pool.entries;
-  const key = `${status.hubId || status.id}:${route}`;
+  const key = `${status.hubId || status.id}:${kind ? `${kind}:` : ""}${route}`;
   if (photoCache.has(key)) {
     const value = photoCache.get(key);
     photoCache.delete(key);
@@ -2565,27 +3179,27 @@ async function cachedPhoto(route) {
     }
     pool.bytes -= value.data.length * 2;
   }
-  if (!route.includes("size=large")) {
+  if (size === "thumb") {
     const stored = await storedGallery(`thumb:${key}`);
     if (stored?.data) return stored;
   }
   if (photoRequests.has(key)) return photoRequests.get(key);
   const pending = api(
-    route.includes("size=large")
+    size === "large"
       ? route.replace("/gallery/preview?", "/gallery/preview-url?")
       : route,
   )
     .then((value) => {
       if (value.url) value = { data: value.url, expires: value.expires };
       if (photoRequests.get(key) !== pending || !value.data) return value;
-      if (
-        !route.includes("size=large") &&
-        value.data?.startsWith("data:image/")
-      )
+      if (size === "thumb" && value.data?.startsWith("data:image/"))
         void storedGallery(`thumb:${key}`, value);
       photoCache.set(key, value);
       pool.bytes += value.data.length * 2;
-      while (pool.bytes > pool.limit || photoCache.size > pool.count) {
+      while (
+        photoCache.size &&
+        (pool.bytes > pool.limit || photoCache.size > pool.count)
+      ) {
         const oldest = photoCache.keys().next().value;
         pool.bytes -= photoCache.get(oldest).data.length * 2;
         photoCache.delete(oldest);
@@ -2598,23 +3212,44 @@ async function cachedPhoto(route) {
   photoRequests.set(key, pending);
   return pending;
 }
+function dropCachedPhoto(route, kind) {
+  const pool = photoCaches[kind];
+  const key = `${status.hubId || status.id}:${kind}:${route}`;
+  const value = pool.entries.get(key);
+  if (!value) return;
+  pool.bytes -= value.data.length * 2;
+  pool.entries.delete(key);
+}
+const busyPreview = (error) =>
+  error?.status === 429 || error?.message === "Previews are busy. Try again.";
+const PREVIEW_RANK = { thumb: 0, medium: 1, large: 2 };
 let galleryReturn = null;
-let galleryView = null,
+let galleryFocus = null,
+  galleryView = null,
   folderViewId = null,
   folderReturn = { tab: "files", scroll: 0 };
-const GALLERY_HERO_AT = 8;
-const GALLERY_QUIET_BELOW = 4;
-const GALLERY_SIDE_TILES = 4;
+const galleryRatios = new Map();
 const galleryDayHeading = (key) => {
+  if (key.length !== 10) return "Day unknown";
   const d = new Date(`${key}T12:00:00`);
   const part = (options) => d.toLocaleDateString("en", options);
-  return `${part({ weekday: "long" })} ${d.getDate()} ${part({ month: "long" })}`;
+  const year =
+    d.getFullYear() === new Date().getFullYear() ? "" : ` ${d.getFullYear()}`;
+  return `${part({ weekday: "long" })} ${d.getDate()} ${part({ month: "long" })}${year}`;
 };
-const galleryRange = (days) => {
-  const sorted = [...days].sort();
-  const first = new Date(`${sorted[0]}T12:00:00`);
-  const last = new Date(`${sorted.at(-1)}T12:00:00`);
-  return `${first.getDate()}–${last.getDate()} ${last.toLocaleDateString("en", { month: "long" })}`;
+const galleryDayShort = (key) => {
+  if (key.length !== 10) return "Day unknown";
+  const d = new Date(`${key}T12:00:00`);
+  const part = (options) => d.toLocaleDateString("en", options);
+  return `${part({ weekday: "short" })} ${d.getDate()} ${part({ month: "short" })}`;
+};
+const galleryDayTiny = (key) => {
+  if (key.length !== 10) return [];
+  const d = new Date(`${key}T12:00:00`);
+  return [
+    `${d.getDate()} ${d.toLocaleDateString("en", { month: "short" })}`,
+    String(d.getDate()),
+  ];
 };
 function mountGallery(volume) {
   galleryView?.observer?.disconnect();
@@ -2639,7 +3274,11 @@ function mountGallery(volume) {
     queue: [],
     workers: 0,
     days: {},
-    plans: {},
+    dirty: new Set(),
+    shifted: new Set(),
+    sharp: [],
+    sharpening: 0,
+    waiting: 0,
   });
   const current = () => galleryView === state && root.isConnected;
   let hoverVideo = null;
@@ -2712,6 +3351,49 @@ function mountGallery(volume) {
       });
     if (periods) showPeriods(galleryZoom);
     else root.querySelector(".photo-periods").replaceChildren();
+  };
+  const pinch = pinchSteps();
+  const zoomBy = (direction, target) => {
+    const next = galleryZoomStep(galleryZoom, galleryRowSize, direction);
+    const resized = next.size !== galleryRowSize;
+    galleryRowSize = next.size;
+    const period = target?.closest?.(".period-tile");
+    if (galleryZoom === "months" && next.zoom === "days" && period) {
+      period.click();
+      return;
+    }
+    if (next.zoom !== galleryZoom) {
+      galleryZoom = next.zoom;
+      state.setZoom();
+    } else if (resized && galleryZoom === "days")
+      root.querySelectorAll(".photo-flow").forEach(relayout);
+  };
+  let gestureScale = 1;
+  const pinchHandlers = {
+    wheel: (event) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      const direction = pinch(-event.deltaY / (event.deltaMode ? 3 : 100), event.timeStamp);
+      if (direction) zoomBy(direction, event.target);
+    },
+    gesturestart: (event) => {
+      event.preventDefault();
+      gestureScale = 1;
+    },
+    gesturechange: (event) => {
+      event.preventDefault();
+      const direction = pinch(Math.log(event.scale / gestureScale), event.timeStamp);
+      gestureScale = event.scale;
+      if (direction) zoomBy(direction, event.target);
+    },
+    gestureend: (event) => event.preventDefault(),
+  };
+  const surface = root.closest(".page") || root;
+  for (const [name, handler] of Object.entries(pinchHandlers))
+    surface.addEventListener(name, handler, { passive: false });
+  state.unpinch = () => {
+    for (const [name, handler] of Object.entries(pinchHandlers))
+      surface.removeEventListener(name, handler);
   };
   const showMemories = async () => {
     const box = root.querySelector(".photo-memories");
@@ -2788,17 +3470,26 @@ function mountGallery(volume) {
   };
   document.addEventListener("visibilitychange", hideHover);
 
-  const previewRoute = (item, large = false) =>
+  const previewRoute = (item, size = "thumb") =>
     "/v1/gallery/preview?" +
     new URLSearchParams({
       volume,
       path: item.path,
       hash: item.hash,
-      ...(large ? { size: "large" } : {}),
+      ...(size === "thumb" ? {} : { size }),
     });
   state.previewRoute = previewRoute;
+  const retryLater = (tile, retry) => {
+    tile.retries = (tile.retries || 0) + 1;
+    setTimeout(retry, Math.min(4000, 250 * 2 ** tile.retries));
+  };
   async function drain() {
-    if (!current() || state.workers >= 3 || !state.queue.length) return;
+    if (!current()) return;
+    if (!state.queue.length) {
+      if (!state.workers && !state.waiting) void sharpenNext();
+      return;
+    }
+    if (state.workers >= 3) return;
     const tile = state.queue.shift();
     if (tile.dataset.visible === "false") {
       delete tile.dataset.queued;
@@ -2806,6 +3497,7 @@ function mountGallery(volume) {
     }
     state.workers++;
     const item = state.items[Number(tile.dataset.photo)];
+    let busy = false;
     try {
       const result = await cachedPhoto(previewRoute(item));
       if (current() && tile.isConnected && tile.dataset.visible !== "false") {
@@ -2815,23 +3507,40 @@ function mountGallery(volume) {
           img.src = result.data;
           img.decoding = "async";
           img.onload = () => {
-            if (!current() || !img.naturalHeight) return;
+            if (!current() || !img.naturalHeight || tile.dataset.source)
+              return;
+            tile.dataset.source = "thumb";
             const ratio = img.naturalWidth / img.naturalHeight;
+            galleryRatios.delete(item.hash);
+            galleryRatios.set(item.hash, ratio);
+            if (galleryRatios.size > 20000)
+              galleryRatios.delete(galleryRatios.keys().next().value);
             if (tile.photoRatio !== ratio) {
               tile.photoRatio = ratio;
-              layoutPhotos();
-            }
+              relayout(tile.parentElement);
+            } else sharpen(tile);
           };
           tile.querySelector(".photo-open").replaceChildren(img);
         } else tile.querySelector(".photo-open").innerHTML = icon("image-off");
         icons();
       }
-    } catch {
-      if (tile.isConnected)
+      tile.retries = 0;
+    } catch (error) {
+      busy = busyPreview(error) && current() && tile.isConnected;
+      if (!busy && tile.isConnected)
         tile.querySelector(".photo-open").innerHTML = icon("image-off");
     } finally {
-      delete tile.dataset.queued;
       state.workers--;
+      if (busy) {
+        state.waiting++;
+        retryLater(tile, () => {
+          state.waiting--;
+          if (current() && tile.isConnected && tile.dataset.visible !== "false")
+            state.queue.push(tile);
+          else delete tile.dataset.queued;
+          drain();
+        });
+      } else delete tile.dataset.queued;
       drain();
     }
   }
@@ -2848,7 +3557,13 @@ function mountGallery(volume) {
                   state.queue.push(tile);
                   drain();
                 }
-              } else tile.querySelector(".photo-open").replaceChildren();
+              } else {
+                delete tile.dataset.source;
+                const item = state.items[Number(tile.dataset.photo)];
+                tile.querySelector(".photo-open").innerHTML =
+                  item?.kind === "video" ? icon("play") : brandArch();
+                if (item?.kind === "video") icons();
+              }
             }
           },
           { rootMargin: "300px" },
@@ -2861,7 +3576,10 @@ function mountGallery(volume) {
   toolbar.querySelector(".photo-selection-delete").hidden = !galleryCanDelete();
   syncHubOnlyControls();
   function updateSelection() {
-    toolbar.hidden = !state.selection.size;
+    if (state.selection.size) {
+      revive(toolbar);
+      toolbar.hidden = false;
+    } else if (!toolbar.hidden) void leave(toolbar, "list", () => (toolbar.hidden = true));
     heading.classList.toggle(
       "has-photo-selection",
       Boolean(state.selection.size),
@@ -2889,153 +3607,316 @@ function mountGallery(volume) {
     state.selection.clear();
     updateSelection();
   };
-  toolbar.querySelector(".photo-selection-delete").onclick = () =>
-    deleteGalleryPhotos([...state.selection.values()]);
+  toolbar.querySelector(".photo-selection-delete").onclick = (event) =>
+    event.currentTarget.getAttribute("aria-disabled") === "true" ? hubOnlyBlocked() : deleteGalleryPhotos([...state.selection.values()]);
   state.updateSelection = updateSelection;
   state.removePhoto = (item) => {
     item.deleted = true;
     state.selection.delete(item.path);
+    const touched = new Set();
     for (const tile of root.querySelectorAll(".photo-thumb")) {
       if (state.items[Number(tile.dataset.photo)].path !== item.path) continue;
       state.observer?.unobserve(tile);
       state.queue = state.queue.filter((queued) => queued !== tile);
+      state.sharp = state.sharp.filter((queued) => queued !== tile);
+      touched.add(tile.closest(".photo-flow"));
+      const block = tile.closest(".photo-block");
+      if (state.days[block?.dataset.block] > 0)
+        state.days[block.dataset.block] -= 1;
       tile.remove();
     }
     for (const block of root.querySelectorAll(".photo-block"))
       if (!block.querySelector(".photo-thumb")) block.remove();
+      else countBlock(block);
     for (const group of root.querySelectorAll(".photo-day"))
       if (!group.querySelector(".photo-thumb")) group.remove();
     updateSelection();
-    layoutPhotos();
+    layoutPhotos([...touched].filter((grid) => grid.isConnected));
     if (!root.querySelector(".photo-thumb") && !state.next)
       root.querySelector(".photo-days").innerHTML = empty(
         "No photos yet",
         "Photos added to this folder appear here.",
         "",
-        "images",
+        "arca",
       );
   };
-  // Fit each complete row to the available width. The last row never grows
-  // beyond the target height, so sparse months keep ordinary-sized photos.
-  function layoutPhotos() {
-    if (!current()) return;
-    for (const grid of root.querySelectorAll(".photo-grid")) {
-      const width = grid.clientWidth;
-      if (!width) continue;
-      const gap = 6;
-      const target = width < 600 ? 120 : 180;
-      const tiles = [...grid.children];
-      let row = [],
-        sum = 0;
-      const place = (complete) => {
-        const height = Math.min(
-          complete ? target * 1.25 : target,
-          (width - gap * (row.length - 1)) / sum,
-        );
-        for (const tile of row) {
-          tile.style.setProperty(
-            "--photo-width",
-            `${Math.max(1, Math.floor(height * (tile.photoRatio || 1.5) * 100) / 100)}px`,
-          );
-          tile.style.setProperty("--photo-height", `${height}px`);
+  const tileSize = (tile) =>
+    tilePreviewSize(
+      parseFloat(tile.style.getPropertyValue("--photo-width")) || 0,
+      parseFloat(tile.style.getPropertyValue("--photo-height")) || 0,
+      window.devicePixelRatio || 1,
+    );
+  function sharpen(tile) {
+    const shown = tile.dataset.source;
+    const needed = tileSize(tile);
+    if (
+      !(shown in PREVIEW_RANK) ||
+      PREVIEW_RANK[needed] <= PREVIEW_RANK[shown] ||
+      tile.dataset.failed === needed ||
+      state.sharp.includes(tile)
+    )
+      return;
+    state.sharp.push(tile);
+    void sharpenNext();
+  }
+  async function sharpenNext() {
+    if (
+      !current() ||
+      state.sharpening >= 2 ||
+      state.queue.length ||
+      state.workers ||
+      state.waiting
+    )
+      return;
+    const tile = state.sharp.shift();
+    if (!tile) return;
+    const img = tile.querySelector(".photo-open img");
+    const size = tileSize(tile);
+    if (
+      !tile.isConnected ||
+      !img ||
+      !(tile.dataset.source in PREVIEW_RANK) ||
+      PREVIEW_RANK[size] <= PREVIEW_RANK[tile.dataset.source]
+    )
+      return sharpenNext();
+    state.sharpening++;
+    const item = state.items[Number(tile.dataset.photo)];
+    const kind = size === "large" ? "tile" : "medium";
+    const route = previewRoute(item, size);
+    let outcome = "failed";
+    try {
+      for (let attempt = 0; attempt < 2 && outcome === "failed"; attempt++) {
+        const result = await cachedPhoto(route, kind);
+        if (!result.data) break;
+        const sharp = new Image();
+        sharp.src = result.data;
+        try {
+          await sharp.decode();
+        } catch {
+          dropCachedPhoto(route, kind);
+          continue;
         }
-        row = [];
-        sum = 0;
-      };
-      for (const tile of tiles) {
-        row.push(tile);
-        sum += tile.photoRatio || 1.5;
-        if (sum * target + gap * (row.length - 1) >= width) place(true);
+        if (!current() || !img.isConnected) outcome = "gone";
+        else {
+          img.src = sharp.src;
+          tile.dataset.source = size;
+          outcome = "shown";
+        }
       }
-      if (row.length) place(false);
+    } catch (error) {
+      if (busyPreview(error)) outcome = "busy";
+    } finally {
+      state.sharpening--;
+      if (outcome === "failed") tile.dataset.failed = size;
+      if (outcome === "shown") tile.retries = 0;
+      if (outcome === "busy") retryLater(tile, () => sharpen(tile));
+      void sharpenNext();
     }
   }
-  const monthPlan = (month) => {
-    const days = Object.keys(state.days)
-      .filter((key) => key.length === 10 && key.startsWith(month))
-      .sort()
-      .reverse();
-    if (!days.length) return null;
-    const blocks = [];
-    for (const key of days) {
-      const count = state.days[key];
-      const last = blocks.at(-1);
-      if (count < GALLERY_QUIET_BELOW && last?.kind === "quiet") {
-        last.days.push(key);
-        last.count += count;
-      } else
-        blocks.push({
-          kind: count >= GALLERY_HERO_AT ? "hero" : count < GALLERY_QUIET_BELOW ? "quiet" : "day",
-          days: [key],
-          count,
-        });
+  const labelWidths = new Map();
+  const labelFonts = new Map();
+  const measure =
+    typeof OffscreenCanvas === "function"
+      ? new OffscreenCanvas(1, 1).getContext("2d")
+      : null;
+  function textWidth(element, text) {
+    if (!labelFonts.get(element.className))
+      labelFonts.set(element.className, getComputedStyle(element).font);
+    const font = labelFonts.get(element.className);
+    const key = `${font}|${text}`;
+    if (!labelWidths.has(key)) {
+      if (measure && font) measure.font = font;
+      labelWidths.set(
+        key,
+        measure && font
+          ? measure.measureText(text).width
+          : text.length * (element.matches(".photo-count") ? 6.6 : 7),
+      );
     }
-    for (const block of blocks)
-      if (block.kind === "quiet" && block.days.length === 1) block.kind = "day";
-    return { blocks, of: new Map(blocks.flatMap((block) => block.days.map((key) => [key, block]))) };
+    return labelWidths.get(key);
+  }
+  function fitLabel(heading, width) {
+    const key = heading.parentElement.dataset.block;
+    const name = heading.querySelector(".photo-day-name");
+    const count = heading.querySelector(".photo-count");
+    const spacing = tokenPixels("--space-2", 8);
+    const forms = [
+      ...[galleryDayHeading(key), galleryDayShort(key)].flatMap((text) => [
+        [text, true],
+        [text, false],
+      ]),
+      ...galleryDayTiny(key).map((text) => [text, false]),
+    ];
+    const [text, counted] =
+      forms.find(
+        ([text, counted]) =>
+          textWidth(name, text) +
+            (counted ? spacing + textWidth(count, count.textContent) : 0) <=
+          width,
+      ) || forms.at(-1);
+    if (name.textContent !== text) name.textContent = text;
+    if (count.hidden === counted) count.hidden = !counted;
+  }
+  function refitLabel(heading) {
+    const width = parseFloat(heading?.style.getPropertyValue("--label-width"));
+    if (width) fitLabel(heading, width);
+  }
+  function refitLabels() {
+    if (!current()) return;
+    labelWidths.clear();
+    labelFonts.clear();
+    for (const heading of root.querySelectorAll(".photo-block > h3"))
+      refitLabel(heading);
+  }
+  document.fonts?.ready?.then(refitLabels);
+  document.fonts?.addEventListener?.("loadingdone", refitLabels);
+  const put = (element, name, value) => {
+    if (element.style.getPropertyValue(name) !== value)
+      element.style.setProperty(name, value);
   };
-  const blockHeading = (block) => {
-    const label =
-      block.kind === "quiet"
-        ? galleryRange(block.days)
-        : galleryDayHeading(block.days[0]);
-    return `<h3>${escape(label)}<span class="photo-count">${escape(countLabel(block.count, "photo"))}</span></h3>`;
-  };
-  function gridFor(group, month, dayKey) {
-    const plan = (state.plans[month] ||= monthPlan(month) || false);
-    const block = plan && dayKey.length === 10 && plan.of.get(dayKey);
-    if (!block) return group.querySelector(".photo-grid");
-    let element = [...group.querySelectorAll(".photo-block")].find(
-      (el) => el.dataset.block === block.days[0],
+  function layoutPhotos(changed = root.querySelectorAll(".photo-flow")) {
+    if (!current()) return;
+    const flows = new Map();
+    for (const element of changed) {
+      const flow = element.closest(".photo-flow");
+      if (!flow?.isConnected) continue;
+      if (!flows.has(flow)) flows.set(flow, new Set());
+      flows.get(flow).add(element);
+    }
+    for (const [flow, dirty] of flows) layoutFlow(flow, dirty);
+  }
+  function layoutFlow(flow, dirty) {
+    const width = flow.clientWidth;
+    if (!width) return;
+    const grids = [...flow.querySelectorAll(".photo-grid")];
+    const layout = photoFlow(
+      grids.map((grid) => ({
+        ratios: [...grid.children].map((tile) => tile.photoRatio || 1.5),
+        label: grid.parentElement.matches(".photo-block"),
+      })),
+      {
+        width,
+        target: rowTarget(width, galleryRowSize),
+        gap: 6,
+        label: tokenPixels("--space-6", 24),
+      },
     );
-    if (!element) {
-      element = document.createElement("div");
-      element.className = `photo-block photo-block-${block.kind}`;
-      element.dataset.block = block.days[0];
-      element.innerHTML = `${blockHeading(block)}${block.kind === "hero" ? '<div class="photo-mosaic"><div class="photo-hero"></div><div class="photo-side"></div></div>' : ""}<div class="photo-grid"></div>`;
-      group.append(element);
+    const firstOf = (chunk) =>
+      layout.tiles.find((tile) => tile.chunk >= chunk)?.row ?? Infinity;
+    const from = dirty.has(flow)
+      ? 0
+      : Math.min(
+          ...grids.map((grid, chunk) =>
+            dirty.has(grid) ? Math.max(0, firstOf(chunk) - 1) : Infinity,
+          ),
+        );
+    const tiles = grids.flatMap((grid) => [...grid.children]);
+    layout.tiles.forEach((place, index) => {
+      if (place.row < from) return;
+      const tile = tiles[index];
+      put(tile, "--photo-left", `${place.left}px`);
+      put(tile, "--photo-top", `${place.top}px`);
+      put(tile, "--photo-width", `${place.width}px`);
+      put(tile, "--photo-height", `${place.height}px`);
+      sharpen(tile);
+    });
+    for (const label of layout.labels) {
+      const heading = grids[label.chunk].parentElement.querySelector(":scope > h3");
+      put(heading, "--label-left", `${label.left}px`);
+      put(heading, "--label-top", `${label.top}px`);
+      put(heading, "--label-width", `${label.width}px`);
+      fitLabel(heading, label.width);
     }
-    const placed = Number(element.dataset.placed || 0);
-    element.dataset.placed = String(placed + 1);
-    if (block.kind === "hero" && placed === 0)
-      return element.querySelector(".photo-hero");
-    if (block.kind === "hero" && placed <= GALLERY_SIDE_TILES)
-      return element.querySelector(".photo-side");
-    return element.querySelector(".photo-grid");
+    put(flow, "--flow-height", `${layout.height}px`);
+  }
+  function relayout(grid) {
+    if (!grid) return;
+    state.dirty.add(grid);
+    if (state.relayoutScheduled) return;
+    state.relayoutScheduled = true;
+    (globalThis.requestAnimationFrame || ((next) => setTimeout(next, 16)))(() => {
+      state.relayoutScheduled = false;
+      const grids = [...state.dirty].filter((item) => item.isConnected);
+      state.dirty.clear();
+      if (!current() || !grids.length) return;
+      const page = root.closest(".page");
+      const top = page.getBoundingClientRect().top;
+      const anchor = [...root.querySelectorAll(".photo-thumb")].find(
+        (tile) => tile.getBoundingClientRect().bottom > top,
+      );
+      const offset = anchor?.getBoundingClientRect().top;
+      layoutPhotos(grids);
+      const delta =
+        anchor?.isConnected && offset != null
+          ? anchor.getBoundingClientRect().top - offset
+          : 0;
+      if (delta) page.scrollTop += delta;
+    });
+  }
+  function countBlock(block) {
+    const loaded = block.querySelectorAll(".photo-thumb").length;
+    const count =
+      state.shifted.has(block.dataset.block)
+        ? loaded
+        : Math.max(loaded, state.days[block.dataset.block] || 0);
+    const label = block.querySelector(".photo-count");
+    const text = countLabel(count, "photo");
+    if (label.textContent === text) return;
+    label.textContent = text;
+    refitLabel(block.querySelector(":scope > h3"));
+  }
+  const placeBefore = (parent, field, selector, key) =>
+    [...parent.querySelectorAll(`:scope > ${selector}`)].find(
+      (other) => other.dataset[field] < key,
+    );
+  function monthGroup(month) {
+    const days = root.querySelector(".photo-days");
+    let group = days.querySelector(`:scope > .photo-day[data-day="${month}"]`);
+    if (group) return group;
+    group = document.createElement("section");
+    group.className = "photo-day";
+    group.dataset.day = month;
+    group.innerHTML =
+      month === "unknown"
+        ? `<h2>Date unknown</h2><div class="photo-flow"><div class="photo-grid"></div></div>`
+        : `<h2>${escape(new Date(`${month}-01T12:00:00`).toLocaleDateString("en", { year: "numeric", month: "long" }))}</h2><div class="photo-flow"></div>`;
+    days.insertBefore(
+      group,
+      month === "unknown"
+        ? null
+        : placeBefore(days, "day", ".photo-day", month) ||
+            days.querySelector(':scope > .photo-day[data-day="unknown"]'),
+    );
+    return group;
+  }
+  function dayGrid(group, key) {
+    const flow = group.querySelector(":scope > .photo-flow");
+    let block = flow.querySelector(`:scope > .photo-block[data-block="${key}"]`);
+    if (!block) {
+      block = document.createElement("div");
+      block.className = "photo-block";
+      block.dataset.block = key;
+      block.innerHTML = `<h3><span class="photo-day-name">${escape(galleryDayHeading(key))}</span><span class="photo-count"></span></h3><div class="photo-grid"></div>`;
+      flow.insertBefore(block, placeBefore(flow, "block", ".photo-block", key) || null);
+    }
+    return block.querySelector(".photo-grid");
   }
   function addItems(items) {
+    const touched = new Set();
+    const recount = new Set();
     for (const item of items) {
       if (state.paths.has(item.path)) continue;
       state.paths.add(item.path);
       const index = state.items.push(item) - 1;
-      const dayKey = (item.date || item.captured)?.slice(0, 10) || "";
-      const day = dayKey.slice(0, 7) || "unknown";
-      let group = [...root.querySelectorAll(".photo-day")].find(
-        (el) => el.dataset.day === day,
-      );
-      if (!group) {
-        group = document.createElement("section");
-        group.className = "photo-day";
-        group.dataset.day = day;
-        const heading =
-          day === "unknown"
-            ? "Date unknown"
-            : new Date(
-                day + (day.length === 7 ? "-01" : "") + "T12:00:00",
-              ).toLocaleDateString("en", {
-                year: "numeric",
-                month: "long",
-              });
-        group.innerHTML = `<h2>${escape(heading)}</h2><div class="photo-grid"></div>`;
-        root.querySelector(".photo-days").append(group);
-      }
+      const dayKey = galleryDay(item.date);
+      const group = monthGroup(dayKey.slice(0, 7) || "unknown");
       const tile = document.createElement("div");
       tile.className = "photo-thumb";
-      tile.photoRatio = state.ratios?.get(item.path);
+      tile.photoRatio = galleryRatios.get(item.hash);
       tile.dataset.photo = index;
-      tile.title = `${galleryPhotoDate(item)}${item.dateSource === "date added" ? " · Date added to Arca" : item.dateSource === "file date" ? " · File date" : ""}`;
+      tile.dataset.tooltip = `${galleryPhotoDate(item)}${!dayKey ? "" : item.dateSource === "date added" ? " · Date added to Arca" : item.dateSource === "file date" ? " · File date" : ""}`;
       const filename = escape(item.path.split("/").pop());
-      tile.innerHTML = `<button type="button" class="photo-open" aria-label="Open ${filename}">${icon(item.kind === "video" ? "play" : "image")}</button>${item.kind === "video" ? `<span class="photo-video-badge" aria-label="Video">${icon("video")}</span>` : ""}<button type="button" class="photo-select" aria-label="Select ${filename}" aria-pressed="${state.selection.has(item.path)}">${icon("check")}</button>`;
+      tile.innerHTML = `<button type="button" class="photo-open" aria-label="Open ${filename}">${item.kind === "video" ? icon("play") : brandArch()}</button>${item.kind === "video" ? `<span class="photo-video-badge" aria-label="Video">${icon("video")}</span>` : ""}<button type="button" class="photo-select" aria-label="Select ${filename}" aria-pressed="${state.selection.has(item.path)}">${icon("check")}</button>`;
       if (item.kind === "video") {
         tile.onpointerenter = (event) => previewVideo(tile, item, event);
         tile.onpointerleave = stopHover;
@@ -3043,7 +3924,23 @@ function mountGallery(volume) {
       tile.querySelector(".photo-open").onclick = () =>
         state.selection.size ? togglePhoto(item) : openGalleryPhoto(index);
       tile.querySelector(".photo-select").onclick = () => togglePhoto(item);
-      gridFor(group, day, dayKey).append(tile);
+      const grid = dayKey ? dayGrid(group, dayKey) : group.querySelector(".photo-grid");
+      const listedDay = dayKey && item.date.slice(0, 10);
+      if (dayKey.length === 10 && listedDay !== dayKey) {
+        state.shifted.add(dayKey);
+        state.shifted.add(listedDay);
+        recount.add(listedDay);
+      }
+      tile.photoTime = dayKey ? galleryMoment(item.date).getTime() : null;
+      grid.insertBefore(
+        tile,
+        tile.photoTime === null
+          ? null
+          : [...grid.children].find(
+              (other) => other.photoTime !== null && other.photoTime < tile.photoTime,
+            ) || null,
+      );
+      touched.add(grid);
       if (item.kind === "image" || item.kind === "video") {
         if (state.observer) state.observer.observe(tile);
         else {
@@ -3052,8 +3949,13 @@ function mountGallery(volume) {
         }
       }
     }
+    for (const grid of touched)
+      if (grid.parentElement.matches(".photo-block"))
+        recount.add(grid.parentElement.dataset.block);
+    for (const block of root.querySelectorAll(".photo-block"))
+      if (recount.has(block.dataset.block)) countBlock(block);
     updateSelection();
-    layoutPhotos();
+    layoutPhotos(touched);
     icons();
   }
   function seekMonth(month) {
@@ -3066,9 +3968,12 @@ function mountGallery(volume) {
     state.items = [];
     state.paths.clear();
     state.queue = [];
+    state.sharp = [];
+    state.shifted.clear();
     root.querySelector(".photo-days").replaceChildren();
     state.next = "";
     state.month = month;
+    state.anchorMonth = month;
     state.range = { month };
     state.previous = null;
     root.closest(".page").scrollTop = 0;
@@ -3177,13 +4082,8 @@ function mountGallery(volume) {
       data.timeline.reduce((sum, row) => sum + (row.videos || 0), 0) +
       (data.undated?.videos || 0);
     summary.textContent = summary.textContent.replace(
-      /^[\d,]+ (?:files?|photos?)(?: · [\d,]+ videos?)?(?= · )/,
-      [
-        countLabel(total - videos, "photo"),
-        videos && countLabel(videos, "video"),
-      ]
-        .filter(Boolean)
-        .join(" · "),
+      /^[\d,]+ (?:files?|photos?|videos?)(?: · [\d,]+ videos?)?(?= · )/,
+      mediaSummary(total - videos, videos),
     );
   }
   function updateTimeline(data) {
@@ -3193,7 +4093,7 @@ function mountGallery(volume) {
     const rail = root.querySelector(".photo-timeline");
     if (data.timeline && !rail.children.length) {
       let year = "";
-      for (const date of data.timeline) {
+      for (const date of data.timeline.filter((row) => galleryDay(row.month))) {
         const button = document.createElement("button");
         button.type = "button";
         button.dataset.month = date.month;
@@ -3277,14 +4177,30 @@ function mountGallery(volume) {
         state.items = [];
         state.paths.clear();
         state.queue = [];
+        state.shifted.clear();
         root.querySelector(".photo-days").replaceChildren();
         root.querySelector(".photo-timeline").replaceChildren();
       }
       updateTimeline(data);
       Object.assign(state.days, data.days);
-      state.plans = {};
       addItems(data.items);
+      if (state.anchorMonth) {
+        const group = root.querySelector(
+          `.photo-days > .photo-day[data-day="${state.anchorMonth}"]`,
+        );
+        state.anchorMonth = null;
+        const view = root.closest(".page");
+        const delta = group
+          ? group.getBoundingClientRect().top - view.getBoundingClientRect().top
+          : 0;
+        if (delta) view.scrollTop += delta;
+      }
       if (first) state.previous = data.previous ?? null;
+      if (state.focus) {
+        const focus = state.items.findIndex((item) => item.path === state.focus);
+        state.focus = null;
+        if (focus >= 0) void openGalleryPhoto(focus);
+      }
       state.next = data.next;
       more.hidden = !data.next;
       more.replaceChildren();
@@ -3294,7 +4210,7 @@ function mountGallery(volume) {
           "No photos yet",
           "Photos added to this folder appear here.",
           "",
-          "images",
+          "arca",
         );
     } catch {
       failed = true;
@@ -3325,12 +4241,8 @@ function mountGallery(volume) {
     const offset = anchor?.getBoundingClientRect().top;
     stopHover();
     state.observer?.disconnect();
-    state.ratios = new Map(
-      [...root.querySelectorAll(".photo-thumb")].map((tile) => [
-        state.items[Number(tile.dataset.photo)]?.path,
-        tile.photoRatio,
-      ]),
-    );
+    state.sharp = [];
+    state.shifted.clear();
     state.items = [];
     state.paths.clear();
     state.queue = [];
@@ -3380,7 +4292,6 @@ function mountGallery(volume) {
         return;
       }
       Object.assign(state.days, data.days);
-      state.plans = {};
       replaceItems([...data.items, ...state.items]);
       state.range = { from: data.items[0].cursor };
       state.previous = data.previous ?? null;
@@ -3428,7 +4339,6 @@ function mountGallery(volume) {
           return;
         items.push(...data.items);
         Object.assign(state.days, data.days);
-        state.plans = {};
         after = data.next;
         if (!after) break;
       }
@@ -3477,10 +4387,13 @@ function mountGallery(volume) {
     const bounds = page.getBoundingClientRect();
     const top = Math.max(bounds.top, root.getBoundingClientRect().top);
     const bottom = parseFloat(getComputedStyle(page).paddingBottom) || 0;
+    const ratio = window.devicePixelRatio || 1;
     if (state.layoutWidth !== root.clientWidth) {
       state.layoutWidth = root.clientWidth;
       layoutPhotos();
-    }
+    } else if (state.pixelRatio && state.pixelRatio !== ratio)
+      for (const tile of root.querySelectorAll(".photo-thumb")) sharpen(tile);
+    state.pixelRatio = ratio;
     rail.style.setProperty(
       "--timeline-height",
       `${Math.max(120, bounds.bottom - top - bottom)}px`,
@@ -3530,7 +4443,28 @@ function mountGallery(volume) {
       : null;
   resizeObserver?.observe(page);
   window.addEventListener("resize", sizeTimeline);
+  const watchPixelRatio = () => {
+    const query = window.matchMedia?.(
+      `(resolution: ${window.devicePixelRatio || 1}dppx)`,
+    );
+    if (!query?.addEventListener) return;
+    const changed = () => {
+      query.removeEventListener("change", changed);
+      if (!current()) return;
+      sizeTimeline();
+      watchPixelRatio();
+    };
+    query.addEventListener("change", changed);
+    state.pixelRatioQuery = { query, changed };
+  };
+  watchPixelRatio();
   state.cleanup = () => {
+    state.unpinch();
+    state.pixelRatioQuery?.query.removeEventListener(
+      "change",
+      state.pixelRatioQuery.changed,
+    );
+    document.fonts?.removeEventListener?.("loadingdone", refitLabels);
     clearInterval(refreshTimer);
     clearTimeout(state.scrollDate);
     clearTimeout(state.poll);
@@ -3564,7 +4498,12 @@ function mountGallery(volume) {
   };
   page.addEventListener("scroll", state.onScroll, { passive: true });
   sizeTimeline();
-  if (galleryReturn?.volume === volume) {
+  if (galleryFocus?.volume === volume) {
+    state.range = { from: galleryFocus.cursor };
+    state.focus = galleryFocus.path;
+    galleryFocus = null;
+    state.load();
+  } else if (galleryReturn?.volume === volume) {
     const saved = galleryReturn;
     Object.assign(state, {
       next: saved.next,
@@ -3639,13 +4578,13 @@ function deleteGalleryPhotos(items) {
       notice(`${completed} ${completed === 1 ? "photo" : "photos"} deleted.`);
       if (inViewer)
         return async () => {
-          const next = state.items.findIndex(
-            (item, index) => index > state.selected && !item.deleted,
+          const target = (state.adjacent || []).findLast(
+            (index) => index >= 0 && !state.items[index]?.deleted,
           );
-          const previous = state.items.findLastIndex((item) => !item.deleted);
-          if (next >= 0 || previous >= 0)
-            await openGalleryPhoto(next >= 0 ? next : previous);
-          else $("#dialog").close();
+          const layer = $("#dialog");
+          if (layer.restore && isLeaving(layer)) settleLeave(layer);
+          if (target !== undefined) await openGalleryPhoto(target);
+          else void closeDialog();
         };
       // The current grid is already updated; do not replace it with a stale
       // replica catalog while the background synchronization catches up.
@@ -3676,16 +4615,9 @@ async function downloadGalleryPhoto(item) {
   }
 }
 function galleryPhotoDate(item) {
-  const value = item.date || item.captured;
-  if (!value) return "Unavailable";
-  const date = new Date(
-    value.length === 7
-      ? `${value}-01T12:00:00`
-      : value.length === 10
-        ? `${value}T12:00:00`
-        : value,
-  );
-  if (!Number.isFinite(date.getTime())) return value;
+  const value = item.date;
+  const date = galleryMoment(value);
+  if (!date) return "Date unknown";
   return date.toLocaleString("en", {
     year: "numeric",
     month: "long",
@@ -3707,8 +4639,8 @@ async function galleryPreview(state, item) {
         return {};
       const active = state.items[state.selected];
       const position = state.items.indexOf(item);
-      if (item !== active && Math.abs(position - state.selected) > 1) return {};
-      const result = await cachedPhoto(state.previewRoute(item, true));
+      if (item !== active && !state.adjacent?.includes(position)) return {};
+      const result = await cachedPhoto(state.previewRoute(item, "large"));
       if (result.data) {
         const image = new Image();
         image.src = result.data;
@@ -3788,18 +4720,34 @@ async function openGalleryPhoto(index) {
   if (!item || item.deleted) return;
   state.stopHover?.();
   state.stopMedia?.();
-  const previousIndex = state.items.findLastIndex(
-    (photo, i) => i < index && !photo.deleted,
-  );
-  const nextIndex = state.items.findIndex(
-    (photo, i) => i > index && !photo.deleted,
-  );
+  const order = [
+    ...state.root.querySelectorAll(".photo-days .photo-thumb[data-photo]"),
+  ]
+    .map((tile) => Number(tile.dataset.photo))
+    .filter((i) => state.items[i] && !state.items[i].deleted);
+  const position = order.indexOf(index);
+  const previousIndex =
+    position < 0
+      ? state.items.findLastIndex((photo, i) => i < index && !photo.deleted)
+      : position > 0
+        ? order[position - 1]
+        : -1;
+  const nextIndex =
+    position < 0
+      ? state.items.findIndex((photo, i) => i > index && !photo.deleted)
+      : (order[position + 1] ?? -1);
+  state.adjacent = [previousIndex, nextIndex];
   const focusNext = document.activeElement?.classList.contains("photo-next");
   const focusPrevious =
     document.activeElement?.classList.contains("photo-previous");
+  const viewing = $("#dialog").open && $("#dialog").classList.contains("photo-viewer");
+  const tile = [...state.root.querySelectorAll(".photo-thumb[data-photo]")]
+    .find((node) => Number(node.dataset.photo) === index)
+    ?.querySelector(".photo-open");
+  if (viewing && tile) dialogOpeners.set($("#dialog"), tile);
   state.selected = index;
   modal(
-    `<div class="photo-viewer-head"><h2 id="dialog-title" class="sr-only">${escape(item.path.split("/").pop())}</h2><div class="photo-viewer-operations"><button type="button" class="icon-button photo-download" aria-label="Download photo" title="Download">${icon("download")}</button><button type="button" class="icon-button photo-info-toggle" aria-label="Photo information" aria-expanded="false" title="Info">${icon("info")}</button>${galleryCanDelete() ? `<button type="button" class="icon-button photo-delete" aria-label="Delete photo" title="Delete">${icon("trash-2")}</button>` : ""}</div></div><div class="photo-viewer-stage"><div class="photo-viewer-image" aria-live="polite">${busyIcon()}</div><button type="button" class="icon-button photo-previous" aria-label="Previous photo" ${previousIndex < 0 ? "disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="icon-button photo-next" aria-label="Next photo" ${nextIndex < 0 ? "disabled" : ""}>${icon("chevron-right")}</button></div><aside class="photo-info" hidden><header><h2>Info</h2><button type="button" class="icon-button photo-info-close" aria-label="Close information">${icon("x")}</button></header><div class="photo-info-body">${item.metadata ? galleryInfo(item, state.volume, item.metadata) : scaffoldInfo(item)}</div><footer class="photo-info-footer" hidden><button type="button" class="secondary photo-file" hidden>${icon("history")}File history</button>${native && status.volumes.find((v) => v.id === state.volume)?.path ? `<button type="button" class="secondary icon-button photo-reveal" aria-label="Show in folder" title="Show in folder">${icon("folder-open")}</button>` : ""}</footer></aside>`,
+    `<div class="photo-viewer-head"><h2 id="dialog-title" class="sr-only">${escape(item.path.split("/").pop())}</h2><div class="photo-viewer-operations"><button type="button" class="icon-button photo-download" aria-label="Download photo">${icon("download")}</button><button type="button" class="icon-button photo-info-toggle" aria-label="Photo information" aria-expanded="false">${icon("info")}</button>${galleryCanDelete() ? `<button type="button" class="icon-button photo-delete" aria-label="Delete photo">${icon("trash-2")}</button>` : ""}</div></div><div class="photo-viewer-stage"><div class="photo-viewer-image" aria-live="polite">${busyIcon()}</div><button type="button" class="icon-button photo-previous" aria-label="Previous photo" ${previousIndex < 0 ? "disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="icon-button photo-next" aria-label="Next photo" ${nextIndex < 0 ? "disabled" : ""}>${icon("chevron-right")}</button></div><aside class="photo-info" hidden><header><h2>Info</h2><button type="button" class="icon-button photo-info-close" aria-label="Close information">${icon("x")}</button></header><div class="photo-info-body">${item.metadata ? galleryInfo(item, state.volume, item.metadata) : scaffoldInfo(item)}</div><footer class="photo-info-footer" hidden><button type="button" class="secondary photo-file" hidden>${icon("history")}File history</button>${native && status.volumes.find((v) => v.id === state.volume)?.path ? `<button type="button" class="secondary icon-button photo-reveal" aria-label="Show in folder">${icon("folder-open")}</button>` : ""}</footer></aside>`,
     null,
     "",
     true,
@@ -3816,8 +4764,8 @@ async function openGalleryPhoto(index) {
   $("#cancel-dialog").innerHTML = icon("arrow-left");
   $("#cancel-dialog").setAttribute("aria-label", "Back to gallery");
   $(".photo-download").onclick = () => action(() => downloadGalleryPhoto(item));
-  $(".photo-delete")?.addEventListener("click", () =>
-    deleteGalleryPhotos([item]),
+  $(".photo-delete")?.addEventListener("click", (event) =>
+    event.currentTarget.getAttribute("aria-disabled") === "true" ? hubOnlyBlocked() : deleteGalleryPhotos([item]),
   );
   syncHubOnlyControls();
   const infoPanel = $(".photo-info");
@@ -3902,14 +4850,14 @@ async function openGalleryPhoto(index) {
     if (!open && infoPanel.contains(document.activeElement))
       $(".photo-info-toggle").focus();
     const frames = [
-      { opacity: 0, transform: "translateX(24px)" },
+      { opacity: 0, transform: `translateX(${tokenPixels("--motion-panel-shift", 0)}px)` },
       { opacity: 1, transform: "translateX(0)" },
     ];
     panelAnimation = infoPanel.animate?.(
       open ? frames : [...frames].reverse(),
       {
         duration: motionDuration(open ? "--motion-enter" : "--motion-exit"),
-        easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        easing: motionEase(),
       },
     );
     if (panelAnimation)
@@ -3919,14 +4867,14 @@ async function openGalleryPhoto(index) {
     else infoPanel.hidden = !open;
   };
   $(".photo-info-toggle").setAttribute("aria-keyshortcuts", "Meta+i Control+i");
-  $(".photo-info-toggle").title = "Info (⌘I / Ctrl+I)";
+  $(".photo-info-toggle").dataset.tooltip = "Info (⌘I / Ctrl+I)";
   $(".photo-info-toggle").onclick = () => toggleInfo(!infoExpanded);
   $(".photo-info-close").onclick = () => toggleInfo(false);
   toggleInfo(false);
   $(".photo-previous").onclick = () => openGalleryPhoto(previousIndex);
   $(".photo-next").onclick = () => openGalleryPhoto(nextIndex);
   $(".photo-file").onclick = () => {
-    $("#dialog").close();
+    void closeDialog();
     action(() =>
       handle(
         "activity-file",
@@ -4069,6 +5017,7 @@ function folderActionsMenu(volume) {
   return `<details class="details-menu folder-actions-menu"><summary class="icon-button" aria-label="Folder actions">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
 }
 let galleryZoom = "days";
+let galleryRowSize = 1;
 const galleryZooms = [
   ["years", "Years"],
   ["months", "Months"],
@@ -4113,7 +5062,7 @@ async function folderBrowser(v, recent, pending = false) {
         active: folderTab === "recent",
       },
     ],
-  )}<div>${folderTab === "files" ? `<button class="icon-button" data-action="folder-search-toggle" aria-label="${folderSearchOpen ? "Close search" : "Search files"}">${icon(folderSearchOpen ? "x" : "search")}</button>` : folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
+  )}<div>${folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
   if (folderTab === "gallery")
     return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v, false)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-memories" hidden></div><div class="photo-periods" hidden></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
   if (folderTab === "recent" && !recent) return tools + scaffoldRow("history");
@@ -4121,7 +5070,7 @@ async function folderBrowser(v, recent, pending = false) {
     return (
       tools +
       (recent.length
-        ? `<div class="history-group">${recent.map((r) => revisionRow(r, true)).join("")}</div>`
+        ? `<div class="history-group" data-listing="recent">${recent.map((r) => revisionRow(r, true)).join("")}</div>`
         : recentSaved.get(v.id)
           ? empty(
               "No saved versions",
@@ -4131,9 +5080,6 @@ async function folderBrowser(v, recent, pending = false) {
     );
   const parts = folderPrefix.split("/").filter(Boolean);
   const trail = `<nav class="folder-breadcrumb" aria-label="File location">${icon("folder")}${parts.length ? button(escape(v.name), "browse-directory", "", "text-button") : `<span aria-current="location">${escape(v.name)}</span>`}${parts.map((part, i) => `${icon("chevron-right")}${i === parts.length - 1 ? `<span aria-current="location">${escape(part)}</span>` : button(escape(part), "browse-directory", parts.slice(0, i + 1).join("/"), "text-button")}`).join("")}</nav>`;
-  const search = folderSearchOpen
-    ? `<div class="folder-browser-search"><input id="folder-search-input" type="search" aria-label="Search files" placeholder="Search files" value="${escape(folderSearch)}" maxlength="256">${button("Search", "folder-search-apply", "", "secondary")}</div>`
-    : "";
   try {
     const pages = [];
     let after = "";
@@ -4143,7 +5089,6 @@ async function folderBrowser(v, recent, pending = false) {
           new URLSearchParams({
             volume: v.id,
             prefix: folderPrefix,
-            search: folderSearch,
             after,
             limit: "100",
           }),
@@ -4165,28 +5110,21 @@ async function folderBrowser(v, recent, pending = false) {
     const capped = Boolean(data.next) && pages.length >= MAX_FOLDER_PAGES;
     return (
       tools +
-      search +
-      `<div class="history-group folder-explorer">${trail}` +
+      `<div class="history-group folder-explorer" data-listing="${escape(`files:${folderPrefix}`)}">${trail}` +
       (data.entries.length
-        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}"${row.directory ? "" : ` data-hash="${escape(row.hash || "")}" data-size="${Number(row.size) || 0}" data-name="${escape(row.name)}"`} aria-label="${escape(`Open ${row.name}`)}">${rowPreview({ ...row, volume: v.id }, fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
-        : empty(
-            folderSearch ? "No matching files" : "This folder is empty",
-            "",
-            "",
-            "folder",
-          )) +
+        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}"${row.directory ? "" : ` data-hash="${escape(row.hash || "")}" data-size="${Number(row.size) || 0}" data-name="${escape(row.name)}"`}${folderFocus === row.path ? ' aria-current="true"' : ""} aria-label="${escape(`Open ${row.name}`)}">${rowPreview({ ...row, volume: v.id }, fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
+        : empty("This folder is empty", "", "", "arca")) +
       "</div>" +
       (data.next
         ? capped
-          ? `<p class="hint">Showing the first ${(MAX_FOLDER_PAGES * 100).toLocaleString("en")} files. Search to narrow the list.</p>`
+          ? `<p class="hint">Showing the first ${(MAX_FOLDER_PAGES * 100).toLocaleString("en")} files. Search Arca to find the rest.</p>`
           : `<div class="pagination">${button("Show more files", "browse-more", String(pages.length), "secondary")}</div>`
         : "")
     );
   } catch (error) {
     return (
       tools +
-      search +
-      `<div class="history-group folder-explorer">${trail}` +
+      `<div class="history-group folder-explorer" data-listing="${escape(`files:${folderPrefix}`)}">${trail}` +
       empty(
         "Files unavailable",
         "Arca could not list this folder’s files. If it keeps happening, update Arca, then try again.",
@@ -4215,9 +5153,10 @@ let musicCoverObserver,
   musicSerial = 0,
   musicSessionReady = false,
   musicView = { tab: "artists", artist: null, album: null, playlist: null, pages: 1, trail: [] },
-  musicQuery = musicSearch(),
   musicPicking = null,
   audioPositions = new Map(),
+  audioFinished = new Map(),
+  showOrder = null,
   audioSavedAt = 0;
 const RESUME_MIN_SECONDS = 1200;
 const positionKey = (volume, path) => `${volume}\0${path}`;
@@ -4227,17 +5166,20 @@ const timeLeft = (seconds) => {
 };
 async function loadAudioPositions(volume) {
   try {
-    const { positions } = await api("/v1/audio-positions");
+    const { positions, finished = [] } = await api("/v1/audio-positions");
     const before = audioSignature(volume);
     audioPositions = new Map(positions.map((row) => [positionKey(row.volume, row.path), row]));
-    if (before !== audioSignature(volume) && musicShowing(volume))
-      renderMusic(status.volumes.find((v) => v.id === volume));
+    audioFinished = new Map(finished.map((row) => [positionKey(row.volume, row.path), row]));
+    if (before === audioSignature(volume)) return;
+    if (showOrder?.volume === volume) showOrder = null;
+    if (musicShowing(volume)) renderMusic(status.volumes.find((v) => v.id === volume));
   } catch {}
 }
 const audioSignature = (volume) =>
   [...audioPositions.values()]
     .filter((row) => row.volume === volume)
     .map((row) => `${row.path}:${Math.floor(row.position / 60)}`)
+    .concat([...audioFinished.values()].filter((row) => row.volume === volume).map((row) => `${row.path}:done`))
     .join("|");
 function saveAudioPosition(force = false) {
   const loaded = musicPlayer?.loadedTrack;
@@ -4250,14 +5192,15 @@ function saveAudioPosition(force = false) {
   const position = audio.currentTime || 0;
   const body = { volume: musicPlayer.volume, path: loaded.path, hash: loaded.hash, position, duration: audio.duration };
   const key = positionKey(body.volume, body.path);
-  if (position >= audio.duration - 60) audioPositions.delete(key);
-  else audioPositions.set(key, { ...body, device: status.id, name: status.name, updated: now });
+  if (position >= audio.duration - 60) {
+    audioPositions.delete(key);
+    audioFinished.set(key, { volume: body.volume, path: body.path, hash: body.hash, updated: now });
+  } else {
+    audioPositions.set(key, { ...body, device: status.id, name: status.name, updated: now });
+    audioFinished.delete(key);
+  }
   api("/v1/audio-position", body).catch(() => {});
 }
-function musicSearch(open = false) {
-  return { open, text: "", songs: 1, albums: 1, artists: 1, episodes: 1 };
-}
-const musicSearching = () => searchText(musicQuery.text).trim() !== "";
 const musicCount = (n, word) => `${n.toLocaleString("en")} ${word}${n === 1 ? "" : "s"}`;
 const musicClock = (seconds) => formatDuration(Math.floor(seconds || 0)) || "0:00";
 function musicAvailable(volume) {
@@ -4354,6 +5297,7 @@ async function readMusic(volume, key, known) {
   try {
     const entry = await loadMusicLibrary(volume);
     void loadAudioPositions(volume);
+    if (!entry.indexing) pruneFavorites(volume, entry.library);
     musicFailures.delete(key);
     if (entry.indexing) armMusicIndex(volume);
     if ((entry !== known || entry.indexing !== indexing) && musicShowing(volume))
@@ -4366,11 +5310,11 @@ async function readMusic(volume, key, known) {
     musicLoading.delete(key);
   }
 }
-function musicCover(volume, key, symbol = "disc-3", cls = "") {
+function musicCover(volume, key, symbol = "arca", cls = "", extra = "") {
   const query = key ? new URLSearchParams({ volume, key }).toString() : "";
-  return `<span class="music-cover${cls}"${query ? ` data-music-cover="${escape(query)}"` : ""}>${symbol ? icon(symbol) : ""}</span>`;
+  return `<span class="music-cover${cls}"${query ? ` data-music-cover="${escape(query)}"` : ""}>${symbol === "arca" ? brandArch() : symbol ? icon(symbol) : ""}${extra}</span>`;
 }
-function musicCard(volume, action, id, cover, title, subtitle, symbol = "disc-3") {
+function musicCard(volume, action, id, cover, title, subtitle, symbol = "arca") {
   return `<button type="button" class="music-card" data-action="${action}" data-id="${escape(id)}">${musicCover(volume, cover, symbol)}<strong>${escape(title)}</strong><span>${escape(subtitle)}</span></button>`;
 }
 const albumCard = (volume, album, subtitle = album.artist) =>
@@ -4382,13 +5326,12 @@ const musicMenu = (items, label = "Track actions") =>
   `<details class="details-menu file-actions-menu music-track-menu"><summary class="ghost icon-button" aria-label="${label}">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
 const musicHeadRow = (album = false, who = "Artist", numbered = true) =>
   `<div class="music-track music-track-head" aria-hidden="true"><div class="music-track-play"><span>${numbered ? "#" : ""}</span><span>Title</span><span>${who}</span>${album ? "<span>Album</span>" : ""}${icon("clock")}</div><span></span></div>`;
-function musicGrid(cards, size = Infinity, more = "") {
+function musicGrid(cards, size = Infinity) {
   const shown = cards.slice(0, size);
-  return `<div class="music-grid">${shown.join("")}</div>${cards.length > shown.length ? `<div class="pagination">${button("Show more", more ? "music-search-more" : "music-more", more, "secondary")}</div>` : ""}`;
+  return `<div class="music-grid">${shown.join("")}</div>${cards.length > shown.length ? `<div class="pagination">${button("Show more", "music-more", "", "secondary")}</div>` : ""}`;
 }
-const musicMore = (label, more) => `<div class="pagination">${button(label, "music-search-more", more, "secondary")}</div>`;
 const musicShuffleAll = () =>
-  musicView.album || musicView.playlist || musicView.artist || musicView.show || musicView.tab === "podcasts" || musicSearching()
+  musicView.album || musicView.playlist || musicView.artist || musicView.show || musicView.tab === "podcasts"
     ? ""
     : button("Shuffle", "music-shuffle-all", "", "secondary", "shuffle");
 const musicOnly = (library) => library.artists.length > 0 || !library.shows.length;
@@ -4405,20 +5348,13 @@ function musicTabList(library) {
     ...(library.shows.length ? [{ id: "podcasts", symbol: "podcast" }] : []),
   ];
 }
-const musicSearchLabel = (library) =>
-  !library.shows.length ? "Search music" : library.albumList.length ? "Search" : "Search podcasts";
-const musicSearchButton = (library, cls = "icon-button") =>
-  `<button class="${cls}" data-action="music-search-toggle" aria-label="${musicQuery.open ? "Close search" : musicSearchLabel(library)}">${icon(musicQuery.open ? "x" : "search")}</button>`;
 function musicTabs(library) {
   const tabs = musicTabList(library);
-  const field = musicQuery.open
-    ? `<div class="folder-browser-search"><input id="music-search-input" type="search" aria-label="${musicSearchLabel(library)}" placeholder="${musicSearchLabel(library)}" value="${escape(musicQuery.text)}" maxlength="256">${button("Search", "music-search-apply", "", "secondary")}</div>`
-    : "";
-  if (tabs.length < 2) return field;
+  if (tabs.length < 2) return "";
   return `<div class="folder-browser-tools"><div class="music-tools">${segmented(
     "Library",
     tabs.map((item) => ({ ...item, label: MUSIC_TABS[item.id], action: "music-tab", active: musicView.tab === item.id })),
-  )}${musicShuffleAll()}</div><div>${musicSearchButton(library)}</div></div>${field}`;
+  )}${musicShuffleAll()}</div></div>`;
 }
 const musicDeep = () => !!(musicView.artist || musicView.album || musicView.playlist || musicView.show);
 function musicTrail(v, library) {
@@ -4427,11 +5363,9 @@ function musicTrail(v, library) {
   const album = library && !show && musicView.album && library.albums.get(musicView.album);
   const list = library && !show && !album && musicView.playlist && library.playlists.find((item) => item.id === musicView.playlist);
   const levels = [show?.name, artist?.name, album?.title, list?.name].filter(Boolean);
-  const results = levels.length && musicSearching();
   const crumbs = [
     ["Folders", "back-folders", ""],
-    [v.name, "music-crumb", results ? "folder" : "0"],
-    ...(results ? [["Results", "music-crumb", "0"]] : []),
+    [v.name, "music-crumb", "0"],
     ...levels.map((label, index) => [label, "music-crumb", String(index + 1)]),
   ];
   return `<nav class="folder-breadcrumb music-trail" aria-label="Library location">${crumbs
@@ -4441,9 +5375,9 @@ function musicTrail(v, library) {
     )
     .join("")}</nav>`;
 }
-function musicRows(v, rows, action, { head = "", songs = false, playlist = "", album = false, episodes = false } = {}) {
+function musicRows(v, rows, action, { head = "", playlist = "", album = false, episodes = false } = {}) {
   const editable = musicEditable(v);
-  return `<div class="history-group music-tracks${songs ? " music-songs" : ""}${album ? " music-with-album" : ""}${episodes ? " music-episodes" : ""}" data-volume="${escape(v.id)}"${playlist ? ` data-playlist="${escape(playlist)}"` : ""}>${head}${rows
+  return `<div class="history-group music-tracks${album ? " music-with-album" : ""}${episodes ? " music-episodes" : ""}" data-volume="${escape(v.id)}"${playlist ? ` data-playlist="${escape(playlist)}"` : ""}>${head}${rows
     .map((row, index) => {
       const number = `<span class="music-track-number mono">${episodes ? icon("play") : index + 1}</span><span class="music-track-playing"><span class="music-bars" aria-hidden="true"><i></i><i></i><i></i></span></span>`;
       const position = row.position === undefined ? "" : ` data-position="${row.position}"`;
@@ -4471,62 +5405,6 @@ function musicRows(v, rows, action, { head = "", songs = false, playlist = "", a
 function musicRow(v, action, id, cover, title, subtitle, symbol) {
   return `<button type="button" class="music-row" data-action="${action}" data-id="${escape(id)}">${musicCover(v.id, cover, symbol)}<span><strong>${escape(title)}</strong><span>${escape(subtitle)}</span></span>${icon("chevron-right")}</button>`;
 }
-function musicResults(v, library) {
-  const text = musicQuery.text.trim();
-  const query = searchText(text).trim();
-  const has = (...values) => values.some((value) => searchText(value).includes(query));
-  const songs = library.albumList
-    .flatMap((album) => album.tracks)
-    .filter((track) => has(track.title, track.artist, track.albumArtist, track.album));
-  const albums = library.albumList.filter((album) => has(album.title, album.artist));
-  const artists = library.artists.filter((artist) => has(artist.name));
-  const playlists = library.playlists.filter((list) => has(list.name));
-  const shows = library.shows.filter((show) => has(show.name));
-  const episodes = library.shows.flatMap((show) => show.tracks).filter((track) => has(track.title, track.album));
-  if (!songs.length && !albums.length && !artists.length && !playlists.length && !shows.length && !episodes.length)
-    return empty(`No results for “${escape(text)}”`, "", "", "search");
-  const heard = episodes.slice(0, musicQuery.episodes * MUSIC_LIST_PAGE);
-  const shown = songs.slice(0, musicQuery.songs * MUSIC_LIST_PAGE);
-  const listed = artists.slice(0, musicQuery.artists * MUSIC_LIST_PAGE);
-  return [
-    songs.length &&
-      section(
-        "Songs",
-        musicRows(
-          v,
-          shown.map((track) => ({ track, id: track.path, subtitle: `${track.artist} · ${track.album}` })),
-          "music-song",
-          { songs: true },
-        ) + (songs.length > shown.length ? musicMore("Show more songs", "songs") : ""),
-      ),
-    albums.length &&
-      section("Albums", musicGrid(albums.map((album) => albumCard(v.id, album)), musicQuery.albums * MUSIC_GRID_PAGE, "albums")),
-    artists.length &&
-      section(
-        "Artists",
-        `<div class="history-group">${listed.map((artist) => musicRow(v, "music-artist", artist.id, artist.cover, artist.name, musicCount(artist.albums.length, "album"), "mic-vocal")).join("")}</div>` +
-          (artists.length > listed.length ? musicMore("Show more artists", "artists") : ""),
-      ),
-    playlists.length &&
-      section(
-        "Playlists",
-        `<div class="history-group">${playlists.map((list) => musicRow(v, "music-playlist", list.id, list.cover, list.name, musicCount(list.entries.length, "track"), "list-music")).join("")}</div>`,
-      ),
-    shows.length && section("Shows", musicShows(v, { shows })),
-    episodes.length &&
-      section(
-        "Episodes",
-        musicRows(
-          v,
-          heard.map((track) => ({ track, id: track.path, subtitle: [track.album, episodeDay(track.date)].filter(Boolean).join(" · ") })),
-          "music-episode",
-          { songs: true, episodes: true },
-        ) + (episodes.length > heard.length ? musicMore("Show more episodes", "episodes") : ""),
-      ),
-  ]
-    .filter(Boolean)
-    .join("");
-}
 function musicArtists(v, library) {
   const shown = library.artists.slice(0, musicView.pages * MUSIC_LIST_PAGE);
   return `${artistGroups(shown)
@@ -4548,7 +5426,7 @@ function musicArtists(v, library) {
 }
 function musicArtist(v, artist) {
   const tracks = artist.albums.reduce((total, album) => total + album.tracks.length, 0);
-  return `<div class="music-head">${musicCover(v.id, artist.cover, "mic-vocal", " large")}<div class="music-head-info"><div><h2>${escape(artist.name)}</h2><p>${musicCount(artist.albums.length, "album")} · ${musicCount(tracks, "track")}</p><div class="heading-actions">${button("Shuffle", "music-shuffle-artist", "", "secondary", "shuffle")}</div></div></div></div>${musicGrid(
+  return `<div class="music-head">${musicCover(v.id, artist.cover, "mic-vocal", " large")}<div class="music-head-info"><div><h2>${escape(artist.name)}</h2><p>${musicCount(artist.albums.length, "album")} · ${musicCount(tracks, "track")}</p><div class="heading-actions">${favoriteStar()}${button("Shuffle", "music-shuffle-artist", "", "secondary", "shuffle")}</div></div></div></div>${musicGrid(
     artist.albums.map((item) => albumCard(v.id, item, item.year ? String(item.year) : musicCount(item.tracks.length, "track"))),
     musicView.pages * MUSIC_GRID_PAGE,
   )}`;
@@ -4561,7 +5439,7 @@ function musicTracks(v, album) {
     formatDuration(album.duration),
   ].filter(Boolean);
   const shown = album.tracks.slice(0, musicView.pages * MUSIC_LIST_PAGE);
-  return `<div class="music-head">${musicCover(v.id, album.cover, "disc-3", " large")}<div class="music-head-info"><div><h2>${escape(album.title)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${button("Play", "music-play", "", "primary", "play")}${button("Shuffle", "music-shuffle", "", "secondary", "shuffle")}</div></div></div></div>${musicRows(
+  return `<div class="music-head">${musicCover(v.id, album.cover, "arca", " large")}<div class="music-head-info"><div><h2>${escape(album.title)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${button("Play", "music-play", "", "primary", "play")}${button("Shuffle", "music-shuffle", "", "secondary", "shuffle")}</div></div></div></div>${musicRows(
     v,
     shown.map((track, index) => ({ track, id: index, subtitle: track.artist })),
     "music-track",
@@ -4590,7 +5468,7 @@ function musicPlaylist(v, list) {
           remove: editable,
         },
   );
-  return `<div class="music-head">${musicCover(v.id, list.cover, "list-music", " large")}<div class="music-head-info"><div><h2>${escape(list.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${list.tracks.length ? button("Play", "music-play", "", "primary", "play") + button("Shuffle", "music-shuffle", "", "secondary", "shuffle") : ""}${menu}</div></div></div></div>${musicRows(v, rows, "music-track", { head: musicHeadRow(true), playlist: list.id, album: true })}${list.entries.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
+  return `<div class="music-head">${musicCover(v.id, list.cover, "list-music", " large")}<div class="music-head-info"><div><h2>${escape(list.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${list.tracks.length ? button("Play", "music-play", "", "primary", "play") + button("Shuffle", "music-shuffle", "", "secondary", "shuffle") : ""}${menu}</div></div></div></div>${musicRows(v, rows, "music-track", { head: musicHeadRow(true), playlist: list.id, album: true })}${list.entries.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
 }
 function musicRecent(v, library) {
   const played = playedItems(library, musicHistory(v.id));
@@ -4601,22 +5479,22 @@ function musicRecent(v, library) {
   return empty("Nothing played yet", "Albums and playlists you play on this device appear here.", "", "clock");
 }
 function musicResumeCard(v, library) {
-  if (musicView.album || musicView.playlist || musicView.artist || musicView.show || musicSearching()) return "";
+  if (musicView.album || musicView.playlist || musicView.artist || musicView.show || musicView.tab === "podcasts") return "";
   const loaded = musicPlayer?.loadedTrack;
   const row = [...audioPositions.values()]
-    .filter((item) => item.volume === v.id && library.tracks.get(item.path)?.hash === item.hash)
+    .filter((item) => item.volume === v.id && library.tracks.get(item.path)?.hash === item.hash && !library.tracks.get(item.path).pending)
     .find((item) => !(loaded && loaded.path === item.path && musicPlayer.volume === item.volume));
   if (!row) return "";
   const track = library.tracks.get(row.path);
   const where = row.device === status.id ? "this device" : escape(row.name);
-  return `<div class="resume-card" role="status" data-path="${escape(row.path)}">${musicCover(v.id, track.cover, track.podcast ? "podcast" : "music")}<div class="resume-text"><strong>${escape(track.title)}</strong><p>Pick up where you left off · <span class="mono">${musicClock(row.position)}</span> · ${where}, ${escape(relative(new Date(row.updated).toISOString()))}</p></div>${button("Continue", "music-resume", row.path, "primary small-button")}${button("Start over", "music-resume-start", row.path, "secondary small-button")}</div>`;
+  return `<div class="resume-card" role="status" data-path="${escape(row.path)}">${musicCover(v.id, track.cover)}<div class="resume-text"><strong>${escape(track.title)}</strong><p>Pick up where you left off · <span class="mono">${musicClock(row.position)}</span> · ${where}, ${escape(relative(new Date(row.updated).toISOString()))}</p></div>${button("Continue", "music-resume", row.path, "primary small-button")}${button("Start over", "music-resume-start", row.path, "secondary small-button")}</div>`;
 }
 function musicBody(v, entry) {
   const library = entry.library;
   if (!library.tracks.size)
     return entry.indexing
-      ? empty("Reading this library", "Albums appear as Arca reads the tags.", "", "music")
-      : empty("No music yet", "Audio files added to this folder appear here.", "", "music");
+      ? empty("Reading this library", "Albums appear as Arca reads the tags.", "", "arca")
+      : empty("No music yet", "Audio files added to this folder appear here.", "", "arca");
   if (musicView.tab === "playlists" && !library.playlists.length)
     musicView = { tab: "artists", artist: null, album: null, playlist: null, pages: 1, trail: [] };
   if (!musicOnly(library) && !["podcasts"].includes(musicView.tab))
@@ -4626,12 +5504,76 @@ function musicBody(v, entry) {
 }
 const episodeDay = (date) =>
   date ? new Date(`${date}T12:00:00Z`).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "";
-function musicShows(v, library) {
-  return `<div class="history-group">${library.shows
-    .map((show) =>
-      musicRow(v, "music-show", show.id, show.cover, show.name, [musicCount(show.tracks.length, "episode"), episodeDay(show.latest)].filter(Boolean).join(" · "), "podcast"),
+const NEW_EPISODE_MS = 7 * 86400000;
+function showDay(date, now = new Date()) {
+  if (!date) return "";
+  const day = new Date(`${date}T12:00:00Z`);
+  const year = day.getUTCFullYear() === now.getFullYear() ? undefined : "numeric";
+  return day.toLocaleDateString("en", { month: "short", day: "numeric", year, timeZone: "UTC" });
+}
+function showSaved(v, show) {
+  let newest = null;
+  for (const track of show.tracks) {
+    const saved = audioPositions.get(positionKey(v.id, track.path));
+    if (!track.pending && saved?.hash === track.hash && (!newest || (saved.updated || 0) > (newest.saved.updated || 0))) newest = { track, saved };
+  }
+  return newest;
+}
+const showProgress = (saved, label) =>
+  `<progress class="music-progress music-cover-bar" max="100" value="${Math.round((saved.position / saved.duration) * 100)}" aria-label="${label}"></progress>`;
+function showPlayed(v, track) {
+  const key = positionKey(v.id, track.path);
+  return audioPositions.get(key)?.hash === track.hash || audioFinished.get(key)?.hash === track.hash;
+}
+function showFresh(v, show, now = Date.now()) {
+  return !!show.latest && now - Date.parse(`${show.latest}T12:00:00Z`) < NEW_EPISODE_MS && !showPlayed(v, show.tracks[0]);
+}
+function showLastPlayed(v, show) {
+  let last = 0;
+  for (const track of show.tracks)
+    for (const row of [audioPositions.get(positionKey(v.id, track.path)), audioFinished.get(positionKey(v.id, track.path))])
+      if (row?.hash === track.hash) last = Math.max(last, row.updated || 0);
+  return last;
+}
+function showCaption(v, show) {
+  const day = showDay(show.latest);
+  return showFresh(v, show)
+    ? { html: `<span class="music-new">New</span>${day ? ` · ${escape(day)}` : ""}`, text: ["New", day].filter(Boolean).join(" · ") }
+    : { html: escape([musicCount(show.tracks.length, "episode"), day].filter(Boolean).join(" · ")), text: [musicCount(show.tracks.length, "episode"), day].filter(Boolean).join(" · ") };
+}
+function orderShows(v, shows) {
+  const rank = (show) => (showSaved(v, show) ? 0 : showFresh(v, show) ? 1 : 2);
+  const latest = (show) => show.latest || "";
+  return shows
+    .map((show) => ({ show, rank: rank(show), played: showLastPlayed(v, show) }))
+    .sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        (a.rank === 0 ? b.played - a.played : 0) ||
+        latest(b.show).localeCompare(latest(a.show)) ||
+        a.show.name.localeCompare(b.show.name),
     )
-    .join("")}</div>`;
+    .map((item) => item.show);
+}
+function shownShows(v, library) {
+  const opened = musicShown.place !== musicPlace(v) || !document.querySelector("#content .music-page");
+  if (opened || showOrder?.library !== library || showOrder?.volume !== v.id)
+    showOrder = { library, volume: v.id, ids: orderShows(v, library.shows).map((show) => show.id) };
+  const byId = new Map(library.shows.map((show) => [show.id, show]));
+  return showOrder.ids.map((id) => byId.get(id)).filter(Boolean);
+}
+function showTile(v, show) {
+  const newest = showSaved(v, show);
+  const caption = showCaption(v, show);
+  if (!newest)
+    return `<button type="button" class="music-card" data-action="music-show" data-id="${escape(show.id)}" aria-label="${escape(`${show.name}, ${caption.text}`)}">${musicCover(v.id, show.cover, "arca")}<strong class="music-two">${escape(show.name)}</strong><span>${caption.html}</span></button>`;
+  const { track, saved } = newest;
+  const left = timeLeft(saved.duration - saved.position);
+  const menu = `<details class="details-menu file-actions-menu music-continue-menu"><summary class="ghost icon-button" aria-label="${escape(`${show.name} actions`)}" data-tooltip="${escape(`${show.name} actions`)}">${icon("ellipsis")}</summary><div class="menu-items" role="menu">${button("Continue", "music-resume", track.path, "secondary", "play")}${button("Start over", "music-resume-start", track.path, "secondary", "rotate-ccw")}${button("Open show", "music-show", show.id, "secondary", "podcast")}</div></details>`;
+  return `<div class="music-continue"><button type="button" class="music-card" data-action="music-show" data-id="${escape(show.id)}" aria-label="${escape(`${show.name}, ${left}`)}">${musicCover(v.id, show.cover, "arca", "", showProgress(saved, "Episode in progress"))}<strong class="music-two">${escape(show.name)}</strong><span>${escape(left)}</span></button><button type="button" class="music-continue-play" data-action="music-tile-play" data-id="${escape(track.path)}" data-volume="${escape(v.id)}" data-title="${escape(track.title)}" data-left="${escape(left)}" data-tooltip="${escape(track.title)}" aria-label="${escape(`Continue ${track.title}, ${left}`)}">${icon("play")}</button>${menu}</div>`;
+}
+function musicShows(v, library) {
+  return musicGrid(shownShows(v, library).map((show) => showTile(v, show)), musicView.pages * MUSIC_GRID_PAGE);
 }
 const hoursLength = (seconds) => {
   const minutes = Math.round((seconds || 0) / 60);
@@ -4639,12 +5581,12 @@ const hoursLength = (seconds) => {
 };
 function musicShow(v, show) {
   const summary = [musicCount(show.tracks.length, "episode"), hoursLength(show.duration)].filter(Boolean);
-  const saved = show.tracks.find((track) => audioPositions.get(positionKey(v.id, track.path))?.hash === track.hash);
+  const saved = show.tracks.find((track) => !track.pending && audioPositions.get(positionKey(v.id, track.path))?.hash === track.hash);
   const play = saved
     ? button("Continue", "music-resume", saved.path, "primary", "play")
     : button("Play", "music-play", "", "primary", "play");
   const shown = show.tracks.slice(0, musicView.pages * MUSIC_LIST_PAGE);
-  return `<div class="music-head">${musicCover(v.id, show.cover, "podcast", " large")}<div class="music-head-info"><div><h2>${escape(show.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${play}</div></div></div></div>${musicRows(
+  return `<div class="music-head">${musicCover(v.id, show.cover, "arca", " large")}<div class="music-head-info"><div><h2>${escape(show.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${play}</div></div></div></div>${musicRows(
     v,
     shown.map((track, index) => ({ track, id: index, subtitle: episodeDay(track.date) })),
     "music-track",
@@ -4663,7 +5605,6 @@ function musicContent(v, library) {
   const artist = musicView.artist && library.artists.find((item) => item.id === musicView.artist);
   if (artist) return musicArtist(v, artist);
   musicView.artist = null;
-  if (musicSearching()) return musicResults(v, library);
   const size = musicView.pages * MUSIC_GRID_PAGE;
   if (musicView.tab === "artists") return musicArtists(v, library);
   if (musicView.tab === "podcasts") return musicShows(v, library);
@@ -4671,27 +5612,9 @@ function musicContent(v, library) {
   if (musicView.tab === "playlists") return musicGrid(library.playlists.map((item) => playlistCard(v.id, item)), size);
   return musicGrid(library.albumList.map((item) => albumCard(v.id, item)), size);
 }
-function musicSearchInput(value) {
-  const v = status.volumes.find((item) => item.id === detailId);
-  const entry = v && musicLibraries.get(musicKey(v.id));
-  const region = $("#content .music-view");
-  if (!entry || !region) return;
-  musicQuery = { ...musicSearch(true), text: value };
-  if (musicView.album || musicView.playlist || musicView.artist)
-    musicView = { ...musicView, album: null, playlist: null, artist: null, pages: 1, trail: [] };
-  region.innerHTML = musicContent(v, entry.library);
-  const tools = $("#content .music-tools");
-  tools?.querySelector('[data-action="music-shuffle-all"]')?.remove();
-  tools?.insertAdjacentHTML("beforeend", musicShuffleAll());
-  musicShown.place = musicPlace(v);
-  musicShown.state = musicState(v, entry, musicFailures.get(musicKey(v.id)));
-  icons();
-  mountMusicCovers();
-  markMusicPlaying();
-}
 const musicPlace = (v) => JSON.stringify([v.id, musicView.tab, musicView.artist, musicView.album, musicView.playlist, musicView.show]);
 const musicState = (v, entry, failure) =>
-  JSON.stringify([musicPlace(v), musicView.pages, entry?.version, entry?.indexing, failure, musicQuery, audioSignature(v.id)]);
+  JSON.stringify([musicPlace(v), musicView.pages, entry?.version, entry?.indexing, failure, audioSignature(v.id)]);
 function musicHeading(v, entry) {
   const library = entry?.library;
   const summary = library
@@ -4699,7 +5622,7 @@ function musicHeading(v, entry) {
       ? `${musicCount(library.tracks.size, "episode")} · ${musicCount(library.shows.length, "show")} · ${bytes(v.bytes || 0)}`
       : `${musicCount(library.tracks.size, "track")} · ${musicCount(library.albumList.length, "album")} · ${bytes(v.bytes || 0)}`
     : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)}`;
-  return `<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${summary}</p></div></div><div class="heading-actions">${library?.tracks.size && musicTabList(library).length < 2 ? musicSearchButton(library, "ghost icon-button") : ""}${musicModeButton(v)}${folderActionsMenu(v)}</div></div>`;
+  return `<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${summary}</p></div></div><div class="heading-actions">${favoriteStar()}${musicModeButton(v)}${folderActionsMenu(v)}</div></div>`;
 }
 function renderMusic(v, scroll = null) {
   if (!v) return;
@@ -4708,7 +5631,6 @@ function renderMusic(v, scroll = null) {
   const failure = musicFailures.get(key);
   const content = $("#content");
   const page = content.querySelector(".music-page");
-  const typing = document.activeElement?.id === "music-search-input";
   const place = () => musicPlace(v);
   const state = () => musicState(v, entry, failure);
   const heading = () => musicTrail(v, entry?.library) + (entry && musicDeep() ? "" : musicHeading(v, entry));
@@ -4719,6 +5641,7 @@ function renderMusic(v, scroll = null) {
       musicShown.head = head;
       icons();
     }
+    markNav();
     return;
   }
   const keep = scroll ?? (musicShown.place === place() && page ? page.scrollTop : 0);
@@ -4733,19 +5656,15 @@ function renderMusic(v, scroll = null) {
   if (moved && !reducedMotion())
     $("#content .music-view")?.animate?.([{ opacity: 0 }, { opacity: 1 }], {
       duration: motionDuration("--motion-fast"),
-      easing: MOTION_EASE,
+      easing: motionEase(),
     });
   content.dataset.detail = v.id;
   musicShown = { place: place(), state: state(), head };
   icons();
   mountMusicCovers();
   markMusicPlaying();
+  markNav();
   if (keep) $("#content .music-page").scrollTop = keep;
-  const field = typing && $("#music-search-input");
-  if (field) {
-    field.focus();
-    field.setSelectionRange(field.value.length, field.value.length);
-  }
 }
 function paintMusicCover(el, data) {
   if (!data || !el.isConnected || el.querySelector("img")) return;
@@ -5050,7 +5969,7 @@ function patchPlayerButtons(markup) {
     for (const control of swapped)
       control.firstElementChild?.animate?.([{ opacity: 0 }, { opacity: 1 }], {
         duration: motionDuration("--motion-fast"),
-        easing: MOTION_EASE,
+        easing: motionEase(),
       });
 }
 function musicToggleButton(cls) {
@@ -5222,7 +6141,7 @@ function renderMini(track) {
   const card = $("#music-mini");
   if (!card) return;
   if (!track) return void (card.innerHTML = "");
-  const cover = musicCover(musicPlayer.volume, track.cover, track.podcast ? "podcast" : "music");
+  const cover = musicCover(musicPlayer.volume, track.cover);
   if (card.querySelector(".music-mini-track")) {
     card.querySelector(".music-mini-track > .music-cover").outerHTML = cover;
     patchPlayerButtons(musicToggleButton() + musicNextButton());
@@ -5288,22 +6207,19 @@ async function musicShowArtist() {
     library?.artists.find((item) => item.albums.some((album) => album.id === track.albumId));
   await musicReveal({ tab: "artists", artist: artist?.id || named, album: null, playlist: null, pages: 1, trail: [] });
 }
-async function musicReveal(next) {
+async function musicReveal(next, volume = musicPlayer.volume, focus = true) {
   view = "folders";
-  detailId = folderViewId = musicPlayer.volume;
+  detailId = folderViewId = volume;
   folderTab = "library";
   folderPrefix = "";
-  folderSearch = "";
-  folderSearchOpen = false;
   folderPageCount = 1;
   folderReturn = { tab: "files", scroll: 0 };
   musicView = next;
-  musicQuery = musicSearch();
   await render();
-  if (window.history.state?.music) window.history.pushState(musicEntry(musicPlayer.volume, 0), "", location.hash);
-  else window.history.replaceState(musicEntry(musicPlayer.volume, 0), "", location.hash);
+  if (window.history.state?.music) window.history.pushState(musicEntry(volume, 0), "", location.hash);
+  else window.history.replaceState(musicEntry(volume, 0), "", location.hash);
   updateShell();
-  $('#music-player [data-player="toggle"]')?.focus();
+  if (focus) $('#music-player [data-player="toggle"]')?.focus();
 }
 function renderPlayer() {
   const root = $("#music-player");
@@ -5314,7 +6230,7 @@ function renderPlayer() {
   placeMusic();
   musicBroadcast();
   if (!track) return void (root.innerHTML = "");
-  const cover = musicCover(musicPlayer.volume, track.cover, track.podcast ? "podcast" : "music");
+  const cover = musicCover(musicPlayer.volume, track.cover);
   const kind = track.podcast ? "episode" : "track";
   const fresh = !root.querySelector(".music-player-track") || root.dataset.kind !== kind;
   root.dataset.kind = kind;
@@ -5349,6 +6265,16 @@ function renderPlayer() {
 }
 function markMusicPlaying() {
   const track = musicCurrent();
+  for (const play of document.querySelectorAll("#content .music-continue-play")) {
+    const here = !!track && musicPlayer.volume === play.dataset.volume && track.path === play.dataset.id;
+    const playing = here && !musicAudio().paused;
+    const symbol = playing ? "pause" : "play";
+    play.setAttribute("aria-label", `${playing ? "Pause" : "Continue"} ${play.dataset.title}, ${play.dataset.left}`);
+    if (play.dataset.symbol === symbol || (!play.dataset.symbol && symbol === "play")) continue;
+    play.dataset.symbol = symbol;
+    play.innerHTML = icon(symbol);
+    icons();
+  }
   const position = track && musicPlayer.context.kind === "playlist" ? musicPlayer.positions?.[musicPlayer.order[musicPlayer.position]] : null;
   for (const list of document.querySelectorAll(".music-tracks")) {
     const here = !!track && list.dataset.volume === musicPlayer.volume;
@@ -5392,7 +6318,7 @@ function musicSession() {
 document.addEventListener("click", (event) => {
   const sleep = event.target.closest?.("#music-player [data-sleep]");
   if (sleep) {
-    sleep.closest("details").open = false;
+    closeMenu(sleep.closest("details"));
     setSleep(sleep.dataset.sleep);
     return;
   }
@@ -5424,7 +6350,6 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("input", (event) => {
   const control = event.target;
-  if (control.id === "music-search-input") return void musicSearchInput(control.value);
   if (!control.matches?.("#music-player [data-player]") || !musicPlayer) return;
   const audio = musicAudio();
   if (control.dataset.player === "seek") {
@@ -5440,15 +6365,12 @@ document.addEventListener("input", (event) => {
     musicLevel();
   }
 });
-const musicEntry = (volume, count, scroll = 0) => ({ music: volume, view: musicView, query: musicQuery, count, scroll });
+const musicEntry = (volume, count, scroll = 0) => ({ music: volume, view: musicView, count, scroll });
 const musicStack = (volume) => (window.history.state?.music === volume ? window.history.state.count : 0);
 window.addEventListener("popstate", (event) => {
   if (!ready) return;
   const saved = event.state?.music === folderViewId ? event.state : null;
-  if (saved) {
-    musicView = saved.view;
-    musicQuery = saved.query;
-  }
+  if (saved) musicView = saved.view;
   if (location.hash !== routeURL() || !musicShowing(detailId)) return;
   if (!saved) musicView = { ...musicView, artist: null, album: null, playlist: null, show: null, pages: 1, trail: [] };
   renderMusic(status.volumes.find((item) => item.id === detailId), saved?.scroll || 0);
@@ -5516,19 +6438,6 @@ async function handleMusic(name, id) {
     const tracks = artist.albums.flatMap((album) => album.tracks);
     return musicStart(v.id, { kind: "artist", id: artist.id, name: artist.name }, tracks, random(tracks.length), true);
   }
-  if (name === "music-search-toggle") {
-    const opening = !musicQuery.open;
-    musicQuery = musicSearch(opening);
-    renderMusic(v, page()?.scrollTop || 0);
-    $(opening ? "#music-search-input" : '[data-action="music-search-toggle"]')?.focus();
-    return;
-  }
-  if (name === "music-search-apply") return musicSearchInput($("#music-search-input")?.value || "");
-  if (name === "music-search-more") {
-    if (["songs", "albums", "artists", "episodes"].includes(id)) musicQuery = { ...musicQuery, [id]: musicQuery[id] + 1 };
-    renderMusic(v, page()?.scrollTop || 0);
-    return;
-  }
   if (["music-track", "music-play", "music-shuffle"].includes(name)) {
     const album = musicView.album && library.albums.get(musicView.album);
     const list = !album && musicView.playlist && library.playlists.find((item) => item.id === musicView.playlist);
@@ -5560,9 +6469,14 @@ async function handleMusic(name, id) {
   }
   const playlist = (path) => library.playlists.find((item) => item.id === path);
   const edit = (body) => api("/v1/music/playlist", { volume: v.id, ...body });
+  if (name === "music-tile-play") {
+    const loaded = musicPlayer?.loadedTrack;
+    if (loaded?.path === id && musicPlayer.volume === v.id) return musicPlayPause();
+    name = "music-resume";
+  }
   if (name === "music-resume" || name === "music-resume-start") {
     const track = library.tracks.get(id);
-    if (!track) return;
+    if (!track || track.pending) return;
     const saved = audioPositions.get(positionKey(v.id, id));
     $("#content .resume-card")?.remove();
     return musicStart(v.id, { kind: "track", id, name: track.title }, [track], 0, false, null, name === "music-resume" ? saved?.position || 0 : 0);
@@ -5577,6 +6491,7 @@ async function handleMusic(name, id) {
         await api("/v1/delete-file", { volume: v.id, path: id, rev: history.versions[0]?.rev });
         if (musicPlayer?.loadedTrack?.path === id && musicPlayer.volume === v.id) stopMusic();
         audioPositions.delete(positionKey(v.id, id));
+        audioFinished.delete(positionKey(v.id, id));
         notice("Track deleted.");
         await refreshMusic(v.id, true);
       },
@@ -5604,7 +6519,7 @@ async function handleMusic(name, id) {
   if (name === "music-pick") {
     const list = playlist(id);
     if (!list || !musicPicking) return;
-    $("#dialog").close();
+    void closeDialog();
     await edit({ action: "add", path: list.id, hash: list.hash, track: musicPicking });
     notice(`Added to ${list.name}`);
     await refreshMusic(v.id, true);
@@ -5666,20 +6581,17 @@ async function handleMusic(name, id) {
     return;
   }
   let scroll = 0;
-  if (name === "music-tab") {
+  if (name === "music-tab")
     musicView = { tab: MUSIC_TABS[id] ? id : "artists", artist: null, album: null, playlist: null, show: null, pages: 1, trail: [] };
-    musicQuery = musicSearch();
-  }
   else if (name === "music-more") {
     musicView.pages++;
     scroll = page()?.scrollTop || 0;
   } else if (name === "music-crumb") {
-    const depth = id === "folder" ? 0 : Number(id);
+    const depth = Number(id);
     if (!Number.isSafeInteger(depth) || depth < 0) return;
     const up = (musicView.show ? 1 : (musicView.artist ? 1 : 0) + (musicView.album || musicView.playlist ? 1 : 0)) - depth;
-    if (id !== "folder" && up > 0 && musicStack(v.id) >= up) return void window.history.go(-up);
-    if (id === "folder") musicQuery = musicSearch();
-    const level = (id !== "folder" && musicView.trail[depth]) || { pages: 1, scroll: 0 };
+    if (up > 0 && musicStack(v.id) >= up) return void window.history.go(-up);
+    const level = musicView.trail[depth] || { pages: 1, scroll: 0 };
     musicView = {
       ...musicView,
       ...(depth ? { album: null, playlist: null, show: null } : { artist: null, album: null, playlist: null, show: null }),
@@ -5712,12 +6624,9 @@ async function renderDetail(pending = false) {
     folderViewId = v.id;
     folderTab = v.gallery ? "gallery" : musicAvailable(v) ? "library" : "files";
     folderPrefix = "";
-    folderSearch = "";
-    folderSearchOpen = false;
     folderPageCount = 1;
     folderReturn = { tab: "files", scroll: 0 };
     musicView = { tab: "artists", artist: null, album: null, pages: 1, trail: [] };
-    musicQuery = musicSearch();
     const cached = musicLibraries.get(musicKey(v.id));
     if (cached) cached.checked = 0;
   }
@@ -5785,7 +6694,7 @@ async function renderDetail(pending = false) {
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
   if (!pending && folderTab === "gallery") mountGallery(v.id);
@@ -5950,16 +6859,17 @@ const machineRow = (
   dashed = false,
   metadata = "",
   totals = "",
+  tone = /class="pill (wa|er)"/.exec(state)?.[1] || (/class="pill id".*(Offline|Paused|Disconnected)<\/span>/.test(state) ? "id" : ""),
 ) =>
-  `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This device</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
+  `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}${tone ? ` ${tone}` : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This device</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
 
 function selfPill() {
-  if (!status.hub) return pill("Disconnected", "wa", "unplug");
+  if (!status.hub) return pill("Disconnected", "id", "unplug");
   if (status.hubUnavailable && status.phase !== "paused")
-    return pill("Offline", "wa", "wifi-off");
+    return pill("Offline", "id", "wifi-off");
   const [label, tone, symbol] = {
     idle: ["Up to date", "ok", "circle-check"],
-    paused: ["Paused", "wa", "pause"],
+    paused: ["Paused", "id", "pause"],
     error: ["Needs attention", "er", "circle-alert"],
   }[status.phase] || ["Syncing", "sy", "busy"];
   return pill(label, tone, symbol);
@@ -6550,7 +7460,7 @@ async function imageLibrary() {
             failed: "Could not finish. Try again.",
           }[job.state] || label;
         const summary = `${state} · ${job.done} / ${job.total} processed`;
-        target.innerHTML = `<p class="hint" title="${escape(summary)}">${escape(summary)}</p>
+        target.innerHTML = `<p class="hint" data-tooltip="${escape(summary)}">${escape(summary)}</p>
           <progress aria-label="${escape(label)}" value="${Number(job.done) || 0}" max="${Math.max(1, Number(job.total) || 0)}"></progress>`;
       } else target.innerHTML = "";
       icons();
@@ -6567,7 +7477,63 @@ function modalHeader(heading, description, symbol = "folder") {
   return `<div class="modal-title"><div class="tile">${icon(symbol)}</div><div><h2 id="dialog-title">${heading}</h2><p>${description}</p></div></div>`;
 }
 const dialogTemplate = $("#dialog").innerHTML;
+function closeDialog(dialog = $("#dialog"), close = () => dialog.close()) {
+  if (!dialog) return Promise.resolve(true);
+  const done = () => {
+    close();
+    returnFocus(dialog);
+  };
+  if (!dialog.open) {
+    done();
+    return Promise.resolve(true);
+  }
+  if (isLeaving(dialog)) return leavingSurfaces.get(dialog).promise;
+  if (dialog.contains(document.activeElement)) document.activeElement.blur();
+  const { duration } = EXIT_ROLES.dialog();
+  const backdrop =
+    duration && !reducedMotion()
+      ? (() => {
+          try {
+            return dialog.animate?.([{ opacity: 1 }, { opacity: 0 }], { duration, easing: motionEase(), fill: "forwards", pseudoElement: "::backdrop" });
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+  return leave(dialog, "dialog", () => {
+    backdrop?.cancel();
+    done();
+  }).then((closed) => {
+    if (!closed) backdrop?.cancel();
+    return closed;
+  });
+}
+const dialogOpeners = new WeakMap();
+function dialogOpener() {
+  const active = document.activeElement;
+  const menu = active?.closest?.(".details-menu, .context-menu");
+  if (menu?.matches(".details-menu")) return menu.querySelector("summary");
+  if ((!active || active === document.body || menu) && menuReturn?.isConnected) return menuReturn;
+  return active && active !== document.body ? active : null;
+}
+function returnFocus(dialog) {
+  const opener = dialogOpeners.get(dialog);
+  if (!opener) return;
+  dialogOpeners.delete(dialog);
+  const active = document.activeElement;
+  if (active && active !== document.body && active.isConnected && !dialog.contains(active)) return;
+  const target = opener.isConnected
+    ? opener
+    : dialog.classList.contains("photo-viewer")
+      ? $(`#content .photo-thumb[data-photo="${galleryView?.selected}"] .photo-open`) ||
+        $("#content .photo-thumb[data-photo] .photo-open") ||
+        $("#content .detail-head button")
+      : null;
+  target?.focus();
+}
+document.addEventListener("close", (event) => returnFocus(event.target), true);
 function modal(html, submit, label = "Save", wide = false, layered = false) {
+  if (isLeaving($("#dialog"))) settleLeave($("#dialog"));
   if (layered) {
     const previous = $("#dialog"),
       previousSubmit = submitDialog;
@@ -6622,7 +7588,12 @@ function modal(html, submit, label = "Save", wide = false, layered = false) {
       item.htmlFor = field.id;
     }
   }
-  if (!$("#dialog").open) $("#dialog").showModal();
+  if (!$("#dialog").open) {
+    const opener = dialogOpener();
+    if (opener) dialogOpeners.set($("#dialog"), opener);
+    menuReturn = null;
+    $("#dialog").showModal();
+  }
   icons();
 }
 function bindDialog(dialog) {
@@ -6635,10 +7606,12 @@ function bindDialog(dialog) {
     control.querySelector(".busy-grid")?.remove();
     control.disabled = false;
   };
-  const close = () => {
+  const shut = () => {
     dialog.close();
     dialog.restore?.();
+    returnFocus(dialog);
   };
+  const close = () => closeDialog(dialog, shut);
   let leaving = false;
   const dismiss = () => {
     if (pending) {
@@ -6654,7 +7627,7 @@ function bindDialog(dialog) {
       .catch(() => {})
       .then(() => {
         leaving = false;
-        close();
+        shut();
       });
   };
   cancel.onclick = dismiss;
@@ -7136,6 +8109,7 @@ async function reviewConflict(item) {
 }
 async function handle(name, id, control) {
   if (name.startsWith("music-")) return handleMusic(name, id);
+  if (name.startsWith("favorite") || name === "context-open") return handleFavorite(name, id, control);
   if (name === "install-update") {
     const button = $("#update-install");
     button.disabled = true;
@@ -7215,7 +8189,7 @@ async function handle(name, id, control) {
     return;
   }
   if (name === "keep-conflict") {
-    $("#dialog").close();
+    void closeDialog();
     return;
   }
   if (name === "open-conflict") {
@@ -7319,21 +8293,11 @@ async function handle(name, id, control) {
     name === "folder-tab" ||
     name === "browse-directory" ||
     name === "browse-more" ||
-    name === "browse-retry" ||
-    name === "folder-search-toggle" ||
-    name === "folder-search-apply"
+    name === "browse-retry"
   ) {
     if (name === "folder-tab") folderTab = id;
-    if (name === "browse-directory") {
-      folderPrefix = id;
-      folderSearch = "";
-    }
-    if (name === "folder-search-toggle") {
-      folderSearchOpen = !folderSearchOpen;
-      if (!folderSearchOpen) folderSearch = "";
-    }
-    if (name === "folder-search-apply")
-      folderSearch = $("#folder-search-input").value.trim();
+    if (name === "browse-directory") folderPrefix = id;
+    if (name !== "browse-more" && name !== "browse-retry") folderFocus = null;
     const keepScroll = name === "browse-more" || name === "browse-retry";
     const scroll = keepScroll ? $(".page")?.scrollTop || 0 : 0;
     if (name === "browse-more") {
@@ -7341,8 +8305,6 @@ async function handle(name, id, control) {
     } else if (name !== "browse-retry") folderPageCount = 1;
     await render();
     if (keepScroll && $(".page")) $(".page").scrollTop = scroll;
-    if (name === "folder-search-toggle" && folderSearchOpen)
-      $("#folder-search-input")?.focus();
     return;
   }
   if (name === "folder-problem") {
@@ -7377,8 +8339,7 @@ async function handle(name, id, control) {
       folderViewId = null;
       folderTab = "files";
       folderPrefix = "";
-      folderSearch = "";
-      folderSearchOpen = false;
+      folderFocus = null;
       folderPageCount = 1;
     }
     detailId = id;
@@ -7421,7 +8382,7 @@ async function handle(name, id, control) {
       if (mine === renderSerial) list.style.minHeight = "";
     }
     if (mine === renderSerial && !reducedMotion())
-      list.animate?.([{ opacity: 0.55 }, { opacity: 1 }], { duration: motionDuration("--motion-fast"), easing: MOTION_EASE });
+      list.animate?.([{ opacity: 0.55 }, { opacity: 1 }], { duration: motionDuration("--motion-fast"), easing: motionEase() });
     return;
   }
   if (name === "history-filter") {
@@ -7447,7 +8408,7 @@ async function handle(name, id, control) {
     if (mine === renderSerial && !reducedMotion())
       list.animate?.(
         [{ opacity: 0.55 }, { opacity: 1 }],
-        { duration: motionDuration("--motion-fast"), easing: MOTION_EASE },
+        { duration: motionDuration("--motion-fast"), easing: motionEase() },
       );
     return;
   }
@@ -7563,7 +8524,7 @@ async function handle(name, id, control) {
           .filter(Boolean)
           .map(
             (r, i) =>
-              `<div class="restore-version">${icon("git-commit-horizontal")}<div><strong>rev ${r.rev} · ${i === 0 ? "restoring" : "current"}</strong><p>${date(r.created)} · ${r.deleted ? "Deleted" : bytes(r.size)}</p></div>${r.hash ? `<span class="mono" title="${escape(r.hash)}">sha ${escape(r.hash.slice(0, 4))}…${escape(r.hash.slice(-4))}</span>` : ""}</div>`,
+              `<div class="restore-version">${icon("git-commit-horizontal")}<div><strong>rev ${r.rev} · ${i === 0 ? "restoring" : "current"}</strong><p>${date(r.created)} · ${r.deleted ? "Deleted" : bytes(r.size)}</p></div>${r.hash ? `<span class="mono" data-tooltip="${escape(r.hash)}">sha ${escape(r.hash.slice(0, 4))}…${escape(r.hash.slice(-4))}</span>` : ""}</div>`,
           )
           .join("")}</div>`,
       async () => {
@@ -8177,6 +9138,8 @@ async function handle(name, id, control) {
   }
 }
 const navigationActions = new Set([
+  "favorite-open",
+  "context-open",
   "unselect",
   "enable-gallery",
   "enable-music",
@@ -8202,6 +9165,7 @@ const navigationActions = new Set([
   "music-playlist-delete",
   "music-resume",
   "music-resume-start",
+  "music-tile-play",
   "music-delete",
   "music-crumb",
   "music-more",
@@ -8209,19 +9173,12 @@ const navigationActions = new Set([
   "music-track",
   "music-play",
   "music-shuffle",
-  "music-song",
-  "music-episode",
   "music-shuffle-all",
   "music-shuffle-artist",
-  "music-search-toggle",
-  "music-search-apply",
-  "music-search-more",
   "folder-tab",
   "browse-directory",
   "browse-more",
   "browse-retry",
-  "folder-search-toggle",
-  "folder-search-apply",
   "back-folders",
   "folder-detail",
   "folder-history",
@@ -8255,9 +9212,12 @@ function dispatchControl(control) {
   return navigationActions.has(name) ? navigate(work) : action(work, control);
 }
 document.addEventListener("click", (e) => {
+  menuReturn = null;
   document.querySelectorAll(".details-menu[open]").forEach((menu) => {
-    if (!menu.contains(e.target) || e.target.closest("[data-action]"))
-      menu.open = false;
+    if (!menu.contains(e.target) || e.target.closest("[data-action]")) {
+      if (menu.contains(e.target)) menuReturn = menu.querySelector("summary");
+      closeMenu(menu);
+    }
   });
   const dropdownRoot = e.target.closest(".dropdown");
   document.querySelectorAll(".dropdown").forEach((root) => {
@@ -8366,7 +9326,7 @@ async function checkWebApprovals() {
     if (!ready || data.offline) return;
     const requests = data.requests.filter((r) => !(r.expires <= Date.now()));
     if (approvalModal && !requests.some((r) => r.id === approvalModal)) {
-      if ($("#dialog").dataset.approval === approvalModal) $("#dialog").close();
+      if ($("#dialog").dataset.approval === approvalModal) void closeDialog();
       approvalModal = null;
     }
     if (busy || $("#dialog").open || !requests.length) return;
@@ -8432,7 +9392,7 @@ async function checkWebApprovals() {
       action(async () => {
         await api("/v1/web-approvals", { id: r.id, decision: "deny" });
         approvalModal = null;
-        $("#dialog").close();
+        void closeDialog();
       });
   } catch {
     /* Offline/older hubs keep their existing sign-in path. */
@@ -8488,7 +9448,7 @@ async function showLogin(message = "") {
     return;
   }
   $("#content").innerHTML =
-    `<div class="access-page"><div class="access-brand"><div class="access-logo"><img src="assets/arca-icon.svg" width="56" height="56" alt=""><h1>arca</h1></div><p><span id="access-role" class="tag" hidden></span> <span class="mono"><span id="access-name"></span> ${escape(location.host)}</span></p></div><div class="access-card">
+    `<div class="access-page"><div class="access-brand"><div class="access-logo">${brandDraw(true)}<h1>arca</h1></div><p><span id="access-role" class="tag" hidden></span> <span class="mono"><span id="access-name"></span> ${escape(location.host)}</span></p></div><div class="access-card">
     <div id="access-methods" hidden>${segmented(
       "Sign-in method",
       [
@@ -8609,8 +9569,7 @@ async function showLogin(message = "") {
     try {
       await browserRequest("/auth/login", { code });
       // A successful one-time login must not be submitted again if loading fails.
-      $("#content").innerHTML =
-        title("Folders") + `<div class="page">${scaffoldRow()}</div>`;
+      $("#content").innerHTML = launchMark();
       await action(() => refresh());
     } catch (error) {
       const loginError = $("#login-error");
@@ -8687,7 +9646,7 @@ function renderOnboarding() {
   if (o.step === 3)
     body = `<h1>A home for your folders</h1><p>${o.role === "replica" ? "Folders you select from the hub live here, as ordinary folders." : "Choose a default location for the folders you share."}</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${native ? button("Change…", "pick-path", "root", "secondary small-button", "folder-input") : ""}</div><div id="setup-space"></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p>${native ? "" : '<p class="hint">This path is on the server. In Docker or Umbrel, use persistent mounted storage; the default is /data/files.</p>'}`;
   $("#content").innerHTML =
-    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${activeStep === i ? "current" : activeStep > i && !(connectSkipped && i === 1) ? "done" : ""}" ${activeStep === i ? 'aria-current="step"' : ""}><span>${activeStep > i && !(connectSkipped && i === 1) ? icon("check") : i + 1}</span>${label}${i === 1 && connectSkipped ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button><button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button></div></form></div>`;
+    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon-small.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${activeStep === i ? "current" : activeStep > i && !(connectSkipped && i === 1) ? "done" : ""}" ${activeStep === i ? 'aria-current="step"' : ""}><span>${activeStep > i && !(connectSkipped && i === 1) ? icon("check") : i + 1}</span>${label}${i === 1 && connectSkipped ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button><button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button></div></form></div>`;
   $("#setup-back").onclick = () => {
     o.step =
       o.step === "access" || o.step === 2 || (o.step === 3 && o.role === "hub")
@@ -9097,7 +10056,7 @@ let dropdownSearch = "",
 document.addEventListener("keydown", (event) => {
   const root = event.target.closest(".dropdown");
   if (!root) return;
-  const open = !root.querySelector(".dropdown-menu").hidden;
+  const open = root.querySelector("[data-dropdown-trigger]").getAttribute("aria-expanded") === "true";
   const options = [...root.querySelectorAll('[role="option"]')];
   const index = options.indexOf(document.activeElement);
   if (event.key === "Escape" && open) {
@@ -9161,26 +10120,60 @@ document.addEventListener("keydown", (event) => {
     else event.target.click();
     return;
   }
-  if (event.target.id === "music-search-input" && ["Enter", "Escape"].includes(event.key)) {
-    event.preventDefault();
-    if (event.key === "Enter") return void musicSearchInput(event.target.value);
-    document.querySelector('[data-action="music-search-toggle"]')?.click();
-    return;
-  }
-  if (event.target.id === "folder-search-input" && event.key === "Enter") {
-    event.preventDefault();
-    document.querySelector('[data-action="folder-search-apply"]')?.click();
-  }
 });
 
-// File actions use a native disclosure, with keyboard dismissal and focus return.
+let menuReturn = null,
+  menuByKeyboard = false;
+const menuPanel = (menu) => menu.querySelector(":scope > .menu-items");
+const menuItems = (panel) => [...panel.querySelectorAll("button:not(:disabled), [role^='menuitem']:not([aria-disabled='true'])")];
+function closeMenu(menu, focusSummary = false) {
+  if (!menu.open) return;
+  if (focusSummary) menu.querySelector("summary")?.focus();
+  const panel = menuPanel(menu);
+  if (!panel) return void (menu.open = false);
+  void leave(panel, "popover", () => (menu.open = false));
+}
+document.addEventListener(
+  "click",
+  (event) => {
+    const summary = event.target.closest?.(".details-menu > summary");
+    const menu = summary?.parentElement;
+    const panel = menu && menuPanel(menu);
+    if (!menu) return;
+    if (menu.open) {
+      event.preventDefault();
+      if (!revive(panel)) closeMenu(menu);
+      return;
+    }
+    if (!panel) return;
+    panel.setAttribute("role", "menu");
+    for (const item of panel.querySelectorAll("button:not([role])")) item.setAttribute("role", "menuitem");
+    if (menuByKeyboard) setTimeout(() => menu.open && menuItems(panel)[0]?.focus());
+  },
+  true,
+);
+document.addEventListener("pointerdown", () => (menuByKeyboard = false), true);
+document.addEventListener("keydown", () => (menuByKeyboard = true), true);
 document.addEventListener("keydown", (event) => {
-  const menu = event.target.closest(".details-menu[open]");
-  if (menu && event.key === "Escape") {
+  if (event.key === "Escape") {
+    const open = [...document.querySelectorAll(".details-menu[open]")].filter((menu) => !isLeaving(menuPanel(menu)));
+    if (!open.length) return;
     event.preventDefault();
-    menu.open = false;
-    menu.querySelector("summary").focus();
+    const active = document.activeElement;
+    for (const menu of open) closeMenu(menu, !active || active === document.body || menu.contains(active));
+    return;
   }
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const menu = event.target.closest?.(".details-menu[open], .context-menu");
+  const panel = menu?.matches(".context-menu") ? menu : menu && menuPanel(menu);
+  if (!panel || isLeaving(panel)) return;
+  const items = menuItems(panel);
+  if (!items.length) return;
+  event.preventDefault();
+  const index = items.indexOf(document.activeElement);
+  const next =
+    event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : event.key === "ArrowDown" ? (index + 1) % items.length : (index - 1 + items.length) % items.length;
+  items[next].focus();
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented || !musicShowing(detailId) || !musicDeep()) return;
@@ -9192,7 +10185,7 @@ document.addEventListener("keydown", (event) => {
 });
 document.addEventListener("focusin", (event) => {
   document.querySelectorAll(".details-menu[open]").forEach((menu) => {
-    if (!menu.contains(event.target)) menu.open = false;
+    if (!menu.contains(event.target)) closeMenu(menu);
   });
 });
 
@@ -9201,8 +10194,8 @@ function iconAction(label, action, symbol, disabled = false) {
   return `<button type="button" class="ghost icon-button" data-action="${escape(action)}" data-tooltip="${escape(label)}" aria-label="${escape(label)}" ${disabled ? "disabled" : ""}>${icon(symbol)}</button>`;
 }
 function installTooltips() {
-  let timer, trigger, tip;
-  const close = () => {
+  let timer, trigger, tip, lastShown = 0;
+  const close = (cut = false) => {
     clearTimeout(timer);
     if (trigger && tip) {
       const ids = (trigger.getAttribute("aria-describedby") || "")
@@ -9211,21 +10204,27 @@ function installTooltips() {
       if (ids.length) trigger.setAttribute("aria-describedby", ids.join(" "));
       else trigger.removeAttribute("aria-describedby");
     }
-    tip?.remove();
+    const old = tip;
     tip = trigger = null;
+    if (!old) return;
+    lastShown = Date.now();
+    old.removeAttribute("id");
+    if (cut) old.remove();
+    else void leave(old, "tooltip", () => old.remove());
   };
   const open = (target) => {
     if (target === trigger) return;
     close();
     if (!target || target.disabled) return;
     trigger = target;
+    const hold = motionDuration("--motion-hint-delay");
     timer = setTimeout(() => {
-      if (!target.isConnected || target.matches("details[open] > summary")) return close();
+      if (!target.isConnected || target.matches("details[open] > summary")) return close(true);
       tip = document.createElement("span");
       tip.id = "arca-tooltip";
       tip.className = "tooltip";
       tip.setAttribute("role", "tooltip");
-      tip.textContent = target.dataset.tooltip;
+      tip.textContent = target.dataset.tooltip || target.getAttribute("aria-label");
       (target.closest("dialog[open]") || document.body).append(tip);
       target.setAttribute(
         "aria-describedby",
@@ -9248,26 +10247,27 @@ function installTooltips() {
           : rect.bottom + 6;
       tip.style.left = `${left}px`;
       tip.style.top = `${Math.max(8, Math.min(top, window.innerHeight - bounds.height - 8))}px`;
-    }, 200);
+    }, Date.now() - lastShown < hold * 2 ? 0 : hold);
   };
+  const HINTED = "[data-tooltip], .icon-button[aria-label]";
   document.addEventListener("pointerover", (event) =>
-    open(event.target.closest("[data-tooltip]")),
+    open(event.target.closest(HINTED)),
   );
   document.addEventListener("pointerout", (event) => {
     if (trigger && !trigger.contains(event.relatedTarget)) close();
   });
   document.addEventListener("focusin", (event) =>
-    open(event.target.closest("[data-tooltip]")),
+    open(event.target.closest(HINTED)),
   );
-  document.addEventListener("focusout", close);
-  document.addEventListener("pointerdown", close);
+  document.addEventListener("focusout", () => close());
+  document.addEventListener("pointerdown", () => close(true));
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") close();
+    if (event.key === "Escape") close(true);
   });
-  document.addEventListener("scroll", close, true);
-  window.addEventListener("resize", close);
+  document.addEventListener("scroll", () => close(true), true);
+  window.addEventListener("resize", () => close());
   new MutationObserver(() => {
-    if (trigger && !trigger.isConnected) close();
+    if (trigger && !trigger.isConnected) close(true);
   }).observe(document.body, { childList: true, subtree: true });
 }
 installTooltips();

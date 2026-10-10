@@ -273,11 +273,13 @@ export class Web {
       "/notice-contract.js": "notice-contract.js",
       "/file-icons.js": "file-icons.js",
       "/music-library.js": "music-library.js",
+      "/favorite-order.js": "favorite-order.js",
       "/gallery-timeline-layout.js": "gallery-timeline-layout.js",
       "/style.css": "style.css",
       "/tokens.css": "tokens.css",
       "/vendor/lucide.js": "vendor/lucide.js",
       "/assets/arca-icon.svg": "assets/arca-icon.svg",
+      "/assets/arca-icon-small.svg": "assets/arca-icon-small.svg",
       "/assets/fonts/instrument-sans.woff2":
         "assets/fonts/instrument-sans.woff2",
       "/assets/fonts/fragment-mono.woff2": "assets/fonts/fragment-mono.woff2",

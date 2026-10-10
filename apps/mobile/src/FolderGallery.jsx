@@ -31,9 +31,11 @@ import {
   useDesign,
 } from "./components";
 import { Pop, useMotion } from "./motion";
+import { motion } from "./design-tokens.js";
 import {
   mergeTimeline,
   monthLabel,
+  datedMonth,
   pendingUploadLabel,
   previewCandidates,
   railMonthLabel,
@@ -41,6 +43,8 @@ import {
 } from "./gallery-timeline";
 import {
   HUB_VIEW_MS,
+  cachedGalleryItems,
+  cachedMonthFocus,
   hubGallery,
   folderIgnored,
   hubPhotoInfo,
@@ -50,15 +54,23 @@ import {
 } from "./hub-gallery";
 import {
   createFlusher,
+  createPreviewQueue,
+  localPreviewIo,
   prepareThumbnails,
   previewProgress,
   pruneSaved,
   savedThumbnail,
+  stillDownloading,
 } from "./thumbnail-cache";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import { thumbnailFiles } from "./gallery-thumbnails";
 import { files } from "./files";
-import { createAccepted, createHubPreviews, hubFallback } from "./hub-preview";
+import {
+  createAccepted,
+  createHubPreviews,
+  hubFallback,
+  replicaHash,
+} from "./hub-preview";
 import { isHubUnreachable } from "../../desktop/src/notice-contract.js";
 import { ScrollPosition } from "./KeyboardPane";
 import { PhotoViewer } from "./PhotoViewer";
@@ -66,7 +78,7 @@ import { PhotoViewer } from "./PhotoViewer";
 import { GalleryYear } from "./GalleryYear";
 import {
   compactColumns,
-  pinchLevel,
+  pinchTracker,
   pinchCell,
   pinchGroup,
   levelColumns,
@@ -81,7 +93,16 @@ import {
   neededMonth,
   sectionAt,
 } from "./gallery-layout";
-import { planCell } from "./gallery-days";
+import {
+  completeDays,
+  localMonths,
+  monthSections,
+  galleryComplete,
+  galleryCounts,
+  photoCount,
+  planCell,
+  shownMonths,
+} from "./gallery-days";
 
 const Tile = memo(function Tile({
   item,
@@ -96,12 +117,13 @@ const Tile = memo(function Tile({
 }) {
   const { s } = useDesign();
   const frame = useRef(null);
-  const { duration } = useMotion();
+  const { duration, easing } = useMotion();
   const settle = useRef(new Animated.Value(selected ? 0.94 : 1)).current;
   useEffect(() => {
     Animated.timing(settle, {
       toValue: selected ? 0.94 : 1,
-      duration: duration(120),
+      duration: duration(motion.fast),
+      easing,
       useNativeDriver: true,
     }).start();
   }, [selected]);
@@ -210,9 +232,11 @@ export function FolderGallery({
   remove,
   reconnect,
   columns = 4,
+  focus = null,
+  onFocused,
 }) {
-  const { s, wide } = useDesign();
-  const { duration } = useMotion();
+  const { s, wide, fontScale = 1 } = useDesign();
+  const { duration, easing } = useMotion();
   const linked = connected && !offline;
   const [failures, setFailures] = useState(0);
   const online = linked && failures < 2;
@@ -242,7 +266,8 @@ export function FolderGallery({
     Animated.timing(pill, {
       toValue: 0,
       delay: duration(1000),
-      duration: duration(200),
+      duration: duration(motion.enter),
+      easing,
       useNativeDriver: true,
     }).start();
   }, [level]);
@@ -402,7 +427,6 @@ export function FolderGallery({
     [entries],
   );
   const [known, setKnown] = useState(null);
-  const [knownLoaded, setKnownLoaded] = useState(false);
   useEffect(() => {
     let active = true;
     store
@@ -423,8 +447,7 @@ export function FolderGallery({
               : files,
           ),
       )
-      .catch(() => {})
-      .finally(() => active && setKnownLoaded(true));
+      .catch(() => {});
     return () => {
       active = false;
     };
@@ -443,7 +466,7 @@ export function FolderGallery({
     [base, entries, known, ignored],
   );
   const monthCache = useRef(new Map());
-  const months = useMemo(() => {
+  const hubMonths = useMemo(() => {
     const view = new Map();
     for (const [month, entry] of Object.entries(source.months)) {
       const known = monthCache.current.get(month);
@@ -474,27 +497,12 @@ export function FolderGallery({
     }
     return view;
   }, [source, entryByPath, hidden]);
-  const sections = useMemo(() => {
-    const list = source.timeline
-      .map(({ month, count }) => {
-        const entry = source.months[month];
-        const shown = months.get(month)?.length || 0;
-        const removed = entry ? entry.items.length - shown : 0;
-        return {
-          month,
-          count: entry?.complete ? shown : Math.max(shown, count - removed),
-        };
-      })
-      .filter((section) => section.count > 0);
-    const undated = source.months.undated;
-    if (undated && (undated.items.length || !undated.complete))
-      list.unshift({
-        month: "undated",
-        count:
-          (months.get("undated")?.length || 0) + (undated.complete ? 0 : 1),
-      });
-    return list;
-  }, [source, months]);
+  const months = useMemo(() => localMonths(hubMonths), [hubMonths]);
+  const shown = useMemo(() => shownMonths(source, months), [source, months]);
+  const sections = useMemo(
+    () => monthSections(source, months, shown),
+    [source, months, shown],
+  );
   useEffect(() => {
     if (!online || level !== "base") return setMemories([]);
     let live = true;
@@ -510,16 +518,10 @@ export function FolderGallery({
     };
   }, [online, level, volume, api, memoryDay]);
   const years = useMemo(() => galleryYears(source.timeline), [source.timeline]);
-  const dayItems = useMemo(() => {
-    if (level !== "base") return null;
-    const byDay = new Map();
-    for (const { month, count } of sections) {
-      const items = months.get(month);
-      if (source.months[month]?.complete && items?.length === count)
-        byDay.set(month, items);
-    }
-    return byDay;
-  }, [level, sections, months, source]);
+  const dayItems = useMemo(
+    () => (level === "base" ? completeDays(sections, months, shown) : null),
+    [level, sections, months, shown],
+  );
   const layout = useMemo(
     () =>
       galleryLayout(
@@ -527,8 +529,9 @@ export function FolderGallery({
         width,
         density === "years" ? compactColumns(columns) : density,
         dayItems,
+        fontScale,
       ),
-    [sections, width, density, columns, dayItems],
+    [sections, width, density, columns, dayItems, fontScale],
   );
   const rows = useMemo(
     () =>
@@ -584,9 +587,7 @@ export function FolderGallery({
       .flatMap((section) => months.get(section.month) || [])
       .filter((item) => !seen.has(item.path) && seen.add(item.path));
   }, [sections, months]);
-  const complete =
-    source.months.undated?.complete !== false &&
-    source.timeline.every(({ month }) => source.months[month]?.complete);
+  const complete = galleryComplete(source);
   const native = useRef({ resolver: null, values: {} });
   const [, setNativeVersion] = useState(0);
   useEffect(() => {
@@ -616,9 +617,10 @@ export function FolderGallery({
       native.current.values[`${item.path}:${item.hash}`];
     return uri && !item.uri ? { ...item, uri, nativeSource: true } : item;
   };
+  const counts = useMemo(() => galleryCounts(source, loaded), [source, loaded]);
   useEffect(() => {
-    onSummary?.({ count: Math.max(loaded.length, source.total || 0) });
-  }, [loaded.length, source.total]);
+    onSummary?.({ photos: counts.photos, videos: counts.videos });
+  }, [counts.photos, counts.videos]);
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
   const previews = useMemo(
@@ -633,8 +635,15 @@ export function FolderGallery({
     [api],
   );
   const accepted = useMemo(
-    () => createAccepted({ hashFile: (uri) => files.hash(uri) }),
-    [],
+    () =>
+      createAccepted({
+        hashFile: (uri) => files.hash(uri),
+        verifiedHash: replicaHash({
+          cachedHash: (key) => store.cachedHash(key),
+          keysOf: (item) => [files.work(scope, volume, item.path), item.uri],
+        }),
+      }),
+    [store, scope, volume],
   );
   const hubContext = useRef(null);
   hubContext.current = { linked: online, volume, known };
@@ -668,17 +677,7 @@ export function FolderGallery({
     }),
     [withHub],
   );
-  const backgroundIo = useMemo(
-    () => ({
-      exists: thumbnailFiles.exists,
-      render: withHub((item) =>
-        item.kind === "video"
-          ? thumbnailFiles.poster(item, true)
-          : thumbnailFiles.render(item, false, true),
-      ),
-    }),
-    [withHub],
-  );
+  const backgroundIo = useMemo(() => localPreviewIo(thumbnailFiles), []);
   const candidates = useMemo(
     () =>
       previewCandidates(
@@ -762,13 +761,56 @@ export function FolderGallery({
       active = false;
     };
   }, [visibleKey, store, scope, volume, io, density]);
+  const previewQueue = useRef(null);
+  const candidatesRef = useRef(candidates);
+  candidatesRef.current = candidates;
   useEffect(() => {
-    let active = true;
-    if (density === "years" || !candidates.length || !knownLoaded) {
+    if (density === "years") {
       setPreparing(false);
       return;
     }
+    let active = true;
     const key = `gallery-thumbnails:${scope}:${volume}`;
+    const queue = createPreviewQueue({
+      io: backgroundIo,
+      saved: () =>
+        thumbnailProgress.current?.key === key
+          ? thumbnailProgress.current.value
+          : {},
+      changed: (delta) => {
+        if (active) commit(key, delta);
+      },
+      failed: (entry) => {
+        if (!active) return;
+        failedPaths.current.add(entry.path);
+        queueFlush();
+      },
+      idle: (idle) => {
+        if (!active) return;
+        setPreparing(!idle);
+        if (!idle) return;
+        const present = new Set(candidatesRef.current.map((item) => item.path));
+        failedPaths.current = new Set(
+          [...failedPaths.current].filter((path) => present.has(path)),
+        );
+        if (completeRef.current && !loadingRef.current) {
+          const kept = pruneSaved(
+            thumbnailProgress.current.value,
+            new Set([...present, ...loadedRef.current.map((item) => item.path)]),
+          );
+          if (
+            Object.keys(kept).length !==
+            Object.keys(thumbnailProgress.current.value).length
+          )
+            dirty.current = true;
+          thumbnailProgress.current = { key, value: kept };
+        }
+        flusher.current.now();
+        void save(key);
+      },
+    });
+    previewQueue.current = queue;
+    queue.update(candidatesRef.current);
     (async () => {
       const cached =
         thumbnailProgress.current?.key === key
@@ -779,53 +821,20 @@ export function FolderGallery({
         thumbnailProgress.current = { key, value: cached };
         setThumbnails({ ...cached });
       }
-      setPreparing(true);
-      try {
-        await prepareThumbnails(
-          candidates,
-          thumbnailProgress.current.value,
-          backgroundIo,
-          () => active,
-          (delta) => {
-            if (active) commit(key, delta);
-          },
-          candidates,
-          3,
-          (entry) => {
-            if (active) {
-              failedPaths.current.add(entry.path);
-              queueFlush();
-            }
-          },
-          true,
-        );
-      } finally {
-        if (active) setPreparing(false);
-      }
-      if (!active) return;
-      const present = new Set(candidates.map((item) => item.path));
-      failedPaths.current = new Set(
-        [...failedPaths.current].filter((path) => present.has(path)),
-      );
-      if (completeRef.current && !loadingRef.current) {
-        const kept = pruneSaved(
-          thumbnailProgress.current.value,
-          new Set([...present, ...loadedRef.current.map((item) => item.path)]),
-        );
-        if (
-          Object.keys(kept).length !==
-          Object.keys(thumbnailProgress.current.value).length
-        )
-          dirty.current = true;
-        thumbnailProgress.current = { key, value: kept };
-      }
-      flusher.current.now();
-      await save(key);
+      queue.start();
     })().catch(() => {});
     return () => {
       active = false;
+      queue.stop();
+      if (previewQueue.current === queue) previewQueue.current = null;
     };
-  }, [candidateKey, store, scope, volume, density, attempt, knownLoaded, online]);
+  }, [store, scope, volume, density, backgroundIo]);
+  useEffect(() => {
+    previewQueue.current?.update(candidates);
+  }, [candidateKey]);
+  useEffect(() => {
+    if (attempt) previewQueue.current?.retry();
+  }, [attempt]);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") {
@@ -840,6 +849,16 @@ export function FolderGallery({
   const progress = useMemo(
     () => previewProgress(candidates, thumbnails, failedPaths.current),
     [candidates, thumbnails, failedCount],
+  );
+  const downloading = useMemo(
+    () =>
+      source.local
+        ? 0
+        : stillDownloading(
+            loaded,
+            (path) => builtinExcluded(path) || !!ignored?.(path),
+          ),
+    [source.local, loaded, ignored],
   );
   const retryPreviews = () => {
     thumbnailFiles.retry();
@@ -895,7 +914,7 @@ export function FolderGallery({
     scrubTimer = useRef(null),
     failedAt = useRef(0);
   const loader = useRef(null);
-  loader.current = { gallery, source, layout, range, online, density };
+  loader.current = { gallery, source, shownMonths: shown, layout, range, online, density };
   const pump = async () => {
     const current = loader.current;
     if (
@@ -911,7 +930,7 @@ export function FolderGallery({
     const top = lastScrollY.current - rootTop.current - canvasTop.current;
     const month = neededMonth(
       current.layout,
-      current.source.months,
+      current.shownMonths,
       current.range.top,
       current.range.bottom,
       top,
@@ -999,7 +1018,7 @@ export function FolderGallery({
           : layout.sections.map((section) => ({
               key: section.month,
               label: railMonthLabel(section.month),
-              year: /^\d{4}-/.test(section.month)
+              year: datedMonth(section.month)
                 ? section.month.slice(0, 4)
                 : "",
               offset: start + section.top,
@@ -1035,29 +1054,46 @@ export function FolderGallery({
     [onRail],
   );
   const pinchResponder = useMemo(() => {
-    const distance = (touches) =>
-      Math.hypot(
-        touches[0].pageX - touches[1].pageX,
-        touches[0].pageY - touches[1].pageY,
-      );
+    const tracker = pinchTracker({
+      lock: (active) => positionRef.current?.setGestureActive(active),
+      level: () => layoutRef.current.level,
+      change: (nextLevel, gesture, from) => {
+        const state = layoutRef.current;
+        const held = gesture.anchor || null;
+        if (from === "years") {
+          anchor.current = held && { ...held, index: 0 };
+          setLevel("compact");
+          return;
+        }
+        const year =
+          held &&
+          state.years.find((item) => item.year === held.month.slice(0, 4));
+        anchor.current =
+          levelColumns(nextLevel, state.columns) !== "years"
+            ? held
+            : year
+              ? { ...held, month: year.month, index: 0 }
+              : null;
+        yearPositions.current.clear();
+        setLevel(nextLevel);
+      },
+    });
     const finish = () => {
       pinch.current = null;
       suppressPressUntil.current = Date.now() + 300;
-      positionRef.current?.setGestureActive(false);
+      tracker.end();
     };
     return PanResponder.create({
-      onStartShouldSetPanResponderCapture: (event) =>
-        event.nativeEvent.touches.length === 2,
-      onMoveShouldSetPanResponderCapture: (event) =>
-        event.nativeEvent.touches.length === 2,
+      onStartShouldSetPanResponderCapture: tracker.claims,
+      onMoveShouldSetPanResponderCapture: tracker.claims,
       onPanResponderTerminationRequest: () => false,
+      onPanResponderReject: finish,
       onPanResponderGrant: (event) => {
+        const gesture = tracker.begin(event);
+        if (!gesture) return;
         const touches = event.nativeEvent.touches;
-        if (touches.length !== 2) return;
-        const gesture = { distance: distance(touches) };
         pinch.current = gesture;
         suppressPressUntil.current = Infinity;
-        positionRef.current?.setGestureActive(true);
         const pageY = (touches[0].pageY + touches[1].pageY) / 2;
         const pageX = (touches[0].pageX + touches[1].pageX) / 2;
         rootRef.current?.measureInWindow((x, top) => {
@@ -1106,40 +1142,7 @@ export function FolderGallery({
           };
         });
       },
-      onPanResponderMove: (event) => {
-        const touches = event.nativeEvent.touches,
-          gesture = pinch.current;
-        if (
-          !gesture ||
-          gesture.changed ||
-          touches.length !== 2 ||
-          !gesture.anchor
-        )
-          return;
-        const state = layoutRef.current;
-        const nextLevel = pinchLevel(
-          state.level,
-          distance(touches) / Math.max(1, gesture.distance),
-        );
-        if (nextLevel === state.level) return;
-        gesture.changed = true;
-        if (state.level === "years") {
-          anchor.current = { ...gesture.anchor, index: 0 };
-          setLevel("compact");
-          return;
-        }
-        const year = state.years.find(
-          (item) => item.year === gesture.anchor.month.slice(0, 4),
-        );
-        anchor.current =
-          levelColumns(nextLevel, state.columns) !== "years"
-            ? gesture.anchor
-            : year
-              ? { ...gesture.anchor, month: year.month, index: 0 }
-              : null;
-        yearPositions.current.clear();
-        setLevel(nextLevel);
-      },
+      onPanResponderMove: tracker.move,
       onPanResponderRelease: finish,
       onPanResponderTerminate: finish,
     });
@@ -1153,14 +1156,14 @@ export function FolderGallery({
   const thumb = (item) =>
     savedThumbnail(thumbnails, item) ||
     (item.upload && item.upload !== "lost" ? item.uri : null);
+  const shownPhoto = (item) => {
+    const preview = thumb(item);
+    return item.kind === "video"
+      ? { ...item, poster: preview }
+      : { ...item, preview };
+  };
   const photos = useMemo(
-    () =>
-      [...pendingItems, ...loaded].map((item) => {
-        const preview = thumb(item);
-        return item.kind === "video"
-          ? { ...item, poster: preview }
-          : { ...item, preview };
-      }),
+    () => [...pendingItems, ...loaded].map(shownPhoto),
     [pendingItems, loaded, thumbnails],
   );
   const actions = useRef({});
@@ -1182,6 +1185,56 @@ export function FolderGallery({
       if (Date.now() > suppressPressUntil.current) toggle(item);
     },
   };
+  const focusing = useRef(null);
+  const [focusTick, setFocusTick] = useState(0);
+  useEffect(() => {
+    if (!focus) return;
+    const item = focus.path ? photos.find((photo) => photo.path === focus.path) : null;
+    if (item) {
+      actions.current.open(item);
+      onFocused?.();
+      return;
+    }
+    if (!focus.path && focus.month && layout.sections?.some((section) => section.month === focus.month)) {
+      anchor.current = { month: focus.month, index: 0, viewportY: 0 };
+      if (applyAnchor()) onFocused?.();
+      return;
+    }
+    if (!gallery) return;
+    if (focusing.current?.focus === focus) {
+      if (focusing.current.done) onFocused?.();
+      return;
+    }
+    const attempt = (focusing.current = { focus, done: false });
+    if (!online && focus.path) {
+      cachedGalleryItems(store, scope, volume)
+        .then((items) => {
+          const found = cachedMonthFocus(items, focus.path);
+          if (live.current && found)
+            setViewer({ items: found.items.map(shownPhoto), index: found.index });
+        })
+        .catch(() => {})
+        .finally(() => {
+          attempt.done = true;
+          if (live.current) onFocused?.();
+        });
+      return;
+    }
+    if (!focus.month || !online) {
+      onFocused?.();
+      return;
+    }
+    hub
+      .load(focus.month)
+      .then(
+        (next) => live.current && next && setGallery(next),
+        () => {},
+      )
+      .finally(() => {
+        attempt.done = true;
+        if (live.current) setFocusTick((value) => value + 1);
+      });
+  }, [focus, photos, layout, gallery, focusTick]);
   const handlers = useRef({
     open: (item) => actions.current.open(item),
     press: (item, rect) => actions.current.press(item, rect),
@@ -1366,9 +1419,16 @@ export function FolderGallery({
           <StatusRow
             busy
             title="Preparing previews"
-            caption={`${progress.done.toLocaleString("en")} of ${progress.total.toLocaleString("en")} ${progress.total === 1 ? "photo" : "photos"}`}
+            caption={`${progress.done.toLocaleString("en")} of ${progress.total.toLocaleString("en")} ${progress.total === 1 ? "photo" : "photos"} on this phone`}
           />
         )}
+      {downloading > 0 && density !== "years" && (
+        <StatusRow
+          icon="download"
+          title={`${downloading.toLocaleString("en")} ${downloading === 1 ? "photo" : "photos"} still downloading`}
+          caption="Previews appear as each one reaches this phone."
+        />
+      )}
       {!!candidates.length &&
         density !== "years" &&
         progress.failed > 0 && (
@@ -1456,15 +1516,14 @@ export function FolderGallery({
           {rows.flatMap(({ section, heads }) =>
             (heads || []).map((head) => (
               <View
-                key={`day:${section.month}:${head.top}`}
-                style={[s.dayHead, { top: section.gridTop + head.top }]}
+                key={`day:${section.month}:${head.top}:${head.left}`}
+                style={[s.dayHead, { top: section.gridTop + head.top, left: head.left, width: head.width }]}
               >
-                <Text numberOfLines={1} style={[s.rowTitle, s.flex]}>
+                {head.tick && <View style={s.dayTick} />}
+                <Text numberOfLines={1} style={[s.rowTitle, s.dayLabel]}>
                   {head.label}
                 </Text>
-                <Text style={s.caption}>
-                  {head.count.toLocaleString("en")} {head.count === 1 ? "photo" : "photos"}
-                </Text>
+                {head.counted && <Text style={s.caption}>{photoCount(head.count)}</Text>}
               </View>
             )),
           )}
@@ -1526,7 +1585,7 @@ export function FolderGallery({
           />
         ) : (
           <EmptyState
-            icon="image"
+            icon="arca"
             title="No photos yet"
             text={
               uploads

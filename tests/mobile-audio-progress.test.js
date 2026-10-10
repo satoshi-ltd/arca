@@ -13,17 +13,22 @@ import {
   musicSheet,
   musicTabs,
   nativeLibrary,
+  orderShows,
   searchLibrary,
-  showCaption,
+  shortDay,
   showRows,
   showSummary,
+  showTile,
   trackContext,
   trackNodeId,
   upNext,
 } from "../apps/mobile/src/music-library.js";
 import {
   fraction,
+  isFinished,
+  playedRow,
   positionMap,
+  positionSignature,
   positionToSave,
   remember,
   resumeCandidate,
@@ -97,7 +102,29 @@ test("episodes are Podcast-genre tracks or long tracks without an artist, groupe
   assert.equal(library.tracks.get(wild.tracks[0]).hash, "h-Podcasts/The Wild Project/2026-10-08 #386.mp3");
   assert.equal(shows[0].name, "WORLDCAST", "an untagged episode belongs to its parent folder");
   assert.equal(showSummary(wild), "2 episodes · 2 h 40 min");
-  assert.equal(showCaption(wild), "2 episodes · Oct 8, 2026");
+  const now = new Date(2026, 9, 10, 12);
+  assert.deepEqual(showTile(wild, library, new Map(), now), { day: "Oct 8", fresh: true, caption: "New · Oct 8", progress: null, resume: null, left: null }, "a show whose newest episode is under a week old and unplayed is New");
+  assert.deepEqual(showTile(wild, library, new Map(), new Date(2026, 9, 16, 12)).caption, "Oct 8", "after a week only the day stays");
+  assert.equal(showTile(wild, library, new Map(), new Date(2027, 0, 2)).caption, "Oct 8, 2026", "the year only outside the current year");
+  const [newest, older] = wild.tracks.map((id) => library.tracks.get(id));
+  const playedNewest = positionMap([{ volume: newest.folder, path: newest.path, hash: newest.hash, position: 1200, duration: 4800, updated: 1 }]);
+  const newestTile = showTile(wild, library, playedNewest, now);
+  assert.deepEqual(
+    { ...newestTile, resume: newestTile.resume.track },
+    { day: "Oct 8", fresh: false, caption: "1 h 0 min left", progress: 0.25, resume: newest, left: "1 h 0 min left" },
+    "a saved position on the newest episode is not New, draws the edge and reads the time left",
+  );
+  const playedOlder = positionMap([{ volume: older.folder, path: older.path, hash: older.hash, position: 600, duration: 2400, updated: 1 }]);
+  const olderTile = showTile(wild, library, playedOlder, now);
+  assert.deepEqual(
+    [olderTile.caption, olderTile.fresh, olderTile.progress, olderTile.resume.track],
+    ["30 min left", false, 0.25, older],
+    "an older episode in progress gives the tile its play and time left",
+  );
+  const finishedNewest = positionMap([], [{ volume: newest.folder, path: newest.path, hash: newest.hash, updated: 2 }]);
+  assert.deepEqual(showTile(wild, library, finishedNewest, now), { day: "Oct 8", fresh: false, caption: "Oct 8", progress: null, resume: null, left: null }, "a finished newest episode is played: not New, and never resumable");
+  assert.equal(shortDay("2026-03-04", now), "Mar 4");
+  assert.equal(shortDay(null, now), "");
   assert.equal(trackContext(library.tracks.get(wild.tracks[0])), wild.id);
 });
 
@@ -173,6 +200,24 @@ test("the player's transitions decide what is saved: playing, pausing, ending an
   assert.equal(positionToSave(paused, { ...paused }), null);
 });
 
+test("a show's play resumes only an episode the phone holds", () => {
+  const tracks = [
+    row("Podcasts/The Wild Project/2026-10-01 #385.mp3", { title: "#385", album: "The Wild Project", genre: "Podcast", duration: 4200 }),
+    row("Podcasts/The Wild Project/2026-10-08 #386.mp3", { title: "#386", album: "The Wild Project", genre: "Podcast", duration: 5400 }),
+  ];
+  const library = buildLibrary([folder("a1", tracks, new Map([[tracks[0].path, tracks[0].hash]]))]);
+  const show = library.shows.values().next().value;
+  const [ready, pending] = show.rows.map((id) => library.tracks.get(id) || library.pending.get(id)).sort((a, b) => a.title.localeCompare(b.title));
+  const now = new Date(2026, 9, 10, 12);
+  const onlyPending = positionMap([{ volume: "a1", path: pending.path, hash: pending.hash, position: 600, duration: 5400, updated: 2 }]);
+  assert.equal(showTile(show, library, onlyPending, now).resume, null, "an episode still downloading offers no play");
+  const both = positionMap([
+    { volume: "a1", path: pending.path, hash: pending.hash, position: 600, duration: 5400, updated: 2 },
+    { volume: "a1", path: ready.path, hash: ready.hash, position: 300, duration: 4200, updated: 1 },
+  ]);
+  assert.equal(showTile(show, library, both, now).resume.track, ready, "the newest progress on a downloaded episode wins");
+});
+
 test("saved positions show time left and progress, and the resume card offers the newest one not playing", () => {
   assert.equal(timeLeft(4500), "1 h 15 min left");
   assert.equal(timeLeft(2520), "42 min left");
@@ -192,9 +237,13 @@ test("saved positions show time left and progress, and the resume card offers th
   assert.equal(savedPosition(positions, newer).position, 900);
   assert.equal(savedPosition(positions, { ...newer, hash: "changed" }), null, "a changed file starts over");
   assert.equal(resumeCandidate(positions, library, "a1").track, older, "the newest position from any device");
-  assert.equal(resumeCandidate(positions, library, "a1", older.id), null, "hidden while that item plays");
+  assert.equal(resumeCandidate(positions, library, "a1", older.id).track, newer, "while the newest item plays the card offers the next one, as on the desktop");
+  assert.equal(resumeCandidate(positionMap([positions.get(`a1\0${older.path}`)]), library, "a1", older.id), null, "and nothing when only the playing item is saved");
+  assert.equal(resumeCandidate(positions, library, "a1", null, (track) => track.id !== older.id).track, newer, "a filter skips to the newest accepted item");
   const next = remember(positions, { volume: "a1", path: older.path, hash: older.hash, position: 4150, duration: 4200 }, { id: "d1", name: "Android" }, 5);
   assert.equal(savedPosition(next, older), null, "the last minute clears the position");
+  assert.deepEqual([playedRow(next, older).finished, playedRow(next, older).position, playedRow(next, older).updated], [true, 0, 5], "and keeps a finished mark with its time");
+  assert.equal(resumeCandidate(next, library, "a1").track, newer, "a finished item is never offered");
   const kept = remember(positions, { volume: "a1", path: older.path, hash: older.hash, position: 2000, duration: 4200 }, { id: "d1", name: "Android" }, 5);
   assert.deepEqual(savedPosition(kept, older), { volume: "a1", path: older.path, hash: older.hash, position: 2000, duration: 4200, device: "d1", name: "Android", updated: 5 });
 });
@@ -248,7 +297,8 @@ test("the phone reads and writes hub positions with its device credential and pa
   const app = read("App.jsx");
   assert.match(app, /const audio = useAudioSession\(\{\s+enabled: !!connected,\s+api: \(route, body\) => client\.api\(route, body\),/);
   assert.match(app, /if \(at > 0\) \{\s+audio\.seeked\(\);\s+await player\.command\("seek", at \* 1000\);/, "a saved row resumes where it stopped");
-  assert.match(app, /positions=\{audio\.positions\}\s+deviceId=\{connection\?\.id\}/);
+  assert.match(app, /positions=\{audio\.positions\}\s+loaded=\{audio\.loaded\}\s+command=\{musicCommand\}\s+deviceId=\{connection\?\.id\}/);
+  assert.match(session, /const \{ positions: rows, finished \} = await deps\.current\.api\("\/v1\/audio-positions"\);\s+const next = positionMap\(rows, finished\);\s+setPositions\(next\);\s+setLoaded\(positionSignature\(next\)\);/, "the hub's finished marks join the positions and each load is signed");
   assert.match(app, /sleep=\{audio\.sleep\}\s+setSleep=\{audio\.setSleep\}\s+seeked=\{audio\.seeked\}/);
 });
 
@@ -257,8 +307,9 @@ test("the library draws progress, the resume card, the Podcasts tab and a track 
   assert.match(library, /<Text style=\{s\.eyebrow\}>PICK UP WHERE YOU LEFT OFF<\/Text>/);
   assert.match(library, /label="Continue" icon="play" onPress=\{\(\) => start\(row\.position\)\}/);
   assert.match(library, /label="Start over" icon="rotate-ccw" onPress=\{\(\) => start\(0\)\}/);
-  assert.match(library, /resumeCandidate\(positions, library, folderId, playing\)/);
-  assert.match(library, /item\.kind === "podcasts"\)\s+return \(\s+<PagedRows\s+items=\{library\.showOrder/);
+  assert.match(library, /route\.length === 1 && tab !== "podcasts"\s+\? resumeCandidate\(positions, library, folderId, playing\)/, "the podcasts root has no resume card");
+  assert.doesNotMatch(library, /ContinueTile|track\.podcast\)/, "the podcasts root has no Continue tile");
+  assert.match(library, /item\.kind === "podcasts"\) \{\s+const shows = \(order \|\| library\.showOrder\)\.map[\s\S]*?<ShowGrid\s+shows=\{shows\}/, "shows render as the cover grid in order c");
   assert.match(library, /episodes\s+flat=\{flat\}\s+\/>/, "a show page plays episodes without Shuffle");
   assert.match(library, /canPlay && tracks\.length > 1 && !episodes && \(/);
   assert.match(library, /label="Delete…"\s+icon="trash"\s+danger\s+disabled=\{locked\}\s+onPress=\{\(\) => removeTrack\(sheet\.track\)\}/);
@@ -267,6 +318,102 @@ test("the library draws progress, the resume card, the Podcasts tab and a track 
   const app = read("App.jsx");
   assert.match(app, /`Delete “\$\{track\.title\}”\?`,\s+"It is removed from every device\. History keeps it/);
   assert.match(app, /await engine\.current\.removeFile\(track\.folder, track\.path\);/, "through the phone's synchronized file delete");
+});
+
+test("every show in progress carries its own play, time left and resume sheet; there is no Continue tile", () => {
+  const library = read("MusicLibrary.jsx");
+  const theme = read("theme.js");
+  const grid = library.slice(library.indexOf("function ShowPlay("), library.indexOf("function AlbumGrid("));
+  assert.match(grid, /<Text numberOfLines=\{2\} style=\{s\.rowTitle\}>\s+\{show\.name\}/, "the name on two lines");
+  assert.match(grid, /<Text style=\{s\.newWord\}>New<\/Text>/);
+  assert.match(grid, /tile\.progress != null && <ProgressLine value=\{tile\.progress\} edge \/>/, "a show in progress draws the edge");
+  assert.match(grid, /accessibilityLabel=\{`\$\{show\.name\}, \$\{tile\.left\}`\}/, "the tile reads its time left");
+  assert.match(grid, /\{ name: "continue", label: "Continue" \},\s+\{ name: "startover", label: "Start over" \},[\s\S]*?\{ name: "favorite", label: favorite\.label \}/, "TalkBack offers Continue, Start over and the favorite toggle");
+  assert.match(grid, /onPress=\{press\}\s+onLongPress=\{more\}/, "a long press opens the resume sheet");
+  assert.match(grid, /\{canPlay && \(\s+<View style=\{s\.showPlaySlot\} pointerEvents="box-none">\s+<ShowPlay/, "the play is its own control over the cover, only where the phone plays");
+  assert.match(grid, /accessibilityLabel=\{`\$\{playing \? "Pause" : "Continue"\} \$\{item\.track\.title\}`\}\s+hitSlop=\{6\}/, "named after the episode, with a 48 dp target");
+  assert.match(grid, /onPress=\{\(\) => \(loaded \? toggle\(\) : resume\(item\.row\.position\)\)\}/, "the loaded episode's button mirrors the player instead of restarting it");
+  assert.match(grid, /<Icon name=\{playing \? "pause" : "play"\}/);
+  assert.match(grid, /if \(!item\)\s+return \(\s+<Pressable\s+\{\.\.\.hold\}/, "shows without progress keep the favorite long press and no play");
+  assert.match(grid, /split && s\.musicAlbumSplit/, "the Fold split keeps three per row");
+  assert.match(grid, /selected && s\.musicTileSelected/);
+  assert.match(grid, /setShown\(shown \+ 60\)/);
+  assert.match(theme, /continuePlay: \{\s+position: "absolute",\s+right: 6,\s+bottom: 8,\s+width: 36,\s+height: 36,/);
+  assert.match(theme, /showPlaySlot: \{ position: "absolute", top: 0, left: 0, right: 0, aspectRatio: 1 \}/, "the play sits on the square cover");
+  assert.match(theme, /musicAlbum: \{ width: wide \? "18%" : "30\.5%", gap: 4 \}/, "five across the Fold root, three on the phone");
+  assert.match(theme, /musicAlbumSplit: \{ width: "30\.5%" \}/);
+  assert.match(library, /label="Continue"\s+icon="play"[\s\S]*?label="Start over"\s+icon="rotate-ccw"[\s\S]*?label="Open show"[\s\S]*?favorite\.has\(sheet\.favorite\) \? "Remove from Favorites" : "Add to Favorites"/, "the sheet offers Continue, Start over, Open show and the favorite toggle");
+  assert.match(library, /entry\.track\.id === playing && at > 0\s+\? player\s+\.command\("state"\)\s+\.then\(\(state\) => !isPlaying\(state\) && command\("toggle"\)\)/, "Continue on the loaded episode only resumes it");
+  assert.deepEqual(
+    musicSheet({ kind: "resume-actions", show: { name: "The Wild Project" }, track: { title: "#385", artist: "The Wild Project" }, row: { position: 1680, duration: 4200 } }),
+    { title: "The Wild Project", icon: "podcast", subtitle: "#385 · 42 min left", menu: true },
+  );
+  assert.match(read("App.jsx"), /resumeActions=\{\(value\) =>\s+setSheet\(\{ kind: "resume-actions", \.\.\.value \}\)/);
+  assert.doesNotMatch(library, /showCaption|showRow\b|ContinueTile/);
+});
+
+test("shows follow order c: in progress by last played, then New by newest, then the rest, recomputed only on open and reload", () => {
+  const day = (offset) => {
+    const date = new Date(Date.UTC(2026, 9, 10 - offset, 12));
+    return date.toISOString().slice(0, 10);
+  };
+  const shows = [
+    ["Lex Fridman Podcast", 1],
+    ["Al Corte", 2],
+    ["The Wild Project", 2],
+    ["Julian Dorey Podcast", 3],
+    ["La Escobula", 7],
+    ["Salud en la radio", 10],
+    ["Acquired", 19],
+    ["Hardcore History", 69],
+  ];
+  const library = buildLibrary([
+    folder(
+      "p",
+      shows.flatMap(([name, offset]) => [
+        row(`${name}/${day(offset)} New.mp3`, { genre: "Podcast", album: name, duration: 6000 }),
+        row(`${name}/${day(offset + 30)} Old.mp3`, { genre: "Podcast", album: name, duration: 6000 }),
+      ]),
+    ),
+  ]);
+  const byName = new Map([...library.shows.values()].map((show) => [show.name, show]));
+  const episode = (name, index) => library.tracks.get(byName.get(name).rows[index]);
+  const at = (name, index, extra) => {
+    const track = episode(name, index);
+    return { volume: "p", path: track.path, hash: track.hash, ...extra };
+  };
+  const positions = positionMap(
+    [
+      at("The Wild Project", 0, { position: 900, duration: 6000, updated: 300 }),
+      at("Acquired", 0, { position: 600, duration: 6000, updated: 200 }),
+      at("Salud en la radio", 1, { position: 3000, duration: 6000, updated: 100 }),
+      at("La Escobula", 0, { position: 0, duration: 6000, updated: 50 }),
+    ],
+    [at("Al Corte", 0, { updated: 400 })],
+  );
+  const now = new Date(Date.UTC(2026, 9, 10, 18));
+  const all = library.showOrder.map((id) => library.shows.get(id));
+  assert.deepEqual(orderShows(all, library, positions, now).map((show) => show.name), [
+    "The Wild Project",
+    "Acquired",
+    "Salud en la radio",
+    "Lex Fridman Podcast",
+    "Julian Dorey Podcast",
+    "Al Corte",
+    "La Escobula",
+    "Hardcore History",
+  ]);
+  assert.equal(isFinished(positions.get(`p\0${episode("Al Corte", 0).path}`)), true, "a hub finished mark is kept as finished");
+  assert.equal(isFinished(positions.get(`p\0${episode("La Escobula", 0).path}`)), true, "and so is a position-0 row");
+  assert.equal(savedPosition(positions, episode("La Escobula", 0)), null, "finished never resumes");
+  assert.equal(showTile(byName.get("Al Corte"), library, positions, now).caption, "Oct 8", "a finished newest episode is not New");
+  assert.equal(showTile(byName.get("Lex Fridman Podcast"), library, positions, now).caption, "New · Oct 9");
+  assert.equal(positionSignature(positions), positionSignature(positionMap([...positions.values()])), "a reload with the same rows signs the same");
+  assert.notEqual(positionSignature(positions), positionSignature(positionMap([at("Acquired", 0, { position: 1800, duration: 6000, updated: 500 })])));
+  const page = read("MusicLibrary.jsx");
+  assert.match(page, /const order = useShowOrder\(library, positions, loaded, showsOpen\(library, route, wide\)\);/);
+  assert.match(page, /if \(!active\) \{\s+kept\.current = null;\s+return null;\s+\}\s+if \(kept\.current\?\.library !== library \|\| kept\.current\.loaded !== loaded\)/, "local saves never move a tile; a new library, a changed hub load or reopening the root do");
+  assert.match(page, /return tab === "podcasts" && musicPane\(route, wide\)\.level === 0;/);
 });
 
 test("Now playing offers the sleep timer and episode controls without shuffle or repeat", () => {

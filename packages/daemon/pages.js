@@ -36,15 +36,13 @@ export function listPage(store, volume, query, name) {
 // Browse the index plus this replica's own scanned changes, never arbitrary paths on the host filesystem.
 export function browsePage(store, volume, query) {
   const prefix = query.get("prefix") || "";
-  const search = query.get("search") || "";
   const after = query.get("after") || "";
   const limit = Number(query.get("limit") || 100);
   if (
     !Number.isSafeInteger(limit) ||
     limit < 1 ||
     limit > 200 ||
-    prefix.length > 1024 ||
-    search.length > 256
+    prefix.length > 1024
   )
     fail("Invalid browse request");
   const base = prefix ? prefix.replace(/\/$/, "") + "/" : "";
@@ -55,11 +53,11 @@ export function browsePage(store, volume, query) {
       SELECT *, substr(path, ?) AS relative FROM ${store.fileSource()}
       WHERE volume=? AND deleted=0 ${base ? "AND path>=? AND path<?" : ""}
     ), entries AS (
-      SELECT CASE WHEN ?='' AND instr(relative,'/')>0
+      SELECT CASE WHEN instr(relative,'/')>0
         THEN substr(relative,1,instr(relative,'/')-1) ELSE relative END AS name,
-        CASE WHEN directory=1 OR (?='' AND instr(relative,'/')>0) THEN 1 ELSE 0 END AS directory,
+        CASE WHEN directory=1 OR instr(relative,'/')>0 THEN 1 ELSE 0 END AS directory,
         CASE WHEN directory=1 THEN 0 ELSE 1 END AS file_count, size, rev, hash
-      FROM source WHERE relative<>'' AND (?='' OR instr(lower(relative),lower(?))>0)
+      FROM source WHERE relative<>''
     )
     SELECT name, directory, sum(file_count) AS files, sum(size) AS size, max(rev) AS rev, max(hash) AS hash
     FROM entries GROUP BY name, directory
@@ -71,10 +69,6 @@ export function browsePage(store, volume, query) {
       Array.from(base).length + 1,
       volume,
       ...(base ? [base, base.slice(0, -1) + "0"] : []),
-      search,
-      search,
-      search,
-      search,
       after,
       limit + 1,
     );

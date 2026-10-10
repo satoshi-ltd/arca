@@ -136,7 +136,7 @@ test("folder sizes read naturally for one file, many files and no count yet", as
 
 test("month and date labels stay readable for undated photos", () => {
   assert.equal(monthLabel("2026-09"), "September 2026");
-  assert.equal(monthLabel("undated"), "Undated");
+  assert.equal(monthLabel("undated"), "Date unknown");
   assert.equal(dateLabel("2026-08"), "August 2026");
   assert.match(dateLabel("2026-09-15"), /Sep 15, 2026/);
   assert.match(dateLabel("2026-09-15T10:12:00"), /Sep 15, 2026/);
@@ -154,10 +154,22 @@ test("shared gallery date and media kind match the hub", () => {
     date: "2026-01-01T00:00:00",
     source: "metadata",
   });
-  assert.deepEqual(galleryDate("Screenshot_2026-02-30.png", null, "added"), {
-    date: "added",
+  assert.deepEqual(galleryDate("Screenshot_2026-02-30.png", null, "2026-04-02T10:00:00.000Z"), {
+    date: "2026-04-02T10:00:00.000Z",
     source: "date added",
   });
+  for (const epoch of ["1970-01-01T00:00:00", "1970-01-01T00:00:00.000Z", "1969-12-31T23:00:00", "0000-00-00T00:00:00", "garbage"])
+    assert.deepEqual(galleryDate("x.jpg", epoch, "2026-04-02T10:00:00.000Z"), {
+      date: "2026-04-02T10:00:00.000Z",
+      source: "date added",
+    }, `${epoch} is a missing capture date`);
+  assert.deepEqual(galleryDate("x.jpg", "1970-01-01T00:00:00", "2026-04-02T10:00:00.000Z", "1970-01-01T00:00:00.000Z"), {
+    date: "2026-04-02T10:00:00.000Z",
+    source: "date added",
+  }, "an epoch file date is missing too");
+  assert.deepEqual(galleryDate("x.jpg", null, "1970-01-01"), { date: null, source: null }, "an epoch modification time leaves the photo undated");
+  assert.deepEqual(galleryDate("x.jpg", null, null), { date: null, source: null }, "an undated photo names no date source");
+  assert.deepEqual(galleryDate("x.jpg", "1971-01-01T00:00:00", null).source, "metadata");
   assert.deepEqual(galleryDate("PXL_20260301_1.jpg", null, null), {
     date: "2026-03-01",
     source: "filename",
@@ -201,7 +213,7 @@ test("viewer zoom keeps the focal point fixed and clamps offsets to the page", (
 function fakeHub(rows, size = 3) {
   const calls = [];
   let inflight = 0;
-  const cursor = (row) => `${row.date || ""}|${row.path}`;
+  const cursor = (row) => `${row.date || "!"}|${row.path}`;
   const api = async (route) => {
     const query = new URL("http://hub" + route).searchParams;
     calls.push(Object.fromEntries(query));
@@ -265,18 +277,19 @@ test("the first page fills the newest months and a month continues from its own 
   assert.deepEqual(calls[0], { volume: "v" });
   assert.equal(first.total, 5, "the undated photo counts in the total");
   assert.equal(first.undated, 1);
-  assert.deepEqual(paths(first.months.undated), ["u.jpg"]);
-  assert.equal(first.months.undated.complete, true);
-  assert.deepEqual(paths(first.months["2026-09"]), ["a.jpg", "b.jpg"]);
+  assert.equal(first.months.undated, undefined, "undated photos page after every dated month");
+  assert.deepEqual(paths(first.months["2026-09"]), ["a.jpg", "b.jpg", "c.jpg"]);
   assert.equal(first.months["2026-09"].complete, false);
   assert.equal(first.months["2026-09"].items[0].rev, 9);
   assert.equal(first.months["2026-08"], undefined);
   const more = await gallery.load("2026-09");
-  assert.deepEqual(calls[1], { volume: "v", after: "2026-09-02|b.jpg" });
+  assert.deepEqual(calls[1], { volume: "v", after: "2026-09-01|c.jpg" });
   assert.deepEqual(paths(more.months["2026-09"]), ["a.jpg", "b.jpg", "c.jpg"]);
   assert.equal(more.months["2026-09"].complete, true);
   assert.deepEqual(paths(more.months["2026-08"]), ["d.jpg"]);
   assert.equal(more.months["2026-08"].complete, true);
+  assert.deepEqual(paths(more.months.undated), ["u.jpg"]);
+  assert.equal(more.months.undated.complete, true);
   assert.equal(await gallery.load("2026-09"), more);
   assert.equal(calls.length, 2);
   const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
@@ -286,6 +299,25 @@ test("the first page fills the newest months and a month continues from its own 
   const forgotten = await reopened.forget("u.jpg");
   assert.equal(forgotten.undated, 0);
   assert.equal(forgotten.total, 4);
+});
+
+test("undated photos load from their own top below every dated month", async () => {
+  const rows = [
+    ...Array.from({ length: 4 }, (_, n) => ({ path: `d-${n}.jpg`, date: `2026-09-0${n + 1}` })),
+    { path: "u-a.jpg", date: null },
+    { path: "u-b.jpg", date: null },
+  ];
+  const { api, calls } = fakeHub(rows, 3);
+  const gallery = hubGallery({ api, store: memoryStore(), scope: "s", volume: "v" });
+  const first = await gallery.refresh();
+  assert.deepEqual(paths(first.months["2026-09"]), ["d-3.jpg", "d-2.jpg", "d-1.jpg"]);
+  assert.equal(first.months.undated, undefined);
+  const undated = await gallery.load("undated");
+  assert.deepEqual(calls.at(-1), { volume: "v", after: "!~" });
+  assert.deepEqual(paths(undated.months.undated), ["u-b.jpg", "u-a.jpg"]);
+  assert.equal(undated.months.undated.complete, true);
+  assert.deepEqual(paths(undated.months["2026-09"]), ["d-3.jpg", "d-2.jpg", "d-1.jpg"], "an undated page claims no dated month");
+  assert.equal(undated.months["2026-09"].complete, false);
 });
 
 test("a gallery saved before undated photos were counted loads, forgets and refreshes to the right total", async () => {
@@ -344,7 +376,7 @@ test("an old month loads from its own top without claiming the newer months", as
   assert.deepEqual(paths(state.months["2014-05"]), ["old.jpg"]);
   assert.equal(state.months["2014-05"].complete, true);
   assert.equal(state.months["2026-09"], undefined);
-  assert.equal(state.months.undated, undefined);
+  assert.deepEqual(state.months.undated, { items: [], fresh: 0, complete: true, next: null }, "the last page proves nothing undated sits below it");
   await assert.rejects(gallery.load("2014-99"), /Invalid gallery month/);
 });
 
@@ -513,8 +545,8 @@ test("without a hub index the phone's own files form a complete local gallery", 
   ]);
   assert.equal(state.local, true);
   assert.deepEqual(state.timeline, [
-    { month: "2026-09", count: 1 },
-    { month: "2026-08", count: 1 },
+    { month: "2026-09", count: 1, videos: 0 },
+    { month: "2026-08", count: 1, videos: 0 },
   ]);
   assert.equal(state.months["2026-09"].complete, true);
   assert.equal(state.months["2026-09"].items[0].uri, "file:a");
@@ -864,6 +896,27 @@ const jpeg = (exif) => {
   ]);
 };
 
+test("a zeroed or epoch EXIF capture time is no capture time on the phone", async () => {
+  const { parseTiff } = await import("../apps/mobile/src/exif.js");
+  for (const raw of ["0000:00:00 00:00:00", "1970:01:01 00:00:00"]) {
+    const helpers = tiff(true, []);
+    const parsed = parseTiff(tiff(true, [["exif", 0x9003, 2, helpers.ascii(raw)]]).bytes);
+    assert.equal(parsed.captured, undefined, raw);
+  }
+  const helpers = tiff(true, []);
+  const old = parseTiff(tiff(true, [["exif", 0x9003, 2, helpers.ascii("1956:07:14 10:15:00")]]).bytes);
+  assert.equal(old.captured, "1956-07-14T10:15:00", "a real date before 1970 stays");
+});
+
+test("a phone asset with an epoch creation time files under Undated, never 1970/01", async () => {
+  const { galleryPath } = await import("../apps/mobile/src/gallery.js");
+  const resource = { name: "IMG_1.jpg", key: "original" };
+  for (const creationTime of [0, -3600000, 5000, undefined])
+    assert.match(galleryPath("Phone-ab12", { id: "a", creationTime }, resource), /^Phone-ab12\/Undated\//, String(creationTime));
+  assert.match(galleryPath("Phone-ab12", { id: "a", creationTime: Date.UTC(1956, 6, 14) }, resource), /^Phone-ab12\/1956\/07\//);
+  assert.match(galleryPath("Phone-ab12", { id: "a", creationTime: Date.UTC(1970, 1, 3) }, resource), /^Phone-ab12\/1970\/02\//);
+});
+
 test("local EXIF reader decodes the hub's tag set in both byte orders and agrees with exifr", async () => {
   const { readExif, parseTiff } = await import("../apps/mobile/src/exif.js");
   const exifr = (await import("exifr")).default;
@@ -1057,6 +1110,57 @@ test("a grid pinch below a month's last row anchors to a tile that exists", asyn
   assert.deepEqual(pinchCell(10, 4, 100, -20, -40), { row: 0, index: 0 });
 });
 
+test("a two-finger pinch locks the page scroll on its first event and changes the level once, anchor or not", async () => {
+  const { pinchTracker } = await import("../apps/mobile/src/gallery-scale.js");
+  const touch = (...points) => ({ nativeEvent: { touches: points.map(([pageX, pageY]) => ({ pageX, pageY })) } });
+  const locks = [];
+  const changes = [];
+  let level = "base";
+  const tracker = pinchTracker({
+    lock: (active) => locks.push(active),
+    level: () => level,
+    change: (next, gesture, from) => {
+      changes.push([from, next, gesture.anchor ?? null]);
+      level = next;
+    },
+  });
+  assert.equal(tracker.claims(touch([0, 0])), false);
+  assert.equal(tracker.claims(touch([0, 0], [100, 0])), true);
+  assert.equal(tracker.begin(touch([0, 0])), null);
+  assert.deepEqual(locks, []);
+  tracker.begin(touch([100, 100], [300, 100]));
+  assert.deepEqual(locks, [true], "the scroll is locked before any move can reach the native scroll view");
+  tracker.move(touch([110, 100], [290, 100]));
+  assert.deepEqual(changes, []);
+  tracker.move(touch([150, 100], [250, 100]));
+  assert.deepEqual(changes, [["base", "compact", null]], "an unmeasured anchor never blocks the level change");
+  tracker.move(touch([190, 100], [210, 100]));
+  assert.equal(changes.length, 1, "one level per gesture");
+  tracker.end();
+  assert.deepEqual(locks, [true, false]);
+  tracker.move(touch([0, 100], [400, 100]));
+  assert.equal(changes.length, 1, "no gesture, no change");
+  tracker.begin(touch([150, 100], [250, 100]));
+  tracker.move(touch([100, 100], [300, 100]));
+  assert.deepEqual(changes.at(-1), ["compact", "base", null]);
+  tracker.end();
+});
+
+test("the gallery pinch is wired to the grid root and to a synchronous native scroll lock", () => {
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  const pane = fs.readFileSync(new URL("../apps/mobile/src/KeyboardPane.jsx", import.meta.url), "utf8");
+  assert.match(gallery, /<View\s+ref=\{rootRef\}\s+\{\.\.\.pinchResponder\.panHandlers\}/);
+  assert.match(gallery, /pinchTracker\(\{\s+lock: \(active\) => positionRef\.current\?\.setGestureActive\(active\)/);
+  assert.match(gallery, /onStartShouldSetPanResponderCapture: tracker\.claims/);
+  assert.match(gallery, /onMoveShouldSetPanResponderCapture: tracker\.claims/);
+  assert.match(gallery, /onPanResponderMove: tracker\.move/);
+  for (const end of ["Release", "Terminate", "Reject"])
+    assert.match(gallery, new RegExp(`onPanResponder${end}: finish`));
+  assert.match(gallery, /change: \(nextLevel, gesture, from\) => \{[\s\S]*?setLevel\(nextLevel\);/);
+  assert.match(pane, /setGestureActive: \(active\) => \{\s+scroll\.current\?\.setNativeProps\?\.\(\{\s+scrollEnabled: scrollable\.current && !active,\s+\}\);\s+setGestureActive\(active\);/);
+  assert.match(pane, /scrollEnabled=\{props\.scrollEnabled !== false && !gestureActive\}/);
+});
+
 test("pending uploads separate waiting photos from failed ones", async () => {
   const { pendingUploadLabel } = await import("../apps/mobile/src/gallery-timeline.js");
   assert.equal(pendingUploadLabel([{ upload: "failed" }], { pending: 1, failed: 1 }), "1 needs attention");
@@ -1093,7 +1197,7 @@ test("a pending upload whose saved copy is gone is marked lost for the strip", a
 
 test("the rail labels undated photos instead of an invalid date", async () => {
   const { railMonthLabel } = await import("../apps/mobile/src/gallery-timeline.js");
-  assert.equal(railMonthLabel("undated"), "Undated");
+  assert.equal(railMonthLabel("undated"), "Date unknown");
   assert.match(railMonthLabel("2026-09"), /2026/);
   assert.doesNotMatch(railMonthLabel("2026-09"), /Invalid/);
 });
@@ -1240,9 +1344,9 @@ test("photos that exist only on the phone join the hub index by their own date a
     known,
   );
   assert.deepEqual(merged.timeline, [
-    { month: "2026-09", count: 1 },
-    { month: "2026-01", count: 1 },
-    { month: "2024-05", count: 1 },
+    { month: "2026-09", count: 1, videos: 0 },
+    { month: "2026-01", count: 1, videos: 0 },
+    { month: "2024-05", count: 1, videos: 0 },
   ]);
   assert.equal(merged.total, 3);
   assert.deepEqual(merged.months["2026-09"].items.map((item) => item.path), ["fresh.jpg"]);
@@ -1448,4 +1552,35 @@ test("replacing an undated photo beyond the first page with the count unchanged 
   const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
   const cached = await reopened.cached();
   assert.equal(cached.undatedRev, 66, "the revision survives a restart");
+});
+
+test("the phone keeps how many gallery items are videos in every view it builds", async () => {
+  const items = [
+    { path: "a.mp4", hash: "a", rev: 1, size: 5, date: "2026-09-02", kind: "video" },
+    { path: "b.mp4", hash: "b", rev: 2, size: 9, date: null, kind: "video" },
+  ];
+  const api = async () => ({
+    items,
+    undated: { count: 1, videos: 1, rev: 2 },
+    next: null,
+    timeline: [{ month: "2026-09", count: 1, rev: 1, videos: 1 }],
+  });
+  const store = memoryStore();
+  const fresh = await hubGallery({ api, store, scope: "s", volume: "v" }).refresh();
+  assert.equal(fresh.undatedVideos, 1);
+  assert.equal(fresh.timeline[0].videos, 1);
+  const reopened = hubGallery({ api, store, scope: "s", volume: "v" });
+  assert.equal((await reopened.cached()).undatedVideos, 1, "the saved gallery keeps the undated video count");
+  const forgotten = await reopened.forget("b.mp4");
+  assert.equal(forgotten.undatedVideos, 0);
+  const entries = [
+    { path: "a.mp4", size: 5, mtime: Date.parse("2026-09-02T10:00:00Z") },
+    { path: "c.mov", size: 3, mtime: Date.parse("2026-09-03T10:00:00Z") },
+  ];
+  const known = new Map([["a.mp4", { hash: "a", rev: 1 }], ["c.mov", { hash: "c", rev: 3 }]]);
+  const offline = localGallery(entries, { rows: known });
+  assert.deepEqual(offline.timeline.map(({ month, count, videos }) => [month, count, videos]), [["2026-09", 2, 2]]);
+  const joined = withLocalOnly(fresh, [...entries, { path: "d.jpg", size: 1, mtime: Date.parse("2026-09-04T10:00:00Z") }], new Map([["a.mp4", {}]]));
+  assert.deepEqual(joined.timeline.map(({ month, count, videos }) => [month, count, videos]), [["2026-09", 3, 2]]);
+  assert.equal(joined.undatedVideos, 1);
 });

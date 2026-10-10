@@ -651,6 +651,21 @@ test("a desktop replica indexes, lists and plays its own copy of a selected audi
     ["So What", "Freddie Freeloader"],
     "a track downloaded by a later cycle is read at once from the local copy",
   );
+  assert.equal(next.tracks.some((row) => row.pending), false, "tracks this replica holds are ready to play");
+  const unheld = path.join(replica.engine.store.volume(f.v.id).path, "Miles Davis", "Kind of Blue", "02 Freddie Freeloader.mp3");
+  replica.engine.store.db.prepare("DELETE FROM scan_cache WHERE path=?").run(unheld);
+  replica.engine.music.memo.clear();
+  const partial = await call(`/v1/music/library?volume=${f.v.id}`);
+  assert.deepEqual(
+    partial.tracks.map((row) => [row.title, !!row.pending]),
+    [["So What", false], ["Freddie Freeloader", true]],
+    "a track whose content this replica cannot vouch for is marked pending",
+  );
+  await assert.rejects(
+    call(`/v1/music/playback?${new URLSearchParams({ volume: f.v.id, path: "Miles Davis/Kind of Blue/02 Freddie Freeloader.mp3", hash: second.hash })}`),
+    { status: 409 },
+    "the pending flag matches what playback refuses",
+  );
 
   replica.engine.config.hub.url = "http://127.0.0.1:9";
   replica.engine.hubUnavailable = true;

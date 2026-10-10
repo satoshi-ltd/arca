@@ -6,15 +6,13 @@ import path from "node:path";
 import sharp from "sharp";
 import exifr from "exifr";
 import { fail } from "./storage.js";
-import { mediaKind, galleryDate } from "../core/gallery-date.js";
+import { PREVIEW_SIZES } from "./preview-sizes.js";
+import { mediaKind, galleryDate, realDate } from "../core/gallery-date.js";
 
 // Cached input files keep working copies open, which blocks renames and deletes on Windows.
 sharp.cache({ files: 0 });
 
 export { mediaKind, galleryDate };
-// Thumbnails are never evicted by large previews; each kind has its own disk budget.
-const THUMB_BUDGET = 1024 ** 3;
-const LARGE_BUDGET = 512 * 1024 ** 2;
 // Revisit videos checked before container capture dates were supported.
 const needsCaptureDate = `(m.hash IS NULL OR (m.captured IS NULL AND
   (m.date_checked=0 OR (arca_media_kind(f.path)='video' AND m.date_checked<2))))`;
@@ -99,7 +97,7 @@ export class Gallery {
         "SELECT coalesce(sum(size),0) AS total FROM gallery_derivatives WHERE key LIKE '%-thumb.jpg'",
       )
       .get().total;
-    if (used >= THUMB_BUDGET) return;
+    if (used >= PREVIEW_SIZES.thumb.budget) return;
     let after = "";
     while (!this.closed) {
       const rows = this.s.db
@@ -139,7 +137,7 @@ export class Gallery {
           "SELECT coalesce(sum(size),0) AS total FROM gallery_derivatives WHERE key LIKE '%-large.jpg'",
         )
         .get().total;
-      if (used >= LARGE_BUDGET * 0.9) return;
+      if (used >= PREVIEW_SIZES.large.budget * 0.9) return;
       const rows = this.s.db
         .prepare(
           `SELECT f.path,f.hash FROM files f JOIN gallery_prepared p ON p.hash=f.hash
@@ -155,7 +153,7 @@ export class Gallery {
         try {
           if (this.s.localContent(volume, row.path, row.hash))
             rendered = !(
-              await this.derivative(volume, row.path, row.hash, true)
+              await this.derivative(volume, row.path, row.hash, "large")
             ).unavailable;
         } catch (error) {
           if (error.status === 429) return;
@@ -216,14 +214,20 @@ export class Gallery {
                 reviveValues: false,
               },
             );
-            const raw =
-              tags?.DateTimeOriginal || tags?.CreateDate || tags?.ModifyDate;
-            if (
-              typeof raw === "string" &&
-              /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)
-            )
-              captured =
-                raw.slice(0, 10).replaceAll(":", "-") + "T" + raw.slice(11);
+            captured =
+              ["DateTimeOriginal", "CreateDate", "ModifyDate"]
+                .map((tag) => tags?.[tag])
+                .filter(
+                  (raw) =>
+                    typeof raw === "string" &&
+                    /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw),
+                )
+                .map((raw) =>
+                  realDate(
+                    raw.slice(0, 10).replaceAll(":", "-") + "T" + raw.slice(11),
+                  ),
+                )
+                .find(Boolean) || null;
           }
         }
       } catch {
@@ -280,7 +284,7 @@ export class Gallery {
         WHERE gm.volume=f.volume AND gm.path=f.path AND ga.deleted=0 AND f.path<>json_extract(ga.resources,'$[0].path')
         AND EXISTS (SELECT 1 FROM ${files} primary_file WHERE primary_file.volume=f.volume AND primary_file.path=json_extract(ga.resources,'$[0].path') AND primary_file.deleted=0 AND arca_gallery_visible(primary_file.path)=1))
     ), dated AS (SELECT *,arca_gallery_date(path,captured,added,modified) AS date FROM media)`;
-    const cursor = "coalesce(date, '') || '|' || path";
+    const cursor = "CASE WHEN date IS NULL THEN '!' ELSE date END || '|' || path";
     const select = (bound, order) =>
       s.db
         .prepare(
@@ -490,12 +494,12 @@ export class Gallery {
         if (Number.isFinite(tags?.[tag]) && tags[tag] > 0)
           result[key] = tags[tag];
       const raw = tags?.DateTimeOriginal;
-      if (
+      const taken =
         typeof raw === "string" &&
-        /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)
-      ) {
-        result.captured =
-          raw.slice(0, 10).replaceAll(":", "-") + "T" + raw.slice(11);
+        /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(raw) &&
+        realDate(raw.slice(0, 10).replaceAll(":", "-") + "T" + raw.slice(11));
+      if (taken) {
+        result.captured = taken;
         if (/^[+-]\d{2}:\d{2}$/.test(tags.OffsetTimeOriginal || ""))
           result.offset = tags.OffsetTimeOriginal;
       }
@@ -515,12 +519,12 @@ export class Gallery {
     return result;
   }
 
-  async preview(volume, name, hash, large = false, revision = null) {
+  async preview(volume, name, hash, size = "thumb", revision = null) {
     const result = await this.derivative(
       volume,
       name,
       hash,
-      large,
+      size,
       false,
       revision,
     );
@@ -532,11 +536,12 @@ export class Gallery {
     volume,
     name,
     hash,
-    large = false,
+    size = "thumb",
     regenerate = false,
     revision = null,
   ) {
     const s = this.s;
+    if (!Object.hasOwn(PREVIEW_SIZES, size)) fail("Invalid preview size", 400);
     const folder = s.volume(volume);
     if (s.config.role !== "hub" && !folder.selected)
       fail("Select this folder first", 403);
@@ -561,24 +566,15 @@ export class Gallery {
     )
       fail("This photo is no longer available", 404);
     if (!mediaKind(name)) return { unavailable: true };
-    const key = `${hash}:${large ? "large" : "thumb"}`;
-    if (regenerate) {
-      await this.pending.get(key);
-      if (this.closed) fail("Gallery is stopping", 409);
-      const previous = this.cache.get(key);
-      if (previous) this.cacheBytes -= previous.bytes.length;
-      this.cache.delete(key);
-      const diskKey = `${hash}-${large ? "large" : "thumb"}.jpg`;
-      fs.rmSync(path.join(this.directory, diskKey), { force: true });
-      s.db.prepare("DELETE FROM gallery_derivatives WHERE key=?").run(diskKey);
-    }
+    const key = `${hash}:${size}`;
+    if (regenerate) await this.discard(hash, size);
     if (this.cache.has(key)) {
       const value = this.cache.get(key);
       this.cache.delete(key);
       this.cache.set(key, value);
       return value;
     }
-    const diskKey = `${hash}-${large ? "large" : "thumb"}.jpg`;
+    const diskKey = `${hash}-${size}.jpg`;
     const disk = path.join(this.directory, diskKey);
     if (fs.lstatSync(disk, { throwIfNoEntry: false })?.isFile()) {
       s.db
@@ -589,36 +585,62 @@ export class Gallery {
       };
     }
     if (this.pending.has(key)) return this.pending.get(key);
-    const source = s.localContent(volume, name, hash);
+    const original = () => s.localContent(volume, name, hash);
+    const scaled = size === "medium" && this.cachedLarge(hash);
+    const source = scaled || original();
     if (!source) fail("Sync this photo before previewing it", 409);
-    const job = this.render(name, source, large, key, diskKey, disk).finally(
+    const job = this.render(name, source, size, key, diskKey, disk, scaled && original).finally(
       () => this.pending.delete(key),
     );
     this.pending.set(key, job);
     return job;
   }
-  async render(name, source, large, key, diskKey, disk) {
+  async discard(hash, size) {
+    const key = `${hash}:${size}`;
+    await this.pending.get(key);
+    if (this.closed) fail("Gallery is stopping", 409);
+    const previous = this.cache.get(key);
+    if (previous) this.cacheBytes -= previous.bytes.length;
+    this.cache.delete(key);
+    const diskKey = `${hash}-${size}.jpg`;
+    fs.rmSync(path.join(this.directory, diskKey), { force: true });
+    this.s.db.prepare("DELETE FROM gallery_derivatives WHERE key=?").run(diskKey);
+  }
+  cachedLarge(hash) {
+    try {
+      return fs.readFileSync(path.join(this.directory, `${hash}-large.jpg`));
+    } catch {
+      return null;
+    }
+  }
+  async render(name, source, size, key, diskKey, disk, original = null) {
     const s = this.s;
     if (this.running >= 4) fail("Previews are busy. Try again.", 429);
     this.running++;
-    try {
-      const data =
-        mediaKind(name) === "video"
-          ? await videoPreview(source, name, large)
-          : isHeic(name) && isHeifContent(source)
-            ? await heicPreview(source, large)
-            : await sharp(source, {
-                limitInputPixels: 100000000,
-                sequentialRead: true,
+    const { edge, quality, budget } = PREVIEW_SIZES[size];
+    const decode = (input, scaled) =>
+      !scaled && mediaKind(name) === "video"
+        ? videoPreview(input, name, size)
+        : !scaled && isHeic(name) && isHeifContent(input)
+          ? heicPreview(input, size)
+          : sharp(input, {
+              limitInputPixels: 100000000,
+              sequentialRead: true,
+            })
+              .rotate()
+              .resize(edge, edge, {
+                fit: "inside",
+                withoutEnlargement: true,
               })
-                .rotate()
-                .resize(large ? 2048 : 360, large ? 2048 : 360, {
-                  fit: "inside",
-                  withoutEnlargement: true,
-                })
-                .jpeg({ quality: large ? 85 : 75 })
-                .timeout({ seconds: 10 })
-                .toBuffer();
+              .jpeg({ quality })
+              .timeout({ seconds: 10 })
+              .toBuffer();
+    try {
+      const data = await decode(source, Boolean(original)).catch((error) => {
+        const fallback = original?.();
+        if (!fallback) throw error;
+        return decode(fallback, false);
+      });
       if (this.closed) return { unavailable: true };
       const temporary = disk + `.${crypto.randomUUID()}.tmp`;
       try {
@@ -630,8 +652,7 @@ export class Gallery {
       s.db
         .prepare("INSERT OR REPLACE INTO gallery_derivatives VALUES(?,?,?)")
         .run(diskKey, data.length, Date.now());
-      const kind = `%-${large ? "large" : "thumb"}.jpg`;
-      const budget = large ? LARGE_BUDGET : THUMB_BUDGET;
+      const kind = `%-${size}.jpg`;
       let total = s.db
         .prepare(
           "SELECT coalesce(sum(size),0) AS total FROM gallery_derivatives WHERE key LIKE ?",

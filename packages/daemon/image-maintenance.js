@@ -94,19 +94,22 @@ export class ImageMaintenance {
           row.volume,
           row.path,
           row.hash,
-          false,
+          "thumb",
           true,
         );
+        if (mediaKind(row.path) !== "image")
+          await this.engine.gallery.discard(row.hash, "large");
         const large =
           mediaKind(row.path) === "image"
             ? await this.engine.gallery.derivative(
                 row.volume,
                 row.path,
                 row.hash,
-                true,
+                "large",
                 true,
               )
             : thumbnail;
+        await this.engine.gallery.discard(row.hash, "medium");
         if (thumbnail.unavailable || large.unavailable)
           throw new Error("Preview could not be decoded");
         this.job.changed++;

@@ -194,6 +194,7 @@ export class Engine {
         progress: this.backupProgress(),
       },
       error: this.error,
+      pauseUntil: this.paused ? this.pauseUntil || null : null,
       hubUnavailable: !!this.hubUnavailable,
       lastSync: this.lastSync,
       transferred: this.transferred,

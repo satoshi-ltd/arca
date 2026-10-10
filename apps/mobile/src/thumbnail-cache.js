@@ -57,6 +57,113 @@ export async function prepareThumbnails(
   return next;
 }
 
+export function localPreviewIo(thumbnails) {
+  return {
+    exists: thumbnails.exists,
+    render: (item) =>
+      item.kind === "video"
+        ? thumbnails.poster(item, true)
+        : thumbnails.render(item, false, true),
+  };
+}
+
+export function createPreviewQueue({
+  io,
+  saved,
+  changed = () => {},
+  failed = () => {},
+  idle = () => {},
+  concurrency = 3,
+}) {
+  const settled = new Map();
+  const failures = new Set();
+  let queue = [];
+  let latest = [];
+  let running = 0;
+  let started = false;
+  let stopped = false;
+  let busy = null;
+  const signatureOf = (entry) => entry.signature || `${entry.size}:${entry.mtime}`;
+  const report = () => {
+    const next = running > 0 || queue.length > 0;
+    if (next === busy) return;
+    busy = next;
+    idle(!busy);
+  };
+  const prepare = async (entry, signature) => {
+    const old = saved()[entry.path];
+    let uri =
+      old?.signature === signature && (await io.exists(old.uri)) ? old.uri : null;
+    if (!uri)
+      try {
+        uri = await io.render(entry);
+      } catch (error) {
+        if (!stopped && settled.get(entry.path) === signature) {
+          failures.add(entry.path);
+          failed(entry, error);
+        }
+      }
+    if (stopped || settled.get(entry.path) !== signature) return;
+    if (uri !== old?.uri || signature !== old?.signature)
+      changed({ [entry.path]: uri ? { signature, uri } : null });
+  };
+  const pump = () => {
+    while (!stopped && running < Math.max(1, concurrency) && queue.length) {
+      const entry = queue.shift();
+      running++;
+      prepare(entry, signatureOf(entry)).finally(() => {
+        running--;
+        pump();
+        report();
+      });
+    }
+    report();
+  };
+  const enqueue = () => {
+    const present = new Set();
+    for (const entry of latest) {
+      if (entry.directory || !mediaKind(entry.path)) continue;
+      present.add(entry.path);
+      const signature = signatureOf(entry);
+      if (settled.get(entry.path) === signature) continue;
+      settled.set(entry.path, signature);
+      failures.delete(entry.path);
+      queue = queue.filter((queued) => queued.path !== entry.path);
+      queue.push(entry);
+    }
+    for (const path of [...settled.keys()])
+      if (!present.has(path)) {
+        settled.delete(path);
+        failures.delete(path);
+      }
+    queue = queue.filter((entry) => present.has(entry.path));
+    pump();
+  };
+  return {
+    update(entries) {
+      latest = entries;
+      if (started && !stopped) enqueue();
+    },
+    start() {
+      if (started || stopped) return;
+      started = true;
+      enqueue();
+    },
+    retry() {
+      for (const path of failures) settled.delete(path);
+      failures.clear();
+      if (started && !stopped) enqueue();
+    },
+    stop() {
+      stopped = true;
+      queue = [];
+    },
+    get pending() {
+      return queue.length + running;
+    },
+  };
+}
+
 export function savedThumbnail(saved, item) {
   const found = saved[item.path];
   return found && found.signature === item.signature ? found.uri : null;
@@ -132,6 +239,12 @@ export function previewProgress(candidates, saved, failed) {
     failed: failures,
     waiting: candidates.length - done - failures,
   };
+}
+
+export function stillDownloading(items, excluded = () => false) {
+  return items.filter(
+    (item) => item.hash && !item.uri && !item.upload && !excluded(item.path),
+  ).length;
 }
 
 export function pruneSaved(saved, keep) {

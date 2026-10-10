@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Modal, PanResponder, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { EmptyState, Icon, pressScale, Sheet, useDesign } from "./components";
+import { EmptyState, Icon, PressScale, Sheet, useDesign } from "./components";
 import { Cover, NowGlyph, RowMeta } from "./MusicLibrary";
 import { artistFor, formatDay, formatDuration, nextRepeat, parseTrackNode, upNext } from "./music-library.js";
 import { ChangeFade, useFlight, useMotion, useRetained } from "./motion";
@@ -18,16 +18,15 @@ const clock = (ms) =>
 
 function Row({ track, current, saved, onPress }) {
   const { s, c } = useDesign();
-  const { reduce } = useMotion();
   const caption = track.podcast ? formatDay(track.date) || track.artist : track.artist;
   return (
     <ChangeFade token={current ? track.id : "row"} ms={motion.fast}>
-      <Pressable
+      <PressScale
         accessibilityRole="button"
         accessibilityLabel={`${track.title}, ${track.artist}${current ? ", playing" : ""}`}
         accessibilityState={{ selected: current }}
         onPress={onPress}
-        style={({ pressed }) => [s.musicTrack, s.musicTrackTall, current && s.historyRowChosen, pressed && s.pressed, pressScale(pressed, reduce)]}
+        style={({ pressed }) => [s.musicTrack, s.musicTrackTall, current && s.historyRowChosen, pressed && s.pressed]}
       >
         {current ? <NowGlyph /> : <Icon name={track.podcast ? "podcast" : "music"} size={16} color={c.mute} />}
         <View style={[s.flex, s.stack]}>
@@ -37,7 +36,7 @@ function Row({ track, current, saved, onPress }) {
           <RowMeta track={track} caption={caption} saved={saved} live={current} style={s.caption} />
         </View>
         {!current && !saved && !!track.duration && <Text style={s.caption}>{formatDuration(track.duration)}</Text>}
-      </Pressable>
+      </PressScale>
     </ChangeFade>
   );
 }
@@ -63,7 +62,6 @@ function SleepButton({ sleep, podcast, onPress }) {
 
 function SleepSheet({ sleep, podcast, choose, closing, onClose, onExited }) {
   const { s, c } = useDesign();
-  const { reduce } = useMotion();
   const active = !!sleep && sleep.mode !== "off";
   const options = [...sleepOptions(podcast), ...(active ? [{ value: "off", label: "Off" }] : [])];
   return (
@@ -80,17 +78,17 @@ function SleepSheet({ sleep, podcast, choose, closing, onClose, onExited }) {
         {options.map((option, index) => {
           const checked = active ? option.value === sleep.value : false;
           return (
-            <Pressable
+            <PressScale
               key={option.value}
               accessibilityRole="radio"
               accessibilityLabel={option.label}
               accessibilityState={{ checked }}
               onPress={() => choose(option.value)}
-              style={({ pressed }) => [s.sleepRow, index > 0 && s.separator, pressed && s.pressed, pressScale(pressed, reduce)]}
+              style={({ pressed }) => [s.sleepRow, index > 0 && s.separator, pressed && s.pressed]}
             >
               <Text style={[s.buttonLabel, s.flex]}>{option.label}</Text>
               {checked && <Icon name="check" size={20} color={c.accent} />}
-            </Pressable>
+            </PressScale>
           );
         })}
       </View>
@@ -101,7 +99,7 @@ function SleepSheet({ sleep, podcast, choose, closing, onClose, onExited }) {
 export function NowPlayingPage({ visible, library, cover, command, play, openAlbum, openArtist, openShow, onClose, sleep, setSleep, seeked, positions }) {
   const { s, c, wide } = useDesign();
   const { width, height } = useWindowDimensions();
-  const { duration: ms } = useMotion();
+  const { duration: ms, easing } = useMotion();
   const twoPane = wide && width >= 1100;
   const [state] = useMusicPlayer(visible);
   const [trackWidth, setTrackWidth] = useState(0);
@@ -126,9 +124,9 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
     if (visible) {
       setMounted(true);
       slide.setValue(0);
-      Animated.timing(slide, { toValue: 1, duration: ms(200), useNativeDriver: true }).start();
+      Animated.timing(slide, { toValue: 1, duration: ms(motion.enter), easing, useNativeDriver: true }).start();
     } else
-      Animated.timing(slide, { toValue: 0, duration: ms(200), useNativeDriver: true }).start(({ finished }) => {
+      Animated.timing(slide, { toValue: 0, duration: ms(motion.exit), easing, useNativeDriver: true }).start(({ finished }) => {
         if (finished) setMounted(false);
       });
   }, [visible]);
@@ -279,6 +277,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   return (
     <Modal visible={mounted} transparent animationType="none" statusBarTranslucent supportedOrientations={["portrait", "landscape-left", "landscape-right"]} onRequestClose={onClose}>
       <Animated.View
+        pointerEvents={visible ? "auto" : "none"}
         style={[
           s.nowRoot,
           {

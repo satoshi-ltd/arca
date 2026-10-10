@@ -23,21 +23,20 @@
                 rx="116"
                 fill="var(--mark-tile)"
               />
-              <g class="brand-glyph">
-                <path
-                  d="M136 370V232a120 120 0 0 1 240 0v138h-58V232a62 62 0 0 0-124 0v138z"
-                  fill="var(--mark-arch)"
-                />
-                <rect
-                  x="224"
-                  y="276"
-                  width="64"
-                  height="94"
-                  rx="8"
-                  fill="var(--mark-door)"
-                />
-              </g></svg
-            ><span class="brand-busy" aria-hidden="true"></span>
+              <path
+                d="M136 380V242a120 120 0 0 1 240 0v138h-68V242a52 52 0 0 0-104 0v138z"
+                fill="var(--mark-arch)"
+              />
+              <rect
+                class="brand-door"
+                x="226"
+                y="280"
+                width="60"
+                height="100"
+                rx="4"
+                fill="var(--mark-door)"
+              />
+            </svg>
           </div>
           <span><b>arca</b></span></a
         >
@@ -68,6 +67,10 @@
             <span data-icon="settings"></span>Settings
           </button>
         </nav>
+        <div id="favorites" class="favorites" role="group" aria-label="Favorites" hidden>
+          <div class="favorites-head section-label" aria-hidden="true"><span>Favorites</span></div>
+          <div class="favorites-list"></div>
+        </div>
         <div class="sidebar-bottom">
           <div class="update-card" id="update-card" hidden>
             <strong id="update-heading">Update available</strong>
@@ -92,21 +95,27 @@
       <main>
         <div id="notice" role="status" hidden></div>
         <section id="content">
-          <div class="heading"><h1>Arca</h1></div>
-          <div class="page">
-            <div class="scaffold-row" role="status" aria-label="Loading Arca">
-              <span class="scaffold-mark" aria-hidden="true"></span>
-              <div class="scaffold-copy">
-                <span
-                  class="scaffold-line scaffold-medium"
-                  aria-hidden="true"
-                ></span
-                ><span
-                  class="scaffold-line scaffold-long"
-                  aria-hidden="true"
-                ></span>
-              </div>
-            </div>
+          <div class="launch-mark" role="status" aria-label="Starting Arca">
+            <svg viewBox="116 100 280 296" aria-hidden="true">
+              <path
+                class="brand-draw-band"
+                pathLength="100"
+                d="M166 380V242A90 90 0 0 1 256 152h2"
+              />
+              <path
+                class="brand-draw-band"
+                pathLength="100"
+                d="M346 380V242A90 90 0 0 0 256 152h-2"
+              />
+              <rect
+                class="brand-draw-door"
+                x="226"
+                y="284"
+                width="60"
+                height="96"
+                rx="6"
+              />
+            </svg>
           </div>
         </section>
         <div id="music-player" class="music-player" role="region" aria-label="Now playing" hidden></div>

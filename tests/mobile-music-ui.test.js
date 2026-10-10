@@ -27,8 +27,8 @@ test("a music folder opens on its library, keeps View files in the folder menu a
 test("Android back leaves library screens before the folder, and the mini player opens Now playing", () => {
   const back = app.slice(app.indexOf("const handler = () => {"), app.indexOf("const selectTab"));
   assert.ok(back.indexOf("musicRoute.length > 1") < back.indexOf("setFolder(null)"));
-  assert.match(back, /\[\s*sheet,\s*folder,\s*view,\s*fileActionsOpen,\s*musicView,\s*musicRoute,\s*shownMusic,\s*musicSearch,?\s*\]/);
-  assert.ok(back.indexOf('typeof musicSearch === "string"') < back.indexOf("musicRoute.length > 1"), "Back closes an open search before leaving the folder");
+  assert.match(back, /\[\s*sheet,\s*folder,\s*view,\s*fileActionsOpen,\s*musicView,\s*musicRoute,\s*shownMusic,?\s*\]/);
+  assert.doesNotMatch(back, /musicSearch/, "the library has no search of its own for Back to close");
   assert.match(back, /musicRoute\.length > 1 &&\s+shownMusic\?\.library\?\.tracks\.size/, "an empty library leaves the folder at once");
   assert.match(app, /musicFolder && !sheet && \(\s+<MiniPlayer[\s\S]*?open=\{\(\) => setNowPlayingOpen\(true\)\}/);
   assert.ok(app.indexOf("<MiniPlayer") < app.indexOf("<Navigation\n", app.indexOf("<MiniPlayer")), "the mini player sits above the tab bar");
@@ -48,7 +48,7 @@ test("playing publishes the car library first on Android and opens the file on i
 test("the library opens on the Artists tab, Recent lists this phone's plays, and playback hides where it cannot play", () => {
   assert.doesNotMatch(library, /kind === "root"/, "there is no root list before the music");
   assert.match(library, /const tabs = musicTabs\(library\);\s+const tab = tabs\.includes\(route\[0\]\?\.kind\) \? route\[0\]\.kind : tabs\[0\];/);
-  assert.match(library, /<SegmentedControl\s+options=\{tabs\.map\(\(value\) => \(\{ value, label: TAB_LABELS\[value\] \}\)\)\}\s+value=\{tab\}\s+onChange=\{\(kind\) => \{\s+setSearch\(null\);\s+select\(kind\);/, "changing tab closes the search");
+  assert.match(library, /<SegmentedControl\s+options=\{tabs\.map\(\(value\) => \(\{ value, label: TAB_LABELS\[value\] \}\)\)\}\s+value=\{tab\}\s+onChange=\{select\}/, "a tab is only a tab");
   assert.match(library, /item\.kind === "albums"\) return albums\(albumsOf\(library\.albumOrder\)\);/);
   const recent = library.slice(library.indexOf('item.kind === "recent"'), library.indexOf('item.kind === "podcasts"'));
   assert.match(recent, /recentPlayed\(library, history \|\| \[\]\)/);
@@ -57,19 +57,13 @@ test("the library opens on the Artists tab, Recent lists this phone's plays, and
   assert.match(app, /useState\(\[\{ kind: "artists" \}\]\)/, "the library opens on Artists");
   assert.match(app, /select=\{\(kind\) => setMusicRoute\(\[\{ kind \}\]\)\}/);
   assert.match(app, /readMusicHistory\(replica\)\.then/);
-  assert.match(library, /<View style=\{s\.folderToolbar\}>[\s\S]*?<SegmentedControl[\s\S]*?label=\{searching \? "Close search" : searchLabel\}/, "search sits beside the tabs as in Files");
-  assert.match(library, /<Field\s+label=\{searchLabel\}\s+autoFocus=\{!query\}\s+placeholder=\{searchLabel\}/);
-  assert.match(library, /const found = useMemo\(\s+\(\) => \(library && searching \? searchLibrary\(library, query\) : null\),\s+\[library, searching, query\],/, "results are computed once per query");
-  assert.match(app, /search=\{musicSearch\}\s+setSearch=\{setMusicSearch\}\s+folderId=\{folder\.id\}/, "the search survives opening a result and coming back");
+  assert.doesNotMatch(library, /searchLibrary|setSearch|searching|"Close search"/, "the library has no search of its own; the one search is Search Arca");
+  assert.match(app, /history=\{musicHistory\}\s+folderId=\{folder\.id\}/);
   assert.match(library, /folderContext\(folderId, context\)/, "Shuffle plays only this folder");
   assert.match(library, /context=\{folderContext\(folderId, album\.id\)\}/, "an album plays only this folder's tracks");
-  assert.match(library, /contextOf=\{\(track\) => folderContext\(folderId, trackContext\(track\)\)\}/, "a found episode plays in its show");
-  assert.match(library, /autoFocus=\{!query\}/, "coming back to results keeps the keyboard closed");
   assert.match(app, /recordMusicPlay\(engine\.current, baseContext\(context\)\)/);
-  assert.match(app, /typeof musicSearch === "string" &&\s+shownMusic\?\.library\?\.tracks\.size/, "an empty library leaves the folder at once, even with search open");
-  assert.match(library, /canPlay && !results && tab !== "podcasts" && everything\.length > 1 &&/);
+  assert.match(library, /canPlay && tab !== "podcasts" && everything\.length > 1 &&/);
   assert.match(library, /canPlay && ids\.length > 1 &&/, "an artist with one track offers no Shuffle, like an album");
-  assert.match(library, /contextOf=\{\(track\) => folderContext\(folderId, trackContext\(track\)\)\}/, "a song found by search plays within its album or show");
   assert.match(library, /shuffle\(LIBRARY_CONTEXT, everything\)/, "Shuffle plays the whole library");
   assert.match(library, /shuffle\(artist\.id, ids\)/, "an artist page shuffles that artist");
   assert.match(read(`${native}/java/expo/modules/arcanetwork/MusicLibrary.kt`), /const val ALBUMS = "albums"/);
@@ -105,7 +99,6 @@ test("a track still downloading stays in its album, dimmed, labelled and not pla
 test("playlists get their tab, screen, search group and Recent rows, and every track row ends in a ⋯", () => {
   assert.match(read("src/music-library.js"), /playlists: "Playlists",/);
   assert.match(library, /item\.kind === "playlists"\)\s+return \(\s+<PagedRows\s+items=\{library\.playlistOrder\.map\(\(id\) => library\.playlists\.get\(id\)\)\}/);
-  assert.match(library, /<Text style=\{s\.eyebrow\}>PLAYLISTS<\/Text>/, "search has a Playlists group");
   assert.match(library, /library\.playlists\.has\(entry\.id\)\s+\? playlistRow\(entry, index, plural\(entry\.tracks\.length, "track", "tracks"\)\)/, "Recent lists played playlists with albums");
   const screen = library.slice(library.indexOf('const playlist = item.kind === "playlist"'), library.indexOf("const gone ="));
   assert.match(screen, /subtitle=\{playlistSummary\(playlist\)\}/);
@@ -119,7 +112,7 @@ test("playlists get their tab, screen, search group and Recent rows, and every t
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
   assert.match(list, /\{actions && \(\s+<Pressable\s+accessibilityRole="button"\s+accessibilityLabel="Track actions"[\s\S]*?onPress=\{\(\) => actions\(row\)\}[\s\S]*?<Icon name="more"/);
   assert.match(list, /accessibilityActions=\{\s+actions \? \[\{ name: "actions", label: "Track actions" \}\] : undefined\s+\}/, "screen readers reach the ⋯ as a row action");
-  assert.match(list, /play\(contextOf \? contextOf\(track\) : context, track, false, row\.position, saved\?\.position \|\| 0\)/);
+  assert.match(list, /play\(context, track, false, row\.position, saved\?\.position \|\| 0\)/);
   const sheet = library.slice(library.indexOf("export function MusicSheet("), library.indexOf("const playingTrack"));
   assert.match(sheet, /\{sheet\.track && \(\s+<ActionRow\s+label="Add to playlist…"[\s\S]*?open\(\{ kind: "add-to-playlist", track: sheet\.track \}\)/, "an entry naming no track offers only Remove");
   assert.match(sheet, /\{sheet\.playlist\?\.editable && \(\s+<ActionRow\s+label="Remove from playlist"[\s\S]*?change\("remove", sheet\)/);
@@ -229,7 +222,7 @@ test("Now playing is a full page whose artist and album go to their screens, and
   assert.match(page, /accessibilityLabel=\{`Album \$\{track\?\.album \|\| state\.album\}`\}\s+disabled=\{!track\}\s+onPress=\{\(\) => track && openAlbum\(track\)\}/, "only a track this folder's library knows links to its album");
   assert.match(app, /openAlbum=\{\(track\) => openPlaying\(\[\{ kind: "albums" \}, \{ kind: "album", id: track\.albumId \}\]\)\}/);
   const opening = app.slice(app.indexOf("function openPlaying("), app.indexOf("function musicCommand("));
-  assert.match(opening, /setNowPlayingOpen\(false\);[\s\S]*setFileView\("music"\);\s+setMusicSearch\(null\);\s+setMusicRoute\(route\);/, "it closes the page and opens the album in the library, even from View files");
+  assert.match(opening, /setNowPlayingOpen\(false\);[\s\S]*setFileView\("music"\);\s+setMusicRoute\(route\);/, "it closes the page and opens the album in the library, even from View files");
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
   assert.match(library, /: numbered && !withAlbum\s+\? track\.artist\s+: `\$\{track\.artist\} · \$\{track\.album\}`;/);
   assert.match(list, /caption=\{trackCaption\(track, numbered, withAlbum\)\}/);
@@ -276,12 +269,12 @@ test("the library has one back, the header's, and draws tabs only when there are
   assert.match(library, /\{tabs\.length > 1 && \(\s+<View style=\{s\.folderToolbar\}>\s+<View style=\{s\.flex\}>\s+<SegmentedControl/, "a podcasts-only folder has no one-segment control");
   assert.match(library, /\{!wide && \(\s+<View style=\{s\.musicHeader\}>\s+<Cover uri=\{cover\(artist\.cover, "small"\)\} size=\{72\} icon="artist" \/>/, "on the Fold the artist heads the screen instead");
   const header = app.slice(app.indexOf('{folder && screen === "Folders" && (\n                      <View style={s.compactActions}>'), app.indexOf("{historyDetail && ("));
-  assert.match(header, /label=\{\s+musicDeep\s+\? musicBackLabel\(\s+musicRoute,\s+musicAt\.level,\s+musicShown,\s+folder\.name,\s+musicSearching,\s+\)\s+: "Folders"\s+\}/);
+  assert.match(header, /label=\{\s+musicDeep\s+\? musicBackLabel\(\s+musicRoute,\s+musicAt\.level,\s+musicShown,\s+folder\.name,\s+\)\s+: "Folders"\s+\}/);
   assert.match(header, /musicDeep\s+\? setMusicRoute\(musicRoute\.slice\(0, musicAt\.level\)\)\s+: setFolder\(null\)/, "the header back leaves the level");
   assert.match(header, /\{!onboarding && \(detail \|\| !\(musicDeep && !musicArtist\)\) && \(/, "a show, album or playlist page keeps only the back arrow");
   assert.match(header, /\) : musicArtist \? \(\s+<ScreenTitle\s+contentIcon="artist"/, "the Fold heads an artist level with the artist");
-  assert.match(app, /const musicHeaderSearch = !!musicShown && !musicDeep && musicTabs\(musicShown\)\.length < 2;/);
-  assert.match(app, /\{musicHeaderSearch && \(\s+<Button\s+iconOnly\s+label=\{musicSearching \? "Close search" : musicSearchLabel\(musicShown\)\}/, "without tabs, search joins the header actions");
+  assert.doesNotMatch(app, /musicHeaderSearch|musicSearchLabel|"Search files"|"Search this folder"/, "no folder or library header has a search of its own");
+  assert.match(app, /\{searchable && \(\s+<Button\s+iconOnly\s+ghost\s+label="Search Arca"\s+icon="search"\s+onPress=\{\(\) => setGlobalSearch\(true\)\}/, "a folder's header opens the one search");
   assert.match(app, /musicView && shownMusic \? librarySummary\(shownMusic\.library\) :/, "the header counts episodes and shows like desktop");
   assert.match(app, /musicFolder\s+\? librarySymbol\(shownMusic\?\.library\)/);
   assert.match(app, /go=\{setMusicRoute\}/);
@@ -306,12 +299,6 @@ test("the mini player shows the playing track's cover from its own folder's libr
   assert.match(app, /playingVolume && playingVolume !== folder\?\.id/);
 });
 
-test("Just arrived cards keep each name on one line with an ellipsis", () => {
-  const strip = read("src/components.jsx");
-  assert.match(strip, /<View style=\{\[s\.stack, s\.arrivalText\]\}>\s+<Text numberOfLines=\{1\} style=\{s\.rowTitle\}>\s+\{row\.path\.split\("\/"\)\.pop\(\)\}/);
-  assert.match(read("src/theme.js"), /arrivalText: \{ flexShrink: 1 \}/);
-});
-
 test("Now playing reads the playing track's own folder and its links open that folder's library", () => {
   assert.match(app, /<NowPlayingPage\s+visible=\{nowPlayingOpen\}\s+library=\{playingLibrary\}/);
   const opening = app.slice(app.indexOf("function openPlaying("), app.indexOf("function musicCommand("));
@@ -321,14 +308,10 @@ test("Now playing reads the playing track's own folder and its links open that f
   assert.match(app, /openArtist=\{\(artist\) => openPlaying\(\[\{ kind: "artists" \}, \{ kind: "artist", id: artist\.id \}\]\)\}/);
 });
 
-test("library search lists Shows and Episodes like desktop, and an episode plays in its show", () => {
-  const search = library.slice(library.indexOf('if (item.kind === "search")'), library.indexOf('if (item.kind === "artists")'));
-  assert.match(search, /<Text style=\{s\.eyebrow\}>SHOWS<\/Text>\s+<PagedRows items=\{results\.shows\} render=\{\(show, index\) => showRow\(show, index\)\} \/>/);
-  assert.match(search, /<Text style=\{s\.eyebrow\}>EPISODES<\/Text>\s+<TrackList\s+rows=\{episodeRows\(library, results\.episodes\)\}\s+contextOf=\{\(track\) => folderContext\(folderId, track\.show\)\}/, "an episode plays or resumes in its show's queue");
-  assert.match(search, /\{albums\(results\.albums\)\}/, "albums found list as rows beside an open album on the Fold");
-  assert.match(search, /onPress=\{\(\) => open\(\{ kind: "artist", id: artist\.id \}\)\}/);
-  assert.match(library, /const showRow = \(show, index\) => \([\s\S]*?onPress=\{\(\) => open\(\{ kind: "show", id: show\.id \}\)\}/, "a found show opens like one in the list, in the right pane on the Fold");
-  assert.match(library, /\? withAlbum\s+\? \[track\.artist, formatDay\(track\.date\)\]\.filter\(Boolean\)\.join\(" · "\)/, "a found episode names its show");
+test("the library draws no search results of its own", () => {
+  assert.doesNotMatch(library, /item\.kind === "search"|results\.shows|results\.episodes/);
+  assert.match(library, /open=\{\(value\) => open\(\{ kind: "show", id: value\.id \}\)\}/, "a show opens in the right pane on the Fold");
+  assert.match(library, /\? withAlbum\s+\? \[track\.artist, formatDay\(track\.date\)\]\.filter\(Boolean\)\.join\(" · "\)/, "an episode in a playlist names its show");
 });
 
 test("on the Fold the open show or album is the pane's own list, without a card inside the card", () => {

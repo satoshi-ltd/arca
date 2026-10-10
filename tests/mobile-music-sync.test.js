@@ -8,6 +8,7 @@ import {
   recordMusicPlay,
   refreshMusic,
   renameMusicPlay,
+  COVERS_PER_PARTIAL,
 } from "../apps/mobile/src/music-sync.js";
 
 const KEY = "a".repeat(64);
@@ -320,4 +321,23 @@ test("a playlist file over the size cap is not read into the library", async () 
   replica.files.listNames = async () => [...disk.keys()].map((uri) => uri.split("/").at(-1));
   const { library } = await folderLibrary(replica, "v");
   assert.deepEqual(library.playlistOrder.map((id) => library.playlists.get(id).name), ["Small"]);
+});
+
+test("covers arrive in small batches while a long download is still running, and stale ones wait for a complete pass", async () => {
+  const { replica, disk, coverCalls } = phone({ cover: async () => ({ data: "data:image/jpeg;base64,AAAA" }) });
+  const saved = await replica.store.musicLibrary();
+  const rows = [{ path: "a.mp3", hash: "h1" }];
+  for (let i = 0; i < 40; i++) {
+    const key = i.toString(16).padStart(64, "c");
+    saved.value.tracks.push({ path: `t${i}.mp3`, hash: `t${i}`, title: `T${i}`, cover: key });
+    rows.push({ path: `t${i}.mp3`, hash: `t${i}` });
+  }
+  replica.store.rows = async () => rows;
+  await refreshMusic(replica, { covers: false });
+  assert.ok(coverCalls.length > 0, "a cycle that has not finished still fetches covers");
+  assert.ok(coverCalls.length <= COVERS_PER_PARTIAL, `${coverCalls.length} covers in one partial pass`);
+  assert.equal(replica.musicTick, 1, "the open library shows the covers that arrived");
+  assert.ok(disk.has(`/covers/${STALE}-small.jpg`), "a partial pass never prunes");
+  await refreshMusic(replica);
+  assert.ok(!disk.has(`/covers/${STALE}-small.jpg`), "the complete pass prunes");
 });

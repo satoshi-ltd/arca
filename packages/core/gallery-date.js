@@ -20,8 +20,28 @@ export function mediaKind(name) {
   const suffix = extension(name);
   return images.has(suffix) ? "image" : videos.has(suffix) ? "video" : null;
 }
+const EPOCH_DAYS = new Set(["1970-01-01", "1969-12-31"]);
+const calendarDay = (value) => {
+  const match = value.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
+  if (!match) return false;
+  const month = Number(match[2]);
+  const day = match[3] ? Number(match[3]) : 1;
+  const date = new Date(Date.UTC(Number(match[1]), month - 1, day));
+  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+};
+export const realDate = (value) =>
+  typeof value === "string" &&
+  calendarDay(value) &&
+  !value.startsWith("0000") &&
+  !(value.length === 7 ? value === "1970-01" : EPOCH_DAYS.has(value.slice(0, 10))) &&
+  Number.isFinite(Date.parse(value.length === 7 ? `${value}-01` : value))
+    ? value
+    : null;
 // File names retain dates for screenshots whose original format has no EXIF.
 export function galleryDate(name, captured, added, modified = null) {
+  captured = realDate(captured);
+  added = realDate(added);
+  modified = realDate(modified);
   if (captured) return { date: captured, source: "metadata" };
   const filename = name.split("/").pop();
   const match = filename.match(
@@ -32,16 +52,18 @@ export function galleryDate(name, captured, added, modified = null) {
     const date = new Date(day);
     if (
       Number.isFinite(date.getTime()) &&
-      date.toISOString().slice(0, 10) === day
+      date.toISOString().slice(0, 10) === day &&
+      realDate(day)
     )
       return { date: day, source: "filename" };
   }
   const month = name.match(
     /^(?:Phone|Machine)-[a-f0-9]+\/(\d{4})\/(0[1-9]|1[0-2])\//,
   );
-  if (month) return { date: `${month[1]}-${month[2]}`, source: "album folder" };
+  if (month && realDate(`${month[1]}-${month[2]}`))
+    return { date: `${month[1]}-${month[2]}`, source: "album folder" };
   // A copy written after the file was added (a download elsewhere) carries no original date.
   if (modified && (!added || modified < added))
     return { date: modified, source: "file date" };
-  return { date: added, source: "date added" };
+  return { date: added, source: added ? "date added" : null };
 }

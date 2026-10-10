@@ -57,22 +57,26 @@ export const geometry = {
   touchHeight: 44,
   touchControlHeight: 48,
 };
-// Mirrors --motion-* in tokens.css (push and dialogScale are the touch variants); milliseconds, dp and one cubic-bezier.
+// Mirrors --motion-* in tokens.css (push and pressScale are the touch variants); milliseconds, dp and one cubic-bezier.
 export const motion = {
   fast: 120,
   enter: 200,
   exit: 140,
+  exitFast: 80,
   distance: 8,
   shared: 280,
   stagger: 20,
   settle: 1800,
   push: 30,
-  dialogScale: 0.9,
+  dialogScale: 0.985,
   pressScale: 0.98,
   ease: [0.2, 0.8, 0.2, 1],
+  loop: 1200,
+  breatheLow: 0.4,
 };
 export const motionDurations = (reduce) => ({
   fast: reduce ? 0 : motion.fast,
   enter: reduce ? 0 : motion.enter,
   exit: reduce ? 0 : motion.exit,
+  exitFast: reduce ? 0 : motion.exitFast,
 });

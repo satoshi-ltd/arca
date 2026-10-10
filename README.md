@@ -2,7 +2,7 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.7.35 · Functional, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing, audio libraries with desktop, web and Android playback and Android Auto, and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.7.36 · Functional, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing, audio libraries with desktop, web and Android playback and Android Auto, and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 

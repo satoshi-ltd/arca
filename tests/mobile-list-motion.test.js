@@ -61,10 +61,10 @@ test("a whole new list replacing the old one is not an arrival", () => {
 
 test("folder rows scale on press and rise through Rise, both off under reduced motion", () => {
   const components = read("../apps/mobile/src/components.jsx");
-  assert.match(components, /!disabled && pressScale\(pressed, reduce\)/);
+  assert.match(components, /<PressScale\s+scale=\{!disabled\}\s+accessibilityRole=\{selectable \? "checkbox" : "button"\}/);
   const app = read("../apps/mobile/src/App.jsx");
   assert.match(app, /useListMotion\(locals\.map\(\(f\) => f\.id\)\)/);
-  assert.match(app, /<Rise\s+key=\{f\.id\}\s+tint=\{c\.tint\}\s+\{\.\.\.folderMotion\(f\.id\)\}/);
+  assert.match(app, /<Rise\s+key=\{f\.id\}\s+tint=\{c\.tint\}\s+leaving=\{folderLeaving\.has\(f\.id\)\}\s+onLeft=\{\(\) => folderLeft\(f\.id\)\}\s+\{\.\.\.folderMotion\(f\.id\)\}/);
   const motion = read("../apps/mobile/src/motion.js");
   assert.match(motion, /new Animated\.Value\(mode && !reduce \? 0 : 1\)/);
 });

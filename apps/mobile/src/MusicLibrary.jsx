@@ -1,14 +1,15 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { putFlight } from "./flight.js";
 import { Animated, Image, Pressable, Text, View } from "react-native";
 import {
   ActionRow,
+  BrandArch,
   Button,
   EmptyState,
   Field,
   Icon,
   OfflineEmpty,
-  pressScale,
+  PressScale,
   Scaffold,
   Section,
   SegmentedControl,
@@ -25,24 +26,22 @@ import {
   folderContext,
   LIBRARY_CONTEXT,
   libraryTracks,
-  episodeRows,
   musicPane,
-  musicSearchLabel,
   musicTabs,
+  orderShows,
   parseTrackNode,
   playlistRows,
   playlistSummary,
   plural,
   recentPlayed,
-  searchLibrary,
-  showCaption,
   showRows,
   showSummary,
+  showTile,
   TAB_LABELS,
   trackContext,
 } from "./music-library.js";
-import { useMusicPlayer } from "./music-player";
-import { ChangeFade, RiseOnce, useFlight, useMotion } from "./motion";
+import { player, useMusicPlayer } from "./music-player";
+import { ChangeFade, RiseOnce, useFlight } from "./motion";
 import { motion } from "./design-tokens.js";
 import { fraction, resumeCandidate, savedPosition, timeLeft } from "./audio-positions.js";
 import { sleepLabel } from "./sleep-timer.js";
@@ -68,6 +67,14 @@ export function Cover({ uri, size, icon = "album" }) {
           onError={() => setFailed(uri)}
           accessibilityIgnoresInvertColors
         />
+      ) : icon === "album" || icon === "podcast" ? (
+        size ? (
+          <BrandArch size={Math.round(size * 0.34)} band={c.line} />
+        ) : (
+          <View style={s.coverMark}>
+            <BrandArch size="100%" band={c.line} />
+          </View>
+        )
       ) : (
         <Icon name={icon} size={size && size < 64 ? 18 : 28} color={c.mute} />
       )}
@@ -83,38 +90,27 @@ function MusicRow({
   onPress,
   divider,
   chevron = true,
-  flight = false,
   selected = false,
+  hold,
 }) {
-  const { s, c, wide } = useDesign();
-  const { reduce } = useMotion();
-  const art = useRef(null);
+  const { s, c } = useDesign();
   return (
-    <Pressable
+    <PressScale
+      {...hold}
       accessibilityRole="button"
       accessibilityLabel={caption ? `${title}, ${caption}` : title}
       accessibilityState={selected ? { selected } : undefined}
-      onPress={() =>
-        flight && wide && art.current?.measureInWindow
-          ? art.current.measureInWindow((x, y, width, height) => {
-              putFlight("collection", { x, y, width, height });
-              onPress();
-            })
-          : onPress()
-      }
+      onPress={onPress}
       style={({ pressed }) => [
         s.folderRow,
         s.groupedFolderRow,
         divider && s.separator,
         selected && s.musicSelected,
         pressed && s.pressed,
-        pressScale(pressed, reduce),
       ]}
     >
       {cover !== undefined ? (
-        <View ref={art}>
-          <Cover uri={cover} size={40} icon={icon} />
-        </View>
+        <Cover uri={cover} size={40} icon={icon} />
       ) : (
         <View style={s.tile}>
           <Icon name={icon} size={16} color={c.accent} />
@@ -131,15 +127,16 @@ function MusicRow({
         )}
       </View>
       {chevron && <Icon name="chevron" color={c.mute} />}
-    </Pressable>
+    </PressScale>
   );
 }
 
-function AlbumTile({ album, cover, open }) {
+function AlbumTile({ album, cover, open, hold }) {
   const { s, wide } = useDesign();
   const art = useRef(null);
   return (
     <Pressable
+      {...hold}
       accessibilityRole="button"
       accessibilityLabel={`${album.title}, ${album.artist}`}
       onPress={() =>
@@ -165,14 +162,158 @@ function AlbumTile({ album, cover, open }) {
   );
 }
 
-function AlbumGrid({ albums, cover, open }) {
+function ShowPlay({ item, resume, toggle }) {
+  const { s, c } = useDesign();
+  const [state] = useMusicPlayer(true);
+  const loaded = parseTrackNode(state?.id)?.track === item.track.id;
+  const playing = loaded && isPlaying(state);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${playing ? "Pause" : "Continue"} ${item.track.title}`}
+      hitSlop={6}
+      onPress={() => (loaded ? toggle() : resume(item.row.position))}
+      style={({ pressed }) => [s.continuePlay, pressed && s.pressedFade]}
+    >
+      <Icon name={playing ? "pause" : "play"} size={18} color={c.onAccent} />
+    </Pressable>
+  );
+}
+
+function ShowTile({ show, tile, cover, open, selected, split, hold, favorite, canPlay, resume, toggle, more }) {
+  const { s, wide } = useDesign();
+  const art = useRef(null);
+  const item = tile.resume;
+  const press = () =>
+    wide && !split && art.current?.measureInWindow
+      ? art.current.measureInWindow((x, y, width, height) => {
+          putFlight("collection", { x, y, width, height });
+          open(show);
+        })
+      : open(show);
+  const body = (
+    <>
+      <View ref={art} style={s.musicTileCover}>
+        <Cover uri={cover(show.cover, "small")} icon="podcast" />
+        {tile.progress != null && <ProgressLine value={tile.progress} edge />}
+      </View>
+      <Text numberOfLines={2} style={s.rowTitle}>
+        {show.name}
+      </Text>
+      {!!tile.caption && (
+        <Text numberOfLines={1} style={s.caption}>
+          {tile.fresh ? (
+            <>
+              <Text style={s.newWord}>New</Text>
+              {tile.day ? ` · ${tile.day}` : ""}
+            </>
+          ) : (
+            tile.caption
+          )}
+        </Text>
+      )}
+    </>
+  );
+  if (!item)
+    return (
+      <Pressable
+        {...hold}
+        accessibilityRole="button"
+        accessibilityLabel={tile.caption ? `${show.name}, ${tile.caption}` : show.name}
+        accessibilityState={selected ? { selected } : undefined}
+        onPress={press}
+        style={({ pressed }) => [
+          s.musicAlbum,
+          split && s.musicAlbumSplit,
+          selected && s.musicTileSelected,
+          pressed && s.musicTilePressed,
+        ]}
+      >
+        {body}
+      </Pressable>
+    );
+  const actions = {
+    continue: () => resume(item.row.position),
+    startover: () => resume(0),
+    favorite: favorite.toggle,
+  };
+  return (
+    <View style={[s.musicAlbum, split && s.musicAlbumSplit]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${show.name}, ${tile.left}`}
+        accessibilityState={selected ? { selected } : undefined}
+        accessibilityActions={[
+          ...(canPlay
+            ? [
+                { name: "continue", label: "Continue" },
+                { name: "startover", label: "Start over" },
+              ]
+            : []),
+          { name: "favorite", label: favorite.label },
+        ]}
+        onAccessibilityAction={({ nativeEvent }) => actions[nativeEvent.actionName]?.()}
+        onPress={press}
+        onLongPress={more}
+        style={({ pressed }) => [
+          s.musicTileBody,
+          selected && s.musicTileSelected,
+          pressed && s.musicTilePressed,
+        ]}
+      >
+        {body}
+      </Pressable>
+      {canPlay && (
+        <View style={s.showPlaySlot} pointerEvents="box-none">
+          <ShowPlay item={item} resume={resume} toggle={toggle} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ShowGrid({ shows, library, positions, cover, open, chosen, split, hold, favorite, canPlay, resume, toggle, more }) {
+  const { s } = useDesign();
+  const [shown, setShown] = useState(60);
+  return (
+    <>
+      <View style={s.musicGrid}>
+        {shows.slice(0, shown).map((show) => {
+          const tile = showTile(show, library, positions);
+          return (
+            <ShowTile
+              key={show.id}
+              show={show}
+              tile={tile}
+              cover={cover}
+              open={open}
+              selected={chosen(show.id)}
+              split={split}
+              hold={hold(show)}
+              favorite={favorite(show)}
+              canPlay={canPlay}
+              resume={tile.resume ? resume(tile.resume) : null}
+              toggle={toggle}
+              more={tile.resume ? () => more(show, tile.resume) : null}
+            />
+          );
+        })}
+      </View>
+      {shows.length > shown && (
+        <Button label="Show more" onPress={() => setShown(shown + 60)} />
+      )}
+    </>
+  );
+}
+
+function AlbumGrid({ albums, cover, open, hold }) {
   const { s } = useDesign();
   const [shown, setShown] = useState(60);
   return (
     <>
       <View style={s.musicGrid}>
         {albums.slice(0, shown).map((album) => (
-          <AlbumTile key={album.id} album={album} cover={cover} open={open} />
+          <AlbumTile key={album.id} album={album} cover={cover} open={open} hold={hold(album)} />
         ))}
       </View>
       {albums.length > shown && (
@@ -201,10 +342,10 @@ export function NowGlyph({ size = 16 }) {
   );
 }
 
-export function ProgressLine({ value }) {
+export function ProgressLine({ value, edge = false }) {
   const { s } = useDesign();
   return (
-    <View style={s.progressLine}>
+    <View style={[s.progressLine, edge && s.progressEdge]} pointerEvents="none">
       <View style={[s.progressFill, { width: `${Math.round(value * 100)}%` }]} />
     </View>
   );
@@ -249,7 +390,6 @@ const trackCaption = (track, numbered, withAlbum) =>
 function TrackList({
   rows,
   context,
-  contextOf,
   isCurrent,
   play,
   numbered,
@@ -264,7 +404,6 @@ function TrackList({
   flat = false,
 }) {
   const { s, c } = useDesign();
-  const { reduce } = useMotion();
   const [shown, setShown] = useState(PAGE);
   const NOTES = notes(offline);
   return (
@@ -324,7 +463,7 @@ function TrackList({
           const current = isCurrent(row);
           const saved = current ? null : savedPosition(positions, track);
           return (
-            <Pressable
+            <PressScale
               key={key}
               accessibilityRole="button"
               accessibilityLabel={`${canPlay ? (saved ? "Resume" : "Play") : "Open"} ${track.title}, ${track.artist}${saved ? `, ${timeLeft(saved.duration - saved.position)}` : ""}`}
@@ -333,9 +472,9 @@ function TrackList({
               }
               onAccessibilityAction={() => actions?.(row)}
               onPress={() =>
-                play(contextOf ? contextOf(track) : context, track, false, row.position, saved?.position || 0)
+                play(context, track, false, row.position, saved?.position || 0)
               }
-              style={({ pressed }) => [...style, pressed && s.pressed, pressScale(pressed, reduce)]}
+              style={({ pressed }) => [...style, pressed && s.pressed]}
             >
               {numbered ? (
                 <View style={s.musicNumber}>
@@ -378,7 +517,7 @@ function TrackList({
                   <Icon name="more" size={20} color={c.mute} />
                 </Pressable>
               )}
-            </Pressable>
+            </PressScale>
           );
         })}
       </View>
@@ -527,6 +666,28 @@ function ArtistIndex({ artists, render }) {
 
 const resumeSeen = { current: false };
 
+function showsOpen(library, route, wide) {
+  if (!library?.tracks.size) return false;
+  const tabs = musicTabs(library);
+  const tab = tabs.includes(route[0]?.kind) ? route[0].kind : tabs[0];
+  return tab === "podcasts" && musicPane(route, wide).level === 0;
+}
+
+function useShowOrder(library, positions, loaded, active) {
+  const kept = useRef(null);
+  if (!active) {
+    kept.current = null;
+    return null;
+  }
+  if (kept.current?.library !== library || kept.current.loaded !== loaded)
+    kept.current = {
+      library,
+      loaded,
+      ids: orderShows(library.showOrder.map((id) => library.shows.get(id)), library, positions).map((show) => show.id),
+    };
+  return kept.current.ids;
+}
+
 function ResumeCard({ item, cover, canPlay, start, deviceId, relative }) {
   const { s } = useDesign();
   const { track, row } = item;
@@ -573,8 +734,6 @@ export function MusicLibrary({
   go,
   select,
   history,
-  search,
-  setSearch,
   folderId,
   cover,
   canPlay,
@@ -584,19 +743,18 @@ export function MusicLibrary({
   reconnect,
   trackActions,
   playlistActions,
+  resumeActions,
+  favorite,
   positions,
+  loaded,
+  command,
   deviceId,
   relative,
 }) {
   const { s, wide } = useDesign();
-  const searching = typeof search === "string";
-  const query = search || "";
-  const found = useMemo(
-    () => (library && searching ? searchLibrary(library, query) : null),
-    [library, searching, query],
-  );
   const node = parseTrackNode(playingId);
   const playing = node?.track || null;
+  const order = useShowOrder(library, positions, loaded, showsOpen(library, route, wide));
   if (!library) return <Scaffold label="Loading music" />;
   if (!saved)
     return offline ? (
@@ -608,7 +766,7 @@ export function MusicLibrary({
       />
     ) : (
       <EmptyState
-        icon="music"
+        icon="arca"
         title="Loading the library"
         text="The hub lists this folder's artists and albums after the next sync."
         action={<Button label="Sync now" icon="refresh" onPress={sync} />}
@@ -617,7 +775,7 @@ export function MusicLibrary({
   if (!library.tracks.size)
     return (
       <EmptyState
-        icon="music"
+        icon="arca"
         title="No music on this phone yet"
         text={
           indexing
@@ -628,17 +786,21 @@ export function MusicLibrary({
     );
   const tabs = musicTabs(library);
   const tab = tabs.includes(route[0]?.kind) ? route[0].kind : tabs[0];
-  const results = found;
   const pane = musicPane(route, wide);
-  const searchLabel = musicSearchLabel(library);
-  const top = pane.level > 0 ? route[pane.level] : { kind: results ? "search" : tab };
+  const top = pane.level > 0 ? route[pane.level] : { kind: tab };
   const shuffle = (context, ids) => {
     const index = Math.floor(Math.random() * ids.length);
     play(folderContext(folderId, context), library.tracks.get(ids[index]), true, index);
   };
   const everything = libraryTracks(library);
+  const resumeFrom = (item) => (at) => {
+    const base = trackContext(item.track);
+    const list = library.shows.get(base)?.tracks || library.albums.get(base)?.tracks || [];
+    const index = list.indexOf(item.track.id);
+    play(folderContext(folderId, base), item.track, false, index >= 0 ? index : -1, at);
+  };
   const resume =
-    route.length === 1 && !searching
+    route.length === 1 && tab !== "podcasts"
       ? resumeCandidate(positions, library, folderId, playing)
       : null;
   const root =
@@ -651,12 +813,7 @@ export function MusicLibrary({
             canPlay={canPlay}
             deviceId={deviceId}
             relative={relative}
-            start={(at) => {
-              const base = trackContext(resume.track);
-              const list = library.shows.get(base)?.tracks || library.albums.get(base)?.tracks || [];
-              const index = list.indexOf(resume.track.id);
-              play(folderContext(folderId, base), resume.track, false, index >= 0 ? index : -1, at);
-            }}
+            start={resumeFrom(resume)}
           />
         )}
         {tabs.length > 1 && (
@@ -665,31 +822,12 @@ export function MusicLibrary({
               <SegmentedControl
                 options={tabs.map((value) => ({ value, label: TAB_LABELS[value] }))}
                 value={tab}
-                onChange={(kind) => {
-                  setSearch(null);
-                  select(kind);
-                }}
+                onChange={select}
               />
             </View>
-            <Button
-              iconOnly
-              label={searching ? "Close search" : searchLabel}
-              icon={searching ? "close" : "search"}
-              onPress={() => setSearch(searching ? null : "")}
-            />
           </View>
         )}
-        {searching && (
-          <Field
-            label={searchLabel}
-            autoFocus={!query}
-            placeholder={searchLabel}
-            returnKeyType="search"
-            value={query}
-            onChangeText={setSearch}
-          />
-        )}
-        {canPlay && !results && tab !== "podcasts" && everything.length > 1 && (
+        {canPlay && tab !== "podcasts" && everything.length > 1 && (
           <View style={s.musicActions}>
             <Button
               label="Shuffle"
@@ -710,6 +848,19 @@ export function MusicLibrary({
   const openAlbum = (album) => open({ kind: "album", id: album.id });
   const openPlaylist = (playlist) => open({ kind: "playlist", id: playlist.id });
   const chosen = (kind, id) => pane.detail?.kind === kind && pane.detail.id === id;
+  const pin = (kind, id, label, coverKey) => ({ folder: folderId, kind, target: id, label, cover: coverKey || null });
+  const hold = (kind, id, label, coverKey) => {
+    const entry = pin(kind, id, label, coverKey);
+    return {
+      onLongPress: () => favorite.hold(entry),
+      accessibilityActions: [
+        { name: "favorite", label: favorite.has(entry) ? "Remove from Favorites" : "Add to Favorites" },
+      ],
+      onAccessibilityAction: ({ nativeEvent }) =>
+        nativeEvent.actionName === "favorite" && favorite.toggle(entry),
+    };
+  };
+  const holdAlbum = (album) => hold("album", album.id, album.title, album.cover);
   const playlistRow = (playlist, index, caption = playlistSummary(playlist)) => (
     <MusicRow
       key={playlist.id}
@@ -719,6 +870,7 @@ export function MusicLibrary({
       title={playlist.name}
       caption={caption}
       selected={chosen("playlist", playlist.id)}
+      hold={hold("playlist", playlist.id, playlist.name, playlist.cover)}
       onPress={() => openPlaylist(playlist)}
     />
   );
@@ -731,20 +883,8 @@ export function MusicLibrary({
       title={album.title}
       caption={caption}
       selected={chosen("album", album.id)}
+      hold={holdAlbum(album)}
       onPress={() => openAlbum(album)}
-    />
-  );
-  const showRow = (show, index) => (
-    <MusicRow
-      key={show.id}
-      divider={index > 0}
-      icon="podcast"
-      flight={!pane.detail}
-      cover={cover(show.cover, "small")}
-      title={show.name}
-      caption={showCaption(show)}
-      selected={chosen("show", show.id)}
-      onPress={() => open({ kind: "show", id: show.id })}
     />
   );
   const playingRow = (row) => row.track?.id === playing;
@@ -754,104 +894,9 @@ export function MusicLibrary({
     pane.detail ? (
       <PagedRows items={list} render={(album, index) => albumRow(album, index, caption(album))} />
     ) : (
-      <AlbumGrid albums={list} cover={cover} open={openAlbum} />
+      <AlbumGrid albums={list} cover={cover} open={openAlbum} hold={holdAlbum} />
     );
   const page = (item, flat = false) => {
-    if (item.kind === "search") {
-      const found =
-        results.tracks.length +
-        results.albums.length +
-        results.artists.length +
-        results.playlists.length +
-        results.shows.length +
-        results.episodes.length;
-      return found ? (
-        <>
-          {results.tracks.length > 0 && (
-            <Section>
-              <Text style={s.eyebrow}>SONGS</Text>
-              <TrackList
-                rows={readyRows(library, results.tracks)}
-                contextOf={(track) => folderContext(folderId, trackContext(track))}
-                isCurrent={playingRow}
-                play={play}
-                cover={cover}
-                canPlay={canPlay}
-                positions={positions}
-              />
-            </Section>
-          )}
-          {results.albums.length > 0 && (
-            <Section>
-              <Text style={s.eyebrow}>ALBUMS</Text>
-              {albums(results.albums)}
-            </Section>
-          )}
-          {results.artists.length > 0 && (
-            <Section>
-              <Text style={s.eyebrow}>ARTISTS</Text>
-              <PagedRows
-                items={results.artists}
-                render={(artist, index) => (
-                  <MusicRow
-                    key={artist.id}
-                    divider={index > 0}
-                    icon="artist"
-                    cover={cover(artist.cover, "small")}
-                    title={artist.name}
-                    caption={plural(artist.albums.length, "album", "albums")}
-                    onPress={() => open({ kind: "artist", id: artist.id })}
-                  />
-                )}
-              />
-            </Section>
-          )}
-          {results.playlists.length > 0 && (
-            <Section>
-              <Text style={s.eyebrow}>PLAYLISTS</Text>
-              <PagedRows
-                items={results.playlists}
-                render={(playlist, index) => playlistRow(playlist, index)}
-              />
-            </Section>
-          )}
-          {results.shows.length > 0 && (
-            <Section>
-              <Text style={s.eyebrow}>SHOWS</Text>
-              <PagedRows items={results.shows} render={(show, index) => showRow(show, index)} />
-            </Section>
-          )}
-          {results.episodes.length > 0 && (
-            <Section>
-              <Text style={s.eyebrow}>EPISODES</Text>
-              <TrackList
-                rows={episodeRows(library, results.episodes)}
-                contextOf={(track) => folderContext(folderId, track.show)}
-                isCurrent={playingRow}
-                play={play}
-                cover={cover}
-                canPlay={canPlay}
-                actions={(row) => trackActions({ track: row.track })}
-                withAlbum
-                positions={positions}
-              />
-            </Section>
-          )}
-        </>
-      ) : (
-        <EmptyState
-          icon="search"
-          title={`No results for “${query.trim()}”`}
-          text={
-            searchLabel === "Search podcasts"
-              ? "Try the name of a show or episode."
-              : searchLabel === "Search"
-                ? "Try the name of a song, album, artist, show or episode."
-                : "Try the name of a song, album, artist or playlist."
-          }
-        />
-      );
-    }
     if (item.kind === "artists")
       return (
         <ArtistIndex
@@ -864,6 +909,7 @@ export function MusicLibrary({
               cover={cover(artist.cover, "small")}
               title={artist.name}
               caption={`${plural(artist.albums.length, "album", "albums")} · ${plural(artist.tracks, "track", "tracks")}`}
+              hold={hold("artist", artist.id, artist.name, artist.cover)}
               onPress={() => push({ kind: "artist", id: artist.id })}
             />
           )}
@@ -934,13 +980,47 @@ export function MusicLibrary({
         </Section>
       );
     }
-    if (item.kind === "podcasts")
+    if (item.kind === "podcasts") {
+      const shows = (order || library.showOrder).map((id) => library.shows.get(id)).filter(Boolean);
+      const showPin = (show) => pin("show", show.id, show.name, show.cover);
+      const resumeShow = (entry) => (at) =>
+        entry.track.id === playing && at > 0
+          ? player
+              .command("state")
+              .then((state) => !isPlaying(state) && command("toggle"))
+              .catch(() => {})
+          : resumeFrom(entry)(at);
       return (
-        <PagedRows
-          items={library.showOrder.map((id) => library.shows.get(id))}
-          render={(show, index) => showRow(show, index)}
+        <ShowGrid
+          shows={shows}
+          library={library}
+          positions={positions}
+          cover={cover}
+          open={(value) => open({ kind: "show", id: value.id })}
+          chosen={(id) => chosen("show", id)}
+          hold={(value) => hold("show", value.id, value.name, value.cover)}
+          favorite={(value) => ({
+            label: favorite.has(showPin(value)) ? "Remove from Favorites" : "Add to Favorites",
+            toggle: () => favorite.toggle(showPin(value)),
+          })}
+          split={!!pane.detail}
+          canPlay={canPlay}
+          resume={resumeShow}
+          toggle={() => command("toggle")}
+          more={(show, entry) =>
+            resumeActions({
+              track: entry.track,
+              row: entry.row,
+              show,
+              canPlay,
+              start: resumeShow(entry),
+              openShow: () => open({ kind: "show", id: show.id }),
+              favorite: showPin(show),
+            })
+          }
         />
       );
+    }
     if (item.kind === "show") {
       const show = library.shows.get(item.id);
       return show ? (
@@ -1077,7 +1157,7 @@ function PlaylistName({ name = "", label, locked, submit }) {
   );
 }
 
-export function MusicSheet({ sheet, library, cover, locked, open, change, remove, removeTrack }) {
+export function MusicSheet({ sheet, library, cover, locked, open, change, remove, removeTrack, favorite }) {
   const { s } = useDesign();
   if (sheet.kind === "track-actions")
     return (
@@ -1160,6 +1240,52 @@ export function MusicSheet({ sheet, library, cover, locked, open, change, remove
         submit={(name) => change("rename", { name, playlist: sheet.playlist })}
       />
     );
+  if (sheet.kind === "resume-actions")
+    return (
+      <View style={s.actionGroup}>
+        <ActionRow
+          label="Continue"
+          icon="play"
+          disabled={!sheet.canPlay}
+          onPress={() => {
+            open(null);
+            sheet.start(sheet.row.position);
+          }}
+        />
+        <ActionRow
+          label="Start over"
+          icon="rotate-ccw"
+          divider
+          disabled={!sheet.canPlay}
+          onPress={() => {
+            open(null);
+            sheet.start(0);
+          }}
+        />
+        {!!sheet.openShow && (
+          <ActionRow
+            label="Open show"
+            icon="podcast"
+            divider
+            onPress={() => {
+              open(null);
+              sheet.openShow();
+            }}
+          />
+        )}
+        {!!sheet.favorite && !!favorite && (
+          <ActionRow
+            label={favorite.has(sheet.favorite) ? "Remove from Favorites" : "Add to Favorites"}
+            icon={favorite.has(sheet.favorite) ? "star-off" : "star"}
+            divider
+            onPress={() => {
+              open(null);
+              favorite.toggle(sheet.favorite);
+            }}
+          />
+        )}
+      </View>
+    );
   if (sheet.kind === "playlist-actions")
     return (
       <>
@@ -1192,7 +1318,6 @@ const miniSeen = { current: false };
 
 export function MiniPlayer({ library, cover, open, command, sleep }) {
   const { s, c } = useDesign();
-  const { reduce } = useMotion();
   const art = useRef(null);
   const [state] = useMusicPlayer(true);
   const now = useNow(sleep?.mode === "duration");
@@ -1207,7 +1332,7 @@ export function MiniPlayer({ library, cover, open, command, sleep }) {
     : [track?.artist || state.artist, track?.album || state.album].filter(Boolean).join(" · ");
   return (
     <RiseOnce seen={miniSeen}>
-      <Pressable
+      <PressScale
         accessibilityRole="button"
         accessibilityLabel={`Now playing ${track?.title || state.title || ""}`}
         onPress={() => {
@@ -1224,7 +1349,7 @@ export function MiniPlayer({ library, cover, open, command, sleep }) {
           });
           setTimeout(go, 150);
         }}
-        style={({ pressed }) => [s.miniPlayer, pressed && s.pressed, pressScale(pressed, reduce)]}
+        style={({ pressed }) => [s.miniPlayer, pressed && s.pressed]}
       >
         <View ref={art}>
           <Cover uri={cover(track?.cover, "small")} size={40} icon={track?.podcast ? "podcast" : "album"} />
@@ -1276,7 +1401,7 @@ export function MiniPlayer({ library, cover, open, command, sleep }) {
             <View style={[s.progressFill, { width: `${Math.round(fraction(at, total) * 100)}%` }]} />
           </View>
         )}
-      </Pressable>
+      </PressScale>
     </RiseOnce>
   );
 }

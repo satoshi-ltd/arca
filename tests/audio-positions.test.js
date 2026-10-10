@@ -41,7 +41,7 @@ test("a long track keeps its position on the hub with the device that played it"
 test("music-length tracks keep no position", async (t) => {
   const { volume, api } = await hub(t);
   assert.deepEqual((await api("/v1/audio-position", long(volume, { duration: 400, position: 200 }))).body, { kept: false });
-  assert.deepEqual((await api("/v1/audio-positions")).body, { positions: [] });
+  assert.deepEqual((await api("/v1/audio-positions")).body, { positions: [], finished: [] });
 });
 
 test("the newest update wins and an older one never overwrites it", async (t) => {
@@ -57,8 +57,12 @@ test("the newest update wins and an older one never overwrites it", async (t) =>
 test("finishing a track clears its position and the first seconds keep none", async (t) => {
   const { volume, api } = await hub(t);
   await api("/v1/audio-position", long(volume, { at: Date.now() - 2000 }));
-  assert.deepEqual((await api("/v1/audio-position", long(volume, { position: 18580, at: Date.now() }))).body, { kept: false, cleared: true });
-  assert.deepEqual((await api("/v1/audio-positions")).body, { positions: [] });
+  const at = Date.now();
+  assert.deepEqual((await api("/v1/audio-position", long(volume, { position: 18580, at }))).body, { kept: false, cleared: true });
+  assert.deepEqual((await api("/v1/audio-positions")).body, {
+    positions: [],
+    finished: [{ volume: volume.id, path: "Show/2026-10-06 Episode.mp3", hash: "h1", updated: at }],
+  });
   await api("/v1/audio-position", long(volume, { position: 3730 }));
   assert.deepEqual((await api("/v1/audio-position", long(volume, { position: 4 }))).body, { kept: false });
   assert.equal((await api("/v1/audio-positions")).body.positions.length, 1, "a save from the first seconds never erases a saved place");
@@ -76,9 +80,11 @@ test("a finished track stays finished when an older save arrives later, and a ne
   await api("/v1/audio-position", long(volume, { position: 5000, at: now - 3000 }));
   await api("/v1/audio-position", long(volume, { position: 18580, at: now - 1000 }));
   assert.deepEqual((await api("/v1/audio-position", long(volume, { position: 9000, at: now - 2000 }))).body, { kept: false });
-  assert.deepEqual((await api("/v1/audio-positions")).body, { positions: [] });
+  assert.deepEqual((await api("/v1/audio-positions")).body.positions, []);
+  assert.deepEqual((await api("/v1/audio-positions")).body.finished.map((row) => row.updated), [now - 1000]);
   await api("/v1/audio-position", long(volume, { position: 700, at: now }));
   assert.equal((await api("/v1/audio-positions")).body.positions[0].position, 700);
+  assert.deepEqual((await api("/v1/audio-positions")).body.finished, [], "a newer listen is no longer finished");
 });
 
 test("a queued position the hub refuses is dropped and the rest of the queue still reaches it", async (t) => {
@@ -119,4 +125,19 @@ test("a replica never lists a queued save from the first seconds or the last min
   const row = (path, position, updated) => ({ volume: "v", path, hash: "h", position, duration: 3600, updated });
   const merged = mergePositions({ positions: [row("a.mp3", 900, 1)] }, [row("a.mp3", 3590, 2), row("b.mp3", 4, 3), row("c.mp3", 1200, 4)]);
   assert.deepEqual(merged.positions.map((item) => item.path), ["c.mp3"]);
+});
+
+test("a replica lists finished episodes from the hub and its own queue, never as resumable positions", async () => {
+  const { mergePositions } = await import("../packages/daemon/audio-positions.js");
+  const row = (path, position, updated) => ({ volume: "v", path, hash: "h", position, duration: 3600, updated });
+  const merged = mergePositions(
+    { positions: [row("a.mp3", 900, 1), row("d.mp3", 900, 9)], finished: [{ volume: "v", path: "b.mp3", hash: "h", updated: 5 }, { volume: "v", path: "d.mp3", hash: "h", updated: 2 }] },
+    [row("a.mp3", 3590, 6), row("b.mp3", 1200, 3), row("c.mp3", 3599, 4)],
+  );
+  assert.deepEqual(merged.positions.map((item) => [item.path, item.position]), [["d.mp3", 900]], "a newer listen outranks an older finished mark");
+  assert.deepEqual(merged.finished, [
+    { volume: "v", path: "a.mp3", hash: "h", updated: 6 },
+    { volume: "v", path: "b.mp3", hash: "h", updated: 5 },
+    { volume: "v", path: "c.mp3", hash: "h", updated: 4 },
+  ]);
 });

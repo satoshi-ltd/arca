@@ -5,18 +5,28 @@ export const SAVE_INTERVAL = 15000;
 
 export const positionKey = (volume, path) => `${volume}\0${path}`;
 
-export function positionMap(rows) {
+export const isFinished = (row) => !!row && (row.finished === true || row.position === 0);
+
+export function positionMap(rows, finished = []) {
   const map = new Map();
+  const keep = (row) => {
+    const key = positionKey(row.volume, row.path);
+    const known = map.get(key);
+    if (!known || (known.updated || 0) < (row.updated || 0)) map.set(key, row);
+  };
+  const file = (row) => typeof row?.volume === "string" && typeof row.path === "string";
   for (const row of Array.isArray(rows) ? rows : [])
-    if (
-      typeof row?.volume === "string" &&
-      typeof row.path === "string" &&
-      Number.isFinite(row.position) &&
-      Number.isFinite(row.duration) &&
-      row.duration > 0
-    )
-      map.set(positionKey(row.volume, row.path), row);
+    if (file(row) && isFinished(row)) keep({ ...row, position: 0, finished: true });
+    else if (file(row) && Number.isFinite(row.position) && Number.isFinite(row.duration) && row.duration > 0) keep(row);
+  for (const row of Array.isArray(finished) ? finished : []) if (file(row)) keep({ ...row, position: 0, finished: true });
   return map;
+}
+
+export function positionSignature(positions) {
+  return [...positions.values()]
+    .map((row) => `${row.volume}\0${row.path}:${isFinished(row) ? "done" : Math.floor(row.position / 60)}`)
+    .sort()
+    .join("|");
 }
 
 export function trackFile(id) {
@@ -24,10 +34,15 @@ export function trackFile(id) {
   return at > 0 ? { volume: id.slice(0, at), path: id.slice(at + 1) } : null;
 }
 
-export function savedPosition(positions, track) {
+export function playedRow(positions, track) {
   if (!positions || !track?.folder || !track.path) return null;
   const row = positions.get(positionKey(track.folder, track.path));
   return row && (!track.hash || !row.hash || row.hash === track.hash) ? row : null;
+}
+
+export function savedPosition(positions, track) {
+  const row = playedRow(positions, track);
+  return row && !isFinished(row) ? row : null;
 }
 
 export function shouldSave({ position, duration, seeking = false, force = false, now, last = 0 }) {
@@ -39,8 +54,14 @@ export function shouldSave({ position, duration, seeking = false, force = false,
 export function remember(positions, body, device, now) {
   const next = new Map(positions);
   const key = positionKey(body.volume, body.path);
-  if (body.position >= body.duration - RESUME_TAIL_SECONDS) next.delete(key);
-  else next.set(key, { ...body, device: device?.id ?? null, name: device?.name ?? null, updated: now });
+  const finished = body.position >= body.duration - RESUME_TAIL_SECONDS;
+  next.set(key, {
+    ...body,
+    ...(finished ? { position: 0, finished: true } : {}),
+    device: device?.id ?? null,
+    name: device?.name ?? null,
+    updated: now,
+  });
   return next;
 }
 
@@ -55,16 +76,16 @@ export function fraction(position, duration) {
   return duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0;
 }
 
-export function resumeCandidate(positions, library, volume, playingId = null) {
+export function resumeCandidate(positions, library, volume, playingId = null, accept = () => true) {
   if (!positions || !library) return null;
   const rows = [...positions.values()]
-    .filter((row) => row.volume === volume)
+    .filter((row) => row.volume === volume && !isFinished(row))
     .sort((a, b) => (b.updated || 0) - (a.updated || 0));
   for (const row of rows) {
     const id = `${row.volume}:${row.path}`;
     const track = library.tracks.get(id);
-    if (!track || (track.hash && row.hash && track.hash !== row.hash)) continue;
-    return id === playingId ? null : { row, track };
+    if (id === playingId || !track || !accept(track) || (track.hash && row.hash && track.hash !== row.hash)) continue;
+    return { row, track };
   }
   return null;
 }

@@ -73,12 +73,6 @@ export function formatDuration(seconds) {
     ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}`
     : `${minutes}:${rest}`;
 }
-export function searchText(value) {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
 const LETTER_BASE = { Æ: "A", Ð: "D", Đ: "D", Ł: "L", Ø: "O", Œ: "O", Þ: "T" };
 export function artistLetter(name) {
   const first = String(name ?? "")
@@ -164,6 +158,7 @@ export function buildLibrary(raw) {
       added: item.added || null,
       podcast: spoken,
       date: episodeDate(item.path),
+      pending: item.pending === true,
     };
     tracks.set(track.path, track);
     if (track.podcast) {

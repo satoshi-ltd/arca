@@ -3,10 +3,11 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import bundledFfmpeg from "ffmpeg-static";
+import { PREVIEW_SIZES } from "./preview-sizes.js";
 
 const execute = promisify(execFile);
-export async function videoPreview(file, name, large = false) {
-  const size = large ? 2048 : 360;
+export async function videoPreview(file, name, size = "thumb") {
+  const { edge } = PREVIEW_SIZES[size];
   const binary =
     bundledFfmpeg && fs.existsSync(bundledFfmpeg) ? bundledFfmpeg : "ffmpeg";
   const { stdout } = await execute(
@@ -31,7 +32,7 @@ export async function videoPreview(file, name, large = false) {
       "-an",
       "-sn",
       "-vf",
-      `scale=${size}:${size}:force_original_aspect_ratio=decrease`,
+      `scale=${edge}:${edge}:force_original_aspect_ratio=decrease`,
       "-threads",
       "1",
       "-f",
