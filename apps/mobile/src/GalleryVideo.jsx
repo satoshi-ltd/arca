@@ -1,7 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AppState, Image, Pressable, Text, View } from "react-native";
 import { requireOptionalNativeModule, useEvent } from "expo";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Busy, Icon, useDesign } from "./components";
+import { videoSurfaceMargins } from "./layout";
 import { holdVideoPlayback, startVideoPlayback } from "./video-playback";
 
 // An installed dev client can receive JS before its new native module is built.
@@ -12,6 +14,7 @@ const { useVideoPlayer, VideoView } = video || {};
 
 function Playback({ uri, held }) {
   const { s } = useDesign();
+  const insets = useSafeAreaInsets();
   const player = useVideoPlayer(null);
   const [loadError, setLoadError] = useState(null);
   const heldRef = useRef(held);
@@ -44,7 +47,7 @@ function Playback({ uri, held }) {
       </Text>
     );
   return (
-    <View style={s.viewerVideoSurface}>
+    <View style={[s.viewerVideoSurface, videoSurfaceMargins(insets)]}>
       <VideoView
         player={player}
         style={s.viewerVideo}

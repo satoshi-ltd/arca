@@ -5,7 +5,13 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { coalescedRun } from "../apps/mobile/src/folder-listing.js";
 import { browseEntries } from "../apps/mobile/src/browse.js";
-import { sidebarLayout, fileMenuPosition } from "../apps/mobile/src/layout.js";
+import {
+  sidebarLayout,
+  fileMenuPosition,
+  videoSurfaceMargins,
+  VIEWER_BAR_HEIGHT,
+  VIEWER_STRIP_HEIGHT,
+} from "../apps/mobile/src/layout.js";
 import { icons, iconNames } from "../apps/mobile/src/icons.js";
 import { musicSheet } from "../apps/mobile/src/music-library.js";
 
@@ -1002,4 +1008,38 @@ test("a wide History row keeps its revision cell on one line up to seven digits 
       const needed = "rev 1234567".length * advance * font * fontScale * textScale;
       assert.ok(width >= needed, `${width} px fits "rev" and seven digits in Fragment Mono at ${label} text and ${fontScale}× system size`);
     }
+});
+
+test("video surface margins follow the safe-area insets around the viewer bars", () => {
+  assert.equal(VIEWER_BAR_HEIGHT, 52);
+  assert.equal(VIEWER_STRIP_HEIGHT, 88);
+  const none = { top: 0, bottom: 0, left: 0, right: 0 };
+  assert.deepEqual(videoSurfaceMargins(none), {
+    marginTop: 52,
+    marginBottom: 88,
+    marginLeft: 0,
+    marginRight: 0,
+  });
+  const plain = videoSurfaceMargins({ ...none, top: 24 });
+  assert.equal(plain.marginTop, 76);
+  assert.equal(plain.marginBottom, 88);
+  const portrait = videoSurfaceMargins({ top: 59, bottom: 34, left: 0, right: 0 });
+  assert.equal(portrait.marginTop, 59 + 52);
+  assert.equal(portrait.marginBottom, 34 + 88);
+  const landscape = videoSurfaceMargins({ top: 0, bottom: 21, left: 59, right: 59 });
+  assert.deepEqual(landscape, {
+    marginTop: 52,
+    marginBottom: 21 + 88,
+    marginLeft: 59,
+    marginRight: 59,
+  });
+});
+
+test("the viewer video surface reads safe-area insets and keeps no fixed margins", () => {
+  const theme = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
+  const surface = theme.match(/viewerVideoSurface: \{[^}]*\}/)[0];
+  assert.doesNotMatch(surface, /margin/);
+  const video = fs.readFileSync(new URL("../apps/mobile/src/GalleryVideo.jsx", import.meta.url), "utf8");
+  assert.match(video, /useSafeAreaInsets\(\)/);
+  assert.match(video, /\[s\.viewerVideoSurface, videoSurfaceMargins\(insets\)\]/);
 });

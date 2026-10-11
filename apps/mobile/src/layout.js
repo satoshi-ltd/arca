@@ -16,3 +16,15 @@ export function fileMenuPosition(x, y, triggerWidth, triggerHeight, rootWidth) {
     top: y + triggerHeight + 6,
   };
 }
+
+export const VIEWER_BAR_HEIGHT = 52;
+export const VIEWER_STRIP_HEIGHT = 88;
+
+export function videoSurfaceMargins(insets) {
+  return {
+    marginTop: insets.top + VIEWER_BAR_HEIGHT,
+    marginBottom: insets.bottom + VIEWER_STRIP_HEIGHT,
+    marginLeft: insets.left,
+    marginRight: insets.right,
+  };
+}

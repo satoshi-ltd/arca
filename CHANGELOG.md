@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.49 — 2026-10-11
+
+- On the phone, a video in the photo viewer stays clear of the notch, camera cutout, status bar and gesture bar in portrait, landscape and on the unfolded Fold, instead of using fixed margins.
+
+Needs: native build
+
 ## 0.7.48 — 2026-10-11
 
 - On the phone, changing the linked albums or the videos setting no longer waits for pending uploads: photos queued from an unticked album (or videos once videos are off) leave the queue, while anything already uploaded, anything already part-sent and your photo library stay untouched.

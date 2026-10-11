@@ -198,8 +198,6 @@ export function styles(
     viewerVideoSurface: {
       flex: 1,
       width: "100%",
-      marginTop: 90,
-      marginBottom: 110,
     },
     viewerVideo: { flex: 1, width: "100%" },
     viewerVideoLoading: {

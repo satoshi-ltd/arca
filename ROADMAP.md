@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-VIDEO-SAFE-AREA** — The photo viewer's video surface uses safe-area insets
-  `bug · agent · low`
-  accept: the video surface in the phone viewer uses the safe-area insets instead of the fixed 90 and 110 margins in `theme.js`; a layout test covers a device with a cutout.
 - **MUSIC-AUTO-PODCASTS** — Continue and progress badges in Android Auto
   `feature · agent · normal`
   accept: episode items in the car's Podcasts tab carry their completion status from the hub's positions so the car draws its partly played badge, and a Continue item comes first and starts the newest saved position at its hub offset; the car adds no controls and never deletes; JVM and library-file tests cover the tree. Device evidence follows in the car after a native build.
