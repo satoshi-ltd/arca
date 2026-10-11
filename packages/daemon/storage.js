@@ -1,4 +1,5 @@
 import { entryKey, directoryItem } from "../core/entries.js";
+import { mediaKind } from "../core/gallery-date.js";
 import { disposableMetadata } from "../core/builtin-exclusions.js";
 import { readIgnore, compileIgnore, IGNORE_FILE } from "./exclusions.js";
 import fs from "node:fs";
@@ -336,6 +337,9 @@ export class Store {
         .some((column) => column.name === "modified")
     )
       this.db.exec("ALTER TABLE gallery_metadata ADD COLUMN modified TEXT");
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS added_dates(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,added TEXT NOT NULL,PRIMARY KEY(volume,path))",
+    );
     if (
       !this.db
         .prepare("PRAGMA table_info(music_tracks)")
@@ -479,6 +483,7 @@ export class Store {
         "files",
         "local_files",
         "revisions",
+        "added_dates",
         "audio_positions",
         "audio_outbox",
       ])
@@ -639,26 +644,51 @@ export class Store {
       )
       .run(hash, modified);
   }
+  rememberAddedDate(volume, name, hash, added) {
+    if (
+      !hash ||
+      typeof added !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(added) ||
+      !Number.isFinite(Date.parse(added))
+    )
+      return;
+    this.db
+      .prepare(
+        "INSERT INTO added_dates(volume,path,hash,added) VALUES(?,?,?,?) ON CONFLICT(volume,path) DO UPDATE SET hash=excluded.hash,added=excluded.added",
+      )
+      .run(volume, name, hash, added);
+  }
   withFileDates(rows) {
-    const hashes = [
-      ...new Set(
-        rows.filter((row) => row.hash && !row.deleted).map((row) => row.hash),
-      ),
-    ];
-    if (!hashes.length) return rows;
+    const media = rows.filter(
+      (row) => row.hash && !row.deleted && mediaKind(row.path),
+    );
+    if (!media.length) return rows;
+    const marks = [...new Set(media.map((row) => row.hash))];
     const dates = new Map(
       this.db
         .prepare(
-          `SELECT hash,modified FROM gallery_metadata WHERE modified IS NOT NULL AND hash IN (${hashes.map(() => "?").join(",")})`,
+          `SELECT hash,modified FROM gallery_metadata WHERE modified IS NOT NULL AND hash IN (${marks.map(() => "?").join(",")})`,
         )
-        .all(...hashes)
+        .all(...marks)
         .map((row) => [row.hash, row.modified]),
     );
-    return dates.size
-      ? rows.map((row) =>
-          dates.has(row.hash) ? { ...row, modified: dates.get(row.hash) } : row,
-        )
-      : rows;
+    const first = this.db.prepare(
+      "SELECT min(created) AS added FROM revisions WHERE volume=? AND path=? AND hash=?",
+    );
+    const attached = new Map(
+      media.map((row) => [
+        row,
+        {
+          ...row,
+          ...(dates.has(row.hash) ? { modified: dates.get(row.hash) } : {}),
+          ...(() => {
+            const added = first.get(row.volume, row.path, row.hash)?.added;
+            return added ? { added } : {};
+          })(),
+        },
+      ]),
+    );
+    return rows.map((row) => attached.get(row) || row);
   }
   syncRow(row) {
     if (!row.deleted) return row;

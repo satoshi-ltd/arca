@@ -149,7 +149,7 @@ export function searchLocal(store, params, music = null) {
 function photoDate(store, source, row) {
   const meta = store.db
     .prepare(
-      `SELECT m.captured,m.modified,(SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash) AS added
+      `SELECT m.captured,m.modified,coalesce((SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash),(SELECT a.added FROM added_dates a WHERE a.volume=f.volume AND a.path=f.path AND a.hash=f.hash)) AS added
        FROM ${source} f LEFT JOIN gallery_metadata m ON m.hash=f.hash WHERE f.volume=? AND f.path=? AND f.deleted=0`,
     )
     .get(row.volume, row.path);

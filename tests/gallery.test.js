@@ -1794,3 +1794,97 @@ test("the undated summary changes revision when one undated photo is replaced wi
   assert.equal(after.count, 3, "the count did not change");
   assert.ok(after.rev > before.rev, "the newest undated revision tells the phone something moved");
 });
+
+async function syncedReplica(f, name) {
+  const home = path.join(f.home, name);
+  init(home, { port: 0, name: "Viewer", role: "replica" });
+  const replica = await start(home, { timer: false });
+  const call = async (route, body) => {
+    const response = await fetch(`http://127.0.0.1:${replica.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { Authorization: `Bearer ${replica.engine.config.adminToken}`, "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return response.json();
+  };
+  const invite = await f.api("/v1/devices", { name: "Viewer", role: "replica" });
+  await call("/v1/connect", { url: `http://127.0.0.1:${f.daemon.port}`, token: invite.token });
+  await call("/v1/select", { id: f.v.id });
+  await replica.engine.cycle();
+  await replica.engine.gallery.background;
+  return { replica, call };
+}
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("a replica dates a photo without capture metadata by the hub's date added", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  await f.photo("plain.jpg");
+  await f.daemon.engine.gallery.background;
+  const hubItem = (await f.api(f.route)).items.find((row) => row.path === "plain.jpg");
+  assert.equal(hubItem.dateSource, "date added");
+  const { replica, call } = await syncedReplica(f, "replica-added");
+  try {
+    const item = (await call(f.route)).items.find((row) => row.path === "plain.jpg");
+    assert.equal(item.date, hubItem.date);
+    assert.equal(item.dateSource, "date added");
+  } finally {
+    await replica.close();
+  }
+});
+
+test("a replica keeps the hub's per-path added date when the same bytes were accepted earlier elsewhere", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  await f.photo("early.jpg");
+  await pause(30);
+  await f.photo("later.jpg");
+  await f.daemon.engine.gallery.background;
+  const hub = (await f.api(f.route)).items;
+  const early = hub.find((row) => row.path === "early.jpg").date;
+  const later = hub.find((row) => row.path === "later.jpg").date;
+  assert.notEqual(early, later);
+  const { replica, call } = await syncedReplica(f, "replica-copies");
+  try {
+    const items = (await call(f.route)).items;
+    assert.equal(items.find((row) => row.path === "early.jpg").date, early);
+    assert.equal(items.find((row) => row.path === "later.jpg").date, later);
+  } finally {
+    await replica.close();
+  }
+});
+
+test("a photo a replica already synced is not backfilled with the added date until it changes", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  const { hash } = await f.photo("plain.jpg");
+  const { replica, call } = await syncedReplica(f, "replica-synced");
+  try {
+    replica.engine.store.db.prepare("DELETE FROM added_dates WHERE hash=?").run(hash);
+    await f.photo("other.jpg", undefined, "blue");
+    await replica.engine.cycle({ incremental: true });
+    await replica.engine.gallery.background;
+    const item = (await call(f.route)).items.find((row) => row.path === "plain.jpg");
+    assert.equal(item.date, null);
+    assert.equal(item.dateSource, null);
+    const other = (await call(f.route)).items.find((row) => row.path === "other.jpg");
+    assert.equal(other.dateSource, "date added");
+  } finally {
+    await replica.close();
+  }
+});
+
+test("a replica forgets the added dates of a share it stops syncing", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  await f.photo("plain.jpg");
+  const { replica } = await syncedReplica(f, "replica-forgets");
+  try {
+    const count = () => replica.engine.store.db.prepare("SELECT count(*) AS n FROM added_dates WHERE volume=?").get(f.v.id).n;
+    assert.ok(count() > 0, "the replica holds the hub's added date");
+    replica.engine.store.forgetVolume(f.v.id);
+    assert.equal(count(), 0);
+  } finally {
+    await replica.close();
+  }
+});

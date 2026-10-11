@@ -1377,6 +1377,8 @@ export class Engine {
                   const local = disk.get(row.path);
                   if (row.modified && !row.deleted)
                     s.rememberFileDate(row.hash, row.modified);
+                  if (row.added && !row.deleted)
+                    s.rememberAddedDate(v.id, row.path, row.hash, row.added);
                   const current =
                     (row.deleted && !local) ||
                     (!row.deleted && entryKey(local) === entryKey(row));
@@ -1862,7 +1864,7 @@ export class Engine {
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec(
-        "DELETE FROM files; DELETE FROM local_files; DELETE FROM revisions; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
+        "DELETE FROM files; DELETE FROM local_files; DELETE FROM revisions; DELETE FROM added_dates; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM devices; DELETE FROM machine_reports; DELETE FROM backup_ack; DELETE FROM pairing; DELETE FROM snapshot_files; DELETE FROM snapshot_sessions;",
       );
       const add = db.prepare(
         "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,0,?,?,?)",

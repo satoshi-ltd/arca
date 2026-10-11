@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **REPLICA-GALLERY-ADDED-DATE** — Photos the hub dates by when they were added may read Date unknown on a replica
-  `bug · agent · low`
-  accept: first confirm with the hub's indexing finished; then a replica dates photos without capture metadata by their added date like the hub (SPEC "replicas date undated photos like the hub"), with a gallery test. Seen once on 2026-10-08 while the hub was still indexing.
 - **MOB-GALLERY-ALBUM-RELEASE** — Changing the selected albums while photos are pending is allowed
   `feature · agent · low`
   accept: changing the albums or the videos setting while uploads are pending or failed no longer fails with "Finish pending uploads…" (`gallery.js:102-116`); queued photos of an unticked album are dropped from the queue (maintainer decision; nothing already uploaded and nothing in the phone's library is touched); a replica test covers adding and removing an album with pending uploads; uploaded files are never touched.
@@ -232,6 +229,9 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 Suggested order for approval: preservation of user files, synchronization recovery, release reliability, then usability and cleanup. No task in this lane is approved for implementation.
 
+- **REPLICA-ADDED-BACKFILL** — Replicas already synced learn each photo's added date
+  `feature · agent · low`
+  accept: one-time re-walk of the change feed on a replica when the hub starts sending `added` (for example reset the stored cursor once on a hub-version change), skipping downloads when `entryKey` matches; a test shows an already-synced undated photo gaining the hub's date.
 - **MOB-WALL-SHARP-TILES** — Photo wall tiles larger than 360 device px use the medium preview
   `feature · agent · low`
   accept: on the Fold's widest columns and other layouts where a wall tile exceeds 360 device px, the tile asks for the 720 px medium preview once it is on screen and idle, keeping the 360 px thumbnail as its first paint; scrolling performance and cache budgets are covered by tests.

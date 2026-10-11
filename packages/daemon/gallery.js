@@ -277,7 +277,7 @@ export class Gallery {
     const files = s.fileSource();
     const source = `WITH media AS (
       SELECT f.path,f.hash,f.size,f.rev,m.captured,m.modified,
-        (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash) AS added
+        coalesce((SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash),(SELECT a.added FROM added_dates a WHERE a.volume=f.volume AND a.path=f.path AND a.hash=f.hash)) AS added
       FROM ${files} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
       WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_gallery_visible(f.path)=1
       AND NOT EXISTS (SELECT 1 FROM gallery_members gm JOIN gallery_assets ga USING(volume,source,asset)
@@ -358,7 +358,7 @@ export class Gallery {
     const files = s.fileSource();
     return `WITH media AS (
       SELECT f.path,f.hash,f.size,f.rev,m.captured,m.modified,
-        (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash) AS added
+        coalesce((SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.path=f.path AND r.hash=f.hash),(SELECT a.added FROM added_dates a WHERE a.volume=f.volume AND a.path=f.path AND a.hash=f.hash)) AS added
       FROM ${files} f LEFT JOIN gallery_metadata m ON m.hash=f.hash
       WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND arca_gallery_visible(f.path)=1
       AND NOT EXISTS (SELECT 1 FROM gallery_members gm JOIN gallery_assets ga USING(volume,source,asset)

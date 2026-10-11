@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.47 — 2026-10-11
+
+- Desktop and server replicas date new and changed photos without capture information by the day they were added to the hub, like the hub does, instead of showing Date unknown; photos already synced to a replica fill the date in when they change or on a full resync.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.46 — 2026-10-11
 
 - On this day cards on the phone load the hub's 720 px preview when a thumbnail is too small, instead of the 2048 px one, with their own cache budget: less data and memory for the same sharpness.
