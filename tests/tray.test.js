@@ -265,6 +265,23 @@ test("the native tray reads offline while only the hub is unreachable", () => {
   assert.match(source, /fn an_unreachable_hub_reads_offline_but_other_problems_still_raise_the_alert\(\)/, "the Rust test exists");
 });
 
+test("the native tray popover is placed inside the clicked monitor's work area", () => {
+  const source = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
+  assert.match(source, /fn tray_popover_origin\(click: \(f64, f64\), popover: \(f64, f64\), work: ScreenRect, scale: f64\) -> \(f64, f64\)/, "one pure function of click, popover size, work area and scale");
+  assert.match(source, /let area = monitor\.work_area\(\);/, "the work area comes from the monitor under the click");
+  assert.match(source, /else \{show_tray_at\(&w,\(position\.x,position\.y\)\);\}/, "the tray click places the popover through it");
+  assert.match(source, /fn resize_tray[\s\S]*?if cfg!\(target_os = "macos"\) \{\s*w\.set_size\(size\)[^\n]*\n\s*if let Some\(point\) = anchor \{ place\(point\); \}\s*\} else \{\s*if let Some\(point\) = anchor \{ place\(point\); \}\s*w\.set_size\(size\)/, "macOS resizes then places, other systems place then resize");
+  assert.doesNotMatch(source, /place_tray\(&w, point, size\)\?/, "a failed placement never stops the resize");
+  assert.match(source, /let \(x, y\) = tray_popover_target\(point, space\(&monitor\), scale, work, \(size\.width, size\.height\)\);/, "the point-to-origin mapping is pure");
+  assert.match(source, /let _ = w\.show\(\);\s*let _ = place_tray\(w, point, size\);/, "placed again after show, after a DPI change");
+  assert.match(source, /w\.cursor_position\(\)[\s\S]*?\(cursor\.0 \/ primary, cursor\.1 \/ primary\)/, "macOS picks the monitor from the cursor in points");
+  assert.match(source, /monitor_under\(point, &bounds\)/, "the monitor choice is the pure helper");
+  assert.doesNotMatch(source, /position\.x-160\.0/, "no fixed offset from the click");
+  for (const name of ["a_bottom_taskbar_opens_the_popover_above_the_click", "a_top_menu_bar_or_taskbar_opens_the_popover_below_the_click", "side_taskbars_keep_the_popover_beside_them", "a_scaled_secondary_monitor_uses_its_own_work_area_and_scale", "a_mixed_scale_mac_picks_the_monitor_under_the_click_in_points", "the_target_maps_points_to_monitor_pixels_and_back", "the_popover_never_crosses_the_work_area"]) {
+    assert.match(source, new RegExp(`fn ${name}\\(\\)`), `the Rust test ${name} exists`);
+  }
+});
+
 test("Now playing is one compact row without Previous, patched in place from music-state", async (t) => {
   const ui = await tray(t, { role: "replica", phase: "idle", volumes: [folder("music", { music: true })] }, { cover: () => ({ data: "data:image/jpeg;base64,AAAA" }) });
   const { $ } = ui;

@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **TRAY-WIN-POSITION** — The tray popover opens inside the screen's work area
-  `bug · agent · high`
-  accept: the popover position comes from one pure function of the click point, the popover size and the monitor's work area (`apps/desktop/src-tauri/src/main.rs`, today 14 px below the click and 160 px left of it); with a bottom taskbar it opens above the click, with a top menu bar or taskbar below it, and it never crosses any edge of the work area, including a click near a corner and on a scaled secondary monitor. Rust unit tests in the `rust-tests` job cover bottom, top, left and right taskbars, both corners and a scale factor of 1.5.
+_None._
 
 ## In progress
 

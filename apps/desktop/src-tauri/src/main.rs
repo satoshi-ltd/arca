@@ -441,11 +441,87 @@ fn main_window_open(app: tauri::AppHandle) -> bool {
         .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
         .unwrap_or(false)
 }
+static TRAY_ANCHOR: std::sync::Mutex<Option<(f64, f64)>> = std::sync::Mutex::new(None);
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ScreenRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+fn tray_popover_origin(click: (f64, f64), popover: (f64, f64), work: ScreenRect, scale: f64) -> (f64, f64) {
+    let fit = |value: f64, start: f64, length: f64, size: f64| value.min(start + length - size).max(start);
+    let (width, height) = (popover.0.ceil(), popover.1.ceil());
+    let gap = 14.0 * scale;
+    let y = if click.1 > work.y + work.height / 2.0 { click.1 - gap - height } else { click.1 + gap };
+    (fit(click.0 - width / 2.0, work.x, work.width, width).round(), fit(y, work.y, work.height, height).round())
+}
+fn scaled(rect: ScreenRect, factor: f64) -> ScreenRect {
+    ScreenRect { x: rect.x * factor, y: rect.y * factor, width: rect.width * factor, height: rect.height * factor }
+}
+fn monitor_under(point: (f64, f64), bounds: &[ScreenRect]) -> Option<usize> {
+    bounds.iter().position(|r| point.0 >= r.x && point.0 < r.x + r.width && point.1 >= r.y && point.1 < r.y + r.height)
+}
+fn tray_point(w: &tauri::WebviewWindow, click: (f64, f64)) -> (f64, f64) {
+    #[cfg(target_os = "macos")]
+    let point = {
+        let primary = w.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
+        let cursor = w.cursor_position().map(|p| (p.x, p.y)).unwrap_or(click);
+        (cursor.0 / primary, cursor.1 / primary)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let point = {
+        let _ = w;
+        click
+    };
+    point
+}
+fn tray_popover_target(point: (f64, f64), space: f64, scale: f64, work: ScreenRect, popover: (f64, f64)) -> (f64, f64) {
+    let origin = tray_popover_origin((point.0 / space, point.1 / space), (popover.0 * scale, popover.1 * scale), work, scale);
+    (origin.0 * space, origin.1 * space)
+}
+fn place_tray(w: &tauri::WebviewWindow, point: (f64, f64), size: tauri::LogicalSize<f64>) -> Result<(), String> {
+    let space = |m: &tauri::Monitor| if cfg!(target_os = "macos") { 1.0 / m.scale_factor() } else { 1.0 };
+    let monitors = w.available_monitors().map_err(|e| e.to_string())?;
+    let bounds: Vec<ScreenRect> = monitors.iter().map(|m| scaled(ScreenRect { x: m.position().x as f64, y: m.position().y as f64, width: m.size().width as f64, height: m.size().height as f64 }, space(m))).collect();
+    let monitor = match monitor_under(point, &bounds).and_then(|i| monitors.into_iter().nth(i)) {
+        Some(m) => m,
+        None => w.primary_monitor().map_err(|e| e.to_string())?.ok_or("No monitor for the tray popover")?,
+    };
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    let work = ScreenRect { x: area.position.x as f64, y: area.position.y as f64, width: area.size.width as f64, height: area.size.height as f64 };
+    let (x, y) = tray_popover_target(point, space(&monitor), scale, work, (size.width, size.height));
+    #[cfg(target_os = "macos")]
+    let position = tauri::Position::Logical(tauri::LogicalPosition::new(x, y));
+    #[cfg(not(target_os = "macos"))]
+    let position = tauri::Position::Physical(tauri::PhysicalPosition::new(x as i32, y as i32));
+    w.set_position(position).map_err(|e| e.to_string())
+}
+fn show_tray_at(w: &tauri::WebviewWindow, click: (f64, f64)) {
+    let factor = w.scale_factor().unwrap_or(1.0);
+    let size = w.outer_size().map(|s| tauri::LogicalSize::new(s.width as f64 / factor, s.height as f64 / factor)).unwrap_or(tauri::LogicalSize::new(320.0, 300.0));
+    let point = tray_point(w, click);
+    if let Ok(mut anchor) = TRAY_ANCHOR.lock() { *anchor = Some(point); }
+    if let Err(error) = place_tray(w, point, size) { eprintln!("Unable to place the tray popover: {error}"); }
+    let _ = w.show();
+    let _ = place_tray(w, point, size);
+    let _ = w.set_focus();
+}
 #[tauri::command]
 fn resize_tray(app: tauri::AppHandle, height: f64) -> Result<(), String> {
     if !height.is_finite() { return Err("Invalid tray height".into()); }
     if let Some(w) = app.get_webview_window("tray") {
-        w.set_size(tauri::LogicalSize::new(320.0, height.clamp(100.0, 600.0))).map_err(|e| e.to_string())?;
+        let size = tauri::LogicalSize::new(320.0, height.clamp(100.0, 600.0));
+        let anchor = TRAY_ANCHOR.lock().ok().and_then(|a| *a).filter(|_| w.is_visible().unwrap_or(false));
+        let place = |point: (f64, f64)| if let Err(error) = place_tray(&w, point, size) { eprintln!("Unable to place the tray popover: {error}"); };
+        if cfg!(target_os = "macos") {
+            w.set_size(size).map_err(|e| e.to_string())?;
+            if let Some(point) = anchor { place(point); }
+        } else {
+            if let Some(point) = anchor { place(point); }
+            w.set_size(size).map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -693,7 +769,7 @@ fn main() {
                     if let tauri::tray::TrayIconEvent::Click {button:tauri::tray::MouseButton::Left,button_state:tauri::tray::MouseButtonState::Up,position,..}=event {
                         if let Some(w)=tray.app_handle().get_webview_window("tray") {
                             if w.is_visible().unwrap_or(false) {let _=w.hide();}
-                            else {let scale=w.scale_factor().unwrap_or(1.0);let _=w.set_position(tauri::PhysicalPosition::new((position.x-160.0*scale).max(0.0) as i32,(position.y+14.0*scale) as i32));let _=w.show();let _=w.set_focus();}
+                            else {show_tray_at(&w,(position.x,position.y));}
                         }
                     }
                 })
@@ -845,6 +921,69 @@ mod tray_tests {
         s["volumes"][0]["conflicts"] = json!(1);
         assert_eq!(tray_state(&s), "alert");
         assert_eq!(tray_text(&s), "Arca · needs attention");
+    }
+    fn area(x: f64, y: f64, width: f64, height: f64) -> ScreenRect {
+        ScreenRect { x, y, width, height }
+    }
+    #[test]
+    fn a_bottom_taskbar_opens_the_popover_above_the_click() {
+        let work = area(0.0, 0.0, 1920.0, 1040.0);
+        assert_eq!(tray_popover_origin((960.0, 1060.0), (320.0, 300.0), work, 1.0), (800.0, 740.0));
+        assert_eq!(tray_popover_origin((1900.0, 1065.0), (320.0, 300.0), work, 1.0), (1600.0, 740.0));
+        assert_eq!(tray_popover_origin((5.0, 1075.0), (320.0, 300.0), work, 1.0), (0.0, 740.0));
+    }
+    #[test]
+    fn a_top_menu_bar_or_taskbar_opens_the_popover_below_the_click() {
+        assert_eq!(tray_popover_origin((1200.0, 12.0), (320.0, 300.0), area(0.0, 25.0, 1440.0, 875.0), 1.0), (1040.0, 26.0));
+        let work = area(0.0, 40.0, 1920.0, 1040.0);
+        assert_eq!(tray_popover_origin((10.0, 20.0), (320.0, 300.0), work, 1.0), (0.0, 40.0));
+        assert_eq!(tray_popover_origin((1910.0, 20.0), (320.0, 300.0), work, 1.0), (1600.0, 40.0));
+    }
+    #[test]
+    fn side_taskbars_keep_the_popover_beside_them() {
+        assert_eq!(tray_popover_origin((30.0, 1050.0), (320.0, 300.0), area(60.0, 0.0, 1860.0, 1080.0), 1.0), (60.0, 736.0));
+        assert_eq!(tray_popover_origin((1890.0, 1050.0), (320.0, 300.0), area(0.0, 0.0, 1860.0, 1080.0), 1.0), (1540.0, 736.0));
+    }
+    #[test]
+    fn a_scaled_secondary_monitor_uses_its_own_work_area_and_scale() {
+        assert_eq!(tray_popover_origin((4760.0, 1584.0), (480.0, 450.0), area(1920.0, 0.0, 2880.0, 1548.0), 1.5), (4320.0, 1098.0));
+        assert_eq!(tray_popover_origin((-50.0, 30.0), (480.0, 451.5), area(-2880.0, 72.0, 2880.0, 1548.0), 1.5), (-480.0, 72.0));
+        assert_eq!(tray_popover_origin((1500.0, 18.0), (480.0, 450.0), area(0.0, 36.0, 2160.0, 1314.0), 1.5), (1260.0, 39.0));
+    }
+    #[test]
+    fn a_mixed_scale_mac_picks_the_monitor_under_the_click_in_points() {
+        let retina = area(0.0, 0.0, 2880.0, 1800.0);
+        let external = area(1440.0, 0.0, 1920.0, 1080.0);
+        assert_eq!(monitor_under((2000.0, 10.0), &[retina, external]), Some(0), "physical bounds overlap across scales");
+        let points = [scaled(retina, 1.0 / 2.0), scaled(external, 1.0)];
+        assert_eq!(points[0], area(0.0, 0.0, 1440.0, 900.0));
+        assert_eq!(monitor_under((4000.0 / 2.0, 20.0 / 2.0), &points), Some(1));
+        assert_eq!(monitor_under((700.0, 10.0), &points), Some(0));
+        assert_eq!(monitor_under((5000.0, 10.0), &points), None);
+        let anchor = (2000.0 * 1.0, 10.0 * 1.0);
+        assert_eq!(tray_popover_origin(anchor, (320.0, 300.0), area(1440.0, 25.0, 1920.0, 1055.0), 1.0), (1840.0, 25.0));
+    }
+    #[test]
+    fn the_target_maps_points_to_monitor_pixels_and_back() {
+        assert_eq!(tray_popover_target((700.0, 12.0), 1.0 / 2.0, 2.0, area(0.0, 50.0, 2880.0, 1750.0), (320.0, 300.0)), (540.0, 26.0));
+        assert_eq!(tray_popover_target((2000.0, 10.0), 1.0, 1.0, area(1440.0, 25.0, 1920.0, 1055.0), (320.0, 300.0)), (1840.0, 25.0));
+        assert_eq!(tray_popover_target((4760.0, 1584.0), 1.0, 1.5, area(1920.0, 0.0, 2880.0, 1548.0), (320.0, 300.0)), (4320.0, 1098.0));
+    }
+    #[test]
+    fn the_popover_never_crosses_the_work_area() {
+        for (work, scale) in [(area(0.0, 0.0, 1920.0, 1040.0), 1.0), (area(0.0, 40.0, 1920.0, 1040.0), 1.0), (area(60.0, 0.0, 1860.0, 1080.0), 1.0), (area(0.0, 0.0, 1860.0, 1080.0), 1.0), (area(-2880.0, 72.0, 2880.0, 1548.0), 1.5), (area(1920.0, 0.0, 2880.0, 1548.0), 1.5)] {
+            let popover = (320.0 * scale + 0.5, 301.0 * scale);
+            for i in 0..=20 {
+                for j in 0..=20 {
+                    let click = (work.x - 100.0 + (work.width + 200.0) * i as f64 / 20.0, work.y - 100.0 + (work.height + 200.0) * j as f64 / 20.0);
+                    let (x, y) = tray_popover_origin(click, popover, work, scale);
+                    assert!(x >= work.x && x + popover.0.ceil() <= work.x + work.width, "{click:?} {work:?}");
+                    assert!(y >= work.y && y + popover.1.ceil() <= work.y + work.height, "{click:?} {work:?}");
+                    if click.1 > work.y + work.height { assert!(y + popover.1.ceil() <= click.1); }
+                    if click.1 < work.y { assert!(y >= click.1); }
+                }
+            }
+        }
     }
 }
 

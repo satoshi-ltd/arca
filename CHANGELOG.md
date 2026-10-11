@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.42 — 2026-10-11
+
+- The tray popover opens inside the screen you clicked: above the click with a bottom taskbar, below it under a top menu bar or taskbar, never past any edge, including corners and a second monitor with a different scale (a Retina Mac with an external display included).
+
+Needs: desktop build
+
 ## 0.7.41 — 2026-10-11
 
 - After a crash, recovery always clears the leftover transfer files beside a file it repairs; on Windows a file timestamp slightly ahead of the clock could keep one behind.
