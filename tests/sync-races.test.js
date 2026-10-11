@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { init } from "../packages/daemon/storage.js";
+import { init, Store } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 
 async function setup(t) {
@@ -741,4 +741,15 @@ test("R1 a hub cycle that ends with an isolated issue keeps the hub's last sync"
   await hub.sync();
   assert.match(hub.engine.folderStates.get(volume.id).error, /locked\.txt/);
   assert.equal(hub.engine.status().lastSync, before);
+});
+
+test("F6 a recovery sweep removes a transfer temporary even when its timestamp is ahead of the clock", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arca-sweep-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const orphan = path.join(dir, ".arca-00000000-0000-0000-0000-000000000000");
+  fs.writeFileSync(orphan, "orphan");
+  const ahead = new Date(Date.now() + 5000);
+  fs.utimesSync(orphan, ahead, ahead);
+  Store.prototype.sweepTemps.call(null, dir);
+  assert.equal(fs.existsSync(orphan), false);
 });

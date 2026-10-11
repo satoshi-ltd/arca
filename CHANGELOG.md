@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.41 — 2026-10-11
+
+- After a crash, recovery always clears the leftover transfer files beside a file it repairs; on Windows a file timestamp slightly ahead of the clock could keep one behind.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.40 — 2026-10-11
 
 - The phone no longer refuses to sync a folder that fits: choosing a folder, during setup or later, needs its own size plus a small margin free instead of twice its size, so 26 GB of photos sync with 40 GB free.

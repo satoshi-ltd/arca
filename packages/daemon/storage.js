@@ -11,6 +11,7 @@ export const TRANSFER_TEMP =
   /^\.arca-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const sweepTemp = (file, olderThan) => {
   try {
+    if (olderThan <= 0) return fs.unlinkSync(file);
     const stat = fs.statSync(file);
     if (Date.now() - Math.max(stat.mtimeMs, stat.ctimeMs) >= olderThan)
       fs.unlinkSync(file);

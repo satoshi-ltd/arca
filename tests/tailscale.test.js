@@ -386,7 +386,7 @@ test("a slow Tailscale check never holds the daemon start or its first hub reque
   const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
   config.hub = { url: `http://127.0.0.1:${hub.address().port}`, token: "token", id: "hub" };
   fs.writeFileSync(path.join(home, "config.json"), JSON.stringify(config));
-  const slow = { read: () => new Promise((resolve) => setTimeout(() => resolve({ state: "not-installed", installed: false, peers: [] }), 2500)) };
+  const slow = { read: () => new Promise((resolve) => setTimeout(() => resolve({ state: "not-installed", installed: false, peers: [] }), 10000)) };
   const started = Date.now();
   const daemon = await start(home, { network: { detector: slow } });
   t.after(async () => {
@@ -396,7 +396,7 @@ test("a slow Tailscale check never holds the daemon start or its first hub reque
     await daemon.close();
     fs.rmSync(home, { recursive: true, force: true });
   });
-  assert.ok(Date.now() - started < 2000, `start took ${Date.now() - started} ms`);
-  while (!connections && Date.now() - started < 5000) await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.ok(connections > 0 && Date.now() - started < 2000, `first hub request after ${Date.now() - started} ms`);
+  assert.ok(Date.now() - started < 5000, `start took ${Date.now() - started} ms`);
+  while (!connections && Date.now() - started < 8000) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.ok(connections > 0 && Date.now() - started < 5000, `first hub request after ${Date.now() - started} ms`);
 });

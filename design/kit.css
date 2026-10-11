@@ -811,3 +811,262 @@ body.kit {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.kit-dt-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.kit-dt-page .page {
+  overflow: visible;
+}
+.kit-dt-dark {
+  padding: 0;
+  border: 0;
+}
+.kit-dt-count {
+  display: flex;
+  margin-bottom: var(--space-3);
+}
+.kit-dt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-control);
+  color: var(--ink);
+}
+.kit-dt-table th {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--div);
+  border-bottom: 1px solid var(--div);
+  font: var(--text-caption) var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--mute);
+  white-space: nowrap;
+}
+.kit-dt-table td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--div);
+  vertical-align: top;
+}
+.kit-dt-table th:first-child,
+.kit-dt-table td:first-child {
+  padding-left: var(--space-1);
+}
+.kit-dt-table th:last-child,
+.kit-dt-table td:last-child {
+  width: var(--button-small-height);
+  padding: var(--space-2) var(--space-1);
+  vertical-align: middle;
+}
+.kit-dt-table .details-menu[open] .menu-items {
+  position: absolute;
+  margin-top: 0;
+}
+.kit-dt-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.kit-dt-cell .row-tags strong {
+  font-size: var(--text-row);
+  font-weight: 600;
+}
+.kit-dt-main {
+  line-height: var(--tag-height);
+  white-space: nowrap;
+}
+.kit-dt-sub {
+  font-size: var(--text-body);
+  line-height: var(--pill-line);
+  color: var(--mute);
+}
+.kit-dt-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+}
+.kit-dt-ver {
+  display: flex;
+  gap: var(--space-1);
+}
+.kit-dt-gutter {
+  flex: none;
+  width: var(--space-4);
+  height: var(--tag-height);
+  display: grid;
+  place-items: center;
+}
+.kit-dt-th-ver {
+  padding-left: var(--space-5);
+}
+.kit-dt-up {
+  display: inline-grid;
+  place-items: center;
+  color: var(--waFg);
+}
+.kit-dt-wa-ink {
+  color: var(--waFg);
+}
+.kit-dt-er-ink {
+  color: var(--erFg);
+}
+.kit-dt-seen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.kit-dt-dot {
+  flex: none;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--r-pill);
+  background: var(--mute);
+}
+.kit-dt-dot.kit-dt-on {
+  background: var(--ok);
+}
+.kit-dt-dot.kit-dt-wa {
+  background: var(--wa);
+}
+.kit-dt-dot.kit-dt-er {
+  background: var(--er);
+}
+.kit-dt-open {
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+}
+.kit-dt-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.kit-board-pair.kit-dt-phones {
+  grid-template-columns: repeat(auto-fit, minmax(432px, 1fr));
+}
+.kit-board-pair .m-device.kit-dt-phone {
+  width: 432px;
+  height: 1000px;
+}
+.kit-dt-folds .m-device.m-fold.kit-dt-fold {
+  max-width: 100%;
+  height: 720px;
+}
+.kit-dt-mcount {
+  align-self: flex-start;
+  padding: var(--m-pill-y) var(--m-pill-right);
+  border-radius: var(--m-pill-radius);
+  background: var(--m-hover);
+  color: var(--m-soft);
+  font-size: var(--m-pill-font);
+  line-height: var(--m-pill-line);
+  font-weight: 600;
+}
+.m-row.kit-dt-mrow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+.kit-dt-mhead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.kit-dt-mhead .m-button.m-icon {
+  min-height: var(--m-touch-height);
+  width: var(--m-touch-height);
+  margin: calc(var(--space-2) * -1) calc(var(--space-2) * -1) 0 0;
+  color: var(--m-mute);
+}
+.kit-dt-mname {
+  gap: 0;
+}
+.kit-dt-mcells {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3) var(--space-4);
+}
+.kit-dt-mcell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.kit-dt-mmain {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--m-touch-caption-font);
+  line-height: var(--m-touch-caption-line);
+  color: var(--m-ink);
+  overflow-wrap: anywhere;
+}
+.kit-dt-mmain.kit-dt-mono {
+  font-size: var(--m-pill-font);
+}
+.kit-dt-msub {
+  font-size: var(--m-pill-font);
+  line-height: var(--m-pill-line);
+  color: var(--m-mute);
+}
+.m-screen .kit-dt-wa-ink,
+.m-screen .kit-dt-up {
+  color: var(--m-warning);
+}
+.m-screen .kit-dt-er-ink {
+  color: var(--m-danger);
+}
+.m-screen .kit-dt-dot {
+  background: var(--m-mute);
+}
+.m-screen .kit-dt-dot.kit-dt-on {
+  background: var(--m-accent);
+}
+.m-screen .kit-dt-dot.kit-dt-wa {
+  background: var(--m-warning);
+}
+.m-screen .kit-dt-dot.kit-dt-er {
+  background: var(--m-danger);
+}
+.m-chip.kit-dt-mchip-er {
+  background: var(--m-danger-bg);
+  color: var(--m-danger);
+}
+.kit-dt-table.kit-dt-touch {
+  color: var(--m-ink);
+  font-size: var(--m-touch-caption-font);
+}
+.kit-dt-touch th {
+  padding: var(--space-2);
+  border-color: var(--m-divider);
+  color: var(--m-mute);
+}
+.kit-dt-touch td {
+  padding: var(--space-3) var(--space-2);
+  border-color: var(--m-divider);
+}
+.kit-dt-touch .row-tags strong {
+  font-size: var(--m-touch-body-font);
+}
+.kit-dt-touch .tag.self {
+  background: var(--m-tint);
+  color: var(--m-ok-fg);
+}
+.kit-dt-touch .kit-dt-sub {
+  color: var(--m-mute);
+}
+.kit-dt-touch .kit-dt-main {
+  line-height: var(--m-touch-caption-line);
+}
+.kit-dt-touch .kit-dt-mono {
+  font-size: var(--m-pill-font);
+}
+.kit-dt-touch th:last-child,
+.kit-dt-touch td:last-child {
+  width: var(--m-touch-height);
+}
+.kit-dt-touch .icon-button {
+  color: var(--m-mute);
+}
