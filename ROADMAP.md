@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-SLEEP-NATIVE** — Sleep timer and position saving inside the playback service
-  `feature · agent · normal`
-  accept: the sleep timer and the 15-second position saves run in `MusicService` instead of the app's JavaScript, so they keep working after a JavaScript reload or with the app process asleep; the app only sets and shows the timer, and queued positions reach the hub when the app next runs; JVM tests cover expiry and End of episode. Needs a native build for device evidence.
 - **MOB-POSITIONS-REFRESH** — The phone refreshes saved positions while a library is open
   `feature · agent · low`
   accept: an open music library re-reads `/v1/audio-positions` periodically while connected and in the foreground (and on returning to the app), so a position saved on another device appears in the resume card and rows without leaving the folder; a test with a mocked api covers the refresh and its stop when the screen leaves.
@@ -95,6 +92,9 @@ _None._
   `verify · maintainer · normal`
   accept: after a native build, on the Desktop Head Unit or in the car, with an episode partly played on the Mac and another finished, the Podcasts tab opens on a Continue entry that starts the newest saved episode at its place (within 15 s), inside its show's queue, never rewinding that episode when it is already playing; episodes of a show draw the car's partly played badge with their progress and the finished one its played mark, music rows draw none, Continue disappears when nothing is in progress, and the car offers no delete or other control.
 
+- **VERIFY-SLEEP-NATIVE** — Sleep timer and position saves keep running without the app
+  `verify · maintainer · normal`
+  accept: after a native build on the Fold, a 30 minute timer set on an episode, with the JavaScript reloaded from Metro or the app swiped away while playback continues, still pauses on time with the screen off and the app asleep, End of episode pauses within the last 1.5 s and choosing another episode before that turns it off, and the timer chip shows the remaining time when the app returns; an episode played over 20 minutes with the app asleep or force-stopped shows its saved place on the Mac within 15 s of the app opening, a position saved in Airplane mode reaches the hub once the app runs again, skipping and scrubbing keep the progress of the episode you leave, and Erase this device leaves no queued positions.
 - **VERIFY-PODCASTS** — Podcasts, resume and sleep on real devices
   `verify · maintainer · normal`
   accept: after a Casa redeploy, a desktop build and a native build, a folder of podcast episodes shows Podcasts with shows newest first on the web admin, the Mac and the Fold; an episode paused on one device offers "Pick up where you left off" on the others and Continue starts within 15 s of where it stopped, also after the Mac replica saved it offline and reconnected; rows show their progress and time left; Delete… removes a track from every device and History restores it; the sleep timer's 30 minutes and End of episode stop playback on the web (with the fade), the Mac and the Fold (also with the screen off and while Android Auto plays) and the next session resumes there; an episode's player has no shuffle or repeat and the phone's −15/+30 work; one trail on desktop and one header back on the phone, and a podcasts-only folder shows no tabs.

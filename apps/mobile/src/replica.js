@@ -160,6 +160,8 @@ export class Replica {
     try {
       await this.player?.reload?.();
     } catch {}
+    const positions = this.files.musicPositions?.();
+    if (positions) await this.files.remove(positions).catch(() => {});
     this.paused = false;
     this.error = this.progress = null;
     this.hashCache.clear();

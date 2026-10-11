@@ -12,6 +12,10 @@ export const player = {
   reload: async () => {
     if (typeof native.musicReload === "function") await native.musicReload();
   },
+  sleep: (value) => native.musicSleep(value),
+  outbox: async (scope) =>
+    typeof native.musicOutbox === "function" ? { entries: JSON.parse(await native.musicOutbox(scope)) } : { entries: [] },
+  acknowledge: (sent) => native.musicOutboxAck(JSON.stringify(sent)),
   renameHistory: (from, to) => native.musicRenameHistory(from, to),
 };
 

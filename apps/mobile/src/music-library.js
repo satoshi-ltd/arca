@@ -4,7 +4,7 @@ import {
   parsePlaylist,
 } from "../../../packages/core/playlist.js";
 import { searchFold as plain, searchTokens } from "../../../packages/core/search.js";
-import { fraction, playedRow, savedPosition, timeLeft } from "./audio-positions.js";
+import { RESUME_MIN_SECONDS, fraction, playedRow, savedPosition, timeLeft } from "./audio-positions.js";
 
 export const UNKNOWN_ARTIST = "Unknown artist";
 export const UNKNOWN_ALBUM = "Unknown album";
@@ -408,6 +408,7 @@ export function nativeLibrary(library, scope) {
       album: track.album,
       duration: track.duration,
       cover: track.cover,
+      hash: track.podcast || !(track.duration > 0) || track.duration >= RESUME_MIN_SECONDS ? track.hash : null,
     })),
     albums: library.albumOrder.map((id) => {
       const album = library.albums.get(id);

@@ -96,7 +96,7 @@ function SleepSheet({ sleep, podcast, choose, closing, onClose, onExited }) {
   );
 }
 
-export function NowPlayingPage({ visible, library, cover, command, play, openAlbum, openArtist, openShow, onClose, sleep, setSleep, seeked, positions }) {
+export function NowPlayingPage({ visible, library, cover, command, play, openAlbum, openArtist, openShow, onClose, sleep, setSleep, positions }) {
   const { s, c, wide } = useDesign();
   const { width, height } = useWindowDimensions();
   const { duration: ms, easing } = useMotion();
@@ -149,7 +149,6 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   const artist = artistFor(library, track);
   const podcast = !!track?.podcast;
   const seek = (ms) => {
-    seeked?.();
     command("seek", Math.max(0, Math.min(total || Infinity, ms)));
   };
   const control = (label, icon, onPress, active = false, primary = false) => (

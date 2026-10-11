@@ -95,6 +95,24 @@ class ArcaNetworkModule : Module() {
     AsyncFunction("musicCommand") Coroutine { name: String, value: Double ->
       music().command(name, value)
     }
+    AsyncFunction("musicSleep") Coroutine { value: String ->
+      music().sleep(value)
+    }
+    AsyncFunction("musicOutbox") Coroutine { scope: String ->
+      withContext(Dispatchers.IO) {
+        QueuedPosition.encode(MusicService.outbox(appContext.reactContext ?: error("App is unavailable")).pending(scope)).toString()
+      }
+    }
+    AsyncFunction("musicOutboxAck") Coroutine { sent: String ->
+      withContext(Dispatchers.IO) {
+        val items = org.json.JSONArray(sent)
+        val rows = (0 until items.length()).mapNotNull { index ->
+          items.optJSONObject(index)?.let { Triple(it.optString("volume"), it.optString("path"), it.optLong("at", -1)) }
+        }.filter { it.first.isNotEmpty() && it.second.isNotEmpty() && it.third >= 0 }
+        MusicService.outbox(appContext.reactContext ?: error("App is unavailable")).acknowledge(rows)
+        true
+      }
+    }
     AsyncFunction("startTransfer") {
       val context = appContext.reactContext ?: error("App is unavailable")
       check(appContext.currentActivity != null && appContext.currentActivity?.isFinishing == false) { "Open Arca to start photo uploads" }

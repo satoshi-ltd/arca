@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.51 — 2026-10-11
+
+- On Android the sleep timer and the podcast position saves run inside the playback service, so they keep working with the app asleep or reloaded; the app only sets and shows the timer, and saved positions reach the hub the next time it runs.
+
+Needs: native build
+
 ## 0.7.50 — 2026-10-11
 
 - The Podcasts tab in Android Auto opens on a Continue entry that resumes the newest episode you were listening to at its saved place, and every episode draws the car's partly played or played badge from the hub's positions.

@@ -218,7 +218,7 @@ test("Artists lists letter groups 120 artists at a time, no artist cover is roun
 
 test("Now playing is a full page whose artist and album go to their screens, and a playlist's rows name each track's album", () => {
   const page = read("src/NowPlayingPage.jsx");
-  assert.match(page, /export function NowPlayingPage\(\{ visible, library, cover, command, play, openAlbum, openArtist, openShow, onClose, sleep, setSleep, seeked, positions \}\)/);
+  assert.match(page, /export function NowPlayingPage\(\{ visible, library, cover, command, play, openAlbum, openArtist, openShow, onClose, sleep, setSleep, positions \}\)/);
   assert.match(page, /accessibilityLabel=\{`Album \$\{track\?\.album \|\| state\.album\}`\}\s+disabled=\{!track\}\s+onPress=\{\(\) => track && openAlbum\(track\)\}/, "only a track this folder's library knows links to its album");
   assert.match(app, /openAlbum=\{\(track\) => openPlaying\(\[\{ kind: "albums" \}, \{ kind: "album", id: track\.albumId \}\]\)\}/);
   const opening = app.slice(app.indexOf("function openPlaying("), app.indexOf("function musicCommand("));
@@ -278,7 +278,7 @@ test("the car, the lock screen and Bluetooth resume a paused episode from a newe
   assert.match(service, /val synced = object : ForwardingPlayer\(player\) \{\s+override fun play\(\) \{\s+catchUp\(\)\s+super\.play\(\)\s+\}\s+override fun setPlayWhenReady\(playWhenReady: Boolean\) \{\s+if \(playWhenReady\) catchUp\(\)\s+super\.setPlayWhenReady\(playWhenReady\)/, "every controller's play goes through the check");
   assert.match(service, /MediaLibrarySession\.Builder\(this, synced, Callback\(\)\)/);
   assert.match(service, /queue\(it, syncedStart\(trackOf\(it\), position, false\) \?: position\)/, "a cold resume starts at the newer place");
-  assert.match(service, /if \(reason == Player\.DISCONTINUITY_REASON_SEEK\) heard\(\)/, "a seek on this phone is its own newer choice");
+  assert.match(service, /if \(reason == Player\.DISCONTINUITY_REASON_SEEK\) \{\s+heard\(\)/, "a seek on this phone is its own newer choice");
   assert.match(service, /heard\(first\)/, "a track picked here starts where it was asked to");
   assert.match(service, /heard\(resolved\[start\]\.mediaId\)/);
   assert.match(service, /val active = player\.isPlaying \|\| player\.playWhenReady \|\| player\.playbackState == Player\.STATE_ENDED/);

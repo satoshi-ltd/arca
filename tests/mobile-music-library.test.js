@@ -289,7 +289,7 @@ test("the native library carries ids, local file URIs, cover keys and what the c
   assert.match(album, /^album:[0-9a-f]{16}$/, "album ids stay short for the car");
   assert.equal(value.format, 1);
   assert.equal(value.scope, "hub-1");
-  assert.deepEqual(value.tracks, [{ id: "m:A/1.mp3", uri: "file:///arca/m/A/1.mp3", title: "One", artist: "Ann", album: "First", duration: 61.5, cover: "k1" }]);
+  assert.deepEqual(value.tracks, [{ id: "m:A/1.mp3", uri: "file:///arca/m/A/1.mp3", title: "One", artist: "Ann", album: "First", duration: 61.5, cover: "k1", hash: null }]);
   assert.deepEqual(value.albums, [{ id: album, title: "First", artist: "Ann", cover: "k1", tracks: ["m:A/1.mp3"] }]);
   assert.deepEqual(value.artists, [{ id: 'artist:"ann"', name: "Ann", letter: "A", cover: "k1", albums: [album] }]);
   assert.deepEqual(value.playlists, []);

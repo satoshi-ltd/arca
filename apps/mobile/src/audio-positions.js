@@ -1,7 +1,5 @@
 export const RESUME_MIN_SECONDS = 1200;
-export const RESUME_HEAD_SECONDS = 10;
 export const RESUME_TAIL_SECONDS = 60;
-export const SAVE_INTERVAL = 15000;
 
 export const positionKey = (volume, path) => `${volume}\0${path}`;
 
@@ -91,12 +89,6 @@ export function progressSignature(synced) {
   return `${synced?.scope}\0${newest?.id ?? ""}\0${marks}`;
 }
 
-export function shouldSave({ position, duration, seeking = false, force = false, now, last = 0 }) {
-  if (seeking || !(duration >= RESUME_MIN_SECONDS)) return false;
-  if (!(position >= RESUME_HEAD_SECONDS)) return false;
-  return force || now - last >= SAVE_INTERVAL;
-}
-
 export function remember(positions, body, device, now) {
   const next = new Map(positions);
   const key = positionKey(body.volume, body.path);
@@ -134,17 +126,4 @@ export function resumeCandidate(positions, library, volume, playingId = null, ac
     return { row, track };
   }
   return null;
-}
-
-export const END_SLACK_MS = 3000;
-
-export function positionToSave(before, next) {
-  if (before.id && before.id !== next.id) {
-    if (!(before.duration >= RESUME_MIN_SECONDS * 1000)) return null;
-    const ended = before.duration - before.position <= END_SLACK_MS;
-    return { snapshot: ended ? { ...before, position: before.duration } : before, force: true };
-  }
-  if (next.id && before.id === next.id && before.playing && !next.playing)
-    return { snapshot: next.ended ? { ...next, position: next.duration } : next, force: true };
-  return next.id && next.playing ? { snapshot: next, force: false } : null;
 }

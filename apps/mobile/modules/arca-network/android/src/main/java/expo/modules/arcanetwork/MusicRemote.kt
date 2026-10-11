@@ -96,6 +96,14 @@ class MusicRemote(private val context: Context, private val emit: (Map<String, A
     }
   }
 
+  suspend fun sleep(value: String): Map<String, Any?> {
+    val controller = controller()
+    return withContext(Dispatchers.Main) {
+      MusicService.instance?.setSleep(value)
+      state(controller)
+    }
+  }
+
   fun release() {
     val future = pending ?: return
     pending = null
@@ -129,6 +137,9 @@ class MusicRemote(private val context: Context, private val emit: (Map<String, A
         else -> "off"
       },
       "error" to player.playerError?.let { message(it) },
+      "sleep" to (MusicService.instance?.sleepState() ?: SleepTimer.OFF).let {
+        mapOf("mode" to it.mode, "value" to it.value, "endsAt" to it.endsAt?.toDouble())
+      },
     )
   }
 

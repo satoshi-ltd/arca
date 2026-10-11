@@ -997,15 +997,7 @@ export default function App() {
     enabled: !!connected,
     api: (route, body) => client.api(route, body),
     device: { id: connection?.id ?? null, name },
-    lookup: async (id) => {
-      const known = shownLibrary.current?.tracks.get(id);
-      if (known?.hash) return known;
-      const r = engine.current;
-      const volume = id.slice(0, id.indexOf(":"));
-      const path = id.slice(id.indexOf(":") + 1);
-      const saved = await r.store.musicLibrary(r.scope, volume);
-      return (saved?.value?.tracks || []).find((item) => item?.path === path) || null;
-    },
+    scope: () => engine.current?.scope,
   });
   useEffect(() => {
     if (musicFolder && connected) audio.refresh();
@@ -1066,10 +1058,7 @@ export default function App() {
         shuffle,
         Number.isSafeInteger(position) ? position : -1,
       );
-      if (at > 0) {
-        audio.seeked();
-        await player.command("seek", at * 1000);
-      }
+      if (at > 0) await player.command("seek", at * 1000);
     });
   }
   function deleteTrack(track) {
@@ -3778,7 +3767,6 @@ export default function App() {
             onClose={() => setNowPlayingOpen(false)}
             sleep={audio.sleep}
             setSleep={audio.setSleep}
-            seeked={audio.seeked}
             positions={audio.positions}
             openShow={(track) => openPlaying([{ kind: "podcasts" }, { kind: "show", id: track.show }])}
             openAlbum={(track) => openPlaying([{ kind: "albums" }, { kind: "album", id: track.albumId }])}

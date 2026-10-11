@@ -5731,6 +5731,7 @@ test("a phone keeps the hub's audio library, its covers and the car's library fi
   const local = path.join(f.root, "mobile");
   Object.assign(files, {
     musicLibrary: () => path.join(local, "music-library.json"),
+    musicPositions: () => path.join(local, "music-positions.json"),
     musicHistory: () => path.join(local, "music-history.json"),
     text: async (p) => fs.readFileSync(p, "utf8"),
     musicCovers: (scope) => path.join(local, scope, "music-covers"),
@@ -5928,6 +5929,7 @@ test("a phone keeps the hub's audio library, its covers and the car's library fi
   replica.musicHistoryWriting = Promise.reject(new Error("history write failed"));
   replica.musicHistoryWriting.catch(() => {});
   replica.lastFullScan = 123;
+  fs.writeFileSync(files.musicPositions(), "{}");
   const { recordMusicPlay } = await import("../apps/mobile/src/music-sync.js");
   const clientDestroy = replica.client.destroy.bind(replica.client);
   replica.client.destroy = async () => {
@@ -5936,6 +5938,7 @@ test("a phone keeps the hub's audio library, its covers and the car's library fi
   };
   replica.player.reload = async (value) => {
     reloads.push(value ?? null);
+    fs.writeFileSync(files.musicPositions(), "{}");
     throw new Error("service gone");
   };
   await replica.destroy(true);
@@ -5946,4 +5949,5 @@ test("a phone keeps the hub's audio library, its covers and the car's library fi
   assert.equal(replica.lastFullScan, 0, "a service that cannot reload never stops the reset");
   assert.equal(fs.existsSync(files.musicLibrary()), false);
   assert.equal(fs.existsSync(files.musicHistory()), false, "a play recorded while erasing does not survive it");
+  assert.equal(fs.existsSync(files.musicPositions()), false, "queued positions, even one the service queued while reloading, do not survive an erase");
 });

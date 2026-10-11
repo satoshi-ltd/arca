@@ -13,6 +13,7 @@ data class MusicTrack(
   val album: String,
   val durationMs: Long?,
   val cover: String?,
+  val hash: String? = null,
 )
 data class MusicAlbum(val id: String, val title: String, val artist: String, val cover: String?, val tracks: List<String>)
 data class MusicArtist(val id: String, val name: String, val letter: String?, val cover: String?, val albums: List<String>)
@@ -56,6 +57,7 @@ data class MusicLibraryData(
           text(item, "album"),
           item.optDouble("duration").takeIf { it.isFinite() && it > 0 }?.let { (it * 1000).toLong() },
           cover(item),
+          text(item, "hash").takeIf { it.isNotEmpty() },
         )
       }
       val albums = LinkedHashMap<String, MusicAlbum>()

@@ -29,11 +29,9 @@ import {
   playedRow,
   positionMap,
   positionSignature,
-  positionToSave,
   remember,
   resumeCandidate,
   savedPosition,
-  shouldSave,
   progressSignature,
   syncedPositions,
   timeLeft,
@@ -42,11 +40,9 @@ import {
 import {
   SLEEP_OFF,
   sleepClock,
-  sleepCheck,
   sleepLabel,
   sleepOptions,
   sleepRemaining,
-  startSleep,
 } from "../apps/mobile/src/sleep-timer.js";
 import { folderSections } from "../apps/mobile/src/home-data.js";
 
@@ -176,32 +172,6 @@ test("a show keeps episodes still downloading in its rows and plays only those o
   assert.equal(musicSheet({ kind: "track-actions", track: library.tracks.get(show.tracks[0]) }).subtitle, "S · Jan 1, 2026");
 });
 
-test("positions save every 15 s while playing, never in the first 10 s, while seeking or for tracks under 20 minutes", () => {
-  const base = { position: 600, duration: 3600, now: 100000, last: 80000 };
-  assert.equal(shouldSave(base), true);
-  assert.equal(shouldSave({ ...base, last: 90000 }), false, "less than 15 s since the last save");
-  assert.equal(shouldSave({ ...base, last: 90000, force: true }), true, "pause and end save at once");
-  assert.equal(shouldSave({ ...base, position: 9 }), false);
-  assert.equal(shouldSave({ ...base, position: 9, force: true }), false);
-  assert.equal(shouldSave({ ...base, seeking: true, force: true }), false);
-  assert.equal(shouldSave({ ...base, duration: 1199 }), false);
-  assert.equal(shouldSave({ ...base, duration: 1200 }), true);
-});
-
-test("the player's transitions decide what is saved: playing, pausing, ending and switching tracks", () => {
-  const playing = { id: "n1", position: 60000, duration: 3600000, playing: true, ended: false };
-  assert.deepEqual(positionToSave(playing, { ...playing, position: 75000 }), { snapshot: { ...playing, position: 75000 }, force: false });
-  const paused = { ...playing, position: 80000, playing: false };
-  assert.deepEqual(positionToSave(playing, paused), { snapshot: paused, force: true });
-  const ended = { ...playing, position: 3600000, playing: false, ended: true };
-  assert.equal(positionToSave(playing, ended).snapshot.position, 3600000, "the end clears the saved position");
-  const next = { id: "n2", position: 0, duration: 3000000, playing: true, ended: false };
-  assert.deepEqual(positionToSave(playing, next), { snapshot: playing, force: true }, "switching mid-episode keeps its place");
-  assert.equal(positionToSave({ ...playing, position: 3599000 }, next).snapshot.position, 3600000, "an episode that ran out is finished");
-  assert.equal(positionToSave({ ...playing, duration: 200000 }, next), null, "short tracks are never saved");
-  assert.equal(positionToSave(paused, { ...paused }), null);
-});
-
 test("play on a paused episode reaches the native player untouched, which alone decides on a newer synced place", () => {
   const session = read("audio-session.js");
   assert.doesNotMatch(session, /command\("seek"|const toggle|touched|syncedSeek/, "the app never seeks before play; the service sees every play, seek and restart");
@@ -310,29 +280,18 @@ test("saved positions show time left and progress, and the resume card offers th
   assert.deepEqual(savedPosition(kept, older), { volume: "a1", path: older.path, hash: older.hash, position: 2000, duration: 4200, device: "d1", name: "Android", updated: 5 });
 });
 
-test("the sleep timer offers 30 minutes, 1 hour and the end of the item, and fires once it is due", () => {
+test("the sleep timer offers 30 minutes, 1 hour and the end of the item, and labels what the service reports", () => {
   assert.deepEqual(sleepOptions(true).map((option) => option.label), ["30 minutes", "1 hour", "End of episode"]);
   assert.deepEqual(sleepOptions(false).map((option) => option.label), ["30 minutes", "1 hour", "End of track"]);
-  const half = startSleep("30", 1000, "t1");
-  assert.equal(half.mode, "duration");
+  const half = { mode: "duration", value: "30", endsAt: 1000 + 30 * 60000 };
   assert.equal(sleepRemaining(half, 1000), 30 * 60000);
   assert.equal(sleepLabel(half, 1000 + 19000), "29:41");
-  assert.equal(sleepCheck(half, half.endsAt - 1), null);
-  assert.equal(sleepCheck(half, half.endsAt), "due");
-  assert.equal(sleepCheck(half, half.endsAt - 1, { track: "t2", ended: true }), null, "a duration timer survives track changes");
   assert.equal(sleepClock(3600000), "1:00:00");
-  const end = startSleep("end", 1000, "t1");
+  const end = { mode: "end", value: "end" };
   assert.equal(sleepLabel(end, 1000), "End of episode");
   assert.equal(sleepLabel(end, 1000, false), "End of track");
-  assert.equal(sleepCheck(end, 1e12, { track: "t1", position: 1000, duration: 600000 }), null, "time alone never ends it");
-  assert.equal(sleepCheck(end, 0, { track: "t1", position: 599000, duration: 600000 }), "due");
-  assert.equal(sleepCheck(end, 0, { track: "t1", position: 597000, duration: 600000 }), "near");
-  assert.equal(sleepCheck({ ...end, near: true }, 0, { track: "t2", position: 0, duration: 600000 }), "due", "the item that was playing ran out into the next one");
-  assert.equal(sleepCheck(end, 0, { track: "t2", position: 0, duration: 600000 }), "cancel", "choosing another item mid-way turns the timer off instead of pausing the new one");
-  assert.equal(sleepCheck(end, 0, { track: "t1", ended: true }), "due");
-  assert.deepEqual(startSleep("end", 0, null), SLEEP_OFF);
-  assert.deepEqual(startSleep("nope", 0, "t1"), SLEEP_OFF);
-  assert.equal(sleepCheck(SLEEP_OFF, 1e12), null);
+  assert.equal(sleepRemaining(end, 1000), null);
+  assert.equal(sleepLabel(SLEEP_OFF, 1000), "");
 });
 
 test("Folders splits selected folders into Folders, Photos and Audio, leaving out empty sections", () => {
@@ -346,22 +305,18 @@ test("Folders splits selected folders into Folders, Photos and Audio, leaving ou
   assert.deepEqual(folderSections([{ id: "b" }], (f) => kinds[f.id]).map((section) => section.kind), ["audio"]);
 });
 
-test("the phone reads and writes hub positions with its device credential and pauses on the sleep timer", () => {
+test("the phone reads hub positions with its device credential and leaves saving and the sleep timer to the service", () => {
   const session = read("audio-session.js");
   assert.match(session, /api\("\/v1\/audio-positions"\)/);
-  assert.match(session, /api\("\/v1\/audio-position", body\)/);
-  assert.match(session, /const body = \{ volume: file\.volume, path: file\.path, hash: info\.hash, position, duration \};/);
+  assert.match(session, /send: \(body\) => deps\.current\.api\("\/v1\/audio-position", body\)/, "queued positions reach the hub through the drain");
   assert.match(session, /native\.addListener\("musicState"/);
-  assert.match(session, /const step = sleepCheck\(sleepRef\.current, now, \{ \.\.\.state, track \}\);/);
-  assert.match(session, /if \(step === "cancel"\) return;\n\s+const snapshot/, "a cancelled timer never pauses");
-  assert.match(session, /state\.playing \? player\.command\("toggle"\)/, "the timer pauses through the existing command bridge");
-  assert.match(session, /pause\.then\(\(\) => save\(snapshot, true\)/, "and force-saves the position");
+  assert.doesNotMatch(session, /sleepCheck|startSleep|sleepRef|positionToSave|shouldSave|toggle|lookup|seeked/, "the app runs no timer and makes no save decision of its own");
   const app = read("App.jsx");
-  assert.match(app, /const audio = useAudioSession\(\{\s+enabled: !!connected,\s+api: \(route, body\) => client\.api\(route, body\),/);
-  assert.match(app, /if \(at > 0\) \{\s+audio\.seeked\(\);\s+await player\.command\("seek", at \* 1000\);/, "a saved row resumes where it stopped");
+  assert.match(app, /const audio = useAudioSession\(\{\s+enabled: !!connected,\s+api: \(route, body\) => client\.api\(route, body\),\s+device: \{ id: connection\?\.id \?\? null, name \},\s+scope: \(\) => engine\.current\?\.scope,/);
+  assert.match(app, /if \(at > 0\) await player\.command\("seek", at \* 1000\);/, "a saved row resumes where it stopped");
   assert.match(app, /positions=\{audio\.positions\}\s+loaded=\{audio\.loaded\}\s+command=\{musicCommand\}\s+deviceId=\{connection\?\.id\}/);
   assert.match(session, /const \{ positions: rows, finished \} = await deps\.current\.api\("\/v1\/audio-positions"\);\s+const next = positionMap\(rows, finished\);\s+setPositions\(next\);\s+setLoaded\(positionSignature\(next\)\);/, "the hub's finished marks join the positions and each load is signed");
-  assert.match(app, /sleep=\{audio\.sleep\}\s+setSleep=\{audio\.setSleep\}\s+seeked=\{audio\.seeked\}/);
+  assert.match(app, /sleep=\{audio\.sleep\}\s+setSleep=\{audio\.setSleep\}\s+positions=/);
 });
 
 test("the library draws progress, the resume card, the Podcasts tab and a track Delete…", () => {
@@ -490,7 +445,7 @@ test("Now playing offers the sleep timer and episode controls without shuffle or
   assert.match(page, /<Sheet\s+title="Sleep timer"/, "a sheet on the phone, the centred dialog on the Fold");
   assert.match(page, /podcast\s+\? control\("Back 15 seconds", "rotate-ccw", \(\) => seek\(position - 15000\)\)/);
   assert.match(page, /\? control\("Forward 30 seconds", "rotate-cw", \(\) => seek\(position \+ 30000\)\)/);
-  assert.match(page, /seeked\?\.\(\);/, "seeking holds position saves");
+  assert.doesNotMatch(page, /seeked/, "the service sees every seek itself");
   assert.match(page, /podcast \? "Podcast" : queue\.name \|\| "Music"/);
 });
 

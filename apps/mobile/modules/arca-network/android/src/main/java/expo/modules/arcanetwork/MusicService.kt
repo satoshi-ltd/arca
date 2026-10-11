@@ -35,6 +35,8 @@ class MusicService : MediaLibraryService() {
     @Volatile var instance: MusicService? = null
     private const val PREFERENCES = "arca-music"
     private val loader = Executors.newSingleThreadExecutor()
+    private val outboxWriter = Executors.newSingleThreadExecutor()
+    fun outbox(context: Context) = PositionOutbox(File(root(context), "music-positions.json"))
     fun root(context: Context) = File(context.filesDir, "arca")
     fun load(context: Context): MusicLibraryData = try {
       val file = File(root(context), "music-library.json")
@@ -98,6 +100,14 @@ class MusicService : MediaLibraryService() {
   private val saved by lazy { getSharedPreferences(PREFERENCES, MODE_PRIVATE) }
   private val syncedFile = SyncedCache()
   private val rootLimits = HashMap<MediaSession.ControllerInfo, Int>()
+  private val sleepTimer = SleepTimer()
+  private val positions = PositionTracker()
+  private val ticker = object : Runnable {
+    override fun run() {
+      tick()
+      schedule()
+    }
+  }
 
   override fun onCreate() {
     super.onCreate()
@@ -113,13 +123,23 @@ class MusicService : MediaLibraryService() {
       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         if (player.isPlaying) heard()
         remember()
+        observe()
       }
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         heard()
         remember()
+        observe()
+        schedule()
+      }
+      override fun onPlaybackStateChanged(playbackState: Int) {
+        observe()
       }
       override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-        if (reason == Player.DISCONTINUITY_REASON_SEEK) heard()
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+          heard()
+          if (oldPosition.mediaItemIndex == newPosition.mediaItemIndex) positions.seeked()
+          observe()
+        }
       }
       override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         if (shuffleModeEnabled && player.mediaItemCount > 0)
@@ -152,6 +172,8 @@ class MusicService : MediaLibraryService() {
 
   override fun onDestroy() {
     instance = null
+    main.removeCallbacks(ticker)
+    sleepTimer.off()
     remember()
     session?.release()
     player.release()
@@ -218,6 +240,52 @@ class MusicService : MediaLibraryService() {
       .putLong("position", player.currentPosition.coerceAtLeast(0))
       .putBoolean("shuffle", player.shuffleModeEnabled)
       .apply()
+  }
+
+  fun sleepState() = sleepTimer.state()
+
+  fun setSleep(value: String): SleepState {
+    val state = sleepTimer.start(value, player.currentMediaItem?.mediaId?.let(::trackOf))
+    schedule()
+    return state
+  }
+
+  private fun snapshot() = PlaybackSnapshot(
+    player.currentMediaItem?.mediaId,
+    player.currentPosition.coerceAtLeast(0),
+    player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L,
+    player.isPlaying,
+    player.playbackState == Player.STATE_ENDED,
+  )
+
+  private fun observe() {
+    positions.observe(snapshot())?.let(::enqueue)
+  }
+
+  private fun schedule() {
+    main.removeCallbacks(ticker)
+    if (player.isPlaying || sleepTimer.active) main.postDelayed(ticker, 1000)
+  }
+
+  private fun tick() {
+    val now = snapshot()
+    val step = if (sleepTimer.active) sleepTimer.tick(SleepPlayer(now.id?.let(::trackOf), now.positionMs, now.durationMs, now.ended)) else SleepStep.NONE
+    positions.observe(now)?.let(::enqueue)
+    if (step != SleepStep.DUE) return
+    val playing = player.isPlaying
+    if (SleepTimer.pauses(playing, player.playWhenReady)) player.pause()
+    if (!playing) positions.force(if (now.ended) now.copy(positionMs = now.durationMs) else now)?.let(::enqueue)
+  }
+
+  private fun enqueue(save: PositionSave) {
+    val id = save.snapshot.id?.let(::trackOf) ?: return
+    val scope = tree.library.scope ?: return
+    val hash = tree.library.tracks[id]?.hash ?: return
+    val (volume, path) = PositionRules.file(id) ?: return
+    val entry = QueuedPosition(volume, path, hash, save.snapshot.positionMs / 1000.0, save.snapshot.durationMs / 1000.0, System.currentTimeMillis())
+    val target = outbox(this)
+    val library = File(root(this), "music-library.json")
+    outboxWriter.execute { runCatching { target.add(scope, entry) { library.isFile } } }
   }
 
   private fun trackOf(id: String) = MusicTree.parseTrackNodeId(id)?.second ?: id
