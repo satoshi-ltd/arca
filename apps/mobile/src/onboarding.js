@@ -10,7 +10,7 @@ export async function selectFirstFolders(replica, catalog, ids) {
     )
   )
     throw new Error("Refresh the hub folders and choose available folders.");
-  await replica.space(selected.reduce((sum, v) => sum + v.bytes * 2, 0));
+  await replica.space(selected.reduce((sum, v) => sum + v.bytes, 0));
   for (const volume of selected) await replica.select(volume);
   await replica.store.set("onboarding", null);
 }

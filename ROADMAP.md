@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-SPACE-CHECK-PHOTOS** — Selecting a large folder on the phone checks space against what it really needs
-  `bug · agent · high`
-  accept: with about 40 GB free on the phone, selecting the 26 GB photos folder starts syncing instead of reporting not enough space; the space check counts only the bytes still to download plus the documented margin (not a multiple of the folder or of files already present), and a folder that truly does not fit still says so before downloading. A test that fails on v0.7.39 reproduces the false refusal.
-
 - **TRAY-WIN-POSITION** — The tray popover opens inside the screen's work area
   `bug · agent · high`
   accept: the popover position comes from one pure function of the click point, the popover size and the monitor's work area (`apps/desktop/src-tauri/src/main.rs`, today 14 px below the click and 160 px left of it); with a bottom taskbar it opens above the click, with a top menu bar or taskbar below it, and it never crosses any edge of the work area, including a click near a corner and on a scaled secondary monitor. Rust unit tests in the `rust-tests` job cover bottom, top, left and right taskbars, both corners and a scale factor of 1.5.
@@ -233,6 +229,10 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 ## Proposed
 
 Suggested order for approval: preservation of user files, synchronization recovery, release reliability, then usability and cleanup. No task in this lane is approved for implementation.
+
+- **MOB-SPACE-PENDING-FOLDERS** — Selection counts what other selected folders still have to download
+  `feature · agent · low`
+  accept: selecting a second folder while the first is still downloading checks free space against both folders' remaining bytes plus headroom, so the refusal comes at selection instead of file by file during the sync.
 
 ### File preservation and synchronization
 

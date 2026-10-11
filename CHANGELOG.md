@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.40 — 2026-10-11
+
+- The phone no longer refuses to sync a folder that fits: choosing a folder, during setup or later, needs its own size plus a small margin free instead of twice its size, so 26 GB of photos sync with 40 GB free.
+
+Needs: native build
+
 ## 0.7.39 — 2026-10-11
 
 - Devices reads the same way everywhere: under each name the line says OS · folders · size, the Arca version appears only when a device is older than the hub, and every row ends in its role chip (Hub, Replica, Replica with Full backup); the Linked, Syncing, Running and Offline labels are gone. Devices now report their version to the hub.

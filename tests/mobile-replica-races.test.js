@@ -453,3 +453,23 @@ test("M16 a cycle cut short before the hub answered stops reporting checking onc
   release();
   await run;
 });
+
+test("selecting a folder needs its size plus headroom free, not twice its size", async () => {
+  const GB = 1024 ** 3;
+  const selected = [];
+  const phone = (free) => ({
+    scope: "hub",
+    files: { free: async () => free, mkdir: async () => {}, folder: () => "/f" },
+    store: { get: async () => false, select: async (scope, volume) => selected.push(volume.id) },
+    requireActiveReplica: async () => {},
+    space: Replica.prototype.space,
+    changed() {},
+  });
+  await Replica.prototype.select.call(phone(40 * GB), { id: "photos", bytes: 26 * GB });
+  assert.deepEqual(selected, ["photos"], "26 GB of photos fit in 40 GB free");
+  await assert.rejects(
+    Replica.prototype.select.call(phone(26 * GB + 128 * 1024 ** 2), { id: "big", bytes: 26 * GB }),
+    /Not enough storage/,
+    "a folder that does not fit with headroom is still refused",
+  );
+});

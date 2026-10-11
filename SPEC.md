@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.7.39 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.7.40 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -426,7 +426,7 @@ The phone and Fold app (`apps/mobile`) is an Expo/React Native JavaScript replic
 
 ### Folders on the phone
 
-- **Selection** explains the space and full-copy behavior and preflights free space. The last completed sync belongs to the current hub.
+- **Selection** explains the space and full-copy behavior and preflights free space: the folder's size plus 256 MB of headroom must be free (each download checks its own size again). The last completed sync belongs to the current hub.
 - **Stop syncing…** removes the app-owned working directory, its index and queued changes after a confirmation titled with the folder name ("Stop syncing “name”?", button "Stop syncing and delete") saying that unsynced changes are lost (pointing to Export folder); album-linked folders also state that Photos originals and uploaded hub files stay. It stops the active sync, persists the removal intent and works offline, with pending edits or after the hub deleted the share. An interrupted deletion keeps a durable `removing:` marker that skips the folder in every cycle and blocks reselecting it, shows Needs attention and retries. Pause and Disconnect keep local files. A share missing from the hub catalog keeps its index and reports an actionable issue; history reads intersect selections with the catalog.
 - **Export folder…** copies the local folder outside Arca without sync or history.
 - The open folder refreshes after automatic sync finishes, and an older asynchronous listing never overwrites a newer navigation. Local explorers keep bounded per-hub caches (20 folder listings, 40 Recent pages) while filesystem reads run.

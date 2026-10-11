@@ -254,7 +254,7 @@ export class Replica {
       throw new Error(
         "Remove the remaining local copy before selecting this folder again.",
       );
-    await this.space(volume.bytes * 2);
+    await this.space(volume.bytes);
     await this.files.mkdir(this.files.folder(this.scope, volume.id));
     await this.store.select(this.scope, volume);
     this.changed();

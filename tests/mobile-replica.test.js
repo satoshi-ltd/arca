@@ -1169,6 +1169,11 @@ test("mobile onboarding downloads only explicitly chosen folders and preflights 
     /storage/,
   );
   assert.equal((await f.store.folders(f.replica.scope)).length, 0);
+  const { HEADROOM } = await import("../apps/mobile/src/replica.js");
+  const chosen = f.client.state().catalog.volumes.find((v) => v.id === f.volume.id);
+  f.files.free = async () => chosen.bytes + HEADROOM;
+  await selectFirstFolders(f.replica, f.client.state().catalog, [f.volume.id]);
+  assert.equal((await f.store.folders(f.replica.scope)).length, 1, "the folder's own size plus headroom is enough");
   f.files.free = free;
   await selectFirstFolders(f.replica, f.client.state().catalog, [f.volume.id]);
   assert.equal(await f.store.get("onboarding"), null);
