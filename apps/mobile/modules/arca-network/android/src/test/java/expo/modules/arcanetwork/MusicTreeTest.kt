@@ -590,4 +590,93 @@ class MusicTreeTest {
     assertEquals(listOf(0), MusicLibraryData.startFirst(1, 0, random).toList())
     assertEquals((0 until 4).toList(), MusicLibraryData.startFirst(4, -1, random).sorted())
   }
+
+  private fun row(percent: Int, updated: Long, finished: Boolean = false) = EpisodeProgress(finished, percent, percent * 10_000L, updated)
+
+  @Test fun withoutHubPositionsTheCarSeesNoBadgeAndNoContinue() {
+    val tree = podcasts(mapOf("Talk" to 2))
+    assertTrue(tree.children("show:0")!!.all { it.played == null })
+    assertEquals(listOf("Talk"), tree.children(MusicTree.PODCASTS)!!.map { it.title })
+    val known = tree.withProgress(emptyMap())
+    assertEquals(listOf(Played.NOT_PLAYED, Played.NOT_PLAYED), known.children("show:0")!!.map { it.played })
+    assertEquals("positions with nothing in progress add no Continue", listOf("Talk"), known.children(MusicTree.PODCASTS)!!.map { it.title })
+  }
+
+  @Test fun episodesCarryTheirCompletionFromTheHubsPositions() {
+    val tree = podcasts(mapOf("Talk" to 3)).withProgress(
+      mapOf("p:Talk/003.mp3" to row(40, 5), "p:Talk/002.mp3" to row(100, 9, true), "m:A/1.mp3" to row(10, 20)),
+    )
+    val episodes = tree.children("show:0")!!
+    assertEquals(listOf(Played.PARTIALLY_PLAYED, Played.FULLY_PLAYED, Played.NOT_PLAYED), episodes.map { it.played })
+    assertEquals(40, episodes[0].percent)
+    assertEquals(episodes[0], tree.node(episodes[0].id))
+    assertNull("music tracks never carry a badge", tree.children("album:first")!!.single().played)
+  }
+
+  @Test fun continueComesFirstAndStartsTheNewestSavedEpisodeInItsShowQueue() {
+    val tree = podcasts(mapOf("Talk" to 2, "News" to 3)).withProgress(
+      mapOf("p:Talk/001.mp3" to row(25, 100), "p:News/002.mp3" to row(50, 300), "p:News/003.mp3" to row(90, 400, true), "p:News/001.mp3" to row(10, 200)),
+    )
+    val list = tree.children(MusicTree.PODCASTS)!!
+    assertEquals(listOf("Episode 2", "Talk", "News"), list.map { it.title })
+    val item = list.first()
+    assertTrue(item.playable)
+    assertEquals("Continue · News · 15:00 left", item.subtitle)
+    assertEquals(MusicTree.continueNodeId(MusicTree.trackNodeId("show:1", "p:News/002.mp3", 1)), item.id)
+    assertEquals(50, item.percent)
+    assertEquals(item, tree.node(item.id))
+    val (queue, start) = tree.expand(item.id)!!
+    assertEquals(listOf("Episode 3", "Episode 2", "Episode 1"), queue.map { it.title })
+    assertEquals(1, start)
+    assertEquals(500_000L, tree.resumePosition(MusicTree.parseContinueNodeId(item.id)!!))
+    assertNull("a finished episode has no place to resume", tree.resumePosition(MusicTree.trackNodeId("show:1", "p:News/003.mp3", 0)))
+    assertEquals("episodes keep their own ids and places", MusicTree.trackNodeId("show:1", "p:News/002.mp3", 1), tree.children("show:1")!![1].id)
+    assertNull(tree.node(MusicTree.continueNodeId(MusicTree.trackNodeId("show:0", "p:Talk/001.mp3", 1))))
+    for (parent in listOf(MusicTree.ROOT, MusicTree.PODCASTS, "show:0", "show:1"))
+      for (child in tree.children(parent)!!) assertEquals(child, tree.node(child.id))
+  }
+
+  @Test fun theNewestSavedEpisodeTiesBreakOnTheLowerIdAndFinishedOnesNeverContinue() {
+    val tie = podcasts(mapOf("Talk" to 2)).withProgress(mapOf("p:Talk/002.mp3" to row(20, 7), "p:Talk/001.mp3" to row(30, 7)))
+    assertEquals("Episode 1", tie.children(MusicTree.PODCASTS)!!.first().title)
+    val done = podcasts(mapOf("Talk" to 2)).withProgress(mapOf("p:Talk/002.mp3" to row(100, 7, true)))
+    assertEquals(listOf("Talk"), done.children(MusicTree.PODCASTS)!!.map { it.title })
+  }
+
+  @Test fun continueTakesOneEntryOfTheHundredAndTwentyTheCarCanListFlat() {
+    val progress = mapOf("p:S0/001.mp3" to row(10, 1))
+    val flat = podcasts((0 until 119).associate { "S$it" to 1 }).withProgress(progress)
+    assertEquals(120, flat.children(MusicTree.PODCASTS)!!.size)
+    assertTrue(flat.node(MusicTree.PODCASTS)!!.grid)
+    val folders = podcasts((0 until 120).associate { "S$it" to 1 }).withProgress(progress)
+    val list = folders.children(MusicTree.PODCASTS)!!
+    assertTrue(list.first().playable)
+    assertTrue(list.drop(1).none { it.playable })
+    assertTrue(list.size <= MusicTree.GROUP_LIMIT)
+    assertFalse(folders.node(MusicTree.PODCASTS)!!.grid)
+    assertEquals(120, podcasts((0 until 120).associate { "S$it" to 1 }).children(MusicTree.PODCASTS)!!.size)
+  }
+
+  @Test fun continueSurvivesRenamesAndReloadsAndLeavesTheRootAlone() {
+    val tree = podcasts(mapOf("Talk" to 2), playlists = true).withProgress(mapOf("p:Talk/001.mp3" to row(30, 7)))
+    assertEquals(listOf("artists", "albums", "playlists", "recent", "podcasts"), tree.children(MusicTree.ROOT)!!.map { it.id })
+    assertEquals(listOf("artists", "albums", "playlists", "podcasts"), tree.children(MusicTree.ROOT, 4)!!.map { it.id })
+    val played = tree.played("in:p:show:0")!!
+    assertEquals(tree.progress, played.progress)
+    assertEquals(tree.progress, played.reloaded(played).progress)
+  }
+
+  @Test fun aContinueIdResolvesToItsEpisodeNodeIdBeforeAnyQueueItemIsBuilt() {
+    val episode = MusicTree.trackNodeId("show:0", "p:Talk/001.mp3", 1)
+    assertEquals(episode, MusicTree.resolveContinue(MusicTree.continueNodeId(episode)))
+    assertEquals(episode, MusicTree.resolveContinue(episode))
+    assertEquals("p:Talk/001.mp3", MusicTree.resolveContinue("p:Talk/001.mp3"))
+    val tree = podcasts(mapOf("Talk" to 2))
+    assertEquals(tree.expand(episode), tree.expand(MusicTree.resolveContinue(MusicTree.continueNodeId(episode))))
+  }
+
+  @Test fun constructingATreeNeverLooksForTheContinueEpisode() {
+    val tree = MusicTree(podcasts(mapOf("Talk" to 2)).library, emptyList(), mapOf("p:Talk/001.mp3" to row(30, 7)))
+    assertEquals("p:Talk/001.mp3", tree.children(MusicTree.PODCASTS)!!.first().track!!.id)
+  }
 }

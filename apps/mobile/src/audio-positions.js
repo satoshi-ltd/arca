@@ -51,6 +51,26 @@ export function episodeHashes(library) {
   return episodes;
 }
 
+export const PROGRESS_BUCKET = 5;
+
+function episodeProgress(positions, episodes) {
+  const progress = {};
+  for (const row of positions?.values() || []) {
+    const id = `${row.volume}:${row.path}`;
+    if (!episodes?.has(id) || (row.hash && episodes.get(id) !== row.hash)) continue;
+    const updated = row.updated > 0 ? row.updated : 0;
+    if (isFinished(row)) progress[id] = { state: "full", updated };
+    else if (row.position > 0)
+      progress[id] = {
+        state: "partial",
+        percent: Math.max(1, Math.min(99, Math.round(fraction(row.position, row.duration) * 100))),
+        position: Math.round(row.position * 1000),
+        updated,
+      };
+  }
+  return progress;
+}
+
 export function syncedPositions(positions, episodes, scope, device = null) {
   const tracks = {};
   for (const row of positions?.values() || []) {
@@ -58,7 +78,17 @@ export function syncedPositions(positions, episodes, scope, device = null) {
     if ((device && row.device === device) || isFinished(row) || !row.hash || episodes?.get(id) !== row.hash || !(row.updated > 0)) continue;
     tracks[id] = { position: Math.round(row.position * 1000), updated: row.updated };
   }
-  return { scope, tracks };
+  return { scope, tracks, progress: episodeProgress(positions, episodes) };
+}
+
+export function progressSignature(synced) {
+  const rows = Object.entries(synced?.progress || {}).map(([id, row]) => ({ id, row }));
+  const newest = rows.filter(({ row }) => row.state === "partial").sort((a, b) => b.row.updated - a.row.updated || (a.id < b.id ? -1 : 1))[0];
+  const marks = rows
+    .map(({ id, row }) => `${id}:${row.state === "full" ? "full" : Math.floor(row.percent / PROGRESS_BUCKET)}`)
+    .sort()
+    .join("|");
+  return `${synced?.scope}\0${newest?.id ?? ""}\0${marks}`;
 }
 
 export function shouldSave({ position, duration, seeking = false, force = false, now, last = 0 }) {

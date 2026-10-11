@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MUSIC-AUTO-PODCASTS** — Continue and progress badges in Android Auto
-  `feature · agent · normal`
-  accept: episode items in the car's Podcasts tab carry their completion status from the hub's positions so the car draws its partly played badge, and a Continue item comes first and starts the newest saved position at its hub offset; the car adds no controls and never deletes; JVM and library-file tests cover the tree. Device evidence follows in the car after a native build.
 - **MOB-SLEEP-NATIVE** — Sleep timer and position saving inside the playback service
   `feature · agent · normal`
   accept: the sleep timer and the 15-second position saves run in `MusicService` instead of the app's JavaScript, so they keep working after a JavaScript reload or with the app process asleep; the app only sets and shows the timer, and queued positions reach the hub when the app next runs; JVM tests cover expiry and End of episode. Needs a native build for device evidence.
@@ -93,6 +90,10 @@ _None._
 - **VERIFY-DESK-MUSIC** — Music plays on desktop and web
   `verify · maintainer · normal`
   accept: after a Casa redeploy, the hub's web admin opens the music folder on its Artists tab, an A–Z index with a heading per letter, square covers and, on a wide window, a strip of each artist's other album covers, plays an album with the player bar through seeking, next, shuffle and repeat, the bar's title, artist and album open the album and the artist page from another folder, a playlist's table shows the Album column, Search Arca finds songs, albums and artists and opens them in the library, Shuffle plays the whole library and an artist, and Recent lists what that browser played; on the Mac build, off the library the sidebar card plays, pauses, skips and opens the album, the tray's Previous, Play/Pause and Next drive the player with the main window hidden, the tray's track brings the window forward on the album, and Quit Arca stops the music; after a desktop build, the Mac app as a replica that selected the folder does the same from its own copy with the hub unreachable; View folder and Library switch both ways; a playlist made from a track's Add to playlist… on the web admin and on the Mac replica appears in `Playlists/` as an `.m3u8` file on every selected device, plays in order, refuses to add the same track twice, renames, loses a track and deletes into History, and a track renamed in Arca keeps its place in the playlist; a hand-edited list that repeats a song plays it in order.
+
+- **VERIFY-AUTO-PODCASTS** — Continue and completion badges in the car
+  `verify · maintainer · normal`
+  accept: after a native build, on the Desktop Head Unit or in the car, with an episode partly played on the Mac and another finished, the Podcasts tab opens on a Continue entry that starts the newest saved episode at its place (within 15 s), inside its show's queue, never rewinding that episode when it is already playing; episodes of a show draw the car's partly played badge with their progress and the finished one its played mark, music rows draw none, Continue disappears when nothing is in progress, and the car offers no delete or other control.
 
 - **VERIFY-PODCASTS** — Podcasts, resume and sleep on real devices
   `verify · maintainer · normal`

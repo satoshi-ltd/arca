@@ -14,7 +14,7 @@ import {
   recordHistory,
 } from "./music-library.js";
 import { folderIgnored } from "./hub-gallery.js";
-import { episodeHashes, syncedPositions } from "./audio-positions.js";
+import { episodeHashes, progressSignature, syncedPositions } from "./audio-positions.js";
 
 export const COVERS_PER_CYCLE = 120;
 export const PARTIAL_REFRESH_MS = 60000;
@@ -254,14 +254,15 @@ async function writeLibrary(replica, library) {
 export function publishSynced(replica, positions, device = null) {
   replica.audioPositions = positions;
   replica.audioDevice = device;
-  const run = (replica.musicPublishing || Promise.resolve()).catch(() => {}).then(() => writeSynced(replica));
+  const run = (replica.musicPublishing || Promise.resolve()).catch(() => {}).then(() => writeSynced(replica, true));
   replica.musicPublishing = run;
   return run;
 }
 
-async function writeSynced(replica) {
+async function writeSynced(replica, notify = false) {
   if (!replica.player || !replica.files.musicSynced || !replica.scope || !replica.musicEpisodes || !replica.audioPositions) return;
-  const text = JSON.stringify(syncedPositions(replica.audioPositions, replica.musicEpisodes, replica.scope, replica.audioDevice));
+  const synced = syncedPositions(replica.audioPositions, replica.musicEpisodes, replica.scope, replica.audioDevice);
+  const text = JSON.stringify(synced);
   if (text === replica.publishedSynced) return;
   replica.publishedSynced = null;
   const target = replica.files.musicSynced();
@@ -271,6 +272,10 @@ async function writeSynced(replica) {
   await replica.files.write(staged, new TextEncoder().encode(text));
   await replica.files.replace(staged, target);
   replica.publishedSynced = text;
+  const signature = progressSignature(synced);
+  const changed = signature !== replica.publishedProgress;
+  replica.publishedProgress = signature;
+  if (notify && changed && replica.files.musicLibrary) await replica.player.reload?.(replica.files.musicLibrary());
 }
 
 export async function refreshMusic(replica, { covers = true } = {}) {

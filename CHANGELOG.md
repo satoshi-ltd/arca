@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.50 — 2026-10-11
+
+- The Podcasts tab in Android Auto opens on a Continue entry that resumes the newest episode you were listening to at its saved place, and every episode draws the car's partly played or played badge from the hub's positions.
+
+Needs: native build
+
 ## 0.7.49 — 2026-10-11
 
 - On the phone, a video in the photo viewer stays clear of the notch, camera cutout, status bar and gesture bar in portrait, landscape and on the unfolded Fold, instead of using fixed margins.

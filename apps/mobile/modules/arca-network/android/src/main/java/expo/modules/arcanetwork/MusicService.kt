@@ -169,8 +169,9 @@ class MusicService : MediaLibraryService() {
           forgetStale()
           loaded.set(Unit)
           val current = session ?: return@post
-          current.notifyChildrenChanged(MusicTree.ROOT, tree.roots.size, null)
-          for (root in tree.roots) current.notifyChildrenChanged(root.id, tree.children(root.id)?.size ?: 0, null)
+          val browsing = browse()
+          current.notifyChildrenChanged(MusicTree.ROOT, browsing.roots.size, null)
+          for (root in browsing.roots) current.notifyChildrenChanged(root.id, browsing.children(root.id)?.size ?: 0, null)
         } finally {
           done()
         }
@@ -226,11 +227,16 @@ class MusicService : MediaLibraryService() {
     saved.edit().putString("heard-track", trackOf(id)).putLong("heard-at", System.currentTimeMillis()).apply()
   }
 
+  private fun syncedText(file: File): String? = try { file.takeIf { it.isFile }?.readText() } catch (_: Exception) { null }
+
+  private fun browse(): MusicTree {
+    val file = File(root(this), "music-synced.json")
+    return tree.withProgress(syncedFile.progress(file.lastModified(), file.length(), tree.library.scope) { syncedText(file) })
+  }
+
   private fun syncedStart(track: String, positionMs: Long, active: Boolean): Long? {
     val file = File(root(this), "music-synced.json")
-    val synced = syncedFile.get(file.lastModified(), file.length(), tree.library.scope) {
-      try { file.takeIf { it.isFile }?.readText() } catch (_: Exception) { null }
-    }[track]
+    val synced = syncedFile.get(file.lastModified(), file.length(), tree.library.scope) { syncedText(file) }[track]
     val heardAt = if (saved.getString("heard-track", null) == track) saved.getLong("heard-at", 0L) else 0L
     return SyncedResume.target(positionMs, active, synced, heardAt)
   }
@@ -270,8 +276,21 @@ class MusicService : MediaLibraryService() {
     else -> MediaMetadata.MEDIA_TYPE_MUSIC
   }
 
+  private fun completion(played: Played?, percent: Int): Bundle? = played?.let {
+    Bundle().apply {
+      when (it) {
+        Played.NOT_PLAYED -> putInt(MediaConstants.EXTRAS_KEY_COMPLETION_STATUS, MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_NOT_PLAYED)
+        Played.FULLY_PLAYED -> putInt(MediaConstants.EXTRAS_KEY_COMPLETION_STATUS, MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_FULLY_PLAYED)
+        Played.PARTIALLY_PLAYED -> {
+          putInt(MediaConstants.EXTRAS_KEY_COMPLETION_STATUS, MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED)
+          putDouble(MediaConstants.EXTRAS_KEY_COMPLETION_PERCENTAGE, percent / 100.0)
+        }
+      }
+    }
+  }
+
   private fun browsable(node: MusicNode): MediaItem {
-    node.track?.let { return playable(node.id, it, false, subtitle = node.subtitle) }
+    node.track?.let { return playable(node.id, it, false, subtitle = node.subtitle, extras = completion(node.played, node.percent)) }
     val metadata = MediaMetadata.Builder()
       .setTitle(node.title)
       .setSubtitle(node.subtitle)
@@ -287,7 +306,7 @@ class MusicService : MediaLibraryService() {
     return MediaItem.Builder().setMediaId(node.id).setMediaMetadata(metadata.build()).build()
   }
 
-  private fun playable(id: String, track: MusicTrack, large: Boolean = true, seen: MutableMap<String, Uri?>? = null, subtitle: String? = null): MediaItem = MediaItem.Builder()
+  private fun playable(id: String, track: MusicTrack, large: Boolean = true, seen: MutableMap<String, Uri?>? = null, subtitle: String? = null, extras: Bundle? = null): MediaItem = MediaItem.Builder()
     .setMediaId(id)
     .setUri(Uri.fromFile(File(track.path)))
     .setMediaMetadata(
@@ -301,6 +320,7 @@ class MusicService : MediaLibraryService() {
         .setIsPlayable(true)
         .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
         .apply { if (subtitle != null) setDisplayTitle(track.title).setSubtitle(subtitle) }
+        .apply { if (extras != null) setExtras(extras) }
         .build(),
     )
     .build()
@@ -348,7 +368,7 @@ class MusicService : MediaLibraryService() {
       browser: MediaSession.ControllerInfo,
       mediaId: String,
     ): ListenableFuture<LibraryResult<MediaItem>> = whenLoaded {
-      val node = tree.node(mediaId)
+      val node = browse().node(mediaId)
       if (node == null) LibraryResult.ofError(SessionError.ERROR_BAD_VALUE) else LibraryResult.ofItem(browsable(node), null)
     }
 
@@ -360,7 +380,7 @@ class MusicService : MediaLibraryService() {
       pageSize: Int,
       params: LibraryParams?,
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = whenLoaded {
-      val children = tree.children(parentId, rootLimits[browser])
+      val children = browse().children(parentId, rootLimits[browser])
       if (children == null || page < 0 || pageSize < 1) LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
       else {
         val from = (page.toLong() * pageSize).coerceAtMost(children.size.toLong()).toInt()
@@ -374,7 +394,7 @@ class MusicService : MediaLibraryService() {
       controller: MediaSession.ControllerInfo,
       mediaItems: MutableList<MediaItem>,
     ): ListenableFuture<MutableList<MediaItem>> = whenLoaded {
-      mediaItems.mapNotNull { item -> tree.expand(item.mediaId)?.let { (tracks, index) -> playable(item.mediaId, tracks[index]) } }.toMutableList()
+      mediaItems.mapNotNull { item -> MusicTree.resolveContinue(item.mediaId).let { id -> tree.expand(id)?.let { (tracks, index) -> playable(id, tracks[index]) } } }.toMutableList()
     }
 
     override fun onSetMediaItems(
@@ -385,15 +405,18 @@ class MusicService : MediaLibraryService() {
       startPositionMs: Long,
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = Futures.transformAsync(loaded, {
       val position = if (startPositionMs == C.TIME_UNSET) 0L else startPositionMs
-      val single = if (mediaItems.size == 1) queue(mediaItems[0].mediaId, position) else null
-      if (single != null) {
-        heard(mediaItems[0].mediaId)
-        MusicTree.parseTrackNodeId(mediaItems[0].mediaId)?.let { played(it.first) }
-        nameQueue(mediaItems[0].mediaId)
+      val continued = if (mediaItems.size == 1) MusicTree.parseContinueNodeId(mediaItems[0].mediaId) else null
+      val first = continued ?: mediaItems.firstOrNull()?.mediaId
+      val begin = if (continued != null) browse().resumePosition(continued)?.let { SyncedResume.continueStart(it, player.currentMediaItem?.mediaId?.let(::trackOf), trackOf(continued), player.currentPosition.coerceAtLeast(0)) } ?: position else position
+      val single = if (mediaItems.size == 1 && first != null) queue(first, begin) else null
+      if (single != null && first != null) {
+        heard(first)
+        MusicTree.parseTrackNodeId(first)?.let { played(it.first) }
+        nameQueue(first)
         Futures.immediateFuture(single)
       }
       else {
-        val resolved = mediaItems.mapNotNull { item -> tree.expand(item.mediaId)?.let { (tracks, index) -> playable(item.mediaId, tracks[index]) } }
+        val resolved = mediaItems.mapNotNull { item -> MusicTree.resolveContinue(item.mediaId).let { id -> tree.expand(id)?.let { (tracks, index) -> playable(id, tracks[index]) } } }
         if (resolved.isEmpty()) Futures.immediateFailedFuture(IllegalArgumentException("This music is no longer on this phone."))
         else {
           nameQueue(null)

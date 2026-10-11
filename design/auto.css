@@ -175,3 +175,12 @@
   font-weight: 600;
   color: var(--m-mute);
 }
+.a-item .a-progress {
+  margin: 6px 0 0;
+}
+.a-p60 i {
+  width: 60%;
+}
+.a-done {
+  color: var(--m-mute);
+}

@@ -57,4 +57,37 @@ class SyncedResumeTest {
     assertTrue(cache.get(11, 81, "other", read).isEmpty())
     assertEquals(4, reads)
   }
+
+  @Test
+  fun theProgressSectionKeepsEachEpisodesCompletionForItsOwnHub() {
+    val text = """{"scope":"hub","tracks":{},"progress":{"v:Show/One.mp3":{"state":"partial","percent":14,"position":600400,"updated":2000},"v:Show/Two.mp3":{"state":"full","updated":3000},"v:Show/Bad.mp3":{"state":"partial","percent":0,"position":5},"v:Show/Odd.mp3":{"state":"other"}}}"""
+    val rows = SyncedResume.parseProgress(text, "hub")!!
+    assertEquals(EpisodeProgress(false, 14, 600_400, 2_000), rows["v:Show/One.mp3"])
+    assertEquals(true, rows["v:Show/Two.mp3"]!!.finished)
+    assertEquals(setOf("v:Show/One.mp3", "v:Show/Two.mp3"), rows.keys)
+    assertNull(SyncedResume.parseProgress(text, "other"))
+    assertNull(SyncedResume.parseProgress("""{"scope":"hub","tracks":{}}""", "hub"))
+    assertNull(SyncedResume.parseProgress(null, "hub"))
+    assertNull(SyncedResume.parseProgress("{not json", "hub"))
+  }
+
+  @Test
+  fun theCacheParsesTheProgressWithTheResumeRowsInOneRead() {
+    val cache = SyncedCache()
+    var reads = 0
+    val text = """{"scope":"hub","tracks":{"v:Show/One.mp3":{"position":600400,"updated":2000}},"progress":{"v:Show/One.mp3":{"state":"partial","percent":14,"position":600400,"updated":2000}}}"""
+    val read = { reads++; text }
+    assertEquals(1, cache.progress(10, 80, "hub", read)!!.size)
+    assertEquals(1, cache.get(10, 80, "hub", read).size)
+    assertEquals(1, reads)
+    assertNull(cache.progress(10, 80, "other", read))
+  }
+
+  @Test
+  fun continueNeverRewindsTheEpisodeThatIsAlreadyPlaying() {
+    assertEquals(900_000L, SyncedResume.continueStart(600_000, "v:Show/One.mp3", "v:Show/One.mp3", 900_000))
+    assertEquals(600_000L, SyncedResume.continueStart(600_000, "v:Show/One.mp3", "v:Show/One.mp3", 100_000))
+    assertEquals(600_000L, SyncedResume.continueStart(600_000, "v:Show/Two.mp3", "v:Show/One.mp3", 900_000))
+    assertEquals(600_000L, SyncedResume.continueStart(600_000, null, "v:Show/One.mp3", 900_000))
+  }
 }

@@ -34,6 +34,7 @@ import {
   resumeCandidate,
   savedPosition,
   shouldSave,
+  progressSignature,
   syncedPositions,
   timeLeft,
   trackFile,
@@ -215,10 +216,50 @@ test("play on a paused episode reaches the native player untouched, which alone 
     { volume: "a1", path: "Show/new.mp3", hash: "changed", position: 900, duration: 4200, updated: 2000 },
     { volume: "a1", path: "Mix/long.mp3", hash: "m", position: 900, duration: 4200, updated: 2000 },
   ]);
-  assert.deepEqual(syncedPositions(positions, episodes, "hub"), { scope: "hub", tracks: { "a1:Show/ep.mp3": { position: 3480200, updated: 2000 } } }, "only podcast episodes whose copy matches reach the service");
+  assert.deepEqual(syncedPositions(positions, episodes, "hub").tracks, { "a1:Show/ep.mp3": { position: 3480200, updated: 2000 } }, "only podcast episodes whose copy matches reach the service");
   const own = positionMap([{ volume: "a1", path: "Show/ep.mp3", hash: "h", position: 3480.2, duration: 4200, updated: 2000, device: "phone" }]);
   assert.deepEqual(syncedPositions(own, episodes, "hub", "phone").tracks, {}, "this phone's own save is never another device's place");
   assert.equal(Object.keys(syncedPositions(own, episodes, "hub", "mac").tracks).length, 1);
+});
+
+test("the car gets every podcast episode's completion: partly played with a percentage, finished, and this phone's own saves", () => {
+  const episodes = new Map([["a1:Show/a.mp3", "ha"], ["a1:Show/b.mp3", "hb"], ["a1:Show/c.mp3", "hc"], ["a1:Show/d.mp3", "hd"]]);
+  const positions = positionMap(
+    [
+      { volume: "a1", path: "Show/a.mp3", hash: "ha", position: 1050, duration: 4200, updated: 2000, device: "phone" },
+      { volume: "a1", path: "Show/b.mp3", hash: "stale", position: 900, duration: 4200, updated: 3000 },
+      { volume: "a1", path: "Show/d.mp3", hash: "hd", position: 4190, duration: 4200, updated: 1000 },
+      { volume: "a1", path: "Mix/long.mp3", hash: "m", position: 900, duration: 4200, updated: 5000 },
+    ],
+    [{ volume: "a1", path: "Show/c.mp3", hash: "hc", updated: 4000 }],
+  );
+  const synced = syncedPositions(positions, episodes, "hub", "phone");
+  assert.deepEqual(synced.tracks, { "a1:Show/d.mp3": { position: 4190000, updated: 1000 } }, "resume keeps its own-device rule");
+  assert.deepEqual(synced.progress, {
+    "a1:Show/a.mp3": { state: "partial", percent: 25, position: 1050000, updated: 2000 },
+    "a1:Show/c.mp3": { state: "full", updated: 4000 },
+    "a1:Show/d.mp3": { state: "partial", percent: 99, position: 4190000, updated: 1000 },
+  });
+  assert.equal(syncedPositions(new Map(), episodes, "hub").progress && Object.keys(syncedPositions(new Map(), episodes, "hub").progress).length, 0);
+});
+
+test("the car list refreshes only when a badge bucket, a finish or the Continue episode changes", () => {
+  const episodes = new Map([["a1:Show/a.mp3", "ha"], ["a1:Show/b.mp3", "hb"]]);
+  const sign = (a, b) =>
+    progressSignature(
+      syncedPositions(
+        positionMap([
+          { volume: "a1", path: "Show/a.mp3", hash: "ha", position: a.position, duration: 4200, updated: a.updated },
+          ...(b ? [{ volume: "a1", path: "Show/b.mp3", hash: "hb", position: b.position, duration: 4200, updated: b.updated }] : []),
+        ]),
+        episodes,
+        "hub",
+      ),
+    );
+  const base = sign({ position: 1050, updated: 1 });
+  assert.equal(sign({ position: 1060, updated: 2 }), base, "a few seconds of playing never refresh the car");
+  assert.notEqual(sign({ position: 1500, updated: 2 }), base);
+  assert.notEqual(sign({ position: 1050, updated: 1 }, { position: 60, updated: 9 }), base, "a newer Continue episode does");
 });
 
 test("a show's play resumes only an episode the phone holds", () => {

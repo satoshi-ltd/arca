@@ -148,6 +148,8 @@ data class MusicLibraryData(
   }
 }
 
+enum class Played { NOT_PLAYED, PARTIALLY_PLAYED, FULLY_PLAYED }
+
 data class MusicNode(
   val id: String,
   val title: String,
@@ -157,6 +159,8 @@ data class MusicNode(
   val grid: Boolean = false,
   val group: String? = null,
   val track: MusicTrack? = null,
+  val played: Played? = null,
+  val percent: Int = 0,
 )
 
 object MusicHistory {
@@ -175,7 +179,11 @@ object MusicHistory {
     JSONObject().put("format", 1).put("scope", scope).put("items", JSONArray(history)).toString()
 }
 
-class MusicTree(val library: MusicLibraryData, val history: List<String> = emptyList()) {
+class MusicTree(
+  val library: MusicLibraryData,
+  val history: List<String> = emptyList(),
+  val progress: Map<String, EpisodeProgress>? = null,
+) {
   companion object {
     const val ROOT = "root"
     const val ARTISTS = "artists"
@@ -183,11 +191,16 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
     const val PLAYLISTS = "playlists"
     const val RECENT = "recent"
     const val PODCASTS = "podcasts"
+    private const val CONTINUE = "continue"
     private const val SEPARATOR = '\u001F'
     fun trackNodeId(context: String, track: String, position: Int? = null): String {
       val id = "track$SEPARATOR$context$SEPARATOR$track"
       return if (position == null) id else "$id$SEPARATOR$position"
     }
+    fun continueNodeId(trackNode: String) = "$CONTINUE$SEPARATOR$trackNode"
+    fun resolveContinue(id: String) = parseContinueNodeId(id) ?: id
+    fun parseContinueNodeId(id: String): String? =
+      id.split(SEPARATOR, limit = 2).takeIf { it.size == 2 && it[0] == CONTINUE && parseTrackNodeId(it[1]) != null }?.get(1)
     fun parseTrackNodeId(id: String): Triple<String, String, Int?>? {
       val parts = id.split(SEPARATOR)
       if (parts[0] != "track") return null
@@ -247,13 +260,24 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
     val rootNode = MusicNode(ROOT, "Arca", null, null, false)
   }
 
-  val roots = listOfNotNull(
+  private class Resume(val show: MusicShow, val track: MusicTrack, val index: Int, val row: EpisodeProgress)
+
+  private val resume: Resume? by lazy {
+    val rows = progress?.filterValues { !it.finished }.orEmpty()
+    library.shows.values
+      .flatMap { show -> queue(show.id).orEmpty().mapIndexedNotNull { index, track -> rows[track.id]?.let { Resume(show, track, index, it) } } }
+      .maxWithOrNull(compareBy<Resume> { it.row.updated }.thenByDescending { it.track.id })
+  }
+
+  private val podcastFlat by lazy { GROUP_LIMIT - if (resume != null) 1 else 0 }
+
+  val roots by lazy { listOfNotNull(
     MusicNode(ARTISTS, "Artists", null, null, false),
     MusicNode(ALBUMS, "Albums", null, null, false, grid = library.albumOrder.size <= GROUP_LIMIT),
     MusicNode(PLAYLISTS, "Playlists", null, null, false).takeIf { library.playlists.isNotEmpty() },
     MusicNode(RECENT, "Recent", null, null, false),
-    MusicNode(PODCASTS, "Podcasts", null, null, false, grid = library.shows.size <= GROUP_LIMIT).takeIf { library.shows.isNotEmpty() },
-  )
+    MusicNode(PODCASTS, "Podcasts", null, null, false, grid = library.shows.size <= podcastFlat).takeIf { library.shows.isNotEmpty() },
+  ) }
 
   fun roots(limit: Int?): List<MusicNode> =
     if (limit == null || roots.size <= limit) roots
@@ -272,7 +296,36 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
   private fun trackNode(context: String, track: MusicTrack, position: Int?): MusicNode {
     val album = track.album.takeIf { base(context).startsWith("playlist:") }
     val subtitle = listOfNotNull(track.artist, album, length(track.durationMs)).filter(String::isNotBlank).joinToString(" · ")
-    return MusicNode(trackNodeId(context, track.id, position), track.title, subtitle.ifEmpty { null }, track.cover, true, track = track)
+    val row = progress?.takeIf { base(context) in library.shows }?.get(track.id)
+    val played = when {
+      progress == null || base(context) !in library.shows -> null
+      row == null -> Played.NOT_PLAYED
+      row.finished -> Played.FULLY_PLAYED
+      else -> Played.PARTIALLY_PLAYED
+    }
+    return MusicNode(trackNodeId(context, track.id, position), track.title, subtitle.ifEmpty { null }, track.cover, true, track = track, played = played, percent = row?.percent ?: 0)
+  }
+
+  private fun continueNode(): MusicNode? = resume?.let { item ->
+    val left = item.track.durationMs?.let { it * (100 - item.row.percent) / 100 }
+    val subtitle = listOfNotNull("Continue", item.show.title.takeIf(String::isNotBlank), length(left)?.let { "$it left" }).joinToString(" · ")
+    MusicNode(
+      continueNodeId(trackNodeId(item.show.id, item.track.id, item.index)),
+      item.track.title,
+      subtitle,
+      item.track.cover,
+      true,
+      track = item.track,
+      played = Played.PARTIALLY_PLAYED,
+      percent = item.row.percent,
+    )
+  }
+
+  fun withProgress(next: Map<String, EpisodeProgress>?) = MusicTree(library, history, next)
+
+  fun resumePosition(trackNode: String): Long? {
+    val track = parseTrackNodeId(trackNode)?.second ?: return null
+    return progress?.get(track)?.takeIf { !it.finished }?.positionMs
   }
 
   private fun base(context: String) = if (context.startsWith(FOLDER)) inFolder(context)?.second ?: context else context
@@ -289,16 +342,16 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
   }
 
   fun reloaded(next: MusicTree): MusicTree =
-    if (next.library.scope != null && next.library.scope == library.scope) MusicTree(next.library, history) else next
+    if (next.library.scope != null && next.library.scope == library.scope) MusicTree(next.library, history, progress) else next
 
   fun renamed(from: String, to: String): MusicTree? =
-    if (from == to || from !in history) null else MusicTree(library, MusicHistory.rename(history, from, to))
+    if (from == to || from !in history) null else MusicTree(library, MusicHistory.rename(history, from, to), progress)
 
   fun played(context: String): MusicTree? {
     val item = if (context.startsWith(FOLDER)) inFolder(context)?.second ?: return null else context
     if (library.albums[item] == null && library.playlists[item] == null && library.shows[item] == null) return null
     val next = MusicHistory.record(history, item)
-    return if (next == history) null else MusicTree(library, next)
+    return if (next == history) null else MusicTree(library, next, progress)
   }
 
   private class Entry(val name: String, val node: MusicNode)
@@ -372,6 +425,7 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
   fun children(parent: String, limit: Int? = null): List<MusicNode>? = when {
     parent == ROOT -> roots(limit)
     parent == ALBUMS && recentInAlbums(limit) -> listOf(roots.first { it.id == RECENT }) + listing(ALBUMS, "", GROUP_LIMIT - 1).orEmpty()
+    parent == PODCASTS -> listOfNotNull(continueNode()) + listing(PODCASTS, "", podcastFlat).orEmpty()
     parent == PLAYLISTS -> library.playlists.values.map(::playlistNode)
     parent == RECENT -> recent()
     else -> parseGroupNodeId(parent)?.let { (base, prefix) ->
@@ -401,6 +455,7 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
 
   fun node(id: String): MusicNode? {
     if (id == ROOT) return rootNode
+    parseContinueNodeId(id)?.let { return continueNode()?.takeIf { it.id == id } }
     roots.firstOrNull { it.id == id }?.let { return it }
     parseTrackNodeId(id)?.let { (context, track, position) ->
       val item = library.tracks[track] ?: return null
@@ -415,6 +470,7 @@ class MusicTree(val library: MusicLibraryData, val history: List<String> = empty
   }
 
   fun expand(id: String): Pair<List<MusicTrack>, Int>? {
+    parseContinueNodeId(id)?.let { return expand(it) }
     val (context, track, position) = parseTrackNodeId(id) ?: return library.tracks[id]?.let { listOf(it) to 0 }
     val tracks = queue(context)
     if (tracks != null) {

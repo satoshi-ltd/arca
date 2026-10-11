@@ -177,7 +177,7 @@ test("the native module ships the media library service, cover provider and car 
   assert.match(read("src/music-player.js"), /renameHistory: \(from, to\) => native\.musicRenameHistory\(from, to\),/);
   assert.match(reload, /if \(tree\(app\)\.expand\(item\) == null\) prefs\.edit\(\)\.clear\(\)\.apply\(\)/, "erasing clears the resume point even when the service is not running");
   assert.match(service, /File\(root\(context\), "music-history\.json"\)/, "the car reads the history the phone shows");
-  assert.match(service, /MusicTree\.parseTrackNodeId\(mediaItems\[0\]\.mediaId\)\?\.let \{ played\(it\.first\) \}/, "every album started from the phone or the car is recorded");
+  assert.match(service, /MusicTree\.parseTrackNodeId\(first\)\?\.let \{ played\(it\.first\) \}/, "every album started from the phone or the car is recorded");
   assert.match(service, /staged\.renameTo\(File\(directory, "music-history\.json"\)\)/);
   assert.match(service, /putString\(MediaConstants\.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it\)/);
   assert.match(service, /tree = tree\.reloaded\(next\)/, "a reload never drops a play the file has not caught up with");
@@ -238,7 +238,7 @@ test("the car reads shows from their own field and lists them under a Podcasts t
   const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
   assert.match(tree, /val rawShows = json\.optJSONArray\("shows"\) \?: JSONArray\(\)/, "a file without shows reads as no shows");
   assert.match(tree, /text\(item, "id"\)\.takeIf \{ it\.startsWith\("show:"\) && it !in shows \}/);
-  assert.match(tree, /MusicNode\(RECENT, "Recent", null, null, false\),\s+MusicNode\(PODCASTS, "Podcasts", null, null, false, grid = library\.shows\.size <= GROUP_LIMIT\)\.takeIf \{ library\.shows\.isNotEmpty\(\) \},\s+\)/);
+  assert.match(tree, /MusicNode\(RECENT, "Recent", null, null, false\),\s+MusicNode\(PODCASTS, "Podcasts", null, null, false, grid = library\.shows\.size <= podcastFlat\)\.takeIf \{ library\.shows\.isNotEmpty\(\) \},\s+\)/);
   assert.match(tree, /count\(show\.tracks\.size, "episode", "episodes"\)/);
   assert.match(tree, /context in library\.shows -> library\.shows\[context\]\?\.tracks/, "an episode queues its show");
   assert.match(service, /id == MusicTree\.PODCASTS -> MediaMetadata\.MEDIA_TYPE_FOLDER_PODCASTS/);
@@ -250,7 +250,7 @@ test("a car that allows fewer root tabs than Arca has gets Recent as the first e
   const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
   assert.match(service, /val limit = params\?\.extras\?\.getInt\(MediaConstants\.EXTRAS_KEY_ROOT_CHILDREN_LIMIT, 0\) \?: 0\s+if \(limit > 0\) rootLimits\[browser\] = limit else rootLimits\.remove\(browser\)/, "each car's root hint is read when it connects");
   assert.match(service, /override fun onDisconnected\(session: MediaSession, controller: MediaSession\.ControllerInfo\) \{\s+rootLimits\.remove\(controller\)/);
-  assert.match(service, /tree\.children\(parentId, rootLimits\[browser\]\)/);
+  assert.match(service, /browse\(\)\.children\(parentId, rootLimits\[browser\]\)/);
   assert.match(tree, /if \(limit == null \|\| roots\.size <= limit\) roots\s+else roots\.filter \{ it\.id != RECENT \}/);
   assert.match(tree, /parent == ALBUMS && recentInAlbums\(limit\) -> listOf\(roots\.first \{ it\.id == RECENT \}\) \+ listing\(ALBUMS, "", GROUP_LIMIT - 1\)\.orEmpty\(\)/, "the Recent entry and the albums never exceed one car answer");
 });
@@ -258,11 +258,11 @@ test("a car that allows fewer root tabs than Arca has gets Recent as the first e
 test("the car names its queue and lists each track with its length, and a playlist's tracks with their album", () => {
   const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
   const tree = read(`${native}/java/expo/modules/arcanetwork/MusicLibrary.kt`);
-  assert.match(service, /node\.track\?\.let \{ return playable\(node\.id, it, false, subtitle = node\.subtitle\) \}/, "browse rows carry the tree's subtitle");
+  assert.match(service, /node\.track\?\.let \{ return playable\(node\.id, it, false, subtitle = node\.subtitle, extras = completion\(node\.played, node\.percent\)\) \}/, "browse rows carry the tree's subtitle");
   assert.match(service, /\.apply \{ if \(subtitle != null\) setDisplayTitle\(track\.title\)\.setSubtitle\(subtitle\) \}/, "a display title makes Media3 send the subtitle instead of the artist and album");
   assert.doesNotMatch(service.slice(service.indexOf("private fun queue("), service.indexOf("private inner class Callback")), /subtitle =/, "Now Playing keeps the artist and album");
   assert.match(service, /player\.playlistMetadata = MediaMetadata\.Builder\(\)\.setTitle\(context\?\.let\(tree::queueTitle\)\)\.build\(\)/, "the queue's name reaches Android Auto as the legacy queue title");
-  assert.match(service, /played\(it\.first\) \}\s+nameQueue\(mediaItems\[0\]\.mediaId\)/);
+  assert.match(service, /played\(it\.first\) \}\s+nameQueue\(first\)/);
   assert.match(service, /nameQueue\(null\)/, "a hand-built queue drops the previous name");
   assert.match(service, /nameQueue\(item\)\s+player\.shuffleModeEnabled/, "a resumed queue keeps its name");
   assert.match(tree, /val album = track\.album\.takeIf \{ base\(context\)\.startsWith\("playlist:"\) \}/);
@@ -279,12 +279,49 @@ test("the car, the lock screen and Bluetooth resume a paused episode from a newe
   assert.match(service, /MediaLibrarySession\.Builder\(this, synced, Callback\(\)\)/);
   assert.match(service, /queue\(it, syncedStart\(trackOf\(it\), position, false\) \?: position\)/, "a cold resume starts at the newer place");
   assert.match(service, /if \(reason == Player\.DISCONTINUITY_REASON_SEEK\) heard\(\)/, "a seek on this phone is its own newer choice");
-  assert.match(service, /heard\(mediaItems\[0\]\.mediaId\)/, "a track picked here starts where it was asked to");
+  assert.match(service, /heard\(first\)/, "a track picked here starts where it was asked to");
   assert.match(service, /heard\(resolved\[start\]\.mediaId\)/);
   assert.match(service, /val active = player\.isPlaying \|\| player\.playWhenReady \|\| player\.playbackState == Player\.STATE_ENDED/);
   assert.match(rule, /if \(active \|\| synced == null \|\| synced\.updated <= heardAt\) return null\s+return if \(synced\.positionMs > positionMs \+ AHEAD_MS\) synced\.positionMs else null/);
   assert.match(rule, /if \(json\.optString\("scope"\) != scope \|\| tracks == null\) emptyMap\(\)/, "another hub's positions never apply");
   assert.match(read("modules/arca-network/android/src/test/java/expo/modules/arcanetwork/SyncedResumeTest.kt"), /SyncedResume\.target/);
+});
+
+test("the car's Podcasts tab draws completion badges and starts Continue at the hub's saved place", () => {
+  const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
+  const tree = read(`${native}/java/expo/modules/arcanetwork/MusicLibrary.kt`);
+  const rule = read(`${native}/java/expo/modules/arcanetwork/SyncedResume.kt`);
+  const positions = read("src/audio-positions.js");
+  const sync = read("src/music-sync.js");
+  assert.match(positions, /return \{ scope, tracks, progress: episodeProgress\(positions, episodes\) \}/, "the file carries every podcast episode's completion beside the resume rows");
+  assert.match(positions, /if \(isFinished\(row\)\) progress\[id\] = \{ state: "full", updated \}/);
+  assert.match(positions, /state: "partial",\s+percent: Math\.max\(1, Math\.min\(99, Math\.round\(fraction\(row\.position, row\.duration\) \* 100\)\)\)/);
+  assert.match(sync, /if \(notify && changed && replica\.files\.musicLibrary\) await replica\.player\.reload\?\.\(replica\.files\.musicLibrary\(\)\)/, "the car's lists refresh when a badge or the Continue episode changes");
+  assert.match(rule, /fun parseProgress\(text: String\?, scope: String\?\): Map<String, EpisodeProgress>\?/);
+  assert.match(rule, /if \(json\.optString\("scope"\) != scope \|\| rows == null\) null/, "another hub's or an absent section claims nothing");
+  for (const name of ["NOT_PLAYED", "PARTIALLY_PLAYED", "FULLY_PLAYED"])
+    assert.match(service, new RegExp(`MediaConstants\\.EXTRAS_VALUE_COMPLETION_STATUS_${name}`));
+  assert.match(service, /putInt\(MediaConstants\.EXTRAS_KEY_COMPLETION_STATUS/);
+  assert.match(service, /putDouble\(MediaConstants\.EXTRAS_KEY_COMPLETION_PERCENTAGE, percent \/ 100\.0\)/);
+  assert.match(service, /\.apply \{ if \(extras != null\) setExtras\(extras\) \}/);
+  assert.match(service, /val node = browse\(\)\.node\(mediaId\)/, "item lookups see the badges");
+  assert.match(service, /val children = browse\(\)\.children\(parentId, rootLimits\[browser\]\)/, "lists see the badges");
+  assert.match(service, /val continued = if \(mediaItems\.size == 1\) MusicTree\.parseContinueNodeId\(mediaItems\[0\]\.mediaId\) else null/);
+  assert.match(service, /val begin = if \(continued != null\) browse\(\)\.resumePosition\(continued\)\?\.let \{ SyncedResume\.continueStart/, "Continue starts at the saved place, not through the forward-only rule");
+  assert.match(service, /SyncedResume\.continueStart\(it, player\.currentMediaItem\?\.mediaId\?\.let\(::trackOf\), trackOf\(continued\), player\.currentPosition\.coerceAtLeast\(0\)\)/, "Continue never rewinds the episode already playing");
+  assert.match(rule, /if \(playingTrack == track\) maxOf\(savedMs, currentMs\) else savedMs/);
+  assert.equal(service.match(/MusicTree\.resolveContinue\(item\.mediaId\)/g).length, 2, "a Continue id never reaches a queue item");
+  assert.match(tree, /private val podcastFlat by lazy/);
+  assert.match(tree, /val roots by lazy \{ listOfNotNull\(/);
+  assert.match(service, /heard\(first\)/, "a Continue start counts as this phone's own play");
+  assert.match(tree, /parent == PODCASTS -> listOfNotNull\(continueNode\(\)\) \+ listing\(PODCASTS, "", podcastFlat\)\.orEmpty\(\)/, "Continue is the Podcasts tab's first entry");
+  assert.match(tree, /private val podcastFlat by lazy \{ GROUP_LIMIT - if \(resume != null\) 1 else 0 \}/, "Continue never pushes a list past 120 entries");
+  assert.match(tree, /compareBy<Resume> \{ it\.row\.updated \}\.thenByDescending \{ it\.track\.id \}/);
+  assert.match(tree, /progress == null \|\| base\(context\) !in library\.shows -> null/, "no positions, no badge");
+  assert.match(tree, /trackNodeId\(item\.show\.id, item\.track\.id, item\.index\)/, "Continue plays inside its show's queue at the episode's own place");
+  const jvm = read("modules/arca-network/android/src/test/java/expo/modules/arcanetwork/MusicTreeTest.kt");
+  for (const name of ["episodesCarryTheirCompletionFromTheHubsPositions", "continueComesFirstAndStartsTheNewestSavedEpisodeInItsShowQueue", "continueTakesOneEntryOfTheHundredAndTwentyTheCarCanListFlat"])
+    assert.match(jvm, new RegExp(`fun ${name}\\(`));
 });
 
 test("cover paths accept only hex keys and the two sizes", async () => {

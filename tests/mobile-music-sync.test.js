@@ -142,10 +142,14 @@ test("the car service gets the latest synced positions of podcast episodes only,
   );
   log.length = 0;
   await publishSynced(replica, positions);
-  assert.deepEqual(JSON.parse(disk.get("/synced.json")), { scope: "hub", tracks: { "v:Show/2026-10-01 One.mp3": { position: 600400, updated: 2000 } } });
-  assert.deepEqual(log, ["remove /synced.json.part", "write /synced.json.part", "replace /synced.json"]);
+  assert.deepEqual(JSON.parse(disk.get("/synced.json")), {
+    scope: "hub",
+    tracks: { "v:Show/2026-10-01 One.mp3": { position: 600400, updated: 2000 } },
+    progress: { "v:Show/2026-10-01 One.mp3": { state: "partial", percent: 14, position: 600400, updated: 2000 } },
+  });
+  assert.deepEqual(log, ["remove /synced.json.part", "write /synced.json.part", "replace /synced.json", "reload"], "the car list refreshes once for the new completion");
   await publishSynced(replica, positions);
-  assert.equal(log.length, 3, "an unchanged answer is not written again");
+  assert.equal(log.length, 4, "an unchanged answer is not written again");
   const write = replica.files.write;
   replica.files.write = async (uri, data) => {
     if (uri.startsWith("/synced.json")) throw new Error("disk full");

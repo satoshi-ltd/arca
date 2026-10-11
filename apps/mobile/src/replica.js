@@ -155,7 +155,7 @@ export class Replica {
     for (const target of [this.files.musicLibrary?.(), this.files.musicHistory?.()])
       if (target) await this.files.remove(target).catch(() => {});
     this.publishedMusic = null;
-    this.publishedSynced = this.musicEpisodes = this.audioPositions = null;
+    this.publishedSynced = this.publishedProgress = this.musicEpisodes = this.audioPositions = null;
     this.journalCut = new Map();
     try {
       await this.player?.reload?.();
