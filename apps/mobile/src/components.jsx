@@ -12,7 +12,7 @@ import {
 } from "../../../packages/core/brand-mark.js";
 import { putFlight } from "./flight.js";
 import { deviceLabel, folderState, machineTone } from "./home-data.js";
-import { machineLabel, segmentText } from "./device-line.js";
+import { foldRowFits, machineLabel, platformName, segmentText } from "./device-line.js";
 import React, {
   createContext,
   useContext,
@@ -419,12 +419,13 @@ export function Button({
       }}
       disabled={disabled || busy}
       onPress={onPress}
-      hitSlop={size === "small" ? 6 : undefined}
+      hitSlop={size !== "normal" ? 6 : undefined}
       style={({ pressed }) => [
         s.button,
         iconOnly && s.iconButton,
-        size === "small" && s.smallButton,
+        size !== "normal" && s.smallButton,
         size === "small" && iconOnly && s.smallIconButton,
+        size === "compact" && s.compactButton,
         primary && s.primary,
         quiet && s.quietButton,
         danger && s.dangerButton,
@@ -441,14 +442,14 @@ export function Button({
           <Pop key={icon}>
             <Icon
               name={icon}
-              size={size === "small" ? g.buttonSmallIcon : g.buttonIcon}
+              size={size !== "normal" ? g.buttonSmallIcon : g.buttonIcon}
               color={ink}
             />
           </Pop>
         ) : (
           <Icon
             name={icon}
-            size={size === "small" ? g.buttonSmallIcon : g.buttonIcon}
+            size={size !== "normal" ? g.buttonSmallIcon : g.buttonIcon}
             color={ink}
           />
         )
@@ -460,6 +461,7 @@ export function Button({
             primary && s.primaryLabel,
             quiet && s.active,
             danger && !primary && s.errorText,
+            size === "compact" && s.compactLabel,
           ]}
         >
           {label}
@@ -1479,10 +1481,39 @@ export function RoleChip({ role = "Replica", hub, backup }) {
   );
 }
 
+function DeviceLine({ segments }) {
+  const { s, c } = useDesign();
+  return (
+    <View style={s.deviceLine}>
+      <View style={s.deviceSegs}>
+        {segments.map((segment) => (
+          <View key={segment.parts.join()} style={s.deviceSeg}>
+            {segment.parts.map((part) => (
+              <React.Fragment key={part}>
+                <Text style={[s.caption, s.deviceSep]}>·</Text>
+                {segment.warning && (
+                  <View style={s.deviceArrow}>
+                    <Icon name="circle-arrow-up" size={g.pillIcon} color={c.warning} />
+                  </View>
+                )}
+                <Text style={[s.caption, segment.warning && s.stateWordWarning]}>
+                  {segmentText(part)}
+                </Text>
+              </React.Fragment>
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function MachineRow({
   name,
   platform = "",
   segments = [],
+  cells = null,
+  presence = null,
   address = "",
   role = "Replica",
   self,
@@ -1493,59 +1524,107 @@ export function MachineRow({
   grouped = false,
   divider = false,
 }) {
-  const { s, c, wide } = useDesign();
+  const { s, c, wide: wideLayout, fontScale = 1 } = useDesign();
+  const wide = wideLayout && foldRowFits(fontScale);
   const tone = machineTone(state);
+  const os = platformName(platform);
+  const identity = (
+    <View style={[s.machineIdentity, s.machineIdentityWrap]}>
+      <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
+        {name}
+      </Text>
+      {self && <Tag variant="self">THIS DEVICE</Tag>}
+    </View>
+  );
+  const tile = (
+    <View
+      style={[
+        s.tile,
+        s.machineTile,
+        !wide && s.machineTileTop,
+        hub && !tone && s.hubTile,
+        tone === "danger" && s.tileDanger,
+        tone === "neutral" && s.tileNeutral,
+      ]}
+    >
+      <Icon
+        color={tone === "danger" ? c.danger : tone === "neutral" ? c.soft : hub ? c.onAccent : undefined}
+        name={hub ? "server" : /android|ios/i.test(platform) ? "phone" : "monitor"}
+      />
+      {!wide && !!presence && <View style={[s.presenceBadge, !presence.connected && s.presenceOff]} />}
+    </View>
+  );
+  const chip = <RoleChip role={role} hub={hub} backup={backup} />;
   return (
     <View
       style={[s.card, s.machineRow, grouped && s.groupedMachineRow, divider && s.separator]}
-      accessibilityLabel={machineLabel({ name, role, self, backup, segments, address, state })}
+      accessibilityLabel={machineLabel({
+        name,
+        role,
+        self,
+        backup,
+        segments: wide ? segments.filter((segment) => !segment.warning) : segments,
+        address,
+        state,
+        presence,
+        version: wide ? cells?.version?.label : "",
+      })}
     >
-      <View style={s.row}>
-        <View
-          style={[
-            s.tile,
-            s.machineTile,
-            hub && !tone && s.hubTile,
-            tone === "danger" && s.tileDanger,
-            tone === "neutral" && s.tileNeutral,
-          ]}
-        >
-          <Icon
-            color={tone === "danger" ? c.danger : tone === "neutral" ? c.soft : hub ? c.onAccent : undefined}
-            name={hub ? "server" : /android|ios/i.test(platform) ? "phone" : "monitor"}
-          />
-        </View>
-        <View style={[s.flex, s.stack]}>
-          <View style={s.machineIdentity}>
-            <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
-              {name}
-            </Text>
-            {self && <Tag variant="self">THIS DEVICE</Tag>}
+      {wide ? (
+        <View style={[s.row, s.machineColumns]}>
+          {tile}
+          <View style={[s.stack, s.machineNameBlock]}>
+            {identity}
+            {!!(os || address) && (
+              <DeviceLine segments={[os, address].filter(Boolean).map((part) => ({ parts: [part] }))} />
+            )}
           </View>
-          {!!segments.length && (
-            <View style={s.deviceLine}>
-              <View style={s.deviceSegs}>
-                {segments.map((segment) => (
-                  <View key={segment.parts.join()} style={s.deviceSeg}>
-                    {segment.parts.map((part) => (
-                      <React.Fragment key={part}>
-                        <Text style={[s.caption, s.deviceSep]}>·</Text>
-                        <Text style={[s.caption, segment.warning && s.stateWordWarning]}>
-                          {segmentText(part)}
-                        </Text>
-                      </React.Fragment>
-                    ))}
-                  </View>
-                ))}
+          <View style={[s.machineCell, s.machineCellVersion]}>
+            {!!cells?.version && (
+              <View style={s.machineVersion}>
+                {cells.version.older && <Icon name="circle-arrow-up" size={g.pillIcon} color={c.warning} />}
+                <Text style={[s.machineCellText, cells.version.older && s.stateWordWarning]}>{cells.version.text}</Text>
+              </View>
+            )}
+          </View>
+          <View style={[s.machineCell, s.machineCellFolders]}>
+            {!!cells?.totals && (
+              <>
+                <Text style={s.machineCellText}>{cells.totals[0]}</Text>
+                <Text style={[s.machineCellText, s.machineCellMute]}>{cells.totals[1]}</Text>
+              </>
+            )}
+          </View>
+          <View style={[s.machineCell, s.machineCellSeen]}>
+            {!!presence && (
+              <View style={s.machineSeen}>
+                <View style={[s.presenceDot, !presence.connected && s.presenceOff]} />
+                <Text style={s.machineCellText}>{presence.label}</Text>
+              </View>
+            )}
+          </View>
+          <View style={s.machineEnd}>
+            {!!state && <Badge>{state}</Badge>}
+            {actions}
+            {chip}
+          </View>
+        </View>
+      ) : (
+        <View style={[s.row, s.machinePhoneRow]}>
+          {tile}
+          <View style={[s.flex, s.stack]}>
+            <View style={s.machineHead}>
+              {identity}
+              <View style={s.machineEnd}>
+                {!!actions && <View style={s.machineHeadAction}>{actions}</View>}
+                {chip}
               </View>
             </View>
-          )}
-          {!!address && <Text style={s.caption}>{address}</Text>}
+            {!!segments.length && <DeviceLine segments={segments} />}
+            {!!address && <Text style={s.caption}>{address}</Text>}
+          </View>
         </View>
-        {wide && !!state && <Badge>{state}</Badge>}
-        {actions}
-        <RoleChip role={role} hub={hub} backup={backup} />
-      </View>
+      )}
     </View>
   );
 }

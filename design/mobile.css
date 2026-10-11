@@ -2105,3 +2105,114 @@
   top: 0;
   right: 0;
 }
+.m-row.m-machine.m-machine-top {
+  align-items: flex-start;
+}
+.m-tile.m-tile-top {
+  position: relative;
+  margin-top: calc((var(--m-touch-row-line) + var(--m-touch-caption-line) + var(--space-1) - 32px) / 2);
+}
+.m-state-dot.m-presence {
+  position: absolute;
+  top: calc(var(--space-1) * -1);
+  right: calc(var(--space-1) * -1);
+  box-shadow: 0 0 0 2px var(--m-surface);
+}
+.m-state-dot.m-state-off {
+  background: var(--m-mute);
+}
+.m-machine-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--m-touch-row-line);
+}
+.m-machine-head .m-identity-row {
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.m-machine-end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.m-button.m-square.m-small {
+  width: var(--m-button-small-height);
+  min-height: var(--m-button-small-height);
+  height: var(--m-button-small-height);
+  margin: calc((var(--m-touch-row-line) - var(--m-button-small-height)) / 2) 0;
+}
+.m-version-older {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.m-up {
+  display: inline-grid;
+  place-items: center;
+  color: var(--m-warning);
+}
+.m-up svg {
+  width: var(--m-pill-icon);
+  height: var(--m-pill-icon);
+}
+.m-row.m-machine.m-machine-cols {
+  gap: var(--space-2);
+}
+.m-stack.m-machine-name {
+  flex: 0 1 172px;
+  min-width: 0;
+}
+.m-machine-name .m-identity-row {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.m-button.m-caution.m-button-compact {
+  min-height: var(--m-button-small-height);
+  height: var(--m-button-small-height);
+  padding: 0 var(--m-pill-right) 0 var(--m-pill-left);
+  gap: var(--m-pill-gap);
+  font-size: var(--m-pill-font);
+  line-height: var(--m-pill-line);
+}
+.m-machine-cell {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--m-pill-font);
+  line-height: var(--m-pill-line);
+  color: var(--m-soft);
+  white-space: nowrap;
+}
+.m-machine-cell.m-machine-version {
+  width: 76px;
+}
+.m-machine-cell.m-machine-folders {
+  width: 66px;
+}
+.m-machine-cell.m-machine-seen {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: normal;
+}
+.m-machine-mute {
+  color: var(--m-mute);
+}
+.m-warning-ink {
+  color: var(--m-warning);
+}
+.m-seen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--m-pill-gap);
+}
+.m-chip.m-danger {
+  background: var(--m-danger-bg);
+  color: var(--m-danger);
+  font-size: var(--m-pill-font);
+  line-height: var(--m-pill-line);
+  font-weight: 600;
+}

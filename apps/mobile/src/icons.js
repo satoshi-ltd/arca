@@ -36,6 +36,7 @@ export const iconNames = {
   monitor: "Monitor",
   "shield-off": "ShieldOff",
   "shield-check": "ShieldCheck",
+  "circle-arrow-up": "CircleArrowUp",
   unlink: "Unlink",
   shield: "Shield",
   search: "Search",
@@ -86,6 +87,11 @@ export const iconNames = {
   "panel-left-open": "PanelLeftOpen",
 };
 export const icons = {
+  "circle-arrow-up": [
+    ["circle", { cx: "12", cy: "12", r: "10" }],
+    ["path", { d: "m16 12-4-4-4 4" }],
+    ["path", { d: "M12 16V8" }],
+  ],
   "map-pin": [
     [
       "path",

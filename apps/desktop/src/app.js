@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.42";
+const APP_VERSION = "0.7.43";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2822,6 +2822,7 @@ async function renderView(
   trackCatalog = false,
 ) {
   const content = $("#content");
+  if (view !== "devices") stopDevicesWatch();
   if (view !== "folders" || !detailId) delete content.dataset.detail;
   if (view === "folders") {
     if (status.role === "hub" || !catalog.length) catalog = status.volumes;
@@ -2849,7 +2850,7 @@ async function renderView(
     );
     html += '<div class="page">';
     if (status.role !== "hub" && !status.hub)
-      html += section("Hub connection", hubConnection());
+      html += hubConnectionSection();
     const shown = [...(status.role === "hub" ? status.volumes : selected)].sort((a, b) => nameOrder(a.name, b.name));
     const kinds = [
       ["Folders", shown.filter((v) => !v.gallery && !v.music)],
@@ -6606,7 +6607,7 @@ async function renderDetail(pending = false) {
   }
   if (status.role !== "hub" && !status.hub) {
     $("#content").innerHTML =
-      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} local`, (native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "") + galleryModeButton(v) + musicModeButton(v) + folderActionsMenu(v))}</div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}">${folderTab === "gallery" ? "" : section("Hub connection", hubConnection()) + `<div class="stats">${folderRetentionSummary(v)}</div>`}${await folderBrowser(v, [])}</div>`;
+      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} local`, (native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "") + galleryModeButton(v) + musicModeButton(v) + folderActionsMenu(v))}</div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}">${folderTab === "gallery" ? "" : hubConnectionSection() + `<div class="stats">${folderRetentionSummary(v)}</div>`}${await folderBrowser(v, [])}</div>`;
     icons();
     if (folderTab === "gallery") mountGallery(v.id);
     return;
@@ -6820,26 +6821,90 @@ function olderVersion(version, hubVersion) {
   for (let i = 0; i < 3; i++) if (own[i] !== hub[i]) return own[i] < hub[i];
   return false;
 }
-function deviceLine({ platform, version, hubVersion, folders, size, extra = [] }) {
-  const older = olderVersion(version, hubVersion);
-  const segments = [
-    platform ? `<span>${escape(platformLabel(platform))}</span>` : "",
-    older
-      ? `<span><span class="state-word state-wa" data-tooltip="Older than the hub’s v${escape(hubVersion)}" aria-label="${escape(`v${version}, older than the hub’s v${hubVersion}`)}">v${escape(version)}</span></span>`
-      : "",
-    Number.isSafeInteger(folders) && Number.isSafeInteger(size)
-      ? `<span><span>${countLabel(folders, "folder")}</span><span>${bytes(size)}</span></span>`
-      : "",
-    ...extra.filter(Boolean).map((text) => `<span>${escape(text)}</span>`),
-  ].filter(Boolean);
+function deviceLine({ platform, extra = [] }) {
+  const segments = [platform ? escape(platformLabel(platform)) : "", ...extra.filter(Boolean).map(escape)]
+    .filter(Boolean)
+    .map((text) => `<span>${text}</span>`);
   return `<p class="connection-line device-line"><span class="device-segs">${segments.join("")}</span></p>`;
+}
+const PRESENCE_WINDOW = 120000;
+function presence({ seen = [], now, offline = false, self = false }) {
+  if (self) return { connected: true };
+  const at = Math.max(...seen.map((value) => Date.parse(value || "")).filter(Number.isFinite));
+  if (!Number.isFinite(at)) return null;
+  const reference = Number.isFinite(now) ? now : Date.now();
+  return { connected: !offline && reference - at < PRESENCE_WINDOW, at };
+}
+function deviceCells({ version, hubVersion, folders, size, revoked = false, seen = null }) {
+  const older = !revoked && olderVersion(version, hubVersion);
+  const core = /^\d+\.\d+\.\d+/.exec(version || "")?.[0] || version;
+  const versionCell = !version
+    ? ""
+    : older
+      ? `<span class="device-older" data-tooltip="Older than the hub’s v${escape(hubVersion)}" aria-label="${escape(`v${version}, older than the hub’s v${hubVersion}`)}">${icon("circle-arrow-up")}v${escape(core)}</span>`
+      : core === version
+        ? `<span>v${escape(version)}</span>`
+        : `<span data-tooltip="v${escape(version)}" aria-label="v${escape(version)}">v${escape(core)}</span>`;
+  const totals =
+    Number.isSafeInteger(folders) && Number.isSafeInteger(size)
+      ? `<span>${countLabel(folders, "folder")}</span><span class="device-size">${bytes(size)}</span>`
+      : "";
+  const seenCell = seen
+    ? `<span class="device-seen-text"><span class="status-dot${seen.connected ? "" : " id"}" aria-hidden="true"></span>${seen.connected ? "Connected" : `Seen ${escape(date(seen.at))}`}</span>`
+    : "";
+  return `<div class="device-cells"><div class="device-cell device-version">${versionCell}</div><div class="device-cell device-folders">${totals}</div><div class="device-cell device-seen">${seenCell}</div></div>`;
 }
 function roleChip(role, backup = false) {
   const label = role === "hub" ? "Hub" : !role || role === "replica" ? "Replica" : role;
   return `<span class="role-set"><span class="tag${role === "hub" ? " hub" : ""}">${escape(label)}</span>${backup ? `<span class="tag full-backup">${icon("shield-check")}Full backup</span>` : ""}</span>`;
 }
-const deviceRow = ({ name, role, self = false, backup = false, platform = "", line, end = "", tone = "", dashed = false }) =>
-  `<article class="device-row device-entry${dashed ? " discovered" : ""}"><div class="tile large${role === "hub" ? " hub" : ""}${tone ? ` ${tone}` : ""}">${icon(role === "hub" ? "server" : self ? managedGlyph() : /ios|android|iphone|ipad/i.test(platform) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${self ? '<span class="tag self">This device</span>' : ""}</div>${line}</div><div class="row-end device-end">${end}${roleChip(role, backup)}</div></article>`;
+const deviceRow = ({ name, role, self = false, backup = false, platform = "", line, cells = "", end = "", tone = "", dashed = false }) =>
+  `<article class="device-row device-entry${dashed ? " discovered" : ""}"><div class="tile large${role === "hub" ? " hub" : ""}${tone ? ` ${tone}` : ""}">${icon(role === "hub" ? "server" : self ? managedGlyph() : /ios|android|iphone|ipad/i.test(platform) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${self ? '<span class="tag self">This device</span>' : ""}</div>${line}</div>${cells}<div class="row-end device-end">${end}${roleChip(role, backup)}</div></article>`;
+let rosterReadAt = 0,
+  rosterReadClock = 0,
+  devicesWatch = 0;
+const rosterAge = () => Math.max(performance.now() - rosterReadAt, Date.now() - rosterReadClock);
+function rosterRead(next) {
+  roster = next;
+  rosterReadAt = performance.now();
+  rosterReadClock = Date.now();
+}
+const rosterNow = () => Date.parse(rosterHub()?.reportedAt || "") + rosterAge();
+const hubPresence = () =>
+  view !== "devices" && rosterAge() >= PRESENCE_WINDOW
+    ? null
+    : presence({
+        seen: [rosterHub()?.reportedAt, roster?.machines?.find((m) => !m.isHub && m.machineId === status.id)?.lastContact],
+        now: rosterNow(),
+        offline: Boolean(roster?.offline || status.hubUnavailable),
+      });
+function stopDevicesWatch() {
+  clearInterval(devicesWatch);
+  devicesWatch = 0;
+}
+function watchDevices() {
+  if (devicesWatch) return;
+  devicesWatch = setInterval(async () => {
+    if (!ready || !status || daemonStopped || view !== "devices") return stopDevicesWatch();
+    const serial = renderSerial;
+    try {
+      const next = await api("/v1/machines");
+      if (!ready || !status || daemonStopped || view !== "devices" || serial !== renderSerial) return;
+      rosterRead(next);
+    } catch {
+      if (!ready || !status || daemonStopped || view !== "devices" || serial !== renderSerial) return;
+    }
+    if (
+      busy ||
+      pointerPressed ||
+      $("#dialog").open ||
+      document.querySelector('.details-menu[open], .dropdown [aria-expanded="true"]') ||
+      $("#content").contains(document.activeElement)
+    )
+      return;
+    await renderMachines(serial, false);
+  }, PRESENCE_WINDOW / 4);
+}
 const rosterHub = () => roster?.machines?.find((m) => m.isHub);
 async function renderMachines(serial = renderSerial, fetchData = true) {
   let issue = "";
@@ -6852,7 +6917,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     if (discoveryResult.status === "fulfilled")
       discovered = discoveryResult.value;
     else issue = discoveryResult.reason.message;
-    if (rosterResult.status === "fulfilled") roster = rosterResult.value;
+    if (rosterResult.status === "fulfilled") rosterRead(rosterResult.value);
     else issue ||= rosterResult.reason.message;
     if (issue)
       notice(issue, true, {
@@ -6884,7 +6949,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     : "";
   let machineRows = status.role === "replica" && status.hub ? hubConnection() : "";
   let html =
-    status.role === "replica" && !status.hub ? section("Hub connection", hubConnection()) : "";
+    status.role === "replica" && !status.hub ? hubConnectionSection() : "";
   const selfAddress = discovered?.tailscale?.self?.addresses?.[0];
   const hubVersion = rosterHub()?.version;
   if (status.role === "hub")
@@ -6895,11 +6960,15 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
       platform: status.platform,
       line: deviceLine({
         platform: status.platform,
-        folders: status.volumes.length,
-        size: status.volumes.reduce((n, v) => n + v.bytes, 0),
         extra: selfAddress
           ? ["Tailscale", selfAddress]
           : [!native && !["localhost", "127.0.0.1", "[::1]"].includes(location.hostname) ? location.host : ""],
+      }),
+      cells: deviceCells({
+        version: hubVersion || APP_VERSION,
+        folders: status.volumes.length,
+        size: status.volumes.reduce((n, v) => n + v.bytes, 0),
+        seen: presence({ self: true }),
       }),
     });
   else if (status.hub && status.role !== "replica") {
@@ -6920,9 +6989,13 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
       tone: hubError ? "wa" : "",
       line: deviceLine({
         platform: hub?.platform || p?.os || p?.arca.platform,
+        extra: [p ? "Tailscale" : "", new URL(status.hub).host],
+      }),
+      cells: deviceCells({
+        version: hub?.version,
         folders: hub?.selectedFolders,
         size: hub?.indexedBytes,
-        extra: [p ? "Tailscale" : "", new URL(status.hub).host],
+        seen: hubPresence(),
       }),
       end: hubError ? pill("Needs attention", "wa", "circle-alert") : "",
     });
@@ -6943,12 +7016,13 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
       self: true,
       backup: !!status.backup?.enabled,
       platform: status.platform,
-      line: deviceLine({
-        platform: status.platform,
+      line: deviceLine({ platform: status.platform }),
+      cells: deviceCells({
         version: APP_VERSION,
         hubVersion,
         folders: selected.length,
         size: selected.reduce((n, v) => n + v.bytes, 0),
+        seen: presence({ self: true }),
       }),
     });
   }
@@ -6969,12 +7043,14 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         platform,
         dashed: !d.last_seen,
         tone: d.revoked ? "er" : !d.last_seen ? "wa" : "",
-        line: deviceLine({
-          platform,
+        line: deviceLine({ platform }),
+        cells: deviceCells({
           version: report?.version,
           hubVersion,
           folders: report?.selectedFolders,
           size: report?.indexedBytes,
+          revoked: !!d.revoked,
+          seen: presence({ seen: [d.last_seen, report?.lastContact, report?.reportedAt], now: rosterNow(), offline: !!d.revoked }),
         }),
         end: d.revoked
           ? pill("Removed", "er", "unplug")
@@ -6996,12 +7072,18 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
               backup: !!m.backup?.enabled,
               platform: m.platform || "",
               tone: m.revoked ? "er" : "",
-              line: deviceLine({
-                platform: m.platform,
+              line: deviceLine({ platform: m.platform }),
+              cells: deviceCells({
                 version: m.version,
                 hubVersion,
                 folders: m.selectedFolders,
                 size: m.indexedBytes,
+                revoked: !!m.revoked,
+                seen: presence({
+                  seen: [m.lastContact, m.reportedAt],
+                  now: rosterNow(),
+                  offline: Boolean(roster?.offline || status.hubUnavailable || m.revoked),
+                }),
               }),
               end: m.revoked ? pill("Removed", "er", "unplug") : "",
             }),
@@ -7086,6 +7168,19 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         : "",
     ) + `<div class="page" id="devices-list">${html}</div>`;
   icons();
+  alignDeviceEnds();
+  document.fonts?.ready.then(() => view === "devices" && alignDeviceEnds());
+  watchDevices();
+}
+function alignDeviceEnds() {
+  for (const list of document.querySelectorAll("#devices-list .device-list")) {
+    list.style.removeProperty("--device-end");
+    const width = Math.max(0, ...[...list.querySelectorAll(".device-end")].map((end) => end.getBoundingClientRect().width));
+    if (width) list.style.setProperty("--device-end", `${Math.ceil(width)}px`);
+  }
+}
+function hubConnectionSection() {
+  return section("Hub connection", status.hub ? `<div class="device-list">${hubConnection()}</div>` : hubConnection());
 }
 function backupActivity() {
   const p = status.backup?.progress;
@@ -7143,9 +7238,13 @@ function hubConnection() {
       platform: hub?.platform || "",
       line: deviceLine({
         platform: hub?.platform,
+        extra: [vpn ? "Tailscale" : "", address.host],
+      }),
+      cells: deviceCells({
+        version: hub?.version,
         folders: hub?.selectedFolders,
         size: hub?.indexedBytes,
-        extra: [vpn ? "Tailscale" : "", address.host],
+        seen: hubPresence(),
       }),
       end:
         status.role === "replica"
@@ -7193,7 +7292,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   }
   if (view !== "settings" || serial !== renderSerial) return;
   let html = title("Settings", "") + '<div class="page">';
-  if (status.role !== "hub") html += section("Hub connection", hubConnection());
+  if (status.role !== "hub") html += hubConnectionSection();
   html += section(
     "This device",
     `<div class="settings-card">${setting("Device name", "Shown to other devices and in history.", `<input id="machine-name" aria-label="Device name" maxlength="100" value="${escape(status.name)}">`)}${setting("Default folder location", `<span class="path">${escape(status.root)}</span>`, button("Copy path", "copy", status.root, "secondary small-button", "copy"))}</div>`,
@@ -9336,6 +9435,7 @@ setInterval(() => {
   void checkWebApprovals();
 }, 3000);
 async function showLogin(message = "") {
+  stopDevicesWatch();
   clearStoredGallery();
   viewLoadSerial++;
   historyCache.clear();
@@ -9751,6 +9851,7 @@ function daemonUnavailable(error) {
   );
 }
 function showDaemonStopped(error) {
+  stopDevicesWatch();
   ready = false;
   daemonStopped = { error: error ?? daemonStopped?.error ?? "" };
   updateBrandActivity();

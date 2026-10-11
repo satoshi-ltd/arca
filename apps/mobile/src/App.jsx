@@ -155,7 +155,7 @@ import {
 } from "./recent-cache";
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize, unbroken } from "./format";
-import { deviceSegments } from "./device-line.js";
+import { deviceCells, deviceSegments, presence, rosterPresence } from "./device-line.js";
 import { FIRST_ROWS, browseEntries, revealWindow } from "./browse";
 import { deviceStatus, folderSections, historyTone, hubChecking, pullHeld } from "./home-data";
 import { FavoritesDrawer, FavoritesSection } from "./Favorites";
@@ -1382,6 +1382,10 @@ export default function App() {
       .catch((e) => setError(e.message));
   }
   const actionLocked = busy || !engine.current;
+  const devicePresence = rosterPresence(machines, {
+    offline: machinesSaved || status.offline,
+    connectionId: connection?.id,
+  });
   async function openFolder(f) {
     setEntries(
       folderLists.current.get(`${engine.current?.scope}:${f.id}`) || [],
@@ -3163,6 +3167,7 @@ export default function App() {
                                 connection={connection}
                                 name={catalog?.name}
                                 machine={machines?.find((m) => m.isHub)}
+                                presence={devicePresence.hub}
                                 busy={actionLocked}
                                 disconnect={disconnect}
                                 retry={() => run(() => client.refresh(), { hubOnly: true })}
@@ -3181,6 +3186,13 @@ export default function App() {
                                   folders: locals.filter((f) => f.selected).length,
                                   size: locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0),
                                 })}
+                                cells={deviceCells({
+                                  version: Application.nativeApplicationVersion || config.expo.version,
+                                  hubVersion: machines?.find((m) => m.isHub)?.version,
+                                  folders: locals.filter((f) => f.selected).length,
+                                  size: locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0),
+                                })}
+                                presence={presence({ self: true })}
                               />
                               {machines?.length ? (
                                 machines
@@ -3202,7 +3214,16 @@ export default function App() {
                                         hubVersion: machines.find((hub) => hub.isHub)?.version,
                                         folders: m.selectedFolders,
                                         size: m.indexedBytes,
+                                        revoked: m.revoked,
                                       })}
+                                      cells={deviceCells({
+                                        version: m.version,
+                                        hubVersion: machines.find((hub) => hub.isHub)?.version,
+                                        folders: m.selectedFolders,
+                                        size: m.indexedBytes,
+                                        revoked: m.revoked,
+                                      })}
+                                      presence={devicePresence.of(m)}
                                       role={m.role || "Replica"}
                                       backup={!!m.backup?.enabled}
                                       state={m.revoked ? "Removed" : ""}
@@ -3432,6 +3453,7 @@ export default function App() {
                               connection={connection}
                               name={catalog?.name}
                               machine={machines?.find((m) => m.isHub)}
+                              presence={devicePresence.hub}
                               busy={actionLocked}
                               disconnect={disconnect}
                               retry={() => run(() => client.refresh(), { hubOnly: true })}

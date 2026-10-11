@@ -2078,7 +2078,7 @@ test("online, the machines list keeps real states and never says last known", as
   assert.doesNotMatch(w.document.querySelector("#content").textContent, /last known|showing saved machine information/);
 });
 
-async function devicesPage(t, { status, machines, web = "", ready = () => true, discovery = { peers: [], tailscale: { state: "not-installed" } } }) {
+async function devicesPage(t, { status, machines, web = "", ready = () => true, discovery = { peers: [], tailscale: { state: "not-installed" } }, prepare, roster }) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-device-lines-"));
   init(home, { port: 0, name: "Local Mac" });
   const daemon = await start(home, { timer: false });
@@ -2096,7 +2096,7 @@ async function devicesPage(t, { status, machines, web = "", ready = () => true, 
       : route === "/v1/remote"
         ? { name: "casa", volumes: [] }
         : route === "/v1/machines"
-          ? { machines }
+          ? roster?.() || { machines }
           : route === "/v1/discovery"
             ? discovery
             : {};
@@ -2107,22 +2107,32 @@ async function devicesPage(t, { status, machines, web = "", ready = () => true, 
         invoke: async (command, args) => (command === "bootstrap" ? { setup: false } : answer(args.route)),
       },
     };
+  prepare?.(w);
   w.eval(`(async()=>{${script}\n})()`);
   await until(() => w.document.querySelector("#nav, .folder-card, .empty, #devices-list"));
   w.document.querySelector('[data-view="devices"]').click();
   await until(() => w.document.querySelectorAll(".device-entry").length >= machines.length && ready(w.document.querySelector("#devices-list")?.textContent || ""));
   const rows = [...w.document.querySelectorAll("#devices-list .device-entry")];
-  const named = (name) => rows.find((row) => row.querySelector(".row-tags strong").textContent === name);
+  const named = (name, list = rows) => list.find((row) => row.querySelector(".row-tags strong").textContent === name);
   const segments = (row) =>
     [...row.querySelectorAll(".device-line .device-segs > span")].map((segment) =>
       segment.children.length ? [...segment.children].map((part) => part.textContent) : segment.textContent,
     );
-  return { w, rows, named, segments };
+  const cells = (row) =>
+    [...row.querySelectorAll(".device-cells > .device-cell")].map((cell) =>
+      cell.children.length > 1 ? [...cell.children].map((part) => part.textContent) : cell.textContent,
+    );
+  return { w, rows, named, segments, cells };
 }
+const seenAt = (value) => `Seen ${new Date(value).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}`;
 
-test("a replica's device rows read OS · folders · size, the version only when older than the hub's, and end in their role chip", async (t) => {
+test("a replica's device rows read the OS under the name, then version, folders over size and last seen in aligned cells, and end in their role chip", async (t) => {
   const GB = 1024 ** 3;
-  const { w, rows, named, segments } = await devicesPage(t, {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  const at = (seconds) => new Date(clock - seconds * 1000).toISOString();
+  let perChild = 40.5,
+    fontsLoaded;
+  const { w, rows, named, segments, cells } = await devicesPage(t, {
     status: (daemon) => ({
       role: "replica",
       phase: "idle",
@@ -2138,33 +2148,60 @@ test("a replica's device rows read OS · folders · size, the version only when 
       id: "mac",
     }),
     machines: [
-      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 9, indexedBytes: 412 * GB },
-      { name: "Local Mac", role: "replica", platform: process.platform, machineId: "mac", version: "0.7.30", selectedFolders: 2, indexedBytes: 3 * GB },
-      { name: "umbrel", role: "replica", platform: "linux", machineId: "umbrel", version: "0.7.38", selectedFolders: 9, indexedBytes: 401 * GB, backup: { enabled: true } },
-      { name: "Yuri", role: "replica", platform: "android", machineId: "yuri", version: "0.7.35", selectedFolders: 2, indexedBytes: 3 * GB },
+      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 9, indexedBytes: 412 * GB, reportedAt: at(0) },
+      { name: "Local Mac", role: "replica", platform: process.platform, machineId: "mac", version: "0.7.30", selectedFolders: 2, indexedBytes: 3 * GB, lastContact: at(5000) },
+      { name: "umbrel", role: "replica", platform: "linux", machineId: "umbrel", version: "0.7.38-beta.12+build.2026", selectedFolders: 9, indexedBytes: 401 * GB, backup: { enabled: true }, lastContact: at(119), reportedAt: at(900) },
+      { name: "Yuri", role: "replica", platform: "android", machineId: "yuri", version: "0.7.35", selectedFolders: 2, indexedBytes: 3 * GB, lastContact: at(4000), reportedAt: at(121) },
       { name: "Fresh", role: "replica", platform: "ios", machineId: "fresh" },
-      { name: "Tablet", role: "replica", platform: "android", machineId: "tablet", version: "0.6.99", selectedFolders: 3, indexedBytes: 5 * GB, revoked: true },
+      { name: "Tablet", role: "replica", platform: "android", machineId: "tablet", version: "0.6.99", selectedFolders: 3, indexedBytes: 5 * GB, revoked: true, lastContact: at(90) },
     ],
     ready: (text) => text.includes("Tablet") && text.includes("412.0 GB"),
+    prepare: (w) => {
+      Object.defineProperty(w.document, "fonts", { value: { ready: new Promise((resolve) => (fontsLoaded = resolve)) } });
+      w.Element.prototype.getBoundingClientRect = function () {
+        return { width: this.classList.contains("device-end") ? perChild * this.children.length : 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 };
+      };
+    },
   });
   assert.equal(rows.length, 6);
+  const list = w.document.querySelector("#devices-list .device-list");
+  assert.equal(list.style.getPropertyValue("--device-end"), "81px", "every end takes the widest end's width");
+  perChild = 50;
+  fontsLoaded();
+  await until(() => list.style.getPropertyValue("--device-end") === "100px");
   const hub = named("casa");
-  assert.deepEqual(segments(hub), ["Linux", ["9 folders", "412.0 GB"], "127.0.0.1:49999"]);
+  assert.deepEqual(segments(hub), ["Linux", "127.0.0.1:49999"], "the name block keeps only the OS and the hub's address");
+  assert.deepEqual(cells(hub), ["v0.7.38", ["9 folders", "412.0 GB"], "Connected"]);
+  assert.equal(hub.querySelector(".device-seen .status-dot").className, "status-dot", "connected reads the --ok dot");
+  assert.deepEqual([...hub.children].map((el) => el.className), ["tile large hub", "row-main", "device-cells", "row-end device-end"], "the cells sit between the name block and the right edge");
   assert.deepEqual([...hub.querySelector(".row-end").children].map((el) => el.className), ["secondary small-button danger", "role-set"], "Disconnect… sits just before the chip");
   assert.equal(hub.querySelector(".role-set").innerHTML, '<span class="tag hub">Hub</span>');
   const own = rows.find((row) => row.querySelector(".tag.self"));
-  assert.deepEqual(segments(own), [{ darwin: "macOS", linux: "Linux", win32: "Windows" }[process.platform], ["2 folders", "3.0 GB"]], "only selected folders count, and this device's own running version, not its last stored report, decides");
+  assert.deepEqual(segments(own), [{ darwin: "macOS", linux: "Linux", win32: "Windows" }[process.platform]]);
+  const running = /const APP_VERSION = "([^"]+)";/.exec(fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8"))[1];
+  assert.deepEqual(cells(own), [`v${running}`, ["2 folders", "3.0 GB"], "Connected"], "only selected folders count, this device runs its own version and is always Connected");
   assert.equal(own.querySelector(".role-set").textContent, "Replica");
-  assert.deepEqual(segments(named("umbrel")), ["Linux", ["9 folders", "401.0 GB"]]);
+  assert.deepEqual(segments(named("umbrel")), ["Linux"]);
+  assert.deepEqual(cells(named("umbrel")), ["v0.7.38", ["9 folders", "401.0 GB"], "Connected"], "the freshest of last contact and report decides, within two minutes of the hub's clock");
+  assert.equal(named("umbrel").querySelector(".device-older"), null, "a current version is shown without the warning");
+  const suffixed = named("umbrel").querySelector(".device-version > span");
+  assert.equal(suffixed.dataset.tooltip, "v0.7.38-beta.12+build.2026", "the cell shows the x.y.z core and keeps the full version in its tooltip");
+  assert.equal(suffixed.getAttribute("aria-label"), "v0.7.38-beta.12+build.2026");
   assert.equal(named("umbrel").querySelector(".role-set").textContent, "ReplicaFull backup");
   assert.ok(named("umbrel").querySelector('.tag.full-backup [data-icon="shield-check"], .tag.full-backup svg'));
   const yuri = named("Yuri");
-  assert.deepEqual(segments(yuri), ["Android", ["v0.7.35"], ["2 folders", "3.0 GB"]]);
-  const version = yuri.querySelector(".state-word.state-wa");
+  assert.deepEqual(segments(yuri), ["Android"]);
+  assert.deepEqual(cells(yuri), ["v0.7.35", ["2 folders", "3.0 GB"], seenAt(at(121))]);
+  assert.equal(yuri.querySelector(".device-seen .status-dot").className, "status-dot id", "not connected reads the grey dot");
+  const version = yuri.querySelector(".device-version .device-older");
   assert.equal(version.dataset.tooltip, "Older than the hub’s v0.7.38");
   assert.equal(version.getAttribute("aria-label"), "v0.7.35, older than the hub’s v0.7.38");
-  assert.deepEqual(segments(named("Fresh")), ["iOS"], "an unreported device leaves folders, size and version out, never 0");
+  assert.ok(version.querySelector('[data-icon="circle-arrow-up"], svg'), "an older version carries the up-arrow");
+  assert.deepEqual(segments(named("Fresh")), ["iOS"]);
+  assert.deepEqual(cells(named("Fresh")), ["", "", ""], "an unreported device leaves its cells empty, never 0");
   const tablet = named("Tablet");
+  assert.deepEqual(cells(tablet), ["v0.6.99", ["3 folders", "5.0 GB"], seenAt(at(90))], "a removed device never reads Connected");
+  assert.equal(tablet.querySelector(".device-older"), null, "a removed device never shows the up-arrow");
   assert.deepEqual([...tablet.querySelector(".row-end").children].map((el) => el.className), ["pill er", "role-set"], "Removed sits just before the chip");
   assert.ok(tablet.querySelector(".tile.large.er"));
   for (const row of rows) {
@@ -2175,10 +2212,263 @@ test("a replica's device rows read OS · folders · size, the version only when 
   assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Linked|Backs up hub|Syncing|Up to date|Offline|Running| local/);
 });
 
-test("the hub's own Devices page draws its row like the others and keeps ⋯ before each chip without presence", async (t) => {
+test("with the hub unreachable a replica's saved rows never read Connected, and the hub row shows when it was last reached", async (t) => {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  const at = (seconds) => new Date(clock - seconds * 1000).toISOString();
+  const { named, cells } = await devicesPage(t, {
+    status: () => ({ role: "replica", phase: "offline", hubUnavailable: true, hubName: "casa", hubId: "hub", hub: "http://127.0.0.1:49999", backup: { enabled: false }, volumes: [], id: "mac" }),
+    machines: [
+      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024, reportedAt: at(30) },
+      { name: "Local Mac", role: "replica", platform: process.platform, machineId: "mac", lastContact: at(0) },
+      { name: "umbrel", role: "replica", platform: "linux", machineId: "umbrel", version: "0.7.38", lastContact: at(5) },
+    ],
+    ready: (text) => text.includes("umbrel") && text.includes("1.0 KB"),
+  });
+  assert.equal(cells(named("casa"))[2], seenAt(at(0)), "the replica's own last contact is its last successful hub request");
+  assert.equal(cells(named("umbrel"))[2], seenAt(at(5)));
+  assert.equal(cells(named("Local Mac"))[2], "Connected", "this device is always Connected");
+});
+
+test("presence ages while Devices stays open: a quiet timer rereads the roster, time advances between reads, and leaving stops it", async (t) => {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  const at = (seconds) => new Date(clock - seconds * 1000).toISOString();
+  let elapsed = 0,
+    failing = false,
+    reads = 0;
+  const timers = [],
+    cleared = [];
+  const machines = [
+    { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024, reportedAt: at(0) },
+    { credentialId: "mac", name: "macbook-pro", platform: "darwin", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024 },
+  ];
+  const { w, cells } = await devicesPage(t, {
+    status: () => ({
+      role: "hub",
+      name: "casa",
+      platform: "linux",
+      phase: "idle",
+      volumes: [{ id: "a", name: "a", selected: 1, bytes: 1024, files: 1 }],
+      devices: [{ id: "mac", name: "macbook-pro", role: "replica", last_seen: at(10), last_address: "100.84.10.2", backup_enabled: null, revoked: 0 }],
+    }),
+    machines,
+    roster: () => {
+      reads++;
+      if (failing) throw new Error("timed out");
+      return { machines };
+    },
+    prepare: (w) => {
+      w.performance.now = () => elapsed;
+      w.setInterval = (run, ms) => timers.push({ run, ms });
+      w.clearInterval = (id) => cleared.push(id);
+    },
+    ready: (text) => /macbook-promacOSv0\.7\.38/.test(text),
+  });
+  const mac = () => [...w.document.querySelectorAll("#devices-list .device-entry")].find((row) => /macbook-pro/.test(row.textContent));
+  assert.equal(cells(mac())[2], "Connected");
+  const watch = timers.findIndex((timer) => timer.ms === 30000);
+  assert.ok(watch >= 0, "Devices rereads the roster every 30 seconds");
+  failing = true;
+  elapsed = 111000;
+  const before = reads;
+  await timers[watch].run();
+  assert.equal(reads, before + 1);
+  await until(() => cells(mac())[2] === `Seen ${new Date(at(10)).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}`);
+  w.document.querySelector('[data-view="folders"]').click();
+  await until(() => cleared.includes(watch + 1));
+  const after = reads;
+  await timers[watch].run();
+  assert.equal(reads, after, "a stopped watch reads nothing");
+});
+
+test("after the computer sleeps the hub connection row ages by the wall clock too, so it never reads Connected on wake", async (t) => {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  const { w } = await devicesPage(t, {
+    status: () => ({ role: "replica", phase: "idle", hubName: "casa", hubId: "hub", hub: "http://127.0.0.1:49999", backup: { enabled: false }, volumes: [], id: "mac" }),
+    machines: [
+      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024, reportedAt: new Date(clock).toISOString() },
+      { name: "Local Mac", role: "replica", platform: process.platform, machineId: "mac", lastContact: new Date(clock).toISOString() },
+    ],
+    prepare: (w) => {
+      w.performance.now = () => 0;
+    },
+    ready: (text) => text.includes("1.0 KB"),
+  });
+  const hubSeen = () => w.document.querySelector("#content .device-entry .device-seen")?.textContent;
+  const wall = w.Date.now.bind(w.Date);
+  w.Date.now = () => wall() + 600000;
+  w.document.querySelector('[data-view="settings"]').click();
+  await until(() => hubSeen() !== undefined);
+  assert.equal(hubSeen(), "", "the monotonic clock paused in sleep, the wall clock did not");
+});
+
+function devicesWatchHarness() {
+  const timers = [],
+    cleared = [];
+  return {
+    timers,
+    cleared,
+    install(w) {
+      w.setInterval = (run, ms) => timers.push({ run, ms });
+      w.clearInterval = (id) => cleared.push(id);
+    },
+    watches: () => timers.flatMap((timer, index) => (timer.ms === 30000 ? [index + 1] : [])),
+    tick: (id) => timers[id - 1].run(),
+  };
+}
+const hubDevicesStatus = (clock) => ({
+  role: "hub",
+  name: "casa",
+  platform: "linux",
+  phase: "idle",
+  volumes: [{ id: "a", name: "a", selected: 1, bytes: 1024, files: 1 }],
+  devices: [{ id: "mac", name: "macbook-pro", role: "replica", last_seen: new Date(clock).toISOString(), last_address: "100.84.10.2", backup_enabled: null, revoked: 0 }],
+});
+const hubRoster = (clock, version = "0.7.38") => [
+  { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024, reportedAt: new Date(clock).toISOString() },
+  { credentialId: "mac", name: "macbook-pro", platform: "darwin", version, selectedFolders: 1, indexedBytes: 1024 },
+];
+
+test("the Devices watch draws nothing over the Service stopped page and stops with it", async (t) => {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  const harness = devicesWatchHarness();
+  let down = false,
+    reads = 0;
+  const { w } = await devicesPage(t, {
+    status: () => {
+      if (down) throw "The daemon is unavailable. Use Start service.";
+      return hubDevicesStatus(clock);
+    },
+    machines: hubRoster(clock),
+    roster: () => {
+      reads++;
+      return { machines: hubRoster(clock) };
+    },
+    prepare: harness.install,
+    ready: (text) => /macbook-promacOSv0\.7\.38/.test(text),
+  });
+  const [watch] = harness.watches();
+  const poll = harness.timers.find((timer) => timer.ms === 5000);
+  down = true;
+  await poll.run();
+  const content = w.document.querySelector("#content");
+  await until(() => /Service stopped/.test(content.textContent));
+  assert.ok(harness.cleared.includes(watch), "showing the stopped page stops the watch");
+  const before = reads;
+  await harness.tick(watch);
+  assert.match(content.textContent, /Service stopped/, "a late tick never redraws the old roster");
+  assert.equal(reads, before);
+});
+
+test("after the web session ends the Devices watch stops and a late tick reads nothing", async (t) => {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  const harness = devicesWatchHarness();
+  let expired = false,
+    reads = 0;
+  const { w } = await devicesPage(t, {
+    web: "http://192.168.1.10:17831/#/machines",
+    status: () => hubDevicesStatus(clock),
+    machines: hubRoster(clock),
+    roster: () => {
+      reads++;
+      return { machines: hubRoster(clock) };
+    },
+    prepare: (w) => {
+      harness.install(w);
+      const original = w.fetch;
+      w.fetch = async (route, options) =>
+        expired && /\/v1\/status/.test(String(route))
+          ? new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } })
+          : original(route, options);
+    },
+    ready: (text) => /macbook-promacOSv0\.7\.38/.test(text),
+  });
+  const [watch] = harness.watches();
+  expired = true;
+  w.document.querySelector('[data-view="devices"]').click();
+  await until(() => w.document.body.classList.contains("access-mode"));
+  assert.ok(harness.cleared.includes(watch), "showing the login stops the watch");
+  const before = reads;
+  await harness.tick(watch);
+  assert.equal(reads, before, "nothing reads the roster, or status.role on a null status");
+  assert.equal(w.document.querySelector("#devices-list"), null);
+});
+
+test("the Devices watch keeps an open dialog, menu, pressed pointer or focused control and runs one interval per visit", async (t) => {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  const harness = devicesWatchHarness();
+  let version = "0.7.38";
+  const { w } = await devicesPage(t, {
+    status: () => hubDevicesStatus(clock),
+    machines: hubRoster(clock),
+    roster: () => ({ machines: hubRoster(clock, version) }),
+    prepare: harness.install,
+    ready: (text) => /macbook-promacOSv0\.7\.38/.test(text),
+  });
+  assert.equal(harness.watches().length, 1, "repeated renders of Devices share one interval");
+  const [watch] = harness.watches();
+  const shown = () => w.document.querySelector("#devices-list")?.textContent || "";
+  const dialog = w.document.querySelector("#dialog");
+  const menu = () => w.document.querySelector("#devices-list .details-menu");
+  const control = () => w.document.querySelector('#content [data-action="invite"]');
+  const gates = [
+    ["dialog", () => dialog.setAttribute("open", ""), () => dialog.removeAttribute("open")],
+    ["menu", () => (menu().open = true), () => (menu().open = false)],
+    ["pointer", () => w.dispatchEvent(new w.Event("pointerdown")), () => w.dispatchEvent(new w.Event("pointerup"))],
+    ["focus", () => control().focus(), () => control().blur()],
+  ];
+  for (const [name, hold, release] of gates) {
+    version = version === "0.7.38" ? "0.7.37" : "0.7.38";
+    hold();
+    const focused = name === "focus" && control();
+    if (focused) assert.equal(w.document.activeElement, focused);
+    const before = shown();
+    await harness.tick(watch);
+    assert.equal(shown(), before, `${name}: no redraw`);
+    if (focused) assert.equal(w.document.activeElement, focused, "focus is kept");
+    release();
+    await harness.tick(watch);
+    assert.match(shown(), new RegExp(`macbook-promacOSv${version.replaceAll(".", "\\.")}`), `${name}: redraws once released`);
+  }
+  w.document.querySelector('[data-view="folders"]').click();
+  await until(() => harness.cleared.includes(watch));
+  w.document.querySelector('[data-view="devices"]').click();
+  await until(() => harness.watches().length === 2);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(harness.watches().length, 2, "re-entering Devices starts exactly one new interval");
+});
+
+test("away from Devices the hub connection row leaves last seen out once its roster is older than two minutes", async (t) => {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  let elapsed = 0;
+  const { w } = await devicesPage(t, {
+    status: () => ({ role: "replica", phase: "idle", hubName: "casa", hubId: "hub", hub: "http://127.0.0.1:49999", backup: { enabled: false }, volumes: [], id: "mac" }),
+    machines: [
+      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024, reportedAt: new Date(clock).toISOString() },
+      { name: "Local Mac", role: "replica", platform: process.platform, machineId: "mac", lastContact: new Date(clock).toISOString() },
+    ],
+    prepare: (w) => {
+      w.performance.now = () => elapsed;
+    },
+    ready: (text) => text.includes("1.0 KB"),
+  });
+  const hubSeen = () => w.document.querySelector("#content .device-entry .device-seen")?.textContent;
+  w.document.querySelector('[data-view="settings"]').click();
+  await until(() => /Hub connection/i.test(w.document.querySelector("#content").textContent) && hubSeen() !== undefined);
+  assert.equal(hubSeen(), "Connected", "a fresh roster still answers");
+  elapsed = 120000;
+  w.document.querySelector('[data-view="folders"]').click();
+  await until(() => !w.document.querySelector("#content .device-entry"));
+  w.document.querySelector('[data-view="settings"]').click();
+  await until(() => hubSeen() !== undefined);
+  assert.equal(hubSeen(), "", "a stale roster leaves the cell empty rather than claim Connected");
+});
+
+test("the hub's own Devices page draws its row like the others, keeps ⋯ before each chip and reads presence from last contact", async (t) => {
   const GB = 1024 ** 3;
-  const now = new Date().toISOString();
-  const { w, named, segments } = await devicesPage(t, {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  const at = (seconds) => new Date(clock - seconds * 1000).toISOString();
+  const now = at(10);
+  const { w, named, segments, cells } = await devicesPage(t, {
     status: () => ({
       role: "hub",
       name: "casa",
@@ -2187,12 +2477,13 @@ test("the hub's own Devices page draws its row like the others and keeps ⋯ bef
       volumes: [{ id: "a", name: "a", selected: 1, bytes: 4 * GB, files: 1 }],
       devices: [
         { id: "mac", name: "macbook-pro", role: "replica", last_seen: now, last_address: "100.84.10.2", backup_enabled: null, revoked: 0 },
-        { id: "umbrel", name: "umbrel", role: "replica", last_seen: now, last_address: "100.70.3.9", backup_enabled: 1, revoked: 0 },
-        { id: "tablet", name: "Tablet", role: "replica", last_seen: now, last_address: "100.88.7.30", backup_enabled: null, revoked: 1 },
+        { id: "umbrel", name: "umbrel", role: "replica", last_seen: at(600), last_address: "100.70.3.9", backup_enabled: 1, revoked: 0 },
+        { id: "tablet", name: "Tablet", role: "replica", last_seen: at(7200), last_address: "100.88.7.30", backup_enabled: null, revoked: 1 },
+        { id: "new", name: "new-laptop", role: "replica", last_seen: null, last_address: null, backup_enabled: null, revoked: 0 },
       ],
     }),
     machines: [
-      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 4 * GB },
+      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 4 * GB, reportedAt: at(0) },
       { credentialId: "mac", name: "macbook-pro", platform: "darwin", version: "0.7.36", selectedFolders: 9, indexedBytes: 36 * GB },
       { credentialId: "umbrel", name: "umbrel", platform: "linux", version: "0.7.38", selectedFolders: 9, indexedBytes: 401 * GB },
       { credentialId: "tablet", name: "Tablet", platform: "android" },
@@ -2205,11 +2496,18 @@ test("the hub's own Devices page draws its row like the others and keeps ⋯ bef
   });
   const hub = named("casa");
   assert.ok(hub.querySelector(".tag.self"));
-  assert.deepEqual(segments(hub), ["Linux", ["1 folder", "4.0 GB"], "Tailscale", "100.99.29.84"]);
+  assert.deepEqual(segments(hub), ["Linux", "Tailscale", "100.99.29.84"]);
+  assert.deepEqual(cells(hub), ["v0.7.38", ["1 folder", "4.0 GB"], "Connected"]);
   assert.equal(hub.querySelector(".row-end").children.length, 1, "no Running pill");
   assert.equal(hub.querySelector(".role-set").innerHTML, '<span class="tag hub">Hub</span>');
   const mac = named("macbook-pro");
-  assert.deepEqual(segments(mac), ["macOS", ["v0.7.36"], ["9 folders", "36.0 GB"]]);
+  assert.deepEqual(segments(mac), ["macOS"]);
+  assert.deepEqual(cells(mac), ["v0.7.36", ["9 folders", "36.0 GB"], "Connected"]);
+  assert.ok(mac.querySelector(".device-version .device-older"));
+  assert.deepEqual(cells(named("umbrel")), ["v0.7.38", ["9 folders", "401.0 GB"], seenAt(at(600))]);
+  assert.deepEqual(cells(named("Tablet")), ["", "", seenAt(at(7200))], "a removed device keeps when it was last seen");
+  assert.deepEqual(cells(named("new-laptop")), ["", "", ""], "an invitation never seen leaves its cells empty");
+  assert.deepEqual([...named("new-laptop").querySelector(".row-end").children].map((el) => el.className), ["pill wa", "details-menu", "role-set"]);
   assert.deepEqual([...mac.querySelector(".row-end").children].map((el) => el.className), ["details-menu", "role-set"], "⋯ sits just before the chip");
   assert.equal(mac.querySelector(".pill"), null, "a peer Tailscale reports down shows no Offline pill");
   assert.equal(named("umbrel").querySelector(".role-set").textContent, "ReplicaFull backup");
@@ -2225,16 +2523,17 @@ test("a LAN hub's own web page shows the address it is reached at, in host form"
     machines: [{ isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: GB }],
     ready: (text) => text.includes("192.168.1.10"),
   });
-  assert.deepEqual(segments(named("casa")), ["Linux", ["1 folder", "1.0 GB"], "192.168.1.10:17831"]);
+  assert.deepEqual(segments(named("casa")), ["Linux", "192.168.1.10:17831"]);
 });
 
 test("a backup connection's hub row names its address in host form, without the scheme", async (t) => {
-  const { named, segments } = await devicesPage(t, {
+  const { named, segments, cells } = await devicesPage(t, {
     status: () => ({ role: "backup", phase: "idle", hub: "http://192.168.1.10:17831", hubName: "casa", hubId: "hub", backup: { enabled: false }, volumes: [] }),
     machines: [{ isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024 }],
     ready: (text) => text.includes("1.0 KB"),
   });
-  assert.deepEqual(segments(named("casa")), ["Linux", ["1 folder", "1.0 KB"], "192.168.1.10:17831"]);
+  assert.deepEqual(segments(named("casa")), ["Linux", "192.168.1.10:17831"]);
+  assert.deepEqual(cells(named("casa")).slice(0, 2), ["v0.7.38", ["1 folder", "1.0 KB"]]);
 });
 
 test("device lines wrap between segments and never ellipsize", () => {
@@ -2252,6 +2551,29 @@ test("device lines wrap between segments and never ellipsize", () => {
   assert.match(rule(".device-segs > span"), /white-space: nowrap;/, "never mid-segment");
   assert.match(rule(".device-row .row-end.device-end"), /flex: none;[\s\S]*margin-left: auto;/, "the chip column stays right-aligned, on its own line under 760px");
   assert.match(rule(".device-row.device-entry .row-main"), /max-width: calc\(100% - var\(--detail-tile\) - var\(--space-3\)\);/, "a wrapping row keeps its name and line beside the tile");
+});
+
+test("device cells are fixed-width caption columns after a fixed name block, so they align from row to row", () => {
+  const style = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  const rule = (selector) => {
+    const at = style.indexOf(`\n${selector} {`);
+    assert.ok(at >= 0, selector);
+    return style.slice(at, style.indexOf("}", at));
+  };
+  assert.match(rule(".device-row.device-entry > .row-main"), /flex: 1 1 160px;\s+min-width: 160px;\s+max-width: 240px;/);
+  assert.match(style, /\n\.device-list \{\n  container-type: inline-size;\n\}/, "rows query their list's width");
+  assert.match(rule(".device-list .device-row .row-end.device-end"), /width: var\(--device-end, auto\);/, "every row's end takes the widest end of the page, so the columns align");
+  assert.match(rule(".device-cells"), /flex: none;/);
+  assert.match(rule(".device-cell"), /font-size: var\(--text-caption\);[\s\S]*color: var\(--soft\);[\s\S]*white-space: nowrap;/);
+  assert.match(rule(".device-cell.device-version"), /width: 72px;/);
+  assert.match(rule(".device-cell.device-folders"), /width: 80px;/);
+  assert.match(rule(".device-cell.device-seen"), /width: 136px;/);
+  assert.match(rule(".device-folders > .device-size"), /color: var\(--mute\);/);
+  assert.match(rule(".device-older"), /color: var\(--waFg\);/);
+  assert.match(rule(".device-older svg"), /width: var\(--pill-icon\);/);
+  assert.match(rule(".device-seen .status-dot"), /display: block;\s+position: static;/, "the presence dot shows at every width");
+  const narrow = style.slice(style.indexOf("@container (max-width: 580px) {"), style.indexOf("\n}\n", style.indexOf("@container (max-width: 580px) {")));
+  assert.match(narrow, /\.device-cells \{[^}]*flex-wrap: wrap;[^}]*margin-left: calc\(var\(--detail-tile\) \+ var\(--space-3\)\);/, "a narrow list moves the cells under the name, beside the tile column");
 });
 
 test("hub-only controls follow the hub's availability and a status-less 'Hub unavailable' failure reads as hub-only", async (t) => {

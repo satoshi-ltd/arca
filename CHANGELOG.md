@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.43 — 2026-10-11
+
+- Devices lines its rows up in columns: each device shows its Arca version (flagged with an arrow when older than the hub), its folders over their size and Connected or when it was last seen, between its name and its role chip; the Fold uses the same row, and the phone keeps one quiet line with presence as a dot on the device's icon and Disconnect as a compact button.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.42 — 2026-10-11
 
 - The tray popover opens inside the screen you clicked: above the click with a bottom taskbar, below it under a top menu bar or taskbar, never past any edge, including corners and a second monitor with a different scale (a Retina Mac with an external display included).
