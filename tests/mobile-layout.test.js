@@ -572,7 +572,7 @@ test("the mobile gallery renders from local files first and asks the hub only fo
   const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(gallery, /hub-previews|hubPreview\(/, "the removed browsing previews stay removed");
   assert.match(gallery, /render: withHub\(\(item\) =>\s*item\.kind === "video"\s*\? thumbnailFiles\.poster\(item\)\s*: displayRef\.current\(item\),\s*\),/);
-  assert.match(gallery, /hashOf: \(item, large\) =>\s*accepted\(hubContext\.current\.known, item, large\),/, "hub previews verify the local content through the memo");
+  assert.match(gallery, /hashOf: \(item, urgent\) =>\s*accepted\(hubContext\.current\.known, item, urgent\),/, "hub previews verify the local content through the memo");
   assert.match(gallery, /createAccepted\(\{\s+hashFile: \(uri\) => files\.hash\(uri\),\s+verifiedHash: replicaHash\(\{\s+cachedHash: \(key\) => store\.cachedHash\(key\),\s+keysOf: \(item\) => \[files\.work\(scope, volume, item\.path\), item\.uri\],/, "a photo the replica verified is not hashed again");
   assert.match(gallery, /previews\.clear\(\);\s+accepted\.clear\(\);/, "forgetting refusals forgets verifications");
   assert.match(gallery, /busy: \(error\) => \[409, 429\]\.includes\(error\.status\),/);
@@ -893,9 +893,9 @@ test("an open photo folder prepares every local preview in the background and sa
 
 test("the viewer's large preview falls back to the hub through the same module and the grid path is untouched", () => {
   const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8").replace(/\s+/g, " ");
-  assert.ok(gallery.includes("const renderLocal = (item, large = false, fallback = false) => galleryDisplay(item, {"));
-  assert.ok(gallery.includes("const display = (item, large = false, fallback = false) => large ? withHub(renderLocal, true)(item, true, fallback) : renderLocal(item, false, fallback);"));
-  assert.ok(gallery.includes("resolveLarge={(item, fallback = false) => display(item, true, fallback)}"));
+  assert.ok(gallery.includes('const renderLocal = (item, size = "thumb", fallback = false) => galleryDisplay(item, { size,'));
+  assert.ok(gallery.includes('const display = (item, size = "thumb", fallback = false, hubSize = size) => size === "thumb" ? renderLocal(item, size, fallback) : withHub(renderLocal, hubSize)(item, size, fallback);'));
+  assert.ok(gallery.includes('resolveLarge={(item, fallback = false) => display(item, "large", fallback)}'));
   assert.ok(gallery.includes("const displayRef = useRef(display); displayRef.current = display;"));
   assert.ok(gallery.indexOf("const display = (item") > gallery.indexOf("const withHub = useMemo("), "display is defined after the hub fallback it uses");
 });

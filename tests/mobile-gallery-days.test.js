@@ -4,7 +4,7 @@ import fs from "node:fs";
 import * as galleryDays from "../apps/mobile/src/gallery-days.js";
 import { galleryComplete, galleryCounts, mediaSummary, localMonths, memoryText, monthSections, shownMonths } from "../apps/mobile/src/gallery-days.js";
 import { monthLabel, railMonthLabel } from "../apps/mobile/src/gallery-timeline.js";
-import { GALLERY_HEADER, GALLERY_SECTION_GAP, galleryLayout, galleryWindow, itemOffset, memoryCard, stickyHeading } from "../apps/mobile/src/gallery-layout.js";
+import { GALLERY_HEADER, GALLERY_SECTION_GAP, galleryLayout, galleryWindow, hubCardSize, itemOffset, mediaAspect, memoryCard, stickyHeading } from "../apps/mobile/src/gallery-layout.js";
 import { levelColumns } from "../apps/mobile/src/gallery-scale.js";
 import { mediaSummary as desktopSummary } from "../apps/desktop/src/gallery-timeline-layout.js";
 
@@ -209,12 +209,18 @@ test("On this day cards are one grid row high at 4:3, at every level and width",
 
 test("an On this day photo is rendered at its drawn size times the pixel ratio", () => {
   const phone = galleryLayout([], 380, 4);
-  assert.equal(memoryCard(phone, 2).large, false, "a 2x phone card fits the 360 px thumbnail");
-  assert.equal(memoryCard(phone, 3.5).large, true, "a denser screen needs the large preview");
+  assert.equal(memoryCard(phone, 2).size, "thumb", "a 2x phone card fits the 360 px thumbnail");
+  assert.equal(memoryCard(phone, 3.5).size, "medium", "a denser screen needs the 720 px medium preview, not the large one");
   const fold = galleryLayout([], 1000, 6);
-  assert.equal(memoryCard(fold, 2.6).large, Math.ceil(memoryCard(fold, 2.6).width * 2.6) > 360);
+  assert.equal(Math.ceil(memoryCard(fold, 2.6).width * 2.6), 565);
+  assert.equal(memoryCard(fold, 2.6).size, "medium", "a Fold card between 360 and 720 device px uses the medium preview");
+  const wide = galleryLayout([], 1000, 4);
+  assert.ok(Math.ceil(memoryCard(wide, 2.6).width * 2.6) > 720);
+  assert.equal(memoryCard(wide, 2.6).size, "large", "only a card beyond 720 device px asks for the large preview");
   const gallery = read("../apps/mobile/src/FolderGallery.jsx");
-  assert.match(gallery, /card\.large && item\.kind !== "video"\s+\? await displayRef\.current\(item, true, true\)\s+: await io\.render\(item\)/);
+  assert.match(gallery, /card\.size !== "thumb" && item\.kind !== "video"\s+\? await displayRef\.current\(\s*item,\s*card\.size,\s*true,\s*hubCardSize\(card, mediaAspect\(item\)\),\s*\)\s+: await io\.render\(item\)/);
+  assert.match(gallery, /\}, \[memories, card\.size, card\.width, !card\.height, io, entryByPath\]\);/);
+  assert.match(gallery, /: withHub\(renderLocal, hubSize\)\(item, size, fallback\);/, "the local render keeps the card's size while the hub fallback uses its own");
   assert.match(gallery, /timelineItem\(memory, entryByPath\.get\(memory\.path\)\)/);
 });
 
@@ -251,4 +257,24 @@ test("zoom is the pinch alone: the Fold has no level control, and the pill and a
   assert.match(gallery, /\/v1\/gallery\/memories\?/);
   assert.match(gallery, /slice\(0, 3\)/);
   assert.match(gallery, /toValue: 0,\s+delay: duration\(1000\)/);
+});
+
+test("an On this day card falls back to the hub's large preview when the 720 px long-side medium would upscale its crop", () => {
+  const card = (width) => ({ size: "medium", pixels: { width, height: Math.ceil((width * 3) / 4) } });
+  assert.equal(hubCardSize(card(700), 4 / 3), "medium", "a 4:3 landscape at 720 x 540 covers a 700 px card");
+  assert.equal(hubCardSize(card(720), 4 / 3), "medium");
+  assert.equal(hubCardSize(card(700), 3 / 4), "large", "a portrait 540 x 720 would upscale on a 700 px card");
+  assert.equal(hubCardSize(card(540), 3 / 4), "medium", "but covers a 540 px card");
+  assert.equal(hubCardSize(card(500), 3), "large", "a panorama is only 240 px tall at 720 px wide");
+  assert.equal(hubCardSize(card(300), 3), "medium");
+  assert.equal(hubCardSize(card(540), null), "medium", "an unknown aspect trusts the medium up to 540 device px");
+  assert.equal(hubCardSize(card(541), null), "large", "and asks for large above it");
+  assert.equal(hubCardSize({ size: "thumb", pixels: { width: 300, height: 225 } }, null), "thumb");
+  assert.equal(hubCardSize({ size: "large", pixels: { width: 900, height: 675 } }, 1), "large");
+  assert.equal(mediaAspect({ width: 4032, height: 3024 }), 4 / 3);
+  assert.equal(mediaAspect({ width: 0, height: 3024 }), null);
+  assert.equal(mediaAspect({}), null);
+  const fold = memoryCard(galleryLayout([], 1000, 6), 2.6);
+  assert.deepEqual(fold.pixels, { width: 565, height: Math.ceil(fold.height * 2.6) });
+  assert.equal(hubCardSize(fold, null), "large", "a Fold card of unknown aspect asks the hub for large");
 });

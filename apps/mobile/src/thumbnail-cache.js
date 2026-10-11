@@ -1,5 +1,32 @@
 import { mediaKind } from "../../../packages/core/gallery-date.js";
 export const THUMB_WIDTH = 360;
+export const PREVIEW_VARIANTS = {
+  thumb: { width: THUMB_WIDTH, quality: 0.75, budget: 512 * 1024 ** 2 },
+  medium: { width: 720, quality: 0.75, budget: 128 * 1024 ** 2 },
+  large: { width: 2048, quality: 0.85, budget: 256 * 1024 ** 2 },
+};
+export function previewSize(devicePixels) {
+  if (devicePixels > PREVIEW_VARIANTS.medium.width) return "large";
+  return devicePixels > THUMB_WIDTH ? "medium" : "thumb";
+}
+export const cacheName = (variant, key) =>
+  `${variant === "large" || variant === "medium" ? `${variant}-` : ""}${key}.jpg`;
+const cacheVariant = (name) =>
+  name.startsWith("large-") ? "large" : name.startsWith("medium-") ? "medium" : "thumb";
+export function cacheEvictions(files, keep) {
+  const evicted = [];
+  for (const [variant, { budget }] of Object.entries(PREVIEW_VARIANTS)) {
+    const group = files.filter((file) => cacheVariant(file.name) === variant);
+    let size = group.reduce((sum, file) => sum + file.size, 0);
+    for (const file of group) {
+      if (size <= budget) break;
+      if (file.uri === keep) continue;
+      size -= file.size;
+      evicted.push(file);
+    }
+  }
+  return evicted;
+}
 // Cancellable preparation with bounded parallelism. A failed derivative never replaces an original.
 export async function prepareThumbnails(
   entries,
@@ -64,7 +91,7 @@ export function localPreviewIo(thumbnails) {
     render: (item) =>
       item.kind === "video"
         ? thumbnails.poster(item, true)
-        : thumbnails.render(item, false, true),
+        : thumbnails.render(item, "thumb", true),
   };
 }
 

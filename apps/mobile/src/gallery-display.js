@@ -33,22 +33,23 @@ export function nativeGallerySources({ store, media, scope, volume }) {
 // A replica shows only what this phone holds: its synchronized file or its own library asset.
 export async function galleryDisplay(
   item,
-  { large = false, fallback = false, nativeSource, localPreview },
+  { size = "thumb", fallback = false, nativeSource, localPreview },
 ) {
   const local = item.uri && !item.nativeSource && !item.upload;
   let failure = null;
   if (local) {
-    if (large && !fallback && !/\.hei[cf]$/i.test(item.path)) return item.uri;
+    if (size === "large" && !fallback && !/\.hei[cf]$/i.test(item.path))
+      return item.uri;
     try {
-      return await localPreview(item, large);
+      return await localPreview(item, size);
     } catch (error) {
       failure = error;
     }
   }
   const native = item.upload ? item.uri : await nativeSource?.(item);
   if (native) {
-    if (large && !fallback) return native;
-    return localPreview({ ...item, uri: native }, large);
+    if (size === "large" && !fallback) return native;
+    return localPreview({ ...item, uri: native }, size);
   }
   throw (
     failure ||

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.46 — 2026-10-11
+
+- On this day cards on the phone load the hub's 720 px preview when a thumbnail is too small, instead of the 2048 px one, with their own cache budget: less data and memory for the same sharpness.
+
+Needs: native build
+
 ## 0.7.45 — 2026-10-11
 
 - A podcast show with a new episode carries a small New pill in its cover's corner instead of a word under the title; the caption keeps the day, and screen readers still say New.

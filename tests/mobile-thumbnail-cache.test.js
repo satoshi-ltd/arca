@@ -3,12 +3,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { mergeTimeline, timelineItem } from "../apps/mobile/src/gallery-timeline.js";
 import {
+  PREVIEW_VARIANTS,
+  cacheEvictions,
+  cacheName,
   createFlusher,
   createLimiter,
   createPreviewQueue,
   localPreviewIo,
   prepareThumbnails,
   previewProgress,
+  previewSize,
   pruneSaved,
   savedThumbnail,
   stillDownloading,
@@ -122,7 +126,7 @@ test("photo thumbnails remember failures like video posters and forget them when
   const source = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
   assert.match(source, /const renderAttempt = rememberFailures\(4096, "Thumbnail unavailable"\);/);
   assert.match(source, /if \(state === "active"\) \{\s+posterAttempt\.clear\(\);\s+renderAttempt\.clear\(\);\s+\}/);
-  assert.match(source, /return large\s+\? produce\(\)\s+: renderAttempt\(`\$\{entry\.uri\}:\$\{entry\.size\}:\$\{entry\.mtime\}`, produce\);/, "only grid thumbnails are remembered; the viewer's large preview is retried on each open");
+  assert.match(source, /return size === "thumb"\s+\? renderAttempt\(`\$\{entry\.uri\}:\$\{entry\.size\}:\$\{entry\.mtime\}`, produce\)\s+: produce\(\);/, "only grid thumbnails are remembered; medium and large previews are retried on each request");
 });
 
 test("the limiter runs three renders at a time, serves visible work before background work and survives failures", async () => {
@@ -421,4 +425,41 @@ test("photos the hub holds that have not reached the phone are counted apart fro
   ];
   assert.equal(stillDownloading(items), 3);
   assert.equal(stillDownloading(items, (path) => path.startsWith("private/")), 2);
+});
+
+test("a tile picks the smallest preview that covers its device pixels", () => {
+  assert.equal(previewSize(300), "thumb");
+  assert.equal(previewSize(360), "thumb");
+  assert.equal(previewSize(361), "medium");
+  assert.equal(previewSize(720), "medium");
+  assert.equal(previewSize(721), "large");
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(PREVIEW_VARIANTS).map(([name, { width }]) => [name, width])),
+    { thumb: 360, medium: 720, large: 2048 },
+  );
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(PREVIEW_VARIANTS).map(([name, { quality }]) => [name, quality])),
+    { thumb: 0.75, medium: 0.75, large: 0.85 },
+    "the portable fallback encodes like the native renderer, which uses 75 up to 1024 px",
+  );
+  assert.equal(cacheName("thumb", "k"), "k.jpg");
+  assert.equal(cacheName("poster", "k"), "k.jpg");
+  assert.equal(cacheName("medium", "k"), "medium-k.jpg");
+  assert.equal(cacheName("large", "k"), "large-k.jpg");
+});
+
+test("medium previews have their own cache budget and never evict thumbnails or large previews", () => {
+  const MiB = 1024 ** 2;
+  const file = (name, size) => ({ name, size, uri: `file:///cache/${name}` });
+  const thumbs = [file("t1.jpg", 300 * MiB), file("t2.jpg", 200 * MiB)];
+  const large = [file("large-l1.jpg", 200 * MiB), file("large-l2.jpg", 50 * MiB)];
+  const medium = [file("medium-m1.jpg", 60 * MiB), file("medium-m2.jpg", 60 * MiB), file("medium-m3.jpg", 60 * MiB)];
+  assert.equal(PREVIEW_VARIANTS.medium.budget, 128 * MiB);
+  assert.equal(PREVIEW_VARIANTS.thumb.budget, 512 * MiB);
+  assert.equal(PREVIEW_VARIANTS.large.budget, 256 * MiB);
+  const all = [...medium, ...thumbs, ...large];
+  assert.deepEqual(cacheEvictions(all, null).map((entry) => entry.name), ["medium-m1.jpg"], "only the oldest medium preview goes, though medium alone is far below the thumbnail budget");
+  assert.deepEqual(cacheEvictions(all, "file:///cache/medium-m1.jpg").map((entry) => entry.name), ["medium-m2.jpg"], "the derivative just rendered is kept");
+  const over = [...thumbs, file("t3.jpg", 100 * MiB), ...large, file("large-l3.jpg", 10 * MiB), ...medium.slice(0, 2)];
+  assert.deepEqual(cacheEvictions(over, null).map((entry) => entry.name), ["t1.jpg", "large-l1.jpg"], "each variant is pruned against its own budget");
 });

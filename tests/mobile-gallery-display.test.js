@@ -14,9 +14,9 @@ test("replicas show only files on this phone, falling back to a local derivative
   };
   const calls = [];
   const options = {
-    large: true,
-    localPreview: async (item, large) => {
-      calls.push(`${item.uri}:${large ? "large" : "thumb"}`);
+    size: "large",
+    localPreview: async (item, size) => {
+      calls.push(`${item.uri}:${size}`);
       return "file:local.jpg";
     },
   };
@@ -46,6 +46,13 @@ test("replicas show only files on this phone, falling back to a local derivative
     galleryDisplay({ path: "hub-only.jpg", hash: "h" }, options),
     /not on this phone yet/,
   );
+  calls.length = 0;
+  assert.equal(await galleryDisplay(jpeg, { ...options, size: "medium" }), "file:local.jpg", "a medium tile never decodes the original");
+  assert.equal(
+    await galleryDisplay({ path: "a.jpg", hash: "h", uri: "content:pending", upload: "pending" }, { ...options, size: "medium" }),
+    "file:local.jpg",
+  );
+  assert.deepEqual(calls, ["file:photo.jpg:medium", "content:pending:medium"]);
 });
 
 test("native resolution uses scoped receipts, deduplicates reads and rejects changed or missing originals", async () => {
@@ -131,7 +138,7 @@ test("a downloaded image opens offline without consulting the native library or 
         uri: "file:///arca/other-phone.jpg",
       },
       {
-        large: true,
+        size: "large",
         nativeSource: unavailable,
         localPreview: unavailable,
         hubPreview: unavailable,

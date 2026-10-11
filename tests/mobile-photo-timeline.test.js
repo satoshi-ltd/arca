@@ -1284,13 +1284,14 @@ test("the gallery grid never decodes originals and keeps preparing thumbnails wh
   const open = app.slice(app.indexOf("  async function openFolder(f) {"), app.indexOf("  async function getHistory("));
   assert.doesNotMatch(open, /listFiles\(/, "the folder effect lists once, after the new folder is shown");
   assert.match(thumbnails, /if \(rendered\+\+ % 200 === 0\) pruneCache\(root, target\.uri\);/);
-  assert.match(thumbnails, /\["large-", 256 \* 1024 \*\* 2\],\s*\["", 512 \* 1024 \*\* 2\],/);
+  assert.match(thumbnails, /for \(const file of cacheEvictions\(files, keep\)\) file\.delete\(\);/);
   assert.match(thumbnails, /!file\.name\.endsWith\("\.part"\)/);
   const swift = fs.readFileSync(new URL("../apps/mobile/modules/arca-network/ios/Thumbnails.swift", import.meta.url), "utf8");
   assert.doesNotMatch(swift, /\? try await/, "Swift rejects try to the right of a ternary");
   assert.doesNotMatch(app, /status\.syncingVolume, status\.last\]/);
   assert.match(app, /return coalescedRun\(/);
-  assert.match(thumbnails, /nativeThumbnail\(\s*entry\.uri,\s*target\.uri,\s*large \? 2048 : THUMB_WIDTH,\s*!large,\s*false,\s*\)/);
+  assert.match(thumbnails, /nativeThumbnail\(\s*entry\.uri,\s*target\.uri,\s*width,\s*size !== "large",\s*false,\s*\)/);
+  assert.match(thumbnails, /const \{ width, quality \} = PREVIEW_VARIANTS\[size\];/);
   assert.match(thumbnails, /nativeThumbnail\(uri, target\.uri, THUMB_WIDTH, true, true\)/);
   assert.match(fs.readFileSync(new URL("../apps/mobile/src/thumbnail-cache.js", import.meta.url), "utf8"), /export const THUMB_WIDTH = 360;/);
   assert.match(viewer, /preview=\{item\.preview\}/);

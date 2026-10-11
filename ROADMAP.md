@@ -26,7 +26,27 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **REPLICA-GALLERY-ADDED-DATE** — Photos the hub dates by when they were added may read Date unknown on a replica
+  `bug · agent · low`
+  accept: first confirm with the hub's indexing finished; then a replica dates photos without capture metadata by their added date like the hub (SPEC "replicas date undated photos like the hub"), with a gallery test. Seen once on 2026-10-08 while the hub was still indexing.
+- **MOB-GALLERY-ALBUM-RELEASE** — Changing the selected albums while photos are pending is allowed
+  `feature · agent · low`
+  accept: changing the albums or the videos setting while uploads are pending or failed no longer fails with "Finish pending uploads…" (`gallery.js:102-116`); queued photos of an unticked album are dropped from the queue (maintainer decision; nothing already uploaded and nothing in the phone's library is touched); a replica test covers adding and removing an album with pending uploads; uploaded files are never touched.
+- **MOB-VIDEO-SAFE-AREA** — The photo viewer's video surface uses safe-area insets
+  `bug · agent · low`
+  accept: the video surface in the phone viewer uses the safe-area insets instead of the fixed 90 and 110 margins in `theme.js`; a layout test covers a device with a cutout.
+- **MUSIC-AUTO-PODCASTS** — Continue and progress badges in Android Auto
+  `feature · agent · normal`
+  accept: episode items in the car's Podcasts tab carry their completion status from the hub's positions so the car draws its partly played badge, and a Continue item comes first and starts the newest saved position at its hub offset; the car adds no controls and never deletes; JVM and library-file tests cover the tree. Device evidence follows in the car after a native build.
+- **MOB-SLEEP-NATIVE** — Sleep timer and position saving inside the playback service
+  `feature · agent · normal`
+  accept: the sleep timer and the 15-second position saves run in `MusicService` instead of the app's JavaScript, so they keep working after a JavaScript reload or with the app process asleep; the app only sets and shows the timer, and queued positions reach the hub when the app next runs; JVM tests cover expiry and End of episode. Needs a native build for device evidence.
+- **MOB-POSITIONS-REFRESH** — The phone refreshes saved positions while a library is open
+  `feature · agent · low`
+  accept: an open music library re-reads `/v1/audio-positions` periodically while connected and in the foreground (and on returning to the app), so a position saved on another device appears in the resume card and rows without leaving the folder; a test with a mocked api covers the refresh and its stop when the screen leaves.
+- **MUSIC-REMOVE-CONTINUE** — Remove an item from Continue
+  `feature · agent · low`
+  accept: a hub route clears one file's saved position (linked or admin, forwarded through a replica's outbox like a save), and the resume card's ⋯ offers Remove from Continue on desktop and the phone; route and client tests cover it, and the next newest position takes the card.
 
 ## In progress
 
@@ -36,19 +56,12 @@ _None._
 
 ### Builds and deployments
 
-- **SYNC-RACES-VERIFY** — Run the sync race fixes on Casa, a desktop and a phone
-  `verify · maintainer · normal`
-  accept: with Casa redeployed and a desktop and phone on the same build, a folder deleted on one device while the Mac holds a `.DS_Store` in it, a file added under a directory deleted elsewhere, an edit racing a deletion and a hub Stop syncing here then re-select all converge without a folder error, a revived deleted file or a lost edit (`tests/sync-races.test.js`, `tests/mobile-replica-races.test.js` model them).
-
 - **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on Casa
   `verify · maintainer · normal`
   accept: shipped installers and Casa carry the production dependencies (Sharp, exifr) and the gallery opens on both.
 
 ### Device checks
 
-- **VERIFY-PHONE-AUDIO-0739** — Phone playback survives imports and resumes synced podcast positions
-  `verify · maintainer · high`
-  accept: on a native build of v0.7.39 on the Fold, importing a file while music plays keeps it playing; an episode paused at a later point on the Mac resumes there from the show tile, Now Playing, the lock screen, Bluetooth and Android Auto; a music track resumes where the phone left it.
 - **OFFLINE-DEVICE** — Offline replicas on real machines
   `verify · maintainer · high`
   accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
@@ -61,9 +74,6 @@ _None._
 - **FOLD-THUMBNAILS** — Gallery thumbnails, posters and viewer
   `verify · maintainer · high`
   accept: on the candidate, grid thumbnails and video posters fill in while folders sync; HEIC photos open and the viewer shows the thumbnail immediately. Offline, downloaded photos remain viewable, unavailable originals are identified and failed derivatives can recover. Record timings and native errors for persistent grey tiles or crashes, including after suspension and cold start.
-- **VERIFY-TRAY-WIN-POSITION** — The tray popover on a real Windows desktop
-  `verify · maintainer · normal · depends: TRAY-WIN-POSITION`
-  accept: on a Windows desktop build, clicking the tray icon with the taskbar at the bottom, top, left and right opens the whole popover on screen next to the icon, also on a second monitor with different scaling; macOS still opens it under the menu-bar icon.
 - **WIN-UPDATE-WATCHER** — A failed Windows update gets the daemon back
   `verify · maintainer · high`
   accept: on a real Windows machine, with an update that fails after Arca closes (for example a locked installation file), the daemon is running again within about a minute without opening Arca, `update-watch.log` in the state directory says `restored` and `%TEMP%\arca-update-watch-*` is gone; a successful update logs `relaunched` and starts no second daemon.
@@ -93,9 +103,6 @@ _None._
   `verify · maintainer · normal`
   accept: after a Casa redeploy, the hub's web admin opens the music folder on its Artists tab, an A–Z index with a heading per letter, square covers and, on a wide window, a strip of each artist's other album covers, plays an album with the player bar through seeking, next, shuffle and repeat, the bar's title, artist and album open the album and the artist page from another folder, a playlist's table shows the Album column, Search Arca finds songs, albums and artists and opens them in the library, Shuffle plays the whole library and an artist, and Recent lists what that browser played; on the Mac build, off the library the sidebar card plays, pauses, skips and opens the album, the tray's Previous, Play/Pause and Next drive the player with the main window hidden, the tray's track brings the window forward on the album, and Quit Arca stops the music; after a desktop build, the Mac app as a replica that selected the folder does the same from its own copy with the hub unreachable; View folder and Library switch both ways; a playlist made from a track's Add to playlist… on the web admin and on the Mac replica appears in `Playlists/` as an `.m3u8` file on every selected device, plays in order, refuses to add the same track twice, renames, loses a track and deletes into History, and a track renamed in Arca keeps its place in the playlist; a hand-edited list that repeats a song plays it in order.
 
-- **VERIFY-ANDROID-AUTO** — Arca plays in the car
-  `verify · maintainer · normal`
-  accept: a sideloaded build on the Fold with Unknown sources enabled in Android Auto's developer settings appears on the Desktop Head Unit on the Mac and in the car; Arca opens on Artists with a heading per letter and each artist's newest album cover, Albums browse as a cover grid with covers, an album's and a playlist's tracks show their length (and the album in a playlist), the queue button reads the playing album's or playlist's name, the phone's Now playing opens the album with Go to album, and Recent lists what this phone played under Recently played; a track plays with lock-screen and steering-wheel controls; the car starts Arca cold with the phone locked and offline; a navigation prompt ducks the music and a phone call pauses and resumes it; disconnecting Bluetooth pauses; nothing auto-plays on connection; a playlist made on the phone or the desktop shows under Playlists in the car, read-only, and a song repeated in it plays from the entry picked; with a podcasts folder on the phone a Podcasts tab follows Recent, lists the shows as a cover grid that Albums no longer holds, and an episode plays on through its show with the show's name as the queue title; on the Desktop Head Unit with a playlist and a show on the phone, the car shows Artists, Albums, Playlists and Podcasts with Recent as the first entry of Albums when it allows four tabs, or all five tabs when it allows more; an MP3, an AAC (M4A), a FLAC, a WAV and an Ogg/Opus file each play on the Fold; `./gradlew :arca-network:testDebugUnitTest` passes.
 - **VERIFY-PODCASTS** — Podcasts, resume and sleep on real devices
   `verify · maintainer · normal`
   accept: after a Casa redeploy, a desktop build and a native build, a folder of podcast episodes shows Podcasts with shows newest first on the web admin, the Mac and the Fold; an episode paused on one device offers "Pick up where you left off" on the others and Continue starts within 15 s of where it stopped, also after the Mac replica saved it offline and reconnected; rows show their progress and time left; Delete… removes a track from every device and History restores it; the sleep timer's 30 minutes and End of episode stop playback on the web (with the fade), the Mac and the Fold (also with the screen off and while Android Auto plays) and the next session resumes there; an episode's player has no shuffle or repeat and the phone's −15/+30 work; one trail on desktop and one header back on the phone, and a podcasts-only folder shows no tabs.
@@ -225,6 +232,10 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 Suggested order for approval: preservation of user files, synchronization recovery, release reliability, then usability and cleanup. No task in this lane is approved for implementation.
 
+- **MOB-WALL-SHARP-TILES** — Photo wall tiles larger than 360 device px use the medium preview
+  `feature · agent · low`
+  accept: on the Fold's widest columns and other layouts where a wall tile exceeds 360 device px, the tile asks for the 720 px medium preview once it is on screen and idle, keeping the 360 px thumbnail as its first paint; scrolling performance and cache budgets are covered by tests.
+
 - **MOB-SPACE-PENDING-FOLDERS** — Selection counts what other selected folders still have to download
   `feature · agent · low`
   accept: selecting a second folder while the first is still downloading checks free space against both folders' remaining bytes plus headroom, so the refusal comes at selection instead of file by file during the sync.
@@ -262,16 +273,9 @@ Suggested order for approval: preservation of user files, synchronization recove
   `feature · agent · normal · depends: DEC-PHOTO-PLACES`
   accept: the hub reads GPS during gallery indexing and stores only a place label and a folded search text (city, district, province, country), never coordinates; names come from a bundled offline GeoNames extract (CC BY, attributed; no cloud geocoding, no new npm dependency), including Spanish and English alternate names for countries and first-level regions so "thailand" and "tailandia" both match; existing photos re-index once; Search Arca gains a Places group (one row per place with its count, opening the gallery filtered to it) on desktop, web and phone, offline on the phone from the synchronized labels; photos without GPS are explained in the empty result; tests cover lookup (Hua Hin, open sea, antimeridian, invalid coordinates), indexing with and without GPS, and the "hua hin"/"thailand"/"tailandia" queries on hub and phone. Feasibility study: GPS read 0.17 ms per photo, compact dataset about 2.5 MB plus alternate names, grid lookup about 13 µs.
 
-- **MOB-MEDIUM-PREVIEW** — The phone asks for the 720 px preview when a 360 px one is too small
-  `feature · agent · low`
-  accept: hub-preview.js, gallery-thumbnails.js and thumbnail-cache.js gain a medium variant with its own budget; On this day cards and other tiles between 360 and 720 device px use it instead of the 2048 px large preview; tests cover the size choice and the cache budget
-
 - **DESK-FORCED-POLL-DROPPED** — An event that arrives while a status poll is running can leave the window stale for 20–30 seconds
   `bug · agent · low`
   accept: `pollStatus(true)` (`apps/desktop/src/app.js`) no longer returns at once when a poll is already in flight; it runs once more right after that poll ends, so a connectivity event consumed during a slow `/v1/status` still updates the window within seconds; a JSDOM test holds one status read open, delivers an event cursor change and sees the second read follow. Suspected by the review of 0.7.5, not reproduced.
-- **REPLICA-GALLERY-ADDED-DATE** — Photos the hub dates by when they were added may read Date unknown on a replica
-  `bug · agent · low`
-  accept: first confirm with the hub's indexing finished; then a replica dates photos without capture metadata by their added date like the hub (SPEC "replicas date undated photos like the hub"), with a gallery test. Seen once on 2026-10-08 while the hub was still indexing.
 - **DESK-ONBOARDING-HUB-ADDRESS** — The onboarding Hub address field loses its placeholder and is forced to monospace
   `bug · agent · low`
   accept: the onboarding "Pair with your hub" step passes its placeholder `https://arca.your-network` in the placeholder position, as the Connect to hub dialog does, so the field shows it and only the typed value is monospace; a desktop test asserts the placeholder. Found by the design audit: `textField` takes no placeholder, so the sixth argument lands in `mono`.
@@ -285,36 +289,16 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **SITE-HERO-TRUE-UI** — The site hero draws the real app and covers no text on a phone
   `chore · agent · low`
   accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), at 390 px its floating "Phone & tablet" card covers no text, and a site test lists the elements.
-- **MOB-VIDEO-SAFE-AREA** — The photo viewer's video surface uses safe-area insets
-  `bug · agent · low`
-  accept: the video surface in the phone viewer uses the safe-area insets instead of the fixed 90 and 110 margins in `theme.js`; a layout test covers a device with a cutout.
-
 - **DESIGN-COVERAGE** — Draw the few shipped views the design kit still lacks
   `chore · agent · low`
   accept: `design/desktop.html` draws the gallery viewer with Info and the Daemon stopped page, and `design/mobile.html` draws History, Devices and Settings as the app renders them (the viewer is the "Now" that open motion tasks need); the design tests keep passing and no board is added.
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; the dated or status passages (about 16, for example "September 10 checkout", "implemented locally", "prepared locally, not deployed") and feature narration that SPEC already owns become short descriptions or pointers into SPEC; the three orphan sections after Public website are folded in or removed, the documents list names the five documents, line 152's "No commit or push without explicit authorization" no longer contradicts AGENTS' loop, and Casa's LAN IP no longer appears in the public README.
-- **MOB-GALLERY-ALBUM-RELEASE** — Changing the selected albums while photos are pending is allowed
-  `feature · agent · low`
-  accept: changing the albums or the videos setting while uploads are pending or failed no longer fails with "Finish pending uploads…" (`gallery.js:102-116`); after the maintainer chooses whether queued photos of an unticked album keep uploading (simplest, no new state) or are dropped, a replica test covers adding and removing an album with pending uploads; uploaded files are never touched.
-
 ### Music
 
-- **MUSIC-AUTO-PODCASTS** — Continue and progress badges in Android Auto
-  `feature · agent · normal`
-  accept: episode items in the car's Podcasts tab carry their completion status from the hub's positions so the car draws its partly played badge, and a Continue item comes first and starts the newest saved position at its hub offset; the car adds no controls and never deletes; JVM and library-file tests cover the tree. Device evidence follows under VERIFY-ANDROID-AUTO after a native build.
-- **MOB-SLEEP-NATIVE** — Sleep timer and position saving inside the playback service
-  `feature · agent · normal`
-  accept: the sleep timer and the 15-second position saves run in `MusicService` instead of the app's JavaScript, so they keep working after a JavaScript reload or with the app process asleep; the app only sets and shows the timer, and queued positions reach the hub when the app next runs; JVM tests cover expiry and End of episode. Needs a native build for device evidence.
-- **MOB-POSITIONS-REFRESH** — The phone refreshes saved positions while a library is open
-  `feature · agent · low`
-  accept: an open music library re-reads `/v1/audio-positions` periodically while connected and in the foreground (and on returning to the app), so a position saved on another device appears in the resume card and rows without leaving the folder; a test with a mocked api covers the refresh and its stop when the screen leaves.
-- **MUSIC-REMOVE-CONTINUE** — Remove an item from Continue
-  `feature · agent · low`
-  accept: a hub route clears one file's saved position (linked or admin, forwarded through a replica's outbox like a save), and the resume card's ⋯ offers Remove from Continue on desktop and the phone; route and client tests cover it, and the next newest position takes the card.
 - **MUSIC-CAR-SEARCH** — Search and voice requests in the car
-  `feature · agent · low · depends: VERIFY-ANDROID-AUTO`
+  `feature · agent · low`
   accept: `MusicService` answers library search and "play … on Arca" voice requests by title, artist and album over the published library, and plays the best match; JVM tests cover the matching. Today search commands are not offered.
 
 ## Later phases

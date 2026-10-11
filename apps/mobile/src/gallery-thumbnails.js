@@ -14,7 +14,15 @@ import {
   renderVideoPoster,
   videoPosterSource,
 } from "./video-playback";
-import { THUMB_WIDTH, createLimiter, isFlatCacheFile, nativeFirst } from "./thumbnail-cache";
+import {
+  PREVIEW_VARIANTS,
+  THUMB_WIDTH,
+  cacheEvictions,
+  cacheName,
+  createLimiter,
+  isFlatCacheFile,
+  nativeFirst,
+} from "./thumbnail-cache";
 const video = requireOptionalNativeModule("ExpoVideo")
   ? require("expo-video")
   : null;
@@ -36,10 +44,6 @@ AppState.addEventListener("change", (state) => {
     renderAttempt.clear();
   }
 });
-const budgets = [
-  ["large-", 256 * 1024 ** 2],
-  ["", 512 * 1024 ** 2],
-];
 let rendered = 0;
 // Derivatives are regenerable and flat; originals live elsewhere, so nested directories are disposable.
 function pruneCache(directory, keep) {
@@ -65,18 +69,7 @@ function pruneCache(directory, keep) {
   const files = entries
     .filter((file) => file instanceof File && !file.name.endsWith(".part"))
     .sort((a, b) => (a.modificationTime || 0) - (b.modificationTime || 0));
-  for (const [prefix, limit] of budgets) {
-    const group = files.filter(
-      (file) => file.name.startsWith("large-") === (prefix === "large-"),
-    );
-    let size = group.reduce((sum, file) => sum + file.size, 0);
-    for (const file of group) {
-      if (size <= limit) break;
-      if (file.uri === keep) continue;
-      size -= file.size;
-      file.delete();
-    }
-  }
+  for (const file of cacheEvictions(files, keep)) file.delete();
 }
 function cachedDerivative(
   entry,
@@ -92,10 +85,7 @@ function cachedDerivative(
       ),
     ),
   );
-  const target = new File(
-    root,
-    `${variant === "large" ? "large-" : ""}${key}.jpg`,
-  );
+  const target = new File(root, cacheName(variant, key));
   if (target.exists) return Promise.resolve(target.uri);
   if (jobs.has(key)) return jobs.get(key);
   const job = (async () => {
@@ -123,11 +113,12 @@ export const thumbnailFiles = {
   async exists(uri) {
     return isFlatCacheFile(uri, root.uri) && new File(uri).exists;
   },
-  render(entry, large = false, background = false) {
+  render(entry, size = "thumb", background = false) {
+    const { width, quality } = PREVIEW_VARIANTS[size];
     const produce = () =>
       cachedDerivative(
         entry,
-        large ? "large" : "thumb",
+        size,
         (target) =>
           nativeFirst(
             nativeThumbnail &&
@@ -136,24 +127,24 @@ export const thumbnailFiles = {
                 nativeThumbnail(
                   entry.uri,
                   target.uri,
-                  large ? 2048 : THUMB_WIDTH,
-                  !large,
+                  width,
+                  size !== "large",
                   false,
                 )),
             async () => {
               const result = await manipulateAsync(
                 entry.uri,
-                [{ resize: { width: large ? 2048 : THUMB_WIDTH } }],
-                { compress: large ? 0.85 : 0.75, format: SaveFormat.JPEG },
+                [{ resize: { width } }],
+                { compress: quality, format: SaveFormat.JPEG },
               );
               return result.uri;
             },
           ),
         background,
       );
-    return large
-      ? produce()
-      : renderAttempt(`${entry.uri}:${entry.size}:${entry.mtime}`, produce);
+    return size === "thumb"
+      ? renderAttempt(`${entry.uri}:${entry.size}:${entry.mtime}`, produce)
+      : produce();
   },
   async poster(item, background = false) {
     const uri = videoPosterSource(item);

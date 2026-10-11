@@ -88,8 +88,10 @@ import {
   GALLERY_HEADER,
   galleryLayout,
   galleryWindow,
+  hubCardSize,
   itemOffset,
   keptOffset,
+  mediaAspect,
   memoryCard,
   neededMonth,
   sectionAt,
@@ -327,9 +329,9 @@ export function FolderGallery({
         : undefined,
     [uploads?.store, uploads?.media, scope, volume, refreshKey],
   );
-  const renderLocal = (item, large = false, fallback = false) =>
+  const renderLocal = (item, size = "thumb", fallback = false) =>
     galleryDisplay(item, {
-      large,
+      size,
       fallback,
       nativeSource,
       localPreview: thumbnailFiles.render,
@@ -655,16 +657,16 @@ export function FolderGallery({
         context: () => ({
           linked: hubContext.current.linked,
           volume: hubContext.current.volume,
-          hashOf: (item, large) =>
-            accepted(hubContext.current.known, item, large),
+          hashOf: (item, urgent) =>
+            accepted(hubContext.current.known, item, urgent),
         }),
       }),
     [previews, accepted],
   );
-  const display = (item, large = false, fallback = false) =>
-    large
-      ? withHub(renderLocal, true)(item, true, fallback)
-      : renderLocal(item, false, fallback);
+  const display = (item, size = "thumb", fallback = false, hubSize = size) =>
+    size === "thumb"
+      ? renderLocal(item, size, fallback)
+      : withHub(renderLocal, hubSize)(item, size, fallback);
   const displayRef = useRef(display);
   displayRef.current = display;
   const io = useMemo(
@@ -690,8 +692,13 @@ export function FolderGallery({
         if (!item) continue;
         try {
           found[memory.path] =
-            card.large && item.kind !== "video"
-              ? await displayRef.current(item, true, true)
+            card.size !== "thumb" && item.kind !== "video"
+              ? await displayRef.current(
+                  item,
+                  card.size,
+                  true,
+                  hubCardSize(card, mediaAspect(item)),
+                )
               : await io.render(item);
         } catch {
           found[memory.path] = null;
@@ -702,7 +709,7 @@ export function FolderGallery({
     return () => {
       active = false;
     };
-  }, [memories, card.large, !card.height, io, entryByPath]);
+  }, [memories, card.size, card.width, !card.height, io, entryByPath]);
   const backgroundIo = useMemo(() => localPreviewIo(thumbnailFiles), []);
   const candidates = useMemo(
     () =>
@@ -1612,7 +1619,7 @@ export function FolderGallery({
         onIndexChange={(index) =>
           setViewer((value) => value && { ...value, index })
         }
-        resolveLarge={(item, fallback = false) => display(item, true, fallback)}
+        resolveLarge={(item, fallback = false) => display(item, "large", fallback)}
         info={(item) => hubPhotoInfo({ api, linked, volume, item })}
         folderName={folderName}
         resolveVideo={resolveVideo}

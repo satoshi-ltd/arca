@@ -1,5 +1,5 @@
 import { galleryTileSize } from "./gallery-scale.js";
-import { THUMB_WIDTH } from "./thumbnail-cache.js";
+import { PREVIEW_VARIANTS, previewSize } from "./thumbnail-cache.js";
 
 export const GALLERY_HEADER = 30;
 export const GALLERY_SECTION_GAP = 20;
@@ -88,7 +88,23 @@ export function stickyHeading(section, start) {
 export function memoryCard(layout, pixelRatio) {
   const height = layout.tile;
   const width = Math.round((height * 4) / 3);
-  return { width, height, large: Math.ceil(width * pixelRatio) > THUMB_WIDTH };
+  const pixels = Math.ceil(width * pixelRatio);
+  return {
+    width,
+    height,
+    pixels: { width: pixels, height: Math.ceil(height * pixelRatio) },
+    size: previewSize(pixels),
+  };
+}
+export const mediaAspect = (item) =>
+  item?.width > 0 && item?.height > 0 ? item.width / item.height : null;
+export function hubCardSize(card, aspect) {
+  if (card.size !== "medium") return card.size;
+  const edge = PREVIEW_VARIANTS.medium.width;
+  if (!(aspect > 0)) return card.pixels.width > edge * 0.75 ? "large" : "medium";
+  const width = aspect >= 1 ? edge : edge * aspect;
+  const height = aspect >= 1 ? edge / aspect : edge;
+  return card.pixels.width <= width && card.pixels.height <= height ? "medium" : "large";
 }
 // Rows added or removed above the viewport must not move the photos being looked at.
 export function keptOffset(previous, current, view) {
