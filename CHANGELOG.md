@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.52 — 2026-10-11
+
+- An open music library on the phone re-reads the saved positions every 30 seconds and when you return to the app, so a podcast position saved on another device shows in the resume card and rows without leaving the folder.
+
+Needs: native build
+
 ## 0.7.51 — 2026-10-11
 
 - On Android the sleep timer and the podcast position saves run inside the playback service, so they keep working with the app asleep or reloaded; the app only sets and shows the timer, and saved positions reach the hub the next time it runs.

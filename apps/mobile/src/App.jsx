@@ -995,13 +995,11 @@ export default function App() {
   }, [replica, audioIds, screen, folder, status.musicTick]);
   const audio = useAudioSession({
     enabled: !!connected,
+    watching: musicFolder && screen === "Folders" && !status.offline,
     api: (route, body) => client.api(route, body),
     device: { id: connection?.id ?? null, name },
     scope: () => engine.current?.scope,
   });
-  useEffect(() => {
-    if (musicFolder && connected) audio.refresh();
-  }, [musicFolder, folder?.id, connected]);
   useEffect(() => {
     if (engine.current && audio.loaded) publishSynced(engine.current, audio.positions, connection?.id ?? null).catch(() => {});
   }, [audio.positions, connection?.id]);

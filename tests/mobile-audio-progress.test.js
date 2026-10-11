@@ -44,6 +44,7 @@ import {
   sleepOptions,
   sleepRemaining,
 } from "../apps/mobile/src/sleep-timer.js";
+import { mergeHubPositions, singleFlight, startPositionRefresh } from "../apps/mobile/src/audio-refresh.js";
 import { folderSections } from "../apps/mobile/src/home-data.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "apps", "mobile", "src");
@@ -312,10 +313,10 @@ test("the phone reads hub positions with its device credential and leaves saving
   assert.match(session, /native\.addListener\("musicState"/);
   assert.doesNotMatch(session, /sleepCheck|startSleep|sleepRef|positionToSave|shouldSave|toggle|lookup|seeked/, "the app runs no timer and makes no save decision of its own");
   const app = read("App.jsx");
-  assert.match(app, /const audio = useAudioSession\(\{\s+enabled: !!connected,\s+api: \(route, body\) => client\.api\(route, body\),\s+device: \{ id: connection\?\.id \?\? null, name \},\s+scope: \(\) => engine\.current\?\.scope,/);
+  assert.match(app, /const audio = useAudioSession\(\{\s+enabled: !!connected,\s+watching: musicFolder && screen === "Folders" && !status\.offline,\s+api: \(route, body\) => client\.api\(route, body\),\s+device: \{ id: connection\?\.id \?\? null, name \},\s+scope: \(\) => engine\.current\?\.scope,/);
   assert.match(app, /if \(at > 0\) await player\.command\("seek", at \* 1000\);/, "a saved row resumes where it stopped");
   assert.match(app, /positions=\{audio\.positions\}\s+loaded=\{audio\.loaded\}\s+command=\{musicCommand\}\s+deviceId=\{connection\?\.id\}/);
-  assert.match(session, /const \{ positions: rows, finished \} = await deps\.current\.api\("\/v1\/audio-positions"\);\s+const next = positionMap\(rows, finished\);\s+setPositions\(next\);\s+setLoaded\(positionSignature\(next\)\);/, "the hub's finished marks join the positions and each load is signed");
+  assert.match(session, /const \{ positions: rows, finished \} = await deps\.current\.api\("\/v1\/audio-positions"\);\s+const next = apply\(\(current\) => mergeHubPositions\(current, rows, finished, deps\.current\.device\.id\)\);\s+setLoaded\(positionSignature\(next\)\);/, "the hub's finished marks join the positions and each load is signed");
   assert.match(app, /sleep=\{audio\.sleep\}\s+setSleep=\{audio\.setSleep\}\s+positions=/);
 });
 
@@ -473,4 +474,120 @@ test("an episode plays without music's repeat, and music gets its repeat back af
   assert.equal(await spokenRepeat(false, null, quiet), null);
   assert.deepEqual(quiet.sent, [], "music alone never touches repeat");
   assert.match(read("App.jsx"), /musicRepeat\.current = await spokenRepeat\(!!track\.podcast, musicRepeat\.current, player\);\n\s+await player\.play\(/);
+});
+
+const fakeTimer = () => {
+  const jobs = new Map();
+  let id = 0;
+  return {
+    set: (fn) => (jobs.set(++id, fn), id),
+    clear: (handle) => jobs.delete(handle),
+    tick: () => Promise.all([...jobs.values()].map((fn) => fn())),
+    live: () => jobs.size,
+  };
+};
+
+const hubRow = (updated, position, device = "other") => ({ volume: "a1", path: "Show/ep.mp3", hash: "h", position, duration: 4200, updated, device });
+const readFile = read;
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("a hub read adds a position saved elsewhere and never replaces a newer own row with an older hub row", () => {
+  const key = "a1\0Show/ep.mp3";
+  const mine = remember(new Map(), { volume: "a1", path: "Show/ep.mp3", hash: "h", position: 900, duration: 4200 }, { id: "phone" }, 5000);
+  assert.equal(mergeHubPositions(mine, [hubRow(4000, 100)], [], "phone").get(key).position, 900);
+  assert.equal(mergeHubPositions(mine, [hubRow(6000, 1500)], [], "phone").get(key).position, 1500);
+  const added = mergeHubPositions(mine, [hubRow(4000, 100), { ...hubRow(7000, 50), path: "Show/new.mp3" }], [], "phone");
+  assert.equal(added.get("a1\0Show/new.mp3").position, 50);
+  assert.equal(mergeHubPositions(mine, [], [], "phone").get(key).position, 900, "an own save not yet at the hub survives a read");
+  assert.equal(mergeHubPositions(new Map([[key, hubRow(1, 10)]]), [], [], "phone").size, 0, "a row the hub no longer lists is dropped");
+});
+
+test("the positions refresh reads on a quiet interval, only in the foreground, never overlaps, reads on return and stops", async () => {
+  const timer = fakeTimer();
+  let state = "active";
+  let calls = 0;
+  let release = null;
+  let wake = null;
+  const stop = startPositionRefresh({
+    refresh: () => {
+      calls++;
+      return new Promise((resolve) => (release = resolve));
+    },
+    interval: 30000,
+    foreground: () => state === "active",
+    onForeground: (run) => ((wake = run), () => (wake = null)),
+    timer,
+  });
+  assert.equal(calls, 1, "it reads at once");
+  await timer.tick();
+  assert.equal(calls, 1, "a read still in flight is not overlapped");
+  release();
+  await settle();
+  state = "background";
+  await timer.tick();
+  assert.equal(calls, 1, "nothing is read in the background");
+  state = "active";
+  wake();
+  assert.equal(calls, 2, "returning to the app reads at once");
+  release();
+  await settle();
+  timer.tick();
+  assert.equal(calls, 3);
+  release();
+  await settle();
+  stop();
+  assert.equal(timer.live(), 0);
+  assert.equal(wake, null);
+  await timer.tick();
+  assert.equal(calls, 3, "a stopped refresh reads no more");
+});
+
+test("the phone watches positions only while a music folder is open, connected and not offline, and still publishes the synced file", () => {
+  const session = read("audio-session.js");
+  assert.match(session, /if \(!enabled \|\| !watching\) return undefined;\s+return startPositionRefresh\(/);
+  assert.match(session, /AppState\.currentState === "active"/);
+  assert.doesNotMatch(read("App.jsx"), /audio\.refresh\(\)/);
+  assert.match(read("App.jsx"), /\}, \[audio\.positions, connection\?\.id\]\);/);
+});
+
+test("a read that changes nothing keeps the same positions, and a changed row replaces them", () => {
+  const key = "a1\0Show/ep.mp3";
+  const known = mergeHubPositions(new Map(), [hubRow(4000, 100)], [], "phone");
+  assert.equal(mergeHubPositions(known, [hubRow(4000, 100)], [], "phone"), known);
+  assert.notEqual(mergeHubPositions(known, [hubRow(4000, 200)], [], "phone"), known);
+  assert.notEqual(mergeHubPositions(known, [hubRow(5000, 100)], [], "phone"), known);
+  assert.notEqual(mergeHubPositions(known, [hubRow(4000, 100), { ...hubRow(4000, 1), path: "x.mp3" }], [], "phone"), known);
+  assert.notEqual(mergeHubPositions(known, [], [], "phone"), known);
+  assert.equal(mergeHubPositions(new Map(), [], [], "phone").size, 0);
+  assert.equal(known.get(key).position, 100);
+  const session = read("audio-session.js");
+  assert.match(session, /if \(next !== known\.current\) \{\s+known\.current = next;\s+setPositions\(next\);/);
+});
+
+test("the merge settles ties, a missing device id, finished own rows and a finished hub row", () => {
+  const key = "a1\0Show/ep.mp3";
+  const own = (at, position) => remember(new Map(), { volume: "a1", path: "Show/ep.mp3", hash: "h", position, duration: 4200 }, { id: "phone" }, at);
+  assert.equal(mergeHubPositions(own(5000, 900), [hubRow(5000, 100)], [], "phone").get(key).position, 100, "a tie takes the hub row");
+  assert.equal(mergeHubPositions(own(5000, 900), [], [], null).size, 0, "without a device id no row counts as own");
+  const finished = own(5000, 4190);
+  assert.equal(finished.get(key).finished, true);
+  assert.equal(mergeHubPositions(finished, [], [], "phone").get(key).finished, true, "an own finished row not yet at the hub stays");
+  assert.equal(mergeHubPositions(finished, [hubRow(4000, 100)], [], "phone").get(key).finished, true, "a newer own finished row beats an older hub row");
+  const older = mergeHubPositions(own(3000, 900), [], [{ volume: "a1", path: "Show/ep.mp3", updated: 4000 }], "phone");
+  assert.equal(older.get(key).finished, true, "a hub finished row beats an older own row");
+});
+
+test("concurrent reads share one request", async () => {
+  let calls = 0;
+  const shared = singleFlight(async () => {
+    calls++;
+    await settle();
+  });
+  await Promise.all([shared(), shared()]);
+  assert.equal(calls, 1);
+  await shared();
+  assert.equal(calls, 2);
+  const session = readFile("audio-session.js");
+  assert.match(session, /read\.current \|\|= singleFlight\(/);
+  assert.match(session, /enabled \? read\.current\(\) : Promise\.resolve\(\)/);
 });

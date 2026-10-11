@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-POSITIONS-REFRESH** — The phone refreshes saved positions while a library is open
-  `feature · agent · low`
-  accept: an open music library re-reads `/v1/audio-positions` periodically while connected and in the foreground (and on returning to the app), so a position saved on another device appears in the resume card and rows without leaving the folder; a test with a mocked api covers the refresh and its stop when the screen leaves.
 - **MUSIC-REMOVE-CONTINUE** — Remove an item from Continue
   `feature · agent · low`
   accept: a hub route clears one file's saved position (linked or admin, forwarded through a replica's outbox like a save), and the resume card's ⋯ offers Remove from Continue on desktop and the phone; route and client tests cover it, and the next newest position takes the card.

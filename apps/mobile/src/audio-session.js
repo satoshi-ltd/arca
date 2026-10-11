@@ -2,30 +2,41 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { native } from "./private-network";
 import { player, playerAvailable } from "./music-player";
-import { positionMap, positionSignature, remember } from "./audio-positions.js";
+import { positionSignature, remember } from "./audio-positions.js";
 import { drainOutbox } from "./audio-outbox.js";
+import { mergeHubPositions, singleFlight, startPositionRefresh } from "./audio-refresh.js";
 import { SLEEP_OFF, sameSleep, sleepFromState } from "./sleep-timer.js";
 
 const DRAIN_INTERVAL = 5000;
 
-export function useAudioSession({ enabled, api, device, scope }) {
+export function useAudioSession({ enabled, watching = false, api, device, scope }) {
   const [positions, setPositions] = useState(() => new Map());
   const [loaded, setLoaded] = useState("");
   const [sleep, setSleepState] = useState(SLEEP_OFF);
   const latest = useRef({ playing: false, sleeping: false });
   const draining = useRef(false);
+  const known = useRef(positions);
   const deps = useRef({ api, device, scope });
   deps.current = { api, device, scope };
 
-  const refresh = useCallback(async () => {
-    if (!enabled) return;
+  const apply = useCallback((change) => {
+    const next = change(known.current);
+    if (next !== known.current) {
+      known.current = next;
+      setPositions(next);
+    }
+    return next;
+  }, []);
+
+  const read = useRef(null);
+  read.current ||= singleFlight(async () => {
     try {
       const { positions: rows, finished } = await deps.current.api("/v1/audio-positions");
-      const next = positionMap(rows, finished);
-      setPositions(next);
+      const next = apply((current) => mergeHubPositions(current, rows, finished, deps.current.device.id));
       setLoaded(positionSignature(next));
     } catch {}
-  }, [enabled]);
+  });
+  const refresh = useCallback(() => (enabled ? read.current() : Promise.resolve()), [enabled]);
 
   const drain = useCallback(async () => {
     if (draining.current) return;
@@ -38,14 +49,12 @@ export function useAudioSession({ enabled, api, device, scope }) {
         send: (body) => deps.current.api("/v1/audio-position", body),
       });
       if (sent.length)
-        setPositions((known) =>
-          sent.reduce((next, entry) => remember(next, entry, deps.current.device, entry.at), known),
-        );
+        apply((current) => sent.reduce((next, entry) => remember(next, entry, deps.current.device, entry.at), current));
     } catch {
     } finally {
       draining.current = false;
     }
-  }, []);
+  }, [apply]);
 
   const observe = useCallback((state) => {
     if (!state) return;
@@ -78,6 +87,20 @@ export function useAudioSession({ enabled, api, device, scope }) {
       clearInterval(flush);
     };
   }, [enabled, observe, refresh, drain]);
+
+  useEffect(() => {
+    if (!enabled || !watching) return undefined;
+    return startPositionRefresh({
+      refresh,
+      foreground: () => AppState.currentState === "active",
+      onForeground: (run) => {
+        const watch = AppState.addEventListener("change", (state) => {
+          if (state === "active") run();
+        });
+        return () => watch.remove();
+      },
+    });
+  }, [enabled, watching, refresh]);
 
   const setSleep = useCallback(
     (value) => {
