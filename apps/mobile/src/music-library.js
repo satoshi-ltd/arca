@@ -409,28 +409,25 @@ export function nativeLibrary(library, scope) {
       duration: track.duration,
       cover: track.cover,
     })),
-    albums: [
-      ...library.albumOrder.map((id) => {
-        const album = library.albums.get(id);
-        return {
-          id,
-          title: album.title,
-          artist: album.artist,
-          cover: album.cover,
-          tracks: album.tracks,
-        };
-      }),
-      ...(library.showOrder || [])
-        .map((id) => library.shows.get(id))
-        .filter((show) => show.tracks.length)
-        .map((show) => ({
-          id: show.id,
-          title: show.name,
-          artist: show.name,
-          cover: show.cover,
-          tracks: show.tracks,
-        })),
-    ],
+    albums: library.albumOrder.map((id) => {
+      const album = library.albums.get(id);
+      return {
+        id,
+        title: album.title,
+        artist: album.artist,
+        cover: album.cover,
+        tracks: album.tracks,
+      };
+    }),
+    shows: (library.showOrder || [])
+      .map((id) => library.shows.get(id))
+      .filter((show) => show.tracks.length)
+      .map((show) => ({
+        id: show.id,
+        title: show.name,
+        cover: show.cover,
+        tracks: show.tracks,
+      })),
     artists: library.artists.map((artist) => ({
       id: artist.id,
       name: artist.name,

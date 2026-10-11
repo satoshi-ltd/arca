@@ -432,6 +432,153 @@ class MusicTreeTest {
     assertEquals("AB#", MusicTree.sortKey("Ab", 3))
   }
 
+  private fun podcasts(episodes: Map<String, Int>, playlists: Boolean = false): MusicTree {
+    val tracks = mutableListOf("""{"id":"m:A/1.mp3","uri":"${uri("hub-1/folders/m/A/1.mp3")}","title":"Song","artist":"Ann","album":"First","duration":200,"cover":null}""")
+    val shows = episodes.entries.mapIndexed { s, (name, count) ->
+      val ids = (0 until count).map { e ->
+        val id = "p:$name/${"%03d".format(count - e)}.mp3"
+        tracks += """{"id":"$id","uri":"${uri("hub-1/folders/p/$name/${"%03d".format(count - e)}.mp3")}","title":"Episode ${count - e}","artist":"$name","album":"$name","duration":1800,"cover":null}"""
+        id
+      }
+      """{"id":"show:$s","title":"$name","cover":${if (s == 0) "\"$cover\"" else "null"},"tracks":[${ids.joinToString(",") { "\"$it\"" }},"p:missing.mp3"]}"""
+    }
+    val lists = if (playlists) ""","playlists":[{"id":"playlist:mix","name":"Mix","tracks":["m:A/1.mp3"]}]""" else ""
+    return MusicTree(MusicLibraryData.parse(
+      """{"format":1,"scope":"hub-1","tracks":[${tracks.joinToString(",")}],
+      "albums":[{"id":"album:first","title":"First","artist":"Ann","cover":null,"tracks":["m:A/1.mp3"]}],
+      "artists":[{"id":"artist:ann","name":"Ann","letter":"A","cover":null,"albums":["album:first"]}],
+      "shows":[${shows.joinToString(",")},{"id":"album:not-a-show","title":"X","tracks":["m:A/1.mp3"]},{"id":"show:empty","title":"Gone","tracks":["p:missing.mp3"]}],
+      "recent":["album:first"]$lists}""",
+      root.path,
+    ))
+  }
+
+  @Test fun thePodcastsTabFollowsRecentOnlyWhileTheFileListsAShowWithAnEpisode() {
+    assertTrue(library().shows.isEmpty())
+    assertEquals("a file without shows keeps the music tabs", listOf("artists", "albums", "recent"), MusicTree(library()).children(MusicTree.ROOT)!!.map { it.id })
+    val tree = podcasts(mapOf("Talk" to 2, "News" to 1))
+    assertEquals(listOf("Artists", "Albums", "Recent", "Podcasts"), tree.children(MusicTree.ROOT)!!.map { it.title })
+    assertTrue(tree.node(MusicTree.PODCASTS)!!.grid)
+    assertEquals(listOf("artists", "albums", "playlists", "recent", "podcasts"), podcasts(mapOf("Talk" to 1), playlists = true).children(MusicTree.ROOT)!!.map { it.id })
+    assertEquals(listOf("show:0", "show:1"), tree.library.shows.keys.toList())
+  }
+
+  @Test fun showsLeaveTheAlbumsTabAndListTheirEpisodesNewestFirstAsTheirQueue() {
+    val tree = podcasts(mapOf("Talk" to 2, "News" to 1))
+    assertEquals(listOf("First"), tree.children(MusicTree.ALBUMS)!!.map { it.title })
+    assertEquals("the library's Shuffle plays music only", listOf("Song"), tree.queue(MusicTree.ALBUMS)!!.map { it.title })
+    val shows = tree.children(MusicTree.PODCASTS)!!
+    assertEquals(listOf(Triple("Talk", "2 episodes", cover), Triple("News", "1 episode", null)), shows.map { Triple(it.title, it.subtitle, it.cover) })
+    assertTrue(shows.none { it.playable || it.grid })
+    val episodes = tree.children("show:0")!!
+    assertEquals(listOf("Episode 2", "Episode 1"), episodes.map { it.title })
+    assertEquals(listOf("Talk · 30:00", "Talk · 30:00"), episodes.map { it.subtitle })
+    assertTrue(episodes.all { it.playable })
+    assertEquals(MusicTree.trackNodeId("show:0", "p:Talk/001.mp3", 1), episodes[1].id)
+    val (queue, start) = tree.expand(episodes[1].id)!!
+    assertEquals(listOf("Episode 2", "Episode 1"), queue.map { it.title })
+    assertEquals(1, start)
+    assertEquals("Talk", tree.queueTitle("show:0"))
+    assertEquals("Talk", tree.queueTitle("in:p:show:0"))
+    assertEquals(listOf("Episode 2", "Episode 1"), tree.queue("in:p:show:0")!!.map { it.title })
+    for (parent in listOf(MusicTree.ROOT, MusicTree.PODCASTS, "show:0"))
+      for (child in tree.children(parent)!!) assertEquals(child, tree.node(child.id))
+    assertNull(tree.node("show:empty"))
+    assertNull(tree.node("album:not-a-show"))
+  }
+
+  @Test fun aPlayedShowEntersRecent() {
+    val tree = podcasts(mapOf("Talk" to 2)).played("in:p:show:0")!!.played("album:first")!!
+    assertEquals(listOf("album:first", "show:0"), tree.history)
+    assertEquals(listOf("First" to "Ann", "Talk" to "2 episodes"), tree.children(MusicTree.RECENT)!!.map { it.title to it.subtitle })
+    assertNull(tree.played("show:unknown"))
+  }
+
+  @Test fun aCarThatAllowsFewerTabsFindsRecentFirstInsideAlbums() {
+    val all = podcasts(mapOf("Talk" to 2), playlists = true)
+    assertEquals(listOf("Artists", "Albums", "Playlists", "Podcasts"), all.children(MusicTree.ROOT, 4)!!.map { it.title })
+    assertTrue(all.recentInAlbums(4))
+    val albums = all.children(MusicTree.ALBUMS, 4)!!
+    assertEquals(listOf(MusicTree.RECENT, "album:first"), albums.map { it.id })
+    assertEquals(albums.first(), all.node(MusicTree.RECENT))
+    assertEquals(all.children(MusicTree.RECENT), all.children(albums.first().id, 4))
+    assertEquals(listOf("album:first"), all.children(MusicTree.ALBUMS)!!.map { it.id })
+    assertEquals(listOf("Artists", "Albums", "Playlists", "Recent", "Podcasts"), all.children(MusicTree.ROOT)!!.map { it.title })
+    assertEquals(listOf("Artists", "Albums", "Playlists", "Recent", "Podcasts"), all.children(MusicTree.ROOT, 5)!!.map { it.title })
+    val four = podcasts(mapOf("Talk" to 2))
+    assertEquals(listOf("Artists", "Albums", "Recent", "Podcasts"), four.children(MusicTree.ROOT, 4)!!.map { it.title })
+    assertFalse(four.recentInAlbums(4))
+    assertEquals(listOf("album:first"), four.children(MusicTree.ALBUMS, 4)!!.map { it.id })
+    val played = all.played("in:p:show:0")!!
+    val recent = played.children(albums.first().id, 4)!!
+    assertEquals(listOf("Talk" to MusicTree.PLAYED), recent.map { it.title to it.group })
+    val episode = played.children(recent.first().id, 4)!!.first()
+    assertEquals(MusicTree.trackNodeId("show:0", "p:Talk/002.mp3", 0), episode.id)
+    assertEquals(episode, played.node(episode.id))
+    assertEquals(0, played.expand(episode.id)!!.second)
+  }
+
+  @Test fun recentInsideFoldedAlbumsLeavesTheLetterFoldersAndTheShuffleAsTheyWere() {
+    val tree = large(listOf("Solo"), 260) { _, b -> "${"MNOPQ"[b % 5]} title %03d".format(b) }
+    val plain = tree.children(MusicTree.ALBUMS)!!
+    val folded = tree.children(MusicTree.ALBUMS, 2)!!
+    assertEquals(listOf("Artists", "Albums"), tree.children(MusicTree.ROOT, 2)!!.map { it.title })
+    assertEquals(listOf(MusicTree.RECENT) + plain.map { it.id }, folded.map { it.id })
+    assertEquals(plain, folded.drop(1))
+    for (group in folded.drop(1)) assertEquals(tree.children(group.id), tree.children(group.id, 2))
+    assertEquals(tree.queue(MusicTree.ALBUMS), tree.expand(MusicTree.trackNodeId(MusicTree.ALBUMS, "v:0/0.mp3"))!!.first)
+    assertEquals(260, tree.queue(MusicTree.ALBUMS)!!.size)
+  }
+
+  @Test fun albumsThatFillACarAnswerOpenOnFoldersOnceRecentJoinsThem() {
+    val tree = large(listOf("Solo"), MusicTree.GROUP_LIMIT) { _, b -> "${"MN"[b % 2]} title %03d".format(b) }
+    val five = MusicTree(tree.library.copy(
+      playlists = mapOf("playlist:p" to MusicPlaylist("playlist:p", "P", null, listOf("v:0/0.mp3"))),
+      shows = mapOf("show:s" to MusicShow("show:s", "S", null, listOf("v:0/1.mp3"))),
+    ))
+    assertEquals(MusicTree.GROUP_LIMIT, five.children(MusicTree.ALBUMS)!!.size)
+    assertTrue(five.children(MusicTree.ROOT)!!.first { it.id == MusicTree.ALBUMS }.grid)
+    val tabs = five.children(MusicTree.ROOT, 4)!!
+    assertEquals(listOf("Artists", "Albums", "Playlists", "Podcasts"), tabs.map { it.title })
+    assertFalse(tabs.first { it.id == MusicTree.ALBUMS }.grid)
+    val albums = five.children(MusicTree.ALBUMS, 4)!!
+    assertEquals(listOf("Recent", "M", "N"), albums.map { it.title })
+    assertTrue(albums.size <= MusicTree.GROUP_LIMIT)
+    assertEquals(listOf("60 albums", "60 albums"), albums.drop(1).map { it.subtitle })
+    assertEquals(MusicTree.GROUP_LIMIT, albums.drop(1).sumOf { five.children(it.id, 4)!!.size })
+    for (group in albums.drop(1)) assertEquals(group, five.node(group.id))
+    assertEquals(MusicTree.GROUP_LIMIT, five.queue(MusicTree.ALBUMS)!!.size)
+  }
+
+  @Test fun aShowWithMoreEpisodesThanACarAnswerOpensOnNumberedRanges() {
+    val count = MusicTree.GROUP_LIMIT + 10
+    val tree = podcasts(mapOf("Daily" to count))
+    val ranges = tree.children("show:0")!!
+    assertEquals(listOf("1\u2013${MusicTree.GROUP_LIMIT}", "${MusicTree.GROUP_LIMIT + 1}\u2013$count"), ranges.map { it.title })
+    assertEquals(listOf("${MusicTree.GROUP_LIMIT} episodes", "10 episodes"), ranges.map { it.subtitle })
+    assertTrue(ranges.none { it.playable || it.grid })
+    for (range in ranges) assertEquals(range, tree.node(range.id))
+    val older = tree.children(ranges[1].id)!!
+    assertEquals("Episode 10", older.first().title)
+    assertEquals(MusicTree.trackNodeId("show:0", "p:Daily/010.mp3", MusicTree.GROUP_LIMIT), older.first().id)
+    val (queue, start) = tree.expand(older.first().id)!!
+    assertEquals(count, queue.size)
+    assertEquals(MusicTree.GROUP_LIMIT, start)
+    for (bad in listOf("@2", "@x", "A@0", "A", "@01"))
+      assertNull(bad, tree.children(MusicTree.groupNodeId("show:0", bad)))
+    assertNull(tree.node(MusicTree.groupNodeId("show:0", "@2")))
+    assertNull(podcasts(mapOf("Short" to 3)).children(MusicTree.groupNodeId("show:0", "@0")))
+  }
+
+  @Test fun manyShowsOpenOnLetterFolders() {
+    val tree = podcasts((0..MusicTree.GROUP_LIMIT).associate { (if (it % 2 == 0) "Alpha $it" else "Beta $it") to 1 })
+    assertFalse(tree.node(MusicTree.PODCASTS)!!.grid)
+    val letters = tree.children(MusicTree.PODCASTS)!!
+    assertEquals(listOf("A" to "61 shows", "B" to "60 shows"), letters.map { it.title to it.subtitle })
+    assertTrue(letters.all { it.grid })
+    assertEquals(61, tree.children(letters[0].id)!!.size)
+  }
+
   @Test fun shuffleOrdersStartWithTheChosenTrackAndKeepEveryOther() {
     val random = java.util.Random(7)
     for (start in 0 until 10) {

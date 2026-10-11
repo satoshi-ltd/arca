@@ -97,6 +97,7 @@ class MusicService : MediaLibraryService() {
   private val loaded: SettableFuture<Unit> = SettableFuture.create()
   private val saved by lazy { getSharedPreferences(PREFERENCES, MODE_PRIVATE) }
   private val syncedFile = SyncedCache()
+  private val rootLimits = HashMap<MediaSession.ControllerInfo, Int>()
 
   override fun onCreate() {
     super.onCreate()
@@ -260,10 +261,12 @@ class MusicService : MediaLibraryService() {
     id == MusicTree.ARTISTS -> MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS
     id == MusicTree.ALBUMS || id == MusicTree.RECENT -> MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS
     id == MusicTree.PLAYLISTS -> MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
+    id == MusicTree.PODCASTS -> MediaMetadata.MEDIA_TYPE_FOLDER_PODCASTS
     MusicTree.parseGroupNodeId(id) != null -> MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
     id.startsWith("artist:") -> MediaMetadata.MEDIA_TYPE_ARTIST
     id.startsWith("album:") -> MediaMetadata.MEDIA_TYPE_ALBUM
     id.startsWith("playlist:") -> MediaMetadata.MEDIA_TYPE_PLAYLIST
+    id.startsWith("show:") -> MediaMetadata.MEDIA_TYPE_PODCAST
     else -> MediaMetadata.MEDIA_TYPE_MUSIC
   }
 
@@ -330,8 +333,15 @@ class MusicService : MediaLibraryService() {
       session: MediaLibrarySession,
       browser: MediaSession.ControllerInfo,
       params: LibraryParams?,
-    ): ListenableFuture<LibraryResult<MediaItem>> =
-      Futures.immediateFuture(LibraryResult.ofItem(browsable(MusicTree.rootNode), null))
+    ): ListenableFuture<LibraryResult<MediaItem>> {
+      val limit = params?.extras?.getInt(MediaConstants.EXTRAS_KEY_ROOT_CHILDREN_LIMIT, 0) ?: 0
+      if (limit > 0) rootLimits[browser] = limit else rootLimits.remove(browser)
+      return Futures.immediateFuture(LibraryResult.ofItem(browsable(MusicTree.rootNode), null))
+    }
+
+    override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+      rootLimits.remove(controller)
+    }
 
     override fun onGetItem(
       session: MediaLibrarySession,
@@ -350,7 +360,7 @@ class MusicService : MediaLibraryService() {
       pageSize: Int,
       params: LibraryParams?,
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = whenLoaded {
-      val children = tree.children(parentId)
+      val children = tree.children(parentId, rootLimits[browser])
       if (children == null || page < 0 || pageSize < 1) LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
       else {
         val from = (page.toLong() * pageSize).coerceAtMost(children.size.toLong()).toInt()

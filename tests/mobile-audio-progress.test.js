@@ -152,8 +152,8 @@ test("shows reach the native player as queues so an episode plays on through its
   const library = mixed();
   const native = nativeLibrary(library, "scope");
   const show = library.shows.get(library.showOrder[1]);
-  const entry = native.albums.find((album) => album.id === show.id);
-  assert.deepEqual(entry.tracks, show.tracks);
+  assert.deepEqual(native.shows.find((item) => item.id === show.id), { id: show.id, title: show.name, cover: show.cover, tracks: show.tracks });
+  assert.ok(!native.albums.some((album) => album.id.startsWith("show:")), "shows leave the car's Albums tab");
   assert.ok(!native.artists.some((artist) => artist.name === show.name));
   const queue = upNext(library, { id: trackNodeId(folderContext("a1", show.id), show.tracks[0], 0) });
   assert.equal(queue.name, "The Wild Project");

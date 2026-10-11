@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.44 — 2026-10-11
+
+- Android Auto has a Podcasts tab: each show the phone holds, with its episodes newest first, instead of shows hiding at the end of Albums; Albums and the car's library shuffle now hold music only.
+
+Needs: native build
+
 ## 0.7.43 — 2026-10-11
 
 - Devices lines its rows up in columns: each device shows its Arca version (flagged with an arrow when older than the hub), its folders over their size and Connected or when it was last seen, between its name and its role chip; the Fold uses the same row, and the phone keeps one quiet line with presence as a dot on the device's icon and Disconnect as a compact button.

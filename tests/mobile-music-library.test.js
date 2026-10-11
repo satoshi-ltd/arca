@@ -297,6 +297,27 @@ test("the native library carries ids, local file URIs, cover keys and what the c
   assert.deepEqual([...coverKeys(library)], ["k1"]);
 });
 
+test("the native library lists shows in their own field, newest first with their downloaded episodes newest first", () => {
+  const episodes = [
+    row("Talk/2026-01-01 Old.mp3", { genre: "Podcast", album: "Talk", duration: 3000, cover: "t1" }),
+    row("Talk/2026-03-01 New.mp3", { genre: "Podcast", album: "Talk", duration: 3000 }),
+    row("Talk/2026-02-01 Middle.mp3", { genre: "Podcast", album: "Talk", duration: 3000 }),
+    row("News/2026-04-01 Today.mp3", { genre: "Podcast", album: "News", duration: 3000 }),
+    row("Later/2026-05-01 Waiting.mp3", { genre: "Podcast", album: "Later", duration: 3000 }),
+  ];
+  const songs = [row("A/1.mp3", { title: "One", artist: "Ann", album: "First" })];
+  const present = new Map([...songs, ...episodes.slice(0, 4)].map((item) => [item.path, item.hash]));
+  const library = buildLibrary([folder("m", songs), folder("p", episodes, present)]);
+  const value = nativeLibrary(library, "hub-1");
+  assert.deepEqual(value.albums.map((album) => album.title), ["First"], "shows leave the car's Albums tab");
+  assert.deepEqual(value.shows, [
+    { id: library.showOrder[1], title: "News", cover: null, tracks: ["p:News/2026-04-01 Today.mp3"] },
+    { id: library.showOrder[2], title: "Talk", cover: "t1", tracks: ["p:Talk/2026-03-01 New.mp3", "p:Talk/2026-02-01 Middle.mp3", "p:Talk/2026-01-01 Old.mp3"] },
+  ], "a show with no episode on the phone stays out");
+  assert.ok(value.shows.every((show) => /^show:[0-9a-f]{16}$/.test(show.id)));
+  assert.deepEqual(nativeLibrary(buildLibrary([folder("m", songs)]), "hub-1").shows, []);
+});
+
 test("artists sort into letter groups with # last, show their newest covered album and give the car its headings", () => {
   const library = buildLibrary([
     folder("m", [

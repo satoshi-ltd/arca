@@ -233,6 +233,28 @@ test("Now playing is a full page whose artist and album go to their screens, and
   assert.match(library, /<TrackList[\s\S]*?withAlbum=\{withAlbum\}/);
 });
 
+test("the car reads shows from their own field and lists them under a Podcasts tab after Recent", () => {
+  const tree = read(`${native}/java/expo/modules/arcanetwork/MusicLibrary.kt`);
+  const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
+  assert.match(tree, /val rawShows = json\.optJSONArray\("shows"\) \?: JSONArray\(\)/, "a file without shows reads as no shows");
+  assert.match(tree, /text\(item, "id"\)\.takeIf \{ it\.startsWith\("show:"\) && it !in shows \}/);
+  assert.match(tree, /MusicNode\(RECENT, "Recent", null, null, false\),\s+MusicNode\(PODCASTS, "Podcasts", null, null, false, grid = library\.shows\.size <= GROUP_LIMIT\)\.takeIf \{ library\.shows\.isNotEmpty\(\) \},\s+\)/);
+  assert.match(tree, /count\(show\.tracks\.size, "episode", "episodes"\)/);
+  assert.match(tree, /context in library\.shows -> library\.shows\[context\]\?\.tracks/, "an episode queues its show");
+  assert.match(service, /id == MusicTree\.PODCASTS -> MediaMetadata\.MEDIA_TYPE_FOLDER_PODCASTS/);
+  assert.match(service, /id\.startsWith\("show:"\) -> MediaMetadata\.MEDIA_TYPE_PODCAST/);
+});
+
+test("a car that allows fewer root tabs than Arca has gets Recent as the first entry of Albums", () => {
+  const tree = read(`${native}/java/expo/modules/arcanetwork/MusicLibrary.kt`);
+  const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
+  assert.match(service, /val limit = params\?\.extras\?\.getInt\(MediaConstants\.EXTRAS_KEY_ROOT_CHILDREN_LIMIT, 0\) \?: 0\s+if \(limit > 0\) rootLimits\[browser\] = limit else rootLimits\.remove\(browser\)/, "each car's root hint is read when it connects");
+  assert.match(service, /override fun onDisconnected\(session: MediaSession, controller: MediaSession\.ControllerInfo\) \{\s+rootLimits\.remove\(controller\)/);
+  assert.match(service, /tree\.children\(parentId, rootLimits\[browser\]\)/);
+  assert.match(tree, /if \(limit == null \|\| roots\.size <= limit\) roots\s+else roots\.filter \{ it\.id != RECENT \}/);
+  assert.match(tree, /parent == ALBUMS && recentInAlbums\(limit\) -> listOf\(roots\.first \{ it\.id == RECENT \}\) \+ listing\(ALBUMS, "", GROUP_LIMIT - 1\)\.orEmpty\(\)/, "the Recent entry and the albums never exceed one car answer");
+});
+
 test("the car names its queue and lists each track with its length, and a playlist's tracks with their album", () => {
   const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
   const tree = read(`${native}/java/expo/modules/arcanetwork/MusicLibrary.kt`);
