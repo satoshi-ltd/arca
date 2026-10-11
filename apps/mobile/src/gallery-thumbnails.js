@@ -14,7 +14,7 @@ import {
   renderVideoPoster,
   videoPosterSource,
 } from "./video-playback";
-import { createLimiter, isFlatCacheFile, nativeFirst } from "./thumbnail-cache";
+import { THUMB_WIDTH, createLimiter, isFlatCacheFile, nativeFirst } from "./thumbnail-cache";
 const video = requireOptionalNativeModule("ExpoVideo")
   ? require("expo-video")
   : null;
@@ -136,14 +136,14 @@ export const thumbnailFiles = {
                 nativeThumbnail(
                   entry.uri,
                   target.uri,
-                  large ? 2048 : 360,
+                  large ? 2048 : THUMB_WIDTH,
                   !large,
                   false,
                 )),
             async () => {
               const result = await manipulateAsync(
                 entry.uri,
-                [{ resize: { width: large ? 2048 : 360 } }],
+                [{ resize: { width: large ? 2048 : THUMB_WIDTH } }],
                 { compress: large ? 0.85 : 0.75, format: SaveFormat.JPEG },
               );
               return result.uri;
@@ -167,7 +167,7 @@ export const thumbnailFiles = {
           nativeFirst(
             nativeThumbnail &&
               onDisk(uri) &&
-              (() => nativeThumbnail(uri, target.uri, 360, true, true)),
+              (() => nativeThumbnail(uri, target.uri, THUMB_WIDTH, true, true)),
             () => {
               if (!video) throw new Error("Video thumbnail unavailable");
               return renderVideoPoster(uri, {

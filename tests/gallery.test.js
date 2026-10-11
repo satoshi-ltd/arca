@@ -279,7 +279,7 @@ test("an epoch capture date falls back to the date added in pages and counts", a
   assert.equal(item.dateSource, "date added");
   assert.ok(Number(item.date.slice(0, 4)) > 1970);
   assert.deepEqual(data.timeline.map((row) => row.month), [item.date.slice(0, 7)]);
-  assert.deepEqual(data.days, { [item.date.slice(0, 10)]: 1 });
+  assert.equal(data.days, undefined, "pages carry no per-day counts");
   assert.equal(data.undated.count, 0);
   const zeroed = await sharp({
     create: { width: 300, height: 200, channels: 3, background: "teal" },
@@ -417,7 +417,7 @@ test("gallery is explicit, chronological, scoped and respects exclusions even fo
   await assert.rejects(f.api("/v1/gallery?volume=missing"), { status: 404 });
 });
 
-test("the gallery reports per-day counts, year and month periods and photos from earlier years on a date", async (t) => {
+test("the gallery reports year and month periods and photos from earlier years on a date", async (t) => {
   const f = await fixture(t);
   const colors = ["red", "green", "blue", "yellow", "purple", "orange", "teal", "pink", "gray"];
   const dates = [
@@ -432,9 +432,7 @@ test("the gallery reports per-day counts, year and month periods and photos from
   ];
   for (const [index, [name, captured]] of dates.entries()) await f.photo(name, captured, colors[index]);
   const page = await f.api(f.route);
-  assert.equal(page.days["2026-09-12"], 2);
-  assert.equal(page.days["2026-09-11"], 1);
-  assert.equal(page.days["2025-09-12"], 3, "counts cover every month the page touches, not only the rows it returned");
+  assert.equal(page.days, undefined, "clients group days themselves, so pages carry no per-day counts");
   const years = await f.api(`/v1/gallery/periods?volume=${f.v.id}&level=year`);
   assert.deepEqual(years.periods.map((p) => [p.period, p.count]), [["2026", 3], ["2025", 3], ["2024", 2]]);
   assert.equal(years.periods[0].path, "b.jpg", "the representative is the newest photo of the period");

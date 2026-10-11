@@ -11,7 +11,7 @@ import {
   brandSplashBox,
 } from "../../../packages/core/brand-mark.js";
 import { putFlight } from "./flight.js";
-import { folderState, machineTone } from "./home-data.js";
+import { deviceLabel, folderState, machineTone } from "./home-data.js";
 import React, {
   createContext,
   useContext,
@@ -1273,7 +1273,7 @@ export function FolderRow({
   );
 }
 const TABS = ["Folders", "Devices", "History", "Settings"];
-export function Navigation({ wide, compact, view, onSelect, name, hub, onFavorites }) {
+export function Navigation({ wide, compact, view, onSelect, name, device, onFavorites }) {
   const { s, c } = useDesign();
   const { duration, easing } = useMotion();
   const [boxes, setBoxes] = useState({});
@@ -1320,14 +1320,6 @@ export function Navigation({ wide, compact, view, onSelect, name, hub, onFavorit
               <Icon name="panel-left-open" color={c.mute} />
               {!compact && <Text style={s.navLabel}>Favorites</Text>}
             </Pressable>
-          )}
-          {!compact && (
-            <View style={s.identity}>
-              <Icon name="phone" size={16} />
-              <Text numberOfLines={1} style={[s.flex, s.caption]}>
-                {name}
-              </Text>
-            </View>
           )}
         </>
       )}
@@ -1392,14 +1384,81 @@ export function Navigation({ wide, compact, view, onSelect, name, hub, onFavorit
           )}
         </Pressable>
       ))}
-      {wide && !compact && (
-        <View style={s.navFooter}>
-          <Text style={s.caption}>
-            {hub ? "Hub connected" : "Disconnected"}
+      {wide && device && (compact ? <DeviceGlyph name={name} device={device} /> : <DeviceStatus name={name} device={device} />)}
+    </Container>
+  );
+}
+
+
+function StateWord({ device }) {
+  const { s } = useDesign();
+  return (
+    <Text
+      style={[
+        s.stateWord,
+        device.tone === "warning" && s.stateWordWarning,
+        device.tone === "danger" && s.stateWordDanger,
+      ]}
+    >
+      {device.word}
+    </Text>
+  );
+}
+
+export function DeviceStatus({ name, device }) {
+  const { s } = useDesign();
+  return (
+    <View accessible accessibilityLabel={deviceLabel(name, device)} style={s.deviceStatus}>
+      <View style={s.deviceWho}>
+        <Icon name="phone" size={16} />
+        <Text numberOfLines={1} style={[s.caption, s.deviceName]}>
+          {name}
+        </Text>
+      </View>
+      <Text numberOfLines={1} style={s.caption}>
+        Replica · <StateWord device={device} />
+      </Text>
+      {!!device.last && (
+        <Text numberOfLines={1} style={s.caption}>
+          {device.last}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function DeviceGlyph({ name, device }) {
+  const { s, c } = useDesign();
+  return (
+    <View accessible accessibilityLabel={deviceLabel(name, device)} style={s.deviceGlyph}>
+      <Icon name="phone" color={c.mute} />
+      <View style={[s.favoriteDot, s.deviceGlyphDot, !!device.tone && s.favoriteDotWarning]} />
+    </View>
+  );
+}
+
+export function DeviceRow({ name, device }) {
+  const { s } = useDesign();
+  return (
+    <View accessible accessibilityLabel={deviceLabel(name, device)} style={[s.card, s.machineRow]}>
+      <View style={s.row}>
+        <View style={[s.tile, s.machineTile]}>
+          <Icon name="phone" />
+        </View>
+        <View style={[s.flex, s.stack]}>
+          <View style={s.machineIdentity}>
+            <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
+              {name}
+            </Text>
+            <Text style={[s.caption, s.roleWord]}>Replica</Text>
+          </View>
+          <Text numberOfLines={1} style={s.caption}>
+            <StateWord device={device} />
+            {device.last ? ` · ${device.last}` : ""}
           </Text>
         </View>
-      )}
-    </Container>
+      </View>
+    </View>
   );
 }
 

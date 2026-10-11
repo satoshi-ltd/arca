@@ -79,6 +79,7 @@ import {
   Breadcrumbs,
   FolderRow,
   Navigation,
+  DeviceRow,
   MachineRow,
   ActionRow,
   SettingsGroup,
@@ -154,7 +155,7 @@ import {
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize, unbroken } from "./format";
 import { FIRST_ROWS, browseEntries, revealWindow } from "./browse";
-import { folderSections, historyTone } from "./home-data";
+import { deviceStatus, folderSections, historyTone } from "./home-data";
 import { FavoritesDrawer, FavoritesSection } from "./Favorites";
 import {
   FAVORITE_ICONS,
@@ -685,6 +686,7 @@ export default function App() {
     connected = connection?.linked,
     catalog = state.catalog,
     volumes = catalog?.volumes || [];
+  const device = deviceStatus({ ...status, connected }, relative);
   useEffect(() => {
     if (!connected || !catalog?.changeEvents) return;
     let controller;
@@ -2175,7 +2177,7 @@ export default function App() {
                 view={view}
                 onSelect={selectTab}
                 name={name}
-                hub={catalog?.name}
+                device={device}
                 onFavorites={onboarding ? undefined : () => setFavoritesOpen(true)}
               />
             )}
@@ -3375,23 +3377,9 @@ export default function App() {
                   )}
                   {screen === "Settings" && (
                     <>
-                      {connection && (
-                        <>
-                          <Section>
-                            <Text style={s.eyebrow}>HUB CONNECTION</Text>
-                            <HubConnection
-                              connection={connection}
-                              name={catalog?.name}
-                              machine={machines?.find((m) => m.isHub)}
-                              busy={actionLocked}
-                              disconnect={disconnect}
-                              retry={() => run(() => client.refresh(), { hubOnly: true })}
-                            />
-                          </Section>
-                        </>
-                      )}
                       <Section>
                         <Text style={s.eyebrow}>THIS DEVICE</Text>
+                        <DeviceRow name={name} device={device} />
                         <Card>
                           <Field
                             label="Device name"
@@ -3430,6 +3418,21 @@ export default function App() {
                           />
                         </Card>
                       </Section>
+                      {connection && (
+                        <>
+                          <Section>
+                            <Text style={s.eyebrow}>HUB CONNECTION</Text>
+                            <HubConnection
+                              connection={connection}
+                              name={catalog?.name}
+                              machine={machines?.find((m) => m.isHub)}
+                              busy={actionLocked}
+                              disconnect={disconnect}
+                              retry={() => run(() => client.refresh(), { hubOnly: true })}
+                            />
+                          </Section>
+                        </>
+                      )}
                       <Section>
                         <Text style={s.eyebrow}>LOCAL SYNCHRONIZATION</Text>
                         <SettingsGroup>
@@ -3446,9 +3449,6 @@ export default function App() {
                                 })
                               }
                             />
-                          </Card>
-                          <Card title="Last completed sync">
-                            <Text style={s.text}>{date(status.last)}</Text>
                           </Card>
                         </SettingsGroup>
                       </Section>
@@ -3677,7 +3677,6 @@ export default function App() {
                     view={view}
                     onSelect={selectTab}
                     name={name}
-                    hub={catalog?.name}
                   />
                 )}
               </KeyboardPane>
@@ -3692,6 +3691,8 @@ export default function App() {
               items={shownFavorites}
               describe={describeFavorite}
               open={openFavorite}
+              name={name}
+              device={device}
               remove={(entry) =>
                 changeFavorites((value) => withoutFavorites(value, [favoriteKey(entry)])).catch((e) => setError(e.message))
               }

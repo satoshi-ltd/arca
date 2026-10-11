@@ -21,6 +21,33 @@ export function tilePreviewSize(width, height, pixelRatio) {
   const edge = Math.max(width, height) * pixelRatio;
   return edge <= 360 ? "thumb" : edge <= 720 ? "medium" : "large";
 }
+export const PREVIEW_RANK = { thumb: 0, medium: 1, large: 2 };
+const previewRank = (size) => PREVIEW_RANK[size] ?? -1;
+export function cardPreviews({ load, show, busy, retry }) {
+  const request = async (card, item, size) => {
+    if (
+      previewRank(size) <= Math.max(previewRank(card.dataset.source), previewRank(card.previewPending)) ||
+      card.dataset.failed === size
+    )
+      return;
+    card.previewPending = size;
+    let outcome = "failed";
+    try {
+      const data = await load(item, size);
+      if (data) {
+        outcome = "shown";
+        if (previewRank(size) > previewRank(card.dataset.source) && show(card, data)) card.dataset.source = size;
+      }
+    } catch (error) {
+      if (busy(error)) outcome = "busy";
+    }
+    if (card.previewPending === size) delete card.previewPending;
+    if (outcome === "failed") card.dataset.failed = size;
+    if (outcome === "shown") card.retries = 0;
+    if (outcome === "busy") retry(card, () => request(card, item, size));
+  };
+  return request;
+}
 export function galleryMoment(value) {
   if (typeof value !== "string" || !value) return null;
   const date = new Date(
@@ -40,10 +67,8 @@ export function galleryDay(value) {
     ? month
     : `${month}-${String(date.getDate()).padStart(2, "0")}`;
 }
-export function photoFlow(chunks, { width, target, gap, label }) {
-  const tiles = chunks.flatMap(({ ratios }, chunk) =>
-    ratios.map((ratio, index) => ({ chunk, index, ratio })),
-  );
+export function photoFlow(ratios, { width, target, gap }) {
+  const tiles = ratios.map((ratio, index) => ({ index, ratio }));
   const rows = [];
   let start = 0,
     sum = 0,
@@ -79,14 +104,9 @@ export function photoFlow(chunks, { width, target, gap, label }) {
   if (start < tiles.length)
     close(tiles.length, Math.min(target, fit(sum, space)));
   const round = (value) => Math.round(value * 100) / 100;
-  const labels = [];
   let top = 0;
   rows.forEach((row, number) => {
-    const labelled = tiles
-      .slice(row.start, row.end)
-      .some((tile) => tile.index === 0 && chunks[tile.chunk].label);
     if (number) top += gap;
-    if (labelled) top += label;
     row.top = round(top);
     let left = 0;
     for (let index = row.start; index < row.end; index++) {
@@ -98,34 +118,21 @@ export function photoFlow(chunks, { width, target, gap, label }) {
       tile.height = round(row.height);
       tile.width = Math.max(1, Math.floor(row.height * tile.ratio * 100) / 100);
       left += row.height * tile.ratio;
-      const owner = labels.at(-1);
-      if (tile.index === 0 && chunks[tile.chunk].label)
-        labels.push({ chunk: tile.chunk, row: number, left: tile.left, top: round(top - label), width: tile.width });
-      else if (owner?.chunk === tile.chunk && owner.row === number)
-        owner.width = round(tile.left + tile.width - owner.left);
     }
     top += row.height;
   });
-  return { tiles, rows, labels, height: round(top) };
+  return { tiles, rows, height: round(top) };
 }
-export const GALLERY_ROW_SCALES = [2 / 3, 1, 4 / 3];
-export function rowTarget(width, size = 1) {
+const ZOOM_STOPS = ["years", "months", "small", "medium", "large"];
+const ROW_SCALES = { small: 2 / 3, medium: 1, large: 4 / 3 };
+export function rowTarget(width, stop = "medium") {
   return Math.round(
-    Math.min(180, Math.max(120, width / 5)) * GALLERY_ROW_SCALES[size],
+    Math.min(180, Math.max(120, width / 5)) * (ROW_SCALES[stop] || 1),
   );
 }
-const ZOOM_STOPS = [
-  ["years", 0],
-  ["months", 0],
-  ["days", 0],
-  ["days", 1],
-  ["days", 2],
-];
-export function galleryZoomStep(zoom, size, direction) {
-  const at = zoom === "years" ? 0 : zoom === "months" ? 1 : 2 + size;
-  const [next, nextSize] =
-    ZOOM_STOPS[Math.max(0, Math.min(ZOOM_STOPS.length - 1, at + direction))];
-  return { zoom: next, size: next === "days" ? nextSize : size };
+export function galleryZoomStep(stop, direction) {
+  const at = Math.max(0, ZOOM_STOPS.indexOf(stop));
+  return ZOOM_STOPS[Math.max(0, Math.min(ZOOM_STOPS.length - 1, at + direction))];
 }
 export function pinchSteps(threshold = Math.log(1.35), idle = 400) {
   let total = 0,

@@ -819,6 +819,7 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
   assert.equal(w.document.querySelector("#notice").hidden, true);
   assert.equal(w.document.querySelectorAll("#node-name").length, 0);
   assert.equal(w.document.querySelector("#managed-role").textContent, "Hub");
+  assert.equal(w.document.querySelector("#status-device [data-icon]").dataset.icon, "server");
   assert.equal(
     w.document.querySelector("#backup-summary").textContent.trim(),
     "No backup reported",
@@ -1262,6 +1263,85 @@ test("a replica's folder header offers Open in Finder alone: no Enable gallery a
     ["Local destination", "Copies"],
     "a replica's side column has no Version history panel",
   );
+});
+
+test("the status card opens with the device glyph, name and role, and the lockup is the brand only", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-status-identity-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const requests = new Set();
+  const windows = [];
+  t.after(async () => {
+    await drainRequests(requests);
+    for (const window of windows) window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const open = async (state, native) => {
+    const dom = new JSDOM(html, { runScripts: "outside-only", url: native ? "http://tauri.localhost" : "http://127.0.0.1:17831" });
+    windows.push(dom.window);
+    const w = dom.window;
+    w.setInterval = () => 0;
+    const reply = (route) => {
+      if (route === "/v1/status") return { ...daemon.engine.status(), platform: "linux", volumes: [], hubUnavailable: false, ...state };
+      if (route === "/v1/remote") return { name: "Casa", volumes: [] };
+      if (route === "/v1/machines") return { machines: [] };
+      return {};
+    };
+    if (native) {
+      w.__TAURI__ = { core: { invoke: async (command, args) => (command === "bootstrap" ? { setup: false } : reply(args.route)) } };
+      trackInvoke(w, requests);
+    } else
+      w.fetch = async (route) => {
+        const request = Promise.resolve(new Response(JSON.stringify(reply(String(route).replace(/^https?:\/\/[^/]+/, ""))), { headers: { "Content-Type": "application/json" } }));
+        requests.add(request);
+        request.finally(() => requests.delete(request));
+        return request;
+      };
+    const document = w.document;
+    assert.equal(document.querySelector(".managing"), null, "no identity card under the lockup");
+    assert.equal(document.querySelector("#status-device").hidden, true, "the device row is absent before the first status");
+    assert.equal(document.querySelector(".status-card").hidden, true, "no empty card is drawn before the first status");
+    w.eval(`(async()=>{${script}\n})()`);
+    await until(() => !document.querySelector("#status-device").hidden);
+    assert.equal(document.querySelector(".status-card").hidden, false);
+    const row = document.querySelector("#status-device");
+    return {
+      glyph: row.firstElementChild.dataset.icon,
+      name: row.querySelector("#managed-name").textContent,
+      role: row.querySelector("#managed-role").textContent,
+      label: document.querySelector(".status-card").getAttribute("aria-label"),
+      first: document.querySelector(".status-card").firstElementChild.id,
+      brand: document.querySelector(".brand").textContent.trim(),
+      dot: row.querySelector(".status-dot").className,
+    };
+  };
+  const app = await open({ role: "replica", name: "macbook-pro", phase: "idle", lastSync: new Date().toISOString(), hub: "http://127.0.0.1:49999", hubName: "Casa" }, true);
+  assert.deepEqual(app, { glyph: "monitor", name: "macbook-pro", role: "Replica", label: "macbook-pro, Replica, Up to date", first: "status-device", brand: "arca", dot: "status-dot ok" });
+  const offline = await open({ role: "hub", name: "casa", phase: "idle", hubUnavailable: true, hub: "", hubName: "" }, true);
+  assert.equal(offline.glyph, "server", "the hub is a server even in its desktop app");
+  assert.equal(offline.role, "Hub");
+  assert.equal(offline.label, "casa, Hub, Offline");
+  assert.equal(offline.dot, "status-dot wa");
+  const server = await open({ role: "replica", name: "nas", phase: "idle", lastSync: new Date().toISOString(), hub: "http://127.0.0.1:49999", hubName: "Casa" }, false);
+  assert.equal(server.glyph, "server", "a replica seen through its own web is a server replica");
+  assert.equal(server.role, "Replica");
+  assert.equal(server.label, "nas, Replica, Up to date");
+});
+
+test("the sidebar keeps the status card inside the narrow column and the rail", () => {
+  const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.doesNotMatch(css, /\.managing\b/);
+  const blocks = (width) => [...css.matchAll(new RegExp(`@media \\(max-width: ${width}px\\) \\{([\\s\\S]*?)\\n\\}`, "g"))].map((m) => m[1]).join("\n");
+  assert.match(blocks(760), /\.sync-status-heading,\s*#sync-controls \{\s*grid-column: 1 \/ -1;/, "below 760 px the state line takes the card's width and the controls drop below it");
+  const rail = blocks(480);
+  assert.match(rail, /\.brand > span,[\s\S]*?display: none;/, "the rail hides the wordmark instead of shrinking it");
+  assert.match(rail, /\.status-card > :not\(#status-device\),\s*\.status-device > :not\(svg\):not\(\.status-dot\) \{\s*display: none;/, "the id in :not() outranks #sync-controls without a second selector");
+  assert.doesNotMatch(rail, /\.status-card #sync-controls/);
+  assert.match(rail, /\.status-dot \{\s*display: block;/);
+  assert.match(rail, /\.ghost\.sign-out \{\s*justify-content: center;\s*font-size: 0;/);
+  assert.match(css, /\n\.ghost\.sign-out \{\s*justify-content: flex-start;\s*\}/);
+  assert.doesNotMatch(css, /\.sign-out \{[^}]*!important/, "specificity, not !important, aligns Sign out");
 });
 
 test("an empty Folders shows its one action in the header and the empty state only explains", async (t) => {
@@ -6434,7 +6514,7 @@ test("the photo timeline appears and seeks while the gallery is still indexing",
   );
 });
 
-test("the gallery heads every day on its own, with On this day and Years and Months views", async (t) => {
+test("the gallery heads each month once with no day labels, with On this day, and pinches to Years and Months", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-moments-"));
   init(home, { port: 0, name: "Gallery" });
   const daemon = await start(home, { timer: false });
@@ -6490,15 +6570,9 @@ test("the gallery heads every day on its own, with On this day and Years and Mon
   await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
   if (!w.document.querySelector(".photo-timeline")) w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => w.document.querySelectorAll(".photo-thumb").length === 17);
-  const blocks = [...w.document.querySelectorAll(".photo-day .photo-block")];
-  const year = new Date().getFullYear() === 2026 ? "" : " 2026";
-  assert.deepEqual(
-    blocks.map((b) => b.querySelector("h3").textContent),
-    [`Saturday 12 September${year}9 photos`, `Thursday 10 September${year}2 photos`, `Wednesday 9 September${year}1 photo`, `Saturday 5 September${year}5 photos`],
-    "sparse neighbouring days keep their own headings",
-  );
-  assert.deepEqual(blocks.map((b) => b.className), ["photo-block", "photo-block", "photo-block", "photo-block"]);
-  assert.deepEqual(blocks.map((b) => b.querySelectorAll(":scope > .photo-grid > .photo-thumb").length), [9, 2, 1, 5]);
+  assert.deepEqual([...w.document.querySelectorAll(".photo-day h2")].map((h) => h.textContent), ["September 2026"]);
+  assert.equal(w.document.querySelector(".photo-block, .photo-grid, .photo-day h3, .photo-day-name, .photo-count"), null, "no day labels anywhere");
+  assert.equal(w.document.querySelectorAll('.photo-day[data-day="2026-09"] > .photo-flow > .photo-thumb').length, 17, "the month's photos are one flow");
   assert.equal(w.document.querySelector(".photo-mosaic, .photo-hero, .photo-side"), null);
   await until(() => !w.document.querySelector(".photo-memories").hidden);
   const memories = [...w.document.querySelectorAll(".memory-card")].map((c) => c.textContent);
@@ -6506,17 +6580,21 @@ test("the gallery heads every day on its own, with On this day and Years and Mon
   assert.match(memories[0], /1 year ago · 21 photos/);
   assert.match(memories[1], /2 years ago · 1 photo/);
   assert.ok(routes.some((route) => /memories\?.*day=\d\d-\d\d.*year=\d{4}/.test(route) || /memories\?.*year=\d{4}.*day=\d\d-\d\d/.test(route)));
-  const zoom = w.document.querySelector(".gallery-zoom");
-  assert.deepEqual([...zoom.querySelectorAll("button")].map((b) => [b.textContent, b.getAttribute("aria-pressed")]), [["Years", "false"], ["Months", "false"], ["Days", "true"]]);
-  zoom.querySelector('[data-id="years"]').click();
+  assert.equal(w.document.querySelector(".gallery-zoom, [data-action='gallery-zoom']"), null, "no Years · Months · Days control");
+  assert.match(w.document.querySelector('.heading-actions [data-action="gallery-mode"]').textContent, /View folder/);
+  const pinch = (deltaY) => w.document.querySelector(".page").dispatchEvent(new w.WheelEvent("wheel", { ctrlKey: true, deltaY, bubbles: true, cancelable: true }));
+  for (let step = 0; step < 2; step++) {
+    pinch(60);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+  }
+  await until(() => w.document.querySelectorAll(".period-tile").length === 1);
+  assert.ok(w.document.querySelector("#photo-gallery").classList.contains("gallery-periods-view"), "pinching in from Medium past Small shows Months");
+  pinch(60);
   await until(() => w.document.querySelectorAll(".period-tile").length === 2);
-  assert.ok(w.document.querySelector("#photo-gallery").classList.contains("gallery-periods-view"));
   assert.match(w.document.querySelector(".period-tile").textContent, /2026\s*17/);
-  assert.equal(w.document.querySelector('.gallery-zoom [data-id="years"]').getAttribute("aria-pressed"), "true");
   w.document.querySelectorAll(".period-tile")[1].click();
   await until(() => routes.some((route) => route.includes("month=2025-12")));
-  assert.equal(w.document.querySelector("#photo-gallery").classList.contains("gallery-periods-view"), false, "choosing a year returns to the days at that period");
-  assert.equal(w.document.querySelector('.gallery-zoom [data-id="days"]').getAttribute("aria-pressed"), "true");
+  assert.equal(w.document.querySelector("#photo-gallery").classList.contains("gallery-periods-view"), false, "choosing a year returns to the photos at that period");
   const flights = [];
   w.Element.prototype.animate = function (frames, options) {
     flights.push({ element: this, frames, options });
@@ -6603,9 +6681,9 @@ test("the wall files each photo under the local day its date names, sharpens til
           if (route.startsWith("/v1/gallery?")) {
             const base = { indexing: false, timeline, undated: { count: 2, videos: 0, rev: 0 } };
             if (!route.includes("after=") || /after=(&|$)/.test(route))
-              return { ...base, items: first, days: { "2026-09-27": 1, "2026-09-26": 2, "2026-09-25": 1 }, next: "cursor-1", previous: null };
+              return { ...base, items: first, next: "cursor-1", previous: null };
             await secondReady;
-            return { ...base, items: second, days: { "2026-09-26": 2 }, next: null, previous: null };
+            return { ...base, items: second, next: null, previous: null };
           }
           if (route.startsWith("/v1/gallery/memories")) return { memories: [] };
           if (route.startsWith("/v1/gallery/preview-url")) {
@@ -6640,7 +6718,7 @@ test("the wall files each photo under the local day its date names, sharpens til
   await until(() => w.document.querySelector('[data-action="gallery-mode"]'));
   if (!w.document.querySelector(".photo-timeline")) w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => w.document.querySelectorAll(".photo-thumb").length === 4);
-  const earlier = [...w.document.querySelectorAll('.photo-block[data-block="2026-09-26"] .photo-thumb')];
+  const earlier = [...w.document.querySelectorAll('.photo-day[data-day="2026-09"] .photo-thumb')].slice(0, 2);
   assert.equal(earlier.length, 2);
   const writes = [];
   for (const tile of earlier) {
@@ -6654,17 +6732,14 @@ test("the wall files each photo under the local day its date names, sharpens til
   await until(() => w.document.querySelectorAll(".photo-thumb").length === 7);
   assert.ok(earlier.every((tile) => tile.isConnected));
   assert.ok(earlier.every((tile) => tile.style.getPropertyValue("--photo-height")));
-  assert.deepEqual(writes, [], "a new page leaves the days already laid out alone");
-  const year = new Date().getFullYear() === 2026 ? "" : " 2026";
-  assert.deepEqual(
-    [...w.document.querySelectorAll(".photo-block h3")].map((h) => h.textContent),
-    [`Monday 28 September${year}1 photo`, `Saturday 26 September${year}2 photos`, `Friday 25 September${year}1 photo`, `Sunday 20 September${year}1 photo`],
-    "a UTC capture falls on its local day and a day missing from the page's day counts still gets its own heading",
-  );
-  const night = w.document.querySelector('.photo-block[data-block="2026-09-28"] .photo-thumb');
-  assert.match(night.dataset.tooltip, /^September 28, 2026/);
+  assert.deepEqual(writes, [], "a new page leaves the rows already laid out alone");
+  const september = [...w.document.querySelectorAll('.photo-day[data-day="2026-09"] .photo-thumb')];
+  assert.deepEqual(september.map((tile) => tile.querySelector(".photo-open").getAttribute("aria-label")), ["Open night.jpg", "Open a.jpg", "Open b.jpg", "Open c.jpg", "Open d.jpg"], "one month flow, newest first");
+  assert.equal(w.document.querySelector(".photo-block, .photo-day h3"), null);
+  const night = september[0];
+  assert.match(night.dataset.tooltip, /^September 28, 2026/, "a UTC capture keeps its local day in the tooltip");
   assert.equal(night.hasAttribute("title"), false);
-  assert.match(w.document.querySelector('.photo-block[data-block="2026-09-20"] .photo-thumb').dataset.tooltip, /^September 20, 2026 at 11:06/);
+  assert.match(september[4].dataset.tooltip, /^September 20, 2026 at 11:06/);
   const groups = [...w.document.querySelectorAll(".photo-day")];
   assert.deepEqual(groups.map((g) => g.querySelector("h2").textContent), ["September 2026", "Date unknown"]);
   assert.equal(groups[1].querySelectorAll(".photo-thumb").length, 2);
@@ -6676,7 +6751,7 @@ test("the wall files each photo under the local day its date names, sharpens til
   assert.deepEqual(large, [], "no wall tile at this size pulls the 2048 px preview");
 });
 
-async function mountWall(t, { zone, page, preview, prepare = () => {} }) {
+async function mountWall(t, { zone, page, preview, prepare = () => {}, memories = [], answer = () => undefined }) {
   const previousZone = process.env.TZ;
   if (zone) process.env.TZ = zone;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-wall-"));
@@ -6726,8 +6801,10 @@ async function mountWall(t, { zone, page, preview, prepare = () => {} }) {
           if (command === "bootstrap") return { setup: false, status: daemon.engine.status() };
           if (command !== "api") throw new Error(command);
           const route = args.route;
+          const answered = await answer(route, args);
+          if (answered !== undefined) return answered;
           if (route.startsWith("/v1/gallery?")) return { indexing: false, previous: null, next: null, ...(await page(new URLSearchParams(route.split("?")[1]))) };
-          if (route.startsWith("/v1/gallery/memories")) return { memories: [] };
+          if (route.startsWith("/v1/gallery/memories")) return { memories };
           if (route.startsWith("/v1/gallery/preview")) {
             const query = new URLSearchParams(route.split("?")[1]);
             const size = route.startsWith("/v1/gallery/preview-url") ? "large" : query.get("size") || "thumb";
@@ -6766,29 +6843,24 @@ async function mountWall(t, { zone, page, preview, prepare = () => {} }) {
 const wallItem = (path, date) => ({ path, hash: `h-${path}`, kind: "image", date, cursor: `${date || "!"}|${path}`, size: 1, rev: 1, dateSource: date ? "metadata" : "date added" });
 const pathsOf = (w, selector) => [...w.document.querySelectorAll(`${selector} .photo-thumb`)].map((tile) => tile.querySelector(".photo-open").getAttribute("aria-label").replace("Open ", ""));
 
-test("a day that lost or gained photos to the local time zone counts what it shows, in time order, and the viewer follows the screen", async (t) => {
+test("photos that cross a local month boundary file under their local month, in time order, and the viewer follows the screen", async (t) => {
   const items = [
-    wallItem("a.jpg", "2026-09-27T10:00:00"),
-    wallItem("b.jpg", "2026-09-27T09:00:00"),
-    wallItem("night.jpg", "2026-09-27T02:30:00.000Z"),
-    wallItem("late.jpg", "2026-09-26T23:00:00"),
+    wallItem("a.jpg", "2026-10-01T10:00:00"),
+    wallItem("night.jpg", "2026-10-01T02:30:00.000Z"),
+    wallItem("late.jpg", "2026-09-30T23:00:00"),
     wallItem("c.jpg", "2026-09-26T10:00:00"),
     wallItem("east.jpg", "2026-09-25T23:30:00-09:00"),
     wallItem("g.jpg", "2026-09-25T10:00:00"),
   ];
   const { w } = await mountWall(t, {
     zone: "America/New_York",
-    page: () => ({ items, timeline: [{ month: "2026-09", count: 7, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: { "2026-09-27": 3, "2026-09-26": 2, "2026-09-25": 2 } }),
+    page: () => ({ items, timeline: [{ month: "2026-10", count: 2, videos: 0 }, { month: "2026-09", count: 4, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 } }),
     preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
   });
-  await until(() => w.document.querySelectorAll(".photo-thumb").length === 7);
-  const year = new Date().getFullYear() === 2026 ? "" : " 2026";
-  assert.deepEqual(
-    [...w.document.querySelectorAll(".photo-block h3")].map((h) => h.textContent),
-    [`Sunday 27 September${year}2 photos`, `Saturday 26 September${year}4 photos`, `Friday 25 September${year}1 photo`],
-    "days that sent a photo to a neighbouring local day count the photos they show",
-  );
-  assert.deepEqual(pathsOf(w, '.photo-block[data-block="2026-09-26"]'), ["late.jpg", "night.jpg", "c.jpg", "east.jpg"], "a day's photos run newest first by instant");
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 6);
+  assert.deepEqual([...w.document.querySelectorAll(".photo-day h2")].map((h) => h.textContent), ["October 2026", "September 2026"], "a month heading carries only its name");
+  assert.deepEqual(pathsOf(w, '.photo-day[data-day="2026-10"]'), ["a.jpg"]);
+  assert.deepEqual(pathsOf(w, '.photo-day[data-day="2026-09"]'), ["late.jpg", "night.jpg", "c.jpg", "east.jpg", "g.jpg"], "a month's photos run newest first by instant");
   w.document.querySelector('.photo-thumb .photo-open[aria-label="Open late.jpg"]').click();
   await until(() => w.document.querySelector("#dialog-title")?.textContent === "late.jpg");
   w.document.querySelector(".photo-next").click();
@@ -6796,178 +6868,177 @@ test("a day that lost or gained photos to the local time zone counts what it sho
   w.document.querySelector(".photo-previous").click();
   await until(() => w.document.querySelector("#dialog-title")?.textContent === "late.jpg");
   w.document.querySelector(".photo-previous").click();
-  await until(() => w.document.querySelector("#dialog-title")?.textContent === "b.jpg");
+  await until(() => w.document.querySelector("#dialog-title")?.textContent === "a.jpg");
 });
 
-test("sparse days share rows in one flow per month, each labelled above its own first tile", async (t) => {
-  const items = [
-    wallItem("a.jpg", "2026-09-27T10:00:00"),
-    wallItem("b.jpg", "2026-09-26T10:00:00"),
-    wallItem("c.jpg", "2026-09-25T10:00:00"),
-    ...Array.from({ length: 40 }, (_, i) => wallItem(`long${String(i).padStart(2, "0")}.jpg`, `2026-09-20T${String(20 - Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "00" : "30"}:00`)),
-  ];
+test("a month is one flow whose heading sticks only while its photos pass under it", async (t) => {
+  const items = Array.from({ length: 43 }, (_, i) => wallItem(`p${String(i).padStart(2, "0")}.jpg`, `2026-09-${String(28 - Math.floor(i / 2)).padStart(2, "0")}T10:00:00`));
+  const observers = [];
   const { w, loadThumbs } = await mountWall(t, {
-    page: () => ({ items, timeline: [{ month: "2026-09", count: 43, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: { "2026-09-27": 1, "2026-09-26": 1, "2026-09-25": 1, "2026-09-20": 40 } }),
+    page: () => ({ items, timeline: [{ month: "2026-09", count: 43, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 } }),
     preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
-    prepare: (w) => Object.defineProperty(w.HTMLImageElement.prototype, "naturalWidth", { configurable: true, get: () => 135 }),
+    prepare: (w) => {
+      Object.defineProperty(w.HTMLImageElement.prototype, "naturalWidth", { configurable: true, get: () => 135 });
+      w.IntersectionObserver = class {
+        constructor(callback, options) {
+          this.callback = callback;
+          this.options = options;
+          observers.push(this);
+        }
+        observe(target) {
+          queueMicrotask(() => this.callback([{ target, isIntersecting: true, boundingClientRect: { top: 0 }, rootBounds: { top: 0 } }]));
+        }
+        unobserve() {}
+        disconnect() {}
+      };
+    },
   });
   await until(() => w.document.querySelectorAll(".photo-thumb").length === 43);
   const flows = w.document.querySelectorAll('.photo-day[data-day="2026-09"] > .photo-flow');
   assert.equal(flows.length, 1);
-  assert.equal(flows[0].querySelectorAll(".photo-thumb").length, 43);
+  assert.equal(flows[0].querySelectorAll(":scope > .photo-thumb").length, 43, "tiles sit directly in the month's flow");
   const px = (element, name) => parseFloat(element.style.getPropertyValue(name));
-  const first = (day) => w.document.querySelector(`.photo-block[data-block="${day}"] .photo-thumb`);
-  const settled = () => [...w.document.querySelectorAll(".photo-thumb")].every((tile) => px(tile, "--photo-width") < px(tile, "--photo-height"));
   await until(() => {
     loadThumbs();
-    return settled();
+    return [...w.document.querySelectorAll(".photo-thumb")].every((tile) => px(tile, "--photo-width") < px(tile, "--photo-height"));
   });
-  const top = px(first("2026-09-27"), "--photo-top");
-  for (const day of ["2026-09-26", "2026-09-25", "2026-09-20"]) assert.equal(px(first(day), "--photo-top"), top, `${day} starts in the first row`);
-  const lefts = ["2026-09-27", "2026-09-26", "2026-09-25", "2026-09-20"].map((day) => px(first(day), "--photo-left"));
-  assert.deepEqual([...lefts].sort((a, b) => a - b), lefts, "days run left to right in the row");
-  for (const block of w.document.querySelectorAll(".photo-block")) {
-    const heading = block.querySelector("h3");
-    const tile = block.querySelector(".photo-thumb");
-    assert.equal(px(heading, "--label-left"), px(tile, "--photo-left"));
-    assert.equal(px(heading, "--label-top"), px(tile, "--photo-top") - 24);
+  const tops = [...new Set([...w.document.querySelectorAll(".photo-thumb")].map((tile) => px(tile, "--photo-top")))].sort((a, b) => a - b);
+  assert.ok(tops.length > 3);
+  for (let index = 1; index < tops.length; index++) {
+    const above = [...w.document.querySelectorAll(".photo-thumb")].find((tile) => px(tile, "--photo-top") === tops[index - 1]);
+    assert.ok(Math.abs(tops[index] - (tops[index - 1] + px(above, "--photo-height") + 6)) < 0.05, "rows follow one tile gap apart with no label room");
   }
-  const long = w.document.querySelector('.photo-block[data-block="2026-09-20"]');
-  const rows = new Set([...long.querySelectorAll(".photo-thumb")].map((tile) => px(tile, "--photo-top")));
-  assert.ok(rows.size > 3, "the long day continues on the next rows");
-  assert.equal(long.querySelectorAll("h3").length, 1);
-  const narrow = first("2026-09-27").closest(".photo-block").querySelector("h3");
-  assert.equal(narrow.querySelector(".photo-day-name").textContent, "Sun 27 Sep", "a one-photo day's label fits above its tile");
-  assert.equal(narrow.querySelector(".photo-count").hidden, true);
-  const wide = long.querySelector("h3");
-  assert.match(wide.querySelector(".photo-day-name").textContent, /^Sunday 20 September/);
-  assert.equal(wide.querySelector(".photo-count").textContent, "40 photos");
-  assert.equal(wide.querySelector(".photo-count").hidden, false);
   const bottom = Math.max(...[...w.document.querySelectorAll(".photo-thumb")].map((tile) => px(tile, "--photo-top") + px(tile, "--photo-height")));
   assert.ok(Math.abs(px(flows[0], "--flow-height") - bottom) < 0.05, "the month is as tall as its rows");
+  const group = w.document.querySelector('.photo-day[data-day="2026-09"]');
+  const edge = group.querySelector(":scope > .photo-day-edge");
+  assert.equal(edge.nextElementSibling.tagName, "H2", "the sentinel sits right above the heading");
+  const sticky = observers.find((observer) => observer.options?.root === w.document.querySelector(".page"));
+  assert.ok(sticky, "the sentinel is watched against the scrolling page");
+  assert.match(sticky.options.rootMargin, /^0px 0px \d+px 0px$/, "a jump past the heading still reports it");
+  sticky.callback([{ target: edge, isIntersecting: false, boundingClientRect: { top: -40 }, rootBounds: { top: 0 } }]);
+  assert.ok(group.classList.contains("photo-day-stuck"), "the fade shows once the heading's own top has scrolled under it");
+  sticky.callback([{ target: edge, isIntersecting: true, boundingClientRect: { top: 30 }, rootBounds: { top: 0 } }]);
+  assert.equal(group.classList.contains("photo-day-stuck"), false, "and goes when the heading is back in place");
+});
+
+test("a month emptied by a deletion stops watching its heading sentinel", async (t) => {
+  const unobserved = [];
+  const { w } = await mountWall(t, {
+    page: () => ({ items: [wallItem("a.jpg", "2026-09-27T10:00:00"), wallItem("b.jpg", "2026-08-10T10:00:00")], timeline: [{ month: "2026-09", count: 1, videos: 0 }, { month: "2026-08", count: 1, videos: 0 }], undated: noUndated }),
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+    answer: (route) => (route === "/v1/gallery/delete" ? { paths: ["b.jpg"], rows: [{ path: "b.jpg", rev: 1 }] } : undefined),
+    prepare: (w) => {
+      w.IntersectionObserver = class {
+        constructor(callback, options) {
+          this.callback = callback;
+          this.options = options;
+        }
+        observe(target) {
+          queueMicrotask(() => this.callback([{ target, isIntersecting: true, boundingClientRect: { top: 0 }, rootBounds: { top: 0 } }]));
+        }
+        unobserve(target) {
+          if (this.options?.root?.classList?.contains("page")) unobserved.push(target);
+        }
+        disconnect() {}
+      };
+    },
+  });
+  await until(() => w.document.querySelector('.photo-day[data-day="2026-08"] .photo-thumb'));
+  const edge = w.document.querySelector('.photo-day[data-day="2026-08"] > .photo-day-edge');
+  w.document.querySelector('.photo-day[data-day="2026-08"] .photo-select').click();
+  w.document.querySelector(".photo-selection-delete").click();
+  w.document.querySelector("#dialog-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  await until(() => !w.document.querySelector('.photo-day[data-day="2026-08"]'));
+  assert.ok(unobserved.includes(edge), "the removed month's sentinel leaves the sticky observer");
+  assert.ok(!unobserved.includes(w.document.querySelector('.photo-day[data-day="2026-09"] > .photo-day-edge')));
 });
 
 const tilePx = (element, name) => parseFloat(element.style.getPropertyValue(name));
 const frames = () => new Promise((resolve) => setTimeout(resolve, 80));
 const noUndated = { count: 0, videos: 0, rev: 0 };
 
-test("a page whose first new day closes the row above re-lays that whole row", async (t) => {
+test("a page whose first new photo closes the row above re-lays that whole row", async (t) => {
   let release;
   const gate = new Promise((resolve) => (release = resolve));
   const timeline = [{ month: "2026-09", count: 5, videos: 0 }];
   const { w, loadThumbs } = await mountWall(t, {
     page: async (query) =>
       query.get("after")
-        ? (await gate, { items: [wallItem("e.jpg", "2026-09-26T10:00:00")], timeline, undated: noUndated, days: { "2026-09-26": 1 } })
-        : { items: ["a", "b", "c", "d"].map((name, i) => wallItem(`${name}.jpg`, `2026-09-27T1${5 - i}:00:00`)), next: "cursor-1", timeline, undated: noUndated, days: { "2026-09-27": 4 } },
+        ? (await gate, { items: [wallItem("e.jpg", "2026-09-26T10:00:00")], timeline, undated: noUndated })
+        : { items: ["a", "b", "c", "d"].map((name, i) => wallItem(`${name}.jpg`, `2026-09-27T1${5 - i}:00:00`)), next: "cursor-1", timeline, undated: noUndated },
     preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
   });
-  const tiles = (day) => [...w.document.querySelectorAll(`.photo-block[data-block="${day}"] .photo-thumb`)];
-  const settled = (day) => tiles(day).every((tile) => Math.abs(tilePx(tile, "--photo-width") / tilePx(tile, "--photo-height") - 4 / 3) < 0.01);
+  const all = () => [...w.document.querySelectorAll('.photo-day[data-day="2026-09"] .photo-thumb')];
+  const settled = (tiles) => tiles.every((tile) => Math.abs(tilePx(tile, "--photo-width") / tilePx(tile, "--photo-height") - 4 / 3) < 0.01);
   await until(() => {
     loadThumbs();
-    return tiles("2026-09-27").length === 4 && settled("2026-09-27");
+    return all().length === 4 && settled(all());
   });
-  assert.equal(tilePx(tiles("2026-09-27")[0], "--photo-height"), 180, "the month's last row keeps the target height");
+  assert.equal(tilePx(all()[0], "--photo-height"), 180, "the month's last row keeps the target height");
   release();
   await until(() => {
     loadThumbs();
-    return tiles("2026-09-26").length === 1 && settled("2026-09-26");
+    return all().length === 5 && settled(all());
   });
   await frames();
-  const row = tiles("2026-09-27");
-  const next = tiles("2026-09-26")[0];
-  assert.ok(tilePx(next, "--photo-top") > tilePx(row[0], "--photo-top"), "the new day starts the next row");
+  const row = all().slice(0, 4);
+  const next = all()[4];
+  assert.ok(tilePx(next, "--photo-top") > tilePx(row[0], "--photo-top"), "the new photo starts the next row");
   for (const tile of row) assert.ok(Math.abs(tilePx(tile, "--photo-height") - 184.17) < 0.05, `the closed row takes its new height, not ${tilePx(tile, "--photo-height")}`);
   const last = row.at(-1);
   assert.ok(Math.abs(tilePx(last, "--photo-left") + tilePx(last, "--photo-width") - 1000) < 0.5, "the closed row fills the wall with no blank strip");
-  assert.ok(tilePx(next, "--photo-top") >= tilePx(row[0], "--photo-top") + 184.17 + 6 + 24 - 0.05);
+  assert.ok(Math.abs(tilePx(next, "--photo-top") - (tilePx(row[0], "--photo-top") + 184.17 + 6)) < 0.05, "one tile gap below, with no label room");
 });
 
-test("a one-photo day too narrow for its short label shows the date and month, then the day number", async (t) => {
-  const b64 = (text) => Buffer.from(text).toString("base64");
-  const { w, loadThumbs } = await mountWall(t, {
-    page: () => ({ items: [wallItem("thin.jpg", "2026-09-27T10:00:00"), wallItem("slim.jpg", "2026-09-26T10:00:00"), wallItem("wide.jpg", "2026-09-25T10:00:00")], timeline: [{ month: "2026-09", count: 3, videos: 0 }], undated: noUndated, days: { "2026-09-27": 1, "2026-09-26": 1, "2026-09-25": 1 } }),
-    preview: (size, path) => ({ data: `data:image/jpeg;base64,${b64(path)}` }),
-    prepare: (w) =>
-      Object.defineProperty(w.HTMLImageElement.prototype, "naturalWidth", {
-        configurable: true,
-        get() {
-          return this.src.includes(b64("thin.jpg")) ? 30 : this.src.includes(b64("slim.jpg")) ? 68 : 360;
-        },
-      }),
-  });
-  const name = (day) => w.document.querySelector(`.photo-block[data-block="${day}"] .photo-day-name`)?.textContent;
-  await until(() => {
-    loadThumbs();
-    return name("2026-09-27") === "27" && name("2026-09-26") === "26 Sep";
-  });
-  assert.match(name("2026-09-25"), /^Friday 25 September/);
-});
-
-test("day labels refit once the label font finishes loading", async (t) => {
-  const state = { loaded: false };
-  let fonts;
-  const { w, loadThumbs } = await mountWall(t, {
-    page: () => ({ items: ["a", "b", "c", "d"].map((name, i) => wallItem(`${name}.jpg`, `2026-09-27T1${5 - i}:00:00`)), timeline: [{ month: "2026-09", count: 4, videos: 0 }], undated: noUndated, days: { "2026-09-27": 4 } }),
+test("On this day cards take the wall's current row height as 4:3 photos and load a preview sharp enough for it", async (t) => {
+  const year = String(new Date().getFullYear() - 1);
+  const { w, log } = await mountWall(t, {
+    page: () => ({ items: ["a", "b"].map((name, i) => wallItem(`${name}.jpg`, `2026-09-27T1${5 - i}:00:00`)), timeline: [{ month: "2026-09", count: 2, videos: 0 }], undated: noUndated }),
+    memories: [{ year, count: 3, path: "m.jpg", hash: "mh", kind: "image" }],
     preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
-    prepare: (w) => {
-      const style = w.document.createElement("style");
-      style.textContent = ".photo-day-name, .photo-count { font: 600 13px Label; }";
-      w.document.head.append(style);
-      w.OffscreenCanvas = class {
-        getContext() {
-          return { font: "", measureText: (text) => ({ width: text.length * (state.loaded ? 60 : 1) }) };
-        }
-      };
-      fonts = new w.EventTarget();
-      fonts.ready = new Promise(() => {});
-      Object.defineProperty(w.document, "fonts", { configurable: true, value: fonts });
+    prepare: (w) => Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("photo-flow") || this.classList.contains("photo-days") ? 1000 : 0; } }),
+  });
+  const gallery = w.document.querySelector("#photo-gallery");
+  const row = () => gallery.style.getPropertyValue("--photo-row");
+  await until(() => w.document.querySelector(".memory-card img"));
+  assert.equal(row(), "180px", "Medium rows are 180 px on a 1000 px wall");
+  assert.ok(log.includes("medium:m.jpg"), `a 240 × 180 card at 2× asks for the medium preview, not the thumbnail (${log.join(" ")})`);
+  const pinch = async (deltaY) => {
+    w.document.querySelector(".page").dispatchEvent(new w.WheelEvent("wheel", { ctrlKey: true, deltaY, bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+  };
+  await pinch(-60);
+  assert.equal(row(), "240px", "Large rows grow the cards with them");
+  await pinch(60);
+  await pinch(60);
+  assert.equal(row(), "120px", "Small rows shrink them");
+  const tile = w.document.querySelector(".photo-thumb");
+  await until(() => tilePx(tile, "--photo-height") > 0);
+  assert.ok(tilePx(tile, "--photo-height") <= 120 * 1.25, "the wall uses the same Small target");
+});
+
+test("an On this day card whose preview is busy asks again and ends with its photo", async (t) => {
+  const year = String(new Date().getFullYear() - 1);
+  let busy = 1;
+  const { w, log } = await mountWall(t, {
+    page: () => ({ items: [wallItem("a.jpg", "2026-09-27T15:00:00")], timeline: [{ month: "2026-09", count: 1, videos: 0 }], undated: noUndated }),
+    memories: [{ year, count: 3, path: "m.jpg", hash: "mh", kind: "image" }],
+    preview: (size, path) => {
+      if (path === "m.jpg" && busy-- > 0) throw Object.assign(new Error("Previews are busy. Try again."), { status: 429 });
+      return { data: "data:image/jpeg;base64,AAAA" };
     },
+    prepare: (w) => Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("photo-flow") || this.classList.contains("photo-days") ? 1000 : 0; } }),
   });
-  const heading = () => w.document.querySelector('.photo-block[data-block="2026-09-27"] h3');
-  await until(() => {
-    loadThumbs();
-    return heading() && tilePx(heading(), "--label-width") > 900;
-  });
-  assert.match(heading().querySelector(".photo-day-name").textContent, /^Sunday 27 September/);
-  assert.equal(heading().querySelector(".photo-count").hidden, false);
-  state.loaded = true;
-  fonts.dispatchEvent(new w.Event("loadingdone"));
-  assert.equal(heading().querySelector(".photo-day-name").textContent, "Sun 27 Sep", "widths measured with the fallback font are dropped");
-  assert.equal(heading().querySelector(".photo-count").hidden, true);
-});
-
-test("a day whose count changes outside a relayout refits its label", async (t) => {
-  let release;
-  const gate = new Promise((resolve) => (release = resolve));
-  const timeline = [{ month: "2026-10", count: 3, videos: 0 }, { month: "2026-09", count: 1, videos: 0 }];
-  const { w, loadThumbs } = await mountWall(t, {
-    zone: "America/New_York",
-    page: async (query) =>
-      query.get("after")
-        ? (await gate, { items: [wallItem("night.jpg", "2026-10-01T02:00:00.000Z")], timeline, undated: noUndated, days: {} })
-        : { items: ["a", "b", "c"].map((name, i) => wallItem(`${name}.jpg`, `2026-10-01T1${5 - i}:00:00`)), next: "cursor-1", timeline, undated: noUndated, days: { "2026-10-01": 1000000 } },
-    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
-    prepare: (w) => Object.defineProperty(w.HTMLImageElement.prototype, "naturalWidth", { configurable: true, get: () => 108 }),
-  });
-  const heading = () => w.document.querySelector('.photo-block[data-block="2026-10-01"] h3');
-  await until(() => {
-    loadThumbs();
-    return heading() && Math.abs(tilePx(heading(), "--label-width") - 228) < 0.05;
-  });
-  assert.equal(heading().querySelector(".photo-count").textContent, "1,000,000 photos");
-  assert.equal(heading().querySelector(".photo-count").hidden, true, "a long count does not fit above three slim photos");
-  release();
-  await until(() => w.document.querySelector('.photo-block[data-block="2026-09-30"]'));
-  assert.equal(heading().querySelector(".photo-count").textContent, "3 photos", "a day that lost a photo to the local time zone counts what it shows");
-  assert.equal(heading().querySelector(".photo-count").hidden, false, "the shorter count now fits beside the name");
+  await until(() => w.document.querySelector(".memory-card img"), 400);
+  assert.equal(log.filter((entry) => entry.endsWith(":m.jpg")).length, 2, "one busy answer, one retry");
+  assert.equal(w.document.querySelector(".memory-card").dataset.source, "medium");
 });
 
 test("moving to a screen with another pixel density sharpens the tiles without a resize", async (t) => {
   const queries = [];
   const { w, log, loadThumbs } = await mountWall(t, {
-    page: () => ({ items: ["a", "b", "c", "d"].map((name, i) => wallItem(`${name}.jpg`, `2026-09-27T1${5 - i}:00:00`)), timeline: [{ month: "2026-09", count: 4, videos: 0 }], undated: noUndated, days: { "2026-09-27": 4 } }),
+    page: () => ({ items: ["a", "b", "c", "d"].map((name, i) => wallItem(`${name}.jpg`, `2026-09-27T1${5 - i}:00:00`)), timeline: [{ month: "2026-09", count: 4, videos: 0 }], undated: noUndated }),
     preview: (size) => (size === "large" ? { url: "http://127.0.0.1:9/large", expires: Date.now() + 3600000 } : { data: "data:image/jpeg;base64,AAAA" }),
     prepare: (w) => {
       w.matchMedia = (media) => {
@@ -7004,13 +7075,13 @@ test("a raw epoch capture time never files a photo under 1970, and a tile scroll
       ],
       timeline: [{ month: "2026-09", count: 2, videos: 1 }],
       undated: { count: 1, videos: 0, rev: 0 },
-      days: { "2026-09-27": 2 },
     }),
     preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
     prepare: (w) => {
       w.IntersectionObserver = class {
-        constructor(callback) {
+        constructor(callback, options) {
           this.callback = callback;
+          this.options = options;
           observers.push(this);
         }
         observe(target) {
@@ -7031,7 +7102,7 @@ test("a raw epoch capture time never files a photo under 1970, and a tile scroll
   assert.equal(epoch.dataset.tooltip, "Date unknown");
   const tile = (name) => w.document.querySelector(`.photo-open[aria-label="Open ${name}"]`).closest(".photo-thumb");
   const tiles = [tile("a.jpg"), tile("clip.mp4")];
-  for (const target of tiles) for (const each of observers) each.callback([{ target, isIntersecting: false }]);
+  for (const target of tiles) for (const each of observers.filter((observer) => !observer.options?.root)) each.callback([{ target, isIntersecting: false }]);
   assert.ok(tile("a.jpg").querySelector(".photo-open svg.brand-arch"), "a photo scrolled out shows the arch placeholder");
   assert.ok(!tile("a.jpg").querySelector(".photo-open img"));
   assert.ok(tile("clip.mp4").querySelector('.photo-open [data-icon="play"], .photo-open svg'), "a video scrolled out shows its play glyph");
@@ -7043,8 +7114,8 @@ test("seeking a month opens on that month, not on a neighbour holding one shifte
     zone: "Asia/Bangkok",
     page: (query) =>
       query.get("month") === "2026-09"
-        ? { items: [wallItem("night.jpg", "2026-09-30T22:30:00.000Z"), wallItem("s.jpg", "2026-09-20T10:00:00")], timeline: [{ month: "2026-09", count: 2, videos: 0 }, { month: "2026-08", count: 1, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: { "2026-09-30": 1, "2026-09-20": 1 } }
-        : { items: [wallItem("aug.jpg", "2026-08-10T10:00:00")], timeline: [{ month: "2026-09", count: 2, videos: 0 }, { month: "2026-08", count: 1, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: { "2026-08-10": 1 } },
+        ? { items: [wallItem("night.jpg", "2026-09-30T22:30:00.000Z"), wallItem("s.jpg", "2026-09-20T10:00:00")], timeline: [{ month: "2026-09", count: 2, videos: 0 }, { month: "2026-08", count: 1, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 } }
+        : { items: [wallItem("aug.jpg", "2026-08-10T10:00:00")], timeline: [{ month: "2026-09", count: 2, videos: 0 }, { month: "2026-08", count: 1, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 } },
     preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
     prepare: (w) => {
       const rect = w.HTMLElement.prototype.getBoundingClientRect;
@@ -7065,7 +7136,7 @@ test("busy previews are retried, and tiles sharpen only once every thumbnail is 
   const busy = new Map();
   const items = Array.from({ length: 5 }, (_, i) => wallItem(`p${i}.jpg`, `2026-09-2${i}T10:00:00`));
   const { w, log, loadThumbs } = await mountWall(t, {
-    page: () => ({ items, timeline: [{ month: "2026-09", count: 5, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: {} }),
+    page: () => ({ items, timeline: [{ month: "2026-09", count: 5, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 } }),
     preview: (size, file) => {
       const key = `${size}:${file}`;
       const refusals = busy.get(key) ?? (size === "thumb" ? (file === "p0.jpg" || file === "p3.jpg" ? 2 : 0) : file === "p1.jpg" ? 1 : 0);
@@ -7092,7 +7163,7 @@ test("medium previews that fail to decode free their cache share, and tiles upgr
   const filler = "A".repeat(1200000);
   const frames = [];
   const { w, log, loadThumbs } = await mountWall(t, {
-    page: () => ({ items, timeline: [{ month: "2026-09", count: 4, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, days: {} }),
+    page: () => ({ items, timeline: [{ month: "2026-09", count: 4, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 } }),
     preview: (size, file) =>
       size === "thumb"
         ? { data: "data:image/jpeg;base64,AAAA" }

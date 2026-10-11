@@ -30,10 +30,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
   `bug · agent · high`
   accept: the popover position comes from one pure function of the click point, the popover size and the monitor's work area (`apps/desktop/src-tauri/src/main.rs`, today 14 px below the click and 160 px left of it); with a bottom taskbar it opens above the click, with a top menu bar or taskbar below it, and it never crosses any edge of the work area, including a click near a corner and on a scaled secondary monitor. Rust unit tests in the `rust-tests` job cover bottom, top, left and right taskbars, both corners and a scale factor of 1.5.
 
-- **UI-SIDEBAR-IDENTITY** — The device name and its role live in the status card
-  `ui · agent · normal`
-  accept: the board UI-SIDEBAR-IDENTITY (option B) on desktop, web, phone and Fold
-
 ## In progress
 
 _None._
@@ -247,6 +243,10 @@ Suggested order for approval: preservation of user files, synchronization recove
   accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
 
 ### Deferred usability and cleanup
+
+- **MOB-MEDIUM-PREVIEW** — The phone asks for the 720 px preview when a 360 px one is too small
+  `feature · agent · low`
+  accept: hub-preview.js, gallery-thumbnails.js and thumbnail-cache.js gain a medium variant with its own budget; On this day cards and other tiles between 360 and 720 device px use it instead of the 2048 px large preview; tests cover the size choice and the cache budget
 
 - **DESK-FORCED-POLL-DROPPED** — An event that arrives while a status poll is running can leave the window stale for 20–30 seconds
   `bug · agent · low`

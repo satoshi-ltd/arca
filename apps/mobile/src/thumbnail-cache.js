@@ -1,4 +1,5 @@
 import { mediaKind } from "../../../packages/core/gallery-date.js";
+export const THUMB_WIDTH = 360;
 // Cancellable preparation with bounded parallelism. A failed derivative never replaces an original.
 export async function prepareThumbnails(
   entries,

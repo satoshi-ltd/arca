@@ -324,21 +324,9 @@ export class Gallery {
       .all(volume);
     const timeline = months.filter((row) => row.month !== null);
     const undated = months.find((row) => row.month === null);
-    const shownMonths = [
-      ...new Set(rows.map((row) => row.date?.slice(0, 7)).filter(Boolean)),
-    ];
-    const dayCounts = shownMonths.length
-      ? s.db
-          .prepare(
-            source +
-              ` SELECT substr(date,1,10) AS day,count(*) AS count FROM dated WHERE substr(date,1,7) IN (${shownMonths.map(() => "?").join(",")}) GROUP BY day`,
-          )
-          .all(volume, ...shownMonths)
-      : [];
     return {
       indexing,
       timeline,
-      days: Object.fromEntries(dayCounts.map((row) => [row.day, row.count])),
       undated: {
         count: undated?.count || 0,
         videos: undated?.videos || 0,

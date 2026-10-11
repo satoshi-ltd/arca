@@ -1,30 +1,24 @@
-import { DAY_HEAD, dayPlan } from "./gallery-days.js";
 import { galleryTileSize } from "./gallery-scale.js";
+import { THUMB_WIDTH } from "./thumbnail-cache.js";
 
 export const GALLERY_HEADER = 30;
 export const GALLERY_SECTION_GAP = 20;
 export const SCRUB_THUMB = 48;
 const YEAR_SPACING = 28;
 
-export function galleryLayout(months, width, columns, days = null, fontScale = 1) {
+export function galleryLayout(months, width, columns) {
   const { gap, size: tile } = galleryTileSize(width, columns);
   const step = tile + gap;
   let top = 0;
   const sections = months.map(({ month, count }) => {
     const rows = Math.ceil(count / columns);
-    const items = days?.get(month);
-    const plan =
-      items && items.length === count && count
-        ? dayPlan(items, { columns, tile, gap, fontScale })
-        : null;
     const section = {
       month,
       count,
       rows,
       top,
       gridTop: top + GALLERY_HEADER,
-      height: GALLERY_HEADER + (plan ? plan.height : Math.max(0, rows * step - gap)),
-      ...(plan ? { plan } : {}),
+      height: GALLERY_HEADER + Math.max(0, rows * step - gap),
     };
     top += section.height + GALLERY_SECTION_GAP;
     return section;
@@ -62,23 +56,6 @@ export function galleryWindow(layout, top, bottom) {
     const section = layout.sections[index];
     if (section.top > bottom) break;
     if (section.top + section.height < top) continue;
-    if (section.plan) {
-      const from = top - section.gridTop;
-      const to = bottom - section.gridTop;
-      rows.push({
-        section,
-        header: section.top + GALLERY_HEADER >= top,
-        first: 0,
-        last: -1,
-        cells: section.plan.cells.flatMap((cell, index) =>
-          cell.top + cell.height >= from && cell.top <= to ? [index] : [],
-        ),
-        heads: section.plan.heads.filter(
-          (head) => head.top + DAY_HEAD >= from && head.top <= to,
-        ),
-      });
-      continue;
-    }
     const row = (y) =>
       Math.max(
         0,
@@ -89,7 +66,6 @@ export function galleryWindow(layout, top, bottom) {
       );
     rows.push({
       section,
-      header: section.top + GALLERY_HEADER >= top,
       first: row(top),
       last: row(bottom),
     });
@@ -99,11 +75,20 @@ export function galleryWindow(layout, top, bottom) {
 export function itemOffset(layout, month, index) {
   const section = layout.sections.find((item) => item.month === month);
   if (!section) return null;
-  if (section.plan) {
-    const cell = section.plan.cells[index];
-    return section.gridTop + (cell ? cell.top : 0);
-  }
   return section.gridTop + Math.floor(index / layout.columns) * layout.step;
+}
+export function stickyHeading(section, start) {
+  const from = start + section.top;
+  const travel = Math.max(0, section.height - GALLERY_HEADER);
+  return {
+    shift: { inputRange: [from, from + travel], outputRange: [0, travel], extrapolate: "clamp" },
+    fade: { inputRange: [from, from + 1], outputRange: [0, 1], extrapolate: "clamp" },
+  };
+}
+export function memoryCard(layout, pixelRatio) {
+  const height = layout.tile;
+  const width = Math.round((height * 4) / 3);
+  return { width, height, large: Math.ceil(width * pixelRatio) > THUMB_WIDTH };
 }
 // Rows added or removed above the viewport must not move the photos being looked at.
 export function keptOffset(previous, current, view) {

@@ -28,6 +28,8 @@
   --m-warning-bg: #f6ebd4;
   --m-danger: #86302a;
   --m-danger-bg: #f7e2df;
+  --m-toast-bg: #121a16;
+  --m-toast-fg: #f4f6f1;
   --m-approval-reference-font: 28px;
   --m-reference-tracking: 4px;
   --m-row-gap: 12px;
@@ -113,4 +115,6 @@
   --m-warning-bg: #332a18;
   --m-danger: #f0a39a;
   --m-danger-bg: #3a2321;
+  --m-toast-bg: #121a16;
+  --m-toast-fg: #f4f6f1;
 }

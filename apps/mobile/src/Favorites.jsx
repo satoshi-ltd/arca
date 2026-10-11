@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BrandActivity, Icon, Section, useDesign } from "./components";
+import { BrandActivity, DeviceStatus, Icon, Section, useDesign } from "./components";
 import { Cover } from "./MusicLibrary";
 import { Rise, useLeaving, useMotion } from "./motion";
 import { motion } from "./design-tokens.js";
@@ -150,6 +150,8 @@ export function FavoritesDrawer({
   describe,
   open,
   remove,
+  name,
+  device,
 }) {
   const { s, c } = useDesign();
   const { duration, easing } = useMotion();
@@ -259,6 +261,7 @@ export function FavoritesDrawer({
                 })}
               </ScrollView>
             )}
+            {!!device && <DeviceStatus name={name} device={device} />}
           </SafeAreaView>
         </Animated.View>
       </View>

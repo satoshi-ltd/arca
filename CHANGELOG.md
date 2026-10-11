@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.37 — 2026-10-11
+
+- The photo wall groups by month only: no day labels, the month title stays at the top while its photos pass under it, and the Years · Months · Days control is gone on the desktop, web and Fold; pinch or ctrl+wheel still zooms, and the phone's levels now read Photos, Months and Years.
+- On this day cards keep their photo look but take the wall's current row height at a 4:3 shape, in one row that scrolls sideways and loads a preview sized to the screen; the phone shows the same photo cards instead of text cards.
+- The sidebar shows the logo alone and the status card now opens with this device's name and whether it is the Hub or a Replica; on the phone Settings opens with This device, and on the Fold the device's state sits at the foot of the navigation. Narrow windows keep their status on one line.
+- Gallery pages from the hub no longer carry per-day counts that no client reads.
+
+Needs: desktop build · native build · Casa redeploy
+
 ## 0.7.36 — 2026-10-10
 
 - The photo wall is calm and sharp again: days keep their labels but flow together in full rows, tiles load a preview sized to the screen (a new 720 px hub preview), undated photos come after every month, and zeroed or epoch capture times fall back to the file date instead of "1970".

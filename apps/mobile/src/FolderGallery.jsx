@@ -13,6 +13,7 @@ import {
   AppState,
   Image,
   Dimensions,
+  PixelRatio,
   Pressable,
   PanResponder,
   ScrollView,
@@ -27,7 +28,6 @@ import {
   Icon,
   MediaPlaceholder,
   Scaffold,
-  SegmentedControl,
   useDesign,
 } from "./components";
 import { Pop, useMotion } from "./motion";
@@ -90,25 +90,47 @@ import {
   galleryWindow,
   itemOffset,
   keptOffset,
+  memoryCard,
   neededMonth,
   sectionAt,
+  stickyHeading,
 } from "./gallery-layout";
 import {
-  completeDays,
   localMonths,
+  memoryText,
   monthSections,
   galleryComplete,
   galleryCounts,
-  photoCount,
-  planCell,
   shownMonths,
 } from "./gallery-days";
+
+const StickyMonth = memo(function StickyMonth({ month, top, height, start, scrollY }) {
+  const { s } = useDesign();
+  const motion = useMemo(() => {
+    if (!scrollY) return null;
+    const stick = stickyHeading({ top, height }, start);
+    return { shift: scrollY.interpolate(stick.shift), fade: scrollY.interpolate(stick.fade) };
+  }, [scrollY, top, height, start]);
+  return (
+    <Animated.View
+      pointerEvents="box-only"
+      style={[
+        s.galleryHeader,
+        { top, height: GALLERY_HEADER, transform: [{ translateY: motion ? motion.shift : 0 }] },
+      ]}
+    >
+      <Text numberOfLines={1} style={s.timelineMonth}>
+        {monthLabel(month)}
+      </Text>
+      {motion && <Animated.View style={[s.galleryFade, { opacity: motion.fade }]} />}
+    </Animated.View>
+  );
+});
 
 const Tile = memo(function Tile({
   item,
   uri,
   size,
-  height = size,
   top,
   left,
   onPress,
@@ -152,7 +174,7 @@ const Tile = memo(function Tile({
         pressed && s.pressedFade,
         {
           width: size,
-          height,
+          height: size,
           ...(top !== undefined ? { top, left } : {}),
           ...(size < 40 ? { borderRadius: 2 } : {}),
         },
@@ -235,7 +257,7 @@ export function FolderGallery({
   focus = null,
   onFocused,
 }) {
-  const { s, wide, fontScale = 1 } = useDesign();
+  const { s } = useDesign();
   const { duration, easing } = useMotion();
   const linked = connected && !offline;
   const [failures, setFailures] = useState(0);
@@ -254,7 +276,7 @@ export function FolderGallery({
   const [measured, setMeasured] = useState(0);
   const [level, setLevel] = useState("base");
   const density = levelColumns(level, columns);
-  const levelName = { base: "Days", compact: "Months", years: "Years" }[level];
+  const levelName = { base: "Photos", compact: "Months", years: "Years" }[level];
   const pill = useRef(new Animated.Value(0)).current;
   const [pillAt, setPillAt] = useState(null);
   const levelSeen = useRef(level);
@@ -518,20 +540,14 @@ export function FolderGallery({
     };
   }, [online, level, volume, api, memoryDay]);
   const years = useMemo(() => galleryYears(source.timeline), [source.timeline]);
-  const dayItems = useMemo(
-    () => (level === "base" ? completeDays(sections, months, shown) : null),
-    [level, sections, months, shown],
-  );
   const layout = useMemo(
     () =>
       galleryLayout(
         sections,
         width,
         density === "years" ? compactColumns(columns) : density,
-        dayItems,
-        fontScale,
       ),
-    [sections, width, density, columns, dayItems, fontScale],
+    [sections, width, density, columns],
   );
   const rows = useMemo(
     () =>
@@ -540,23 +556,8 @@ export function FolderGallery({
   );
   const cells = useMemo(() => {
     const list = [];
-    for (const { section, first, last, cells: planned } of rows) {
+    for (const { section, first, last } of rows) {
       const items = months.get(section.month) || [];
-      if (planned) {
-        for (const index of planned) {
-          const place = section.plan.cells[index];
-          list.push({
-            month: section.month,
-            index,
-            item: items[index],
-            top: section.gridTop + place.top,
-            left: place.left,
-            width: place.width,
-            height: place.height,
-          });
-        }
-        continue;
-      }
       for (let row = first; row <= last; row++)
         for (let column = 0; column < layout.columns; column++) {
           const index = row * layout.columns + column;
@@ -677,6 +678,31 @@ export function FolderGallery({
     }),
     [withHub],
   );
+  const card = useMemo(() => memoryCard(layout, PixelRatio.get()), [layout.tile]);
+  const [memoryCovers, setMemoryCovers] = useState({});
+  useEffect(() => {
+    if (!memories.length || !card.height) return;
+    let active = true;
+    (async () => {
+      const found = {};
+      for (const memory of memories) {
+        const item = timelineItem(memory, entryByPath.get(memory.path));
+        if (!item) continue;
+        try {
+          found[memory.path] =
+            card.large && item.kind !== "video"
+              ? await displayRef.current(item, true, true)
+              : await io.render(item);
+        } catch {
+          found[memory.path] = null;
+        }
+      }
+      if (active) setMemoryCovers(found);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [memories, card.large, !card.height, io, entryByPath]);
   const backgroundIo = useMemo(() => localPreviewIo(thumbnailFiles), []);
   const candidates = useMemo(
     () =>
@@ -1121,15 +1147,13 @@ export function FolderGallery({
           const y = localY - canvasTop.current;
           const section = grid.sections[sectionAt(grid, y)];
           if (!section) return;
-          const cell = section.plan
-            ? planCell(section.plan, pageX - x, y - section.gridTop)
-            : pinchCell(
-                section.count,
-                grid.columns,
-                grid.step,
-                pageX - x,
-                y - section.gridTop,
-              );
+          const cell = pinchCell(
+            section.count,
+            grid.columns,
+            grid.step,
+            pageX - x,
+            y - section.gridTop,
+          );
           gesture.anchor = {
             month: section.month,
             index: cell.index,
@@ -1137,7 +1161,7 @@ export function FolderGallery({
               rootTop.current +
               canvasTop.current +
               section.gridTop +
-              (section.plan ? cell.top : cell.row * grid.step) -
+              cell.row * grid.step -
               lastScrollY.current,
           };
         });
@@ -1274,7 +1298,7 @@ export function FolderGallery({
       {...pinchResponder.panHandlers}
       style={s.timeline}
       accessibilityActions={[
-        { name: "days", label: "Show days" },
+        { name: "photos", label: "Show photos" },
         { name: "months", label: "Show months" },
         { name: "years", label: "Show years" },
       ]}
@@ -1282,7 +1306,7 @@ export function FolderGallery({
         anchor.current = null;
         yearPositions.current.clear();
         setLevel(
-          { days: "base", months: "compact", years: "years" }[event.nativeEvent.actionName] || level,
+          { photos: "base", months: "compact", years: "years" }[event.nativeEvent.actionName] || level,
         );
       }}
       onLayout={(event) => {
@@ -1315,21 +1339,6 @@ export function FolderGallery({
         </View>
       )}
       {!!notice && <Text style={s.caption}>{notice}</Text>}
-      {wide && (
-        <SegmentedControl
-          value={level}
-          onChange={(next) => {
-            anchor.current = null;
-            yearPositions.current.clear();
-            setLevel(next);
-          }}
-          options={[
-            { value: "years", label: "Years" },
-            { value: "compact", label: "Months" },
-            { value: "base", label: "Days" },
-          ]}
-        />
-      )}
       {pillAt !== null && (
         <Animated.View
           pointerEvents="none"
@@ -1338,16 +1347,19 @@ export function FolderGallery({
           <Text style={s.levelPillText}>{levelName}</Text>
         </Animated.View>
       )}
-      {!!memories.length && level === "base" && (
+      {!!memories.length && level === "base" && !!card.height && (
         <View style={s.memories}>
           <Text style={s.eyebrow}>ON THIS DAY</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.memoryRow}>
-            {memories.map((memory) => (
+            {memories.map((memory) => {
+              const text = memoryText(memory, memoryDay.day, Number(memoryDay.year));
+              const cover = memoryCovers[memory.path];
+              return (
               <Pressable
                 key={memory.year}
                 accessibilityRole="button"
                 accessibilityLabel={`On this day in ${memory.year}, ${memory.count} ${memory.count === 1 ? "photo" : "photos"}`}
-                style={({ pressed }) => [s.memoryCard, pressed && s.pressed]}
+                style={({ pressed }) => [s.memoryCard, { width: card.width, height: card.height }, pressed && s.pressedFade]}
                 onPress={() => {
                   const section = layout.sections.find(
                     (item) => item.month === `${memory.year}-${memoryDay.day.slice(0, 2)}`,
@@ -1358,12 +1370,25 @@ export function FolderGallery({
                   followRef.current(y);
                 }}
               >
-                <Text style={s.rowTitle}>{memory.year}</Text>
-                <Text style={s.caption}>
-                  {memory.count.toLocaleString("en")} {memory.count === 1 ? "photo" : "photos"}
-                </Text>
+                {cover ? (
+                  <Image
+                    source={{ uri: cover }}
+                    style={s.memoryCover}
+                    resizeMode="cover"
+                    resizeMethod="resize"
+                    onError={() => setMemoryCovers((covers) => ({ ...covers, [memory.path]: null }))}
+                  />
+                ) : (
+                  <View style={s.memoryCover}>
+                    <MediaPlaceholder size={card.height} video={memory.kind === "video"} />
+                  </View>
+                )}
+                <View style={s.memoryShade} />
+                <Text numberOfLines={1} style={s.memoryTitle}>{text.title}</Text>
+                <Text numberOfLines={1} style={s.memoryCaption}>{text.caption}</Text>
               </Pressable>
-            ))}
+              );
+            })}
           </ScrollView>
         </View>
       )}
@@ -1498,43 +1523,28 @@ export function FolderGallery({
             canvasTop.current = y;
             canvasHeight.current = height;
             shownLayout.current = layoutRef.current.layout;
+            if (y !== previousTop) setMeasured((value) => value + 1);
             if (applyAnchor() || keepPlace(previous, previousTop)) return;
             if (y !== previousTop) remeasured();
           }}
         >
-          {rows
-            .filter((row) => row.header)
-            .map(({ section }) => (
-              <Text
-                key={`month:${section.month}`}
-                numberOfLines={1}
-                style={[s.timelineMonth, s.galleryHeader, { top: section.top }]}
-              >
-                {monthLabel(section.month)}
-              </Text>
-            ))}
-          {rows.flatMap(({ section, heads }) =>
-            (heads || []).map((head) => (
-              <View
-                key={`day:${section.month}:${head.top}:${head.left}`}
-                style={[s.dayHead, { top: section.gridTop + head.top, left: head.left, width: head.width }]}
-              >
-                {head.tick && <View style={s.dayTick} />}
-                <Text numberOfLines={1} style={[s.rowTitle, s.dayLabel]}>
-                  {head.label}
-                </Text>
-                {head.counted && <Text style={s.caption}>{photoCount(head.count)}</Text>}
-              </View>
-            )),
-          )}
+          {rows.map(({ section }) => (
+            <StickyMonth
+              key={`month:${section.month}`}
+              month={section.month}
+              top={section.top}
+              height={section.height}
+              start={rootTop.current + canvasTop.current}
+              scrollY={position?.scrollY}
+            />
+          ))}
           {cells.map((cell) => {
             const item = cell.item && withNative(cell.item);
             return item ? (
               <Tile
                 key={`${cell.month}:${item.path}`}
                 item={item}
-                size={cell.width || layout.tile}
-                height={cell.height}
+                size={layout.tile}
                 top={cell.top}
                 left={cell.left}
                 uri={thumb(item)}

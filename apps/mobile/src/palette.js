@@ -29,6 +29,8 @@ export const palettes = {
     warningBg: "#f6ebd4",
     danger: "#86302a",
     dangerBg: "#f7e2df",
+    toastBg: "#121a16",
+    toastFg: "#f4f6f1",
   },
   dark: {
     noticeSurface: "#1f2521",
@@ -59,6 +61,8 @@ export const palettes = {
     warningBg: "#332a18",
     danger: "#f0a39a",
     dangerBg: "#3a2321",
+    toastBg: "#121a16",
+    toastFg: "#f4f6f1",
   },
 };
 

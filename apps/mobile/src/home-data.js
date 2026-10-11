@@ -35,3 +35,23 @@ export function historyTone(row) {
   if (row.path.includes(".conflict-") && !row.resolved) return "warning";
   return null;
 }
+const DEVICE_WARNINGS = ["Paused", "Offline", "Disconnected"];
+export const deviceLabel = (name, device) => [name, "Replica", device.word, device.last].filter(Boolean).join(", ");
+
+export function deviceStatus({ connected, paused, offline, busy, error, last }, when) {
+  const word = !connected
+    ? "Disconnected"
+    : paused
+      ? "Paused"
+      : offline
+        ? "Offline"
+        : error
+          ? "Needs attention"
+          : busy
+            ? "Syncing"
+            : last
+              ? "Up to date"
+              : "Not synced yet";
+  const tone = word === "Needs attention" ? "danger" : DEVICE_WARNINGS.includes(word) ? "warning" : null;
+  return { word, tone, last: last ? `Last sync ${when(last)}` : "" };
+}

@@ -435,37 +435,65 @@
   grid-template-columns: repeat(var(--columns, 4), minmax(0, 1fr));
   gap: 4px;
 }
-.m-day-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 28px;
+.m-month.m-stuck {
+  position: relative;
+  z-index: 1;
+  background: var(--m-paper);
 }
-.m-day-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 28px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.m-day-label.m-span-2 {
-  grid-column: span 2;
-}
-.m-day-label.m-span-3 {
-  grid-column: span 3;
-}
-.m-day-label.m-day-tick::before {
+.m-month.m-stuck::after {
   content: "";
-  flex: none;
-  align-self: stretch;
-  width: 2px;
-  background: var(--m-line);
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 14px;
+  background: linear-gradient(180deg, var(--m-paper), transparent);
 }
-.m-day-label > .m-row-title {
+.m-grid.m-under {
+  margin-top: -46px;
+}
+.m-memories {
+  display: flex;
+  gap: 8px;
+  overflow: hidden;
+}
+.m-photo.m-memory {
+  position: relative;
+  flex: none;
+  width: calc((100% - (var(--columns, 4) - 1) * 4px) / var(--columns, 4) * 4 / 3);
+  aspect-ratio: 4 / 3;
+  border-radius: var(--m-card-radius);
+  overflow: hidden;
+}
+.m-memory::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 30%, var(--m-toast-bg));
+}
+.m-memory > span {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--m-toast-fg);
+  font-size: var(--m-touch-body-font);
+  line-height: 20px;
+  font-weight: 600;
+}
+.m-memory > span > * {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-memory small {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
 }
 .m-grid.m-dense {
   gap: 2px;
@@ -2006,4 +2034,59 @@
 }
 .m-state-dot.m-state-dot-warning {
   background: var(--m-warning);
+}
+.m-device.m-fold.m-fold-wide {
+  width: 1000px;
+}
+.m-device-status {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--m-divider);
+  border-radius: var(--m-card-radius);
+  background: var(--m-surface);
+}
+.m-device-status .m-caption,
+.m-device-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-device-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--m-touch-caption-font);
+  font-weight: 600;
+  color: var(--m-ink);
+}
+.m-device-who svg {
+  flex: none;
+  color: var(--m-mute);
+}
+.m-role-word {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--m-touch-caption-font);
+  font-weight: 400;
+  color: var(--m-mute);
+}
+.m-device-glyph {
+  position: relative;
+  margin-top: auto;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-6) + var(--space-2));
+  height: calc(var(--space-6) + var(--space-2));
+  color: var(--m-mute);
+}
+.m-device-glyph .m-state-dot {
+  position: absolute;
+  top: 0;
+  right: 0;
 }

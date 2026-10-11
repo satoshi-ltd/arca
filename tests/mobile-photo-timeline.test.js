@@ -577,13 +577,12 @@ test("the gallery layout places every month by its count and windows only nearby
   assert.equal(sectionAt(layout, august.top - 1), 0);
   assert.equal(sectionAt(layout, august.top), 1);
   assert.deepEqual(
-    galleryWindow(layout, 140, 200).map(({ section, header, first, last }) => [
+    galleryWindow(layout, 140, 200).map(({ section, first, last }) => [
       section.month,
-      header,
       first,
       last,
     ]),
-    [["2026-09", false, 1, 1]],
+    [["2026-09", 1, 1]],
   );
   assert.deepEqual(
     galleryWindow(layout, 0, layout.height).map(({ section, first, last }) => [section.month, first, last]),
@@ -1291,8 +1290,9 @@ test("the gallery grid never decodes originals and keeps preparing thumbnails wh
   assert.doesNotMatch(swift, /\? try await/, "Swift rejects try to the right of a ternary");
   assert.doesNotMatch(app, /status\.syncingVolume, status\.last\]/);
   assert.match(app, /return coalescedRun\(/);
-  assert.match(thumbnails, /nativeThumbnail\(\s*entry\.uri,\s*target\.uri,\s*large \? 2048 : 360,\s*!large,\s*false,\s*\)/);
-  assert.match(thumbnails, /nativeThumbnail\(uri, target\.uri, 360, true, true\)/);
+  assert.match(thumbnails, /nativeThumbnail\(\s*entry\.uri,\s*target\.uri,\s*large \? 2048 : THUMB_WIDTH,\s*!large,\s*false,\s*\)/);
+  assert.match(thumbnails, /nativeThumbnail\(uri, target\.uri, THUMB_WIDTH, true, true\)/);
+  assert.match(fs.readFileSync(new URL("../apps/mobile/src/thumbnail-cache.js", import.meta.url), "utf8"), /export const THUMB_WIDTH = 360;/);
   assert.match(viewer, /preview=\{item\.preview\}/);
   assert.match(viewer, /\{!loaded && !!preview && \(/);
 });

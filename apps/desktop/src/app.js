@@ -3,8 +3,10 @@ import {
   galleryMoment,
   galleryZoomStep,
   mediaSummary,
+  cardPreviews,
   photoFlow,
   pinchSteps,
+  PREVIEW_RANK,
   rowTarget,
   tilePreviewSize,
   timelineSegments,
@@ -110,7 +112,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.36";
+const APP_VERSION = "0.7.37";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1845,9 +1847,6 @@ function updateShell() {
   const nav = document.querySelector('nav [data-view="devices"]');
   if (nav) nav.innerHTML = icon("monitor-smartphone") + "Devices";
 
-  $("#managed-role").textContent = status.role === "hub" ? "Hub" : "";
-  $("#managed-role").hidden = status.role !== "hub";
-  $("#managed-name").textContent = status.name;
   const states = {
     idle: ["Up to date", "ok", "circle-check"],
     paused: ["Paused", "wa", "pause"],
@@ -1871,6 +1870,14 @@ function updateShell() {
   $("#connection").innerHTML =
     (symbol === "busy" ? busyIcon() : icon(symbol)) + escape(label);
   $("#connection").className = color;
+  const role = status.role === "hub" ? "Hub" : "Replica";
+  const device = $("#status-device");
+  device.innerHTML = `${icon(status.role === "hub" || !native ? "server" : "monitor")}<b id="managed-name">${escape(status.name)}</b><span id="managed-role" class="machine-role">${role}</span><span class="status-dot ${color}" aria-hidden="true"></span>`;
+  device.title = `${status.name} · ${role} · ${label}`;
+  device.hidden = false;
+  const card = device.closest(".status-card");
+  card.setAttribute("aria-label", `${status.name}, ${role}, ${label}`);
+  card.hidden = false;
   $("#last-sync").textContent =
     status.role !== "hub" && !status.hub
       ? "Local files are kept on this device"
@@ -2725,7 +2732,6 @@ async function render({ refreshStatus = false } = {}) {
       dates: galleryView.dates,
       undated: galleryView.undated,
       month: galleryView.month,
-      days: galleryView.days,
       scroll: galleryView.root.closest(".page")?.scrollTop || 0,
     };
   }
@@ -3222,35 +3228,12 @@ function dropCachedPhoto(route, kind) {
 }
 const busyPreview = (error) =>
   error?.status === 429 || error?.message === "Previews are busy. Try again.";
-const PREVIEW_RANK = { thumb: 0, medium: 1, large: 2 };
 let galleryReturn = null;
 let galleryFocus = null,
   galleryView = null,
   folderViewId = null,
   folderReturn = { tab: "files", scroll: 0 };
 const galleryRatios = new Map();
-const galleryDayHeading = (key) => {
-  if (key.length !== 10) return "Day unknown";
-  const d = new Date(`${key}T12:00:00`);
-  const part = (options) => d.toLocaleDateString("en", options);
-  const year =
-    d.getFullYear() === new Date().getFullYear() ? "" : ` ${d.getFullYear()}`;
-  return `${part({ weekday: "long" })} ${d.getDate()} ${part({ month: "long" })}${year}`;
-};
-const galleryDayShort = (key) => {
-  if (key.length !== 10) return "Day unknown";
-  const d = new Date(`${key}T12:00:00`);
-  const part = (options) => d.toLocaleDateString("en", options);
-  return `${part({ weekday: "short" })} ${d.getDate()} ${part({ month: "short" })}`;
-};
-const galleryDayTiny = (key) => {
-  if (key.length !== 10) return [];
-  const d = new Date(`${key}T12:00:00`);
-  return [
-    `${d.getDate()} ${d.toLocaleDateString("en", { month: "short" })}`,
-    String(d.getDate()),
-  ];
-};
 function mountGallery(volume) {
   galleryView?.observer?.disconnect();
   galleryView?.moreObserver?.disconnect();
@@ -3273,9 +3256,7 @@ function mountGallery(volume) {
     poll: null,
     queue: [],
     workers: 0,
-    days: {},
     dirty: new Set(),
-    shifted: new Set(),
     sharp: [],
     sharpening: 0,
     waiting: 0,
@@ -3297,11 +3278,12 @@ function mountGallery(volume) {
   state.stopHover = stopHover;
   const tileImage = async (button, item) => {
     try {
-      const result = await cachedPhoto(previewRoute(item));
+      const result = await cachedPhoto(previewRoute(item, "thumb"));
       if (!current() || !button.isConnected || !result.data) return;
       const img = document.createElement("img");
       img.alt = "";
       img.src = result.data;
+      button.querySelector(":scope > img")?.remove();
       button.prepend(img);
     } catch {
       /* A missing preview leaves the placeholder. */
@@ -3311,6 +3293,8 @@ function mountGallery(volume) {
     period.length === 4
       ? period
       : new Date(`${period}-01T12:00:00`).toLocaleDateString("en", { month: "short", year: "numeric" });
+  const page = root.closest(".page");
+  const zoomView = (stop) => (stop === "years" || stop === "months" ? stop : "photos");
   async function showPeriods(level) {
     const box = root.querySelector(".photo-periods");
     const seek = state.seek;
@@ -3332,41 +3316,34 @@ function mountGallery(volume) {
       const p = data.periods[index];
       tileImage(tile, p);
       tile.onclick = () => {
-        galleryZoom = "days";
+        galleryZoom = "small";
         state.setZoom();
         seekMonth(level === "years" ? p.latest || `${p.period}-12` : p.period);
       };
     });
   }
   state.setZoom = () => {
-    const periods = galleryZoom !== "days";
+    const periods = zoomView(galleryZoom) !== "photos";
     root.classList.toggle("gallery-periods-view", periods);
     root.querySelector(".photo-periods").hidden = !periods;
-    document
-      .querySelectorAll('.gallery-zoom button[data-action="gallery-zoom"]')
-      .forEach((control) => {
-        const on = control.dataset.id === galleryZoom;
-        control.classList.toggle("active", on);
-        control.setAttribute("aria-pressed", String(on));
-      });
-    if (periods) showPeriods(galleryZoom);
-    else root.querySelector(".photo-periods").replaceChildren();
+    if (periods) return void showPeriods(galleryZoom);
+    root.querySelector(".photo-periods").replaceChildren();
+    sizeRow();
   };
   const pinch = pinchSteps();
   const zoomBy = (direction, target) => {
-    const next = galleryZoomStep(galleryZoom, galleryRowSize, direction);
-    const resized = next.size !== galleryRowSize;
-    galleryRowSize = next.size;
+    const next = galleryZoomStep(galleryZoom, direction);
+    if (next === galleryZoom) return;
     const period = target?.closest?.(".period-tile");
-    if (galleryZoom === "months" && next.zoom === "days" && period) {
+    if (galleryZoom === "months" && direction > 0 && period) {
       period.click();
       return;
     }
-    if (next.zoom !== galleryZoom) {
-      galleryZoom = next.zoom;
-      state.setZoom();
-    } else if (resized && galleryZoom === "days")
-      root.querySelectorAll(".photo-flow").forEach(relayout);
+    const changed = zoomView(next) !== zoomView(galleryZoom);
+    galleryZoom = next;
+    if (changed) return void state.setZoom();
+    sizeRow();
+    root.querySelectorAll(".photo-flow").forEach(relayout);
   };
   let gestureScale = 1;
   const pinchHandlers = {
@@ -3413,8 +3390,9 @@ function mountGallery(volume) {
           return `<button type="button" class="memory-card" data-year="${escape(m.year)}"><span class="memory-title">${escape(new Date(`${m.year}-${day}T12:00:00`).toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric" }))}</span><span class="memory-sub">${ago === 1 ? "1 year ago" : `${ago} years ago`} · ${escape(countLabel(m.count, "photo"))}</span></button>`;
         })
         .join("")}</div>`;
+      state.memories = data.memories;
+      sizeRow();
       box.querySelectorAll(".memory-card").forEach((card, index) => {
-        tileImage(card, data.memories[index]);
         card.onclick = () => seekMonth(`${data.memories[index].year}-${day.slice(0, 2)}`);
       });
     } catch {
@@ -3483,6 +3461,21 @@ function mountGallery(volume) {
     tile.retries = (tile.retries || 0) + 1;
     setTimeout(retry, Math.min(4000, 250 * 2 ** tile.retries));
   };
+  const cardPreview = cardPreviews({
+    load: async (item, size) =>
+      (await cachedPhoto(previewRoute(item, size), size === "thumb" ? undefined : size === "large" ? "tile" : "medium")).data,
+    show: (card, data) => {
+      if (!current() || !card.isConnected) return false;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = data;
+      card.querySelector(":scope > img")?.remove();
+      card.prepend(img);
+      return true;
+    },
+    busy: busyPreview,
+    retry: (card, again) => retryLater(card, () => current() && card.isConnected && again()),
+  });
   async function drain() {
     if (!current()) return;
     if (!state.queue.length) {
@@ -3517,7 +3510,7 @@ function mountGallery(volume) {
               galleryRatios.delete(galleryRatios.keys().next().value);
             if (tile.photoRatio !== ratio) {
               tile.photoRatio = ratio;
-              relayout(tile.parentElement);
+              relayout(tile);
             } else sharpen(tile);
           };
           tile.querySelector(".photo-open").replaceChildren(img);
@@ -3567,6 +3560,21 @@ function mountGallery(volume) {
             }
           },
           { rootMargin: "300px" },
+        )
+      : null;
+  state.sticky =
+    typeof IntersectionObserver === "function"
+      ? new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries)
+              entry.target.parentElement?.classList.toggle(
+                "photo-day-stuck",
+                !entry.isIntersecting &&
+                  entry.boundingClientRect.top <
+                    (entry.rootBounds || page.getBoundingClientRect()).top,
+              );
+          },
+          { root: page, rootMargin: "0px 0px 1000000px 0px" },
         )
       : null;
   const toolbar = $("#photo-selection");
@@ -3620,16 +3628,14 @@ function mountGallery(volume) {
       state.queue = state.queue.filter((queued) => queued !== tile);
       state.sharp = state.sharp.filter((queued) => queued !== tile);
       touched.add(tile.closest(".photo-flow"));
-      const block = tile.closest(".photo-block");
-      if (state.days[block?.dataset.block] > 0)
-        state.days[block.dataset.block] -= 1;
       tile.remove();
     }
-    for (const block of root.querySelectorAll(".photo-block"))
-      if (!block.querySelector(".photo-thumb")) block.remove();
-      else countBlock(block);
     for (const group of root.querySelectorAll(".photo-day"))
-      if (!group.querySelector(".photo-thumb")) group.remove();
+      if (!group.querySelector(".photo-thumb")) {
+        const edge = group.querySelector(":scope > .photo-day-edge");
+        if (edge) state.sticky?.unobserve(edge);
+        group.remove();
+      }
     updateSelection();
     layoutPhotos([...touched].filter((grid) => grid.isConnected));
     if (!root.querySelector(".photo-thumb") && !state.next)
@@ -3713,67 +3719,16 @@ function mountGallery(volume) {
       void sharpenNext();
     }
   }
-  const labelWidths = new Map();
-  const labelFonts = new Map();
-  const measure =
-    typeof OffscreenCanvas === "function"
-      ? new OffscreenCanvas(1, 1).getContext("2d")
-      : null;
-  function textWidth(element, text) {
-    if (!labelFonts.get(element.className))
-      labelFonts.set(element.className, getComputedStyle(element).font);
-    const font = labelFonts.get(element.className);
-    const key = `${font}|${text}`;
-    if (!labelWidths.has(key)) {
-      if (measure && font) measure.font = font;
-      labelWidths.set(
-        key,
-        measure && font
-          ? measure.measureText(text).width
-          : text.length * (element.matches(".photo-count") ? 6.6 : 7),
-      );
-    }
-    return labelWidths.get(key);
-  }
-  function fitLabel(heading, width) {
-    const key = heading.parentElement.dataset.block;
-    const name = heading.querySelector(".photo-day-name");
-    const count = heading.querySelector(".photo-count");
-    const spacing = tokenPixels("--space-2", 8);
-    const forms = [
-      ...[galleryDayHeading(key), galleryDayShort(key)].flatMap((text) => [
-        [text, true],
-        [text, false],
-      ]),
-      ...galleryDayTiny(key).map((text) => [text, false]),
-    ];
-    const [text, counted] =
-      forms.find(
-        ([text, counted]) =>
-          textWidth(name, text) +
-            (counted ? spacing + textWidth(count, count.textContent) : 0) <=
-          width,
-      ) || forms.at(-1);
-    if (name.textContent !== text) name.textContent = text;
-    if (count.hidden === counted) count.hidden = !counted;
-  }
-  function refitLabel(heading) {
-    const width = parseFloat(heading?.style.getPropertyValue("--label-width"));
-    if (width) fitLabel(heading, width);
-  }
-  function refitLabels() {
-    if (!current()) return;
-    labelWidths.clear();
-    labelFonts.clear();
-    for (const heading of root.querySelectorAll(".photo-block > h3"))
-      refitLabel(heading);
-  }
-  document.fonts?.ready?.then(refitLabels);
-  document.fonts?.addEventListener?.("loadingdone", refitLabels);
   const put = (element, name, value) => {
     if (element.style.getPropertyValue(name) !== value)
       element.style.setProperty(name, value);
   };
+  function sizeRow() {
+    const row = rowTarget(root.querySelector(".photo-days").clientWidth, galleryZoom);
+    put(root, "--photo-row", `${row}px`);
+    const size = tilePreviewSize((row * 4) / 3, row, window.devicePixelRatio || 1);
+    root.querySelectorAll(".memory-card").forEach((card, index) => cardPreview(card, state.memories[index], size));
+  }
   function layoutPhotos(changed = root.querySelectorAll(".photo-flow")) {
     if (!current()) return;
     const flows = new Map();
@@ -3788,29 +3743,21 @@ function mountGallery(volume) {
   function layoutFlow(flow, dirty) {
     const width = flow.clientWidth;
     if (!width) return;
-    const grids = [...flow.querySelectorAll(".photo-grid")];
+    const tiles = [...flow.children];
     const layout = photoFlow(
-      grids.map((grid) => ({
-        ratios: [...grid.children].map((tile) => tile.photoRatio || 1.5),
-        label: grid.parentElement.matches(".photo-block"),
-      })),
-      {
-        width,
-        target: rowTarget(width, galleryRowSize),
-        gap: 6,
-        label: tokenPixels("--space-6", 24),
-      },
+      tiles.map((tile) => tile.photoRatio || 1.5),
+      { width, target: rowTarget(width, galleryZoom), gap: 6 },
     );
-    const firstOf = (chunk) =>
-      layout.tiles.find((tile) => tile.chunk >= chunk)?.row ?? Infinity;
     const from = dirty.has(flow)
       ? 0
-      : Math.min(
-          ...grids.map((grid, chunk) =>
-            dirty.has(grid) ? Math.max(0, firstOf(chunk) - 1) : Infinity,
-          ),
+      : Math.max(
+          0,
+          Math.min(
+            ...tiles.map((tile, index) =>
+              dirty.has(tile) ? layout.tiles[index].row : Infinity,
+            ),
+          ) - 1,
         );
-    const tiles = grids.flatMap((grid) => [...grid.children]);
     layout.tiles.forEach((place, index) => {
       if (place.row < from) return;
       const tile = tiles[index];
@@ -3820,32 +3767,24 @@ function mountGallery(volume) {
       put(tile, "--photo-height", `${place.height}px`);
       sharpen(tile);
     });
-    for (const label of layout.labels) {
-      const heading = grids[label.chunk].parentElement.querySelector(":scope > h3");
-      put(heading, "--label-left", `${label.left}px`);
-      put(heading, "--label-top", `${label.top}px`);
-      put(heading, "--label-width", `${label.width}px`);
-      fitLabel(heading, label.width);
-    }
     put(flow, "--flow-height", `${layout.height}px`);
   }
-  function relayout(grid) {
-    if (!grid) return;
-    state.dirty.add(grid);
+  function relayout(element) {
+    if (!element) return;
+    state.dirty.add(element);
     if (state.relayoutScheduled) return;
     state.relayoutScheduled = true;
     (globalThis.requestAnimationFrame || ((next) => setTimeout(next, 16)))(() => {
       state.relayoutScheduled = false;
-      const grids = [...state.dirty].filter((item) => item.isConnected);
+      const changed = [...state.dirty].filter((item) => item.isConnected);
       state.dirty.clear();
-      if (!current() || !grids.length) return;
-      const page = root.closest(".page");
+      if (!current() || !changed.length) return;
       const top = page.getBoundingClientRect().top;
       const anchor = [...root.querySelectorAll(".photo-thumb")].find(
         (tile) => tile.getBoundingClientRect().bottom > top,
       );
       const offset = anchor?.getBoundingClientRect().top;
-      layoutPhotos(grids);
+      layoutPhotos(changed);
       const delta =
         anchor?.isConnected && offset != null
           ? anchor.getBoundingClientRect().top - offset
@@ -3853,22 +3792,10 @@ function mountGallery(volume) {
       if (delta) page.scrollTop += delta;
     });
   }
-  function countBlock(block) {
-    const loaded = block.querySelectorAll(".photo-thumb").length;
-    const count =
-      state.shifted.has(block.dataset.block)
-        ? loaded
-        : Math.max(loaded, state.days[block.dataset.block] || 0);
-    const label = block.querySelector(".photo-count");
-    const text = countLabel(count, "photo");
-    if (label.textContent === text) return;
-    label.textContent = text;
-    refitLabel(block.querySelector(":scope > h3"));
+  function clearWall() {
+    state.sticky?.disconnect();
+    root.querySelector(".photo-days").replaceChildren();
   }
-  const placeBefore = (parent, field, selector, key) =>
-    [...parent.querySelectorAll(`:scope > ${selector}`)].find(
-      (other) => other.dataset[field] < key,
-    );
   function monthGroup(month) {
     const days = root.querySelector(".photo-days");
     let group = days.querySelector(`:scope > .photo-day[data-day="${month}"]`);
@@ -3876,40 +3803,31 @@ function mountGallery(volume) {
     group = document.createElement("section");
     group.className = "photo-day";
     group.dataset.day = month;
-    group.innerHTML =
+    group.innerHTML = `<span class="photo-day-edge" aria-hidden="true"></span>${
       month === "unknown"
-        ? `<h2>Date unknown</h2><div class="photo-flow"><div class="photo-grid"></div></div>`
-        : `<h2>${escape(new Date(`${month}-01T12:00:00`).toLocaleDateString("en", { year: "numeric", month: "long" }))}</h2><div class="photo-flow"></div>`;
+        ? "<h2>Date unknown</h2>"
+        : `<h2>${escape(new Date(`${month}-01T12:00:00`).toLocaleDateString("en", { year: "numeric", month: "long" }))}</h2>`
+    }<div class="photo-flow"></div>`;
     days.insertBefore(
       group,
       month === "unknown"
         ? null
-        : placeBefore(days, "day", ".photo-day", month) ||
-            days.querySelector(':scope > .photo-day[data-day="unknown"]'),
+        : [...days.querySelectorAll(":scope > .photo-day")].find(
+            (other) => other.dataset.day < month,
+          ) || days.querySelector(':scope > .photo-day[data-day="unknown"]'),
     );
+    state.sticky?.observe(group.querySelector(".photo-day-edge"));
     return group;
-  }
-  function dayGrid(group, key) {
-    const flow = group.querySelector(":scope > .photo-flow");
-    let block = flow.querySelector(`:scope > .photo-block[data-block="${key}"]`);
-    if (!block) {
-      block = document.createElement("div");
-      block.className = "photo-block";
-      block.dataset.block = key;
-      block.innerHTML = `<h3><span class="photo-day-name">${escape(galleryDayHeading(key))}</span><span class="photo-count"></span></h3><div class="photo-grid"></div>`;
-      flow.insertBefore(block, placeBefore(flow, "block", ".photo-block", key) || null);
-    }
-    return block.querySelector(".photo-grid");
   }
   function addItems(items) {
     const touched = new Set();
-    const recount = new Set();
     for (const item of items) {
       if (state.paths.has(item.path)) continue;
       state.paths.add(item.path);
       const index = state.items.push(item) - 1;
       const dayKey = galleryDay(item.date);
-      const group = monthGroup(dayKey.slice(0, 7) || "unknown");
+      const month = dayKey.slice(0, 7) || "unknown";
+      const group = monthGroup(month);
       const tile = document.createElement("div");
       tile.className = "photo-thumb";
       tile.photoRatio = galleryRatios.get(item.hash);
@@ -3924,23 +3842,18 @@ function mountGallery(volume) {
       tile.querySelector(".photo-open").onclick = () =>
         state.selection.size ? togglePhoto(item) : openGalleryPhoto(index);
       tile.querySelector(".photo-select").onclick = () => togglePhoto(item);
-      const grid = dayKey ? dayGrid(group, dayKey) : group.querySelector(".photo-grid");
-      const listedDay = dayKey && item.date.slice(0, 10);
-      if (dayKey.length === 10 && listedDay !== dayKey) {
-        state.shifted.add(dayKey);
-        state.shifted.add(listedDay);
-        recount.add(listedDay);
-      }
+      const flow = group.querySelector(":scope > .photo-flow");
       tile.photoTime = dayKey ? galleryMoment(item.date).getTime() : null;
-      grid.insertBefore(
+      const last = flow.lastElementChild;
+      flow.insertBefore(
         tile,
-        tile.photoTime === null
+        tile.photoTime === null || !last || last.photoTime >= tile.photoTime
           ? null
-          : [...grid.children].find(
+          : [...flow.children].find(
               (other) => other.photoTime !== null && other.photoTime < tile.photoTime,
             ) || null,
       );
-      touched.add(grid);
+      touched.add(tile);
       if (item.kind === "image" || item.kind === "video") {
         if (state.observer) state.observer.observe(tile);
         else {
@@ -3949,11 +3862,6 @@ function mountGallery(volume) {
         }
       }
     }
-    for (const grid of touched)
-      if (grid.parentElement.matches(".photo-block"))
-        recount.add(grid.parentElement.dataset.block);
-    for (const block of root.querySelectorAll(".photo-block"))
-      if (recount.has(block.dataset.block)) countBlock(block);
     updateSelection();
     layoutPhotos(touched);
     icons();
@@ -3969,14 +3877,13 @@ function mountGallery(volume) {
     state.paths.clear();
     state.queue = [];
     state.sharp = [];
-    state.shifted.clear();
-    root.querySelector(".photo-days").replaceChildren();
+    clearWall();
     state.next = "";
     state.month = month;
     state.anchorMonth = month;
     state.range = { month };
     state.previous = null;
-    root.closest(".page").scrollTop = 0;
+    page.scrollTop = 0;
     for (const button of root.querySelectorAll(".photo-timeline button"))
       button.toggleAttribute("aria-current", button.dataset.month === month);
     state.load();
@@ -4177,12 +4084,10 @@ function mountGallery(volume) {
         state.items = [];
         state.paths.clear();
         state.queue = [];
-        state.shifted.clear();
-        root.querySelector(".photo-days").replaceChildren();
+        clearWall();
         root.querySelector(".photo-timeline").replaceChildren();
       }
       updateTimeline(data);
-      Object.assign(state.days, data.days);
       addItems(data.items);
       if (state.anchorMonth) {
         const group = root.querySelector(
@@ -4231,7 +4136,6 @@ function mountGallery(volume) {
     }
   };
   function replaceItems(items) {
-    const page = root.closest(".page");
     const top = page.getBoundingClientRect().top;
     const anchor = [...root.querySelectorAll(".photo-thumb")].find(
       (tile) => tile.getBoundingClientRect().bottom > top,
@@ -4242,11 +4146,10 @@ function mountGallery(volume) {
     stopHover();
     state.observer?.disconnect();
     state.sharp = [];
-    state.shifted.clear();
     state.items = [];
     state.paths.clear();
     state.queue = [];
-    root.querySelector(".photo-days").replaceChildren();
+    clearWall();
     addItems(items);
     const index = state.items.findIndex((item) => item.path === anchorPath);
     const nextAnchor = root.querySelector(`[data-photo="${index}"]`);
@@ -4291,7 +4194,6 @@ function mountGallery(volume) {
         state.previous = null;
         return;
       }
-      Object.assign(state.days, data.days);
       replaceItems([...data.items, ...state.items]);
       state.range = { from: data.items[0].cursor };
       state.previous = data.previous ?? null;
@@ -4338,7 +4240,6 @@ function mountGallery(volume) {
         )
           return;
         items.push(...data.items);
-        Object.assign(state.days, data.days);
         after = data.next;
         if (!after) break;
       }
@@ -4380,7 +4281,6 @@ function mountGallery(volume) {
         )
       : null;
   state.newerObserver?.observe(root.querySelector(".photo-newer"));
-  const page = root.closest(".page");
   const rail = root.querySelector(".photo-timeline");
   const sizeTimeline = () => {
     if (!current()) return;
@@ -4390,9 +4290,12 @@ function mountGallery(volume) {
     const ratio = window.devicePixelRatio || 1;
     if (state.layoutWidth !== root.clientWidth) {
       state.layoutWidth = root.clientWidth;
+      sizeRow();
       layoutPhotos();
-    } else if (state.pixelRatio && state.pixelRatio !== ratio)
+    } else if (state.pixelRatio && state.pixelRatio !== ratio) {
+      sizeRow();
       for (const tile of root.querySelectorAll(".photo-thumb")) sharpen(tile);
+    }
     state.pixelRatio = ratio;
     rail.style.setProperty(
       "--timeline-height",
@@ -4464,7 +4367,7 @@ function mountGallery(volume) {
       "change",
       state.pixelRatioQuery.changed,
     );
-    document.fonts?.removeEventListener?.("loadingdone", refitLabels);
+    state.sticky?.disconnect();
     clearInterval(refreshTimer);
     clearTimeout(state.scrollDate);
     clearTimeout(state.poll);
@@ -4510,7 +4413,6 @@ function mountGallery(volume) {
       previous: saved.previous,
       range: saved.range,
       month: saved.month,
-      days: saved.days || {},
     });
     updateTimeline({ timeline: saved.dates, undated: saved.undated });
     addItems(saved.items.filter((item) => !item.deleted));
@@ -5016,28 +4918,10 @@ function folderActionsMenu(volume) {
     button(".arcaignore…", "edit-ignore", volume.id, "secondary", "file-pen-line");
   return `<details class="details-menu folder-actions-menu"><summary class="icon-button" aria-label="Folder actions">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
 }
-let galleryZoom = "days";
-let galleryRowSize = 1;
-const galleryZooms = [
-  ["years", "Years"],
-  ["months", "Months"],
-  ["days", "Days"],
-];
-function galleryZoomControl() {
-  return segmented(
-    "Gallery zoom",
-    galleryZooms.map(([id, label]) => ({
-      action: "gallery-zoom",
-      id,
-      label,
-      active: galleryZoom === id,
-    })),
-    "gallery-zoom",
-  );
-}
-function galleryModeButton(volume, withZoom = true) {
+let galleryZoom = "medium";
+function galleryModeButton(volume) {
   if (!volume.gallery) return "";
-  return (withZoom && folderTab === "gallery" ? galleryZoomControl() : "") + button(
+  return button(
     folderTab === "gallery" ? "View folder" : "Gallery",
     "gallery-mode",
     volume.id,
@@ -5064,7 +4948,7 @@ async function folderBrowser(v, recent, pending = false) {
     ],
   )}<div>${folderTab === "recent" ? button("All history", "folder-history", v.id, "text-button") : ""}</div></div>`;
   if (folderTab === "gallery")
-    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v, false)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-memories" hidden></div><div class="photo-periods" hidden></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
+    return `<div id="photo-selection" class="photo-selection-bar" hidden><button type="button" class="icon-button photo-selection-clear" aria-label="Clear selection">${icon("x")}</button><strong class="photo-selection-count" role="status"></strong><button type="button" class="secondary danger photo-selection-delete">${icon("trash-2")}Delete selected…</button>${galleryModeButton(v)}</div><div id="photo-gallery"><div class="photo-newer" aria-hidden="true"></div><div class="photo-memories" hidden></div><div class="photo-periods" hidden></div><div class="photo-days"></div><nav class="photo-timeline" aria-label="Photo dates"></nav><div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true">${busyIcon()}</div></div>`;
   if (folderTab === "recent" && !recent) return tools + scaffoldRow("history");
   if (folderTab === "recent")
     return (
@@ -8256,12 +8140,6 @@ async function handle(name, id, control) {
     );
     return;
   }
-  if (name === "gallery-zoom") {
-    if (galleryZoom === id || !galleryView) return;
-    galleryZoom = id;
-    galleryView.setZoom();
-    return;
-  }
   if (name === "gallery-mode") {
     const volume = status.volumes.find((v) => v.id === detailId);
     if (!volume?.gallery) return;
@@ -8276,7 +8154,6 @@ async function handle(name, id, control) {
         dates: galleryView.dates,
         undated: galleryView.undated,
         month: galleryView.month,
-        days: galleryView.days,
         scroll: $(".page")?.scrollTop || 0,
       };
       folderTab = folderReturn.tab;
