@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { native } from "./private-network";
 import { player, playerAvailable } from "./music-player";
-import { positionSignature, remember } from "./audio-positions.js";
+import { forget, positionKey, positionSignature, remember } from "./audio-positions.js";
 import { drainOutbox } from "./audio-outbox.js";
 import { mergeHubPositions, singleFlight, startPositionRefresh } from "./audio-refresh.js";
 import { SLEEP_OFF, sameSleep, sleepFromState } from "./sleep-timer.js";
@@ -49,12 +49,30 @@ export function useAudioSession({ enabled, watching = false, api, device, scope 
         send: (body) => deps.current.api("/v1/audio-position", body),
       });
       if (sent.length)
-        apply((current) => sent.reduce((next, entry) => remember(next, entry, deps.current.device, entry.at), current));
+        apply((current) =>
+          sent.reduce(
+            (next, entry) =>
+              (next.get(positionKey(entry.volume, entry.path))?.updated || 0) > entry.at
+                ? next
+                : remember(next, entry, deps.current.device, entry.at),
+            current,
+          ),
+        );
     } catch {
     } finally {
       draining.current = false;
     }
   }, [apply]);
+
+  const clear = useCallback(
+    async (row) => {
+      const at = Date.now();
+      const answer = await deps.current.api("/v1/audio-position/clear", { volume: row.volume, path: row.path, hash: row.hash, at });
+      if (answer?.cleared === false) return read.current();
+      apply((current) => forget(current, row, deps.current.device, at));
+    },
+    [apply],
+  );
 
   const observe = useCallback((state) => {
     if (!state) return;
@@ -109,7 +127,7 @@ export function useAudioSession({ enabled, watching = false, api, device, scope 
     [observe],
   );
 
-  return { positions, loaded, refresh, sleep, setSleep };
+  return { positions, loaded, refresh, clear, sleep, setSleep };
 }
 
 export function useNow(active, every = 1000) {

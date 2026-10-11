@@ -141,3 +141,95 @@ test("a replica lists finished episodes from the hub and its own queue, never as
     { volume: "v", path: "c.mp3", hash: "h", updated: 4 },
   ]);
 });
+
+test("clearing a position removes it from Continue, survives an older save and yields to a newer listen", async (t) => {
+  const { volume, api } = await hub(t);
+  const now = Date.now();
+  await api("/v1/audio-position", long(volume, { position: 5000, at: now - 3000 }));
+  const target = { volume: volume.id, path: "Show/2026-10-06 Episode.mp3", hash: "h1" };
+  assert.deepEqual((await api("/v1/audio-position/clear", { ...target, at: now - 1000 })).body, { cleared: true });
+  assert.deepEqual((await api("/v1/audio-positions")).body, { positions: [], finished: [{ ...target, updated: now - 1000 }] });
+  assert.deepEqual((await api("/v1/audio-position", long(volume, { position: 9000, at: now - 2000 }))).body, { kept: false });
+  assert.deepEqual((await api("/v1/audio-positions")).body.positions, []);
+  assert.deepEqual((await api("/v1/audio-position/clear", { ...target, at: now - 2000 })).body, { cleared: false });
+  await api("/v1/audio-position", long(volume, { position: 700, at: now }));
+  assert.equal((await api("/v1/audio-positions")).body.positions[0].position, 700);
+});
+
+test("clearing needs a known folder and a hash", async (t) => {
+  const { volume, api } = await hub(t);
+  assert.equal((await api("/v1/audio-position/clear", { volume: volume.id, path: "a.mp3" })).status, 400);
+  assert.notEqual((await api("/v1/audio-position/clear", { volume: "nope", path: "a.mp3", hash: "h" })).status, 200);
+});
+
+test("a replica queues a clear in the outbox like a save, forwards it and lists it as finished", async (t) => {
+  const { daemon, volume } = await hub(t);
+  const engine = daemon.engine;
+  const sent = [];
+  const replica = {
+    store: engine.store,
+    config: { role: "replica", hub: "http://hub", id: "replica", name: "Replica" },
+    hubUnavailable: true,
+    json: async (route, body) => {
+      sent.push([route, body.clear === true]);
+      return {};
+    },
+    flushPositions: engine.flushPositions,
+    queuedPositions: engine.queuedPositions,
+  };
+  await engine.audioPosition.call(replica, long(volume));
+  await engine.clearAudioPosition.call(replica, { volume: volume.id, path: "Show/2026-10-06 Episode.mp3", hash: "h1" });
+  assert.equal(engine.store.db.prepare("SELECT COUNT(*) AS n FROM audio_outbox").get().n, 1, "a clear replaces the queued save");
+  const { mergePositions } = await import("../packages/daemon/audio-positions.js");
+  assert.deepEqual(mergePositions({ positions: [] }, engine.queuedPositions.call(replica)).positions, []);
+  assert.equal(mergePositions({ positions: [] }, engine.queuedPositions.call(replica)).finished.length, 1);
+  replica.hubUnavailable = false;
+  await engine.flushPositions.call(replica);
+  assert.deepEqual(sent, [["/v1/audio-position/clear", true]]);
+  assert.equal(engine.store.db.prepare("SELECT COUNT(*) AS n FROM audio_outbox").get().n, 0);
+});
+
+test("a linked device clears under its own name, a far-future at is capped and a malformed at falls back to now", async (t) => {
+  const { daemon, volume, api } = await hub(t);
+  const invite = (await api("/v1/devices", { name: "Phone", role: "replica" })).body;
+  const as = async (route, body) => {
+    const response = await fetch(`http://127.0.0.1:${daemon.port}${route}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${invite.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  const target = { volume: volume.id, path: "Show/2026-10-06 Episode.mp3", hash: "h1" };
+  const before = Date.now();
+  assert.deepEqual((await as("/v1/audio-position/clear", { ...target, at: before + 10 * 86400000 })).body, { cleared: true });
+  const row = daemon.engine.store.db.prepare("SELECT device,name,updated FROM audio_positions").get();
+  assert.equal(row.name, "Phone");
+  assert.notEqual(row.device, daemon.engine.config.id);
+  assert.ok(row.updated <= Date.now() + 60000 && row.updated > before + 30000, "the future at is capped at the hub's clock plus 60 s");
+  await api("/v1/audio-position", long(volume, { position: 5000, at: Date.now() + 120000 }));
+  assert.equal((await as("/v1/audio-position/clear", { ...target, path: "b.mp3", at: "garbage" })).body.cleared, true);
+  const other = daemon.engine.store.db.prepare("SELECT updated FROM audio_positions WHERE path='b.mp3'").get();
+  assert.ok(Math.abs(other.updated - Date.now()) < 5000, "a malformed at means now");
+  assert.equal((await as("/v1/audio-position/clear", { ...target, hash: "" })).status, 400);
+});
+
+test("a replica's route queues the clear for the hub instead of writing it", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-resume-replica-"));
+  init(home, { port: 0, role: "replica", name: "Replica" });
+  const daemon = await start(home, { timer: false });
+  t.after(async () => {
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const response = await fetch(`http://127.0.0.1:${daemon.port}/v1/audio-position/clear`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${daemon.engine.config.adminToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ volume: "v", path: "a.mp3", hash: "h" }),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { cleared: true });
+  const queued = daemon.engine.store.db.prepare("SELECT body FROM audio_outbox").all().map((r) => JSON.parse(r.body));
+  assert.deepEqual(queued.map((r) => [r.clear, r.path, r.hash]), [[true, "a.mp3", "h"]]);
+  assert.equal(daemon.engine.store.db.prepare("SELECT COUNT(*) AS n FROM audio_positions").get().n, 0);
+});

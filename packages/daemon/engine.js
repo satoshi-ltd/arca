@@ -1710,14 +1710,14 @@ export class Engine {
           volume: row.volume,
           path: row.path,
           hash: row.hash,
-          position: row.position,
-          duration: row.duration,
+          position: row.clear ? 0 : row.position,
+          duration: row.clear ? 0 : row.duration,
           device: this.config.hub?.deviceId || this.config.id,
           name: this.config.name,
           updated: row.at,
         };
       })
-      .filter((row) => row.duration >= RESUME_MIN_SECONDS);
+      .filter((row) => row.duration >= RESUME_MIN_SECONDS || row.position === 0);
   }
   async audioPosition(body) {
     const row = {
@@ -1735,12 +1735,23 @@ export class Engine {
     await this.flushPositions();
     return { kept: true };
   }
+  async clearAudioPosition(body) {
+    if (typeof body.volume !== "string" || typeof body.path !== "string" || typeof body.hash !== "string" || !body.hash)
+      fail("Invalid audio position");
+    const row = { clear: true, volume: body.volume, path: body.path, hash: body.hash, at: Date.now() };
+    this.store.db
+      .prepare("INSERT OR REPLACE INTO audio_outbox VALUES(?,?,?)")
+      .run(row.volume, row.path, JSON.stringify(row));
+    await this.flushPositions();
+    return { cleared: true };
+  }
   async flushPositions() {
     if (this.config.role === "hub" || !this.config.hub || this.hubUnavailable) return;
     const rows = this.store.db.prepare("SELECT volume,path,body FROM audio_outbox").all();
     for (const { volume, path, body } of rows) {
       try {
-        await this.json("/v1/audio-position", JSON.parse(body), {
+        const entry = JSON.parse(body);
+        await this.json(entry.clear ? "/v1/audio-position/clear" : "/v1/audio-position", entry, {
           signal: AbortSignal.timeout(5000),
           trackConnection: false,
         });

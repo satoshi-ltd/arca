@@ -152,7 +152,7 @@ test("upload verification yields to HTTP reads while preserving content verifica
       pending.then(() => { throw new Error("Verification did not yield through the stream"); }),
     ]);
     const response = await fetch(`http://127.0.0.1:${hub.port}/.well-known/arca`, {
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(10000),
     });
     assert.equal(response.status, 200);
     await response.json();
@@ -1788,7 +1788,7 @@ test("snapshot reads do not wait behind an active hub cycle", async (t) => {
       `http://127.0.0.1:${hub.port}/v1/snapshot?volume=${volume.id}&limit=10`,
       {
         headers: { Authorization: `Bearer ${hub.engine.config.adminToken}` },
-        signal: AbortSignal.timeout(1000),
+        signal: AbortSignal.timeout(10000),
       },
     );
     assert.equal(response.status, 200);

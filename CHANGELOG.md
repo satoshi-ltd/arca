@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.53 — 2026-10-12
+
+- The resume card on the desktop and the phone has a ⋯ with Remove from Continue: it clears that file's saved position on the hub (also from a replica), so the next newest position takes the card; playing the file again brings it back.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.52 — 2026-10-11
 
 - An open music library on the phone re-reads the saved positions every 30 seconds and when you return to the app, so a podcast position saved on another device shows in the resume card and rows without leaving the folder.

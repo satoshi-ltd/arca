@@ -24,6 +24,7 @@ import {
   upNext,
 } from "../apps/mobile/src/music-library.js";
 import {
+  forget,
   fraction,
   isFinished,
   playedRow,
@@ -590,4 +591,35 @@ test("concurrent reads share one request", async () => {
   const session = readFile("audio-session.js");
   assert.match(session, /read\.current \|\|= singleFlight\(/);
   assert.match(session, /enabled \? read\.current\(\) : Promise\.resolve\(\)/);
+});
+
+test("removing from Continue marks the row finished so the next newest position takes the card, in memory and in the car's file", () => {
+  const library = mixed();
+  const [newer, older] = library.shows.get(library.showOrder[1]).tracks.map((id) => library.tracks.get(id));
+  const positions = positionMap([
+    { volume: "a1", path: older.path, hash: older.hash, position: 1680, duration: 4200, device: "d2", name: "macbook-pro", updated: 2 },
+    { volume: "a1", path: newer.path, hash: newer.hash, position: 900, duration: 5400, device: "d1", name: "Android", updated: 1 },
+  ]);
+  assert.equal(resumeCandidate(positions, library, "a1").track, older);
+  const cleared = forget(positions, positions.get(`a1\0${older.path}`), { id: "d1", name: "Android" }, 7);
+  assert.equal(resumeCandidate(cleared, library, "a1").track, newer, "the next newest position takes the card");
+  assert.equal(savedPosition(cleared, older), null);
+  assert.deepEqual([playedRow(cleared, older).finished, playedRow(cleared, older).updated], [true, 7]);
+  const hubRead = mergeHubPositions(cleared, [{ volume: "a1", path: older.path, hash: older.hash, position: 1680, duration: 4200, device: "d2", updated: 2 }], [], "d1");
+  assert.equal(savedPosition(hubRead, older), null, "an older hub row never brings it back");
+  assert.equal(syncedPositions(cleared, new Map([[older.id, older.hash], [newer.id, newer.hash]]), "scope", "d9").tracks[older.id], undefined, "the car's Continue drops it");
+  assert.ok(syncedPositions(cleared, new Map([[newer.id, newer.hash]]), "scope", "d9").tracks[newer.id]);
+});
+
+test("the resume card's actions sheet offers Remove from Continue through the hub's clear route", () => {
+  const session = read("audio-session.js");
+  assert.match(session, /api\("\/v1\/audio-position\/clear", \{ volume: row\.volume, path: row\.path, hash: row\.hash, at \}\);[^\n]*\n[^\n]*\n\s+apply\(\(current\) => forget\(current, row, deps\.current\.device, at\)\);/, "the memory changes only after the hub accepted it");
+  assert.match(session, /\(next\.get\(positionKey\(entry\.volume, entry\.path\)\)\?\.updated \|\| 0\) > entry\.at\s+\? next/, "a drained older save never replaces a newer clear");
+  const library = read("MusicLibrary.jsx");
+  assert.match(library, /accessibilityLabel="Resume actions"[\s\S]*?onPress=\{more\}/, "the card has one more button");
+  assert.match(library, /forget: \(\) => forgetResume\(resume\.row\)/);
+  assert.match(library, /label="Remove from Continue"\s+icon="close"\s+divider\s+onPress=\{\(\) => \{\s+open\(null\);\s+sheet\.forget\(\);/, "the sheet closes and clears");
+  assert.match(read("App.jsx"), /await audio\.clear\(row\);[\s\S]*?Could not remove it from Continue\. Try again when connected\./);
+  assert.match(read("App.jsx"), /relative=\{relative\}\s+forgetResume=\{forgetContinue\}/);
+  assert.match(session, /const answer = await deps\.current\.api\("\/v1\/audio-position\/clear"[^\n]*\n\s+if \(answer\?\.cleared === false\) return read\.current\(\);\s+apply\(\(current\) => forget/, "a refusal from the hub rereads instead of forgetting");
 });

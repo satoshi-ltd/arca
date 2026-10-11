@@ -1000,6 +1000,13 @@ export default function App() {
     device: { id: connection?.id ?? null, name },
     scope: () => engine.current?.scope,
   });
+  const forgetContinue = async (row) => {
+    try {
+      await audio.clear(row);
+    } catch {
+      notices.push({ kind: "info", title: "Could not remove it from Continue. Try again when connected." });
+    }
+  };
   useEffect(() => {
     if (engine.current && audio.loaded) publishSynced(engine.current, audio.positions, connection?.id ?? null).catch(() => {});
   }, [audio.positions, connection?.id]);
@@ -2589,6 +2596,7 @@ export default function App() {
                             command={musicCommand}
                             deviceId={connection?.id}
                             relative={relative}
+                            forgetResume={forgetContinue}
                           />
                         ) : (
                           <View style={s.detailGrid}>

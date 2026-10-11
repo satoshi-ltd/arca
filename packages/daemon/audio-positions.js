@@ -32,6 +32,22 @@ export function savePosition(store, owner, body) {
   return { kept: true };
 }
 
+export function clearPosition(store, owner, body) {
+  const { volume, path, hash } = body;
+  if (typeof volume !== "string" || typeof path !== "string" || typeof hash !== "string" || !hash)
+    fail("Invalid audio position");
+  store.volume(volume);
+  const at = Math.min(Math.floor(Number(body.at) || Date.now()), Date.now() + 60000);
+  const known = store.db
+    .prepare("SELECT duration,updated FROM audio_positions WHERE volume=? AND path=?")
+    .get(volume, path);
+  if (known && known.updated >= at) return { cleared: false };
+  store.db
+    .prepare("INSERT OR REPLACE INTO audio_positions VALUES(?,?,?,0,?,?,?,?)")
+    .run(volume, path, hash, known?.duration || 0, owner.id, owner.name, at);
+  return { cleared: true };
+}
+
 export function listPositions(store) {
   const rows = store.db
     .prepare("SELECT volume,path,hash,position,duration,device,name,updated FROM audio_positions ORDER BY updated DESC")

@@ -18,7 +18,7 @@ import { folderPreview } from "./folder-preview.js";
 import { filePreview } from "./file-preview.js";
 import { searchLocal } from "./search.js";
 import { acceptReport, machines } from "./machines.js";
-import { listPositions, mergePositions, savePosition } from "./audio-positions.js";
+import { clearPosition, listPositions, mergePositions, savePosition } from "./audio-positions.js";
 import { listFavorites, saveFavorites } from "./favorites.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
 import { listPage, browsePage } from "./pages.js";
@@ -1467,6 +1467,15 @@ export async function start(home, options = {}) {
             );
           requireAdmin();
           return send(200, await engine.audioPosition(b));
+        }
+        if (route === "/v1/audio-position/clear") {
+          if (config.role === "hub")
+            return send(
+              200,
+              clearPosition(s, admin ? { id: config.id, name: config.name } : device, b),
+            );
+          requireAdmin();
+          return send(200, await engine.clearAudioPosition(b));
         }
         if (route === "/v1/machine-report") {
           requireHub();

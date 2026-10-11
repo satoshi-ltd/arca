@@ -103,6 +103,21 @@ export function remember(positions, body, device, now) {
   return next;
 }
 
+export function forget(positions, row, device, now) {
+  const next = new Map(positions);
+  next.set(positionKey(row.volume, row.path), {
+    volume: row.volume,
+    path: row.path,
+    hash: row.hash,
+    position: 0,
+    finished: true,
+    device: device?.id ?? null,
+    name: device?.name ?? null,
+    updated: now,
+  });
+  return next;
+}
+
 export function timeLeft(seconds) {
   const minutes = Math.max(1, Math.round(Math.max(0, seconds) / 60));
   return minutes >= 60

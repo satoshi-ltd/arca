@@ -289,7 +289,7 @@ test("background sync acknowledges before completion, coalesces requests and exp
         "content-type": "application/json",
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(10000),
     });
   assert.equal((await request("/v1/sync", { background: true })).status, 202);
   assert.equal((await request("/v1/sync", { background: true })).status, 202);

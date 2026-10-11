@@ -6,6 +6,7 @@ import path from "node:path";
 import { JSDOM } from "jsdom";
 import { init } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
+import { savePosition } from "../packages/daemon/audio-positions.js";
 import {
   artistGroups,
   artistLetter,
@@ -67,7 +68,7 @@ const TRACKS = [
   track("Loose/untagged.ogg"),
 ];
 
-async function open(t, { role = "hub", selected = true, folders = ["Music"], manualCovers = false, library = null, storageFails = false, web = false, others = [] } = {}) {
+async function open(t, { role = "hub", selected = true, folders = ["Music"], manualCovers = false, library = null, storageFails = false, web = false, others = [], positions = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-desktop-music-"));
   init(home, { port: 0, name: "Casa" });
   const daemon = await start(home, { timer: false });
@@ -75,6 +76,7 @@ async function open(t, { role = "hub", selected = true, folders = ["Music"], man
   const plain = others.map((name) => daemon.engine.store.addVolume(name));
   for (const item of volumes) daemon.engine.music.mark(item.id);
   const volume = volumes[0];
+  for (const row of positions?.(volume) || []) savePosition(daemon.engine.store, { id: daemon.engine.config.id, name: daemon.engine.config.name }, row);
   const dom = new JSDOM(html, {
     runScripts: "outside-only",
     url: `http://tauri.localhost/#/folders/${volume.id}`,
@@ -2010,4 +2012,48 @@ test("an episode never inherits music's shuffle or repeat, music gets them back,
   await playAlbum(ui);
   assert.equal($('#music-player [data-player="repeat"]').getAttribute("aria-label"), "Repeat one", "music keeps its repeat");
   assert.equal($('#music-player [data-player="shuffle"]').getAttribute("aria-pressed"), "true", "and its shuffle");
+});
+
+test("the resume card menu removes the item from Continue and the next newest position takes the card", async (t) => {
+  const first = track("Show/2026-10-06 Episode 1.mp3", { title: "Episode 1", artist: "Show", albumArtist: "Show", album: "Show", track: 1, duration: 18612 });
+  const second = track("Show/2026-10-07 Episode 2.mp3", { title: "Episode 2", artist: "Show", albumArtist: "Show", album: "Show", track: 2, duration: 18612 });
+  const at = Date.now();
+  const ui = await open(t, {
+    library: () => ({ version: "v1", indexing: false, tracks: [first, second] }),
+    positions: (volume) => [
+      { volume: volume.id, path: first.path, hash: first.hash, position: 1300, duration: 18612, at: at - 60000 },
+      { volume: volume.id, path: second.path, hash: second.hash, position: 2400, duration: 18612, at },
+    ],
+  });
+  const { $, $$ } = ui;
+  const url = `http://127.0.0.1:${ui.daemon.port}`;
+  await until(() => $(".music-page .music-artist-row") && ui.idle());
+  await until(() => $(".resume-card"));
+  assert.match($(".resume-card").textContent, /Episode 2/);
+  assert.deepEqual(
+    $$(".resume-card .resume-menu .menu-items button").map((el) => [el.dataset.action, el.textContent.trim()]),
+    [["music-resume-clear", "Remove from Continue"]],
+  );
+  $(".resume-card .resume-menu summary").click();
+  $('.resume-card [data-action="music-resume-clear"]').click();
+  await until(() => /Episode 1/.test($(".resume-card")?.textContent || ""));
+  const { positions, finished } = await (await fetch(url + "/v1/audio-positions", { headers: { authorization: `Bearer ${ui.daemon.engine.config.adminToken}` } })).json();
+  assert.deepEqual(positions.map((row) => row.path), [first.path]);
+  assert.deepEqual(finished.map((row) => row.path), [second.path]);
+});
+
+test("when the hub already holds a newer row the card's removal changes nothing locally and rereads the hub", async (t) => {
+  const first = track("Show/2026-10-06 Episode 1.mp3", { title: "Episode 1", artist: "Show", albumArtist: "Show", album: "Show", track: 1, duration: 18612 });
+  const ui = await open(t, {
+    library: () => ({ version: "v1", indexing: false, tracks: [first] }),
+    positions: (volume) => [{ volume: volume.id, path: first.path, hash: first.hash, position: 1300, duration: 18612, at: Date.now() - 60000 }],
+  });
+  const { $ } = ui;
+  await until(() => $(".music-page .music-artist-row") && ui.idle());
+  await until(() => $(".resume-card"));
+  savePosition(ui.daemon.engine.store, { id: "other", name: "Other" }, { volume: ui.volume.id, path: first.path, hash: first.hash, position: 3000, duration: 18612, at: Date.now() + 30000 });
+  $(".resume-card .resume-menu summary").click();
+  $('.resume-card [data-action="music-resume-clear"]').click();
+  await until(() => /50:00/.test($(".resume-card")?.textContent || ""));
+  assert.match($(".resume-card").textContent, /Episode 1.*Other/s);
 });

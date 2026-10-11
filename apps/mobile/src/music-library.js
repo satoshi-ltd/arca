@@ -682,7 +682,7 @@ export function musicSheet(sheet) {
   if (sheet?.kind === "resume-actions")
     return {
       title: sheet.show?.name || sheet.track.title,
-      icon: "podcast",
+      icon: sheet.show || sheet.track.podcast ? "podcast" : "album",
       subtitle: [sheet.show ? sheet.track.title : sheet.track.artist, timeLeft(sheet.row.duration - sheet.row.position)]
         .filter(Boolean)
         .join(" · "),

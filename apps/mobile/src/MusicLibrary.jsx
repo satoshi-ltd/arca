@@ -687,8 +687,8 @@ function useShowOrder(library, positions, loaded, active) {
   return kept.current.ids;
 }
 
-function ResumeCard({ item, cover, canPlay, start, deviceId, relative }) {
-  const { s } = useDesign();
+function ResumeCard({ item, cover, canPlay, start, more, deviceId, relative }) {
+  const { s, c } = useDesign();
   const { track, row } = item;
   const where = row.device && row.device === deviceId ? "this phone" : row.name || "another device";
   const caption = [
@@ -718,6 +718,15 @@ function ResumeCard({ item, cover, canPlay, start, deviceId, relative }) {
             </View>
           )}
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Resume actions"
+          hitSlop={4}
+          onPress={more}
+          style={({ pressed }) => [s.musicRowAction, pressed && s.musicPressed]}
+        >
+          <Icon name="more" size={20} color={c.mute} />
+        </Pressable>
       </View>
     </RiseOnce>
   );
@@ -743,6 +752,7 @@ export function MusicLibrary({
   trackActions,
   playlistActions,
   resumeActions,
+  forgetResume,
   favorite,
   positions,
   loaded,
@@ -813,6 +823,15 @@ export function MusicLibrary({
             deviceId={deviceId}
             relative={relative}
             start={resumeFrom(resume)}
+            more={() =>
+              resumeActions({
+                track: resume.track,
+                row: resume.row,
+                canPlay,
+                start: resumeFrom(resume),
+                forget: () => forgetResume(resume.row),
+              })
+            }
           />
         )}
         {tabs.length > 1 && (
@@ -1261,6 +1280,17 @@ export function MusicSheet({ sheet, library, cover, locked, open, change, remove
             sheet.start(0);
           }}
         />
+        {!!sheet.forget && (
+          <ActionRow
+            label="Remove from Continue"
+            icon="close"
+            divider
+            onPress={() => {
+              open(null);
+              sheet.forget();
+            }}
+          />
+        )}
         {!!sheet.openShow && (
           <ActionRow
             label="Open show"

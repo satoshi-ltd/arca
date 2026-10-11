@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.52";
+const APP_VERSION = "0.7.53";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5394,7 +5394,7 @@ function musicResumeCard(v, library) {
   if (!row) return "";
   const track = library.tracks.get(row.path);
   const where = row.device === status.id ? "this device" : escape(row.name);
-  return `<div class="resume-card" role="status" data-path="${escape(row.path)}">${musicCover(v.id, track.cover)}<div class="resume-text"><strong>${escape(track.title)}</strong><p>Pick up where you left off · <span class="mono">${musicClock(row.position)}</span> · ${where}, ${escape(relative(new Date(row.updated).toISOString()))}</p></div>${button("Continue", "music-resume", row.path, "primary small-button")}${button("Start over", "music-resume-start", row.path, "secondary small-button")}</div>`;
+  return `<div class="resume-card" role="status" data-path="${escape(row.path)}">${musicCover(v.id, track.cover)}<div class="resume-text"><strong>${escape(track.title)}</strong><p>Pick up where you left off · <span class="mono">${musicClock(row.position)}</span> · ${where}, ${escape(relative(new Date(row.updated).toISOString()))}</p></div>${button("Continue", "music-resume", row.path, "primary small-button")}${button("Start over", "music-resume-start", row.path, "secondary small-button")}<details class="details-menu file-actions-menu resume-menu"><summary class="ghost icon-button" aria-label="Resume actions" data-tooltip="Resume actions">${icon("ellipsis")}</summary><div class="menu-items" role="menu">${button("Remove from Continue", "music-resume-clear", row.path, "secondary", "x")}</div></details></div>`;
 }
 function musicBody(v, entry) {
   const library = entry.library;
@@ -6439,6 +6439,17 @@ async function handleMusic(name, id) {
     const saved = audioPositions.get(positionKey(v.id, id));
     $("#content .resume-card")?.remove();
     return musicStart(v.id, { kind: "track", id, name: track.title }, [track], 0, false, null, name === "music-resume" ? saved?.position || 0 : 0);
+  }
+  if (name === "music-resume-clear") {
+    const key = positionKey(v.id, id);
+    const saved = audioPositions.get(key);
+    if (!saved) return;
+    const answer = await api("/v1/audio-position/clear", { volume: v.id, path: id, hash: saved.hash });
+    if (answer?.cleared === false) return loadAudioPositions(v.id);
+    audioPositions.delete(key);
+    audioFinished.set(key, { volume: v.id, path: id, hash: saved.hash, updated: Date.now() });
+    renderMusic(v);
+    return;
   }
   if (name === "music-delete") {
     const track = library.tracks.get(id);

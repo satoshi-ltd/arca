@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MUSIC-REMOVE-CONTINUE** — Remove an item from Continue
-  `feature · agent · low`
-  accept: a hub route clears one file's saved position (linked or admin, forwarded through a replica's outbox like a save), and the resume card's ⋯ offers Remove from Continue on desktop and the phone; route and client tests cover it, and the next newest position takes the card.
+_None._
 
 ## In progress
 
