@@ -1618,8 +1618,12 @@ test("podcast shows resume from their own tile: in progress first, then New, the
   );
   assert.equal(wildTile.querySelector(".music-continue-menu summary").getAttribute("aria-label"), "The Wild Project actions");
   assert.equal(tile("Lex Fridman Podcast").querySelector(".music-continue-play"), null, "shows without progress have no play button");
-  assert.equal(tile("Lex Fridman Podcast").querySelector(".music-new").textContent, "New");
-  assert.equal(tile("Al Corte").querySelector(".music-new"), null, "a finished newest episode is played, not New");
+  const lexTile = tile("Lex Fridman Podcast");
+  assert.equal(lexTile.querySelector(".music-cover > .pill.music-cover-new").textContent, "New", "a New show carries the pill inside its cover");
+  assert.match(lexTile.querySelector("strong + span").textContent, /^[A-Z][a-z]{2} \d{1,2}(, \d{4})?$/, "its caption keeps only the day");
+  assert.match(lexTile.getAttribute("aria-label"), /^Lex Fridman Podcast, New · [A-Z][a-z]{2} \d{1,2}(, \d{4})?$/, "screen readers still hear New");
+  assert.equal(wildTile.querySelector(".music-cover-new"), null, "a show in progress is never New");
+  assert.equal(tile("Al Corte").querySelector(".music-cover-new"), null, "a finished newest episode is played, not New");
   assert.match(tile("Al Corte").querySelector("strong + span").textContent, /^1 episode · /);
   await ui.click(".music-continue-play[data-id]", () => ui.played.length === 1);
   $("audio").dispatchEvent(new w.Event("loadedmetadata"));
@@ -1638,6 +1642,8 @@ test("podcast shows resume from their own tile: in progress first, then New, the
   assert.deepEqual(names(), ["The Wild Project", "Lex Fridman Podcast", "Julian Dorey Podcast", "Al Corte", "Salud en la radio", "Hardcore History"], "reopening the root reorders: the finished show joins the rest");
   const css = source("style.css");
   assert.match(css, /\n\.music-card strong\.music-two \{[^}]*-webkit-line-clamp: 2;/);
+  assert.match(css, /\n\.music-cover > \.pill\.music-cover-new \{\s+position: absolute;\s+top: var\(--space-2\);\s+left: var\(--space-2\);\s+z-index: 1;\s+padding-right: var\(--pill-left\);\s+background: var\(--surface\);\s+color: var\(--green\);\s+\}/, "the pill sits at the play button's inset with surface fill and accent ink");
+  assert.doesNotMatch(css, /\.music-new\b/);
   assert.match(css, /\n\.music-continue-play \{[^}]*top: calc\(var\(--music-tile\) - var\(--control-height\) - var\(--space-2\) - var\(--space-3\)\);[^}]*width: calc\(var\(--control-height\) \+ var\(--space-2\)\);[^}]*background: var\(--green\);/);
   assert.match(css, /\n\.music-continue:hover > \.music-continue-menu,\n\.music-continue:focus-within > \.music-continue-menu,/);
 });

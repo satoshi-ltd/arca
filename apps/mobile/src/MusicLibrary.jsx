@@ -184,6 +184,7 @@ function ShowTile({ show, tile, cover, open, selected, split, hold, favorite, ca
   const { s, wide } = useDesign();
   const art = useRef(null);
   const item = tile.resume;
+  const line = tile.fresh ? tile.day : tile.caption;
   const press = () =>
     wide && !split && art.current?.measureInWindow
       ? art.current.measureInWindow((x, y, width, height) => {
@@ -196,20 +197,18 @@ function ShowTile({ show, tile, cover, open, selected, split, hold, favorite, ca
       <View ref={art} style={s.musicTileCover}>
         <Cover uri={cover(show.cover, "small")} icon="podcast" />
         {tile.progress != null && <ProgressLine value={tile.progress} edge />}
+        {tile.fresh && (
+          <View style={s.newPill} pointerEvents="none">
+            <Text style={s.newPillText}>New</Text>
+          </View>
+        )}
       </View>
       <Text numberOfLines={2} style={s.rowTitle}>
         {show.name}
       </Text>
-      {!!tile.caption && (
+      {!!line && (
         <Text numberOfLines={1} style={s.caption}>
-          {tile.fresh ? (
-            <>
-              <Text style={s.newWord}>New</Text>
-              {tile.day ? ` · ${tile.day}` : ""}
-            </>
-          ) : (
-            tile.caption
-          )}
+          {line}
         </Text>
       )}
     </>

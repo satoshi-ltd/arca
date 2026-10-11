@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.44";
+const APP_VERSION = "0.7.45";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5444,9 +5444,9 @@ function showLastPlayed(v, show) {
 }
 function showCaption(v, show) {
   const day = showDay(show.latest);
-  return showFresh(v, show)
-    ? { html: `<span class="music-new">New</span>${day ? ` · ${escape(day)}` : ""}`, text: ["New", day].filter(Boolean).join(" · ") }
-    : { html: escape([musicCount(show.tracks.length, "episode"), day].filter(Boolean).join(" · ")), text: [musicCount(show.tracks.length, "episode"), day].filter(Boolean).join(" · ") };
+  const fresh = showFresh(v, show);
+  const line = fresh ? day : [musicCount(show.tracks.length, "episode"), day].filter(Boolean).join(" · ");
+  return { fresh, line, text: fresh ? ["New", day].filter(Boolean).join(" · ") : line };
 }
 function orderShows(v, shows) {
   const rank = (show) => (showSaved(v, show) ? 0 : showFresh(v, show) ? 1 : 2);
@@ -5473,7 +5473,7 @@ function showTile(v, show) {
   const newest = showSaved(v, show);
   const caption = showCaption(v, show);
   if (!newest)
-    return `<button type="button" class="music-card" data-action="music-show" data-id="${escape(show.id)}" aria-label="${escape(`${show.name}, ${caption.text}`)}">${musicCover(v.id, show.cover, "arca")}<strong class="music-two">${escape(show.name)}</strong><span>${caption.html}</span></button>`;
+    return `<button type="button" class="music-card" data-action="music-show" data-id="${escape(show.id)}" aria-label="${escape(`${show.name}, ${caption.text}`)}">${musicCover(v.id, show.cover, "arca", "", caption.fresh ? '<span class="pill music-cover-new">New</span>' : "")}<strong class="music-two">${escape(show.name)}</strong><span>${escape(caption.line)}</span></button>`;
   const { track, saved } = newest;
   const left = timeLeft(saved.duration - saved.position);
   const menu = `<details class="details-menu file-actions-menu music-continue-menu"><summary class="ghost icon-button" aria-label="${escape(`${show.name} actions`)}" data-tooltip="${escape(`${show.name} actions`)}">${icon("ellipsis")}</summary><div class="menu-items" role="menu">${button("Continue", "music-resume", track.path, "secondary", "play")}${button("Start over", "music-resume-start", track.path, "secondary", "rotate-ccw")}${button("Open show", "music-show", show.id, "secondary", "podcast")}</div></details>`;

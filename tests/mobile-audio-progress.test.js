@@ -346,7 +346,12 @@ test("every show in progress carries its own play, time left and resume sheet; t
   const theme = read("theme.js");
   const grid = library.slice(library.indexOf("function ShowPlay("), library.indexOf("function AlbumGrid("));
   assert.match(grid, /<Text numberOfLines=\{2\} style=\{s\.rowTitle\}>\s+\{show\.name\}/, "the name on two lines");
-  assert.match(grid, /<Text style=\{s\.newWord\}>New<\/Text>/);
+  assert.match(grid, /tile\.progress != null && <ProgressLine value=\{tile\.progress\} edge \/>\}\s+\{tile\.fresh && \(\s+<View style=\{s\.newPill\} pointerEvents="none">\s+<Text style=\{s\.newPillText\}>New<\/Text>\s+<\/View>\s+\)\}\s+<\/View>/, "a New show carries the pill inside its cover");
+  assert.match(grid, /const line = tile\.fresh \? tile\.day : tile\.caption;[\s\S]*?\{!!line && \(\s+<Text numberOfLines=\{1\} style=\{s\.caption\}>\s+\{line\}/, "its caption keeps only the day");
+  assert.match(grid, /accessibilityLabel=\{tile\.caption \? `\$\{show\.name\}, \$\{tile\.caption\}` : show\.name\}/, "TalkBack still hears New");
+  assert.doesNotMatch(grid, /newWord/);
+  assert.match(theme, /newPill: \{\s+position: "absolute",\s+top: 6,\s+left: 6,\s+paddingVertical: g\.pillY,\s+paddingHorizontal: g\.pillLeft,\s+borderRadius: g\.pillRadius,\s+backgroundColor: c\.surface,\s+\}/, "the pill sits at the play button's 6 dp inset with surface fill");
+  assert.match(theme, /newPillText: \{\s+fontFamily: "InstrumentSans_600SemiBold",\s+fontSize: g\.pillFont,\s+lineHeight: g\.pillLine,\s+color: c\.accent,/, "and accent ink at the pill size");
   assert.match(grid, /tile\.progress != null && <ProgressLine value=\{tile\.progress\} edge \/>/, "a show in progress draws the edge");
   assert.match(grid, /accessibilityLabel=\{`\$\{show\.name\}, \$\{tile\.left\}`\}/, "the tile reads its time left");
   assert.match(grid, /\{ name: "continue", label: "Continue" \},\s+\{ name: "startover", label: "Start over" \},[\s\S]*?\{ name: "favorite", label: favorite\.label \}/, "TalkBack offers Continue, Start over and the favorite toggle");

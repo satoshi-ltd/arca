@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.45 — 2026-10-11
+
+- A podcast show with a new episode carries a small New pill in its cover's corner instead of a word under the title; the caption keeps the day, and screen readers still say New.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.44 — 2026-10-11
 
 - Android Auto has a Podcasts tab: each show the phone holds, with its episodes newest first, instead of shows hiding at the end of Albums; Albums and the car's library shuffle now hold music only.

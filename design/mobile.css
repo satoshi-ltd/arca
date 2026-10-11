@@ -1947,9 +1947,16 @@
 .m-cover-grid.m-five {
   grid-template-columns: repeat(5, 1fr);
 }
-.m-new {
-  font-weight: 600;
+.m-new-pill {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: var(--m-pill-y) var(--m-pill-left);
+  border-radius: var(--m-pill-radius);
+  background: var(--m-surface);
   color: var(--m-accent);
+  font: 600 var(--m-pill-font) / var(--m-pill-line) var(--font-ui);
+  white-space: nowrap;
 }
 .m-continue-play {
   position: absolute;

@@ -5990,9 +5990,14 @@ label.toggle {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
-.music-new {
+.music-cover > .pill.music-cover-new {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 1;
+  padding-right: var(--pill-left);
+  background: var(--surface);
   color: var(--green);
-  font-weight: 600;
 }
 :has(> .row-leaving) {
   position: relative;
