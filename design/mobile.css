@@ -1854,9 +1854,24 @@
 .m-row .m-identity-row > .m-row-title,
 .m-machine .m-stack > .m-caption {
   min-width: 0;
+}
+.m-caption.m-device-line {
+  display: block;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+}
+.m-roleset {
+  display: inline-flex;
+  flex: none;
+}
+.m-tag.m-tag-joined {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.m-tag.m-backup-tag {
+  border-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  color: var(--m-accent);
 }
 .m-track .m-stack > .m-caption {
   overflow: hidden;

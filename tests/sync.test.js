@@ -10,6 +10,8 @@ import { start } from "../packages/daemon/server.js";
 import { DEFAULT_IGNORE, readIgnore } from "../packages/daemon/exclusions.js";
 import { applyFolderRetention } from "../packages/daemon/maintenance.js";
 import { FIXED_POLICY } from "../packages/core/builtin-exclusions.js";
+import { release } from "../packages/daemon/network.js";
+import { machineReport } from "../packages/daemon/machines.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-test-"));
@@ -1070,6 +1072,38 @@ test("replica promotion preserves files and reconnects another replica with dive
         read(other, volume, f) === "offline other edit",
     ),
   );
+});
+
+test("the hub keeps each device's version, folder count and local bytes and leaves out what an older device never sent", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const mac = await connect("Report Mac");
+  write(hub, volume, "report.txt", "content");
+  await hub.sync();
+  await mac.sync();
+  const roster = await mac.api("/v1/machines");
+  const own = roster.machines.find((m) => m.isHub);
+  assert.equal(own.version, release.version, "the hub row carries the hub's own version");
+  assert.equal(own.selectedFolders, hub.engine.store.volumes().length);
+  assert.equal(own.indexedBytes, hub.engine.status().volumes.reduce((n, v) => n + v.bytes, 0));
+  const reported = roster.machines.find((m) => m.machineId === mac.engine.config.id);
+  assert.equal(reported.version, release.version);
+  assert.equal(reported.selectedFolders, 1);
+  assert.equal(reported.indexedBytes, mac.engine.status().volumes.filter((v) => v.selected).reduce((n, v) => n + v.bytes, 0));
+  assert.ok(reported.indexedBytes > 0);
+  const { version, ...older } = machineReport(mac.engine);
+  assert.equal(version, release.version);
+  await hub.api("/v1/machine-report", { ...older, lastSync: null }, mac.invite.token);
+  const after = (await mac.api("/v1/machines")).machines.find((m) => m.machineId === mac.engine.config.id);
+  assert.equal("version" in after, false, "an older device that sends no version shows none");
+  assert.equal(after.selectedFolders, 1);
+  for (const bad of ["", "latest", "1.2", "1.2.3; rm", 7]) {
+    await hub.api("/v1/machine-report", { ...older, selectedFolders: 0, folderIds: [], lastSync: null, version: bad }, mac.invite.token);
+    const kept = (await mac.api("/v1/machines")).machines.find((m) => m.machineId === mac.engine.config.id);
+    assert.equal("version" in kept, false, `a malformed version ${JSON.stringify(bad)} is dropped`);
+    assert.equal(kept.selectedFolders, 0, "and the rest of the report is still accepted");
+    assert.deepEqual(kept.folderIds, []);
+    await hub.api("/v1/machine-report", { ...older, lastSync: null }, mac.invite.token);
+  }
 });
 
 test("an unavailable folder does not block a different healthy folder", async (t) => {

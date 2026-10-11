@@ -14,6 +14,7 @@ import {
   recordHistory,
 } from "./music-library.js";
 import { folderIgnored } from "./hub-gallery.js";
+import { episodeHashes, syncedPositions } from "./audio-positions.js";
 
 export const COVERS_PER_CYCLE = 120;
 export const PARTIAL_REFRESH_MS = 60000;
@@ -235,6 +236,8 @@ export function publishMusic(replica, library = null) {
 async function writeLibrary(replica, library) {
   if (!replica.player || !replica.files.musicLibrary || !replica.scope) return;
   library ||= await localLibrary(replica, await musicFolders(replica));
+  replica.musicEpisodes = episodeHashes(library);
+  await writeSynced(replica).catch(() => {});
   const text = JSON.stringify(nativeLibrary(library, replica.scope));
   if (text === replica.publishedMusic) return;
   replica.publishedMusic = null;
@@ -246,6 +249,28 @@ async function writeLibrary(replica, library) {
   await replica.files.replace(staged, target);
   await replica.player.reload?.(target);
   replica.publishedMusic = text;
+}
+
+export function publishSynced(replica, positions, device = null) {
+  replica.audioPositions = positions;
+  replica.audioDevice = device;
+  const run = (replica.musicPublishing || Promise.resolve()).catch(() => {}).then(() => writeSynced(replica));
+  replica.musicPublishing = run;
+  return run;
+}
+
+async function writeSynced(replica) {
+  if (!replica.player || !replica.files.musicSynced || !replica.scope || !replica.musicEpisodes || !replica.audioPositions) return;
+  const text = JSON.stringify(syncedPositions(replica.audioPositions, replica.musicEpisodes, replica.scope, replica.audioDevice));
+  if (text === replica.publishedSynced) return;
+  replica.publishedSynced = null;
+  const target = replica.files.musicSynced();
+  const staged = `${target}.part`;
+  await replica.files.mkdir(replica.files.parent(target));
+  await replica.files.remove(staged);
+  await replica.files.write(staged, new TextEncoder().encode(text));
+  await replica.files.replace(staged, target);
+  replica.publishedSynced = text;
 }
 
 export async function refreshMusic(replica, { covers = true } = {}) {

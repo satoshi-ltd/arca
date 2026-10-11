@@ -507,13 +507,13 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
       () =>
         w.document
           .querySelector("#devices-list")
-          .textContent.includes("Offline") &&
+          .textContent.includes("Known device") &&
         w.document.body.getAttribute("aria-busy") === "false",
     );
-    assert.ok(
-      w.document
-        .querySelector("#devices-list")
-        .textContent.includes("Known device"),
+    assert.equal(
+      w.document.querySelector("#devices-list").textContent.includes("Offline"),
+      false,
+      "Tailscale presence never reaches a device row",
     );
     daemon.engine.store.db
       .prepare("DELETE FROM devices WHERE id=?")
@@ -1828,11 +1828,10 @@ test("offline labels: this machine reads Offline, saved machines say last known 
     };
   };
   const { own, other } = await machines();
-  assert.equal(own.querySelector(".pill").textContent.trim(), "Offline");
-  assert.ok(own.querySelector(".pill.id"), "a neutral pill, never Syncing or a green state");
-  assert.ok(own.querySelector(".tile.large.id"), "the device tile takes its pill's neutral tone");
-  assert.equal(other.querySelector(".pill").textContent.trim(), "Offline");
-  assert.match(other.querySelector(".connection-line").textContent, / · last known$/);
+  assert.equal(own.querySelector(".pill"), null, "this device's sync state stays in the status card");
+  assert.equal(own.querySelector(".tile.large").className, "tile large");
+  assert.equal(other.querySelector(".pill"), null, "presence never reaches a device row");
+  assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known|192\.168/);
   assert.match(w.document.querySelector("#content").textContent, /Offline · showing saved device information · last known/);
   const openFile = async (file, expected, gone = /^$/) => {
     const forced = w.document.createElement("button");
@@ -1954,7 +1953,7 @@ test("Folders has no Just arrived row, keeps type icons and shows no path or las
   assert.equal(routes.some((route) => route.startsWith("/v1/folder-previews")), false);
 });
 
-test("a paused replica stays Paused and a live list while the hub is unavailable stays Linked", async (t) => {
+test("a paused replica's Devices rows carry roles and full backup, never sync, presence or Linked pills", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-paused-labels-"));
   init(home, { port: 0, name: "Local Mac" });
   const daemon = await start(home, { timer: false });
@@ -1986,13 +1985,15 @@ test("a paused replica stays Paused and a live list while the hub is unavailable
   w.document.querySelector('[data-view="devices"]').click();
   await until(() => w.document.querySelectorAll(".device-row").length >= 4);
   const rows = [...w.document.querySelectorAll(".device-row")];
-  assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").textContent.trim(), "Paused", "pausing is a choice that outranks Offline");
-  assert.ok(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").classList.contains("id"), "Paused is neutral on the Devices row too");
+  assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill"), null, "Paused lives in the status card");
   const other = rows.find((row) => /phone-fold/.test(row.textContent));
-  assert.equal(other.querySelector(".pill").textContent.trim(), "Linked", "a live list is never marked Offline just because the hub is");
+  assert.equal(other.querySelector(".pill"), null, "no Linked or Offline pill");
   assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
-  assert.doesNotMatch(other.textContent, /Backs up hub/, "a device that is not a backup carries no tag");
-  assert.match(rows.find((row) => /umbrel/.test(row.textContent)).querySelector(".row-tags").textContent, /Backs up hub/, "the hub's backup server is tagged in a replica's list");
+  assert.equal(other.querySelector(".tag.full-backup"), null, "a device that is not a backup has no full-backup segment");
+  assert.equal(other.querySelector(".row-end > .role-set").textContent, "Replica");
+  const umbrel = rows.find((row) => /umbrel/.test(row.textContent));
+  assert.equal(umbrel.querySelector(".role-set .tag.full-backup").textContent, "Full backup", "the hub's backup server carries the full-backup segment");
+  assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Backs up hub|Linked/);
 });
 
 test("offline, an empty saved History reads its normal empty state and Copies say they are last known", async (t) => {
@@ -2071,10 +2072,186 @@ test("online, the machines list keeps real states and never says last known", as
   w.document.querySelector('[data-view="devices"]').click();
   await until(() => w.document.querySelectorAll(".device-row").length >= 3);
   const rows = [...w.document.querySelectorAll(".device-row")];
-  assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill").textContent.trim(), "Syncing");
+  assert.equal(rows.find((row) => row.querySelector(".tag.self")).querySelector(".pill"), null, "no Syncing pill on Devices");
   const other = rows.find((row) => /phone-fold/.test(row.textContent));
-  assert.equal(other.querySelector(".pill").textContent.trim(), "Linked");
+  assert.equal(other.querySelector(".pill"), null, "no Linked pill");
   assert.doesNotMatch(w.document.querySelector("#content").textContent, /last known|showing saved machine information/);
+});
+
+async function devicesPage(t, { status, machines, web = "", ready = () => true, discovery = { peers: [], tailscale: { state: "not-installed" } } }) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-device-lines-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: web || "http://tauri.localhost" });
+  t.after(async () => {
+    dom.window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const w = dom.window;
+  w.setInterval = () => 0;
+  const answer = (route) =>
+    route === "/v1/status"
+      ? { ...daemon.engine.status(), ...status(daemon) }
+      : route === "/v1/remote"
+        ? { name: "casa", volumes: [] }
+        : route === "/v1/machines"
+          ? { machines }
+          : route === "/v1/discovery"
+            ? discovery
+            : {};
+  if (web) w.fetch = async (route) => new Response(JSON.stringify(answer(String(route).replace(/^https?:\/\/[^/]+/, ""))), { headers: { "Content-Type": "application/json" } });
+  else
+    w.__TAURI__ = {
+      core: {
+        invoke: async (command, args) => (command === "bootstrap" ? { setup: false } : answer(args.route)),
+      },
+    };
+  w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector("#nav, .folder-card, .empty, #devices-list"));
+  w.document.querySelector('[data-view="devices"]').click();
+  await until(() => w.document.querySelectorAll(".device-entry").length >= machines.length && ready(w.document.querySelector("#devices-list")?.textContent || ""));
+  const rows = [...w.document.querySelectorAll("#devices-list .device-entry")];
+  const named = (name) => rows.find((row) => row.querySelector(".row-tags strong").textContent === name);
+  const segments = (row) =>
+    [...row.querySelectorAll(".device-line .device-segs > span")].map((segment) =>
+      segment.children.length ? [...segment.children].map((part) => part.textContent) : segment.textContent,
+    );
+  return { w, rows, named, segments };
+}
+
+test("a replica's device rows read OS · folders · size, the version only when older than the hub's, and end in their role chip", async (t) => {
+  const GB = 1024 ** 3;
+  const { w, rows, named, segments } = await devicesPage(t, {
+    status: (daemon) => ({
+      role: "replica",
+      phase: "idle",
+      hubName: "casa",
+      hubId: "hub",
+      hub: "http://127.0.0.1:49999",
+      backup: { enabled: false },
+      volumes: [
+        { id: "a", name: "a", selected: 1, bytes: 2 * GB, files: 1 },
+        { id: "b", name: "b", selected: 1, bytes: GB, files: 1 },
+        { id: "c", name: "c", selected: 0, bytes: 9 * GB, files: 1 },
+      ],
+      id: "mac",
+    }),
+    machines: [
+      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 9, indexedBytes: 412 * GB },
+      { name: "Local Mac", role: "replica", platform: process.platform, machineId: "mac", version: "0.7.30", selectedFolders: 2, indexedBytes: 3 * GB },
+      { name: "umbrel", role: "replica", platform: "linux", machineId: "umbrel", version: "0.7.38", selectedFolders: 9, indexedBytes: 401 * GB, backup: { enabled: true } },
+      { name: "Yuri", role: "replica", platform: "android", machineId: "yuri", version: "0.7.35", selectedFolders: 2, indexedBytes: 3 * GB },
+      { name: "Fresh", role: "replica", platform: "ios", machineId: "fresh" },
+      { name: "Tablet", role: "replica", platform: "android", machineId: "tablet", version: "0.6.99", selectedFolders: 3, indexedBytes: 5 * GB, revoked: true },
+    ],
+    ready: (text) => text.includes("Tablet") && text.includes("412.0 GB"),
+  });
+  assert.equal(rows.length, 6);
+  const hub = named("casa");
+  assert.deepEqual(segments(hub), ["Linux", ["9 folders", "412.0 GB"], "127.0.0.1:49999"]);
+  assert.deepEqual([...hub.querySelector(".row-end").children].map((el) => el.className), ["secondary small-button danger", "role-set"], "Disconnect… sits just before the chip");
+  assert.equal(hub.querySelector(".role-set").innerHTML, '<span class="tag hub">Hub</span>');
+  const own = rows.find((row) => row.querySelector(".tag.self"));
+  assert.deepEqual(segments(own), [{ darwin: "macOS", linux: "Linux", win32: "Windows" }[process.platform], ["2 folders", "3.0 GB"]], "only selected folders count, and this device's own running version, not its last stored report, decides");
+  assert.equal(own.querySelector(".role-set").textContent, "Replica");
+  assert.deepEqual(segments(named("umbrel")), ["Linux", ["9 folders", "401.0 GB"]]);
+  assert.equal(named("umbrel").querySelector(".role-set").textContent, "ReplicaFull backup");
+  assert.ok(named("umbrel").querySelector('.tag.full-backup [data-icon="shield-check"], .tag.full-backup svg'));
+  const yuri = named("Yuri");
+  assert.deepEqual(segments(yuri), ["Android", ["v0.7.35"], ["2 folders", "3.0 GB"]]);
+  const version = yuri.querySelector(".state-word.state-wa");
+  assert.equal(version.dataset.tooltip, "Older than the hub’s v0.7.38");
+  assert.equal(version.getAttribute("aria-label"), "v0.7.35, older than the hub’s v0.7.38");
+  assert.deepEqual(segments(named("Fresh")), ["iOS"], "an unreported device leaves folders, size and version out, never 0");
+  const tablet = named("Tablet");
+  assert.deepEqual([...tablet.querySelector(".row-end").children].map((el) => el.className), ["pill er", "role-set"], "Removed sits just before the chip");
+  assert.ok(tablet.querySelector(".tile.large.er"));
+  for (const row of rows) {
+    assert.equal(row.querySelector(".row-end").lastElementChild.className, "role-set", "every row ends in its role chip");
+    assert.ok(row.querySelector(".row-end").classList.contains("device-end"));
+    assert.ok(row.querySelector(".connection-line").classList.contains("device-line"));
+  }
+  assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Linked|Backs up hub|Syncing|Up to date|Offline|Running| local/);
+});
+
+test("the hub's own Devices page draws its row like the others and keeps ⋯ before each chip without presence", async (t) => {
+  const GB = 1024 ** 3;
+  const now = new Date().toISOString();
+  const { w, named, segments } = await devicesPage(t, {
+    status: () => ({
+      role: "hub",
+      name: "casa",
+      platform: "linux",
+      phase: "idle",
+      volumes: [{ id: "a", name: "a", selected: 1, bytes: 4 * GB, files: 1 }],
+      devices: [
+        { id: "mac", name: "macbook-pro", role: "replica", last_seen: now, last_address: "100.84.10.2", backup_enabled: null, revoked: 0 },
+        { id: "umbrel", name: "umbrel", role: "replica", last_seen: now, last_address: "100.70.3.9", backup_enabled: 1, revoked: 0 },
+        { id: "tablet", name: "Tablet", role: "replica", last_seen: now, last_address: "100.88.7.30", backup_enabled: null, revoked: 1 },
+      ],
+    }),
+    machines: [
+      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 4 * GB },
+      { credentialId: "mac", name: "macbook-pro", platform: "darwin", version: "0.7.36", selectedFolders: 9, indexedBytes: 36 * GB },
+      { credentialId: "umbrel", name: "umbrel", platform: "linux", version: "0.7.38", selectedFolders: 9, indexedBytes: 401 * GB },
+      { credentialId: "tablet", name: "Tablet", platform: "android" },
+    ],
+    ready: (text) => text.includes("100.99.29.84") && text.includes("v0.7.36"),
+    discovery: {
+      tailscale: { state: "connected", self: { addresses: ["100.99.29.84"] } },
+      peers: [{ id: "p1", name: "macbook-pro", addresses: ["100.84.10.2"], online: false, os: "macOS", arca: { id: "x", role: "replica", state: "linked" } }],
+    },
+  });
+  const hub = named("casa");
+  assert.ok(hub.querySelector(".tag.self"));
+  assert.deepEqual(segments(hub), ["Linux", ["1 folder", "4.0 GB"], "Tailscale", "100.99.29.84"]);
+  assert.equal(hub.querySelector(".row-end").children.length, 1, "no Running pill");
+  assert.equal(hub.querySelector(".role-set").innerHTML, '<span class="tag hub">Hub</span>');
+  const mac = named("macbook-pro");
+  assert.deepEqual(segments(mac), ["macOS", ["v0.7.36"], ["9 folders", "36.0 GB"]]);
+  assert.deepEqual([...mac.querySelector(".row-end").children].map((el) => el.className), ["details-menu", "role-set"], "⋯ sits just before the chip");
+  assert.equal(mac.querySelector(".pill"), null, "a peer Tailscale reports down shows no Offline pill");
+  assert.equal(named("umbrel").querySelector(".role-set").textContent, "ReplicaFull backup");
+  assert.deepEqual([...named("Tablet").querySelector(".row-end").children].map((el) => el.className), ["pill er", "role-set"]);
+  assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Linked|Backs up hub|Running|Offline|100\.84\.10\.2/);
+});
+
+test("a LAN hub's own web page shows the address it is reached at, in host form", async (t) => {
+  const GB = 1024 ** 3;
+  const { named, segments } = await devicesPage(t, {
+    web: "http://192.168.1.10:17831/#/machines",
+    status: () => ({ role: "hub", name: "casa", platform: "linux", phase: "idle", volumes: [{ id: "a", name: "a", selected: 1, bytes: GB, files: 1 }], devices: [] }),
+    machines: [{ isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: GB }],
+    ready: (text) => text.includes("192.168.1.10"),
+  });
+  assert.deepEqual(segments(named("casa")), ["Linux", ["1 folder", "1.0 GB"], "192.168.1.10:17831"]);
+});
+
+test("a backup connection's hub row names its address in host form, without the scheme", async (t) => {
+  const { named, segments } = await devicesPage(t, {
+    status: () => ({ role: "backup", phase: "idle", hub: "http://192.168.1.10:17831", hubName: "casa", hubId: "hub", backup: { enabled: false }, volumes: [] }),
+    machines: [{ isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024 }],
+    ready: (text) => text.includes("1.0 KB"),
+  });
+  assert.deepEqual(segments(named("casa")), ["Linux", ["1 folder", "1.0 KB"], "192.168.1.10:17831"]);
+});
+
+test("device lines wrap between segments and never ellipsize", () => {
+  const style = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  const rule = (selector) => {
+    const at = style.indexOf(`\n${selector} {`);
+    assert.ok(at >= 0, selector);
+    return style.slice(at, style.indexOf("}", at));
+  };
+  const line = rule(".device-row .connection-line.device-line");
+  assert.match(line, /white-space: normal;/);
+  assert.match(line, /text-overflow: clip;/);
+  assert.match(line, /overflow: hidden;/);
+  assert.match(rule(".device-segs"), /flex-wrap: wrap;\s+margin-left: calc\(var\(--space-3\) \* -1\);/, "a wrapped line hides its leading separator");
+  assert.match(rule(".device-segs > span"), /white-space: nowrap;/, "never mid-segment");
+  assert.match(rule(".device-row .row-end.device-end"), /flex: none;[\s\S]*margin-left: auto;/, "the chip column stays right-aligned, on its own line under 760px");
+  assert.match(rule(".device-row.device-entry .row-main"), /max-width: calc\(100% - var\(--detail-tile\) - var\(--space-3\)\);/, "a wrapping row keeps its name and line beside the tile");
 });
 
 test("hub-only controls follow the hub's availability and a status-less 'Hub unavailable' failure reads as hub-only", async (t) => {
@@ -3116,10 +3293,11 @@ test("desktop connection confirms disconnect, retains files and offers a fresh p
       w.document.body.getAttribute("aria-busy") === "false",
   );
   assert.equal(w.document.querySelector("#devices-list .busy-grid"), null);
-  const disconnected = [
-    ...w.document.querySelectorAll("#devices-list .pill"),
-  ].find((el) => el.textContent.includes("Disconnected"));
-  assert.ok(disconnected.classList.contains("id"));
+  assert.equal(
+    w.document.querySelector("#devices-list .device-entry.device-row .pill"),
+    null,
+    "this device's sync state stays in the status card",
+  );
   w.document.querySelector('[data-action="connect"]').click();
   await until(() => w.document.querySelector("#dialog").hasAttribute("open"));
   assert.match(
@@ -3314,9 +3492,9 @@ test("Machines refreshes backup acknowledgements without navigation", async (t) 
     w.document.querySelector("#backup-summary").dataset.action,
     "machines",
   );
-  assert.match(
-    w.document.querySelector("#devices-list").textContent,
-    /Backs up hub/,
+  assert.equal(
+    w.document.querySelector("#devices-list .device-row .role-set .tag.full-backup").textContent,
+    "Full backup",
   );
   const menu = w.document.querySelector(".details-menu");
   menu.open = true;
@@ -3426,8 +3604,8 @@ test("LAN mobile metadata appears on hub and other machines appear read-only on 
     const row = [...w.document.querySelectorAll(".device-row")].find((r) =>
       r.textContent.includes("Android emulator"),
     );
-    assert.match(row.textContent, /192\.168\.1\.171/);
-    assert.match(row.textContent, /Android/i);
+    assert.doesNotMatch(row.textContent, /192\.168\.1\.171/, "only the hub row carries an address");
+    assert.match(row.querySelector(".device-line").textContent, /Android/);
     assert.equal(
       row.textContent.includes("Connection details unavailable"),
       false,

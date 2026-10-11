@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildLibrary } from "../apps/mobile/src/music-library.js";
+import { positionMap } from "../apps/mobile/src/audio-positions.js";
 import {
   folderLibrary,
   publishMusic,
+  publishSynced,
   readMusicHistory,
   recordMusicPlay,
   refreshMusic,
@@ -109,6 +111,50 @@ const titled = (title) =>
   buildLibrary([
     { id: "v", library: { tracks: [{ path: "a.mp3", hash: "h1", title }] }, present: new Map([["a.mp3", "h1"]]), uri: (path) => `/work/${path}` },
   ]);
+
+test("the car service gets the latest synced positions of podcast episodes only, written atomically", async () => {
+  const { replica, disk, log } = phone({ cover: async () => ({}) });
+  replica.files.musicSynced = () => "/synced.json";
+  const library = buildLibrary([
+    {
+      id: "v",
+      library: {
+        tracks: [
+          { path: "Show/2026-10-01 One.mp3", hash: "e1", title: "One", genre: "Podcast", duration: 900 },
+          { path: "Show/2026-10-02 Two.mp3", hash: "e2", title: "Two", genre: "Podcast", duration: 4200 },
+          { path: "Mix/01 Mix.mp3", hash: "m1", title: "Mix", artist: "DJ", album: "Mix", track: 1, duration: 4200 },
+        ],
+      },
+      present: new Map([["Show/2026-10-01 One.mp3", "e1"], ["Show/2026-10-02 Two.mp3", "e2"], ["Mix/01 Mix.mp3", "m1"]]),
+      uri: (path) => `/work/${path}`,
+    },
+  ]);
+  await publishMusic(replica, library);
+  assert.equal(disk.has("/synced.json"), false, "nothing is written before positions arrive");
+  const row = (path, hash, position, updated) => ({ volume: "v", path, hash, position, duration: 4200, updated });
+  const positions = positionMap(
+    [
+      row("Show/2026-10-01 One.mp3", "e1", 600.4, 2000),
+      row("Show/2026-10-02 Two.mp3", "old", 900, 2000),
+      row("Mix/01 Mix.mp3", "m1", 3000, 2000),
+    ],
+    [{ volume: "v", path: "Show/2026-10-03 Three.mp3", hash: "e3", updated: 3000 }],
+  );
+  log.length = 0;
+  await publishSynced(replica, positions);
+  assert.deepEqual(JSON.parse(disk.get("/synced.json")), { scope: "hub", tracks: { "v:Show/2026-10-01 One.mp3": { position: 600400, updated: 2000 } } });
+  assert.deepEqual(log, ["remove /synced.json.part", "write /synced.json.part", "replace /synced.json"]);
+  await publishSynced(replica, positions);
+  assert.equal(log.length, 3, "an unchanged answer is not written again");
+  const write = replica.files.write;
+  replica.files.write = async (uri, data) => {
+    if (uri.startsWith("/synced.json")) throw new Error("disk full");
+    return write(uri, data);
+  };
+  replica.audioPositions = positionMap([row("Show/2026-10-01 One.mp3", "e1", 700, 2500)]);
+  await publishMusic(replica, titled("After a failed synced write"));
+  assert.match(disk.get("/library.json"), /After a failed synced write/, "a failed synced write never blocks the car library");
+});
 
 test("two publishes of the car library never interleave their writes", async () => {
   const { replica, disk, log } = phone({ cover: async () => ({}) });

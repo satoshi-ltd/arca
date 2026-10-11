@@ -83,3 +83,23 @@ test("sync stops only when the app is backgrounded without a transfer lease", ()
   assert.equal(shouldStopSync("background", false), true);
   assert.equal(shouldStopSync("background", true), false);
 });
+
+test("Android never stops the transfer service before it is in the foreground, which would kill the app and its music", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const read = (name) =>
+    readFile(new URL(`../apps/mobile/modules/arca-network/android/src/main/java/expo/modules/arcanetwork/${name}`, import.meta.url), "utf8");
+  const module = await read("ArcaNetworkModule.kt");
+  const service = await read("TransferService.kt");
+  const start = module.slice(module.indexOf('AsyncFunction("startTransfer")'), module.indexOf('AsyncFunction("stopTransfer")'));
+  const stop = module.slice(module.indexOf('AsyncFunction("stopTransfer")'), module.indexOf('AsyncFunction("transferProgress")'));
+  assert.ok(start.indexOf("TransferService.gate.requested()") >= 0 && start.indexOf("TransferService.gate.requested()") < start.indexOf("startForegroundService"));
+  assert.match(stop, /if \(TransferService\.gate\.released\(\)\)\s+appContext\.reactContext\?\.let \{ it\.stopService\(/);
+  assert.equal(stop.match(/stopService/g).length, 1);
+  const created = service.slice(service.indexOf("override fun onCreate()"), service.indexOf("private fun notification("));
+  assert.ok(created.indexOf("gate.promoted()") > created.lastIndexOf("startForeground(ID"));
+  assert.match(service, /else if \(!gate\.keep\(\)\) stopSelf\(\)\s+else super\.onStartCommand\(intent, flags, startId\)/);
+  for (const reason of ["paused", "timeout", "closed"])
+    assert.match(service, new RegExp(`onStopped\\?\\.invoke\\("${reason}"\\); halt\\(\\)`));
+  assert.match(service, /private fun halt\(\) \{ gate\.ended\(\); stopSelf\(\) \}/);
+  assert.match(service, /override fun onDestroy\(\) \{\s+instance = null\s+gate\.ended\(\)/, "a service the system destroyed is never stopped again from outside");
+});

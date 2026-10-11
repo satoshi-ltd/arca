@@ -1,5 +1,7 @@
 import os from "node:os";
 import { fail } from "./storage.js";
+import { release } from "./network.js";
+const VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:[-+][0-9A-Za-z.-]{1,40})?$/;
 export function machineReport(engine) {
   const status = engine.status(),
     volumes = status.volumes.filter((v) => v.selected);
@@ -7,6 +9,7 @@ export function machineReport(engine) {
     machineId: status.id,
     name: status.name,
     platform: process.platform,
+    version: release.version,
     arch: process.arch,
     kernelRelease: os.release(),
     uptimeSeconds: Math.floor(process.uptime()),
@@ -42,6 +45,8 @@ export function acceptReport(store, device, body) {
       fail(`Invalid machine report: ${key}`);
     clean[key] = body[key];
   }
+  if (typeof body.version === "string" && VERSION.test(body.version))
+    clean.version = body.version;
   if (
     body.lastSync !== null &&
     (!Number.isFinite(Date.parse(body.lastSync)) ||

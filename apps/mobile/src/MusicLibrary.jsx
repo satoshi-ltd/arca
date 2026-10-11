@@ -472,7 +472,7 @@ function TrackList({
               }
               onAccessibilityAction={() => actions?.(row)}
               onPress={() =>
-                play(context, track, false, row.position, saved?.position || 0)
+                play(context, track, false, row.position, current && track.podcast ? null : saved?.position || 0)
               }
               style={({ pressed }) => [...style, pressed && s.pressed]}
             >

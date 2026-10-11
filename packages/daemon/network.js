@@ -4,6 +4,9 @@ import { isIP } from "node:net";
 import fs from "node:fs";
 import { Tailscale, discoverPeers, tailAddress } from "./tailscale.js";
 import { fail } from "./storage.js";
+export const release = {
+  version: "0.7.39",
+};
 export function lanAddress(address) {
   if (isIP(address || "") !== 4) return false;
   const [a, b] = address.split(".").map(Number);
@@ -89,7 +92,7 @@ export class Network {
       service: "arca",
       discoveryVersion: 1,
       protocol: 1,
-      version: "0.7.38",
+      version: release.version,
       id: c.id,
       name: c.name,
       role: c.role,

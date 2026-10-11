@@ -146,9 +146,8 @@ test("captions under a list sit 8 below it at 12 px with the row inset; side sec
   assert.match(style, /\n\.detail-side \{[^}]*gap: var\(--section-gap\);/);
 });
 
-test("a device row keeps its name and puts its totals on one line", () => {
+test("a device row keeps its name and carries no separate totals block", () => {
   assert.match(style, /\n\.device-row \.row-main \{\s*flex: 1 1 auto;/);
-  assert.match(body(".device-row .row-end > .hint"), /white-space: nowrap;/);
-  assert.match(body(".device-row .row-end > .hint"), /text-overflow: ellipsis;/);
+  assert.doesNotMatch(style, /\.device-row \.row-end > \.hint/);
   assert.doesNotMatch(style, /\n\.device-row \{\s*gap: 14px;/);
 });

@@ -858,6 +858,61 @@ main {
   width: 13px;
   height: 13px;
 }
+.device-row.device-entry .row-main {
+  max-width: calc(100% - var(--detail-tile) - var(--space-3));
+}
+.device-row .connection-line.device-line {
+  display: block;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: normal;
+}
+.device-segs {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: calc(var(--space-3) * -1);
+}
+.device-segs > span {
+  white-space: nowrap;
+}
+.device-segs > span::before,
+.device-segs > span > span + span::before {
+  content: "·";
+  display: inline-block;
+  width: var(--space-3);
+  text-align: center;
+}
+.device-row .row-end.device-end {
+  flex: none;
+  min-width: 0;
+  max-width: none;
+  margin-left: auto;
+  align-items: center;
+  justify-content: flex-end;
+}
+.role-set {
+  display: inline-flex;
+  flex: none;
+}
+.role-set > .tag:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.role-set > .tag + .tag {
+  border-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.tag.full-backup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.tag.full-backup svg {
+  width: var(--pill-icon);
+  height: var(--pill-icon);
+  color: var(--green);
+}
 .backup-card {
   min-height: var(--row-height);
   display: flex;
@@ -2429,13 +2484,6 @@ label {
 .device-row .row-end {
   max-width: 50%;
   text-align: right;
-}
-.device-row .row-end > .hint {
-  min-width: 0;
-  overflow: hidden;
-  font-size: var(--text-body);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .detail-side .panel > button {
   align-self: flex-start;

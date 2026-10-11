@@ -192,7 +192,7 @@ test("an empty state's 40 px arch uses the small drawing", async () => {
   assert.ok(markup.includes(`<rect x="${drawing.door.x}" y="${drawing.door.y}" width="${drawing.door.width}" height="${drawing.door.height}" rx="${drawing.door.rx}"/>`));
 });
 
-test("a replica checking its hub after a launch says so in the sidebar and on its own row, without the busy animation", async (t) => {
+test("a replica checking its hub after a launch says so in the sidebar, without the busy animation", async (t) => {
   const last = new Date(Date.now() - 3600000).toISOString();
   const w = await boot(t, {
     id: "mac",
@@ -214,7 +214,7 @@ test("a replica checking its hub after a launch says so in the sidebar and on it
   assert.equal(q(".sidebar .brand-mark")?.classList.contains("is-busy") ?? false, false);
   const app = source("app.js");
   assert.equal(app.split("Checking hub…").length - 1, 1, "one definition of the words");
-  assert.equal(app.split("checking: CHECKING_HUB,").length - 1, 2, "the sidebar card and this device's row share it");
+  assert.equal(app.split("checking: CHECKING_HUB,").length - 1, 1, "the sidebar card owns it; Devices rows carry no sync state");
 });
 
 function stoppedBoot(t, { upAfter = Infinity } = {}) {

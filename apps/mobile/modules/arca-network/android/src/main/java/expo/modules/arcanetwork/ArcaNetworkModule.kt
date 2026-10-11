@@ -99,11 +99,13 @@ class ArcaNetworkModule : Module() {
       val context = appContext.reactContext ?: error("App is unavailable")
       check(appContext.currentActivity != null && appContext.currentActivity?.isFinishing == false) { "Open Arca to start photo uploads" }
       val intent = android.content.Intent(context, TransferService::class.java)
+      TransferService.gate.requested()
       if (android.os.Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
       true
     }
     AsyncFunction("stopTransfer") {
-      appContext.reactContext?.let { it.stopService(android.content.Intent(it, TransferService::class.java)) }
+      if (TransferService.gate.released())
+        appContext.reactContext?.let { it.stopService(android.content.Intent(it, TransferService::class.java)) }
     }
     AsyncFunction("transferProgress") { text: String, done: Double, total: Double ->
       TransferService.instance?.progress(text, done.toLong(), total.toLong())

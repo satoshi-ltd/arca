@@ -22,6 +22,7 @@ import {
   FIXED_POLICY,
 } from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
+import { REPORTABLE_VERSION } from "./device-line.js";
 export const CHUNK = 1024 * 1024;
 export const HEADROOM = 256 * 1024 * 1024;
 export { validPath, validRow } from "./validation.js";
@@ -43,11 +44,12 @@ export class Replica {
     notify = async () => {},
     changed = () => {},
     platform = "mobile",
+    version = null,
     media = null,
     player = null,
     transfer = { begin: async () => false, end: async () => {} },
   }) {
-    Object.assign(this, { store, files, changed, platform, transfer, player });
+    Object.assign(this, { store, files, changed, platform, version, transfer, player });
     this.interactiveClient = client;
     // Only replica work inherits this cancellation scope; UI uses the original client.
     this.client = {
@@ -153,6 +155,7 @@ export class Replica {
     for (const target of [this.files.musicLibrary?.(), this.files.musicHistory?.()])
       if (target) await this.files.remove(target).catch(() => {});
     this.publishedMusic = null;
+    this.publishedSynced = this.musicEpisodes = this.audioPositions = null;
     this.journalCut = new Map();
     try {
       await this.player?.reload?.();
@@ -1226,6 +1229,7 @@ export class Replica {
       machineId: this.client.state().connection.id,
       name,
       platform: this.platform,
+      ...(REPORTABLE_VERSION.test(this.version || "") ? { version: this.version } : {}),
       arch: "",
       kernelRelease: "",
       uptimeSeconds: 0,

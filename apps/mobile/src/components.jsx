@@ -12,6 +12,7 @@ import {
 } from "../../../packages/core/brand-mark.js";
 import { putFlight } from "./flight.js";
 import { deviceLabel, folderState, machineTone } from "./home-data.js";
+import { machineLabel, segmentText } from "./device-line.js";
 import React, {
   createContext,
   useContext,
@@ -1462,11 +1463,28 @@ export function DeviceRow({ name, device }) {
   );
 }
 
+export function RoleChip({ role = "Replica", hub, backup }) {
+  const { s, c } = useDesign();
+  return (
+    <View style={s.roleSet}>
+      <View style={[s.machineTag, hub && s.hubTag, backup && s.roleTagJoined]}>
+        <Text style={[s.machineTagText, hub && s.hubTagText]}>{role.toUpperCase()}</Text>
+      </View>
+      {backup && (
+        <View accessible accessibilityLabel="Full backup" style={[s.machineTag, s.backupTag]}>
+          <Icon name="shield-check" size={g.pillIcon} color={c.accent} />
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function MachineRow({
   name,
-  description,
+  platform = "",
+  segments = [],
+  address = "",
   role = "Replica",
-  totals,
   self,
   hub,
   backup,
@@ -1476,12 +1494,11 @@ export function MachineRow({
   divider = false,
 }) {
   const { s, c, wide } = useDesign();
-  const shownRole = role.toLowerCase() === "replica" ? "" : role;
   const tone = machineTone(state);
   return (
     <View
       style={[s.card, s.machineRow, grouped && s.groupedMachineRow, divider && s.separator]}
-      accessibilityLabel={`${name}${shownRole ? `, ${shownRole}` : ""}${self ? ", this device" : ""}${backup ? ", backs up the hub" : ""}, ${description}${state ? `, ${state}` : ""}`}
+      accessibilityLabel={machineLabel({ name, role, self, backup, segments, address, state })}
     >
       <View style={s.row}>
         <View
@@ -1495,13 +1512,7 @@ export function MachineRow({
         >
           <Icon
             color={tone === "danger" ? c.danger : tone === "neutral" ? c.soft : hub ? c.onAccent : undefined}
-            name={
-              hub
-                ? "server"
-                : /android|ios|iphone/i.test(description)
-                  ? "phone"
-                  : "monitor"
-            }
+            name={hub ? "server" : /android|ios/i.test(platform) ? "phone" : "monitor"}
           />
         </View>
         <View style={[s.flex, s.stack]}>
@@ -1509,23 +1520,31 @@ export function MachineRow({
             <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
               {name}
             </Text>
-            {!!shownRole && (
-              <Tag variant={hub ? "hub" : undefined}>{shownRole.toUpperCase()}</Tag>
-            )}
             {self && <Tag variant="self">THIS DEVICE</Tag>}
-            {backup && <Tag>BACKS UP HUB</Tag>}
           </View>
-          <Text numberOfLines={1} style={wide ? s.mono : s.caption}>
-            {description}
-          </Text>
+          {!!segments.length && (
+            <View style={s.deviceLine}>
+              <View style={s.deviceSegs}>
+                {segments.map((segment) => (
+                  <View key={segment.parts.join()} style={s.deviceSeg}>
+                    {segment.parts.map((part) => (
+                      <React.Fragment key={part}>
+                        <Text style={[s.caption, s.deviceSep]}>·</Text>
+                        <Text style={[s.caption, segment.warning && s.stateWordWarning]}>
+                          {segmentText(part)}
+                        </Text>
+                      </React.Fragment>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+          {!!address && <Text style={s.caption}>{address}</Text>}
         </View>
-        {wide && (
-          <View style={s.machineEnd}>
-            {!!state && <Badge>{state}</Badge>}
-            {!!totals && <Text style={s.caption}>{totals}</Text>}
-          </View>
-        )}
+        {wide && !!state && <Badge>{state}</Badge>}
         {actions}
+        <RoleChip role={role} hub={hub} backup={backup} />
       </View>
     </View>
   );

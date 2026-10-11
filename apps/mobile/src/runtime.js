@@ -13,6 +13,8 @@ import { Replica } from "./replica";
 import { ReplicaStore } from "./replica-store";
 import { files } from "./files";
 import { player } from "./music-player";
+import * as Application from "expo-application";
+import config from "../app.json";
 let finishTransferTask;
 AppRegistry.registerHeadlessTask(
   "ArcaPhotoTransfer",
@@ -187,6 +189,7 @@ export function runtime() {
         files,
         client,
         platform: Platform.OS,
+        version: Application.nativeApplicationVersion || config.expo.version,
         changed,
         notify: async (title, body, detail) => {
           if (detail?.conditions)

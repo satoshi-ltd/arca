@@ -139,12 +139,12 @@ test("the UX review's wording and tones hold across desktop, phone and site", ()
   for (const phrase of ["Daemon stopped", "Start the local daemon", "managing this daemon", "Daemon is still starting", "No visible copy selected", "in catalog`", 'pill("Revoked"', '"unlink")', "Cancel selection"])
     assert.equal(desktop.includes(phrase) || mobile.includes(phrase) || gallery.includes(phrase), false, `still says ${phrase}`);
   assert.match(desktop, /\["Paused", "id", "pause"\]/);
-  assert.match(desktop, /pill\("Disconnected", "id", "unplug"\)/);
+  assert.match(desktop, /\["Disconnected", "id", "unplug"\]/);
   assert.match(desktop, /pill\("Removed", "er", "unplug"\)/);
   assert.match(mobile, /`Stop syncing “\$\{target\.name\}”\?`/, "the phone names the folder it stops syncing");
   assert.match(mobile, /"Stop syncing and delete",\n\s+\);/, "the phone button says the copy is deleted");
   assert.doesNotMatch(mobile, /credentials, selections, index, queues and caches/);
-  assert.match(mobile, /state=\{m\.revoked \? "Removed" : "Linked"\}/);
+  assert.match(mobile, /state=\{m\.revoked \? "Removed" : ""\}/);
   assert.match(components, /\["Needs attention", "Removed"\]/);
   assert.match(gallery, /label="Clear selection"/);
   assert.match(gallery, /accessibilityActions=\{\s*onLongPress\s*\?\s*\[\{ name: "longpress", label: selected \? "Deselect" : "Select" \}\]/, "a screen reader can select a tile");

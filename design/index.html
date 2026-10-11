@@ -23,7 +23,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.7.38 · production</span>
+      <span class="kit-version">v0.7.39 · production</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -278,7 +278,7 @@
           </div>
           <div class="kit-card">
             <h3>Role tags · inputs</h3>
-            <div class="kit-row"><span class="tag hub">Hub</span><span class="tag self">This device</span><span class="tag">Album source</span><span class="tag">Backs up hub</span></div>
+            <div class="kit-row"><span class="tag hub">Hub</span><span class="tag">Replica</span><span class="role-set"><span class="tag">Replica</span><span class="tag full-backup"><span data-icon="shield-check"></span>Full backup</span></span><span class="tag self">This device</span><span class="tag">Album source</span></div>
             <label for="kit-name">Device name</label>
             <input id="kit-name" value="macbook-pro" />
             <div class="kit-row">
@@ -340,8 +340,8 @@
           </div>
           <div class="kit-card">
             <h3>Devices</h3>
-            <div class="device-list"><article class="device-row"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong><span class="tag hub">Hub</span></div><p class="connection-line">Linux · Docker · 100.99.29.84:17831</p></div><div class="row-end"><span class="pill ok"><span data-icon="circle-check"></span>Running</span></div></article><article class="device-row"><div class="tile large id"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong></div><p class="connection-line">Android · 192.168.1.144</p></div><div class="row-end"><span class="pill id"><span data-icon="circle-dashed"></span>Offline</span></div></article></div>
-            <p class="kit-note">One grouped list: the hub first, then this device, then the others. Meta stays on one line with an ellipsis. A device keeps its pill and its tile takes the pill's tone when it is offline, removed or waiting.</p>
+            <div class="device-list"><article class="device-row device-entry"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span><span><span>9 folders</span><span>412.0 GB</span></span><span>Tailscale</span><span>100.99.29.84:17831</span></span></p></div><div class="row-end device-end"><button type="button" class="secondary small-button danger"><span data-icon="unplug"></span>Disconnect…</button><span class="role-set"><span class="tag hub">Hub</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>umbrel</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span><span><span>9 folders</span><span>401.0 GB</span></span></span></p></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span><span class="tag full-backup"><span data-icon="shield-check"></span>Full backup</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span><span><span class="state-word state-wa" data-tooltip="Older than the hub’s v0.7.38" aria-label="v0.7.35, older than the hub’s v0.7.38">v0.7.35</span></span><span><span>6 folders</span><span>18.2 GB</span></span></span></p></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span></span></div></article><article class="device-row device-entry"><div class="tile large er"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>tablet-yuri</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span></span></p></div><div class="row-end device-end"><span class="pill er"><span data-icon="unplug"></span>Removed</span><span class="role-set"><span class="tag">Replica</span></span></div></article></div></div>
+            <p class="kit-note">One grouped list: the hub first, then this device, then the others. Under each name one line reads OS · folders · size (the local bytes of the folders that device selected; the hub's shared folders), adds the Arca version in warning ink only when it is older than the hub's, and the hub's address; a value a device has not reported is left out. The line wraps between segments, never inside one and never with an ellipsis. The right edge is one column of role chips: Hub filled, Replica outlined, a full-backup replica with an attached shield segment; the row's action or Removed sits just before it, and a removed device tints its tile. Rows carry no presence or sync pill.</p>
           </div>
           <div class="kit-card">
             <h3>History</h3>

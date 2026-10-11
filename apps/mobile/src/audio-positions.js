@@ -45,6 +45,22 @@ export function savedPosition(positions, track) {
   return row && !isFinished(row) ? row : null;
 }
 
+export function episodeHashes(library) {
+  const episodes = new Map();
+  for (const track of library?.tracks?.values() || []) if (track.podcast && track.hash) episodes.set(track.id, track.hash);
+  return episodes;
+}
+
+export function syncedPositions(positions, episodes, scope, device = null) {
+  const tracks = {};
+  for (const row of positions?.values() || []) {
+    const id = `${row.volume}:${row.path}`;
+    if ((device && row.device === device) || isFinished(row) || !row.hash || episodes?.get(id) !== row.hash || !(row.updated > 0)) continue;
+    tracks[id] = { position: Math.round(row.position * 1000), updated: row.updated };
+  }
+  return { scope, tracks };
+}
+
 export function shouldSave({ position, duration, seeking = false, force = false, now, last = 0 }) {
   if (seeking || !(duration >= RESUME_MIN_SECONDS)) return false;
   if (!(position >= RESUME_HEAD_SECONDS)) return false;

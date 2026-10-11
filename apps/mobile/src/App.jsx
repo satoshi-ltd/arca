@@ -142,6 +142,7 @@ import {
   hubFolderLibrary,
   isMusicFolder,
   publishMusic,
+  publishSynced,
   readMusicHistory,
   recordMusicPlay,
   renameMusicPlay,
@@ -154,6 +155,7 @@ import {
 } from "./recent-cache";
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize, unbroken } from "./format";
+import { deviceSegments } from "./device-line.js";
 import { FIRST_ROWS, browseEntries, revealWindow } from "./browse";
 import { deviceStatus, folderSections, historyTone, hubChecking, pullHeld } from "./home-data";
 import { FavoritesDrawer, FavoritesSection } from "./Favorites";
@@ -1008,6 +1010,9 @@ export default function App() {
   useEffect(() => {
     if (musicFolder && connected) audio.refresh();
   }, [musicFolder, folder?.id, connected]);
+  useEffect(() => {
+    if (engine.current && audio.loaded) publishSynced(engine.current, audio.positions, connection?.id ?? null).catch(() => {});
+  }, [audio.positions, connection?.id]);
   const musicCover = (key, size) => {
     if (!key || !replica?.scope) return null;
     try {
@@ -1043,6 +1048,13 @@ export default function App() {
       openFileDetail({ path: track.path, uri: track.uri }).catch((e) =>
         setError(e.message),
       );
+      return;
+    }
+    if (at === null) {
+      runLocal(async () => {
+        const state = await player.command("state");
+        if (!state?.playing && !state?.playWhenReady) await player.command("toggle");
+      });
       return;
     }
     runLocal(async () => {
@@ -3161,29 +3173,14 @@ export default function App() {
                                 name={name}
                                 self
                                 role="Replica"
-                                totals={unbroken(`${locals.filter((f) => f.selected).length} folders · ${bytes(locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0))} local`)}
-                                description={`${Platform.OS === "ios" ? "iOS" : "Android"}${machines?.find((m) => m.credentialId === connection.id)?.lastAddress ? ` · ${machines.find((m) => m.credentialId === connection.id).lastAddress}` : ""}`}
-                                state={
-                                  status.paused
-                                    ? "Paused"
-                                    : status.offline
-                                      ? "Offline"
-                                      : status.error ||
-                                          locals.some(
-                                            (f) => f.selected && f.issue,
-                                          )
-                                        ? "Needs attention"
-                                        : status.busy
-                                          ? "Syncing"
-                                          : locals.some(
-                                                (f) =>
-                                                  f.selected && !f.completed,
-                                              )
-                                            ? "Incomplete"
-                                            : status.last
-                                              ? "Up to date"
-                                              : "Not yet synced"
-                                }
+                                platform={Platform.OS}
+                                segments={deviceSegments({
+                                  platform: Platform.OS,
+                                  version: Application.nativeApplicationVersion || config.expo.version,
+                                  hubVersion: machines?.find((m) => m.isHub)?.version,
+                                  folders: locals.filter((f) => f.selected).length,
+                                  size: locals.filter((f) => f.selected).reduce((n, f) => n + (f.bytes || 0), 0),
+                                })}
                               />
                               {machines?.length ? (
                                 machines
@@ -3198,10 +3195,17 @@ export default function App() {
                                       grouped
                                       divider
                                       name={m.name}
-                                      description={`${{ darwin: "macOS", android: "Android", ios: "iOS", linux: "Linux", win32: "Windows" }[m.platform] || m.platform || "Platform not reported"}${m.lastAddress ? ` · ${m.lastAddress}` : ""}`}
+                                      platform={m.platform}
+                                      segments={deviceSegments({
+                                        platform: m.platform,
+                                        version: m.version,
+                                        hubVersion: machines.find((hub) => hub.isHub)?.version,
+                                        folders: m.selectedFolders,
+                                        size: m.indexedBytes,
+                                      })}
                                       role={m.role || "Replica"}
                                       backup={!!m.backup?.enabled}
-                                      state={m.revoked ? "Removed" : "Linked"}
+                                      state={m.revoked ? "Removed" : ""}
                                     />
                                   ))
                               ) : (

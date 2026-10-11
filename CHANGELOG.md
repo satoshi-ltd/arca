@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.39 — 2026-10-11
+
+- Devices reads the same way everywhere: under each name the line says OS · folders · size, the Arca version appears only when a device is older than the hub, and every row ends in its role chip (Hub, Replica, Replica with Full backup); the Linked, Syncing, Running and Offline labels are gone. Devices now report their version to the hub.
+- Importing a file on Android no longer stops the music: the app could be killed when a sync was cut short before its transfer service had started.
+- Pressing play on a podcast episode paused at a later point on another device resumes there on the phone (including the lock screen, Bluetooth and Android Auto) and on the desktop; tapping the loaded episode continues it instead of restarting, and music tracks still resume where that device left them.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.38 — 2026-10-11
 
 - Sync handles races without losing work: an edit always wins over a deletion made elsewhere, an edit follows a file renamed on another device, a folder deleted elsewhere keeps files you added to it as conflicts, a file that keeps failing no longer holds every other device back, and a crash while a file is being replaced leaves no stray conflict copy.

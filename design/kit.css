@@ -811,38 +811,3 @@ body.kit {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.kit-dv-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-}
-.kit-dv-page .page {
-  overflow: visible;
-}
-.kit-dv-dark {
-  padding: 0;
-  border: 0;
-}
-.kit-dv-narrow {
-  max-width: calc(700px - var(--space-6) * 2);
-}
-.kit-dv-narrow .device-row {
-  flex-wrap: wrap;
-}
-.kit-dv-narrow .device-row .row-end {
-  max-width: none;
-  margin-left: calc(var(--detail-tile) + var(--row-gap));
-  align-items: flex-start;
-  text-align: left;
-}
-.kit-board-pair.kit-dv-phones {
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-}
-.kit-board-pair .m-device.kit-dv-phone {
-  height: 760px;
-}
-.kit-dv-folds .m-device.m-fold {
-  max-width: 100%;
-  height: 680px;
-}

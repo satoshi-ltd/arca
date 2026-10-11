@@ -45,6 +45,7 @@ export const files = {
   object: (scope, hash) => new File(root, id(scope), "objects", id(hash)).uri,
   musicLibrary: () => new File(root, "music-library.json").uri,
   musicHistory: () => new File(root, "music-history.json").uri,
+  musicSynced: () => new File(root, "music-synced.json").uri,
   musicCovers: (scope) => new Directory(root, id(scope), "music-covers").uri,
   musicCover(scope, key, size) {
     if (!/^[a-f0-9]{64}$/.test(key) || !["small", "large"].includes(size))

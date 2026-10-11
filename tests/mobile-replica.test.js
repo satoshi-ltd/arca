@@ -1985,6 +1985,33 @@ test("saving the device name gives the hub a short deadline", async (t) => {
   assert.deepEqual(calls.find(([route]) => route === "/v1/machine-report"), ["/v1/machine-report", 5000]);
 });
 
+test("the phone reports its app version with its selected folders and bytes, and leaves the version out when it has none", async (t) => {
+  const f = await fixture(t);
+  await sync(f);
+  const phone = async () => (await f.client.api("/v1/machines")).machines.find((m) => !m.isHub);
+  assert.equal("version" in (await phone()), false);
+  f.replica.version = "0.7.30";
+  await f.replica.report();
+  const reported = await phone();
+  assert.equal(reported.version, "0.7.30");
+  assert.equal(reported.platform, "ios");
+  const selected = (await f.store.folders(f.replica.scope)).filter((folder) => folder.selected);
+  assert.equal(reported.selectedFolders, selected.length);
+  assert.equal(reported.indexedBytes, selected.reduce((n, folder) => n + folder.bytes, 0));
+  const sent = [];
+  const api = f.client.api.bind(f.client);
+  f.client.api = (route, body, options) => {
+    if (route === "/v1/machine-report") sent.push(body);
+    return api(route, body, options);
+  };
+  f.replica.version = "dev build";
+  await f.replica.report();
+  assert.equal("version" in sent.at(-1), false, "a version the hub would not accept is never sent");
+  f.replica.version = "0.7.39-beta.1";
+  await f.replica.report();
+  assert.equal(sent.at(-1).version, "0.7.39-beta.1");
+});
+
 test("Add photos while the hub is unreachable keeps the picks pending and uploads them after reconnecting", async (t) => {
   const f = await galleryFixture(t);
   const r = f.replica;
@@ -5766,6 +5793,9 @@ test("a phone keeps the hub's audio library, its covers and the car's library fi
   assert.equal(reloads.length, published + 1);
   assert.equal(await f.store.musicLibrary(replica.scope, volume.id), null);
   replica.publishedMusic = "previous";
+  replica.publishedSynced = "previous";
+  replica.musicEpisodes = new Map();
+  replica.audioPositions = new Map();
   let late;
   replica.musicPublishing = new Promise((resolve) => setTimeout(resolve, 30)).then(() => {
     late = true;
@@ -5787,6 +5817,7 @@ test("a phone keeps the hub's audio library, its covers and the car's library fi
   await replica.destroy(true);
   assert.ok(late, "erasing waits for a car library write already running");
   assert.equal(replica.publishedMusic, null, "erasing forgets what the car was given");
+  assert.deepEqual([replica.publishedSynced, replica.musicEpisodes, replica.audioPositions], [null, null, null], "and the synced places, so a re-pair to the same hub writes them again");
   assert.equal(reloads.at(-1), null, "and tells the car service to reload");
   assert.equal(replica.lastFullScan, 0, "a service that cannot reload never stops the reset");
   assert.equal(fs.existsSync(files.musicLibrary()), false);

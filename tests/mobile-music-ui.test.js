@@ -112,7 +112,7 @@ test("playlists get their tab, screen, search group and Recent rows, and every t
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
   assert.match(list, /\{actions && \(\s+<Pressable\s+accessibilityRole="button"\s+accessibilityLabel="Track actions"[\s\S]*?onPress=\{\(\) => actions\(row\)\}[\s\S]*?<Icon name="more"/);
   assert.match(list, /accessibilityActions=\{\s+actions \? \[\{ name: "actions", label: "Track actions" \}\] : undefined\s+\}/, "screen readers reach the ⋯ as a row action");
-  assert.match(list, /play\(context, track, false, row\.position, saved\?\.position \|\| 0\)/);
+  assert.match(list, /play\(context, track, false, row\.position, current && track\.podcast \? null : saved\?\.position \|\| 0\)/);
   const sheet = library.slice(library.indexOf("export function MusicSheet("), library.indexOf("const playingTrack"));
   assert.match(sheet, /\{sheet\.track && \(\s+<ActionRow\s+label="Add to playlist…"[\s\S]*?open\(\{ kind: "add-to-playlist", track: sheet\.track \}\)/, "an entry naming no track offers only Remove");
   assert.match(sheet, /\{sheet\.playlist\?\.editable && \(\s+<ActionRow\s+label="Remove from playlist"[\s\S]*?change\("remove", sheet\)/);
@@ -163,7 +163,7 @@ test("the native module ships the media library service, cover provider and car 
   const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
   assert.match(service, /File\(root\(context\), "music-library\.json"\)/, "the car reads the library the phone publishes");
   assert.match(service, /override fun onPlaybackResumption\(/);
-  assert.doesNotMatch(service, /prepare\(\)|\.play\(\)/, "the service never starts playback on its own");
+  assert.doesNotMatch(service, /prepare\(\)|(?<!super)\.play\(\)/, "the service never starts playback on its own, it only forwards a controller's play");
   const reload = service.slice(service.indexOf("fun reloadRunning("), service.indexOf("fun reloadRunning(") + 500);
   assert.match(reload, /instance\?\.let \{\s+it\.reload\(done\)\s+return\s+\}/);
   assert.match(reload, /\} finally \{\s+done\(\)\s+\}/, "a reload with the service stopped still answers");
@@ -245,6 +245,24 @@ test("the car names its queue and lists each track with its length, and a playli
   assert.match(service, /nameQueue\(item\)\s+player\.shuffleModeEnabled/, "a resumed queue keeps its name");
   assert.match(tree, /val album = track\.album\.takeIf \{ base\(context\)\.startsWith\("playlist:"\) \}/);
   assert.match(tree, /listOfNotNull\(track\.artist, album, length\(track\.durationMs\)\)\.filter\(String::isNotBlank\)\.joinToString\(" · "\)/);
+});
+
+test("the car, the lock screen and Bluetooth resume a paused episode from a newer place saved on another device", () => {
+  const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
+  const rule = read(`${native}/java/expo/modules/arcanetwork/SyncedResume.kt`);
+  assert.match(read("src/files.js"), /musicSynced: \(\) => new File\(root, "music-synced\.json"\)\.uri/);
+  assert.match(service, /File\(root\(this\), "music-synced\.json"\)/, "the service reads the file the app writes");
+  assert.match(service, /syncedFile\.get\(file\.lastModified\(\), file\.length\(\), tree\.library\.scope\)/, "the file is parsed again only when it changes");
+  assert.match(service, /val synced = object : ForwardingPlayer\(player\) \{\s+override fun play\(\) \{\s+catchUp\(\)\s+super\.play\(\)\s+\}\s+override fun setPlayWhenReady\(playWhenReady: Boolean\) \{\s+if \(playWhenReady\) catchUp\(\)\s+super\.setPlayWhenReady\(playWhenReady\)/, "every controller's play goes through the check");
+  assert.match(service, /MediaLibrarySession\.Builder\(this, synced, Callback\(\)\)/);
+  assert.match(service, /queue\(it, syncedStart\(trackOf\(it\), position, false\) \?: position\)/, "a cold resume starts at the newer place");
+  assert.match(service, /if \(reason == Player\.DISCONTINUITY_REASON_SEEK\) heard\(\)/, "a seek on this phone is its own newer choice");
+  assert.match(service, /heard\(mediaItems\[0\]\.mediaId\)/, "a track picked here starts where it was asked to");
+  assert.match(service, /heard\(resolved\[start\]\.mediaId\)/);
+  assert.match(service, /val active = player\.isPlaying \|\| player\.playWhenReady \|\| player\.playbackState == Player\.STATE_ENDED/);
+  assert.match(rule, /if \(active \|\| synced == null \|\| synced\.updated <= heardAt\) return null\s+return if \(synced\.positionMs > positionMs \+ AHEAD_MS\) synced\.positionMs else null/);
+  assert.match(rule, /if \(json\.optString\("scope"\) != scope \|\| tracks == null\) emptyMap\(\)/, "another hub's positions never apply");
+  assert.match(read("modules/arca-network/android/src/test/java/expo/modules/arcanetwork/SyncedResumeTest.kt"), /SyncedResume\.target/);
 });
 
 test("cover paths accept only hex keys and the two sizes", async () => {
@@ -330,6 +348,6 @@ test("episode rows give their length in hours and minutes as desktop does, music
 test("header and folder captions only wrap between their · segments", () => {
   assert.match(app, /const folderSubtitle = unbroken\(`/);
   assert.match(app, /description=\{unbroken\(`\$\{f\.files\} files · \$\{bytes\(f\.bytes\)\} local`\)\}/);
-  assert.match(app, /totals=\{unbroken\(`/);
+  assert.match(app, /segments=\{deviceSegments\(\{/, "device lines wrap only between segments");
   assert.match(read("src/format.js"), /\? unbroken\(`\$\{folder\.files/);
 });

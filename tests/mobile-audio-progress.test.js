@@ -34,6 +34,7 @@ import {
   resumeCandidate,
   savedPosition,
   shouldSave,
+  syncedPositions,
   timeLeft,
   trackFile,
 } from "../apps/mobile/src/audio-positions.js";
@@ -198,6 +199,26 @@ test("the player's transitions decide what is saved: playing, pausing, ending an
   assert.equal(positionToSave({ ...playing, position: 3599000 }, next).snapshot.position, 3600000, "an episode that ran out is finished");
   assert.equal(positionToSave({ ...playing, duration: 200000 }, next), null, "short tracks are never saved");
   assert.equal(positionToSave(paused, { ...paused }), null);
+});
+
+test("play on a paused episode reaches the native player untouched, which alone decides on a newer synced place", () => {
+  const session = read("audio-session.js");
+  assert.doesNotMatch(session, /command\("seek"|const toggle|touched|syncedSeek/, "the app never seeks before play; the service sees every play, seek and restart");
+  const app = read("App.jsx");
+  assert.match(app, /function musicCommand\(name, value\) \{\s+player\.command\(name, value\)\.catch/);
+  assert.match(app, /if \(at === null\) \{\s+runLocal\(async \(\) => \{\s+const state = await player\.command\("state"\);\s+if \(!state\?\.playing && !state\?\.playWhenReady\) await player\.command\("toggle"\);/);
+  assert.match(read("MusicLibrary.jsx"), /play\(context, track, false, row\.position, current && track\.podcast \? null : saved\?\.position \|\| 0\)/, "tapping the loaded episode continues it instead of restarting it");
+  assert.match(app, /if \(engine\.current && audio\.loaded\) publishSynced\(engine\.current, audio\.positions, connection\?\.id \?\? null\)/);
+  const episodes = new Map([["a1:Show/ep.mp3", "h"], ["a1:Show/new.mp3", "h2"]]);
+  const positions = positionMap([
+    { volume: "a1", path: "Show/ep.mp3", hash: "h", position: 3480.2, duration: 4200, updated: 2000 },
+    { volume: "a1", path: "Show/new.mp3", hash: "changed", position: 900, duration: 4200, updated: 2000 },
+    { volume: "a1", path: "Mix/long.mp3", hash: "m", position: 900, duration: 4200, updated: 2000 },
+  ]);
+  assert.deepEqual(syncedPositions(positions, episodes, "hub"), { scope: "hub", tracks: { "a1:Show/ep.mp3": { position: 3480200, updated: 2000 } } }, "only podcast episodes whose copy matches reach the service");
+  const own = positionMap([{ volume: "a1", path: "Show/ep.mp3", hash: "h", position: 3480.2, duration: 4200, updated: 2000, device: "phone" }]);
+  assert.deepEqual(syncedPositions(own, episodes, "hub", "phone").tracks, {}, "this phone's own save is never another device's place");
+  assert.equal(Object.keys(syncedPositions(own, episodes, "hub", "mac").tracks).length, 1);
 });
 
 test("a show's play resumes only an episode the phone holds", () => {

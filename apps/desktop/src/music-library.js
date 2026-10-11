@@ -97,6 +97,11 @@ export function artistGroups(artists) {
 export function nextRepeat(mode) {
   return mode === "off" ? "all" : mode === "all" ? "one" : "off";
 }
+export function syncedSeek(player, row, touched = 0) {
+  if (!player?.paused || player.ended || !row || !(row.position > 0)) return null;
+  if (!((row.updated || 0) > touched)) return null;
+  return row.position > (player.position || 0) + 10 ? row.position : null;
+}
 export function shuffleOrder(length, first, random = Math.random) {
   const rest = [];
   for (let index = 0; index < length; index++)

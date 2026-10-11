@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -95,6 +96,7 @@ class MusicService : MediaLibraryService() {
   private var tree = MusicTree(MusicLibraryData.EMPTY)
   private val loaded: SettableFuture<Unit> = SettableFuture.create()
   private val saved by lazy { getSharedPreferences(PREFERENCES, MODE_PRIVATE) }
+  private val syncedFile = SyncedCache()
 
   override fun onCreate() {
     super.onCreate()
@@ -107,8 +109,17 @@ class MusicService : MediaLibraryService() {
       .build()
     player.setShuffleOrder(shuffle)
     player.addListener(object : Player.Listener {
-      override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = remember()
-      override fun onIsPlayingChanged(isPlaying: Boolean) = remember()
+      override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        if (player.isPlaying) heard()
+        remember()
+      }
+      override fun onIsPlayingChanged(isPlaying: Boolean) {
+        heard()
+        remember()
+      }
+      override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) heard()
+      }
       override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         if (shuffleModeEnabled && player.mediaItemCount > 0)
           player.setShuffleOrder(shuffle.startingAt(player.mediaItemCount, player.currentMediaItemIndex))
@@ -118,7 +129,17 @@ class MusicService : MediaLibraryService() {
     val open = packageManager.getLaunchIntentForPackage(packageName)?.let {
       PendingIntent.getActivity(this, 2, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
-    session = MediaLibrarySession.Builder(this, player, Callback()).apply { open?.let(::setSessionActivity) }.build()
+    val synced = object : ForwardingPlayer(player) {
+      override fun play() {
+        catchUp()
+        super.play()
+      }
+      override fun setPlayWhenReady(playWhenReady: Boolean) {
+        if (playWhenReady) catchUp()
+        super.setPlayWhenReady(playWhenReady)
+      }
+    }
+    session = MediaLibrarySession.Builder(this, synced, Callback()).apply { open?.let(::setSessionActivity) }.build()
     reload()
   }
 
@@ -195,6 +216,28 @@ class MusicService : MediaLibraryService() {
       .putLong("position", player.currentPosition.coerceAtLeast(0))
       .putBoolean("shuffle", player.shuffleModeEnabled)
       .apply()
+  }
+
+  private fun trackOf(id: String) = MusicTree.parseTrackNodeId(id)?.second ?: id
+
+  private fun heard(id: String? = player.currentMediaItem?.mediaId) {
+    if (id == null) return
+    saved.edit().putString("heard-track", trackOf(id)).putLong("heard-at", System.currentTimeMillis()).apply()
+  }
+
+  private fun syncedStart(track: String, positionMs: Long, active: Boolean): Long? {
+    val file = File(root(this), "music-synced.json")
+    val synced = syncedFile.get(file.lastModified(), file.length(), tree.library.scope) {
+      try { file.takeIf { it.isFile }?.readText() } catch (_: Exception) { null }
+    }[track]
+    val heardAt = if (saved.getString("heard-track", null) == track) saved.getLong("heard-at", 0L) else 0L
+    return SyncedResume.target(positionMs, active, synced, heardAt)
+  }
+
+  private fun catchUp() {
+    val id = player.currentMediaItem?.mediaId ?: return
+    val active = player.isPlaying || player.playWhenReady || player.playbackState == Player.STATE_ENDED
+    syncedStart(trackOf(id), player.currentPosition.coerceAtLeast(0), active)?.let { player.seekTo(it) }
   }
 
   private fun <T> whenLoaded(block: () -> T): ListenableFuture<T> = Futures.transform(loaded, { block() }, onMain)
@@ -334,6 +377,7 @@ class MusicService : MediaLibraryService() {
       val position = if (startPositionMs == C.TIME_UNSET) 0L else startPositionMs
       val single = if (mediaItems.size == 1) queue(mediaItems[0].mediaId, position) else null
       if (single != null) {
+        heard(mediaItems[0].mediaId)
         MusicTree.parseTrackNodeId(mediaItems[0].mediaId)?.let { played(it.first) }
         nameQueue(mediaItems[0].mediaId)
         Futures.immediateFuture(single)
@@ -344,6 +388,7 @@ class MusicService : MediaLibraryService() {
         else {
           nameQueue(null)
           val start = if (startIndex == C.INDEX_UNSET) 0 else startIndex.coerceIn(0, resolved.size - 1)
+          heard(resolved[start].mediaId)
           Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(resolved, start, position))
         }
       }
@@ -355,7 +400,10 @@ class MusicService : MediaLibraryService() {
       isForPlayback: Boolean,
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = Futures.transformAsync(loaded, {
       val item = saved.getString("item", null)
-      val restored = item?.let { queue(it, saved.getLong("position", 0)) }
+      val restored = item?.let {
+        val position = saved.getLong("position", 0)
+        queue(it, syncedStart(trackOf(it), position, false) ?: position)
+      }
       if (restored == null) Futures.immediateFailedFuture(UnsupportedOperationException("Nothing to resume"))
       else {
         nameQueue(item)

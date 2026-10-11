@@ -22,6 +22,7 @@ import {
   playedItems,
   rememberPlayed,
   shuffleOrder,
+  syncedSeek,
   tagsRead,
 } from "./music-library.js";
 import { favoriteOrder, nameOrder } from "./favorite-order.js";
@@ -114,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.38";
+const APP_VERSION = "0.7.39";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1536,7 +1537,7 @@ const countLabel = (n, singular, plural = `${singular}s`) =>
 const machineLabel = () =>
   native && status?.platform === "darwin" ? "this Mac" : "this device";
 const platformLabel = (value) =>
-  ({ darwin: "macOS", linux: "Linux", win32: "Windows" })[value] ||
+  ({ darwin: "macOS", linux: "Linux", win32: "Windows", android: "Android", ios: "iOS" })[value] ||
   value ||
   "Platform not reported";
 const hubName = () =>
@@ -5052,6 +5053,8 @@ let musicCoverObserver,
   musicPicking = null,
   audioPositions = new Map(),
   audioFinished = new Map(),
+  audioPlayedAt = new Map(),
+  musicContinuing = null,
   showOrder = null,
   audioSavedAt = 0;
 const RESUME_MIN_SECONDS = 1200;
@@ -5646,10 +5649,16 @@ function musicAudio() {
     const level = localStorage.getItem("arca-music-volume");
     if (level !== null && Number(level) >= 0 && Number(level) <= 1) musicElement.volume = Number(level);
   } catch {}
-  musicElement.addEventListener("timeupdate", musicProgress);
+  musicElement.addEventListener("timeupdate", () => {
+    if (!musicElement.paused) musicTouch();
+    musicProgress();
+  });
   musicElement.addEventListener("durationchange", musicProgress);
+  musicElement.addEventListener("seeking", musicTouch);
+  musicElement.addEventListener("seeked", musicTouch);
   musicElement.addEventListener("play", musicControls);
   musicElement.addEventListener("pause", () => {
+    musicTouch();
     musicControls();
     saveAudioPosition(true);
   });
@@ -5710,6 +5719,7 @@ function musicLoad(at = 0) {
   const track = musicCurrent();
   if (sleepTimer?.mode === "end" && (sleepTimer.volume !== state.volume || sleepTimer.path !== track.path)) setSleep("off");
   const serial = ++musicSerial;
+  musicContinuing = null;
   const audio = musicAudio();
   state.failed = false;
   state.renewed = false;
@@ -5782,6 +5792,7 @@ function musicPlayable() {
 }
 function stopMusic() {
   musicSerial++;
+  musicContinuing = null;
   if (musicElement) {
     musicElement.pause();
     musicElement.removeAttribute("src");
@@ -5848,6 +5859,7 @@ function musicPrevious() {
   if (!musicPlayer) return;
   if ((musicElement?.currentTime || 0) > 3) musicElement.currentTime = 0;
   else musicStep(-1);
+  musicTouch();
 }
 function musicPlayerButton(action, label, symbol, pressed = null, disabled = false, cls = "ghost") {
   return `<button type="button" class="${cls} icon-button" data-player="${action}" data-symbol="${symbol}" data-tooltip="${label}" aria-label="${label}"${pressed === null ? "" : ` aria-pressed="${pressed}"`}${disabled ? " disabled" : ""}>${icon(symbol)}</button>`;
@@ -6087,11 +6099,54 @@ function musicBroadcast(force = false) {
   musicBroadcastKey = key;
   window.__TAURI__.event.emit("music-state", payload)?.catch?.(() => {});
 }
+function musicTouch() {
+  const loaded = musicPlayer?.loadedTrack;
+  if (loaded) audioPlayedAt.set(positionKey(musicPlayer.volume, loaded.path), Date.now());
+}
 function musicPlayPause() {
   if (!musicPlayer) return;
   const audio = musicAudio();
-  if (audio.paused || musicPlayer.failed) musicResume();
-  else audio.pause();
+  if (musicContinuing) return musicPause();
+  if (audio.paused || musicPlayer.failed) return musicContinue();
+  audio.pause();
+}
+function musicPause() {
+  musicContinuing = null;
+  musicElement?.pause();
+}
+const ownAudioRow = (row) => !!row?.device && (row.device === status?.deviceId || row.device === status?.id);
+function musicContinue() {
+  const state = musicPlayer;
+  const loaded = state?.loadedTrack;
+  const audio = musicAudio();
+  if (!loaded?.podcast || state.failed || state.loading || !audio.getAttribute("src")) return musicResume();
+  if (musicContinuing) return musicContinuing.run;
+  const pending = {};
+  musicContinuing = pending;
+  pending.run = (async () => {
+    const serial = musicSerial;
+    if (!hubOffline()) {
+      let timer;
+      await Promise.race([
+        loadAudioPositions(state.volume),
+        new Promise((resolve) => (timer = setTimeout(resolve, 1500))),
+      ]);
+      clearTimeout(timer);
+    }
+    if (musicContinuing !== pending) return;
+    musicContinuing = null;
+    if (serial !== musicSerial || musicPlayer !== state || state.loadedTrack !== loaded || !audio.paused) return;
+    const key = positionKey(state.volume, loaded.path);
+    const row = audioPositions.get(key);
+    const at = syncedSeek(
+      { paused: audio.paused, ended: audio.ended, position: audio.currentTime || 0 },
+      row?.hash === loaded.hash && !ownAudioRow(row) ? row : null,
+      audioPlayedAt.get(key) || 0,
+    );
+    if (at !== null) audio.currentTime = at;
+    musicResume();
+  })();
+  return pending.run;
 }
 async function musicShowAlbum() {
   const track = musicCurrent();
@@ -6209,8 +6264,8 @@ function musicSession() {
   if (musicSessionReady) return;
   musicSessionReady = true;
   for (const [name, run] of [
-    ["play", () => musicResume()],
-    ["pause", () => musicElement?.pause()],
+    ["play", () => musicContinue()],
+    ["pause", () => musicPause()],
     ["previoustrack", () => musicPrevious()],
     ["nexttrack", () => musicStep(1)],
   ])
@@ -6751,34 +6806,41 @@ async function renderHistory(
   icons();
 }
 const managedGlyph = () => (status.role === "hub" || !native ? "server" : "monitor");
-const machineRow = (
-  name,
-  tags,
-  description,
-  sub,
-  state,
-  controls = "",
-  self = false,
-  hub = false,
-  dashed = false,
-  metadata = "",
-  totals = "",
-  tone = /class="pill (wa|er)"/.exec(state)?.[1] || (/class="pill id".*(Offline|Paused|Disconnected)<\/span>/.test(state) ? "id" : ""),
-) =>
-  `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}${tone ? ` ${tone}` : ""}">${icon(hub ? "server" : self ? managedGlyph() : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This device</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
+const machineRow = (name, tags, description, state, controls, metadata) => {
+  const tone = /class="pill (wa|er)"/.exec(state)?.[1] || "";
+  return `<article class="device-row discovered"><div class="tile large${tone ? ` ${tone}` : ""}">${icon(/ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}</div>${controls}</article>`;
+};
 
-function selfPill() {
-  if (!status.hub) return pill("Disconnected", "id", "unplug");
-  if (status.hubUnavailable && status.phase !== "paused")
-    return pill("Offline", "id", "wifi-off");
-  const [label, tone, symbol] = {
-    idle: ["Up to date", "ok", "circle-check"],
-    paused: ["Paused", "id", "pause"],
-    checking: CHECKING_HUB,
-    error: ["Needs attention", "er", "circle-alert"],
-  }[status.phase] || ["Syncing", "sy", "busy"];
-  return pill(label, tone, symbol);
+const versionParts = (value) =>
+  /^(\d+)\.(\d+)\.(\d+)/.exec(value || "")?.slice(1).map(Number) || null;
+function olderVersion(version, hubVersion) {
+  const own = versionParts(version),
+    hub = versionParts(hubVersion);
+  if (!own || !hub) return false;
+  for (let i = 0; i < 3; i++) if (own[i] !== hub[i]) return own[i] < hub[i];
+  return false;
 }
+function deviceLine({ platform, version, hubVersion, folders, size, extra = [] }) {
+  const older = olderVersion(version, hubVersion);
+  const segments = [
+    platform ? `<span>${escape(platformLabel(platform))}</span>` : "",
+    older
+      ? `<span><span class="state-word state-wa" data-tooltip="Older than the hub’s v${escape(hubVersion)}" aria-label="${escape(`v${version}, older than the hub’s v${hubVersion}`)}">v${escape(version)}</span></span>`
+      : "",
+    Number.isSafeInteger(folders) && Number.isSafeInteger(size)
+      ? `<span><span>${countLabel(folders, "folder")}</span><span>${bytes(size)}</span></span>`
+      : "",
+    ...extra.filter(Boolean).map((text) => `<span>${escape(text)}</span>`),
+  ].filter(Boolean);
+  return `<p class="connection-line device-line"><span class="device-segs">${segments.join("")}</span></p>`;
+}
+function roleChip(role, backup = false) {
+  const label = role === "hub" ? "Hub" : !role || role === "replica" ? "Replica" : role;
+  return `<span class="role-set"><span class="tag${role === "hub" ? " hub" : ""}">${escape(label)}</span>${backup ? `<span class="tag full-backup">${icon("shield-check")}Full backup</span>` : ""}</span>`;
+}
+const deviceRow = ({ name, role, self = false, backup = false, platform = "", line, end = "", tone = "", dashed = false }) =>
+  `<article class="device-row device-entry${dashed ? " discovered" : ""}"><div class="tile large${role === "hub" ? " hub" : ""}${tone ? ` ${tone}` : ""}">${icon(role === "hub" ? "server" : self ? managedGlyph() : /ios|android|iphone|ipad/i.test(platform) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${self ? '<span class="tag self">This device</span>' : ""}</div>${line}</div><div class="row-end device-end">${end}${roleChip(role, backup)}</div></article>`;
+const rosterHub = () => roster?.machines?.find((m) => m.isHub);
 async function renderMachines(serial = renderSerial, fetchData = true) {
   let issue = "";
   if (fetchData) {
@@ -6817,7 +6879,6 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         : "";
   const platform = (p) =>
     p ? escape(platformLabel(p.os || p.arca.platform)) : "";
-  const row = machineRow;
   const summary = roster?.offline
     ? '<p class="hint">Offline · showing saved device information · last known</p>'
     : "";
@@ -6825,24 +6886,22 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
   let html =
     status.role === "replica" && !status.hub ? section("Hub connection", hubConnection()) : "";
   const selfAddress = discovered?.tailscale?.self?.addresses?.[0];
+  const hubVersion = rosterHub()?.version;
   if (status.role === "hub")
-    machineRows += row(
-      status.name,
-      '<span class="tag hub">Hub</span>',
-      selfAddress ? `Tailscale · ${escape(selfAddress)}` : "",
-      "",
-      pill(
-        status.phase === "paused" ? "Paused" : "Running",
-        status.phase === "paused" ? "id" : "ok",
-        status.phase === "paused" ? "pause" : "circle-check",
-      ),
-      "",
-      true,
-      true,
-      false,
-      escape(platformLabel(status.platform)),
-      `${status.volumes.length} shared folders · ${bytes(status.volumes.reduce((n, v) => n + v.bytes, 0))} on the hub`,
-    );
+    machineRows += deviceRow({
+      name: status.name,
+      role: "hub",
+      self: true,
+      platform: status.platform,
+      line: deviceLine({
+        platform: status.platform,
+        folders: status.volumes.length,
+        size: status.volumes.reduce((n, v) => n + v.bytes, 0),
+        extra: selfAddress
+          ? ["Tailscale", selfAddress]
+          : [!native && !["localhost", "127.0.0.1", "[::1]"].includes(location.hostname) ? location.host : ""],
+      }),
+    });
   else if (status.hub && status.role !== "replica") {
     const hubError =
       /fetch failed|ECONN|ENOTFOUND|timed? ?out|unreachable|401|403|revoked|credential|unauthoriz/i.test(
@@ -6853,27 +6912,20 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         p.arca.id === status.hubId ||
         p.addresses.includes(new URL(status.hub).hostname),
     );
-    machineRows += row(
-      p?.name || hubName(),
-      '<span class="tag hub">Hub</span>',
-      p ? connection(p) : escape(status.hub),
-      status.lastSync ? `Last sync ${relative(status.lastSync)}` : "",
-      pill(
-        status.lastSync && !hubError
-          ? "Connected"
-          : hubError
-            ? "Needs attention"
-            : "Linked",
-        hubError ? "wa" : "id",
-        hubError ? "circle-alert" : "link",
-      ),
-      "",
-      false,
-      true,
-      false,
-      platform(p),
-      `${countLabel(catalog.length, "shared folder")} on the hub`,
-    );
+    const hub = rosterHub();
+    machineRows += deviceRow({
+      name: p?.name || hubName(),
+      role: "hub",
+      platform: hub?.platform || p?.os || "",
+      tone: hubError ? "wa" : "",
+      line: deviceLine({
+        platform: hub?.platform || p?.os || p?.arca.platform,
+        folders: hub?.selectedFolders,
+        size: hub?.indexedBytes,
+        extra: [p ? "Tailscale" : "", new URL(status.hub).host],
+      }),
+      end: hubError ? pill("Needs attention", "wa", "circle-alert") : "",
+    });
   } else if (status.role !== "replica")
     html += section(
       "Hub",
@@ -6883,20 +6935,23 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         button("Connect to a hub", "connect", "", "primary", "link"),
       ),
     );
-  if (status.role !== "hub")
-    machineRows += row(
-      status.name,
-      `${roleTag(status.role)}${status.backup?.enabled ? '<span class="tag">Backs up hub</span>' : ""}`,
-      selfAddress ? `Tailscale · ${escape(selfAddress)}` : "",
-      "",
-      selfPill(),
-      "",
-      true,
-      false,
-      false,
-      escape(platformLabel(status.platform)),
-      `${status.volumes.filter((v) => v.selected).length} folders · ${bytes(status.volumes.filter((v) => v.selected).reduce((n, v) => n + v.bytes, 0))} local`,
-    );
+  if (status.role !== "hub") {
+    const selected = status.volumes.filter((v) => v.selected);
+    machineRows += deviceRow({
+      name: status.name,
+      role: status.role,
+      self: true,
+      backup: !!status.backup?.enabled,
+      platform: status.platform,
+      line: deviceLine({
+        platform: status.platform,
+        version: APP_VERSION,
+        hubVersion,
+        folders: selected.length,
+        size: selected.reduce((n, v) => n + v.bytes, 0),
+      }),
+    });
+  }
   if (status.role === "hub" && status.devices.length) {
     let records = "";
     for (const d of status.devices) {
@@ -6906,28 +6961,25 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
           (Boolean(d.last_address) && p.addresses.includes(d.last_address)) ||
           (Boolean(report?.machineId) && p.arca.id === report.machineId),
       );
-      const state = d.revoked
-        ? pill("Removed", "er", "unplug")
-        : p?.online === false
-          ? pill("Offline", "id", "circle-dashed")
-          : !d.last_seen
-            ? pill("Invitation only", "wa", "clock")
-            : pill("Linked", "id", "link");
-      const tags = `${roleTag(d.role)}${d.backup_enabled ? '<span class="tag">Backs up hub</span>' : ""}`;
-      records += row(
-        report?.name || d.name,
-        tags,
-        connection(p, d.last_address),
-        "",
-        state,
-        d.revoked
-          ? ""
-          : `<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Remove device", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
-        false,
-        false,
-        !d.last_seen,
-        p ? platform(p) : escape(platformLabel(report?.platform || "")),
-      );
+      const platform = report?.platform || p?.os || p?.arca.platform || "";
+      records += deviceRow({
+        name: report?.name || d.name,
+        role: d.role,
+        backup: !!d.backup_enabled,
+        platform,
+        dashed: !d.last_seen,
+        tone: d.revoked ? "er" : !d.last_seen ? "wa" : "",
+        line: deviceLine({
+          platform,
+          version: report?.version,
+          hubVersion,
+          folders: report?.selectedFolders,
+          size: report?.indexedBytes,
+        }),
+        end: d.revoked
+          ? pill("Removed", "er", "unplug")
+          : `${d.last_seen ? "" : pill("Invitation only", "wa", "clock")}<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Remove device", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
+      });
     }
     machineRows += records;
   }
@@ -6938,34 +6990,21 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     machineRows += others.length
       ? others
           .map((m) =>
-            row(
-              m.name,
-              `${roleTag(m.role)}${m.backup?.enabled ? '<span class="tag">Backs up hub</span>' : ""}`,
-              [
-                connection(
-                  peers.find(
-                    (p) =>
-                      p.arca.id === m.machineId ||
-                      p.addresses?.includes(m.lastAddress),
-                  ),
-                  m.lastAddress,
-                ),
-                roster.offline ? "last known" : "",
-              ]
-                .filter(Boolean)
-                .join(" · "),
-              "",
-              m.revoked
-                ? pill("Removed", "er", "unplug")
-                : roster.offline && status.hubUnavailable
-                  ? pill("Offline", "id", "circle-dashed")
-                  : pill("Linked", "id", "link"),
-              "",
-              false,
-              false,
-              false,
-              escape(platformLabel(m.platform || "")),
-            ),
+            deviceRow({
+              name: m.name,
+              role: m.role,
+              backup: !!m.backup?.enabled,
+              platform: m.platform || "",
+              tone: m.revoked ? "er" : "",
+              line: deviceLine({
+                platform: m.platform,
+                version: m.version,
+                hubVersion,
+                folders: m.selectedFolders,
+                size: m.indexedBytes,
+              }),
+              end: m.revoked ? pill("Removed", "er", "unplug") : "",
+            }),
           )
           .join("")
       : roster
@@ -7000,11 +7039,10 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         : "Detected hubs",
       found
         .map((p) =>
-          row(
+          machineRow(
             p.name,
             roleTag(p.arca.role) || '<span class="tag">Arca</span>',
             connection(p),
-            "",
             p.arca.state === "incompatible"
               ? pill("Incompatible Arca", "er", "circle-alert")
               : pill("Arca detected", "id", "circle-dot"),
@@ -7027,9 +7065,6 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
                     )
                   : ""
               : "",
-            false,
-            false,
-            true,
             `${platform(p)} · Arca ${escape(p.arca.version || "")}`,
           ),
         )
@@ -7102,28 +7137,27 @@ function hubConnection() {
     const vpn = discovered?.peers?.some((peer) =>
       peer.addresses?.includes(address.hostname),
     );
-    return machineRow(
-      hubName(),
-      '<span class="tag hub">Hub</span>',
-      escape(
-        [vpn ? "Tailscale" : "", address.host].filter(Boolean).join(" · "),
-      ),
-      "",
-      "",
-      status.role === "replica"
-        ? button(
-            "Disconnect…",
-            "disconnect-hub",
-            "",
-            "secondary small-button danger",
-            "unplug",
-          )
-        : "",
-      false,
-      true,
-      false,
-      hub?.platform ? escape(platformLabel(hub.platform)) : "",
-    );
+    return deviceRow({
+      name: hubName(),
+      role: "hub",
+      platform: hub?.platform || "",
+      line: deviceLine({
+        platform: hub?.platform,
+        folders: hub?.selectedFolders,
+        size: hub?.indexedBytes,
+        extra: [vpn ? "Tailscale" : "", address.host],
+      }),
+      end:
+        status.role === "replica"
+          ? button(
+              "Disconnect…",
+              "disconnect-hub",
+              "",
+              "secondary small-button danger",
+              "unplug",
+            )
+          : "",
+    });
   }
   return `<div class="settings-card">${setting(connected ? `Connected to ${escape(hubName())}` : "Not connected", connected ? `<span class="path">${escape(status.hub)}</span>` : "Your local files and saved destinations are kept. Enter a new pairing code to connect.", connected ? (status.role === "replica" ? button("Disconnect…", "disconnect-hub", "", "secondary small-button danger", "unplug") : pill("Backup connection", "id", "shield")) : button(status.disconnectedHub ? "Reconnect…" : "Connect to hub…", "connect", "", "primary", "link"))}</div>`;
 }

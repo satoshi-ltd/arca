@@ -13,6 +13,7 @@ class TransferService : com.facebook.react.HeadlessJsTaskService() {
     const val PAUSE = "arca.transfer.PAUSE"
     @Volatile var instance: TransferService? = null
     var onStopped: ((String) -> Unit)? = null
+    val gate = TransferGate()
   }
   private var lock: PowerManager.WakeLock? = null
   private var lastUpdate = 0L
@@ -25,6 +26,7 @@ class TransferService : com.facebook.react.HeadlessJsTaskService() {
     val notification = notification("Synchronizing folders", 0, 0)
     if (Build.VERSION.SDK_INT >= 29) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     else startForeground(ID, notification)
+    gate.promoted()
     lock = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "arca:sync")
     lock?.acquire(6 * 60 * 60 * 1000L)
   }
@@ -47,14 +49,17 @@ class TransferService : com.facebook.react.HeadlessJsTaskService() {
     getSystemService(NotificationManager::class.java).notify(ID, notification(text.take(120), done, total))
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (intent?.action == PAUSE) { onStopped?.invoke("paused"); stopSelf() }
-    if (intent?.action != PAUSE) super.onStartCommand(intent, flags, startId)
+    if (intent?.action == PAUSE) { onStopped?.invoke("paused"); halt() }
+    else if (!gate.keep()) stopSelf()
+    else super.onStartCommand(intent, flags, startId)
     return START_NOT_STICKY
   }
-  override fun onTimeout(startId: Int, fgsType: Int) { onStopped?.invoke("timeout"); stopSelf() }
-  override fun onTaskRemoved(rootIntent: Intent?) { onStopped?.invoke("closed"); stopSelf() }
+  private fun halt() { gate.ended(); stopSelf() }
+  override fun onTimeout(startId: Int, fgsType: Int) { onStopped?.invoke("timeout"); halt() }
+  override fun onTaskRemoved(rootIntent: Intent?) { onStopped?.invoke("closed"); halt() }
   override fun onDestroy() {
     instance = null
+    gate.ended()
     if (lock?.isHeld == true) lock?.release()
     stopForeground(STOP_FOREGROUND_REMOVE)
     super.onDestroy()
