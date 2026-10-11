@@ -142,18 +142,13 @@ export class Gallery {
       }
       const old = await r.store.gallery(r.scope, volume);
       const damaged = old?.mode === "damaged";
-      if (
+      const reselect =
         old &&
         !damaged &&
         gallerySettingsChanged(
           old,
           albums.map((album) => album.id),
           !!options.videos,
-        ) &&
-        (await r.store.gallerySummary(r.scope, volume)).pending
-      )
-        throw new Error(
-          "Finish pending uploads before changing the source, or remove this source and configure it again.",
         );
       const source = {
         ...old,
@@ -176,6 +171,15 @@ export class Gallery {
       if (!away && r.client.state().catalog?.gallery && !remote.gallery)
         await r.client.api("/v1/gallery/link", { volume });
       await r.store.setGallery(r.scope, volume, source);
+      if (reselect) {
+        await r.store.dropQueuedGallery(r.scope, volume);
+        await r.files.clearGalleryStage(r.scope, volume);
+        source.summary = await r.store.gallerySummary(r.scope, volume);
+        source.issue = source.summary.failed
+          ? "Some photos could not be uploaded. Retry to continue."
+          : null;
+        await r.store.setGallery(r.scope, volume, source);
+      }
       await r.store.retryGallery(r.scope, volume);
     } finally {
       r.importing = r.busy = false;

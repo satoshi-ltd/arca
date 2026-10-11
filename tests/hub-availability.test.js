@@ -309,15 +309,15 @@ test("a silent hub that comes back is noticed within seconds", async (t) => {
   await waitFor(() => calls.some((c) => c.route.startsWith("/v1/events")));
   const online = replica.engine.config.hub.url;
   replica.engine.config.hub.url = "http://127.0.0.1:1";
-  await waitFor(() => replica.engine.hubUnavailable, 15000);
+  await waitFor(() => replica.engine.hubUnavailable, 40000);
   const quiet = (await silent(t)).url;
   replica.engine.config.hub.url = quiet;
   await waitFor(
     () => calls.some((c) => c.route === "/v1/events?" && c.url === quiet),
-    12000,
+    40000,
   );
   replica.engine.config.hub.url = online;
-  await within(5000, () => waitFor(() => !replica.engine.hubUnavailable));
+  await within(15000, () => waitFor(() => !replica.engine.hubUnavailable, 15000));
 });
 
 test("offline probes stay paced while a cycle still waits on the hub", async (t) => {

@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-GALLERY-ALBUM-RELEASE** — Changing the selected albums while photos are pending is allowed
-  `feature · agent · low`
-  accept: changing the albums or the videos setting while uploads are pending or failed no longer fails with "Finish pending uploads…" (`gallery.js:102-116`); queued photos of an unticked album are dropped from the queue (maintainer decision; nothing already uploaded and nothing in the phone's library is touched); a replica test covers adding and removing an album with pending uploads; uploaded files are never touched.
 - **MOB-VIDEO-SAFE-AREA** — The photo viewer's video surface uses safe-area insets
   `bug · agent · low`
   accept: the video surface in the phone viewer uses the safe-area insets instead of the fixed 90 and 110 margins in `theme.js`; a layout test covers a device with a cutout.

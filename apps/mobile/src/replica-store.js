@@ -419,6 +419,21 @@ export class ReplicaStore {
       volume,
     );
   }
+  async dropQueuedGallery(scope, volume) {
+    await this.db.runAsync(
+      `DELETE FROM gallery_assets WHERE scope=? AND volume=?
+       AND state NOT IN ('accepted','removed','unavailable')
+       AND asset NOT GLOB 'picked-*'
+       AND coalesce(json_extract(row,'$.manual'),0)=0
+       AND json_type(row,'$.picked') IS NULL
+       AND json_type(row,'$.previousResources') IS NULL
+       AND NOT EXISTS (SELECT 1 FROM json_each(row,'$.resources') AS resource
+         WHERE json_extract(resource.value,'$.accepted')=1
+         OR json_extract(resource.value,'$.attempted')=1)`,
+      scope,
+      volume,
+    );
+  }
   async retryGalleryManual(scope, volume) {
     await this.db.runAsync(
       "UPDATE gallery_assets SET retryAt=0 WHERE scope=? AND volume=? AND state NOT IN ('accepted','removed','unavailable') AND json_extract(row,'$.manual')=1",

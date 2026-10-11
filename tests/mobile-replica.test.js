@@ -3942,6 +3942,125 @@ test("changing the album of an existing gallery source works while the hub is of
   assert.equal(source.mode, "source");
 });
 
+async function albumFixture(t, albums, videos = new Set()) {
+  const every = Object.values(albums).flat();
+  const f = await galleryFixture(t, every.map((id) => ({ id, filename: `${id}.jpg`, creationTime: 1750000000000 })));
+  for (const id of ["a-2", "b-2", "b-3", "b-4", "v-1"]) {
+    f.data.set(id, Buffer.from(`original ${id}`));
+    f.assets.push({ id, filename: `${id}.jpg`, creationTime: 1750000000000 });
+  }
+  f.media.albums = async () => Object.keys(albums).map((id) => ({ id, title: id }));
+  f.media.page = async (source) => {
+    const list = (source.albumId ? albums[source.albumId] : Object.values(albums).flat()).filter((id) => source.videos || !videos.has(id));
+    return { assets: list.map((id) => ({ id, filename: `${id}.jpg`, creationTime: 1750000000000 })), hasNextPage: false, endCursor: null };
+  };
+  const row = (id, state, extra = {}) => f.store.putGalleryAsset(f.replica.scope, f.volume.id, { id, name: `${id}.jpg`, prefix: "Machine-test", state, retryAt: 0, ...extra });
+  const ids = async () => (await f.store.db.getAllAsync("SELECT asset FROM gallery_assets WHERE scope=? AND volume=? ORDER BY asset", f.replica.scope, f.volume.id)).map((r) => r.asset);
+  return { ...f, row, ids };
+}
+
+test("changing albums with pending and failed uploads drops the queue of the unticked album and touches nothing uploaded", async (t) => {
+  const albums = { a: ["a-1", "a-2"], b: ["b-1", "b-2", "b-3", "b-4"] };
+  const f = await albumFixture(t, albums);
+  const { replica: r, store, volume } = f;
+  const pick = (...ids) => ids.map((id) => ({ id, title: id }));
+  await r.gallery.configure(volume.id, { albums: pick("a", "b"), videos: false }, true);
+  await r.sync(true);
+  const before = await store.galleryAsset(r.scope, volume.id, "b-1");
+  assert.equal(before.state, "accepted");
+  const hubFile = f.daemon.engine.store.current(volume.id, before.resources[0].path);
+  assert.ok(hubFile);
+  const originals = new Map(f.data);
+  for (const id of ["a-2", "b-2", "b-3", "b-4"]) await store.db.runAsync("DELETE FROM gallery_assets WHERE asset=?", id);
+  await f.row("a-2", "pending");
+  await f.row("b-2", "pending");
+  await f.row("b-3", "failed", { issue: "Original download timed out." });
+  await f.row("b-4", "uploading", { resources: [{ key: "original", path: "x/b-4.jpg", hash: "h", size: 1, accepted: false, attempted: true }] });
+  const stage = f.files.galleryStage(r.scope, volume.id);
+  fs.mkdirSync(stage, { recursive: true });
+  fs.writeFileSync(path.join(stage, "original"), "half");
+  f.exports.length = 0;
+
+  await r.gallery.configure(volume.id, { albums: pick("a"), videos: false }, true);
+
+  assert.deepEqual(await f.ids(), ["a-1", "b-1", "b-4"]);
+  assert.equal(fs.existsSync(stage), false);
+  const source = await store.gallery(r.scope, volume.id);
+  assert.equal(source.issue, null);
+  assert.equal(source.summary.failed, 0);
+  assert.deepEqual(await store.galleryAsset(r.scope, volume.id, "b-1"), before);
+  await r.sync(true).catch(() => {});
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "a-2")).state, "accepted");
+  assert.equal(f.exports.includes("b-2"), false);
+  assert.equal(f.exports.includes("b-3"), false);
+  assert.equal(f.daemon.engine.store.current(volume.id, before.resources[0].path).rev, hubFile.rev);
+  assert.deepEqual(f.data, originals);
+
+  await r.gallery.configure(volume.id, { albums: pick("a", "b"), videos: false }, true);
+  await r.sync(true).catch(() => {});
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "b-2")).state, "accepted");
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "b-3")).state, "accepted");
+});
+
+test("each exemption keeps its queued row on its own when the selection changes", async (t) => {
+  const f = await albumFixture(t, { a: ["a-1"], b: ["b-1"] });
+  const { replica: r, store, volume } = f;
+  const pick = (...ids) => ids.map((id) => ({ id, title: id }));
+  await r.gallery.configure(volume.id, { albums: pick("a", "b"), videos: false }, true);
+  await store.db.runAsync("DELETE FROM gallery_assets");
+  const res = (extra) => [{ key: "original", path: "x/y.jpg", hash: "h", size: 1, accepted: false, ...extra }];
+  await f.row("edit-only", "pending", { previousResources: res({ accepted: true }) });
+  await f.row("half-done", "pending", { resources: [{ ...res({ accepted: true })[0] }, { ...res()[0], key: "video" }] });
+  await f.row("sent-only", "failed", { issue: "Network", resources: res({ attempted: true }) });
+  await f.row("picked-only", "pending");
+  await f.row("manual-only", "pending", { manual: true });
+  await f.row("flag-only", "pending", { picked: { name: "p.jpg", key: "original" } });
+  await f.row("plain", "pending", { resources: res() });
+  await f.row("plain-failed", "failed", { issue: "x" });
+  await r.gallery.configure(volume.id, { albums: pick("a"), videos: false }, true);
+  assert.deepEqual(await f.ids(), ["edit-only", "flag-only", "half-done", "manual-only", "picked-only", "sent-only"]);
+  const source = await store.gallery(r.scope, volume.id);
+  assert.equal(source.summary.failed, 1);
+  assert.match(source.issue, /could not be uploaded/);
+});
+
+test("a failure saving the new source after the drop leaves the old source and cursors so queued photos return", async (t) => {
+  const f = await albumFixture(t, { a: ["a-1"], b: ["b-1"] });
+  const { replica: r, store, volume } = f;
+  const pick = (...ids) => ids.map((id) => ({ id, title: id }));
+  await r.gallery.configure(volume.id, { albums: pick("a", "b"), videos: false }, true);
+  await r.sync(true);
+  const order = [];
+  const set = store.setGallery.bind(store);
+  const drop = store.dropQueuedGallery.bind(store);
+  store.setGallery = async (...args) => { order.push("set"); return set(...args); };
+  store.dropQueuedGallery = async (...args) => { order.push("drop"); return drop(...args); };
+  await r.gallery.configure(volume.id, { albums: pick("a"), videos: false }, true);
+  assert.deepEqual(order, ["set", "drop", "set"]);
+});
+
+test("switching videos off drops queued videos and switching on brings them into the flow", async (t) => {
+  const f = await albumFixture(t, { all: ["a-1", "v-1"] }, new Set(["v-1"]));
+  const { replica: r, store, volume } = f;
+  await r.gallery.configure(volume.id, { albums: [], videos: true }, true);
+  for (const id of ["a-1", "v-1"]) await store.db.runAsync("DELETE FROM gallery_assets WHERE asset=?", id);
+  await f.row("v-1", "pending");
+  await f.row("a-1", "failed", { issue: "Original download timed out." });
+  f.exports.length = 0;
+
+  await r.gallery.configure(volume.id, { albums: [], videos: false }, true);
+  assert.deepEqual(await f.ids(), []);
+  assert.equal((await store.gallery(r.scope, volume.id)).issue, null);
+  await r.sync(true).catch(() => {});
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "a-1")).state, "accepted");
+  assert.equal(f.exports.includes("v-1"), false);
+
+  await r.gallery.configure(volume.id, { albums: [], videos: true }, true);
+  await r.sync(true).catch(() => {});
+  assert.equal((await store.galleryAsset(r.scope, volume.id, "v-1")).state, "accepted");
+  assert.ok(f.data.has("v-1"));
+});
+
 test("a queued object the hub rejects is verified again before the next attempt", async (t) => {
   const f = await fixture(t);
   await f.replica.select(f.volume);

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.48 — 2026-10-11
+
+- On the phone, changing the linked albums or the videos setting no longer waits for pending uploads: photos queued from an unticked album (or videos once videos are off) leave the queue, while anything already uploaded, anything already part-sent and your photo library stay untouched.
+
+Needs: native build
+
 ## 0.7.47 — 2026-10-11
 
 - Desktop and server replicas date new and changed photos without capture information by the day they were added to the hub, like the hub does, instead of showing Date unknown; photos already synced to a replica fill the date in when they change or on a full resync.
