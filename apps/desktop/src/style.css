@@ -4483,6 +4483,18 @@ dialog.photo-viewer {
   #sync-controls {
     grid-row: auto;
   }
+  .status-device svg {
+    display: none;
+  }
+  .status-card .backup-link {
+    min-width: 0;
+  }
+  .status-card .backup-link > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 @media (max-width: 480px) {
   .brand > span,
@@ -4500,6 +4512,7 @@ dialog.photo-viewer {
     border: 0;
   }
   .status-device svg {
+    display: block;
     width: var(--space-5);
     height: var(--space-5);
   }
@@ -5511,7 +5524,7 @@ dialog.palette:not([open]) {
   color: var(--mute);
 }
 .pal-active {
-  background: var(--hover);
+  background: var(--press);
 }
 .pal-go {
   display: inline-flex;

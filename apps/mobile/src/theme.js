@@ -1151,7 +1151,7 @@ export function styles(
     historyFolderFilter: { width: wide ? 140 : undefined },
     historyGroups: { gap: 24 },
     historyFolder: { width: 110 },
-    historyRevision: { width: 64 },
+    historyRevision: { width: Math.ceil(88 * fontScale * textScale), flexShrink: 0 },
     historyDate: { width: 90, fontVariant: ["tabular-nums"] },
     tabularTime: { fontVariant: ["tabular-nums"] },
     fileMenuOverlay: {

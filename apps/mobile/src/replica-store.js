@@ -680,6 +680,15 @@ export class ReplicaStore {
       row.path,
     );
   }
+  async discard(scope, row) {
+    await this.db.runAsync(
+      "DELETE FROM applying WHERE scope=? AND volume=? AND path=? AND json_extract(row,'$.rev')=?",
+      scope,
+      row.volume,
+      row.path,
+      row.rev,
+    );
+  }
   async applying(scope, volume) {
     return (
       await this.db.getAllAsync(

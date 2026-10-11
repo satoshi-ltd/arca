@@ -10,6 +10,8 @@ test("the phone names its own state with the desktop card's words", async () => 
   const linked = { connected: true, last: "10:12" };
   assert.deepEqual(deviceStatus(linked, when), { word: "Up to date", tone: null, last: "Last sync at 10:12" });
   assert.deepEqual(deviceStatus({ ...linked, busy: true }, when), { word: "Syncing", tone: null, last: "Last sync at 10:12" });
+  assert.deepEqual(deviceStatus({ ...linked, checking: true }, when), { word: "Checking hub…", tone: null, last: "Last sync at 10:12" });
+  assert.deepEqual(deviceStatus({ ...linked, checking: true, offline: true }, when), { word: "Offline", tone: "warning", last: "Last sync at 10:12" });
   assert.deepEqual(deviceStatus({ ...linked, busy: true, offline: true }, when), { word: "Offline", tone: "warning", last: "Last sync at 10:12" });
   assert.deepEqual(deviceStatus({ ...linked, offline: true, paused: true }, when), { word: "Paused", tone: "warning", last: "Last sync at 10:12" });
   assert.deepEqual(deviceStatus({ ...linked, error: "disk full" }, when), { word: "Needs attention", tone: "danger", last: "Last sync at 10:12" });
@@ -61,4 +63,26 @@ test("the device row and the Fold block read the last sync to screen readers", a
     const block = components.slice(components.indexOf(name));
     assert.match(block.slice(0, 200), /accessibilityLabel=\{deviceLabel\(name, device\)\}/, name);
   }
+});
+
+test("the phone shows the launch check apart from syncing and restarts its event wait when the hub returns", () => {
+  const app = source("App.jsx");
+  assert.match(app, /busy: r\.activity,\s*checking: hubChecking\(r\),/);
+  assert.match(app, /if \(!pulling \|\| pullHeld\(status\)\) return;/);
+  assert.match(app, /import \{ deviceStatus, folderSections, historyTone, hubChecking, pullHeld \} from "\.\/home-data";/);
+  assert.doesNotMatch(app, /checking: r\.checking/);
+  assert.match(app, /\}, \[connected, connection\?\.hubId, catalog\?\.changeEvents, status\.offline\]\);/);
+});
+
+test("Checking hub… lasts only while a cycle runs, so a cycle that ended never holds the word or the pull", async () => {
+  const { hubChecking, pullHeld, deviceStatus } = await import("../apps/mobile/src/home-data.js");
+  const ended = { checking: true, busy: false };
+  assert.equal(hubChecking(ended), false, "the replica's getter can stay true after the cycle; the snapshot does not");
+  assert.equal(hubChecking({ checking: true, busy: true }), true);
+  assert.equal(hubChecking({ checking: false, busy: true }), false);
+  const snapshot = { busy: false, checking: hubChecking(ended) };
+  assert.equal(pullHeld(snapshot), false, "pull-to-refresh releases once nothing runs");
+  assert.equal(pullHeld({ busy: false, checking: true }), true);
+  assert.equal(pullHeld({ busy: true, checking: false }), true);
+  assert.notEqual(deviceStatus({ connected: true, last: "10:12", ...snapshot }, (v) => v).word, "Checking hub…");
 });

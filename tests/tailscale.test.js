@@ -356,3 +356,47 @@ test("a stale Tailscale status answers as temporarily unavailable, never as a re
   remote = "100.70.0.9";
   assert.equal((await call()).status, 403);
 });
+test("a CLI that hangs stops the search instead of trying every other candidate", async () => {
+  const calls = [];
+  const detector = new Tailscale({
+    run: (binary) => {
+      calls.push(binary);
+      return calls.length === 1
+        ? Promise.reject(Object.assign(new Error("missing"), { code: "ENOENT" }))
+        : new Promise((_, reject) =>
+            setTimeout(() => reject(Object.assign(new Error("Command failed: timed out"), { killed: true, signal: "SIGTERM" })), 50),
+          );
+    },
+  });
+  const state = await detector.read();
+  assert.equal(state.state, "unavailable");
+  assert.ok(calls.length <= 2, calls.join());
+});
+test("a slow Tailscale check never holds the daemon start or its first hub request", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-tailnet-slow-"));
+  init(home, { port: 0, role: "replica" });
+  let connections = 0;
+  const sockets = new Set();
+  const hub = http.createServer(() => {});
+  hub.on("connection", (socket) => {
+    connections++;
+    sockets.add(socket);
+  });
+  await new Promise((resolve) => hub.listen(0, "127.0.0.1", resolve));
+  const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+  config.hub = { url: `http://127.0.0.1:${hub.address().port}`, token: "token", id: "hub" };
+  fs.writeFileSync(path.join(home, "config.json"), JSON.stringify(config));
+  const slow = { read: () => new Promise((resolve) => setTimeout(() => resolve({ state: "not-installed", installed: false, peers: [] }), 2500)) };
+  const started = Date.now();
+  const daemon = await start(home, { network: { detector: slow } });
+  t.after(async () => {
+    const closed = new Promise((resolve) => hub.close(resolve));
+    for (const socket of sockets) socket.destroy();
+    await closed;
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  assert.ok(Date.now() - started < 2000, `start took ${Date.now() - started} ms`);
+  while (!connections && Date.now() - started < 5000) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.ok(connections > 0 && Date.now() - started < 2000, `first hub request after ${Date.now() - started} ms`);
+});

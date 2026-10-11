@@ -18,6 +18,7 @@ import {
 import { entryKey, directoryItem } from "../../../packages/core/entries.js";
 import {
   builtinExcluded,
+  disposableMetadata,
   FIXED_POLICY,
 } from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
@@ -86,6 +87,14 @@ export class Replica {
     this.offlineHoldMs = OFFLINE_HOLD_MS;
     this.retryDelay = (attempt) => Math.min(30000, 2000 * 2 ** attempt);
     this.progressAt = 0;
+    this.rowIssues = new Map();
+    this.swept = new Set();
+  }
+  get checking() {
+    return !!this.active && this.busy && !this.connectionChecked && !this.paused;
+  }
+  get activity() {
+    return this.busy && !this.checking;
   }
   reportProgress(progress) {
     this.progress = progress;
@@ -577,8 +586,17 @@ export class Replica {
     // A missing root is not a deletion of every file.
     if (!(await this.files.exists(root)))
       throw new Error("Local folder is unavailable");
-    for await (const entry of this.files.walk(root)) {
+    const sweep = this.force || !this.swept.has(folder.id);
+    const included = [];
+    const tombstoned = [];
+    for await (const entry of this.files.walk(root, "", sweep)) {
       this.check();
+      const leaf = entry.path.split("/").at(-1);
+      if (entry.path.split("/").some((part) => part.startsWith(".arca-"))) {
+        if (!entry.directory && /^\.arca-(transfer|copy)-/.test(leaf))
+          await this.files.remove(entry.uri);
+        continue;
+      }
       try {
         entry.path = validPath(entry.path);
       } catch {
@@ -593,6 +611,7 @@ export class Replica {
       names.add(entry.path);
       foldedNames.add(entry.path.toLowerCase());
       if (excluded(entry.path + (entry.directory ? "/" : ""))) continue;
+      included.push(entry.path);
       const previous = heads.get(entry.path.toLowerCase());
       if (previous?.unapplied) continue;
       const hash = entry.directory
@@ -600,6 +619,12 @@ export class Replica {
         : await this.localHash(entry.uri, folder.id, entry.path);
       if (entry.directory) {
         if (
+          previous?.path === entry.path &&
+          previous.deleted &&
+          previous.directory
+        )
+          tombstoned.push(previous);
+        else if (
           previous?.path !== entry.path ||
           entryKey(previous) !== "directory"
         ) {
@@ -632,6 +657,22 @@ export class Replica {
           previous?.rev || 0,
         );
       }
+    }
+    this.swept.add(folder.id);
+    for (const previous of tombstoned) {
+      const prefix = previous.path + "/";
+      if (
+        !included.some((name) => name.startsWith(prefix)) &&
+        [...names].some((name) => name.startsWith(prefix))
+      )
+        continue;
+      queued.add(previous.path);
+      await this.store.queue(this.scope, {
+        volume: folder.id,
+        path: previous.path,
+        base: previous.rev,
+        ...directoryItem(),
+      });
     }
     for (const row of rows.sort((a, b) => b.path.localeCompare(a.path)))
       if (
@@ -737,8 +778,12 @@ export class Replica {
         await this.store.put(this.scope, {
           ...result.row,
           localHash: op.hash,
-          ...(result.conflict && { unapplied: true }),
+          ...(result.conflict && !result.row.directory && { unapplied: true }),
         });
+      if (result.row && !result.conflict && result.row.path !== op.path) {
+        const own = await this.store.current(this.scope, folder.id, op.path);
+        if (own) await this.store.put(this.scope, { ...own, localHash: op.hash });
+      }
       await this.store.dequeue(this.scope, folder.id, op.path);
     }
   }
@@ -752,7 +797,10 @@ export class Replica {
       return;
     const current = await this.store.current(this.scope, row.volume, row.path);
     // Resumed snapshots predate rows pushed since; the change feed after `through` delivers them.
-    if (!recovering && current && row.rev < current.rev) return;
+    if (current && row.rev < current.rev) {
+      if (recovering) await this.store.discard(this.scope, row);
+      return;
+    }
     const target = this.files.work(this.scope, row.volume, row.path);
     if (row.deleted && row.replacementPath) {
       await this.store.applied(this.scope, row);
@@ -818,10 +866,7 @@ export class Replica {
         );
       await this.store.journal(this.scope, row);
       if (row.deleted) {
-        if (exists) {
-          await this.files.removeDirectory(target);
-          this.touch(row.volume);
-        }
+        if (exists && (await this.removeDirectory(target))) this.touch(row.volume);
       } else {
         await this.files.mkdir(target);
         if (!exists) this.touch(row.volume);
@@ -847,59 +892,101 @@ export class Replica {
       if (current.unapplied) await this.store.put(this.scope, row);
       return;
     }
-    // A size/mtime cache hit cannot prove a file is unedited before it is replaced or removed.
-    if (
-      exists &&
-      actual !== row.hash &&
-      actual === (current?.localHash ?? current?.hash)
-    )
-      actual = await this.files.hash(target);
-    if (
-      actual &&
-      actual !== row.hash &&
-      actual !== (current?.localHash ?? current?.hash)
-    ) {
-      // An edit made after scanning remains a separate local file, including after crashes.
-      const conflict = `${row.path}.conflict-mobile-${actual.slice(0, 12)}`;
-      const kept = this.files.work(this.scope, row.volume, conflict);
-      if (!(await this.files.exists(kept))) await this.files.copy(target, kept);
-      await this.snapshotLocal(row.volume, conflict, kept, 0);
-    }
+    const baseline = current?.localHash ?? current?.hash;
+    const temp = this.files.parent(target) + "/.arca-transfer-" + row.hash;
+    const staged = !row.deleted && actual !== row.hash;
     await this.store.journal(this.scope, row);
-    if (row.deleted) {
-      if (exists) {
-        await this.files.remove(target);
+    try {
+      if (staged) {
+        const pulling = this.pulling;
+        await this.files.mkdir(this.files.parent(target));
+        await this.files.remove(temp);
+        const placed = pulling?.placed.get(row.hash);
+        const source =
+          placed &&
+          placed !== target &&
+          (await this.files.exists(placed)) &&
+          (await this.files.hash(placed)) === row.hash
+            ? placed
+            : null;
+        const object = source ?? (await this.download(row.hash, row.size));
+        if (pulling && !source && !pulling.retained.has(row.hash)) {
+          this.verified.delete(object);
+          await this.files.move(object, temp);
+          pulling.placed.set(row.hash, target);
+        } else {
+          await this.space(row.size);
+          await this.files.copy(object, temp);
+        }
+      }
+      let seen = await this.files.stat(target);
+      if (seen?.directory)
+        throw new Error(
+          "File conflicts with a local directory; reconcile it first.",
+        );
+      actual = seen ? await this.localHash(target, row.volume, row.path) : null;
+      // A size/mtime cache hit cannot prove a file is unedited before it is replaced or removed.
+      if (seen && actual !== row.hash && actual === baseline)
+        actual = await this.files.hash(target);
+      const known = (hash) => !hash || hash === row.hash || hash === baseline;
+      const preserve = async (hash) => {
+        if (!staged || known(hash)) return;
+        // An edit made after scanning remains a separate local file, including after crashes.
+        const conflict = `${row.path}.conflict-mobile-${hash.slice(0, 12)}`;
+        const kept = this.files.work(this.scope, row.volume, conflict);
+        if (!(await this.files.exists(kept))) await this.files.copy(target, kept);
+        await this.snapshotLocal(row.volume, conflict, kept, 0);
+      };
+      await preserve(actual);
+      const latest = await this.files.stat(target);
+      if (
+        latest &&
+        (!seen ||
+          latest.mtime == null ||
+          latest.size !== seen.size ||
+          latest.mtime !== seen.mtime)
+      ) {
+        const now = await this.files.hash(target);
+        if (now !== actual) await preserve(now);
+        actual = now;
+      }
+      seen = latest;
+      if (row.deleted) {
+        if (seen && !known(actual)) this.lastInventory.delete(row.volume);
+        else if (seen) {
+          await this.files.remove(target);
+          this.touch(row.volume);
+        }
+      } else if (staged) {
+        await this.files.replace(temp, target);
         this.touch(row.volume);
-      }
-    } else if (actual !== row.hash) {
-      const pulling = this.pulling;
-      await this.files.mkdir(this.files.parent(target));
-      const temp = this.files.parent(target) + "/.arca-transfer-" + row.hash;
-      await this.files.remove(temp);
-      const placed = pulling?.placed.get(row.hash);
-      const source =
-        placed &&
-        placed !== target &&
-        (await this.files.exists(placed)) &&
-        (await this.files.hash(placed)) === row.hash
-          ? placed
-          : null;
-      const object = source ?? (await this.download(row.hash, row.size));
-      if (pulling && !source && !pulling.retained.has(row.hash)) {
-        this.verified.delete(object);
-        await this.files.move(object, temp);
-        pulling.placed.set(row.hash, target);
-      } else {
-        await this.space(row.size);
-        await this.files.copy(object, temp);
-      }
-      await this.files.replace(temp, target);
-      this.touch(row.volume);
-      const landed = await this.files.stat(target);
-      if (landed?.mtime != null)
-        await this.rememberHash(target, target, landed, row.hash, row.volume, row.path);
+        const landed = await this.files.stat(target);
+        if (landed?.mtime != null)
+          await this.rememberHash(target, target, landed, row.hash, row.volume, row.path);
+      } else if (actual !== row.hash) this.lastInventory.delete(row.volume);
+    } finally {
+      if (staged) await this.files.remove(temp).catch(() => {});
     }
     await this.store.applied(this.scope, row);
+  }
+  async removeDirectory(target) {
+    const names = await this.files.listNames(target);
+    if (
+      names.every(
+        (name) =>
+          disposableMetadata(name) ||
+          /^\.arca-(transfer|copy)-/.test(name),
+      )
+    )
+      for (const name of names) await this.files.remove(target + "/" + name);
+    try {
+      await this.files.removeDirectory(target);
+      return true;
+    } catch (error) {
+      if ((await this.files.exists(target)) && (await this.files.listNames(target)).length)
+        return false;
+      throw error;
+    }
   }
   async recoverApplying(volume) {
     const journaled = (await this.store.applying(this.scope, volume)).sort(
@@ -910,7 +997,7 @@ export class Replica {
     let awaiting = false;
     for (const row of journaled)
       if (await this.awaitsDownload(row, rows)) awaiting = true;
-      else await this.apply(row, true);
+      else await this.isolated(row, () => this.apply(row, true));
     return awaiting;
   }
   // Defer only when the working file still holds its acknowledged baseline, or is absent with no live row, so scan cannot propose an edit or deletion.
@@ -934,6 +1021,23 @@ export class Replica {
     return (
       actual !== row.hash && actual === (current.localHash ?? current.hash)
     );
+  }
+  async isolated(row, work) {
+    try {
+      await work();
+    } catch (error) {
+      if (
+        ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error?.code) ||
+        isHubUnreachable(error) ||
+        this.syncAbort?.signal.aborted
+      )
+        throw error;
+      await this.store.journal(this.scope, row);
+      this.rowIssues.set(row.volume, [
+        ...(this.rowIssues.get(row.volume) || []),
+        `${row.path}: ${error.message}`,
+      ]);
+    }
   }
   touch(volume) {
     this.folderChanges.set(volume, (this.folderChanges.get(volume) || 0) + 1);
@@ -969,7 +1073,9 @@ export class Replica {
         for (const known of await this.store.rows(this.scope, folder.id))
           remember(known);
       }
-      await this.apply(row, false, aliases.get(row.path.toLowerCase()) || []);
+      await this.isolated(row, () =>
+        this.apply(row, false, aliases.get(row.path.toLowerCase()) || []),
+      );
       remember(row);
     };
     const defer = (list, row) => {
@@ -1233,21 +1339,6 @@ export class Replica {
     if (!this.hubUnavailable) this.error = null;
     this.changed();
     try {
-      // Acquire before file transfers; after an offline verdict only once the probe succeeds.
-      const acquire = async () => {
-        if (
-          !this.paused &&
-          this.client.state().connection?.linked &&
-          (await this.store.folders(this.scope)).some(
-            (folder) => folder.selected,
-          )
-        ) {
-          await this.transfer.begin();
-          this.check();
-        }
-      };
-      const offline = this.connectionChecked && this.hubUnavailable;
-      if (!offline) await acquire();
       try {
         await this.refreshCatalog();
       } catch (error) {
@@ -1256,7 +1347,14 @@ export class Replica {
       }
       this.hubAnswered();
       this.cycleAnswered = true;
-      if (offline) await acquire();
+      if (
+        !this.paused &&
+        this.client.state().connection?.linked &&
+        (await this.store.folders(this.scope)).some((folder) => folder.selected)
+      ) {
+        await this.transfer.begin();
+        this.check();
+      }
       const connection = this.client.state().connection;
       if (!connection?.linked) return;
       if (this.scope !== connection.hubId) {
@@ -1307,6 +1405,7 @@ export class Replica {
           continue;
         }
         this.syncingVolume = folder.id;
+        this.rowIssues.delete(folder.id);
         this.changed();
         let galleryError = null;
         try {
@@ -1373,7 +1472,7 @@ export class Replica {
             for (const row of (
               await this.store.applying(this.scope, folder.id)
             ).sort((a, b) => b.path.localeCompare(a.path)))
-              await this.apply(row, true);
+              await this.isolated(row, () => this.apply(row, true));
             this.turnDeadline = Date.now() + 10000;
             this.turnTransferred = false;
           }
@@ -1382,6 +1481,11 @@ export class Replica {
             if (isMusicFolder(catalog, folder.id))
               this.journalCut.set(folder.id, journal.at(-1).seq);
             else await this.forgetLocal(folder.id, journal.at(-1).seq);
+          const failed = this.rowIssues.get(folder.id);
+          if (failed?.length)
+            throw new Error(
+              `Could not sync ${failed.length === 1 ? "1 file" : `${failed.length} files`}: ${failed.slice(0, 3).join("; ")}`,
+            );
           if (galleryError) throw galleryError;
         } catch (e) {
           if (e.code === "SYNC_YIELD") {
@@ -1436,6 +1540,7 @@ export class Replica {
       this.syncingVolume = null;
       this.busy = false;
       this.progress = null;
+      this.changed();
       if (!this.stopped && !this.paused) {
         const conditions = conditionNotices({
           error: this.error,
@@ -1447,7 +1552,6 @@ export class Replica {
         });
         await this.notify(null, null, { conditions });
       }
-      this.changed();
     }
   }
   async withImportPicker(work) {

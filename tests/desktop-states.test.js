@@ -104,6 +104,34 @@ test("a folder row's state tints its tile, leads its subtitle and drops the pill
   assert.doesNotMatch(css, /home-conflict|\.history-row\.conflict > \.icon/);
 });
 
+test("a folder names its state from folder-level errors only; isolated file issues read as a count", async (t) => {
+  const failing = (id, error) => ({ ...base, id, name: id, path: `/data/${id}`, sync: { state: "error", error } });
+  const w = await boot(
+    t,
+    hub([
+      failing("one", "Could not sync 1 file: notes/missing-chapter.md: ENOENT: no such file or directory, open 'notes/missing-chapter.md'"),
+      failing("many", "Could not sync 3 files: a.txt: ENOENT: gone; b.txt: EACCES: denied; c.txt: EBUSY: busy"),
+      failing("write", "Could not write 2 files to this folder: x/missing.png: ENOSPC: no space left on device; y.png: ENOENT"),
+      failing("root", "ENOENT: no such file or directory, scandir '/data/root'"),
+      failing("marker", "Volume unavailable or marker missing; synchronization stopped"),
+      failing("full", "ENOSPC: no space left on device, write"),
+      failing("other", "The file missing.txt is locked"),
+    ]),
+  );
+  const row = (id) => w.document.querySelector(`.folder-card[data-id="${id}"]`);
+  await until(() => row("other"));
+  const word = (id) => row(id).getAttribute("aria-label").split(", ").pop();
+  assert.equal(word("one"), "Could not sync 1 file");
+  assert.equal(word("many"), "Could not sync 3 files");
+  assert.equal(word("write"), "Could not sync 2 files");
+  assert.equal(row("one").querySelector('[data-action="locate-folder"]'), null, "a file issue never offers Locate…");
+  assert.equal(word("root"), "Path missing");
+  assert.ok(row("root").querySelector('[data-action="locate-folder"]'));
+  assert.equal(word("marker"), "Path missing");
+  assert.equal(word("full"), "Disk full");
+  assert.equal(word("other"), "Needs attention");
+});
+
 test("a paused hub draws every folder on a neutral tile with its kind glyph and the word Paused", async (t) => {
   const w = await boot(t, hub([{ ...base, id: "photos", name: "photos", gallery: true }], { phase: "paused" }));
   await until(() => w.document.querySelector('.folder-card[data-id="photos"]'));
@@ -162,4 +190,95 @@ test("an empty state's 40 px arch uses the small drawing", async () => {
   assert.equal(drawing, brandDrawing(40));
   assert.ok(markup.includes(`d="${drawing.arch}"`), "the arch is the drawing for its size");
   assert.ok(markup.includes(`<rect x="${drawing.door.x}" y="${drawing.door.y}" width="${drawing.door.width}" height="${drawing.door.height}" rx="${drawing.door.rx}"/>`));
+});
+
+test("a replica checking its hub after a launch says so in the sidebar and on its own row, without the busy animation", async (t) => {
+  const last = new Date(Date.now() - 3600000).toISOString();
+  const w = await boot(t, {
+    id: "mac",
+    name: "macbook-pro",
+    role: "replica",
+    phase: "checking",
+    hub: "http://casa:17831",
+    hubName: "casa",
+    lastSync: last,
+    volumes: [{ ...base, id: "docs", name: "documents", sync: { state: "pending", lastCompleted: last } }],
+  }, { "/v1/remote": () => ({ volumes: [] }) });
+  const q = (selector) => w.document.querySelector(selector);
+  await until(() => q('.folder-card[data-id="docs"]') && q("#connection")?.textContent);
+  assert.equal(q("#connection").textContent, "Checking hub…");
+  assert.equal(q("#connection").className, "id");
+  assert.equal(q("#connection .busy-grid"), null);
+  assert.match(q("#last-sync").textContent, /^Last sync /);
+  assert.equal(q("#last-sync").hidden, false);
+  assert.equal(q(".sidebar .brand-mark")?.classList.contains("is-busy") ?? false, false);
+  const app = source("app.js");
+  assert.equal(app.split("Checking hub…").length - 1, 1, "one definition of the words");
+  assert.equal(app.split("checking: CHECKING_HUB,").length - 1, 2, "the sidebar card and this device's row share it");
+});
+
+function stoppedBoot(t, { upAfter = Infinity } = {}) {
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  const w = dom.window;
+  t.after(() => w.close());
+  w.setInterval = () => 0;
+  const ticks = [];
+  const timeout = w.setTimeout.bind(w);
+  w.setTimeout = (work, ms, ...rest) => (ms === 1000 ? ticks.push(() => work(...rest)) : timeout(work, ms, ...rest));
+  let probes = 0;
+  const status = hub([{ ...base, id: "docs", name: "documents" }]);
+  w.__TAURI__ = {
+    core: {
+      invoke: async (command, args) => {
+        if (command === "bootstrap") return { setup: false, stopped: true };
+        if (command !== "api") return {};
+        if (args.route === "/v1/status" && ++probes <= upAfter) throw "The daemon is unavailable. Use Start service.";
+        if (args.route === "/v1/status") return status;
+        if (args.route === "/v1/favorites") return { favorites: [] };
+        return {};
+      },
+    },
+    event: { listen: async () => () => {}, emit: async () => {} },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  const tick = async () => {
+    await until(() => ticks.length);
+    ticks.shift()();
+    await new Promise((resolve) => timeout(resolve, 5));
+  };
+  return { w, tick, probes: () => probes, pendingTicks: () => ticks.length };
+}
+
+test("a launch that finds the service stopped shows Service stopped with Start service at once", async (t) => {
+  const { w, probes } = stoppedBoot(t);
+  const q = (selector) => w.document.querySelector(selector);
+  await until(() => /Service stopped/.test(q("#content").textContent));
+  assert.ok(q('#content [data-action="start"]'));
+  assert.equal(q("#content .launch-mark"), null);
+  assert.equal(probes(), 0);
+});
+
+test("a service that starts listening within fifteen seconds replaces Service stopped without a click", async (t) => {
+  const { w, tick, probes } = stoppedBoot(t, { upAfter: 2 });
+  const q = (selector) => w.document.querySelector(selector);
+  await until(() => /Service stopped/.test(q("#content").textContent));
+  for (let i = 0; i < 2; i++) {
+    await tick();
+    assert.match(q("#content").textContent, /Service stopped/, `still stopped after ${i + 1} s`);
+  }
+  await tick();
+  await until(() => q('.folder-card[data-id="docs"]'));
+  assert.equal(probes(), 3);
+  assert.notEqual(q("#connection").textContent, "Service stopped");
+});
+
+test("the quiet launch probe stops after fifteen seconds and leaves Service stopped", async (t) => {
+  const { w, tick, probes, pendingTicks } = stoppedBoot(t);
+  const q = (selector) => w.document.querySelector(selector);
+  for (let i = 0; i < 15; i++) await tick();
+  assert.equal(probes(), 15);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(pendingTicks(), 0);
+  assert.match(q("#content").textContent, /Service stopped/);
+  assert.ok(q('#content [data-action="start"]'));
 });

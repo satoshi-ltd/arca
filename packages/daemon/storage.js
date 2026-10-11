@@ -7,6 +7,17 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
+export const TRANSFER_TEMP =
+  /^\.arca-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const sweepTemp = (file, olderThan) => {
+  try {
+    const stat = fs.statSync(file);
+    if (Date.now() - Math.max(stat.mtimeMs, stat.ctimeMs) >= olderThan)
+      fs.unlinkSync(file);
+  } catch {
+    /* A vanished or locked temporary is retried by the next sweep. */
+  }
+};
 export const digest = (data) =>
   crypto.createHash("sha256").update(data).digest("hex");
 export const token = () => crypto.randomBytes(32).toString("hex");
@@ -288,7 +299,7 @@ export class Store {
       CREATE TRIGGER IF NOT EXISTS local_generation_delete AFTER DELETE ON local_files BEGIN
         INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
       END;
-      CREATE TABLE IF NOT EXISTS pending(volume TEXT NOT NULL,path TEXT NOT NULL,row TEXT NOT NULL,expected TEXT,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS pending(volume TEXT NOT NULL,path TEXT NOT NULL,row TEXT NOT NULL,expected TEXT,failures INTEGER NOT NULL DEFAULT 0,side TEXT,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL,role TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,last_seen TEXT,last_address TEXT);
       CREATE TABLE IF NOT EXISTS conflict_resolutions(volume TEXT NOT NULL,path TEXT NOT NULL,conflict_rev INTEGER NOT NULL,resolution_rev INTEGER NOT NULL,choice TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS transitions(id TEXT PRIMARY KEY);
@@ -350,6 +361,22 @@ export class Store {
         .exec(`ALTER TABLE snapshot_sessions ADD COLUMN total INTEGER NOT NULL DEFAULT 0;
         UPDATE snapshot_sessions SET total=(SELECT COUNT(*) FROM snapshot_files WHERE session=snapshot_sessions.id);`);
     }
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(pending)")
+        .all()
+        .some((column) => column.name === "failures")
+    )
+      this.db.exec(
+        "ALTER TABLE pending ADD COLUMN failures INTEGER NOT NULL DEFAULT 0",
+      );
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(pending)")
+        .all()
+        .some((column) => column.name === "side")
+    )
+      this.db.exec("ALTER TABLE pending ADD COLUMN side TEXT");
     this.db.exec(
       "CREATE INDEX IF NOT EXISTS files_volume_path_key ON files(volume,path_key)",
     );
@@ -885,13 +912,13 @@ export class Store {
       } else fail(`Unsupported file: ${name}`, 409);
     };
     const walk = (relative) => {
-      for (const entry of fs.readdirSync(
-        relative ? this.filePath(v, relative) : v.path,
-        {
-          withFileTypes: true,
-        },
-      ))
+      const directory = relative ? this.filePath(v, relative) : v.path;
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        // A concurrent materialization may still own a young temporary.
+        if (scopes === null && entry.isFile() && TRANSFER_TEMP.test(entry.name))
+          sweepTemp(path.join(directory, entry.name), 3600000);
         visit(relative ? `${relative}/${entry.name}` : entry.name, entry);
+      }
     };
     if (scopes === null) walk("");
     else
@@ -1019,25 +1046,124 @@ export class Store {
   }
   queue(row, expected) {
     this.db
-      .prepare("INSERT OR REPLACE INTO pending VALUES(?,?,?,?)")
+      .prepare(
+        "INSERT INTO pending(volume,path,row,expected) VALUES(?,?,?,?) ON CONFLICT(volume,path) DO UPDATE SET row=excluded.row,expected=excluded.expected,failures=CASE WHEN json_extract(pending.row,'$.rev') IS json_extract(excluded.row,'$.rev') THEN pending.failures ELSE 0 END",
+      )
       .run(row.volume, row.path, JSON.stringify(row), expected ?? null);
   }
-  preserveFile(file) {
-    const kept = `${file}.conflict-local-${crypto.randomUUID().slice(0, 8)}`;
-    fs.copyFileSync(file, kept);
-    fs.chmodSync(kept, fs.statSync(kept).mode | 0o200);
-    const fd = fs.openSync(kept, "r+");
-    try {
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
+  markDirty(volume, name) {
+    this.db
+      .prepare("INSERT OR REPLACE INTO sync_dirty(volume,path) VALUES(?,?)")
+      .run(volume, name);
+  }
+  knownContent(row, actual, expected) {
+    if (!actual) return false;
+    if (actual === expected || actual === row.hash) return true;
+    return Boolean(
+      row.reselected &&
+        this.db
+          .prepare(
+            "SELECT 1 FROM revisions WHERE volume=? AND path=? AND hash=? LIMIT 1",
+          )
+          .get(row.volume, row.path, actual),
+    );
+  }
+  displace(file, row) {
+    const suffix = `.conflict-local-${crypto.randomUUID().slice(0, 8)}`;
+    this.db
+      .prepare("UPDATE pending SET side=? WHERE volume=? AND path=?")
+      .run(suffix, row.volume, row.path);
+    fs.renameSync(file, file + suffix);
+    return file + suffix;
+  }
+  restoreDisplaced(row, file, known) {
+    const suffix = this.db
+      .prepare("SELECT side FROM pending WHERE volume=? AND path=?")
+      .get(row.volume, row.path)?.side;
+    if (!suffix) return;
+    const side = file + suffix;
+    if (fs.existsSync(side)) {
+      if (!fs.existsSync(file)) {
+        fs.renameSync(side, file);
+        syncDirectory(path.dirname(file));
+      } else if (this.settle(side, known))
+        this.markDirty(row.volume, row.path + suffix);
     }
-    syncDirectory(path.dirname(kept));
-    return kept;
+    this.db
+      .prepare("UPDATE pending SET side=NULL WHERE volume=? AND path=?")
+      .run(row.volume, row.path);
+  }
+  settle(side, known) {
+    let actual = null;
+    try {
+      actual = hashFile(side);
+    } catch {
+      actual = null;
+    }
+    if (known(actual)) {
+      fs.unlinkSync(side);
+      return null;
+    }
+    syncDirectory(path.dirname(side));
+    return side;
+  }
+  removeDirectoryEntry(file) {
+    const entries = fs.readdirSync(file, { withFileTypes: true });
+    if (
+      entries.every(
+        (entry) =>
+          entry.isFile() &&
+          (disposableMetadata(entry.name) ||
+            TRANSFER_TEMP.test(entry.name)),
+      )
+    )
+      for (const entry of entries) fs.rmSync(path.join(file, entry.name), { force: true });
+    try {
+      fs.rmdirSync(file);
+      return true;
+    } catch (error) {
+      if (["ENOTEMPTY", "EEXIST"].includes(error.code)) return false;
+      throw error;
+    }
+  }
+  sweepTemps(directory, olderThan = 0) {
+    let entries;
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries)
+      if (entry.isFile() && TRANSFER_TEMP.test(entry.name))
+        sweepTemp(path.join(directory, entry.name), olderThan);
   }
   materialize(row, expected = null) {
+    try {
+      return this.materializeRow(row, expected);
+    } catch (error) {
+      this.db
+        .prepare(
+          "UPDATE pending SET failures=failures+1 WHERE volume=? AND path=?",
+        )
+        .run(row.volume, row.path);
+      throw error;
+    }
+  }
+  materializeRow(row, expected = null) {
     validPath(row.path);
     const v = this.volume(row.volume);
+    const file = this.filePath(v, row.path);
+    const previous = this.current(row.volume, row.path);
+    const keep = (side) => {
+      if (side) this.markDirty(row.volume, row.path + side.slice(file.length));
+    };
+    this.restoreDisplaced(
+      row,
+      file,
+      (actual) =>
+        (actual && actual === previous?.hash) ||
+        this.knownContent(row, actual, expected),
+    );
     if (this.ignoreRules(v)(row.path, !!row.directory)) {
       this.db
         .prepare("DELETE FROM pending WHERE volume=? AND path=?")
@@ -1065,10 +1191,7 @@ export class Store {
       }
     }
     if (row.deleted && (row.replacementPath || absent)) {
-      this.setFile(row);
-      this.db
-        .prepare("DELETE FROM pending WHERE volume=? AND path=?")
-        .run(row.volume, row.path);
+      this.complete(row);
       return;
     }
     if (!row.deleted) {
@@ -1086,8 +1209,6 @@ export class Store {
         syncDirectory(path.dirname(destination));
       }
     }
-    const file = this.filePath(v, row.path);
-    const previous = this.current(row.volume, row.path);
     if (
       !row.deleted &&
       fs.existsSync(file) &&
@@ -1100,12 +1221,14 @@ export class Store {
       )
         fail(`Path type conflicts with local content: ${row.path}`, 409);
       if (previous.directory) fs.rmdirSync(file);
-      else {
-        const actual = hashFile(file);
-        if (actual !== expected && actual !== previous.hash)
-          this.preserveFile(file);
-        fs.unlinkSync(file);
-      }
+      else
+        keep(
+          this.settle(
+            this.displace(file, row),
+            (actual) =>
+              actual === previous.hash || this.knownContent(row, actual, expected),
+          ),
+        );
       syncDirectory(path.dirname(file));
     }
     if (row.directory) {
@@ -1113,44 +1236,91 @@ export class Store {
         fail(`Directory conflicts with a local file: ${row.path}`, 409);
       if (row.deleted) {
         // Never recursively remove a directory: local/new/excluded content survives.
-        if (fs.existsSync(file)) fs.rmdirSync(file);
+        if (fs.existsSync(file) && !this.removeDirectoryEntry(file))
+          this.markDirty(row.volume, row.path);
       } else fs.mkdirSync(file, { recursive: true });
     } else {
       if (!row.deleted) requireSpace(path.dirname(file), row.size);
       if (!row.deleted && hashFile(this.blob(row.hash)) !== row.hash)
         fail("Historical object corruption detected", 409);
-      if (fs.existsSync(file)) {
-        if (!fs.lstatSync(file).isFile())
-          fail(`Path is not a regular file: ${row.path}`, 409);
-        const actual = hashFile(file);
-        if (actual !== expected && actual !== row.hash) {
-          // Preserve edits made by another process since the scan (also on crash recovery).
-          this.preserveFile(file);
-        }
-      }
+      if (fs.existsSync(file) && !fs.lstatSync(file).isFile())
+        fail(`Path is not a regular file: ${row.path}`, 409);
+      const known = (actual) => this.knownContent(row, actual, expected);
       if (row.deleted) {
-        if (fs.existsSync(file)) fs.unlinkSync(file);
+        if (fs.existsSync(file)) {
+          const side = this.settle(this.displace(file, row), known);
+          if (side && !fs.existsSync(file)) {
+            fs.renameSync(side, file);
+            this.markDirty(row.volume, row.path);
+          } else keep(side);
+        }
       } else {
         fs.mkdirSync(path.dirname(file), { recursive: true });
         const tmp = path.join(
           path.dirname(file),
           `.arca-${crypto.randomUUID()}`,
         );
-        fs.copyFileSync(this.blob(row.hash), tmp);
-        fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
-        const fd = fs.openSync(tmp, "r+");
         try {
-          fs.fsyncSync(fd);
+          fs.copyFileSync(this.blob(row.hash), tmp);
+          fs.chmodSync(tmp, fs.statSync(tmp).mode | 0o200);
+          const fd = fs.openSync(tmp, "r+");
+          try {
+            fs.fsyncSync(fd);
+          } finally {
+            fs.closeSync(fd);
+          }
+          const side = fs.existsSync(file) ? this.displace(file, row) : null;
+          try {
+            fs.renameSync(tmp, file);
+          } catch (error) {
+            if (side && !fs.existsSync(file)) fs.renameSync(side, file);
+            throw error;
+          }
+          if (side) keep(this.settle(side, known));
         } finally {
-          fs.closeSync(fd);
+          fs.rmSync(tmp, { force: true });
         }
-        fs.renameSync(tmp, file);
       }
     }
     if (fs.existsSync(path.dirname(file))) syncDirectory(path.dirname(file));
-    const written = !row.deleted && !row.directory && fileSignature(file);
+    this.complete(
+      row,
+      file,
+      !row.deleted && !row.directory && fileSignature(file),
+    );
+  }
+  complete(row, file = null, written = false) {
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      const parked =
+        this.config.role === "hub" &&
+        !row.pendingFrom &&
+        this.db
+          .prepare(
+            "SELECT failures FROM pending WHERE volume=? AND path=? AND json_extract(row,'$.rev')=?",
+          )
+          .get(row.volume, row.path, row.rev)?.failures >= 3;
+      // A parked row was skipped by the change feed, so it is published again under a new revision.
+      if (parked)
+        row = {
+          ...row,
+          rev: Number(
+            this.db
+              .prepare(
+                "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,?,?,?,?,?,?)",
+              )
+              .run(
+                row.volume,
+                row.path,
+                row.hash ?? null,
+                row.size ?? 0,
+                row.deleted ? 1 : 0,
+                row.author || this.config.id,
+                new Date().toISOString(),
+                row.directory ? 1 : 0,
+              ).lastInsertRowid,
+          ),
+        };
       this.setFile(row);
       this.db
         .prepare("DELETE FROM pending WHERE volume=? AND path=?")
@@ -1209,7 +1379,42 @@ export class Store {
         return a.row.directory ? -1 : 1;
       return a.row.path.localeCompare(b.row.path);
     });
-    for (const p of rows) this.materialize(p.row, p.expected);
+    const failures = [];
+    const swept = new Set();
+    for (const p of rows) {
+      const current = this.current(p.row.volume, p.row.path);
+      if (current && current.rev > p.row.rev) {
+        try {
+          this.restoreDisplaced(
+            p.row,
+            this.filePath(this.volume(p.row.volume), p.row.path),
+            (actual) =>
+              !!actual && (actual === current.hash || actual === p.row.hash),
+          );
+          this.db
+            .prepare(
+              "DELETE FROM pending WHERE volume=? AND path=? AND json_extract(row,'$.rev')=?",
+            )
+            .run(p.row.volume, p.row.path, p.row.rev);
+        } catch (error) {
+          failures.push({ path: p.row.path, volume: p.row.volume, error });
+        }
+        continue;
+      }
+      try {
+        const v = this.volume(p.row.volume);
+        const parent = path.dirname(this.filePath(v, p.row.path));
+        if (!swept.has(parent)) {
+          swept.add(parent);
+          this.sweepTemps(parent);
+        }
+        this.materialize(p.row, p.expected);
+      } catch (error) {
+        failures.push({ path: p.row.path, volume: p.row.volume, error });
+      }
+    }
+    if (failures.length)
+      throw Object.assign(failures[0].error, { failures });
   }
   unresolvedConflicts(volume) {
     return this.db
@@ -1265,24 +1470,15 @@ export class Store {
         )
           fail("Target type differs; synchronize its removal first", 409);
     }
-    if (!item && this.current(volume, name)?.directory) {
-      if (
-        this.db
-          .prepare(
-            "SELECT 1 FROM files WHERE volume=? AND deleted=0 AND path_key>=? AND path_key<? LIMIT 1",
-          )
-          .get(volume, name.toLowerCase() + "/", name.toLowerCase() + "0")
-      )
-        fail(
-          "Directory contains synchronized entries; synchronize their removal first",
-          409,
-        );
-      if (write) {
-        const target = this.filePath(this.volume(volume), name);
-        if (fs.existsSync(target) && fs.readdirSync(target).length)
-          fail("Directory is not empty; local contents were preserved", 409);
-      }
-    }
+    if (
+      !item &&
+      this.current(volume, name)?.directory &&
+      this.liveDescendant(volume, name)
+    )
+      fail(
+        "Directory contains synchronized entries; synchronize their removal first",
+        409,
+      );
     const key = name.toLowerCase();
     const alias = this.caseAlias(volume, name);
     if (alias && !alias.deleted && (!item || renameFrom !== alias.path))
@@ -1322,9 +1518,39 @@ export class Store {
         !!(item?.directory || (!item && this.current(volume, name)?.directory)),
       ),
     };
+    const revived = [];
+    if (item)
+      for (let length = 1; length < key.split("/").length; length++) {
+        const ancestor = name.split("/").slice(0, length).join("/");
+        const head = this.pathHead(volume, ancestor);
+        if (head?.deleted && head.directory && head.path === ancestor)
+          revived.push(ancestor);
+      }
     this.db.exec("BEGIN IMMEDIATE");
     let row, pendingFrom;
+    const ancestors = [];
     try {
+      for (const ancestor of revived) {
+        const added = this.db
+          .prepare(
+            "INSERT INTO revisions(volume,path,hash,size,deleted,author,created,directory) VALUES(?,?,NULL,0,0,?,?,1)",
+          )
+          .run(volume, ancestor, author, created);
+        const live = {
+          volume,
+          path: ancestor,
+          hash: null,
+          size: 0,
+          deleted: 0,
+          author,
+          created,
+          directory: 1,
+          rev: Number(added.lastInsertRowid),
+        };
+        ancestors.push(live);
+        if (write) this.queue(live, null);
+        else this.setFile(live);
+      }
       if (item && alias && !alias.deleted) {
         const removed = this.db
           .prepare(
@@ -1378,8 +1604,20 @@ export class Store {
       this.db.exec("ROLLBACK");
       throw e;
     }
-    if (write) this.materialize(row, expected);
+    if (write) {
+      for (const ancestor of ancestors) this.materialize(ancestor, null);
+      this.materialize(row, expected);
+    }
     return row;
+  }
+  liveDescendant(volume, name) {
+    return Boolean(
+      this.db
+        .prepare(
+          "SELECT 1 FROM files WHERE volume=? AND deleted=0 AND path_key>=? AND path_key<? LIMIT 1",
+        )
+        .get(volume, name.toLowerCase() + "/", name.toLowerCase() + "0"),
+    );
   }
   renameFile(current, destination, author) {
     const volume = current.volume;

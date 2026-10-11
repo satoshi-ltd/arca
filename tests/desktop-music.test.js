@@ -611,6 +611,27 @@ test("each indexing library keeps its own refresh timer, also after a failed ref
   await until(() => ui.timers.size === 2);
 });
 
+test("a library being indexed never groups unread tracks under Unknown artist", async (t) => {
+  const unread = TRACKS.map((row) => track(row.path));
+  let answer = { version: "v1", indexing: true, tracks: unread };
+  const ui = await open(t, { library: () => answer });
+  const refresh = async (ready) => {
+    const [[id, run]] = [...ui.timers].slice(-1);
+    ui.timers.delete(id);
+    run();
+    await until(() => ready() && ui.idle());
+  };
+  await until(() => /Reading this library/.test(ui.text("#content") || "") && ui.idle());
+  assert.equal(ui.$(".music-page .music-artist-row"), null);
+  assert.doesNotMatch(ui.text("#content"), /Unknown artist/);
+  answer = { version: "v2", indexing: true, tracks: [TRACKS[0], ...unread.slice(1)] };
+  await refresh(() => ui.artists().length);
+  assert.deepEqual(ui.artists(), ["Miles Davis"], "only the tracks already read are listed");
+  answer = { version: "v2", indexing: false, unchanged: true };
+  await refresh(() => ui.artists().length === 2);
+  assert.deepEqual(ui.artists(), ["Miles Davis", "Unknown artist"], "a track read without tags joins Unknown artist once indexing ends");
+});
+
 test("a refreshed library updates the queue: tracks keep their new hash and removed ones leave", async (t) => {
   let version = 1;
   const extra = track("Miles Davis/Kind of Blue/03 Blue in Green.mp3", { title: "Blue in Green", artist: "Miles Davis", albumArtist: "Miles Davis", album: "Kind of Blue", track: 3, duration: 337 });

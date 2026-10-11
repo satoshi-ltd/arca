@@ -21,6 +21,12 @@ export function tilePreviewSize(width, height, pixelRatio) {
   const edge = Math.max(width, height) * pixelRatio;
   return edge <= 360 ? "thumb" : edge <= 720 ? "medium" : "large";
 }
+export function coverPreviewSize(width, height, pixelRatio, photoWidth, photoHeight) {
+  if (!(photoWidth > 0 && photoHeight > 0)) return tilePreviewSize(width, height, pixelRatio);
+  const ratio = photoWidth / photoHeight;
+  const edge = Math.max(width / Math.min(1, ratio), height / Math.min(1, 1 / ratio)) * pixelRatio;
+  return edge <= 360 ? "thumb" : edge <= 720 ? "medium" : "large";
+}
 export const PREVIEW_RANK = { thumb: 0, medium: 1, large: 2 };
 const previewRank = (size) => PREVIEW_RANK[size] ?? -1;
 export function cardPreviews({ load, show, busy, retry }) {

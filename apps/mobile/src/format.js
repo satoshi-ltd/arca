@@ -12,7 +12,7 @@ export const unbroken = (text) =>
   text
     .split(" · ")
     .map((part) => part.replace(/ /g, "\u00a0"))
-    .join(" · ");
+    .join(" ·\u00a0");
 export const folderSize = (folder) =>
   Number.isFinite(folder?.files)
     ? unbroken(`${folder.files.toLocaleString("en")} ${folder.files === 1 ? "file" : "files"} · ${bytes(folder.bytes)}`)

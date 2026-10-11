@@ -115,6 +115,7 @@ export class Tailscale {
         return normalizeStatus(JSON.parse(stdout), "cli");
       } catch (error) {
         if (error.code !== "ENOENT") found = true;
+        if (error.killed) break;
       }
     }
     return {

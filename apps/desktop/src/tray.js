@@ -114,6 +114,7 @@ function summary(state, rows = attentionRows(state)) {
     const line = parts.join(" · ") || state.error || last;
     return { title: "Needs attention", line: line[0].toUpperCase() + line.slice(1), ink: "error" };
   }
+  if (state.phase === "checking") return { title: "Checking hub…", line: last };
   const active = selected.filter((v) => ["syncing", "scanning"].includes(v.sync?.state)).length;
   const waiting = selected.filter((v) => !v.sync || v.sync.state === "pending").length;
   if (state.phase === "syncing" || active) {

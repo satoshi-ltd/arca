@@ -1329,12 +1329,82 @@ test("the status card opens with the device glyph, name and role, and the lockup
   assert.equal(server.label, "nas, Replica, Up to date");
 });
 
+test("the Search Arca active row stays visible on the dialog surface in dark", () => {
+  const tokens = fs.readFileSync(new URL("../apps/desktop/src/tokens.css", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const split = tokens.indexOf('\n[data-theme="dark"] {');
+  const light = tokens.slice(0, split);
+  const dark = tokens.slice(split);
+  const value = (block, name) => block.match(new RegExp(`--${name}:\\s*#([0-9a-f]{6})`, "i"))[1].match(/../g).map((h) => parseInt(h, 16));
+  const distance = (block, a, b) => Math.hypot(...value(block, a).map((c, i) => c - value(block, b)[i]));
+  const fill = (selector) => css.match(new RegExp(`${selector.replace(/[.()]/g, "\\$&")} \\{\\s*background: var\\(--([a-z-]+)\\)`))[1];
+  const step = distance(light, "hover", "notice-surface");
+  const token = fill(".pal-active");
+  assert.ok(distance(dark, token, "notice-surface") >= step, `--${token} is visible on the dark dialog surface`);
+  assert.ok(distance(light, token, "notice-surface") >= step, `--${token} is visible on the light dialog surface`);
+});
+
+test("the Devices row tagged This device draws the same glyph as the status card", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-self-glyph-"));
+  init(home, { port: 0, name: "Local Mac" });
+  const daemon = await start(home, { timer: false });
+  const requests = new Set();
+  const windows = [];
+  t.after(async () => {
+    await drainRequests(requests);
+    for (const window of windows) window.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const open = async (state, native) => {
+    const dom = new JSDOM(html, { runScripts: "outside-only", url: native ? "http://tauri.localhost" : "http://127.0.0.1:17831" });
+    windows.push(dom.window);
+    const w = dom.window;
+    w.setInterval = () => 0;
+    const reply = (route) => {
+      if (route === "/v1/status") return { ...daemon.engine.status(), platform: "darwin", volumes: [], hubUnavailable: false, ...state };
+      if (route === "/v1/remote") return { name: "Casa", volumes: [] };
+      if (route === "/v1/machines") return { machines: [] };
+      return {};
+    };
+    if (native) {
+      w.__TAURI__ = { core: { invoke: async (command, args) => (command === "bootstrap" ? { setup: false } : reply(args.route)) } };
+      trackInvoke(w, requests);
+    } else
+      w.fetch = async (route) => {
+        const request = Promise.resolve(new Response(JSON.stringify(reply(String(route).replace(/^https?:\/\/[^/]+/, "").split("?")[0])), { headers: { "Content-Type": "application/json" } }));
+        requests.add(request);
+        request.finally(() => requests.delete(request));
+        return request;
+      };
+    w.eval(`(async()=>{${script}\n})()`);
+    const document = w.document;
+    await until(() => !document.querySelector("#status-device").hidden && document.body.getAttribute("aria-busy") === "false");
+    document.querySelector('[data-view="devices"]').click();
+    await until(() => document.querySelector(".device-row .tag.self"));
+    return {
+      card: document.querySelector("#status-device").firstElementChild.dataset.icon,
+      row: document.querySelector(".device-row .tag.self").closest(".device-row").querySelector(".tile [data-icon]").dataset.icon,
+    };
+  };
+  const replica = { role: "replica", name: "macbook", phase: "idle", lastSync: new Date().toISOString(), hub: "http://127.0.0.1:49999", hubName: "Casa" };
+  assert.deepEqual(await open(replica, false), { card: "server", row: "server" }, "a replica's own web draws it as a server in both places");
+  assert.deepEqual(await open(replica, true), { card: "monitor", row: "monitor" });
+  assert.deepEqual(await open({ role: "hub", name: "casa", phase: "idle", hub: "", hubName: "" }, false), { card: "server", row: "server" });
+});
+
 test("the sidebar keeps the status card inside the narrow column and the rail", () => {
   const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.doesNotMatch(css, /\.managing\b/);
   const blocks = (width) => [...css.matchAll(new RegExp(`@media \\(max-width: ${width}px\\) \\{([\\s\\S]*?)\\n\\}`, "g"))].map((m) => m[1]).join("\n");
   assert.match(blocks(760), /\.sync-status-heading,\s*#sync-controls \{\s*grid-column: 1 \/ -1;/, "below 760 px the state line takes the card's width and the controls drop below it");
+  assert.match(blocks(760), /\.status-device svg \{\s*display: none;/, "below 760 px the device row gives the glyph's room to the name");
+  assert.match(blocks(760), /\.status-card \.backup-link > span:last-child \{\s*min-width: 0;\s*overflow: hidden;\s*text-overflow: ellipsis;\s*white-space: nowrap;/, "below 760 px the backup label stays on one line");
+  assert.doesNotMatch(css, /\.backup-link > span \{/, "only the label span ellipsizes, never the icon placeholder");
+  const kit = fs.readFileSync(new URL("../design/kit.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(kit, /\.kit-status-narrow \.backup-link > span:last-child \{\s*min-width: 0;\s*overflow: hidden;\s*text-overflow: ellipsis;\s*white-space: nowrap;/, "the kit draws the narrow card with the same rule");
   const rail = blocks(480);
+  assert.match(rail, /\.status-device svg \{\s*display: block;/, "the rail keeps the glyph as its only mark");
   assert.match(rail, /\.brand > span,[\s\S]*?display: none;/, "the rail hides the wordmark instead of shrinking it");
   assert.match(rail, /\.status-card > :not\(#status-device\),\s*\.status-device > :not\(svg\):not\(\.status-dot\) \{\s*display: none;/, "the id in :not() outranks #sync-controls without a second selector");
   assert.doesNotMatch(rail, /\.status-card #sync-controls/);
@@ -5922,11 +5992,13 @@ test("web admin reads time out into the connection notice while a stalled submis
   assert.equal(q("#cancel-dialog").disabled, false);
 
   stalled.add("/v1/status");
-  const polled = poll();
-  await until(() => sent.filter((r) => r === "GET /v1/status").length > 1);
-  expire(20000);
-  await polled;
-  assert.match(q("#notice").textContent, /Cannot reach this device/);
+  for (let read = 2; read <= 3; read++) {
+    const polled = poll();
+    await until(() => sent.filter((r) => r === "GET /v1/status").length >= read);
+    expire(20000);
+    await polled;
+  }
+  assert.match(q("#notice").textContent, /Cannot reach Casa/);
   assert.equal(q("#dialog").open, true, "the notice does not wait for the dialog");
 
   q("#cancel-dialog").click();
@@ -5940,7 +6012,129 @@ test("web admin reads time out into the connection notice while a stalled submis
   await until(() => daemon.engine.paused && idle());
   assert.match(q("#notice").textContent, /Connection interrupted/);
   assert.equal(daemon.engine.store.volume(v.id).name, "Original");
-  await until(() => !/Cannot reach this device/.test(q("#notice").textContent));
+  await until(() => !/Cannot reach Casa/.test(q("#notice").textContent));
+});
+
+test("web admin marks the card unreachable when a background status read fails and recovers on the next good read", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-web-unreachable-"));
+  init(home, { port: 0, name: "casa" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Documents");
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: base });
+  const w = dom.window;
+  const pending = new Set();
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  let poll;
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) poll = fn;
+    return 0;
+  };
+  let offline = false;
+  w.fetch = async (route, options = {}) => {
+    if (offline && route === "/v1/status") throw new w.TypeError("Failed to fetch");
+    const work = fetch(new URL(route, base), {
+      ...nodeInit(options),
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${daemon.engine.config.adminToken}`,
+      },
+    });
+    pending.add(work);
+    void work.finally(() => pending.delete(work));
+    return work;
+  };
+  const q = (selector) => w.document.querySelector(selector);
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => q(".folder-card") && idle());
+  daemon.engine.lastSync = new Date().toISOString();
+  await poll(true);
+  await until(() => q("#connection").textContent === "Up to date");
+  offline = true;
+  await poll(true);
+  assert.equal(q("#connection").textContent, "Up to date", "one failed read is not enough to call the device offline");
+  assert.equal(q('#notice [data-notice-id="connection"]'), null);
+  await poll(true);
+  assert.equal(q("#connection").textContent, "Offline");
+  assert.equal(q("#connection").className, "wa");
+  assert.match(q("#connection").innerHTML, /wifi-off/);
+  assert.equal(q("#status-device .status-dot").className, "status-dot wa");
+  assert.equal(q(".status-card").getAttribute("aria-label"), "casa, Hub, Offline");
+  const item = q('#notice [data-notice-id="connection"]');
+  assert.equal(item?.querySelector("strong")?.textContent, "Cannot reach casa");
+  assert.equal(item.querySelector("p")?.textContent, "Check your connection and retry.");
+  assert.match(item.innerHTML, /wifi-off/);
+  assert.doesNotMatch(item.innerHTML, /circle-alert/);
+  assert.doesNotMatch(q("#notice").textContent, /Could not complete action/);
+  offline = false;
+  await poll(true);
+  assert.equal(q("#connection").textContent, "Up to date");
+  assert.equal(q("#status-device .status-dot").className, "status-dot ok");
+  await until(() => !q('#notice [data-notice-id="connection"]'));
+});
+
+test("web admin leaves Offline as soon as an events read answers, without waiting for the next status read", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-web-events-back-"));
+  init(home, { port: 0, name: "casa" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Documents");
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: base });
+  const w = dom.window;
+  const pending = new Set();
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  let poll, events;
+  Object.defineProperty(w.document, "hidden", { configurable: true, get: () => false });
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) poll = fn;
+    if (ms === 1000 && poll && !events) events = fn;
+    return 0;
+  };
+  let offline = false;
+  w.fetch = async (route, options = {}) => {
+    if (route.startsWith("/v1/events")) {
+      if (offline) throw new w.TypeError("Failed to fetch");
+      return new Response(JSON.stringify({ cursor: null }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (offline && route === "/v1/status") throw new w.TypeError("Failed to fetch");
+    const work = fetch(new URL(route, base), {
+      ...nodeInit(options),
+      headers: { ...options.headers, Authorization: `Bearer ${daemon.engine.config.adminToken}` },
+    });
+    pending.add(work);
+    void work.finally(() => pending.delete(work));
+    return work;
+  };
+  const q = (selector) => w.document.querySelector(selector);
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => q(".folder-card") && idle());
+  daemon.engine.lastSync = new Date().toISOString();
+  await poll(true);
+  await until(() => q("#connection").textContent === "Up to date");
+  offline = true;
+  await poll(true);
+  await poll(true);
+  assert.equal(q("#connection").textContent, "Offline");
+  assert.ok(q('#notice [data-notice-id="connection"]'));
+  offline = false;
+  await events();
+  assert.equal(q("#connection").textContent, "Up to date");
+  await until(() => !q('#notice [data-notice-id="connection"]'));
+  offline = true;
+  await poll(true);
+  assert.equal(q("#connection").textContent, "Up to date", "a good events read restarts the count of failed status reads");
 });
 
 test("Tauri replaces the stale view with Start service when the daemon stops and restores it once the daemon answers", async (t) => {
@@ -6309,13 +6503,14 @@ test("web admin reports gateway failures as an unreachable machine and keeps the
   await until(() => q(".folder-card") && idle());
   answers.set("/v1/status", { status: 502, body: "<html>Bad gateway</html>" });
   await poll();
-  assert.match(q("#notice").textContent, /Cannot reach this device/);
+  await poll();
+  assert.match(q("#notice").textContent, /Cannot reach Casa/);
   answers.set("/v1/status", {
     status: 503,
     body: JSON.stringify({ error: "Tailscale access unavailable" }),
   });
   await poll();
-  assert.match(q("#notice").textContent, /Cannot reach this device/);
+  assert.match(q("#notice").textContent, /Cannot reach Casa/);
   assert.doesNotMatch(q("#notice").textContent, /Permission required/);
   answers.delete("/v1/status");
   answers.set("/v1/pause", {
@@ -7016,6 +7211,22 @@ test("On this day cards take the wall's current row height as 4:3 photos and loa
   const tile = w.document.querySelector(".photo-thumb");
   await until(() => tilePx(tile, "--photo-height") > 0);
   assert.ok(tilePx(tile, "--photo-height") <= 120 * 1.25, "the wall uses the same Small target");
+});
+
+test("an On this day card sharpens a wide photo until its short side covers the 4:3 crop", async (t) => {
+  const year = String(new Date().getFullYear() - 1);
+  const { w, log } = await mountWall(t, {
+    page: () => ({ items: [wallItem("a.jpg", "2026-09-27T15:00:00")], timeline: [{ month: "2026-09", count: 1, videos: 0 }], undated: noUndated }),
+    memories: [{ year, count: 3, path: "m.jpg", hash: "mh", kind: "image" }],
+    preview: () => ({ data: "data:image/jpeg;base64,AAAA" }),
+    prepare: (w) => {
+      Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("photo-flow") || this.classList.contains("photo-days") ? 600 : 0; } });
+      Object.defineProperty(w.HTMLImageElement.prototype, "naturalHeight", { configurable: true, get: () => 203 });
+    },
+  });
+  await until(() => w.document.querySelector(".memory-card")?.dataset.source === "medium");
+  assert.equal(w.document.querySelector("#photo-gallery").style.getPropertyValue("--photo-row"), "120px");
+  assert.deepEqual(log.filter((entry) => entry.endsWith(":m.jpg")), ["thumb:m.jpg", "medium:m.jpg"], "a 160 × 120 card at 2× fits the thumbnail, but a 16:9 thumbnail is only 203 px tall");
 });
 
 test("an On this day card whose preview is busy asks again and ends with its photo", async (t) => {

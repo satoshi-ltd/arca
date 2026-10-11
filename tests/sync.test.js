@@ -2540,26 +2540,36 @@ test("empty directories synchronize bidirectionally, browse and survive restore 
   );
 });
 
-test("directory removal preserves unsynchronized local contents and older clients are rejected", async (t) => {
+test("directory removal clears OS metadata, keeps unmanaged local contents and older clients are rejected", async (t) => {
   const { hub, volume, connect } = await setup(t);
   const mac = await connect("mac");
   const root = hub.engine.store.volume(volume.id).path;
   fs.mkdirSync(path.join(root, "empty"));
+  fs.mkdirSync(path.join(root, "kept"));
   await hub.sync();
   await mac.sync();
   const row = hub.engine.store.current(volume.id, "empty");
-  fs.writeFileSync(path.join(root, "empty", ".DS_Store"), "keep");
-  await assert.rejects(
-    hub.engine.propose(
-      { volume: volume.id, path: "empty", base: row.rev },
-      { id: mac.engine.config.id },
-    ),
-    /not empty|ENOTEMPTY/,
+  fs.writeFileSync(path.join(root, "empty", ".DS_Store"), "metadata");
+  const removed = await hub.engine.propose(
+    { volume: volume.id, path: "empty", base: row.rev },
+    { id: mac.engine.config.id },
   );
+  assert.equal(removed.conflict, false);
+  assert.equal(fs.existsSync(path.join(root, "empty")), false);
+  const kept = hub.engine.store.current(volume.id, "kept");
+  fs.mkdirSync(path.join(root, "kept", "node_modules"));
+  fs.writeFileSync(path.join(root, "kept", "node_modules", "cache.js"), "excluded");
+  await hub.engine.propose(
+    { volume: volume.id, path: "kept", base: kept.rev },
+    { id: mac.engine.config.id },
+  );
+  assert.equal(hub.engine.store.current(volume.id, "kept").deleted, 1);
   assert.equal(
-    fs.readFileSync(path.join(root, "empty/.DS_Store"), "utf8"),
-    "keep",
+    fs.readFileSync(path.join(root, "kept", "node_modules", "cache.js"), "utf8"),
+    "excluded",
   );
+  await hub.sync();
+  assert.equal(hub.engine.store.current(volume.id, "kept").deleted, 1, "unmanaged leftovers never revive the directory");
   const unsupported = await fetch(
     `http://127.0.0.1:${hub.port}/v1/snapshot?volume=${volume.id}`,
     { headers: { Authorization: `Bearer ${mac.invite.token}` } },

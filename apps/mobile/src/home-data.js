@@ -38,7 +38,10 @@ export function historyTone(row) {
 const DEVICE_WARNINGS = ["Paused", "Offline", "Disconnected"];
 export const deviceLabel = (name, device) => [name, "Replica", device.word, device.last].filter(Boolean).join(", ");
 
-export function deviceStatus({ connected, paused, offline, busy, error, last }, when) {
+export const hubChecking = (replica) => !!(replica.checking && replica.busy);
+export const pullHeld = ({ busy, checking }) => !!(busy || checking);
+
+export function deviceStatus({ connected, paused, offline, checking, busy, error, last }, when) {
   const word = !connected
     ? "Disconnected"
     : paused
@@ -47,11 +50,13 @@ export function deviceStatus({ connected, paused, offline, busy, error, last }, 
         ? "Offline"
         : error
           ? "Needs attention"
-          : busy
-            ? "Syncing"
-            : last
-              ? "Up to date"
-              : "Not synced yet";
+          : checking
+            ? "Checking hub…"
+            : busy
+              ? "Syncing"
+              : last
+                ? "Up to date"
+                : "Not synced yet";
   const tone = word === "Needs attention" ? "danger" : DEVICE_WARNINGS.includes(word) ? "warning" : null;
   return { word, tone, last: last ? `Last sync ${when(last)}` : "" };
 }

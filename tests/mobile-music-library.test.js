@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   albumKey,
   albumRows,
@@ -551,8 +552,12 @@ test("episode lengths read in hours and minutes like desktop", () => {
   assert.equal(formatDuration(3840), "1:04:00", "music keeps m:ss");
 });
 
-test("captions keep each value whole so a wrap falls only between segments", async () => {
+test("captions keep each value whole and bind each separator to the part after it, so no line ends on a dot", async () => {
   const { unbroken, folderSize } = await import("../apps/mobile/src/format.js");
-  assert.equal(unbroken("2 episodes · 2 shows · 80.6 MB local"), "2 episodes · 2 shows · 80.6 MB local");
-  assert.equal(folderSize({ files: 3, bytes: 1048576 * 2 }), "3 files · 2.0 MB");
+  const caption = unbroken("2 episodes · 2 shows · 80.6 MB local");
+  assert.equal(caption, "2\u00a0episodes ·\u00a02\u00a0shows ·\u00a080.6\u00a0MB\u00a0local");
+  assert.deepEqual(caption.split(" "), ["2\u00a0episodes", "·\u00a02\u00a0shows", "·\u00a080.6\u00a0MB\u00a0local"], "the only break points fall before a separator");
+  assert.equal(folderSize({ files: 3, bytes: 1048576 * 2 }), "3\u00a0files ·\u00a02.0\u00a0MB");
+  const components = fs.readFileSync(new URL("../apps/mobile/src/components.jsx", import.meta.url), "utf8");
+  assert.match(components, /description\.replace\(\/ ·\[ \\u00a0\]\/g, ", "\)/, "screen readers hear commas, not the bound separators");
 });

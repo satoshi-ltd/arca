@@ -17,11 +17,15 @@ const DRAWER_WIDTH = 280;
 
 function Lead({ entry, cover, icon }) {
   const { s, c } = useDesign();
-  return cover !== undefined ? (
-    <Cover uri={cover} size={32} icon={FAVORITE_ICONS[entry.kind]} />
-  ) : (
-    <View style={s.tile}>
-      <Icon name={icon || FAVORITE_ICONS[entry.kind]} size={16} color={c.accent} />
+  return (
+    <View style={s.homeLead}>
+      {cover !== undefined ? (
+        <Cover uri={cover} size={32} icon={FAVORITE_ICONS[entry.kind]} />
+      ) : (
+        <View style={s.tile}>
+          <Icon name={icon || FAVORITE_ICONS[entry.kind]} size={16} color={c.accent} />
+        </View>
+      )}
     </View>
   );
 }

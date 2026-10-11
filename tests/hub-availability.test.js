@@ -8,6 +8,7 @@ import http from "node:http";
 import path from "node:path";
 import { init, digest } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
+import { HUB_UNAVAILABLE } from "../packages/daemon/engine.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-availability-"));
@@ -1138,4 +1139,115 @@ test("a desktop replica sends each photo's file date so undated photos keep thei
   other.engine.config.hub.url = "http://127.0.0.1:1";
   const { galleryDate } = await import("../packages/core/gallery-date.js");
   assert.equal(galleryDate("immich/uuid.jpg", null, null, localDate(other)).date, "2023-03-19T00:21:52.000Z", "the date is stored locally, so it holds offline");
+});
+
+test("after a restart with the hub silent a replica checks the hub, never claims to sync, keeps its last sync and ends offline", async (t) => {
+  const { root, connect } = await setup(t);
+  const replica = await connect("cold");
+  await replica.sync();
+  const last = replica.engine.status().lastSync;
+  assert.ok(last);
+  const close = replica.close;
+  replica.close = async () => {};
+  await close();
+  const home = path.join(root, "cold");
+  const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+  config.hub.url = (await silent(t)).url;
+  fs.writeFileSync(path.join(home, "config.json"), JSON.stringify(config));
+  const again = await start(home, { timer: false });
+  try {
+    const status = async () =>
+      (
+        await fetch(`http://127.0.0.1:${again.port}/v1/status`, {
+          headers: { Authorization: `Bearer ${config.adminToken}` },
+        })
+      ).json();
+    const restored = (await status()).lastSync;
+    assert.ok(restored && Math.abs(Date.parse(restored) - Date.parse(last)) < 5000, `the last sync survives the restart: ${restored}`);
+    again.engine.metadataTimeoutMs = 400;
+    const phases = new Set();
+    const cycle = again.engine.exclusive(() => again.engine.cycle());
+    const sample = setInterval(() => phases.add(again.engine.status().phase), 2);
+    await assert.rejects(cycle, (error) => error.hubUnavailable);
+    clearInterval(sample);
+    assert.ok(phases.has("checking"), [...phases].join());
+    assert.equal(phases.has("syncing"), false, [...phases].join());
+    const after = await status();
+    assert.equal(after.phase, "offline");
+    assert.equal(after.lastSync, restored);
+    assert.equal(after.error, HUB_UNAVAILABLE);
+  } finally {
+    await again.close();
+  }
+});
+
+test("a proxy's HTML error page never reaches the status and reads as the hub being unavailable", async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("proxied");
+  await replica.sync();
+  let code = 502;
+  const proxy = await listen(
+    t,
+    http.createServer((req, res) => {
+      res.writeHead(code, { "Content-Type": "text/html" });
+      res.end(`<html><body><h1>${code} Bad Gateway</h1></body></html>`);
+    }),
+  );
+  replica.engine.config.hub.url = proxy.url;
+  await assert.rejects(replica.sync(), (error) => !/<html/i.test(error.message));
+  const status = replica.engine.status();
+  assert.equal(status.phase, "offline");
+  assert.equal(status.error, HUB_UNAVAILABLE);
+  code = 404;
+  await assert.rejects(replica.engine.request("/v1/catalog"), (error) => error.message === "Hub 404");
+});
+
+test("a hub error whose text mentions an angle-bracket name keeps its message; an untyped HTML document does not", async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("plain");
+  let reply = { type: "text/plain", body: "Cannot replace <draft> while it is open" };
+  const hub = await listen(
+    t,
+    http.createServer((req, res) => {
+      res.writeHead(409, { "Content-Type": reply.type });
+      res.end(reply.body);
+    }),
+  );
+  replica.engine.config.hub.url = hub.url;
+  await assert.rejects(
+    replica.engine.request("/v1/catalog"),
+    (error) => error.message === "Hub 409: Cannot replace <draft> while it is open",
+  );
+  reply = { type: "application/octet-stream", body: "<!DOCTYPE html><html><body>Conflict</body></html>" };
+  await assert.rejects(replica.engine.request("/v1/catalog"), (error) => error.message === "Hub 409");
+});
+
+test("a replica connected to a different hub checks it again before it claims to sync", async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("moved");
+  await replica.sync();
+  assert.equal(replica.engine.hubVerified, replica.engine.config.hub.id);
+  replica.engine.config.hub = { ...replica.engine.config.hub, id: "another-hub", url: (await silent(t)).url };
+  replica.engine.metadataTimeoutMs = 400;
+  const phases = new Set();
+  const cycle = replica.engine.exclusive(() => replica.engine.cycle());
+  const sample = setInterval(() => phases.add(replica.engine.status().phase), 2);
+  await assert.rejects(cycle, (error) => error.hubUnavailable);
+  clearInterval(sample);
+  assert.ok(phases.has("checking"), [...phases].join());
+  assert.equal(phases.has("syncing"), false, [...phases].join());
+});
+
+test("a scheduled cycle that cannot reach the hub reports the hub-unavailable message, not the transport error", async (t) => {
+  const { connect } = await setup(t);
+  const replica = await connect("scheduled", { timer: true, eventRetryMs: 100 });
+  await waitFor(() => replica.engine.status().lastSync);
+  const closed = net.createServer();
+  await new Promise((resolve) => closed.listen(0, "127.0.0.1", resolve));
+  const { port } = closed.address();
+  await new Promise((resolve) => closed.close(resolve));
+  replica.engine.config.hub.url = `http://127.0.0.1:${port}`;
+  await replica.api("/v1/sync", { background: true });
+  await waitFor(() => replica.engine.status().phase === "offline" && replica.engine.status().error, 4000);
+  assert.equal(replica.engine.status().error, HUB_UNAVAILABLE);
 });

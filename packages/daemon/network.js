@@ -89,7 +89,7 @@ export class Network {
       service: "arca",
       discoveryVersion: 1,
       protocol: 1,
-      version: "0.7.37",
+      version: "0.7.38",
       id: c.id,
       name: c.name,
       role: c.role,
@@ -236,10 +236,10 @@ export class Network {
         server.closeAllConnections();
       });
   }
-  async start() {
-    await this.maintain();
+  start() {
     this.timer = setInterval(() => this.maintain().catch(() => {}), 15000);
     this.timer.unref();
+    return this.maintain();
   }
   async close() {
     this.stopping = true;

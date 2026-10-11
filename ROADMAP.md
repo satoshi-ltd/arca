@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-09 · Phase 1 functional, not release-qualified.
+Updated 2026-10-11 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -37,6 +37,10 @@ _None._
 ## Needs maintainer
 
 ### Builds and deployments
+
+- **SYNC-RACES-VERIFY** — Run the sync race fixes on Casa, a desktop and a phone
+  `verify · maintainer · normal`
+  accept: with Casa redeployed and a desktop and phone on the same build, a folder deleted on one device while the Mac holds a `.DS_Store` in it, a file added under a directory deleted elsewhere, an edit racing a deletion and a hub Stop syncing here then re-select all converge without a folder error, a revived deleted file or a lost edit (`tests/sync-races.test.js`, `tests/mobile-replica-races.test.js` model them).
 
 - **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on Casa
   `verify · maintainer · normal`
@@ -184,6 +188,10 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 ### Decisions
 
+- **DEC-PHOTO-PLACES** — May Arca read and index photo GPS as place names?
+  `decision · maintainer · normal`
+  accept: answers recorded in SPEC: GPS indexing allowed (rewrites the "no place data" sentences); place labels visible on every device that syncs the folder or only on the hub; on by default or per folder; no map view; people and object search stay out of Arca (Immich covers them).
+
 - **DEC-AUTO-ALBUMS-SHOWS** — Should Android Auto's Albums list keep podcast shows?
   `decision · maintainer · normal`
   accept: keep or filter. The phone's car library file lists every show after the albums (title and artist the show's name), so Albums in the car mixes shows with albums while the phone and desktop keep them under Podcasts; filtering them leaves shows unreachable in the car until MUSIC-AUTO-PODCASTS.
@@ -221,6 +229,10 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### File preservation and synchronization
 
+- **SYNC-REPLAY-SELF-CONFLICT** — A replayed proposal never conflicts with its own accepted revision
+  `bug · agent · low`
+  accept: a replica that re-sends an edit the hub already accepted, after a newer edit of its own on the same stale base, gets no conflict copy of its own older content (scenario D11 of the sync audit); receipts still refuse unsafe replays.
+
 ### Release and native reliability
 
 - **DESK-ONBOARDING-TRAFFIC-LIGHTS** — The onboarding rail's brand sits under the macOS window controls
@@ -243,6 +255,10 @@ Suggested order for approval: preservation of user files, synchronization recove
   accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
 
 ### Deferred usability and cleanup
+
+- **PHOTO-PLACES** — Search Arca finds photos by place ("hua hin", "thailand", "tailandia")
+  `feature · agent · normal · depends: DEC-PHOTO-PLACES`
+  accept: the hub reads GPS during gallery indexing and stores only a place label and a folded search text (city, district, province, country), never coordinates; names come from a bundled offline GeoNames extract (CC BY, attributed; no cloud geocoding, no new npm dependency), including Spanish and English alternate names for countries and first-level regions so "thailand" and "tailandia" both match; existing photos re-index once; Search Arca gains a Places group (one row per place with its count, opening the gallery filtered to it) on desktop, web and phone, offline on the phone from the synchronized labels; photos without GPS are explained in the empty result; tests cover lookup (Hua Hin, open sea, antimeridian, invalid coordinates), indexing with and without GPS, and the "hua hin"/"thailand"/"tailandia" queries on hub and phone. Feasibility study: GPS read 0.17 ms per photo, compact dataset about 2.5 MB plus alternate names, grid lookup about 13 µs.
 
 - **MOB-MEDIUM-PREVIEW** — The phone asks for the 720 px preview when a 360 px one is too small
   `feature · agent · low`

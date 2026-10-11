@@ -130,6 +130,8 @@ export function playedItems(library, history) {
   return items;
 }
 
+export const tagsRead = (item) =>
+  ["title", "artist", "albumArtist", "album", "duration", "codec"].some((name) => item?.[name] != null);
 export function buildLibrary(raw) {
   const tracks = new Map();
   const albums = new Map();

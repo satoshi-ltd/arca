@@ -154,17 +154,26 @@ test("pending recovery errors stay within their folder", async (t) => {
   write(hub, volume, "docs/note.txt", "a");
   await hub.sync();
   await r.sync();
-  write(r, volume, "docs/.DS_Store", "metadata");
-  fs.rmSync(localPath(hub, volume, "docs"), { recursive: true });
+  const s = r.engine.store,
+    materialize = s.materialize.bind(s);
+  s.materialize = (row, expected) => {
+    if (row.path === "docs/note.txt")
+      throw Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" });
+    return materialize(row, expected);
+  };
+  write(hub, volume, "docs/note.txt", "b");
   await hub.sync();
-  await assert.rejects(r.sync(), /not empty|ENOTEMPTY/i);
+  await assert.rejects(r.sync(), /EBUSY/);
   write(hub, beta, "fresh.txt", "new");
   await hub.sync();
-  await assert.rejects(r.sync(), /not empty|ENOTEMPTY/i);
+  await assert.rejects(r.sync(), /EBUSY/);
 
   assert.equal(fs.existsSync(localPath(r, beta, "fresh.txt")), true);
   assert.equal(r.engine.phase, "error");
   assert.equal(r.engine.folderStates.get(beta.id).state, "synced");
+  s.materialize = materialize;
+  await r.sync();
+  assert.equal(fs.readFileSync(localPath(r, volume, "docs/note.txt"), "utf8"), "b");
 });
 test("SYNC-04 pending revision gap", async (t) => {
   const { hub, volume } = await setup(t);
@@ -608,47 +617,28 @@ test("pending case rename hides its tombstone until the complete revision is mat
   assert.equal(read(hub, volume, "Name"), "old");
 });
 
-test("conflict copy is flushed before removing the edited original", async (t) => {
+test("a file edited while its deletion is applied stays at its path and is rescanned", async (t) => {
   const { hub, volume } = await setup(t),
     s = hub.engine.store;
   write(hub, volume, "note", "original");
   await hub.sync();
   const old = s.current(volume.id, "note");
   write(hub, volume, "note", "edited");
-  const open = fs.openSync,
-    flush = fs.fsyncSync,
-    unlink = fs.unlinkSync;
-  const handles = new Map();
-  let durable = false,
-    removed = false;
-  fs.openSync = (name, ...args) => {
-    const fd = open(name, ...args);
-    handles.set(fd, String(name));
-    return fd;
-  };
-  fs.fsyncSync = (fd) => {
-    flush(fd);
-    if (handles.get(fd)?.includes("conflict-local")) durable = true;
-  };
-  fs.unlinkSync = (name) => {
-    if (name === path.join(volume.path, "note")) {
-      assert.equal(durable, true);
-      removed = true;
-    }
-    return unlink(name);
-  };
-  try {
-    s.commit(volume.id, "note", null, hub.engine.config.id, true, old.hash);
-  } finally {
-    fs.openSync = open;
-    fs.fsyncSync = flush;
-    fs.unlinkSync = unlink;
-  }
-  assert.equal(removed, true);
-  const kept = fs
-    .readdirSync(volume.path)
-    .find((n) => n.includes("conflict-local"));
-  assert.equal(read(hub, volume, kept), "edited");
+  s.commit(volume.id, "note", null, hub.engine.config.id, true, old.hash);
+  assert.equal(read(hub, volume, "note"), "edited");
+  assert.equal(
+    fs.readdirSync(volume.path).some((n) => n.includes("conflict-local")),
+    false,
+  );
+  assert.ok(
+    s.db
+      .prepare("SELECT 1 FROM sync_dirty WHERE volume=? AND path='note'")
+      .get(volume.id),
+  );
+  await hub.engine.exclusive(() => hub.engine.cycle({ incremental: true }));
+  const revived = s.current(volume.id, "note");
+  assert.equal(revived.deleted, 0);
+  assert.equal(fs.readFileSync(s.blob(revived.hash), "utf8"), "edited");
 });
 
 test("repeated case-only renames converge without reviving earlier spellings", async (t) => {

@@ -155,7 +155,7 @@ import {
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, folderSize, unbroken } from "./format";
 import { FIRST_ROWS, browseEntries, revealWindow } from "./browse";
-import { deviceStatus, folderSections, historyTone } from "./home-data";
+import { deviceStatus, folderSections, historyTone, hubChecking, pullHeld } from "./home-data";
 import { FavoritesDrawer, FavoritesSection } from "./Favorites";
 import {
   FAVORITE_ICONS,
@@ -337,7 +337,8 @@ export default function App() {
       );
     setStatus((old) =>
       retainSnapshot(old, {
-        busy: r.busy,
+        busy: r.activity,
+        checking: hubChecking(r),
         offline: !!r.hubUnavailable,
         syncingVolume: r.paused || r.hubUnavailable ? null : r.syncingVolume,
         picking: !!r.picking,
@@ -668,10 +669,10 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [status.busy]);
   useEffect(() => {
-    if (!pulling || status.busy) return;
+    if (!pulling || pullHeld(status)) return;
     const timer = setTimeout(() => setPulling(false), 800);
     return () => clearTimeout(timer);
-  }, [pulling, status.busy]);
+  }, [pulling, status.busy, status.checking]);
   const listedFolder = locals.find((f) => f.id === folder?.id);
   useEffect(() => {
     if (!folder || !engine.current) return;
@@ -727,7 +728,7 @@ export default function App() {
       listener.remove();
       clearInterval(retry);
     };
-  }, [connected, connection?.hubId, catalog?.changeEvents]);
+  }, [connected, connection?.hubId, catalog?.changeEvents, status.offline]);
   const [webApproval, setWebApproval] = useState(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [approvalError, setApprovalError] = useState("");
@@ -3343,6 +3344,7 @@ export default function App() {
                                           {row.folder}
                                         </Text>
                                         <Text
+                                          numberOfLines={1}
                                           style={[s.mono, s.historyRevision]}
                                         >
                                           rev {row.rev}

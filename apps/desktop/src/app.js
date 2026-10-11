@@ -4,6 +4,7 @@ import {
   galleryZoomStep,
   mediaSummary,
   cardPreviews,
+  coverPreviewSize,
   photoFlow,
   pinchSteps,
   PREVIEW_RANK,
@@ -21,6 +22,7 @@ import {
   playedItems,
   rememberPlayed,
   shuffleOrder,
+  tagsRead,
 } from "./music-library.js";
 import { favoriteOrder, nameOrder } from "./favorite-order.js";
 import {
@@ -112,7 +114,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.37";
+const APP_VERSION = "0.7.38";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1158,6 +1160,8 @@ let status,
   busy = false,
   ready = false,
   daemonStopped = false,
+  deviceUnreachable = false,
+  statusFailures = 0,
   daemonProbe = null,
   discovered = null,
   network = null,
@@ -1503,23 +1507,23 @@ async function performAction(work, exclusive, track = true) {
     icons();
   }
 }
+function folderProblem(error) {
+  const files = /^Could not (?:sync|write) (\d+) files?\b/.exec(error);
+  if (files) return `Could not sync ${countLabel(Number(files[1]), "file")}`;
+  if (/^(?:ENOENT|ENOTDIR)\b|^Volume unavailable or marker missing|^Local folder is unavailable/.test(error))
+    return "Path missing";
+  if (/^ENOSPC\b|^Insufficient free disk space|no space left on device/i.test(error))
+    return "Disk full";
+  if (/letter case|Case collision/i.test(error)) return "Name collision";
+  return "Needs attention";
+}
 function stateFor(v) {
   if (status.role !== "hub" && !status.hub)
     return ["Disconnected", "id", "unplug"];
   if (!v.selected) return ["Catalog only", "id", "circle-dashed"];
   if (status.phase === "paused") return ["Paused", "id", "pause"];
   if (v.sync?.state === "error")
-    return [
-      /ENOENT|missing/i.test(v.sync.error || "")
-        ? "Path missing"
-        : /ENOSPC|space/i.test(v.sync.error || "")
-          ? "Disk full"
-          : /letter case|Case collision/i.test(v.sync.error || "")
-            ? "Name collision"
-            : "Needs attention",
-      "er",
-      "circle-alert",
-    ];
+    return [folderProblem(v.sync.error || ""), "er", "circle-alert"];
   if (v.conflicts) return ["Conflict", "wa", "triangle-alert"];
   if (status.hubUnavailable) return ["Offline", "id", "wifi-off"];
   if (v.sync?.state === "scanning") return ["Scanning", "sy", "busy"];
@@ -1843,6 +1847,7 @@ function markNav() {
     else el.removeAttribute("aria-current");
   });
 }
+const CHECKING_HUB = ["Checking hub…", "id", "clock"];
 function updateShell() {
   const nav = document.querySelector('nav [data-view="devices"]');
   if (nav) nav.innerHTML = icon("monitor-smartphone") + "Devices";
@@ -1851,6 +1856,7 @@ function updateShell() {
     idle: ["Up to date", "ok", "circle-check"],
     paused: ["Paused", "wa", "pause"],
     syncing: ["Syncing", "sy", "busy"],
+    checking: CHECKING_HUB,
     error: ["Needs attention", "er", "circle-alert"],
     unlinked: status.hub
       ? ["Connected", "id", "link"]
@@ -1860,7 +1866,7 @@ function updateShell() {
   const conflicts = status.volumes.reduce((n, v) => n + v.conflicts, 0);
   const [label, color, symbol] = (daemonStopped
     ? ["Service stopped", "er", "power"]
-    : status.hubUnavailable && status.phase !== "paused"
+    : deviceUnreachable || (status.hubUnavailable && status.phase !== "paused")
       ? ["Offline", "wa", "wifi-off"]
       : status.phase === "idle" && conflicts
         ? ["Conflicts to review", "wa", "triangle-alert"]
@@ -1872,7 +1878,7 @@ function updateShell() {
   $("#connection").className = color;
   const role = status.role === "hub" ? "Hub" : "Replica";
   const device = $("#status-device");
-  device.innerHTML = `${icon(status.role === "hub" || !native ? "server" : "monitor")}<b id="managed-name">${escape(status.name)}</b><span id="managed-role" class="machine-role">${role}</span><span class="status-dot ${color}" aria-hidden="true"></span>`;
+  device.innerHTML = `${icon(managedGlyph())}<b id="managed-name">${escape(status.name)}</b><span id="managed-role" class="machine-role">${role}</span><span class="status-dot ${color}" aria-hidden="true"></span>`;
   device.title = `${status.name} · ${role} · ${label}`;
   device.hidden = false;
   const card = device.closest(".status-card");
@@ -1997,6 +2003,8 @@ async function refresh(renderView = true) {
     return;
   }
   noticeStore.clear("connection");
+  deviceUnreachable = false;
+  statusFailures = 0;
   ready = true;
   document.body.classList.remove("access-mode", "onboarding-mode");
   updateShell();
@@ -3471,6 +3479,7 @@ function mountGallery(volume) {
       img.src = data;
       card.querySelector(":scope > img")?.remove();
       card.prepend(img);
+      img.decode?.().then(() => current() && img.isConnected && sizeRow(), () => {});
       return true;
     },
     busy: busyPreview,
@@ -3726,8 +3735,11 @@ function mountGallery(volume) {
   function sizeRow() {
     const row = rowTarget(root.querySelector(".photo-days").clientWidth, galleryZoom);
     put(root, "--photo-row", `${row}px`);
-    const size = tilePreviewSize((row * 4) / 3, row, window.devicePixelRatio || 1);
-    root.querySelectorAll(".memory-card").forEach((card, index) => cardPreview(card, state.memories[index], size));
+    root.querySelectorAll(".memory-card").forEach((card, index) => {
+      const item = state.memories[index];
+      const shown = card.querySelector(":scope > img");
+      cardPreview(card, item, coverPreviewSize((row * 4) / 3, row, window.devicePixelRatio || 1, item?.width || shown?.naturalWidth, item?.height || shown?.naturalHeight));
+    });
   }
   function layoutPhotos(changed = root.querySelectorAll(".photo-flow")) {
     if (!current()) return;
@@ -5141,18 +5153,25 @@ async function loadMusicLibrary(volume) {
   if (data.unchanged && known) {
     known.indexing = !!data.indexing;
     known.checked = Date.now();
+    if (!known.indexing && known.unread) {
+      known.library = buildLibrary(known.unread);
+      known.unread = null;
+    }
     return known;
   }
+  const full = buildLibrary(data);
+  const unread = data.indexing && (data.tracks || []).some((item) => !tagsRead(item));
   const entry = {
     version: data.version,
     indexing: !!data.indexing,
     checked: Date.now(),
-    library: buildLibrary(data),
+    library: unread ? buildLibrary({ ...data, tracks: data.tracks.filter(tagsRead) }) : full,
+    unread: unread ? data : null,
   };
   musicLibraries.delete(key);
   musicLibraries.set(key, entry);
   while (musicLibraries.size > 8) musicLibraries.delete(musicLibraries.keys().next().value);
-  musicRequeue(volume, entry.library);
+  musicRequeue(volume, full);
   return entry;
 }
 const musicShowing = (volume) =>
@@ -6731,6 +6750,7 @@ async function renderHistory(
       : historyEmpty());
   icons();
 }
+const managedGlyph = () => (status.role === "hub" || !native ? "server" : "monitor");
 const machineRow = (
   name,
   tags,
@@ -6745,7 +6765,7 @@ const machineRow = (
   totals = "",
   tone = /class="pill (wa|er)"/.exec(state)?.[1] || (/class="pill id".*(Offline|Paused|Disconnected)<\/span>/.test(state) ? "id" : ""),
 ) =>
-  `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}${tone ? ` ${tone}` : ""}">${icon(hub ? "server" : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This device</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
+  `<article class="device-row ${dashed ? "discovered" : ""}"><div class="tile large ${hub ? "hub" : ""}${tone ? ` ${tone}` : ""}">${icon(hub ? "server" : self ? managedGlyph() : /ios|android|iphone|ipad/i.test(metadata) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${tags}${self ? '<span class="tag self">This device</span>' : ""}</div><p class="connection-line">${[metadata, description].filter(Boolean).join(" · ")}</p></div><div class="row-end">${state}${totals ? `<span class="hint">${totals}</span>` : ""}</div>${controls}</article>`;
 
 function selfPill() {
   if (!status.hub) return pill("Disconnected", "id", "unplug");
@@ -6754,6 +6774,7 @@ function selfPill() {
   const [label, tone, symbol] = {
     idle: ["Up to date", "ok", "circle-check"],
     paused: ["Paused", "id", "pause"],
+    checking: CHECKING_HUB,
     error: ["Needs attention", "er", "circle-alert"],
   }[status.phase] || ["Syncing", "sy", "busy"];
   return pill(label, tone, symbol);
@@ -9672,8 +9693,21 @@ async function boot() {
       code: "",
     };
     renderOnboarding();
-  } else if (state.stopped) showDaemonStopped(state.error);
+  } else if (state.stopped && state.error) showDaemonStopped(state.error);
+  else if (state.stopped) awaitDaemon();
   else await refresh();
+}
+const DAEMON_GRACE_MS = 15000;
+function awaitDaemon() {
+  showDaemonStopped();
+  let waited = 0;
+  const probe = async () => {
+    waited += 1000;
+    if (!daemonStopped) return;
+    await refresh().catch(() => {});
+    if (daemonStopped && waited < DAEMON_GRACE_MS) setTimeout(probe, 1000);
+  };
+  setTimeout(probe, 1000);
 }
 function daemonUnavailable(error) {
   return (
@@ -9807,8 +9841,20 @@ async function pollStatus(force = false) {
     }
   } catch (error) {
     if (daemonUnavailable(error)) showDaemonStopped();
-    else if (error.transportError && error.readOnly)
-      notice(error.message, true, { id: "connection", action: "refresh" });
+    else if (error.transportError && error.readOnly) {
+      if (++statusFailures < 2) return;
+      deviceUnreachable = true;
+      if (status) updateShell();
+      notice(error.message, true, {
+        id: "connection",
+        action: "refresh",
+        title: `Cannot reach ${status?.name || "this device"}`,
+        body: "Check your connection and retry.",
+        icon: "wifi-off",
+        cause: "connection",
+        offline: true,
+      });
+    }
     else if (!busy && !$("#dialog").open)
       await action(() => {
         throw error;
@@ -9858,6 +9904,12 @@ setInterval(async () => {
     });
     if (!document?.body || !ready) return;
     eventsHealthyAt = Date.now();
+    statusFailures = 0;
+    if (deviceUnreachable) {
+      deviceUnreachable = false;
+      noticeStore.clear("connection");
+      if (status) updateShell();
+    }
     if (next.cursor !== eventCursor) {
       eventCursor = next.cursor;
       document.dispatchEvent(new Event("arca-changes"));

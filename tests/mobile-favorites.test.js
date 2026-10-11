@@ -243,3 +243,13 @@ test("the Fold drawer closes when the screen folds and ignores touches while it 
   const drawer = favorites.slice(favorites.indexOf("export function FavoritesDrawer("));
   assert.match(drawer, /<View style=\{s\.modalRoot\} pointerEvents=\{visible \? "auto" : "none"\}>/);
 });
+
+test("Favorites rows reuse the Folders row's lead slot so tiles and titles share one column", () => {
+  const source = fs.readFileSync(new URL("../apps/mobile/src/Favorites.jsx", import.meta.url), "utf8");
+  const components = fs.readFileSync(new URL("../apps/mobile/src/components.jsx", import.meta.url), "utf8");
+  assert.match(components, /<View ref=\{lead\} style=\{s\.homeLead\}>/, "folder rows lead with the homeLead slot");
+  const lead = source.slice(source.indexOf("function Lead("), source.indexOf("function EditRow("));
+  assert.match(lead, /return \(\s*<View style=\{s\.homeLead\}>\s*\{cover !== undefined \? \(\s*<Cover[\s\S]*?\) : \(\s*<View style=\{s\.tile\}>/);
+  const edit = source.slice(source.indexOf("function EditRow("), source.indexOf("export"));
+  assert.doesNotMatch(edit, /homeLead/, "Edit mode keeps its remove buttons where they were");
+});

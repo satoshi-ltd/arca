@@ -985,3 +985,21 @@ test("a gallery header names its photos and videos as desktop does", () => {
   assert.match(gallery, /const counts = useMemo\(\(\) => galleryCounts\(source, loaded\), \[source, loaded\]\);/);
   assert.match(gallery, /onSummary\?\.\(\{ photos: counts\.photos, videos: counts\.videos \}\);/);
 });
+
+test("a wide History row keeps its revision cell on one line up to seven digits at every text size", async () => {
+  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const theme = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
+  assert.match(app, /<Text\s+numberOfLines=\{1\}\s+style=\{\[s\.mono, s\.historyRevision\]\}\s*>\s*rev \{row\.rev\}/);
+  const rule = theme.match(/historyRevision: \{ width: ([^,]+), flexShrink: 0 \}/);
+  assert.ok(rule, "the revision cell never shrinks below its width");
+  const widthAt = new Function("fontScale", "textScale", `return ${rule[1]};`);
+  const font = Number(theme.match(/mono: \{\s*fontFamily: "FragmentMono_400Regular",\s*fontSize: (\d+),/)[1]);
+  const advance = 0.618;
+  const { textSizes } = await import("../apps/mobile/src/text-size.js");
+  for (const fontScale of [1, 1.3, 2])
+    for (const { value: textScale, label } of textSizes) {
+      const width = widthAt(fontScale, textScale);
+      const needed = "rev 1234567".length * advance * font * fontScale * textScale;
+      assert.ok(width >= needed, `${width} px fits "rev" and seven digits in Fragment Mono at ${label} text and ${fontScale}× system size`);
+    }
+});

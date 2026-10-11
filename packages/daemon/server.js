@@ -1054,7 +1054,7 @@ export async function start(home, options = {}) {
         );
         const pending = s.db
           .prepare(
-            "SELECT MIN(COALESCE(json_extract(row, '$.pendingFrom'), json_extract(row, '$.rev'))) n FROM pending WHERE volume=?",
+            "SELECT MIN(COALESCE(json_extract(row, '$.pendingFrom'), json_extract(row, '$.rev'))) n FROM pending WHERE volume=? AND (failures<3 OR json_extract(row, '$.pendingFrom') IS NOT NULL)",
           )
           .get(volume).n;
         const latest =
@@ -2301,7 +2301,7 @@ export async function start(home, options = {}) {
   network.port = server.address().port;
   engine.listeningPort = network.port;
   network.mainHost = host;
-  await network.start();
+  network.start().catch(() => {});
   const watchers = new Map();
   const watcherRetry = new Map();
   const events = new Map();
@@ -2433,7 +2433,7 @@ export async function start(home, options = {}) {
       if (!offline && !engine.error) viewSilentAt = 0;
       if (engine.activity !== activity) lastActivity = Date.now();
     } catch (error) {
-      engine.error = error.message;
+      engine.error = error.hubUnavailable ? HUB_UNAVAILABLE : error.message;
       failures = Math.min(failures + 1, 5);
       offline = !!(error.hubUnavailable || engine.hubUnavailable);
     } finally {

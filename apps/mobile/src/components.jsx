@@ -1242,7 +1242,7 @@ export function FolderRow({
     <PressScale
       scale={!disabled}
       accessibilityRole={selectable ? "checkbox" : "button"}
-      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${state.word || syncing ? `, ${state.word || status}` : ""}${description ? `, ${description.replaceAll(" · ", ", ")}` : ""}`}
+      accessibilityLabel={`${selectable ? "Select" : "Open"} ${name}${state.word || syncing ? `, ${state.word || status}` : ""}${description ? `, ${description.replace(/ ·[ \u00a0]/g, ", ")}` : ""}`}
       accessibilityState={{
         disabled: !!disabled,
         ...(selectable ? { checked: selected } : {}),

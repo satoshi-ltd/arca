@@ -788,7 +788,7 @@ test("a cycle stopped right after a conflicting proposal never overwrites the ot
   assert.equal(rows.some((row) => row.unapplied), false, "nothing stays waiting once the hub's rows are applied");
 });
 
-test("an edit made after the interrupted conflict is kept as its own copy, and a hub deletion meanwhile still keeps the phone's content", async (t) => {
+test("an edit made after the interrupted conflict is kept as its own copy, and the phone's edit outlives a hub deletion at its path", async (t) => {
   const f = await fixture(t);
   const { volume, replica, daemon } = f;
   const hubFile = (name) => path.join(volume.path, name);
@@ -816,8 +816,8 @@ test("an edit made after the interrupted conflict is kept as its own copy, and a
   assert.equal(hub("again.txt"), "hub edit");
   const contents = fs.readdirSync(volume.path).filter((name) => name.startsWith("again.txt.conflict-")).map(hub).sort();
   assert.deepEqual(contents, ["first phone edit", "second phone edit"], "both phone edits survive, one as the hub's conflict copy and one as the phone's");
-  assert.equal(fs.existsSync(hubFile("gone.txt")), false, "the hub's deletion stands");
-  assert.ok(fs.readdirSync(volume.path).some((name) => name.startsWith("gone.txt.conflict-") && hub(name) === "phone edit of a file the hub deletes"), "and the phone's content survives next to it");
+  assert.equal(hub("gone.txt"), "phone edit of a file the hub deletes", "the edit wins over the hub's deletion");
+  assert.equal(fs.readdirSync(volume.path).some((name) => name.startsWith("gone.txt.conflict-")), false, "without a conflict copy");
   assert.equal(fs.readFileSync(phoneFile("again.txt"), "utf8"), "hub edit");
   assert.equal((await f.store.rows(replica.scope, volume.id)).some((row) => row.unapplied), false);
 });
@@ -2774,14 +2774,14 @@ test("a cycle whose last verdict was offline never raises the foreground session
   f.offline();
   await replica.sync();
   assert.equal(replica.hubUnavailable, true);
-  assert.deepEqual(events.map((e) => e.event), ["begin", "end", "begin", "end"], "the first failure still acquired, and released at once");
+  assert.deepEqual(events.map((e) => e.event), ["begin", "end"], "a failed refresh never acquires");
   const before = events.length;
   await replica.sync();
   await replica.sync();
   assert.equal(events.length, before, "later offline cycles neither acquire nor release");
 });
 
-test("the first cycle against an unreachable hub acquires the session and releases it when the refresh fails", async (t) => {
+test("after a launch the phone checks the hub without raising the session or counting as activity until it answers", async (t) => {
   const f = await fixture(t);
   await f.replica.select(f.client.state().catalog.volumes[0]);
   await sync(f);
@@ -2790,9 +2790,26 @@ test("the first cycle against an unreachable hub acquires the session and releas
   assert.equal(reopened.connectionChecked, false);
   const { events, session } = recordedSession(f);
   reopened.transfer = session;
-  f.offline();
-  await reopened.sync();
-  assert.deepEqual(events.map((e) => e.event), ["begin", "end"]);
+  let release;
+  const hanging = new Promise((resolve) => (release = resolve));
+  f.stall(async (url, options) => {
+    await hanging;
+    throw new TypeError("Network request failed");
+  });
+  const run = reopened.sync();
+  for (let waited = 0; !reopened.busy && waited < 2000; waited += 5)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(reopened.busy, true, "the cycle holds its lock");
+  assert.equal(reopened.checking, true);
+  assert.equal(reopened.activity, false, "checking the hub is not shown as syncing");
+  assert.deepEqual(events, [], "no foreground session before the hub answers");
+  release();
+  await run;
+  f.stall(null);
+  assert.equal(reopened.hubUnavailable, true);
+  assert.equal(reopened.checking, false);
+  assert.deepEqual(events, []);
   assert.equal(session.active, false);
 });
 
@@ -2850,7 +2867,7 @@ test("a forced follow-up cycle after a failed refresh does not keep the session 
   reopened.sync(true);
   await run;
   assert.equal(probes, 2, "the forced follow-up cycle ran");
-  assert.deepEqual(events, ["begin@0", "end@1"], "the lease is released before the follow-up cycle, which skips it");
+  assert.deepEqual(events, [], "neither the failed cycle nor its follow-up takes the lease");
 });
 
 test("a native failure while releasing the session does not hide that the hub is unreachable", async (t) => {
@@ -4151,13 +4168,14 @@ test("a remote deletion keeps a local edit that the size and mtime cache cannot 
   await r
     .pull(await f.store.folder(r.scope, f.volume.id))
     .catch((error) => assert.match(error.message, /Local changes are waiting/));
-  const conflict = fs
-    .readdirSync(path.dirname(target))
-    .find((name) => name.startsWith("note.txt.conflict-mobile-"));
-  assert.ok(conflict, "the hidden local edit survives the remote deletion");
   assert.equal(
-    fs.readFileSync(path.join(path.dirname(target), conflict), "utf8"),
+    fs.readFileSync(target, "utf8"),
     "HUB V1",
+    "the hidden local edit stays at its path",
+  );
+  assert.equal(
+    fs.readdirSync(path.dirname(target)).some((name) => name.startsWith("note.txt.conflict-mobile-")),
+    false,
   );
 });
 
@@ -4270,8 +4288,14 @@ test("an interrupted initial snapshot keeps its lease while a failed one drops i
   const saved = await f.store.snapshotCursor(r.scope, f.volume.id);
   assert.ok(saved?.session);
   assert.deepEqual(released, []);
-  failure = new Error("Disk failure");
+  const page = r.client.api;
+  r.client.api = (route, ...rest) => {
+    if (route.startsWith("/v1/snapshot?") && route.includes("session="))
+      return Promise.reject(new Error("Disk failure"));
+    return page(route, ...rest);
+  };
   await assert.rejects(r.pull(await f.store.folder(r.scope, f.volume.id)), /Disk failure/);
+  r.client.api = page;
   assert.equal(await f.store.snapshotCursor(r.scope, f.volume.id), null);
   assert.deepEqual(released, [saved.session]);
 });
@@ -4480,7 +4504,8 @@ test('service refusal is reported before transfers and a foreground retry can re
   f.offline();
   await r.sync();
   assert.ok(r.error);
-  assert.equal(service.stops, 2);
+  assert.equal(service.starts, 2, "a cycle whose refresh fails never starts the service");
+  assert.equal(service.stops, 1);
   assert.equal(r.transfer.active, false);
 });
 

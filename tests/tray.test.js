@@ -256,9 +256,11 @@ test("tray offers Start service and Quit while the daemon is unavailable", async
 
 test("the native tray reads offline while only the hub is unreachable", () => {
   const source = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
-  assert.match(source, /let offline = status\["phase"\] == "offline";/);
+  assert.match(source, /fn hub_offline\(status: &serde_json::Value\) -> bool \{\s*status\["phase"\] == "offline" \|\| \(status\["phase"\] == "checking" && status\["hubUnavailable"\] == true\)\s*\}/, "a check that keeps failing to reach the hub is offline too");
+  assert.match(source, /let offline = hub_offline\(status\);/);
   assert.match(source, /\(!offline && status\["error"\]\.as_str\(\)\.is_some\(\)\)/, "the hub's own error no longer raises the alert");
-  assert.match(source, /"offline" if tray_state\(status\) == "alert" => "Arca · needs attention",\s+"offline" => "Arca · offline",/);
+  assert.match(source, /"offline" \| "checking" if hub_offline\(status\) && tray_state\(status\) == "alert" => "Arca · needs attention",\s+"offline" \| "checking" if hub_offline\(status\) => "Arca · offline",\s+"checking" => "Arca · checking",/);
+  assert.match(source, /fn a_replica_checking_its_hub_after_a_start_reads_checking\(\) \{[\s\S]*?s\["hubUnavailable"\] = json!\(true\);[\s\S]*?assert_eq!\(tray_text\(&s\), "Arca · offline"\);\s*assert_eq!\(tray_state\(&s\), "default"\);/, "the Rust test covers a failing check");
   assert.match(source, /Ok\(s\) => tray_text\(s\),/, "the tooltip comes from tray_text");
   assert.match(source, /fn an_unreachable_hub_reads_offline_but_other_problems_still_raise_the_alert\(\)/, "the Rust test exists");
 });
@@ -429,4 +431,12 @@ test("Pause until tomorrow lasts until the next local 08:00, always under 24 hou
     const seconds = at(`2026-10-24T${String(hour).padStart(2, "0")}:15:00`);
     assert.ok(seconds >= 1 && seconds < 86400, `${hour}:15 → ${seconds}`);
   }
+});
+
+test("checking the hub after a launch reads as such with the last sync and no progress", async (t) => {
+  const ui = await tray(t, { role: "replica", phase: "checking", hubName: "casa", lastSync: LAST, volumes: [folder("docs", { sync: { state: "pending" } })] });
+  assert.equal(ui.$(".tray-heading strong").textContent, "Checking hub…");
+  assert.equal(ui.$(".tray-heading p").textContent, `Last completed ${clock(LAST)}`);
+  assert.equal(ui.$(".tray-progress"), null);
+  assert.equal(ui.$(".tray-heading.tray-warn"), null);
 });

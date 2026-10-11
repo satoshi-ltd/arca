@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.38 — 2026-10-11
+
+- Sync handles races without losing work: an edit always wins over a deletion made elsewhere, an edit follows a file renamed on another device, a folder deleted elsewhere keeps files you added to it as conflicts, a file that keeps failing no longer holds every other device back, and a crash while a file is being replaced leaves no stray conflict copy.
+- After a start, devices read "Checking hub…" until the hub answers instead of reporting a stale state, the last sync time survives a restart and only counts cycles that finished cleanly, and the desktop shows Service stopped with Start service at once while it keeps looking for a daemon that is still starting.
+- The web admin reads Offline with "Cannot reach <device>" only after two failed reads in a row and recovers as soon as the device answers; a folder with a few files that would not sync says "Could not sync N files" instead of Path missing.
+- Dark palette selection, memory previews, music indexing counts, the Fold's history revisions at large text sizes and the phone header summary no longer break or crop.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.37 — 2026-10-11
 
 - The photo wall groups by month only: no day labels, the month title stays at the top while its photos pass under it, and the Years · Months · Days control is gone on the desktop, web and Fold; pinch or ctrl+wheel still zooms, and the phone's levels now read Photos, Months and Years.

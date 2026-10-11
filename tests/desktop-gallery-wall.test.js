@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   cardPreviews,
+  coverPreviewSize,
   galleryDay,
   galleryMoment,
   galleryZoomStep,
@@ -88,6 +89,22 @@ test("a panorama on a narrow wall does not squash the row before it", () => {
   assert.deepEqual(flow.rows.map((row) => row.end - row.start), [1, 1, 1]);
   assert.ok(flow.rows[0].height > 120 && flow.rows[0].height <= 150, String(flow.rows[0].height));
   assert.ok(flow.rows[1].height >= 234 / 4 - 1);
+});
+
+test("an On this day card asks for a preview whose short side covers the cropped card", () => {
+  const card = [160, 120];
+  assert.equal(coverPreviewSize(...card, 2, 1920, 1080), "medium", "a 16:9 photo at 2x needs 427 px long edges");
+  assert.equal(coverPreviewSize(...card, 1, 1920, 1080), "thumb");
+  assert.equal(coverPreviewSize(...card, 2, 1600, 1200), "thumb");
+  assert.equal(coverPreviewSize(...card, 1, 1600, 1200), "thumb");
+  assert.equal(coverPreviewSize(...card, 2, 1200, 1600), "medium", "a portrait photo fills the card's width");
+  assert.equal(coverPreviewSize(...card, 1, 1200, 1600), "thumb");
+  assert.equal(coverPreviewSize(...card, 2, 1000, 1000), "thumb");
+  assert.equal(coverPreviewSize(...card, 1, 1000, 1000), "thumb");
+  assert.equal(coverPreviewSize(240, 180, 2, 1920, 1080), "medium");
+  assert.equal(coverPreviewSize(300, 225, 2, 1920, 1080), "large");
+  assert.equal(coverPreviewSize(...card, 2), "thumb", "an unknown shape starts from the card's own fit until a preview shows its shape");
+  assert.equal(coverPreviewSize(240, 180, 2), "medium");
 });
 
 test("a tile asks for the smallest preview with enough pixels for it", () => {
@@ -253,7 +270,7 @@ test("an On this day card is not marked shown when it left the page before its p
 test("On this day cards load through the busy-aware card loader", () => {
   const app = fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8");
   const sizeRow = app.slice(app.indexOf("function sizeRow() {"), app.indexOf("function layoutPhotos("));
-  assert.match(sizeRow, /cardPreview\(card, state\.memories\[index\], size\)/);
+  assert.match(sizeRow, /cardPreview\(card, item, coverPreviewSize\(\(row \* 4\) \/ 3, row, window\.devicePixelRatio \|\| 1, item\?\.width \|\| shown\?\.naturalWidth, item\?\.height \|\| shown\?\.naturalHeight\)\)/);
   assert.doesNotMatch(sizeRow, /dataset\.source = /);
   assert.match(app, /const cardPreview = cardPreviews\(\{[\s\S]*?busy: busyPreview,[\s\S]*?retryLater\(card/);
 });

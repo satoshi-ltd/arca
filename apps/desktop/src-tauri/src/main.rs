@@ -451,8 +451,11 @@ fn resize_tray(app: tauri::AppHandle, height: f64) -> Result<(), String> {
 }
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {app.exit(0);}
+fn hub_offline(status: &serde_json::Value) -> bool {
+    status["phase"] == "offline" || (status["phase"] == "checking" && status["hubUnavailable"] == true)
+}
 fn tray_state(status: &serde_json::Value) -> &str {
-    let offline = status["phase"] == "offline";
+    let offline = hub_offline(status);
     if status["phase"] != "paused" && (
         status["phase"] == "error" || (!offline && status["error"].as_str().is_some())
         || status["backup"]["error"].as_str().is_some()
@@ -484,10 +487,11 @@ fn tray_text(status: &serde_json::Value) -> &'static str {
         "idle" => "Arca · not yet verified",
         "unlinked" => "Arca · no hub",
         "needs-folder" => "Arca · choose a shared folder",
+        "offline" | "checking" if hub_offline(status) && tray_state(status) == "alert" => "Arca · needs attention",
+        "offline" | "checking" if hub_offline(status) => "Arca · offline",
+        "checking" => "Arca · checking",
         "syncing" => "Arca · syncing",
         "paused" => "Arca · paused",
-        "offline" if tray_state(status) == "alert" => "Arca · needs attention",
-        "offline" => "Arca · offline",
         _ => "Arca · needs attention",
     }
 }
@@ -824,6 +828,23 @@ mod tray_tests {
         assert_eq!(tray_text(&failing), "Arca · needs attention");
         let idle_error = json!({"phase":"idle", "error":"boom"});
         assert_eq!(tray_state(&idle_error), "alert");
+    }
+    #[test]
+    fn a_replica_checking_its_hub_after_a_start_reads_checking() {
+        let mut s = json!({"phase":"checking", "lastSync":"2026-09-07", "volumes":[{"selected":true,"conflicts":0,"sync":{"state":"idle"}}]});
+        assert_eq!(tray_text(&s), "Arca · checking");
+        assert_eq!(tray_state(&s), "default");
+        s["hubUnavailable"] = json!(true);
+        s["error"] = json!("Hub unavailable. Try again when it is reachable.");
+        assert_eq!(tray_text(&s), "Arca · offline");
+        assert_eq!(tray_state(&s), "default");
+        s["hubUnavailable"] = json!(false);
+        s["error"] = json!(null);
+        assert_eq!(tray_text(&s), "Arca · checking");
+        s["hubUnavailable"] = json!(true);
+        s["volumes"][0]["conflicts"] = json!(1);
+        assert_eq!(tray_state(&s), "alert");
+        assert_eq!(tray_text(&s), "Arca · needs attention");
     }
 }
 
