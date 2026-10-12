@@ -180,7 +180,7 @@ function ShowPlay({ item, resume, toggle }) {
   );
 }
 
-function ShowTile({ show, tile, cover, open, selected, split, hold, favorite, canPlay, resume, toggle, more }) {
+function ShowTile({ show, tile, cover, open, selected, split, hold, favorite, canPlay, resume, toggle, more, forget }) {
   const { s, wide } = useDesign();
   const art = useRef(null);
   const item = tile.resume;
@@ -234,6 +234,7 @@ function ShowTile({ show, tile, cover, open, selected, split, hold, favorite, ca
   const actions = {
     continue: () => resume(item.row.position),
     startover: () => resume(0),
+    forget,
     favorite: favorite.toggle,
   };
   return (
@@ -249,6 +250,7 @@ function ShowTile({ show, tile, cover, open, selected, split, hold, favorite, ca
                 { name: "startover", label: "Start over" },
               ]
             : []),
+          { name: "forget", label: "Remove from Continue" },
           { name: "favorite", label: favorite.label },
         ]}
         onAccessibilityAction={({ nativeEvent }) => actions[nativeEvent.actionName]?.()}
@@ -271,7 +273,7 @@ function ShowTile({ show, tile, cover, open, selected, split, hold, favorite, ca
   );
 }
 
-function ShowGrid({ shows, library, positions, cover, open, chosen, split, hold, favorite, canPlay, resume, toggle, more }) {
+function ShowGrid({ shows, library, positions, cover, open, chosen, split, hold, favorite, canPlay, resume, toggle, more, forget }) {
   const { s } = useDesign();
   const [shown, setShown] = useState(60);
   return (
@@ -294,6 +296,7 @@ function ShowGrid({ shows, library, positions, cover, open, chosen, split, hold,
               resume={tile.resume ? resume(tile.resume) : null}
               toggle={toggle}
               more={tile.resume ? () => more(show, tile.resume) : null}
+              forget={tile.resume ? () => forget(tile.resume.row) : null}
             />
           );
         })}
@@ -1025,6 +1028,7 @@ export function MusicLibrary({
           canPlay={canPlay}
           resume={resumeShow}
           toggle={() => command("toggle")}
+          forget={forgetResume}
           more={(show, entry) =>
             resumeActions({
               track: entry.track,
@@ -1032,6 +1036,7 @@ export function MusicLibrary({
               show,
               canPlay,
               start: resumeShow(entry),
+              forget: () => forgetResume(entry.row),
               openShow: () => open({ kind: "show", id: show.id }),
               favorite: showPin(show),
             })

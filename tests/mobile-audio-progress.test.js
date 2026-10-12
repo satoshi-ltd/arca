@@ -611,6 +611,16 @@ test("removing from Continue marks the row finished so the next newest position 
   assert.ok(syncedPositions(cleared, new Map([[newer.id, newer.hash]]), "scope", "d9").tracks[newer.id]);
 });
 
+test("a show tile's sheet and TalkBack actions offer Remove from Continue through the same forget", () => {
+  const library = read("MusicLibrary.jsx");
+  assert.match(library, /forget: \(\) => forgetResume\(entry\.row\),\s+openShow:/, "the tile's sheet passes forget");
+  assert.match(library, /forget=\{forgetResume\}/);
+  assert.match(library, /forget=\{tile\.resume \? \(\) => forget\(tile\.resume\.row\) : null\}/);
+  assert.match(library, /\{ name: "forget", label: "Remove from Continue" \}/, "TalkBack offers it on tiles in progress");
+  assert.match(library, /startover: \(\) => resume\(0\),\s+forget,/);
+  assert.match(library, /label="Start over"[\s\S]*?\{!!sheet\.forget && \([\s\S]*?label="Open show"/, "between Start over and Open show");
+});
+
 test("the resume card's actions sheet offers Remove from Continue through the hub's clear route", () => {
   const session = read("audio-session.js");
   assert.match(session, /api\("\/v1\/audio-position\/clear", \{ volume: row\.volume, path: row\.path, hash: row\.hash, at \}\);[^\n]*\n[^\n]*\n\s+apply\(\(current\) => forget\(current, row, deps\.current\.device, at\)\);/, "the memory changes only after the hub accepted it");

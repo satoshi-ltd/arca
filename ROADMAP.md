@@ -42,9 +42,6 @@ _None._
 
 ### Device checks
 
-- **OFFLINE-DEVICE** — Offline replicas on real machines
-  `verify · maintainer · high`
-  accept: with Casa unreachable (Tailscale off or the hub stopped), the Fold and the Mac open every view, browse folders, open and share local files and show hub-only actions as unavailable; reconnecting resumes sync without restarting either app.
 - **VERIFY-SHARE-CACHE** — Incoming shares on the Fold
   `verify · maintainer · high`
   accept: sharing one and several files, a large file and a file named like a path from another app into Arca on the Fold lists them in the Save sheet with their real names, saves them, and leaves nothing under the app's cache except generated names (`arca-incoming/<id>-<n>`) while the sheet is open and nothing after Save or Cancel.
@@ -78,21 +75,6 @@ _None._
 - **P2-SHARING** — Incoming sharing
   `verify · maintainer · low`
   accept: the iOS Share Extension works; cold-start, foreground and multiple-file shares work. Known gaps stay documented: text/plain streams, links and text are not imported, and duplicate temporary filenames must be shared separately.
-
-- **VERIFY-DESK-MUSIC** — Music plays on desktop and web
-  `verify · maintainer · normal`
-  accept: after a Casa redeploy, the hub's web admin opens the music folder on its Artists tab, an A–Z index with a heading per letter, square covers and, on a wide window, a strip of each artist's other album covers, plays an album with the player bar through seeking, next, shuffle and repeat, the bar's title, artist and album open the album and the artist page from another folder, a playlist's table shows the Album column, Search Arca finds songs, albums and artists and opens them in the library, Shuffle plays the whole library and an artist, and Recent lists what that browser played; on the Mac build, off the library the sidebar card plays, pauses, skips and opens the album, the tray's Previous, Play/Pause and Next drive the player with the main window hidden, the tray's track brings the window forward on the album, and Quit Arca stops the music; after a desktop build, the Mac app as a replica that selected the folder does the same from its own copy with the hub unreachable; View folder and Library switch both ways; a playlist made from a track's Add to playlist… on the web admin and on the Mac replica appears in `Playlists/` as an `.m3u8` file on every selected device, plays in order, refuses to add the same track twice, renames, loses a track and deletes into History, and a track renamed in Arca keeps its place in the playlist; a hand-edited list that repeats a song plays it in order.
-
-- **VERIFY-AUTO-PODCASTS** — Continue and completion badges in the car
-  `verify · maintainer · normal`
-  accept: after a native build, on the Desktop Head Unit or in the car, with an episode partly played on the Mac and another finished, the Podcasts tab opens on a Continue entry that starts the newest saved episode at its place (within 15 s), inside its show's queue, never rewinding that episode when it is already playing; episodes of a show draw the car's partly played badge with their progress and the finished one its played mark, music rows draw none, Continue disappears when nothing is in progress, and the car offers no delete or other control.
-
-- **VERIFY-SLEEP-NATIVE** — Sleep timer and position saves keep running without the app
-  `verify · maintainer · normal`
-  accept: after a native build on the Fold, a 30 minute timer set on an episode, with the JavaScript reloaded from Metro or the app swiped away while playback continues, still pauses on time with the screen off and the app asleep, End of episode pauses within the last 1.5 s and choosing another episode before that turns it off, and the timer chip shows the remaining time when the app returns; an episode played over 20 minutes with the app asleep or force-stopped shows its saved place on the Mac within 15 s of the app opening, a position saved in Airplane mode reaches the hub once the app runs again, skipping and scrubbing keep the progress of the episode you leave, and Erase this device leaves no queued positions.
-- **VERIFY-PODCASTS** — Podcasts, resume and sleep on real devices
-  `verify · maintainer · normal`
-  accept: after a Casa redeploy, a desktop build and a native build, a folder of podcast episodes shows Podcasts with shows newest first on the web admin, the Mac and the Fold; an episode paused on one device offers "Pick up where you left off" on the others and Continue starts within 15 s of where it stopped, also after the Mac replica saved it offline and reconnected; rows show their progress and time left; Delete… removes a track from every device and History restores it; the sleep timer's 30 minutes and End of episode stop playback on the web (with the fade), the Mac and the Fold (also with the screen off and while Android Auto plays) and the next session resumes there; an episode's player has no shuffle or repeat and the phone's −15/+30 work; one trail on desktop and one header back on the phone, and a podcasts-only folder shows no tabs.
 
 ### Phone sync (native follow-ups)
 

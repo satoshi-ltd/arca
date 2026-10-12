@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.54 — 2026-10-12
+
+- A podcast show in progress has Remove from Continue in its ⋯ menu on the desktop, the web, the phone and the Fold: it clears that episode's saved position, so the show stops reading as in progress.
+
+Needs: native build · desktop build
+
 ## 0.7.53 — 2026-10-12
 
 - The resume card on the desktop and the phone has a ⋯ with Remove from Continue: it clears that file's saved position on the hub (also from a replica), so the next newest position takes the card; playing the file again brings it back.

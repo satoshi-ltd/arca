@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.53";
+const APP_VERSION = "0.7.54";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5476,7 +5476,7 @@ function showTile(v, show) {
     return `<button type="button" class="music-card" data-action="music-show" data-id="${escape(show.id)}" aria-label="${escape(`${show.name}, ${caption.text}`)}">${musicCover(v.id, show.cover, "arca", "", caption.fresh ? '<span class="pill music-cover-new">New</span>' : "")}<strong class="music-two">${escape(show.name)}</strong><span>${escape(caption.line)}</span></button>`;
   const { track, saved } = newest;
   const left = timeLeft(saved.duration - saved.position);
-  const menu = `<details class="details-menu file-actions-menu music-continue-menu"><summary class="ghost icon-button" aria-label="${escape(`${show.name} actions`)}" data-tooltip="${escape(`${show.name} actions`)}">${icon("ellipsis")}</summary><div class="menu-items" role="menu">${button("Continue", "music-resume", track.path, "secondary", "play")}${button("Start over", "music-resume-start", track.path, "secondary", "rotate-ccw")}${button("Open show", "music-show", show.id, "secondary", "podcast")}</div></details>`;
+  const menu = `<details class="details-menu file-actions-menu music-continue-menu"><summary class="ghost icon-button" aria-label="${escape(`${show.name} actions`)}" data-tooltip="${escape(`${show.name} actions`)}">${icon("ellipsis")}</summary><div class="menu-items" role="menu">${button("Continue", "music-resume", track.path, "secondary", "play")}${button("Start over", "music-resume-start", track.path, "secondary", "rotate-ccw")}${button("Remove from Continue", "music-resume-clear", track.path, "secondary", "x")}${button("Open show", "music-show", show.id, "secondary", "podcast")}</div></details>`;
   return `<div class="music-continue"><button type="button" class="music-card" data-action="music-show" data-id="${escape(show.id)}" aria-label="${escape(`${show.name}, ${left}`)}">${musicCover(v.id, show.cover, "arca", "", showProgress(saved, "Episode in progress"))}<strong class="music-two">${escape(show.name)}</strong><span>${escape(left)}</span></button><button type="button" class="music-continue-play" data-action="music-tile-play" data-id="${escape(track.path)}" data-volume="${escape(v.id)}" data-title="${escape(track.title)}" data-left="${escape(left)}" data-tooltip="${escape(track.title)}" aria-label="${escape(`Continue ${track.title}, ${left}`)}">${icon("play")}</button>${menu}</div>`;
 }
 function musicShows(v, library) {

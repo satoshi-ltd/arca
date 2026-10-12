@@ -1616,8 +1616,9 @@ test("podcast shows resume from their own tile: in progress first, then New, the
   assert.equal(card.hasAttribute("title"), false);
   assert.deepEqual(
     [...wildTile.querySelectorAll(".music-continue-menu .menu-items button")].map((el) => [el.dataset.action, el.textContent.trim()]),
-    [["music-resume", "Continue"], ["music-resume-start", "Start over"], ["music-show", "Open show"]],
+    [["music-resume", "Continue"], ["music-resume-start", "Start over"], ["music-resume-clear", "Remove from Continue"], ["music-show", "Open show"]],
   );
+  assert.equal(tile("Lex Fridman Podcast").querySelector(".music-continue-menu"), null, "a show without a position has no Continue menu");
   assert.equal(wildTile.querySelector(".music-continue-menu summary").getAttribute("aria-label"), "The Wild Project actions");
   assert.equal(tile("Lex Fridman Podcast").querySelector(".music-continue-play"), null, "shows without progress have no play button");
   const lexTile = tile("Lex Fridman Podcast");
@@ -2040,6 +2041,31 @@ test("the resume card menu removes the item from Continue and the next newest po
   const { positions, finished } = await (await fetch(url + "/v1/audio-positions", { headers: { authorization: `Bearer ${ui.daemon.engine.config.adminToken}` } })).json();
   assert.deepEqual(positions.map((row) => row.path), [first.path]);
   assert.deepEqual(finished.map((row) => row.path), [second.path]);
+});
+
+test("a show tile's menu removes its episode from Continue and the tile falls back to its normal state", async (t) => {
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const episode = (show, n, title) => track(`${show}/${day(n)} ${title}.mp3`, { title, album: show, genre: "Podcast", duration: 4200 });
+  const wild = episode("The Wild Project", 30, "#385");
+  const radio = episode("Salud en la radio", 40, "Radio");
+  const ui = await open(t, {
+    library: () => ({ version: "v1", indexing: false, tracks: [wild, radio] }),
+    positions: (volume) => [
+      { volume: volume.id, path: wild.path, hash: wild.hash, position: 1680, duration: 4200, at: Date.now() - 60000 },
+    ],
+  });
+  const { $, $$ } = ui;
+  const url = `http://127.0.0.1:${ui.daemon.port}`;
+  await until(() => $$(".music-continue-play").length === 1 && ui.idle());
+  assert.equal($$('.music-grid [data-action="music-resume-clear"]').length, 1, "only the tile with a position offers it");
+  $(".music-continue-menu summary").click();
+  $('.music-continue-menu [data-action="music-resume-clear"]').click();
+  await until(() => $$(".music-continue-play").length === 0);
+  assert.equal($(".music-cover-bar"), null);
+  assert.equal($$('.music-grid [data-action="music-resume-clear"]').length, 0);
+  const { positions, finished } = await (await fetch(url + "/v1/audio-positions", { headers: { authorization: `Bearer ${ui.daemon.engine.config.adminToken}` } })).json();
+  assert.deepEqual(positions, []);
+  assert.deepEqual(finished.map((row) => row.path), [wild.path]);
 });
 
 test("when the hub already holds a newer row the card's removal changes nothing locally and rereads the hub", async (t) => {
