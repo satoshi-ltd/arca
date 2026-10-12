@@ -23,6 +23,33 @@ function Lead({ item, cover }) {
   );
 }
 
+function useDerived(load, key) {
+  const [uri, setUri] = useState(null);
+  useEffect(() => {
+    let live = true;
+    setUri(null);
+    Promise.resolve(load())
+      .then((found) => live && setUri(found || null))
+      .catch(() => live && setUri(null));
+    return () => {
+      live = false;
+    };
+  }, [key]);
+  return uri;
+}
+
+function SearchThumb({ item, thumbnail }) {
+  const { s, c } = useDesign();
+  const source = useDerived(() => thumbnail(item), `${item.volume}:${item.path}:${item.rev}`);
+  return source ? <Image source={{ uri: source }} resizeMethod="resize" style={s.searchThumbImage} /> : <Icon name={item.kind === "video" ? "play" : "gallery"} color={c.mute} />;
+}
+
+function PanePreview({ item, preview, files }) {
+  const source = useDerived(() => preview(item), `${item.volume}:${item.path}:${item.rev}`);
+  if (!source) return null;
+  return <FilePreview entry={{ path: source, uri: source, size: item.size }} label={item.path.split("/").pop()} files={files} />;
+}
+
 function Row({ item, subtitle, active, onPress, onLongPress, trailing, cover }) {
   const { s, c } = useDesign();
   const title = searchTitle(item);
@@ -51,7 +78,7 @@ function Row({ item, subtitle, active, onPress, onLongPress, trailing, cover }) 
   );
 }
 
-export function GlobalSearch({ visible, twoPane, search, recents, onForget, actions, onOpen, onClose, uri, cover, files, folderFiles, timeLeft, describe }) {
+export function GlobalSearch({ visible, twoPane, search, recents, onForget, actions, onOpen, onClose, uri, thumbnail, preview, cover, files, folderFiles, timeLeft, describe }) {
   const { s, c } = useDesign();
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
@@ -198,7 +225,6 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
             {!!cells.length && (
               <View style={s.searchThumbs}>
                 {cells.map(([item, index]) => {
-                  const source = uri(item);
                   const day = formatDay((item.date || "").slice(0, 10));
                   return (
                     <Pressable
@@ -210,7 +236,7 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
                       style={s.searchCell}
                     >
                       <View style={[s.searchThumb, twoPane && selected === index && s.searchThumbChosen]}>
-                        {source ? <Image source={{ uri: source }} resizeMethod="resize" style={s.searchThumbImage} /> : <Icon name={item.kind === "video" ? "play" : "gallery"} color={c.mute} />}
+                        <SearchThumb item={item} thumbnail={thumbnail} />
                       </View>
                       <Text numberOfLines={1} style={s.caption}>
                         {day || item.name}
@@ -242,7 +268,9 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
   const about = shown && ["album", "show", "playlist", "artist"].includes(shown.type) ? describe(shown) : null;
   const pane = shown ? (
     <View style={s.searchPane}>
-      {shown.type === "photo" || shown.type === "file" ? (
+      {shown.type === "photo" ? (
+        <PanePreview item={shown} preview={preview} files={files} />
+      ) : shown.type === "file" ? (
         <FilePreview entry={{ path: shown.path, uri: uri(shown), size: shown.size }} files={files} />
       ) : about ? (
         <Image source={{ uri: about.cover || undefined }} resizeMethod="resize" style={s.searchPaneCover} />

@@ -1,4 +1,6 @@
 import { galleryVideoURI } from "./video-playback";
+import { thumbnailFiles } from "./gallery-thumbnails";
+import { canonicalFileUri, searchIo, searchPreview, searchThumbnail } from "./search-thumbnail";
 import { StickyDetailSide } from "./StickyDetailSide";
 import * as Application from "expo-application";
 import { textSizes, textScale } from "./text-size.js";
@@ -1197,6 +1199,19 @@ export default function App() {
     searchPhotos.current.clear();
   }, [globalSearch]);
   const galleryFolder = (f) => !!(galleryConfig(f) || f.gallery || catalog?.volumes?.find((v) => v.id === f.id)?.gallery);
+  function searchWorkUri(r) {
+    const e = engine.current;
+    if (!e?.scope) return null;
+    const uri = canonicalFileUri(e.files.folder(e.scope, r.volume), r.path);
+    return !e.files.present || e.files.present(uri) ? uri : null;
+  }
+  function searchPhotoDeps() {
+    return {
+      uri: searchWorkUri,
+      stat: (uri) => engine.current.files.stat(uri),
+      ...searchIo(thumbnailFiles),
+    };
+  }
   async function searchAll(query, type = "", offset = 0) {
     const r = engine.current;
     const volumes = locals.filter((f) => f.selected).map((f) => ({ id: f.id, name: f.name, gallery: galleryFolder(f) }));
@@ -3792,12 +3807,9 @@ export default function App() {
             ]}
             onOpen={openSearchResult}
             onClose={() => setGlobalSearch(false)}
-            uri={(r) => {
-              const e = engine.current;
-              if (!e?.scope) return null;
-              const uri = e.files.work(e.scope, r.volume, r.path);
-              return !e.files.present || e.files.present(uri) ? uri : null;
-            }}
+            uri={searchWorkUri}
+            thumbnail={(r) => searchThumbnail(r, searchPhotoDeps())}
+            preview={(r) => searchPreview(r, searchPhotoDeps())}
             cover={(key) => musicCover(key, "small")}
             files={engine.current?.files}
             folderFiles={(id) => locals.find((f) => f.id === id)?.files || 0}

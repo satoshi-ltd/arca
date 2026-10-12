@@ -20,7 +20,7 @@ export function RowThumb({ entry, enabled = true }) {
   );
 }
 
-export function FilePreview({ entry, files }) {
+export function FilePreview({ entry, files, label }) {
   const { s } = useDesign();
   const kind = entry?.path ? previewKind(entry.path) : "none";
   const [head, setHead] = useState(null);
@@ -45,7 +45,7 @@ export function FilePreview({ entry, files }) {
           resizeMode="contain"
           resizeMethod="resize"
           style={s.previewImage}
-          accessibilityLabel={entry.path.split("/").pop()}
+          accessibilityLabel={label || entry.path.split("/").pop()}
         />
       </View>
     );

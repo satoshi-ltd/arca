@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.55 — 2026-10-12
+
+- Search Arca on the phone shows photo results through the same thumbnail pipeline as the photo wall instead of decoding each full-size original: HEIC photos now show, and a search no longer loads dozens of 24-megapixel files.
+
+Needs: native build
+
 ## 0.7.54 — 2026-10-12
 
 - A podcast show in progress has Remove from Continue in its ⋯ menu on the desktop, the web, the phone and the Fold: it clears that episode's saved position, so the show stops reading as in progress.
