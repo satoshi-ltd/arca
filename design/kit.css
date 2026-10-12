@@ -513,13 +513,6 @@ body.kit {
   --music-fill: 70%;
 }
 
-.kit-board-pair.kit-sp-phones {
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-}
-.kit-sp-folds .m-device.m-fold {
-  max-width: 760px;
-  height: 640px;
-}
 .kit-mo-scroll {
   max-width: 100%;
   overflow-x: auto;
@@ -810,17 +803,4 @@ body.kit {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.kit-board-pair.kit-sp-412 {
-  grid-template-columns: repeat(auto-fit, minmax(432px, 1fr));
-}
-.kit-board-pair.kit-sp-412 .m-device {
-  max-width: 432px;
-  height: 1200px;
-}
-.kit-board-pair.kit-sp-folds {
-  grid-template-columns: repeat(auto-fit, minmax(760px, 1fr));
-}
-.kit-board-pair.kit-sp-folds .m-device.m-fold {
-  height: 1020px;
 }

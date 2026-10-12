@@ -24,7 +24,8 @@ test("Folders and Devices are grouped surfaces: sections for folders, one list w
   const app = read("App.jsx");
   const folders = app.slice(app.indexOf("folderSections(folderRows"), app.indexOf("ON HUB · NOT SELECTED"));
   assert.match(folders, /<View style=\{s\.group\}>\s+\{section\.folders\.map\(\(f, index\) =>/);
-  assert.match(folders, /<FolderRow\s+grouped\s+divider=\{index > 0\}/);
+  assert.match(folders, /\{folderRowFor\(f, index\)\}/);
+  assert.match(app, /const folderRowFor = \(f, index\) => \(\s+<FolderRow\s+grouped\s+divider=\{index > 0\}/);
   assert.match(app, /<View style=\{s\.availableGroup\}>[\s\S]*?<FolderRow\s+key=\{v\.id\}\s+grouped\s+dashedDivider=\{index > 0\}/);
   const devices = app.slice(app.indexOf('<Text style={s.eyebrow}>DEVICES</Text>'), app.indexOf('{screen === "History" && ('));
   assert.ok(devices.indexOf("<HubConnection") < devices.indexOf("self"), "the hub comes first, then this device");

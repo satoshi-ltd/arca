@@ -21,7 +21,7 @@ test("a music folder opens on its library, keeps View files in the folder menu a
   assert.match(actions, /\{!!folder\.selected && !musicFolder && \(\s+<ActionRow\s+label="Add photos…"/);
   assert.match(actions, /\{!musicFolder && \(\s+<ActionRow\s+label=\{source \? "Change album…" : "Link album…"\}/);
   assert.match(app, /: isMusicFolder\(catalog, f\.id\)\s+\? "audio"\s+: "folders"/, "a selected music folder sits in Audio");
-  assert.match(app, /: section\.kind === "audio"\s+\? audioSymbols\[f\.id\] \|\| "music"\s+: "folders"/, "and shows the music tile, or the podcast tile for a podcasts-only library");
+  assert.match(app, /galleryFolder\(f\) \? "gallery" : isMusicFolder\(catalog, f\.id\) \? audioSymbols\[f\.id\] \|\| "music" : "folders"/, "and shows the music tile, or the podcast tile for a podcasts-only library");
 });
 
 test("Android back leaves library screens before the folder, and the mini player opens Now playing", () => {

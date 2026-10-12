@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.56 — 2026-10-12
+
+- On the phone and the Fold, a favorite folder moves up to FAVORITES and leaves the Folders, Photos and Audio lists below, with the same files, size and state line as before; FAVORITES shows every pinned folder first and fills the rest of its five rows with pinned places.
+
+Needs: native build
+
 ## 0.7.55 — 2026-10-12
 
 - Search Arca on the phone shows photo results through the same thumbnail pipeline as the photo wall instead of decoding each full-size original: HEIC photos now show, and a search no longer loads dozens of 24-megapixel files.

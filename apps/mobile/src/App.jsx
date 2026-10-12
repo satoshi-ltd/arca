@@ -170,6 +170,7 @@ import {
   isFavorite,
   readFavorites,
   reconcileFavorites,
+  pinnedFolderIds,
   sortFavorites,
   favoritesSettled,
   staleFavorites,
@@ -1367,6 +1368,63 @@ export default function App() {
       return f ? folderKind(f) : "folders";
     },
     (entry) => describeFavorite(entry).label,
+  );
+  const pinnedFolders = pinnedFolderIds(favorites.items);
+  const folderRowFor = (f, index) => (
+    <FolderRow
+      grouped
+      divider={index > 0}
+      name={f.name}
+      icon={favoriteFolderIcon(f)}
+      description={unbroken(`${f.files} files · ${bytes(f.bytes)} local`)}
+      conflict={!!catalog?.volumes?.find((v) => v.id === f.id)?.conflicts}
+      progress={
+        status.busy &&
+        status.syncingVolume === f.id &&
+        status.progress?.bytesTotal > 0
+          ? status.progress.bytesDone /
+            status.progress.bytesTotal
+          : undefined
+      }
+      status={
+        status.paused
+          ? "Paused"
+          : f.issue || galleryConfig(f)?.issue
+            ? "Needs attention"
+            : status.offline
+              ? "Offline"
+              : !connected
+                ? "Disconnected"
+              : status.busy &&
+                  status.syncingVolume === f.id
+                ? "Syncing"
+                : !f.completed ||
+                    (galleryConfig(f)?.enabled &&
+                      (galleryConfig(f).summary
+                        ?.pending ||
+                        !galleryConfig(f)
+                          .scannedAt ||
+                        Object.keys(
+                          galleryConfig(f)
+                            .cursors || {},
+                        ).length))
+                  ? "Incomplete"
+                  : "Up to date"
+      }
+      onPress={() =>
+        openFolder(f).catch((e) =>
+          setError(e.message),
+        )
+      }
+      onLongPress={() =>
+        favoriteSheet(
+          { folder: f.id, kind: "folder", target: "", label: f.name },
+          { open: () => openFolder(f).catch((e) => setError(e.message)) },
+        )
+      }
+      favorite={isFavorite(favorites, { folder: f.id, kind: "folder", target: "" })}
+      onFavorite={() => toggleFavoriteEntry({ folder: f.id, kind: "folder", target: "", label: f.name })}
+    />
   );
   const toggleFavoriteEntry = (entry) => changeFavorites((value) => toggleFavorite(value, entry)).catch((e) => setError(e.message));
   const favoriteSheet = (entry, extra = {}) => setSheet({ kind: "favorite", entry, ...extra });
@@ -2884,13 +2942,17 @@ export default function App() {
                         <>
                           <FavoritesSection
                             items={shownFavorites}
+                            renderFolder={(entry, index) => {
+                              const f = locals.find((item) => item.id === entry.folder);
+                              return f ? folderRowFor(f, index) : null;
+                            }}
                             describe={describeFavorite}
                             open={openFavorite}
                             remove={(entry) =>
                               changeFavorites((value) => withoutFavorites(value, [favoriteKey(entry)])).catch((e) => setError(e.message))
                             }
                           />
-                          {folderSections(folderRows.map((row) => row.item), folderKind).map((section) => (
+                          {folderSections(folderRows.map((row) => row.item).filter((f) => !pinnedFolders.has(f.id)), folderKind).map((section) => (
                             <Section key={section.kind}>
                               <Text style={s.eyebrow}>{section.label}</Text>
                               <View style={s.group}>
@@ -2902,66 +2964,7 @@ export default function App() {
                                     onLeft={() => folderLeft(f.id)}
                                     {...folderMotion(f.id)}
                                   >
-                                  <FolderRow
-                                    grouped
-                                    divider={index > 0}
-                                    name={f.name}
-                                    icon={
-                                      section.kind === "photos"
-                                        ? "gallery"
-                                        : section.kind === "audio"
-                                          ? audioSymbols[f.id] || "music"
-                                          : "folders"
-                                    }
-                                    description={unbroken(`${f.files} files · ${bytes(f.bytes)} local`)}
-                                    conflict={!!catalog?.volumes?.find((v) => v.id === f.id)?.conflicts}
-                                    progress={
-                                      status.busy &&
-                                      status.syncingVolume === f.id &&
-                                      status.progress?.bytesTotal > 0
-                                        ? status.progress.bytesDone /
-                                          status.progress.bytesTotal
-                                        : undefined
-                                    }
-                                    status={
-                                      status.paused
-                                        ? "Paused"
-                                        : f.issue || galleryConfig(f)?.issue
-                                          ? "Needs attention"
-                                          : status.offline
-                                            ? "Offline"
-                                            : !connected
-                                              ? "Disconnected"
-                                            : status.busy &&
-                                                status.syncingVolume === f.id
-                                              ? "Syncing"
-                                              : !f.completed ||
-                                                  (galleryConfig(f)?.enabled &&
-                                                    (galleryConfig(f).summary
-                                                      ?.pending ||
-                                                      !galleryConfig(f)
-                                                        .scannedAt ||
-                                                      Object.keys(
-                                                        galleryConfig(f)
-                                                          .cursors || {},
-                                                      ).length))
-                                                ? "Incomplete"
-                                                : "Up to date"
-                                    }
-                                    onPress={() =>
-                                      openFolder(f).catch((e) =>
-                                        setError(e.message),
-                                      )
-                                    }
-                                    onLongPress={() =>
-                                      favoriteSheet(
-                                        { folder: f.id, kind: "folder", target: "", label: f.name },
-                                        { open: () => openFolder(f).catch((e) => setError(e.message)) },
-                                      )
-                                    }
-                                    favorite={isFavorite(favorites, { folder: f.id, kind: "folder", target: "" })}
-                                    onFavorite={() => toggleFavoriteEntry({ folder: f.id, kind: "folder", target: "", label: f.name })}
-                                  />
+                                    {folderRowFor(f, index)}
                                   </Rise>
                                 ))}
                               </View>

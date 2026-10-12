@@ -16,6 +16,8 @@ import {
   readFavorites,
   reconcileFavorites,
   sortFavorites,
+  capFavorites,
+  pinnedFolderIds,
   staleFavorites,
   toggleFavorite,
   withoutFavorites,
@@ -91,8 +93,8 @@ test("the phone pins places in Favorites and the Fold opens them from a drawer",
   const components = read("components.jsx");
   const library = read("MusicLibrary.jsx");
   const root = app.slice(app.indexOf("<FavoritesSection"), app.indexOf("ON HUB · NOT SELECTED"));
-  assert.match(root, /items=\{shownFavorites\}[\s\S]*\{folderSections\(folderRows\.map\(\(row\) => row\.item\), folderKind\)/, "Favorites sits before the folder sections and holds every pinned entry");
-  assert.match(root, /onLongPress=\{\(\) =>\s+favoriteSheet\(\s+\{ folder: f\.id, kind: "folder", target: "", label: f\.name \},/, "a folder row pins on long press on phone and Fold alike");
+  assert.match(root, /items=\{shownFavorites\}[\s\S]*\{folderSections\(folderRows\.map\(\(row\) => row\.item\)\.filter\(\(f\) => !pinnedFolders\.has\(f\.id\)\), folderKind\)/, "Favorites sits before the folder sections and holds every pinned entry");
+  assert.match(app, /const folderRowFor = \(f, index\) => \(\s+<FolderRow[\s\S]*?onLongPress=\{\(\) =>\s+favoriteSheet\(\s+\{ folder: f\.id, kind: "folder", target: "", label: f\.name \},/, "a folder row pins on long press on phone and Fold alike");
   assert.match(app, /const key = `favorites:\$\{r\.scope\}`;/, "favorites live in the app's own storage");
   assert.doesNotMatch(app, /api\([^)]*favorites/i, "favorites are never sent to the hub");
   assert.match(app, /reconcileFavorites\(value, folders\.filter\(\(f\) => f\.selected\)\)/);
@@ -106,7 +108,7 @@ test("the phone pins places in Favorites and the Fold opens them from a drawer",
   assert.match(app, /kind: "directory", target: e\.path, label: e\.label/, "a sub-folder row pins on long press");
   assert.match(app, /isFavorite\(favorites, shownSheet\.entry\) \? "Remove from Favorites" : "Add to Favorites"/);
   assert.match(app, /withoutFavorites\(value, missing\)/, "a target that disappears leaves Favorites");
-  assert.match(favorites, /rows\.slice\(0, PHONE_FAVORITES\)/);
+  assert.match(favorites, /capFavorites\(live, PHONE_FAVORITES, \(row\) => row\.item\.kind === "folder"\)/);
   assert.match(favorites, /Show all/);
   assert.doesNotMatch(favorites, /moveUp|moveDown|grip-vertical|PanResponder|Reorder|\bmove\(/, "no manual reordering: Edit only removes");
   assert.doesNotMatch(app, /moveFavorite/);
@@ -252,4 +254,43 @@ test("Favorites rows reuse the Folders row's lead slot so tiles and titles share
   assert.match(lead, /return \(\s*<View style=\{s\.homeLead\}>\s*\{cover !== undefined \? \(\s*<Cover[\s\S]*?\) : \(\s*<View style=\{s\.tile\}>/);
   const edit = source.slice(source.indexOf("function EditRow("), source.indexOf("export"));
   assert.doesNotMatch(edit, /homeLead/, "Edit mode keeps its remove buttons where they were");
+});
+
+test("a pinned folder moves into Favorites as the Folders row and leaves its section", () => {
+  const app = read("App.jsx");
+  const favorites = read("Favorites.jsx");
+  const section = app.slice(app.indexOf("<FavoritesSection"), app.indexOf("ON HUB · NOT SELECTED"));
+  assert.match(app, /const pinnedFolders = pinnedFolderIds\(favorites\.items\);/);
+  assert.match(section, /renderFolder=\{\(entry, index\) => \{\s+const f = locals\.find\(\(item\) => item\.id === entry\.folder\);\s+return f \? folderRowFor\(f, index\) : null;/, "a pinned folder draws the Folders row with its state and actions");
+  assert.match(section, /\.filter\(\(f\) => !pinnedFolders\.has\(f\.id\)\)/, "and is absent from the sections below");
+  assert.equal(app.match(/<FolderRow\s+grouped\s+divider=\{index > 0\}/g).length, 1, "one folder row component serves Favorites and the sections");
+  assert.match(section, /\{folderRowFor\(f, index\)\}/, "the sections reuse it");
+  assert.match(app, /!locals\.length &&\s+!volumes\.length &&/, "the no-folders state counts every synced folder, pinned or not");
+  assert.match(favorites, /\) : folderRow \? \(\s+folderRow\s+\) : \(/);
+  assert.match(favorites, /capped\.size < live\.length && \(/, "Show all appears whenever live rows are hidden");
+  assert.match(favorites, /const live = rows\.filter\(\(row\) => !row\.leaving\);/, "a row fading out never counts toward the cap");
+  assert.match(favorites, /rows\.filter\(\(row\) => row\.leaving \|\| capped\.has\(row\)\)/, "and stays drawn until it has left");
+  assert.match(favorites, /const folderRow = !editing && !leaving && entry\.kind === "folder" \? renderFolder/, "Edit keeps its remove rows and a leaving folder fades as the generic row, never as a second Folders row");
+});
+
+test("the cap counts pinned folders first and places fill what is left", () => {
+  const folder = (id) => ({ item: { folder: id, kind: "folder", target: "", label: id } });
+  const place = (label) => ({ item: { folder: "v1", kind: "directory", target: label, label } });
+  const isFolder = (row) => row.item.kind === "folder";
+  const labels = (rows) => rows.map((row) => row.item.label);
+  const mixed = [folder("a"), folder("b"), place("p1"), folder("c"), place("p2"), place("p3")];
+  assert.deepEqual(labels(capFavorites(mixed, 5, isFolder)), ["a", "b", "p1", "c", "p2"], "three pinned folders leave room for two places, in order");
+  assert.deepEqual(labels(capFavorites([place("p1"), place("p2")], 5, isFolder)), ["p1", "p2"]);
+  const six = [place("p1"), ...["a", "b", "c", "d", "e", "f"].map(folder), place("p2")];
+  assert.deepEqual(labels(capFavorites(six, 5, isFolder)), ["a", "b", "c", "d", "e", "f"], "five or more pinned folders show and no place does");
+  assert.deepEqual(labels(capFavorites(["a", "b", "c", "d", "e"].map(folder).concat(place("p")), 5, isFolder)), ["a", "b", "c", "d", "e"]);
+  assert.equal(capFavorites(mixed, 5, isFolder).length < mixed.length, true, "Show all has rows to reveal");
+  const exact = [folder("a"), place("p1"), place("p2"), place("p3"), place("p4")];
+  assert.equal(capFavorites(exact, 5, isFolder).length, exact.length, "exactly five rows show everything");
+});
+
+test("the pinned folder ids are the folders whose own entry is pinned, never those with only a place", () => {
+  const state = toggleFavorite(toggleFavorite(emptyFavorites(), { folder: "v1", kind: "folder", target: "", label: "documents" }), { folder: "v2", kind: "album", target: "a1", label: "Kind of Blue" });
+  assert.deepEqual([...pinnedFolderIds(state.items)], ["v1"]);
+  assert.equal(pinnedFolderIds(emptyFavorites().items).size, 0);
 });

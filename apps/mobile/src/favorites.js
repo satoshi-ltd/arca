@@ -69,6 +69,15 @@ export function sortFavorites(items, kindOf, labelOf) {
     .map((item) => item.entry);
 }
 
+export const pinnedFolderIds = (items) =>
+  new Set(items.filter((entry) => entry.kind === "folder").map((entry) => entry.folder));
+
+export function capFavorites(rows, limit, isFolder) {
+  const room = Math.max(0, limit - rows.filter(isFolder).length);
+  let places = 0;
+  return rows.filter((row) => isFolder(row) || places++ < room);
+}
+
 export function favoriteCaption(entry, folderName) {
   if (entry.kind === "folder") return "";
   if (entry.kind === "directory")

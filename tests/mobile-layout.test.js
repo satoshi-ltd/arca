@@ -567,7 +567,7 @@ test("folder rows show the gallery icon the hub assigns and selection states the
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   assert.match(app, /const galleryFolder = \(f\) => !!\(galleryConfig\(f\) \|\| f\.gallery \|\| catalog\?\.volumes\?\.find\(/);
   assert.match(app, /const folderKind = \(f\) => \(galleryFolder\(f\) \? "photos"/);
-  assert.match(app, /\{folderSections\(folderRows\.map\(\(row\) => row\.item\), folderKind\)\.map/);
+  assert.match(app, /\{folderSections\(folderRows\.map\(\(row\) => row\.item\)\.filter\(\(f\) => !pinnedFolders\.has\(f\.id\)\), folderKind\)\.map/);
   assert.match(app, /available\s+icon=\{v\.gallery \? "gallery" : v\.music && catalog\?\.music \? "music" : "folders"\}/);
   assert.match(app, /`Needs \$\{bytes\(shownSheet\.volume\.bytes\)\} · `/);
   assert.match(app, /shownSheet\.kind === "select"\s*\?\s*\{\s*title: shownSheet\.volume\.name,\s*icon: shownSheet\.volume\.gallery \? "gallery" : shownSheet\.volume\.music && catalog\?\.music \? "music" : "folder",/);

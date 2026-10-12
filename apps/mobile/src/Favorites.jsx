@@ -5,7 +5,7 @@ import { BrandActivity, DeviceStatus, Icon, Section, useDesign } from "./compone
 import { Cover } from "./MusicLibrary";
 import { Rise, useLeaving, useMotion } from "./motion";
 import { motion } from "./design-tokens.js";
-import { FAVORITE_ICONS, PHONE_FAVORITES, favoriteKey } from "./favorites.js";
+import { FAVORITE_ICONS, PHONE_FAVORITES, capFavorites, favoriteKey } from "./favorites.js";
 
 const NAV = [
   ["Folders", "folders"],
@@ -75,7 +75,7 @@ function SectionHead({ label, editing, setEditing, editable }) {
   );
 }
 
-export function FavoritesSection({ items, describe, open, remove }) {
+export function FavoritesSection({ items, describe, open, remove, renderFolder }) {
   const { s, c } = useDesign();
   const [editing, setEditing] = useState(false);
   const [all, setAll] = useState(false);
@@ -84,13 +84,16 @@ export function FavoritesSection({ items, describe, open, remove }) {
     if (!items.length) setEditing(false);
   }, [items.length]);
   if (!rows.length) return null;
-  const shown = editing || all ? rows : rows.slice(0, PHONE_FAVORITES);
+  const live = rows.filter((row) => !row.leaving);
+  const capped = new Set(capFavorites(live, PHONE_FAVORITES, (row) => row.item.kind === "folder"));
+  const shown = editing || all ? rows : rows.filter((row) => row.leaving || capped.has(row));
   return (
     <Section>
       <SectionHead label="FAVORITES" editing={editing} setEditing={setEditing} editable />
       <View style={s.group}>
         {shown.map(({ item: entry, key, leaving }, index) => {
           const { label, caption, cover, icon } = describe(entry);
+          const folderRow = !editing && !leaving && entry.kind === "folder" ? renderFolder?.(entry, index) : null;
           return (
             <Rise key={key} leaving={leaving} onLeft={() => left(key)}>
               {editing ? (
@@ -100,6 +103,8 @@ export function FavoritesSection({ items, describe, open, remove }) {
                   divider={index > 0}
                   remove={() => remove(entry)}
                 />
+              ) : folderRow ? (
+                folderRow
               ) : (
                 <Pressable
                   accessibilityRole="button"
@@ -129,7 +134,7 @@ export function FavoritesSection({ items, describe, open, remove }) {
             </Rise>
           );
         })}
-        {!editing && !all && items.length > PHONE_FAVORITES && (
+        {!editing && !all && capped.size < live.length && (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Show all ${items.length} favorites`}

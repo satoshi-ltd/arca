@@ -89,3 +89,22 @@ test("every design page links a favicon inside design/ that equals the project i
     );
   }
 });
+
+test("the mobile Folders screens draw a pinned folder only in Favorites, with the Folders row's detail", () => {
+  const lines = read("design", "mobile.html")
+    .split("\n")
+    .filter((line) => line.includes('<span class="m-title">Folders</span>') && line.includes('m-eyebrow">Favorites<'));
+  assert.equal(lines.length, 3, "the phone, the Fold and the Fold behind its drawer all draw Favorites");
+  for (const line of lines) {
+    const [favorites, rest] = line.split('<span class="m-eyebrow">Folders</span>');
+    assert.match(favorites, /<span class="m-row-title">documents<\/span><span class="m-caption">20 files · 14\.2 MB local<\/span>/, "a pinned folder keeps its files and size");
+    assert.equal(rest.includes(">20 files"), false, "and is not drawn again below");
+    assert.match(favorites, /<span class="m-row-title">invoices<\/span><span class="m-caption">documents › work<\/span>/, "a place keeps its location line");
+    if (!line.includes("m-drawer-scrim")) assert.match(favorites, /Show all/);
+    assert.doesNotMatch(rest, line.includes("m-drawer-scrim") ? /<span class="m-row-title">documents<\/span>/ : /<span class="m-row-title">(documents|photos|music)<\/span>/, "a pinned folder is absent from the sections below");
+    if (!line.includes("m-drawer-scrim")) assert.doesNotMatch(rest, /m-eyebrow">Photos</, "Photos vanishes when its only folder is pinned");
+  }
+  const proposals = read("design", "proposals.html");
+  assert.ok(!proposals.includes("UI-MOB-FAVORITES-MOVE"), "the shipped board is deleted");
+  assert.doesNotMatch(read("design", "kit.css"), /kit-sp-/, "its kit-only styles go with it");
+});
