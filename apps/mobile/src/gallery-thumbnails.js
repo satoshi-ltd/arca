@@ -20,8 +20,11 @@ import {
   cacheEvictions,
   cacheName,
   createLimiter,
+  createUndecodable,
   isFlatCacheFile,
+  isHeic,
   nativeFirst,
+  renderLocal,
 } from "./thumbnail-cache";
 const video = requireOptionalNativeModule("ExpoVideo")
   ? require("expo-video")
@@ -35,9 +38,11 @@ const onDisk = (uri) => !!uri?.startsWith("file://");
 const root = new Directory(Paths.cache, "arca-gallery");
 const jobs = new Map();
 const limiter = createLimiter(3, 30000);
-const hubLimiter = createLimiter(2, 60000);
+const hubLimiter = createLimiter(3, 60000);
+const backgroundHubLimiter = createLimiter(2, 60000);
 const posterAttempt = rememberFailures();
 const renderAttempt = rememberFailures(4096, "Thumbnail unavailable");
+const undecodable = createUndecodable();
 AppState.addEventListener("change", (state) => {
   if (state === "active") {
     posterAttempt.clear();
@@ -115,13 +120,15 @@ export const thumbnailFiles = {
   },
   render(entry, size = "thumb", background = false) {
     const { width, quality } = PREVIEW_VARIANTS[size];
+    const fileKey = `${entry.uri}:${entry.size}:${entry.mtime}`;
+    const heic = Platform.OS === "android" && isHeic(entry.uri) && !!nativeThumbnail;
     const produce = () =>
       cachedDerivative(
         entry,
         size,
         (target) =>
-          nativeFirst(
-            nativeThumbnail &&
+          renderLocal({
+            native:
               onDisk(entry.uri) &&
               (() =>
                 nativeThumbnail(
@@ -131,7 +138,10 @@ export const thumbnailFiles = {
                   size !== "large",
                   false,
                 )),
-            async () => {
+            heic,
+            key: fileKey,
+            undecodable,
+            fallback: async () => {
               const result = await manipulateAsync(
                 entry.uri,
                 [{ resize: { width } }],
@@ -139,11 +149,12 @@ export const thumbnailFiles = {
               );
               return result.uri;
             },
-          ),
+          }),
         background,
+        heic && undecodable.has(fileKey),
       );
     return size === "thumb"
-      ? renderAttempt(`${entry.uri}:${entry.size}:${entry.mtime}`, produce)
+      ? renderAttempt(fileKey, produce)
       : produce();
   },
   async poster(item, background = false) {
@@ -173,12 +184,14 @@ export const thumbnailFiles = {
       ),
     );
   },
-  fromHub(entry, variant, load) {
+  fromHub(entry, variant, load, background = false) {
     return cachedDerivative(
       entry,
       variant,
       async (target) => {
-        const bytes = toByteArray(await hubLimiter.run(load));
+        const bytes = toByteArray(
+          await (background ? backgroundHubLimiter : hubLimiter).run(load),
+        );
         const part = new File(`${target.uri}.part`);
         try {
           part.create({ intermediates: true, overwrite: true });

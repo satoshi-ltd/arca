@@ -19,6 +19,7 @@ import {
 } from "../apps/mobile/src/thumbnail-cache.js";
 import { previewCandidates } from "../apps/mobile/src/gallery-timeline.js";
 import { rememberFailures } from "../apps/mobile/src/video-playback.js";
+import { hubFallback } from "../apps/mobile/src/hub-preview.js";
 
 test("mobile thumbnail cache reuses unchanged images, regenerates changed or evicted copies and drops deletions", async () => {
   const entries = [
@@ -126,7 +127,7 @@ test("photo thumbnails remember failures like video posters and forget them when
   const source = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
   assert.match(source, /const renderAttempt = rememberFailures\(4096, "Thumbnail unavailable"\);/);
   assert.match(source, /if \(state === "active"\) \{\s+posterAttempt\.clear\(\);\s+renderAttempt\.clear\(\);\s+\}/);
-  assert.match(source, /return size === "thumb"\s+\? renderAttempt\(`\$\{entry\.uri\}:\$\{entry\.size\}:\$\{entry\.mtime\}`, produce\)\s+: produce\(\);/, "only grid thumbnails are remembered; medium and large previews are retried on each request");
+  assert.match(source, /return size === "thumb"\s+\? renderAttempt\(fileKey, produce\)\s+: produce\(\);/, "only grid thumbnails are remembered; medium and large previews are retried on each request");
 });
 
 test("the limiter runs three renders at a time, serves visible work before background work and survives failures", async () => {
@@ -412,7 +413,7 @@ test("the background pass renders on the phone only and never hashes originals o
   assert.equal(hashed, 0);
   assert.equal(asked, 0);
   const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
-  assert.match(gallery, /backgroundIo = useMemo\(\(\) => localPreviewIo\(thumbnailFiles\), \[\]\)/, "the gallery's background pass uses the local-only renderer");
+  assert.match(gallery, /const local = localPreviewIo\(thumbnailFiles\);\s+return \{\s+exists: local\.exists,\s+render: \(item, \.\.\.rest\) =>\s+withHubBackgroundRef\.current\(local\.render\)\(item, \.\.\.rest\),/, "the gallery's background pass renders locally and falls back to the hub's preview");
 });
 
 test("photos the hub holds that have not reached the phone are counted apart from previews", () => {
@@ -462,4 +463,120 @@ test("medium previews have their own cache budget and never evict thumbnails or 
   assert.deepEqual(cacheEvictions(all, "file:///cache/medium-m1.jpg").map((entry) => entry.name), ["medium-m2.jpg"], "the derivative just rendered is kept");
   const over = [...thumbs, file("t3.jpg", 100 * MiB), ...large, file("large-l3.jpg", 10 * MiB), ...medium.slice(0, 2)];
   assert.deepEqual(cacheEvictions(over, null).map((entry) => entry.name), ["t1.jpg", "large-l1.jpg"], "each variant is pruned against its own budget");
+});
+
+test("a HEIC the phone cannot decode goes straight to the hub preview: no JS fallback, and one native attempt per file version", async () => {
+  const { createUndecodable, isDecodeFailure, isHeic, renderLocal } = await import("../apps/mobile/src/thumbnail-cache.js");
+  assert.equal(isHeic("file:///a/IMG.HEIC"), true);
+  assert.equal(isHeic("file:///a/b.heif?x=1"), true);
+  assert.equal(isHeic("file:///a/b.heic.jpg"), false);
+  assert.equal(isHeic(undefined), false);
+  assert.equal(isDecodeFailure(new Error("Failed to create image decoder with message 'unimplemented'")), true);
+  assert.equal(isDecodeFailure(new Error("Unsupported image")), true);
+  assert.equal(isDecodeFailure(new Error("Call to function 'ArcaNetwork.thumbnail' has been rejected.")), true);
+  assert.equal(isDecodeFailure(new Error("")), true);
+  assert.equal(isDecodeFailure(undefined), true);
+  assert.equal(isDecodeFailure("boom"), true);
+  assert.equal(isDecodeFailure(new Error("Call to function 'ArcaNetwork.thumbnail' has been rejected. Caused by: java.io.FileNotFoundException: /x.heic (No such file or directory)")), false);
+  assert.equal(isDecodeFailure(new Error("Thumbnail is outside Arca cache")), false);
+  assert.equal(isDecodeFailure(new Error("Invalid thumbnail size")), false);
+  assert.equal(isDecodeFailure(new Error("Could not encode the thumbnail")), false);
+  assert.equal(isDecodeFailure(new Error("open failed: EACCES (Permission denied)")), false);
+  assert.equal(isDecodeFailure(new Error("File is outside Arca storage")), false);
+  assert.equal(isDecodeFailure(new Error("Could not save the thumbnail")), false);
+  assert.equal(isDecodeFailure(new Error("/data/x.heic (No such file or directory)")), false);
+
+  const undecodable = createUndecodable();
+  const calls = [];
+  const run = (heic, key, fail, native = true) =>
+    renderLocal({
+      native: native && (async () => {
+        calls.push(`native:${key}`);
+        if (fail) throw fail;
+      }),
+      heic,
+      key,
+      undecodable,
+      fallback: async () => {
+        calls.push(`js:${key}`);
+        return "js-uri";
+      },
+    });
+  const decode = new Error("ImageDecoder$DecodeException: configure: err(-22)");
+  await assert.rejects(run(true, "a:1:1", decode), /err\(-22\)/);
+  await assert.rejects(run(true, "a:1:1", decode), /^Error: Thumbnail unavailable$/);
+  assert.deepEqual(calls, ["native:a:1:1"], "a decode failure skips the JS fallback and is tried once per file version");
+  await assert.rejects(run(true, "a:1:2", decode), /err\(-22\)/);
+  assert.deepEqual(calls, ["native:a:1:1", "native:a:1:2"], "a changed mtime tries again");
+
+  for (const [key, unknown] of [["u1", new Error("Call to function 'ArcaNetwork.thumbnail' has been rejected.")], ["u2", new Error("")], ["u3", "boom"]]) {
+    calls.length = 0;
+    await assert.rejects(run(true, `${key}:1:1`, unknown));
+    await assert.rejects(run(true, `${key}:1:1`, unknown), /^Error: Thumbnail unavailable$/);
+    assert.deepEqual(calls, [`native:${key}:1:1`], "an unknown native failure counts as a decode failure");
+  }
+
+  calls.length = 0;
+  const outside = new Error("File is outside Arca storage");
+  assert.equal(await run(true, "b:1:1", outside), "js-uri");
+  assert.equal(await run(true, "b:1:1", outside), "js-uri");
+  assert.deepEqual(calls, ["native:b:1:1", "js:b:1:1", "native:b:1:1", "js:b:1:1"], "a non-decode error keeps the JS fallback and is not memoized");
+
+  calls.length = 0;
+  assert.equal(await run(true, "c:1:1", null, false), "js-uri", "a HEIC the native renderer cannot read still tries JS");
+  assert.equal(await run(false, "d:1:1", decode), "js-uri", "other formats and platforms keep the JS fallback");
+  assert.equal(await run(true, "e:1:1", null), null);
+  assert.deepEqual(calls, ["js:c:1:1", "native:d:1:1", "js:d:1:1", "native:e:1:1"]);
+});
+
+test("the phone renders HEIC natively only and skips the limiter once the local decode is known to fail", () => {
+  const source = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
+  assert.match(source, /const undecodable = createUndecodable\(\);/);
+  assert.match(source, /const heic =\s*Platform\.OS === "android" && isHeic\(entry\.uri\) && !!nativeThumbnail;/);
+  assert.match(source, /renderLocal\(\{/);
+  assert.match(source, /background,\s+heic && undecodable\.has\(fileKey\),\s+\);/, "a known failure never waits for a render slot");
+  assert.doesNotMatch(source, /AppState[\s\S]{0,200}undecodable\.clear/, "Retry and returning to the app keep the decode memo");
+});
+
+test("the background pass fetches the hub's preview for a photo the phone cannot decode, and reports a failure only when the hub cannot help", async () => {
+  const local = localPreviewIo({
+    exists: async () => false,
+    render: async () => {
+      throw new Error("Thumbnail unavailable");
+    },
+    poster: async () => {
+      throw new Error("Thumbnail unavailable");
+    },
+  });
+  const asked = [];
+  const previews = {
+    allowed: ({ linked, item }) => !!linked && !!item.uri,
+    preview: async ({ hash, item }) => {
+      asked.push(item.path);
+      return hash ? `hub://${item.path}` : null;
+    },
+  };
+  const hashes = new Map([["big.heic", "h1"]]);
+  const render = hubFallback({
+    previews,
+    context: () => ({ linked: true, hashOf: async (item) => hashes.get(item.path) || null }),
+  })(local.render);
+  const changes = [];
+  const failed = [];
+  const queue = createPreviewQueue({
+    io: { exists: local.exists, render },
+    saved: () => ({}),
+    changed: (delta) => changes.push(delta),
+    failed: (entry) => failed.push(entry.path),
+    concurrency: 2,
+  });
+  queue.update([
+    { path: "big.heic", uri: "file:///big.heic", signature: "1" },
+    { path: "mine.heic", uri: "file:///mine.heic", signature: "1" },
+  ]);
+  queue.start();
+  await drain(queue);
+  assert.deepEqual(changes, [{ "big.heic": { signature: "1", uri: "hub://big.heic" } }, { "mine.heic": null }]);
+  assert.deepEqual(failed, ["mine.heic"], "a photo the hub does not hold stays failed");
+  assert.deepEqual(asked, ["big.heic", "mine.heic"]);
 });

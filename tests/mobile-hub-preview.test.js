@@ -459,3 +459,21 @@ test("a photo the replica already verified needs no hashing before the hub is as
   assert.equal(await accepted(known, item({ path: "c.heic", uri: "file:///c.heic" })), "h1");
   assert.equal(hashed, 2, "a photo without a replica record is hashed once");
 });
+
+test("a background preview never pauses the hub for the visible tiles and reaches the store as background work", async () => {
+  const flags = [];
+  const previews = createHubPreviews({
+    api: async () => {
+      throw new Error("Network request failed");
+    },
+    save: async (entry, variant, load, background) => (flags.push(background), load()),
+    unreachable: (error) => /Network/.test(error.message),
+    busy: never,
+    now: () => 0,
+  });
+  await previews.preview({ linked: true, volume: "v1", hash: "h", item: item(), background: true });
+  assert.equal(previews.allowed({ linked: true, item: item({ uri: "file:///b" }) }), true, "background failures do not pause the grid");
+  await previews.preview({ linked: true, volume: "v1", hash: "h", item: item({ uri: "file:///b" }) });
+  assert.equal(previews.allowed({ linked: true, item: item({ uri: "file:///c" }) }), false, "a visible failure still pauses");
+  assert.deepEqual(flags, [true, false]);
+});

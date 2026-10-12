@@ -215,6 +215,45 @@ export async function nativeFirst(native, fallback) {
   return fallback();
 }
 
+export const isHeic = (uri) => /\.(heic|heif)$/i.test(String(uri ?? "").split(/[?#]/)[0]);
+
+const NON_DECODE =
+  /outside arca|invalid thumbnail|could not (create|encode|save)|filenotfoundexception|no such file|enoent|eacces|permission denied/i;
+
+export function isDecodeFailure(error) {
+  const text = [error?.message, error?.code, error?.cause?.message, typeof error === "string" ? error : ""]
+    .filter((part) => typeof part === "string")
+    .join(" ");
+  return !NON_DECODE.test(text);
+}
+
+export function createUndecodable(limit = 4096) {
+  const keys = new Set();
+  return {
+    has: (key) => keys.has(key),
+    add(key) {
+      keys.add(key);
+      if (keys.size > limit) keys.delete(keys.values().next().value);
+    },
+  };
+}
+
+export async function renderLocal({ native, heic, key, undecodable, fallback }) {
+  if (!heic) return nativeFirst(native, fallback);
+  if (undecodable.has(key)) throw new Error("Thumbnail unavailable");
+  if (native)
+    try {
+      await native();
+      return null;
+    } catch (error) {
+      if (isDecodeFailure(error)) {
+        undecodable.add(key);
+        throw error;
+      }
+    }
+  return fallback();
+}
+
 export function createLimiter(limit, timeout = 0) {
   let running = 0;
   const urgent = [];

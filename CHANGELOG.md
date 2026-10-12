@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.59 — 2026-10-12
+
+- Large HEIC photos that Android cannot decode no longer leave "previews could not be made" on the phone: the grid and the background preparation pass both take the hub's preview, which is remembered, so Retry does not repeat the failing local attempt and the phone stops flooding its log.
+- On Android any failure of the phone's own thumbnail generator on a HEIC photo, except path, storage or permission errors, goes straight to the hub preview instead of the JavaScript decoder that fails the same way.
+
+Needs: native build
+
 ## 0.7.56 — 2026-10-12
 
 - On the phone and the Fold, a favorite folder moves up to FAVORITES and leaves the Folders, Photos and Audio lists below, with the same files, size and state line as before; FAVORITES shows every pinned folder first and fills the rest of its five rows with pinned places.

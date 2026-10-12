@@ -588,8 +588,8 @@ test("the mobile gallery renders from local files first and asks the hub only fo
   assert.match(gallery, /setFailures\(\(count\) => count \+ 1\);\s*setError\(e\.message\);/);
   assert.equal(fs.existsSync(new URL("../apps/mobile/src/hub-previews.js", import.meta.url)), false);
   const thumbnails = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
-  assert.match(thumbnails, /fromHub\(entry, variant, load\) \{/);
-  assert.match(thumbnails, /toByteArray\(await hubLimiter\.run\(load\)\)/);
+  assert.match(thumbnails, /fromHub\(entry, variant, load, background = false\) \{/);
+  assert.match(thumbnails, /await \(background \? backgroundHubLimiter : hubLimiter\)\.run\(load\)/);
   assert.match(gallery, /if \(state === "active"\) \{\s+previews\.clear\(\);\s+accepted\.clear\(\);\s+\}/);
   assert.match(gallery, /thumbnailFiles\.retry\(\);\s*previews\.clear\(\);/);
 });
@@ -881,7 +881,7 @@ test("an open photo folder prepares every local preview in the background and sa
   const components = read("components.jsx");
   const has = (source, ...pieces) => pieces.forEach((piece) => assert.ok(source.includes(piece), piece));
   has(gallery, "const candidates = useMemo(", "(path) => builtinExcluded(path) || (online && !!ignored?.(path))");
-  has(gallery, "const backgroundIo = useMemo(() => localPreviewIo(thumbnailFiles), []);", "const queue = createPreviewQueue({ io: backgroundIo,");
+  has(gallery, "const backgroundIo = useMemo(() => { const local = localPreviewIo(thumbnailFiles); return { exists: local.exists, render: (item, ...rest) => withHubBackgroundRef.current(local.render)(item, ...rest), }; }, []);", "const queue = createPreviewQueue({ io: backgroundIo,");
   has(gallery, "failed: (entry) => { if (!active) return; failedPaths.current.add(entry.path); queueFlush(); },");
   assert.match(gallery, /\}, \[store, scope, volume, density, backgroundIo\]\);/, "one long-lived queue per open folder");
   has(gallery, "useEffect(() => { previewQueue.current?.update(candidates); }, [candidateKey]);", "useEffect(() => { if (attempt) previewQueue.current?.retry(); }, [attempt]);");
@@ -892,7 +892,7 @@ test("an open photo folder prepares every local preview in the background and sa
   has(gallery, '{downloading > 0 && density !== "years" && ( <StatusRow icon="download"', "still downloading`}", 'caption="Previews appear as each one reaches this phone."');
   has(gallery, 'progress.failed > 0 && ( <StatusRow icon="image"', "could not be made", 'caption="The photos are on this phone."', '<Button label="Retry" icon="refresh" onPress={retryPreviews} />');
   has(gallery, "const retryPreviews = () => { thumbnailFiles.retry(); previews.clear(); accepted.clear(); failedPaths.current = new Set(); setFailedCount(0); setAttempt((value) => value + 1); };");
-  has(thumbnails, "const limiter = createLimiter(3, 30000);", "limiter.run(() => produce(target), !background)", "const hubLimiter = createLimiter(2, 60000);");
+  has(thumbnails, "const limiter = createLimiter(3, 30000);", "limiter.run(() => produce(target), !background)", "const hubLimiter = createLimiter(3, 60000);");
   assert.match(thumbnails, /retry\(\) \{\s+posterAttempt\.clear\(\);\s+renderAttempt\.clear\(\);\s+\},/);
   assert.match(components, /export function StatusRow\([\s\S]*?<View style=\{\[s\.card, s\.folderRow\]\}/);
 });

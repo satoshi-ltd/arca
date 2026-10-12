@@ -26,7 +26,9 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **DESK-ON-THIS-DAY-STUCK** — On this day disappears after opening a card and never comes back
+  `bug · agent · high`
+  accept: on the desktop and web photo wall, opening a card of On this day and then returning to the top of the wall shows On this day again (the same cards); the wall never jumps, re-fetches in a loop or "goes crazy" after the click; a JSDOM test covers opening a card, scrolling back to the top and clearing the month filter, and the wall stays still while it does. Check the phone (FolderGallery.jsx) for the same behaviour and fix it there too if it shares the cause. Reported by the maintainer; suspected from `showMemories` (`apps/desktop/src/app.js` ~3395): `box.hidden = Boolean(state.month)` keeps the section hidden while the month filter that `seekMonth` sets stays on, and nothing shows it again; not reproduced.
 
 ## In progress
 
@@ -240,6 +242,10 @@ Suggested order for approval: preservation of user files, synchronization recove
   accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
 
 ### Deferred usability and cleanup
+
+- **ON-THIS-DAY-OPEN-PHOTO** — A card of On this day takes you to the photo it shows
+  `feature · agent · normal`
+  accept: opening a card of On this day on the desktop, web and phone lands on that day's photos with the card's cover photo in view and highlighted for a moment (or open in the viewer: the maintainer chooses), instead of only moving to its month; the same photo the card draws is the one that opens; tests cover the landing on desktop and the phone's card press. Reported by the maintainer: today the card seeks the month (`seekMonth` in `apps/desktop/src/app.js` ~3406) and does not reach the photo.
 
 - **PHOTO-PLACES** — Search Arca finds photos by place ("hua hin", "thailand", "tailandia")
   `feature · agent · normal · depends: DEC-PHOTO-PLACES`

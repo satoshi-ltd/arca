@@ -92,17 +92,22 @@ export function createHubPreviews({
       (now() >= pausedUntil && !refused.has(keyOf(item, "thumb"))));
   return {
     allowed,
-    async preview({ linked, volume, hash, item, size = "thumb" }) {
+    async preview({ linked, volume, hash, item, size = "thumb", background = false }) {
       if (!hash || !allowed({ linked, item, size })) return null;
       const variant = variantOf(item, size);
       const key = keyOf(item, size);
       try {
-        return await save(item, variant, () =>
-          fetchHubPreview({ api, volume, item, hash, size }),
+        return await save(
+          item,
+          variant,
+          () => fetchHubPreview({ api, volume, item, hash, size }),
+          background,
         );
       } catch (error) {
         if (size !== "thumb") return null;
-        if (unreachable(error)) pausedUntil = now() + PAUSE;
+        if (unreachable(error)) {
+          if (!background) pausedUntil = now() + PAUSE;
+        }
         else if (!busy(error)) refused.add(key);
         return null;
       }

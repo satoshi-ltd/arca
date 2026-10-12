@@ -630,8 +630,8 @@ export function FolderGallery({
     () =>
       createHubPreviews({
         api,
-        save: (item, variant, load) =>
-          thumbnailFiles.fromHub(item, variant, load),
+        save: (item, variant, load, background) =>
+          thumbnailFiles.fromHub(item, variant, load, background),
         unreachable: isHubUnreachable,
         busy: (error) => [409, 429].includes(error.status),
       }),
@@ -663,6 +663,21 @@ export function FolderGallery({
       }),
     [previews, accepted],
   );
+  const withHubBackground = useMemo(
+    () =>
+      hubFallback({
+        previews,
+        context: () => ({
+          linked: hubContext.current.linked,
+          volume: hubContext.current.volume,
+          background: true,
+          hashOf: (item) => accepted(hubContext.current.known, item, false),
+        }),
+      }),
+    [previews, accepted],
+  );
+  const withHubBackgroundRef = useRef(withHubBackground);
+  withHubBackgroundRef.current = withHubBackground;
   const display = (item, size = "thumb", fallback = false, hubSize = size) =>
     size === "thumb"
       ? renderLocal(item, size, fallback)
@@ -710,7 +725,14 @@ export function FolderGallery({
       active = false;
     };
   }, [memories, card.size, card.width, !card.height, io, entryByPath]);
-  const backgroundIo = useMemo(() => localPreviewIo(thumbnailFiles), []);
+  const backgroundIo = useMemo(() => {
+    const local = localPreviewIo(thumbnailFiles);
+    return {
+      exists: local.exists,
+      render: (item, ...rest) =>
+          withHubBackgroundRef.current(local.render)(item, ...rest),
+    };
+  }, []);
   const candidates = useMemo(
     () =>
       previewCandidates(
@@ -868,6 +890,9 @@ export function FolderGallery({
   useEffect(() => {
     if (attempt) previewQueue.current?.retry();
   }, [attempt]);
+  useEffect(() => {
+    if (online && known && failedPaths.current.size) setAttempt((v) => v + 1);
+  }, [online, known]);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") {
