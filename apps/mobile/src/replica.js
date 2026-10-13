@@ -348,6 +348,14 @@ export class Replica {
       }
     }
   }
+  async beginTransfer() {
+    try {
+      await this.transfer.begin();
+    } catch (error) {
+      throw Object.assign(new Error(error.message), { code: "TRANSFER_REFUSED" });
+    }
+    this.check();
+  }
   async download(hash, size) {
     if (!this.client.state().catalog?.blobRanges)
       throw new Error(
@@ -367,6 +375,7 @@ export class Replica {
       offset = 0;
     }
     await this.space(size - offset);
+    await this.beginTransfer();
     if (!(await this.files.exists(tmp)))
       await this.files.write(tmp, new Uint8Array());
     while (offset < size) {
@@ -733,6 +742,7 @@ export class Replica {
         throw new Error("Queued upload failed verification");
       if (!source) this.verified.add(object);
     }
+    await this.beginTransfer();
     let { offset, complete } = await this.client.api(`/v1/uploads/${op.hash}`);
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > op.size)
       throw new Error("Invalid upload offset");
@@ -797,7 +807,9 @@ export class Replica {
         await this.upload(op).catch((error) => {
           if (
             !isHubUnreachable(error) &&
-            !["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code)
+            !["SYNC_INTERRUPTED", "SYNC_YIELD", "TRANSFER_REFUSED"].includes(
+              error.code,
+            )
           )
             this.verified.delete(this.files.object(this.scope, op.hash));
           throw error;
@@ -1057,7 +1069,9 @@ export class Replica {
       await work();
     } catch (error) {
       if (
-        ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error?.code) ||
+        ["SYNC_INTERRUPTED", "SYNC_YIELD", "TRANSFER_REFUSED"].includes(
+          error?.code,
+        ) ||
         isHubUnreachable(error) ||
         this.syncAbort?.signal.aborted
       )
@@ -1382,14 +1396,6 @@ export class Replica {
       }
       this.hubAnswered();
       this.cycleAnswered = true;
-      if (
-        !this.paused &&
-        this.client.state().connection?.linked &&
-        (await this.store.folders(this.scope)).some((folder) => folder.selected)
-      ) {
-        await this.transfer.begin();
-        this.check();
-      }
       const connection = this.client.state().connection;
       if (!connection?.linked) return;
       if (this.scope !== connection.hubId) {

@@ -2795,22 +2795,34 @@ function recordedSession(f) {
   return { events, session };
 }
 
-test("a cycle whose last verdict was offline never raises the foreground session", async (t) => {
+test("a cycle with nothing to transfer, or whose last verdict was offline, never raises the foreground session", async (t) => {
   const f = await fixture(t);
   const { replica } = f;
   await replica.select(f.client.state().catalog.volumes[0]);
   const { events, session } = recordedSession(f);
   replica.transfer = session;
   await sync(f);
-  assert.deepEqual(events.map((e) => e.event), ["begin", "end"], "an online cycle acquires and releases once");
+  assert.deepEqual(events.map((e) => e.event), [], "an online cycle with no download or upload never acquires the service");
   f.offline();
   await replica.sync();
   assert.equal(replica.hubUnavailable, true);
-  assert.deepEqual(events.map((e) => e.event), ["begin", "end"], "a failed refresh never acquires");
-  const before = events.length;
+  assert.deepEqual(events.map((e) => e.event), [], "a failed refresh never acquires");
   await replica.sync();
   await replica.sync();
-  assert.equal(events.length, before, "later offline cycles neither acquire nor release");
+  assert.deepEqual(events.map((e) => e.event), [], "later offline cycles neither acquire nor release");
+});
+
+test("the first download acquires the session once, before its first request, and releases it when the run ends", async (t) => {
+  const f = await fixture(t);
+  const { replica } = f;
+  fs.writeFileSync(path.join(f.volume.path, "remote.bin"), crypto.randomBytes(CHUNK + 5));
+  await f.daemon.engine.cycle();
+  await replica.select(f.volume);
+  const { events, session } = recordedSession(f);
+  replica.transfer = session;
+  await sync(f);
+  assert.deepEqual(events.map((e) => e.event), ["begin", "end"], "one acquisition for the whole run");
+  assert.ok(events[0].requests > 0, "the catalog was refreshed first");
 });
 
 test("after a launch the phone checks the hub without raising the session or counting as activity until it answers", async (t) => {
@@ -4641,11 +4653,15 @@ test('pausing a screen-off download releases its service and later resumes the v
 
 test('service refusal is reported before transfers and a foreground retry can recover', async (t) => {
   const f = await fixture(t), r = f.replica;
+  fs.writeFileSync(path.join(f.volume.path, 'remote.bin'), crypto.randomBytes(CHUNK + 3));
+  await f.daemon.engine.cycle();
   await r.select(f.volume);
   let refuse = true;
   const service = syncService(r, { start: async () => { if (refuse) throw new Error('Background service unavailable'); } });
   await r.sync();
   assert.match(r.error, /Background service unavailable/);
+  assert.doesNotMatch(r.error, /Could not sync/, "a refusal ends the cycle instead of failing every file");
+  assert.equal(service.starts, 1, "and it is asked once");
   assert.equal(r.transfer.active, false);
   assert.equal(service.stops, 0);
   refuse = false;

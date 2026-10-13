@@ -293,7 +293,9 @@ export class Gallery {
         } catch (error) {
           if (r.syncAbort?.signal.aborted) r.check();
           if (
-            ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
+            ["SYNC_INTERRUPTED", "SYNC_YIELD", "TRANSFER_REFUSED"].includes(
+              error.code,
+            ) ||
             isHubUnreachable(error)
           )
             throw error;
@@ -941,7 +943,9 @@ export class Gallery {
         } catch (error) {
           if (r.syncAbort?.signal.aborted) r.check();
           if (
-            ["SYNC_INTERRUPTED", "SYNC_YIELD"].includes(error.code) ||
+            ["SYNC_INTERRUPTED", "SYNC_YIELD", "TRANSFER_REFUSED"].includes(
+              error.code,
+            ) ||
             isHubUnreachable(error)
           )
             throw error;

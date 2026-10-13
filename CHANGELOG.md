@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.66 — 2026-10-13
+
+- The Arca Synchronization notification and its Android service now appear only while a file is really being downloaded or uploaded; before, every sync cycle started them, so they flashed on and off all day even with nothing to transfer.
+- With Background refresh off, leaving the app now stops the sync and no service starts; before, a sync started with the app open kept running in the background regardless of the setting.
+
+Needs: native build
+
 ## 0.7.65 — 2026-10-13
 
 - The phone no longer syncs all day: a scheduled cycle with nothing to transfer ends in seconds without re-walking any folder, folders are re-inventoried every six hours, on launch or after ten minutes away from the app, and the photo library every fifteen minutes at most; the OS background task runs one cheap cycle instead of a full scan.

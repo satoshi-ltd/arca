@@ -24,9 +24,12 @@ AppRegistry.registerHeadlessTask(
       else finishTransferTask = resolve;
     }),
 );
+let backgroundAllowed = false;
 const transfer = new TransferSession({
   visible: () =>
-    Platform.OS === "android" && AppState.currentState === "active",
+    Platform.OS === "android" &&
+    backgroundAllowed &&
+    AppState.currentState === "active",
   start: async () => {
     await Notifications.requestPermissionsAsync();
     await native.startTransfer();
@@ -204,6 +207,7 @@ export function runtime() {
       currentReplica = replica;
       await client.load();
       await replica.load();
+      backgroundAllowed = await replica.store.get("background", false);
       await clearIncoming(replica);
       return replica;
     })().catch((error) => {
@@ -241,6 +245,11 @@ export async function setBackground(enabled) {
   } else if (await TaskManager.isTaskRegisteredAsync(BACKGROUND_TASK))
     await BackgroundTask.unregisterTaskAsync(BACKGROUND_TASK);
   await replica.store.set("background", enabled);
+  backgroundAllowed = enabled;
+  if (!enabled && transfer.active) {
+    replica.suspend();
+    await transfer.end().catch(() => {});
+  }
 }
 export async function destroyReplica() {
   const replica = await runtime();

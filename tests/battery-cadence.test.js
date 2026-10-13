@@ -61,3 +61,17 @@ test("the phone launches with an inventory, rediscovers photos fast in the foreg
   assert.match(gallery, />= r\.discoveryMs;/);
   assert.equal(FOREGROUND_DISCOVERY_MS, 60000);
 });
+
+test("the Android service and its notification exist only for a real transfer and only with Background refresh on", () => {
+  const replica = read("apps/mobile/src/replica.js");
+  assert.equal(replica.match(/transfer\.begin\(\)/g).length, 1, "the session is acquired in one place");
+  assert.match(replica, /async beginTransfer\(\) \{\s+try \{\s+await this\.transfer\.begin\(\);\s+\} catch \(error\) \{\s+throw Object\.assign\(new Error\(error\.message\), \{ code: "TRANSFER_REFUSED" \}\);\s+\}\s+this\.check\(\);\s+\}/);
+  assert.match(replica, /await this\.space\(size - offset\);\s+await this\.beginTransfer\(\);/, "a download acquires it before its first request");
+  assert.match(replica, /await this\.beginTransfer\(\);\s+let \{ offset, complete \} = await this\.client\.api\(`\/v1\/uploads/, "an upload acquires it before its first request");
+  const runtime = read("apps/mobile/src/runtime.js");
+  assert.match(runtime, /let backgroundAllowed = false;\s+const transfer = new TransferSession\(\{\s+visible: \(\) =>\s+Platform\.OS === "android" &&\s+backgroundAllowed &&\s+AppState\.currentState === "active",/);
+  assert.match(runtime, /backgroundAllowed = await replica\.store\.get\("background", false\);/);
+  assert.ok(runtime.indexOf('backgroundAllowed = await replica.store.get("background", false);') > runtime.indexOf("await replica.load();"), "the setting is read once the settings table exists");
+  assert.match(runtime, /backgroundAllowed = enabled;\s+if \(!enabled && transfer\.active\) \{\s+replica\.suspend\(\);\s+await transfer\.end\(\)\.catch\(\(\) => \{\}\);\s+\}/);
+  assert.match(runtime, /await replica\.store\.set\("background", enabled\);\s+backgroundAllowed = enabled;/);
+});
