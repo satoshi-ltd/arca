@@ -8973,3 +8973,60 @@ test("an empty strip of the open photo viewer drags the native window, never its
   assert.equal(press(at(".photo-viewer-image img")), 0, "the photo itself never starts a drag");
   assert.equal(press(at(".photo-info-body p")), 0, "the Info panel never starts a drag");
 });
+
+test("an event that arrives while a status read is running still gets its own read right after", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-forced-poll-"));
+  init(home, { port: 0, name: "casa" });
+  const daemon = await start(home, { timer: false });
+  daemon.engine.store.addVolume("Documents");
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: base });
+  const w = dom.window;
+  const pending = new Set();
+  t.after(async () => {
+    await drainRequests(pending);
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  let poll, events;
+  Object.defineProperty(w.document, "hidden", { configurable: true, get: () => false });
+  w.setInterval = (fn, ms) => {
+    if (ms === 5000) poll = fn;
+    if (ms === 1000 && poll && !events) events = fn;
+    return 0;
+  };
+  let reads = 0;
+  let release;
+  let gate = null;
+  w.fetch = async (route, options = {}) => {
+    if (route.startsWith("/v1/events"))
+      return new Response(JSON.stringify({ cursor: "changed" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (route === "/v1/status") {
+      reads++;
+      if (gate) await gate;
+    }
+    const work = fetch(new URL(route, base), {
+      ...nodeInit(options),
+      headers: { ...options.headers, Authorization: `Bearer ${daemon.engine.config.adminToken}` },
+    });
+    pending.add(work);
+    void work.finally(() => pending.delete(work));
+    return work;
+  };
+  const q = (selector) => w.document.querySelector(selector);
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => q(".folder-card") && w.document.body.getAttribute("aria-busy") === "false");
+  gate = new Promise((resolve) => (release = resolve));
+  const before = reads;
+  const slow = poll(true);
+  await until(() => reads === before + 1);
+  await events();
+  assert.equal(reads, before + 1, "the event finds a read running");
+  gate = null;
+  release();
+  await slow;
+  await until(() => reads === before + 2);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(reads, before + 2, "one more read follows, and only one");
+});

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.63 — 2026-10-13
+
+- The desktop and web window no longer stays stale for 20–30 seconds when a change arrives while a status read is still running: the event now triggers one more read as soon as the slow one ends.
+
+Needs: desktop build
+
 ## 0.7.62 — 2026-10-13
 
 - In the native desktop app you can drag the window by an empty strip of the full-window photo viewer, as everywhere else; its buttons, the photo, videos and the Info panel still never start a drag.

@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.62";
+const APP_VERSION = "0.7.63";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -9944,10 +9944,15 @@ window.addEventListener("blur", () => {
   pointerPressed = false;
 });
 let polling = false,
+  pollAgain = false,
   eventsHealthyAt = 0,
   lastStatusPoll = 0;
 async function pollStatus(force = false) {
-  if (!ready || polling) return;
+  if (!ready) return;
+  if (polling) {
+    if (force) pollAgain = true;
+    return;
+  }
   if (
     !force &&
     Date.now() - eventsHealthyAt < 20000 &&
@@ -10046,6 +10051,10 @@ async function pollStatus(force = false) {
       });
   } finally {
     polling = false;
+    if (pollAgain) {
+      pollAgain = false;
+      pollStatus(true).catch(() => {});
+    }
   }
 }
 setInterval(pollStatus, 5000);
