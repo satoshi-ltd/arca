@@ -172,7 +172,10 @@ function changed() {
     !currentReplica.paused &&
     AppState.currentState === "active"
   )
-    galleryTimer = setTimeout(() => currentReplica.sync(), 500);
+    galleryTimer = setTimeout(
+      () => currentReplica.sync(false, { scheduled: true }),
+      500,
+    );
   for (const listener of listeners) listener();
 }
 export function runtime() {
@@ -218,7 +221,7 @@ TaskManager.defineTask(BACKGROUND_TASK, async () => {
     const replica = await runtime();
     if (!(await replica.store.get("background", false)))
       return BackgroundTask.BackgroundTaskResult.Success;
-    await replica.sync();
+    await replica.sync(false, { scheduled: true });
     return replica.error
       ? BackgroundTask.BackgroundTaskResult.Failed
       : BackgroundTask.BackgroundTaskResult.Success;

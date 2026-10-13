@@ -3431,11 +3431,11 @@ test("a folder that fails every cycle does not keep scheduled cycles forcing ful
   assert.ok(scans.includes(healthy.id), "Sync now verifies the healthy folder");
   assert.ok(r.lastFullScan > before, "the failing folder does not hold the verification time back");
   assert.equal(await f.store.get(`fullScan:${r.scope}`), r.lastFullScan);
-  r.lastFullScan = Date.now() - 2 * 3600000;
+  r.lastFullScan = Date.now() - 2 * 24 * 3600000;
   scans.length = 0;
   r.lastInventory.set(healthy.id, Date.now());
   await r.sync(false, { scheduled: true });
-  assert.ok(scans.includes(healthy.id), "an hour later a scheduled cycle verifies the healthy folder once");
+  assert.ok(scans.includes(healthy.id), "a day later a scheduled cycle verifies the healthy folder once");
   assert.ok(Date.now() - r.lastFullScan < 60000, "and the failing folder does not hold that back");
   scans.length = 0;
   r.lastInventory.set(healthy.id, Date.now());

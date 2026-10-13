@@ -482,3 +482,82 @@ test("folder totals are cached until the store changes", async (t) => {
   assert.equal(third[0].issue, "Something changed");
   assert.equal(f.queries.filter((sql) => sql.includes(FOLDERS_SQL)).length, 2);
 });
+
+test("a scheduled cycle with nothing due skips every folder scan and leaves the library discovery alone", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "a.txt"), "a");
+  await f.select();
+  await f.replica.sync(true);
+  const scans = [];
+  const scan = f.replica.scan.bind(f.replica);
+  f.replica.scan = async (folder) => {
+    scans.push(folder.id);
+    return scan(folder);
+  };
+  for (const id of [...f.replica.lastInventory.keys()]) f.replica.lastInventory.set(id, Date.now() - 2 * 3600000);
+  await f.replica.sync(false, { scheduled: true });
+  assert.deepEqual(scans, [], "a scheduled cycle two hours after the last inventory scans nothing");
+  f.replica.lastInventory.clear();
+  await f.replica.sync(false, { scheduled: true });
+  assert.ok(scans.length > 0, "after a long absence the next cycle scans again");
+});
+
+test("a run that shows no progress for ten minutes gives up and frees the transfer", async (t) => {
+  const f = await phone(t);
+  await f.select();
+  const { NO_PROGRESS_MS } = await import("../apps/mobile/src/sync-cadence.js");
+  assert.equal(NO_PROGRESS_MS, 10 * 60000);
+  const intervals = [];
+  const realSet = globalThis.setInterval;
+  const realClear = globalThis.clearInterval;
+  globalThis.setInterval = (fn, ms) => (intervals.push({ fn, ms }), intervals.length);
+  globalThis.clearInterval = () => {};
+  t.after(() => {
+    globalThis.setInterval = realSet;
+    globalThis.clearInterval = realClear;
+  });
+  let stopped = 0;
+  f.replica.suspend = () => stopped++;
+  const run = f.replica.sync(true);
+  await run;
+  const watchdog = intervals.find((entry) => entry.ms === 30000);
+  assert.ok(watchdog, "every run arms a 30 s watchdog");
+  f.replica.lastChangeAt = Date.now() - NO_PROGRESS_MS - 1000;
+  f.replica.changed();
+  watchdog.fn();
+  assert.equal(stopped, 1, "ten idle minutes suspend the run, however often the state is announced");
+  f.replica.lastChangeAt = Date.now() - NO_PROGRESS_MS - 1000;
+  f.replica.check();
+  watchdog.fn();
+  assert.equal(stopped, 1, "a run that keeps stepping through files and pages is alive");
+  f.replica.lastChangeAt = Date.now() - NO_PROGRESS_MS - 1000;
+  f.replica.reportProgress({ direction: "download", bytesDone: 1, bytesTotal: 10 });
+  watchdog.fn();
+  assert.equal(stopped, 1, "real transfer progress keeps it going");
+});
+
+test("the inventory time survives a cold start and a manual call joining a scheduled run asks for a scan", async (t) => {
+  const f = await phone(t);
+  fs.writeFileSync(path.join(f.volume.path, "a.txt"), "a");
+  await f.select();
+  await f.replica.sync(true);
+  const id = f.volume.id;
+  const key = f.replica.inventoryKey(id);
+  const saved = await f.store.get(key, 0);
+  assert.ok(saved > 0, "a scan records its time durably");
+  f.replica.lastInventory.clear();
+  await f.replica.load();
+  assert.equal(f.replica.lastInventory.get(id), saved, "a new process starts from the saved time, so a background cycle does not walk the folder again");
+  f.replica.forceNext = false;
+  f.replica.active = new Promise(() => {});
+  f.replica.stopped = false;
+  void f.replica.sync();
+  assert.equal(f.replica.forceNext, true, "an unscheduled call that finds a run asks the run for one more full inventory");
+  f.replica.forceNext = false;
+  void f.replica.sync(false, { scheduled: true });
+  assert.equal(f.replica.forceNext, false, "a scheduled call does not");
+  f.replica.active = null;
+  await f.replica.unselect(id);
+  assert.equal(f.replica.lastInventory.has(id), false, "stopping a folder forgets its inventory time");
+  assert.equal(await f.store.get(key, 0), 0, "and the saved one, so selecting it again scans at once");
+});

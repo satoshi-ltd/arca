@@ -1,4 +1,9 @@
 import { galleryVideoURI } from "./video-playback";
+import {
+  DISCOVERY_MS,
+  FOREGROUND_DISCOVERY_MS,
+  INACTIVE_RESCAN_MS,
+} from "./sync-cadence.js";
 import { thumbnailFiles } from "./gallery-thumbnails";
 import { canonicalFileUri, searchIo, searchPreview, searchThumbnail } from "./search-thumbnail";
 import { StickyDetailSide } from "./StickyDetailSide";
@@ -560,16 +565,26 @@ export default function App() {
           ),
         );
         await update();
-        engine.current.sync(false, { scheduled: true });
+        engine.current.discoveryMs = FOREGROUND_DISCOVERY_MS;
+        engine.current.sync();
       },
       { silent: true },
     );
+    let leftAt = null;
     const app = AppState.addEventListener("change", (value) => {
+      if (engine.current)
+        engine.current.discoveryMs =
+          value === "active" ? FOREGROUND_DISCOVERY_MS : DISCOVERY_MS;
       if (value === "active") {
-        engine.current?.lastInventory.clear();
+        if (leftAt !== null && Date.now() - leftAt >= INACTIVE_RESCAN_MS)
+          engine.current?.lastInventory.clear();
+        leftAt = null;
         engine.current?.sync(false, { scheduled: true });
-      } else if (shouldStopSync(value, canContinueInBackground()))
-        engine.current?.suspend();
+      } else {
+        leftAt ??= Date.now();
+        if (shouldStopSync(value, canContinueInBackground()))
+          engine.current?.suspend();
+      }
     });
     const timer = setInterval(() => {
       const r = engine.current;

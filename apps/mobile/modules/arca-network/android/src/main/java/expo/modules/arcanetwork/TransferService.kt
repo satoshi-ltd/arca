@@ -14,6 +14,7 @@ class TransferService : com.facebook.react.HeadlessJsTaskService() {
     @Volatile var instance: TransferService? = null
     var onStopped: ((String) -> Unit)? = null
     val gate = TransferGate()
+    const val LEASE_MS = 10 * 60 * 1000L
   }
   private var lock: PowerManager.WakeLock? = null
   private var lastUpdate = 0L
@@ -27,8 +28,8 @@ class TransferService : com.facebook.react.HeadlessJsTaskService() {
     if (Build.VERSION.SDK_INT >= 29) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     else startForeground(ID, notification)
     gate.promoted()
-    lock = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "arca:sync")
-    lock?.acquire(6 * 60 * 60 * 1000L)
+    lock = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "arca:sync").apply { setReferenceCounted(false) }
+    lock?.acquire(LEASE_MS)
   }
   private fun notification(text: String, done: Long, total: Long): Notification {
     val pause = PendingIntent.getService(this, 0, Intent(this, TransferService::class.java).setAction(PAUSE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -46,6 +47,7 @@ class TransferService : com.facebook.react.HeadlessJsTaskService() {
     val now = SystemClock.elapsedRealtime()
     if (now - lastUpdate < 1000) return
     lastUpdate = now
+    lock?.acquire(LEASE_MS)
     getSystemService(NotificationManager::class.java).notify(ID, notification(text.take(120), done, total))
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

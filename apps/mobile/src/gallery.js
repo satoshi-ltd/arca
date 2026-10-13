@@ -845,7 +845,8 @@ export class Gallery {
         scanning() ||
         !source.scannedAt ||
         r.force ||
-        Date.now() - Date.parse(source.scannedAt) >= 60000;
+        r.inventoryDue.get(folder.id) === true ||
+        Date.now() - Date.parse(source.scannedAt) >= r.discoveryMs;
       for (let pageIndex = 0; scanDue && pageIndex < 4; pageIndex++) {
         r.check();
         const target = targets.find(

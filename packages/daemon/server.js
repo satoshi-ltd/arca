@@ -12,7 +12,11 @@ import { Music } from "./music.js";
 import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
 import { inspectSetupRoot } from "./setup.js";
 import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
-import { ACTIVE_POLL_MS, IDLE_POLL_MS, IDLE_AFTER_MS } from "./sync-work.js";
+import {
+  ACTIVE_POLL_MS,
+  IDLE_POLL_MS,
+  normalDelay,
+} from "./sync-work.js";
 import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
 import { filePreview } from "./file-preview.js";
@@ -2336,6 +2340,7 @@ export async function start(home, options = {}) {
     timer,
     lastActivity = Date.now(),
     failures = 0,
+    eventsAnsweredAt = 0,
     offline = false,
     rerun = false,
     requestedFull = false,
@@ -2457,10 +2462,15 @@ export async function start(home, options = {}) {
       }
       if (!stopping && options.timer !== false) {
         watchFolders();
-        const normal =
-          config.role === "hub" || Date.now() - lastActivity >= IDLE_AFTER_MS
-            ? IDLE_POLL_MS
-            : ACTIVE_POLL_MS;
+        const normal = normalDelay({
+          role: config.role,
+          now: Date.now(),
+          eventsAnsweredAt,
+          lastActivity,
+          unwatched: s
+            .volumes()
+            .some((v) => v.selected && v.path && !watchers.has(v.path)),
+        });
         const delay = Math.min(
           offline ? 60000 : 300000,
           ACTIVE_POLL_MS * 2 ** failures,
@@ -2547,6 +2557,7 @@ export async function start(home, options = {}) {
             },
           );
           const next = (await response.json()).cursor;
+          if (!probing) eventsAnsweredAt = Date.now();
           if (engine.hubUnavailable || (failures && offline)) {
             failures = 0;
             retryAt = 0;

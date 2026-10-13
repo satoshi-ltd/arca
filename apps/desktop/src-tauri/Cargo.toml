@@ -1,6 +1,6 @@
 [package]
 name = "arca-desktop"
-version = "0.7.64"
+version = "0.7.65"
 edition = "2021"
 license = "LicenseRef-PolyForm-Strict-1.0.0"
 

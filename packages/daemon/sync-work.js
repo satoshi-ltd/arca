@@ -3,6 +3,8 @@ export const RECONCILE_MS = 6 * 60 * 60 * 1000;
 export const ACTIVE_POLL_MS = 15000;
 export const IDLE_POLL_MS = 60000;
 export const IDLE_AFTER_MS = 5 * 60 * 1000;
+export const SAFETY_POLL_MS = 10 * 60 * 1000;
+export const EVENTS_FRESH_MS = 30000;
 export function covers(paths, name) {
   return (
     paths === null ||
@@ -108,4 +110,12 @@ export class SyncWork {
       )
       .run(volume, policy);
   }
+}
+
+export function normalDelay({ role, now, eventsAnsweredAt, unwatched, lastActivity }) {
+  if (role === "replica" && !unwatched && now - eventsAnsweredAt < EVENTS_FRESH_MS)
+    return SAFETY_POLL_MS;
+  return role === "hub" || now - lastActivity >= IDLE_AFTER_MS
+    ? IDLE_POLL_MS
+    : ACTIVE_POLL_MS;
 }

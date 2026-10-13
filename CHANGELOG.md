@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.65 — 2026-10-13
+
+- The phone no longer syncs all day: a scheduled cycle with nothing to transfer ends in seconds without re-walking any folder, folders are re-inventoried every six hours, on launch or after ten minutes away from the app, and the photo library every fifteen minutes at most; the OS background task runs one cheap cycle instead of a full scan.
+- The Android sync service holds its wake lock on a ten-minute lease that only progress renews, and a run that shows no progress for ten minutes gives up, so a stalled sync can no longer keep the phone awake for hours (it had drained about 40% of a Fold's battery).
+- Desktop and server replicas whose event stream answers poll the hub only every ten minutes as a safety net, instead of every 15 to 60 seconds; hub changes and local changes still sync within seconds.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.64 — 2026-10-13
 
 - In the native Mac app the onboarding screens keep the Arca logo and the steps clear of the red, yellow and green window buttons; the web and other platforms are unchanged.

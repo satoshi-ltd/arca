@@ -1,4 +1,10 @@
 import { GalleryDeletions } from "./gallery-deletions.js";
+import {
+  DISCOVERY_MS,
+  FULL_SCAN_MS,
+  INVENTORY_MS,
+  NO_PROGRESS_MS,
+} from "./sync-cadence.js";
 import { remoteView, warmViews } from "./remote-views.js";
 import { abortRequest, abortable } from "./request-control.js";
 import { renamedPath } from "../../../packages/core/file-rename.js";
@@ -49,7 +55,11 @@ export class Replica {
     player = null,
     transfer = { begin: async () => false, end: async () => {} },
   }) {
-    Object.assign(this, { store, files, changed, platform, version, transfer, player });
+    Object.assign(this, { store, files, platform, version, transfer, player });
+    this.changed = changed;
+    this.lastChangeAt = Date.now();
+    this.discoveryMs = DISCOVERY_MS;
+    this.inventoryDue = new Map();
     this.interactiveClient = client;
     // Only replica work inherits this cancellation scope; UI uses the original client.
     this.client = {
@@ -92,6 +102,9 @@ export class Replica {
     this.rowIssues = new Map();
     this.swept = new Set();
   }
+  inventoryKey(folderId) {
+    return `inventory:${this.scope}:${folderId}`;
+  }
   get checking() {
     return !!this.active && this.busy && !this.connectionChecked && !this.paused;
   }
@@ -100,6 +113,7 @@ export class Replica {
   }
   reportProgress(progress) {
     this.progress = progress;
+    this.lastChangeAt = Date.now();
     if (
       progress.bytesDone < progress.bytesTotal &&
       Date.now() - this.progressAt < PROGRESS_MS
@@ -122,6 +136,11 @@ export class Replica {
     }
     this.scope = await this.store.get("scope");
     await this.store.clearInterrupted(this.scope);
+    if (this.scope)
+      for (const folder of await this.store.folders(this.scope)) {
+        const at = await this.store.get(this.inventoryKey(folder.id), 0);
+        if (at) this.lastInventory.set(folder.id, at);
+      }
     if (this.files.clearGalleryStage && this.scope)
       for (const folder of await this.store.folders(this.scope))
         if (galleryConfig(folder)) {
@@ -167,6 +186,8 @@ export class Replica {
     this.hashCache.clear();
     this.verified.clear();
     this.lastFullScan = 0;
+    this.lastInventory.clear();
+    this.inventoryDue.clear();
   }
   async destroy(confirmed = false) {
     if (!confirmed)
@@ -185,6 +206,7 @@ export class Replica {
     }
   }
   check() {
+    this.lastChangeAt = Date.now();
     if (this.stopped || this.paused) {
       const error = new Error("Sync paused");
       error.code = "SYNC_INTERRUPTED";
@@ -277,6 +299,9 @@ export class Replica {
       // The UI confirms permanent local removal, including unsynced changes.
       // Persist before deletion so interruption can be retried safely.
       await this.store.set(removalKey, true);
+      this.lastInventory.delete(id);
+      this.inventoryDue.delete(id);
+      await this.store.set(this.inventoryKey(id), 0);
       const removedHashes = new Set(
         (await this.store.rows(scope, id)).map((row) => row.hash),
       );
@@ -1250,7 +1275,7 @@ export class Replica {
     if (this.active) {
       if (this.stopped && !this.paused)
         return this.active.then(() => this.sync(force, { scheduled }));
-      if (force) {
+      if (force || !scheduled) {
         this.forceNext = true;
         this.retryNow?.();
       }
@@ -1260,9 +1285,13 @@ export class Replica {
     this.scheduled = scheduled;
     this.continuing = false;
     this.force =
-      force || this.forceNext || Date.now() - this.lastFullScan > 3600000;
+      force || this.forceNext || Date.now() - this.lastFullScan > FULL_SCAN_MS;
     this.forceNext = false;
     this.syncAbort = new AbortController();
+    this.lastChangeAt = Date.now();
+    const watchdog = setInterval(() => {
+      if (Date.now() - this.lastChangeAt > NO_PROGRESS_MS) this.suspend();
+    }, 30000);
     this.active = (async () => {
       let offlineSince = 0;
       let attempt = 0;
@@ -1270,7 +1299,6 @@ export class Replica {
         for (;;) {
           this.holdingOffline = !!offlineSince;
           await this.cycle();
-          // Continuation turns reuse the 60 s inventory; a Sync now tap mid-run queues one scan of every folder.
           this.continuing = true;
           this.force = this.forceNext;
           this.forceNext = false;
@@ -1295,6 +1323,7 @@ export class Replica {
             break;
         }
       } finally {
+        clearInterval(watchdog);
         await this.transfer.end();
       }
     })().finally(() => {
@@ -1444,15 +1473,17 @@ export class Replica {
           await this.syncIgnore(folder);
           const journal = (await this.store.get(this.journalKey(folder.id), [])) || [];
           let scanned = false;
-          if (
+          const inventoryDue =
             (!this.scheduled && !this.continuing) ||
             this.force ||
-            Date.now() - (this.lastInventory.get(folder.id) || 0) >= 60000 ||
-            (await this.store.pending(this.scope, folder.id)).length
-          ) {
+            Date.now() - (this.lastInventory.get(folder.id) || 0) >= INVENTORY_MS ||
+            (await this.store.pending(this.scope, folder.id)).length > 0;
+          this.inventoryDue.set(folder.id, inventoryDue);
+          if (inventoryDue) {
             await this.scan(folder);
             scanned = true;
             this.lastInventory.set(folder.id, Date.now());
+            await this.store.set(this.inventoryKey(folder.id), Date.now());
           }
           this.turnDeadline = Date.now() + 10000;
           await this.push(folder);
