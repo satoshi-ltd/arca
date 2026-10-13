@@ -26,10 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-VIEWER-DRAG** — The window cannot be dragged while the gallery viewer is open
-  `bug · agent · low`
-  accept: in the native app, pressing and dragging an empty strip of the full-window viewer moves the window, without starting a drag on the viewer's buttons, video controls or the Info panel; the existing titlebar drag rule (`app.js` mousedown handler returns whenever a dialog is open) is narrowed instead of removed; a JSDOM test covers it. Found by the review of 0.6.111. Needs a desktop build.
-
 - **DESK-FORCED-POLL-DROPPED** — An event that arrives while a status poll is running can leave the window stale for 20–30 seconds
   `bug · agent · low`
   accept: `pollStatus(true)` (`apps/desktop/src/app.js`) no longer returns at once when a poll is already in flight; it runs once more right after that poll ends, so a connectivity event consumed during a slow `/v1/status` still updates the window within seconds; a JSDOM test holds one status read open, delivers an event cursor change and sees the second read follow. Suspected by the review of 0.7.5, not reproduced.

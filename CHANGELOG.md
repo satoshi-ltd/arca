@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.62 — 2026-10-13
+
+- In the native desktop app you can drag the window by an empty strip of the full-window photo viewer, as everywhere else; its buttons, the photo, videos and the Info panel still never start a drag.
+
+Needs: desktop build
+
 ## 0.7.61 — 2026-10-13
 
 - A card of On this day now takes you to its own photo, scrolled into view and tinted for a moment on the desktop, web and phone, instead of only to the start of its month, so you land among that day's photos ready to open one.

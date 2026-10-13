@@ -8938,3 +8938,38 @@ test("History groups rows under Today, Yesterday and a short date and shows each
   for (const time of w.document.querySelectorAll("#history-list .history-row .row-time"))
     assert.match(time.textContent.trim(), /^\d{2}:\d{2}$/);
 });
+
+test("an empty strip of the open photo viewer drags the native window, never its controls, video or Info panel", async (t) => {
+  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
+  t.after(() => dom.window.close());
+  const w = dom.window;
+  w.setInterval = () => 0;
+  let drags = 0;
+  w.__TAURI__ = {
+    core: { invoke: async () => ({}) },
+    window: { getCurrentWindow: () => ({ startDragging: async () => void drags++ }) },
+  };
+  w.eval(`(async()=>{${script}\n})()`);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const dialog = w.document.querySelector("#dialog");
+  dialog.setAttribute("open", "");
+  const press = (target) => {
+    const before = drags;
+    target.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, clientY: 400 }));
+    return drags - before;
+  };
+  dialog.className = "";
+  assert.equal(press(dialog), 0, "any other dialog keeps the window still");
+  dialog.className = "photo-viewer";
+  dialog.innerHTML = '<form><div class="photo-viewer-head"><div class="photo-viewer-operations"><button type="button" class="icon-button">x</button></div></div><div class="photo-viewer-stage"><div class="photo-viewer-image"><img alt=""><video></video></div></div><aside class="photo-info"><div class="photo-info-body"><p>Info</p></div></aside></form>';
+  const at = (selector) => dialog.querySelector(selector);
+  assert.equal(press(dialog), 1, "the viewer's own backdrop drags");
+  assert.equal(press(at(".photo-viewer-head")), 1, "the head strip drags");
+  assert.equal(press(at(".photo-viewer-operations")), 1, "the strip around the buttons drags");
+  assert.equal(press(at(".photo-viewer-stage")), 1, "the empty stage drags");
+  assert.equal(press(at(".photo-viewer-image")), 1, "the black around the photo, which the image box covers, drags");
+  assert.equal(press(at("button")), 0, "a button never starts a drag");
+  assert.equal(press(at("video")), 0, "video controls never start a drag");
+  assert.equal(press(at(".photo-viewer-image img")), 0, "the photo itself never starts a drag");
+  assert.equal(press(at(".photo-info-body p")), 0, "the Info panel never starts a drag");
+});

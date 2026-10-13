@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.61";
+const APP_VERSION = "0.7.62";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1328,15 +1328,25 @@ document.body.classList.toggle(
 if (native) {
   document.addEventListener("mousedown", (event) => {
     const target = event.target;
-    if (event.button !== 0 || !(target instanceof Element) || $("#dialog").open)
-      return;
+    if (event.button !== 0 || !(target instanceof Element)) return;
+    const dialog = $("#dialog");
+    const viewer = dialog.open && dialog.classList.contains("photo-viewer");
+    if (dialog.open && !viewer) return;
     if (
       target.closest(
         'button, a, input, select, textarea, label, summary, [role="button"], [contenteditable="true"]',
       )
     )
       return;
-    if (
+    if (viewer) {
+      if (
+        target !== dialog &&
+        !target.matches(
+          ".photo-viewer-head, .photo-viewer-operations, .photo-viewer-stage, .photo-viewer-image",
+        )
+      )
+        return;
+    } else if (
       event.clientY > 32 &&
       !target.closest(".heading, .detail-head, .window-drag")
     )
