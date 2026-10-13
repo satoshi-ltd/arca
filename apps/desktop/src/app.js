@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.60";
+const APP_VERSION = "0.7.61";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -3403,7 +3403,11 @@ function mountGallery(volume) {
       state.memories = data.memories;
       sizeRow();
       box.querySelectorAll(".memory-card").forEach((card, index) => {
-        card.onclick = () => seekMonth(`${data.memories[index].year}-${day.slice(0, 2)}`);
+        card.onclick = () => {
+          const memory = data.memories[index];
+          if (memory.cursor) seekPhoto(memory.cursor, memory.path);
+          else seekMonth(`${memory.year}-${day.slice(0, 2)}`);
+        };
       });
     } catch {
       if (current()) box.hidden = true;
@@ -3880,7 +3884,10 @@ function mountGallery(volume) {
     layoutPhotos(touched);
     icons();
   }
-  function seekMonth(month) {
+  function seekPhoto(cursor, path) {
+    seekMonth(cursor.slice(0, 7), { cursor, path });
+  }
+  function seekMonth(month, photo = null) {
     if (state.refreshing) return;
     clearTimeout(state.poll);
     state.poll = null;
@@ -3894,8 +3901,9 @@ function mountGallery(volume) {
     clearWall();
     state.next = "";
     state.month = month;
-    state.anchorMonth = month;
-    state.range = { month };
+    state.anchorMonth = photo ? null : month;
+    state.highlight = photo?.path ?? null;
+    state.range = photo ? { from: photo.cursor } : { month };
     state.previous = null;
     page.scrollTop = 0;
     for (const button of root.querySelectorAll(".photo-timeline button"))
@@ -4144,6 +4152,8 @@ function mountGallery(volume) {
         more.removeAttribute("aria-busy");
       }
     }
+    if (live() && !failed && !waiting && state.highlight)
+      await landOnPhoto(live);
     if (live() && !failed) {
       loadNewerIfNear();
       loadOlderIfNear();
@@ -4181,6 +4191,25 @@ function mountGallery(volume) {
         root.closest(".page").getBoundingClientRect().bottom + 400
     )
       void state.load();
+  };
+  const landOnPhoto = async (live) => {
+    const path = state.highlight;
+    state.highlight = null;
+    if (state.previous) await state.loadNewer();
+    if (!live()) return;
+    const index = state.items.findIndex((item) => item.path === path);
+    const tile = index >= 0 && root.querySelector(`.photo-thumb[data-photo="${index}"]`);
+    if (!tile) return;
+    const view = root.closest(".page");
+    view.scrollTop +=
+      tile.getBoundingClientRect().top -
+      view.getBoundingClientRect().top -
+      view.clientHeight / 3;
+    tile.classList.add("photo-found");
+    setTimeout(
+      () => tile.classList.remove("photo-found"),
+      motionDuration("--motion-settle"),
+    );
   };
   const loadNewerIfNear = () => {
     const sentinel = root.querySelector(".photo-newer");

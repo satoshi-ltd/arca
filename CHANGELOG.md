@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.61 — 2026-10-13
+
+- A card of On this day now takes you to its own photo, scrolled into view and tinted for a moment on the desktop, web and phone, instead of only to the start of its month, so you land among that day's photos ready to open one.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.60 — 2026-10-13
 
 - On the desktop and web photo wall, On this day no longer disappears for good after you open one of its cards and come back to the wall: it stays above the wall and is there when you scroll to the top.

@@ -441,6 +441,7 @@ test("the gallery reports year and month periods and photos from earlier years o
   assert.deepEqual(months.periods.map((p) => [p.period, p.count]), [["2026-09", 3], ["2025-09", 3], ["2024-09", 1], ["2024-03", 1]]);
   const memories = await f.api(`/v1/gallery/memories?volume=${f.v.id}&day=09-12&year=2026`);
   assert.deepEqual(memories.memories.map((m) => [m.year, m.count]), [["2025", 3], ["2024", 1]], "earlier years only, newest first");
+  assert.ok(memories.memories.every((m) => m.cursor === `${m.cursor.split("|")[0]}|${m.path}` && m.cursor.startsWith(`${m.year}-09-12`)), "each card carries the cursor of its own photo");
   assert.deepEqual((await f.api(`/v1/gallery/memories?volume=${f.v.id}&day=12-25&year=2026`)).memories, []);
   for (const bad of ["day=13-45&year=2026", "day=09-12&year=26", "day=&year=", "level=week"]) {
     const route = bad.startsWith("level") ? `/v1/gallery/periods?volume=${f.v.id}&${bad}` : `/v1/gallery/memories?volume=${f.v.id}&${bad}`;

@@ -6097,6 +6097,15 @@ label.toggle {
     flex-direction: column;
   }
 }
+.photo-found::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--tint);
+  pointer-events: none;
+  animation: arrival-settle var(--motion-settle) var(--motion-ease) forwards;
+}
 .row-arrived {
   position: relative;
 }

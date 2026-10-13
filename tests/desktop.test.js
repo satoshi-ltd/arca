@@ -7240,7 +7240,7 @@ test("the gallery heads each month once with no day labels, with On this day, an
           if (args.route.startsWith("/v1/gallery?"))
             return { indexing: false, timeline: [{ month: "2026-09", count: 17, videos: 0 }], undated: { count: 0, videos: 0, rev: 0 }, items, days, next: null, previous: null };
           if (args.route.startsWith("/v1/gallery/memories"))
-            return { memories: [{ year: String(new Date().getFullYear() - 1), count: 21, path: "m.jpg", hash: "mh", kind: "image" }, { year: String(new Date().getFullYear() - 2), count: 1, path: "n.jpg", hash: "nh", kind: "image" }] };
+            return { memories: [{ year: String(new Date().getFullYear() - 1), count: 21, path: "2026-09-10-1.jpg", hash: "mh", kind: "image", cursor: "2026-09-10T10:00:00.000Z|2026-09-10-1.jpg" }, { year: String(new Date().getFullYear() - 2), count: 1, path: "n.jpg", hash: "nh", kind: "image" }] };
           if (args.route.startsWith("/v1/gallery/periods"))
             return { level: args.route.includes("level=year") ? "year" : "month", periods: args.route.includes("level=year") ? [{ period: "2026", latest: "2026-09", count: 17, path: "p.jpg", hash: "ph", kind: "image" }, { period: "2025", latest: "2025-12", count: 4, path: "q.jpg", hash: "qh", kind: "image" }] : [{ period: "2026-09", count: 17, path: "p.jpg", hash: "ph", kind: "image" }] };
           if (args.route.startsWith("/v1/gallery/preview")) return { unavailable: true };
@@ -7324,8 +7324,11 @@ test("the gallery heads each month once with no day labels, with On this day, an
   w.document.querySelector("#cancel-dialog").click();
   await until(() => !w.document.querySelector("#dialog").hasAttribute("open"));
   const wallRequests = () => routes.filter((route) => route.startsWith("/v1/gallery?")).length;
+  w.document.documentElement.style.setProperty("--motion-settle", "1800ms");
   w.document.querySelector(".memory-card").click();
-  await until(() => routes.some((route) => route.includes("month=")));
+  await until(() => routes.some((route) => route.includes("from=2026-09-10")));
+  await until(() => w.document.querySelector(".photo-found"));
+  assert.equal(w.document.querySelector(".photo-memories").hidden, false);
   const toggle = () => w.document.querySelector('[data-action="gallery-mode"]').click();
   toggle();
   await until(() => !w.document.querySelector(".photo-timeline"));

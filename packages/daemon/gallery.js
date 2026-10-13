@@ -388,7 +388,7 @@ export class Gallery {
       .prepare(
         this.datedSource(volume) +
           `, ranked AS (SELECT path,hash,rev,date,substr(date,1,4) AS year,count(*) OVER (PARTITION BY substr(date,1,4)) AS count,row_number() OVER (PARTITION BY substr(date,1,4) ORDER BY date ASC,path ASC) AS n FROM dated WHERE substr(date,6,5)=? AND substr(date,1,4)<?)
-          SELECT year,count,path,hash,rev,arca_media_kind(path) AS kind FROM ranked WHERE n=1 ORDER BY year DESC LIMIT 12`,
+          SELECT year,count,path,hash,rev,date || '|' || path AS cursor,arca_media_kind(path) AS kind FROM ranked WHERE n=1 ORDER BY year DESC LIMIT 12`,
       )
       .all(volume, day, year);
     return { day, memories: rows };

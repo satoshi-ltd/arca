@@ -26,7 +26,17 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **DESK-VIEWER-DRAG** — The window cannot be dragged while the gallery viewer is open
+  `bug · agent · low`
+  accept: in the native app, pressing and dragging an empty strip of the full-window viewer moves the window, without starting a drag on the viewer's buttons, video controls or the Info panel; the existing titlebar drag rule (`app.js` mousedown handler returns whenever a dialog is open) is narrowed instead of removed; a JSDOM test covers it. Found by the review of 0.6.111. Needs a desktop build.
+
+- **DESK-FORCED-POLL-DROPPED** — An event that arrives while a status poll is running can leave the window stale for 20–30 seconds
+  `bug · agent · low`
+  accept: `pollStatus(true)` (`apps/desktop/src/app.js`) no longer returns at once when a poll is already in flight; it runs once more right after that poll ends, so a connectivity event consumed during a slow `/v1/status` still updates the window within seconds; a JSDOM test holds one status read open, delivers an event cursor change and sees the second read follow. Suspected by the review of 0.7.5, not reproduced.
+
+- **DESK-ONBOARDING-TRAFFIC-LIGHTS** — The onboarding rail's brand sits under the macOS window controls
+  `bug · agent · low`
+  accept: in the native Mac app the onboarding screens (the sidebar is hidden there) keep the brand and rail clear of the red, yellow and green controls, reusing the `mac-native` class and `--window-controls-inset`; the web interface and other platforms keep their layout; a stylesheet contract test covers it. Found by the review of 0.6.111 from reading the CSS (`.onboarding-rail` starts at the top-left); check it on the Mac first. Needs a desktop build.
 
 ## In progress
 
@@ -165,10 +175,6 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 ### Decisions
 
-- **DEC-PHOTO-PLACES** — May Arca read and index photo GPS as place names?
-  `decision · maintainer · normal`
-  accept: answers recorded in SPEC: GPS indexing allowed (rewrites the "no place data" sentences); place labels visible on every device that syncs the folder or only on the hub; on by default or per folder; no map view; people and object search stay out of Arca (Immich covers them).
-
 - **DEC-LAN-PERMISSION** — Cache LAN permission?
   `decision · maintainer · normal`
 - **DEC-FIRST-PAGE** — Serve the first snapshot page without a hub scan?
@@ -220,12 +226,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Release and native reliability
 
-- **DESK-ONBOARDING-TRAFFIC-LIGHTS** — The onboarding rail's brand sits under the macOS window controls
-  `bug · agent · low`
-  accept: in the native Mac app the onboarding screens (the sidebar is hidden there) keep the brand and rail clear of the red, yellow and green controls, reusing the `mac-native` class and `--window-controls-inset`; the web interface and other platforms keep their layout; a stylesheet contract test covers it. Found by the review of 0.6.111 from reading the CSS (`.onboarding-rail` starts at the top-left); check it on the Mac first. Needs a desktop build.
-- **DESK-VIEWER-DRAG** — The window cannot be dragged while the gallery viewer is open
-  `bug · agent · low`
-  accept: in the native app, pressing and dragging an empty strip of the full-window viewer moves the window, without starting a drag on the viewer's buttons, video controls or the Info panel; the existing titlebar drag rule (`app.js` mousedown handler returns whenever a dialog is open) is narrowed instead of removed; a JSDOM test covers it. Found by the review of 0.6.111. Needs a desktop build.
 - **DESK-TRAY-UNUSED-COMMAND** — Remove the unused `main_window_open` Tauri command
   `chore · agent · low`
   accept: `main_window_open` (`apps/desktop/src-tauri/src/main.rs`, its function and its `invoke_handler` entry) is deleted now that the tray keeps Open Arca in its footer and never calls it; `tests/tray.test.js` keeps asserting the tray never invokes it, and a source test asserts `main.rs` no longer defines or registers it. Needs a desktop build to prove it compiles and the tray still opens the main window.
@@ -241,17 +241,10 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Deferred usability and cleanup
 
-- **ON-THIS-DAY-OPEN-PHOTO** — A card of On this day takes you to the photo it shows
-  `feature · agent · normal`
-  accept: opening a card of On this day on the desktop, web and phone lands on that day's photos with the card's cover photo in view and highlighted for a moment (or open in the viewer: the maintainer chooses), instead of only moving to its month; the same photo the card draws is the one that opens; tests cover the landing on desktop and the phone's card press. Reported by the maintainer: today the card seeks the month (`seekMonth` in `apps/desktop/src/app.js` ~3406) and does not reach the photo.
-
 - **PHOTO-PLACES** — Search Arca finds photos by place ("hua hin", "thailand", "tailandia")
   `feature · agent · normal · depends: DEC-PHOTO-PLACES`
   accept: the hub reads GPS during gallery indexing and stores only a place label and a folded search text (city, district, province, country), never coordinates; names come from a bundled offline GeoNames extract (CC BY, attributed; no cloud geocoding, no new npm dependency), including Spanish and English alternate names for countries and first-level regions so "thailand" and "tailandia" both match; existing photos re-index once; Search Arca gains a Places group (one row per place with its count, opening the gallery filtered to it) on desktop, web and phone, offline on the phone from the synchronized labels; photos without GPS are explained in the empty result; tests cover lookup (Hua Hin, open sea, antimeridian, invalid coordinates), indexing with and without GPS, and the "hua hin"/"thailand"/"tailandia" queries on hub and phone. Feasibility study: GPS read 0.17 ms per photo, compact dataset about 2.5 MB plus alternate names, grid lookup about 13 µs.
 
-- **DESK-FORCED-POLL-DROPPED** — An event that arrives while a status poll is running can leave the window stale for 20–30 seconds
-  `bug · agent · low`
-  accept: `pollStatus(true)` (`apps/desktop/src/app.js`) no longer returns at once when a poll is already in flight; it runs once more right after that poll ends, so a connectivity event consumed during a slow `/v1/status` still updates the window within seconds; a JSDOM test holds one status read open, delivers an event cursor change and sees the second read follow. Suspected by the review of 0.7.5, not reproduced.
 - **DESK-ONBOARDING-HUB-ADDRESS** — The onboarding Hub address field loses its placeholder and is forced to monospace
   `bug · agent · low`
   accept: the onboarding "Pair with your hub" step passes its placeholder `https://arca.your-network` in the placeholder position, as the Connect to hub dialog does, so the field shows it and only the typed value is monospace; a desktop test asserts the placeholder. Found by the design audit: `textField` takes no placeholder, so the sixth argument lands in `mono`.

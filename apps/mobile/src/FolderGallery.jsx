@@ -138,6 +138,7 @@ const Tile = memo(function Tile({
   onPress,
   onLongPress,
   selected,
+  found,
 }) {
   const { s } = useDesign();
   const frame = useRef(null);
@@ -151,6 +152,17 @@ const Tile = memo(function Tile({
       useNativeDriver: true,
     }).start();
   }, [selected]);
+  const glow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!found) return;
+    glow.setValue(0.7);
+    Animated.timing(glow, {
+      toValue: 0,
+      duration: duration(motion.settle),
+      easing,
+      useNativeDriver: true,
+    }).start();
+  }, [found]);
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [uri]);
   return (
@@ -204,6 +216,7 @@ const Tile = memo(function Tile({
         <MediaPlaceholder size={size} video={item.kind === "video"} />
       )}
       </Animated.View>
+      {found && <Animated.View pointerEvents="none" style={[s.photoFound, { opacity: glow }]} />}
       {selected && (
         <Pop style={s.photoBadge}>
           <Icon name="check" size={14} color="#fff" />
@@ -296,6 +309,9 @@ export function FolderGallery({
     }).start();
   }, [level]);
   const [memories, setMemories] = useState([]);
+  const [foundPath, setFoundPath] = useState(null);
+  const foundTimer = useRef(null);
+  useEffect(() => () => clearTimeout(foundTimer.current), []);
   const today = new Date().toDateString();
   const memoryDay = useMemo(() => {
     const now = new Date();
@@ -1393,13 +1409,23 @@ export function FolderGallery({
                 accessibilityLabel={`On this day in ${memory.year}, ${memory.count} ${memory.count === 1 ? "photo" : "photos"}`}
                 style={({ pressed }) => [s.memoryCard, { width: card.width, height: card.height }, pressed && s.pressedFade]}
                 onPress={() => {
-                  const section = layout.sections.find(
-                    (item) => item.month === `${memory.year}-${memoryDay.day.slice(0, 2)}`,
-                  );
+                  const month = `${memory.year}-${memoryDay.day.slice(0, 2)}`;
+                  const section = layout.sections.find((item) => item.month === month);
                   if (!section) return;
-                  const y = rootTop.current + canvasTop.current + section.top;
+                  const index = (months.get(month) || []).findIndex((item) => item.path === memory.path);
+                  const offset = index >= 0 ? itemOffset(layout, month, index) : null;
+                  const y =
+                    rootTop.current +
+                    canvasTop.current +
+                    (offset === null
+                      ? section.top
+                      : Math.max(section.top, offset - (positionRef.current?.viewport.height || 800) / 3));
                   positionRef.current?.scrollTo(y);
                   followRef.current(y);
+                  if (offset === null) return;
+                  clearTimeout(foundTimer.current);
+                  setFoundPath(memory.path);
+                  foundTimer.current = setTimeout(() => setFoundPath(null), motion.settle);
                 }}
               >
                 {cover ? (
@@ -1581,6 +1607,7 @@ export function FolderGallery({
                 left={cell.left}
                 uri={thumb(item)}
                 selected={selection.some((photo) => photo.path === item.path)}
+                found={item.path === foundPath}
                 onPress={handlers.press}
                 onLongPress={
                   remove && Number.isSafeInteger(item.rev)

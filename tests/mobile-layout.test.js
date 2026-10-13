@@ -1043,3 +1043,15 @@ test("the viewer video surface reads safe-area insets and keeps no fixed margins
   assert.match(video, /useSafeAreaInsets\(\)/);
   assert.match(video, /\[s\.viewerVideoSurface, videoSurfaceMargins\(insets\)\]/);
 });
+
+test("an On this day card scrolls to its own photo and highlights it for the settle time", () => {
+  const gallery = fs.readFileSync(new URL("../apps/mobile/src/FolderGallery.jsx", import.meta.url), "utf8");
+  const theme = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
+  assert.match(gallery, /findIndex\(\(item\) => item\.path === memory\.path\)/);
+  assert.match(gallery, /itemOffset\(layout, month, index\)/);
+  assert.match(gallery, /offset - \(positionRef\.current\?\.viewport\.height \|\| 800\) \/ 3/);
+  assert.match(gallery, /setFoundPath\(memory\.path\);\s+foundTimer\.current = setTimeout\(\(\) => setFoundPath\(null\), motion\.settle\);/);
+  assert.match(gallery, /found=\{item\.path === foundPath\}/);
+  assert.match(gallery, /duration: duration\(motion\.settle\)/);
+  assert.match(theme, /photoFound: \{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: c\.tint \}/);
+});
