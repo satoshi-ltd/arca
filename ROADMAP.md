@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-ON-THIS-DAY-STUCK** — On this day disappears after opening a card and never comes back
-  `bug · agent · high`
-  accept: on the desktop and web photo wall, opening a card of On this day and then returning to the top of the wall shows On this day again (the same cards); the wall never jumps, re-fetches in a loop or "goes crazy" after the click; a JSDOM test covers opening a card, scrolling back to the top and clearing the month filter, and the wall stays still while it does. Check the phone (FolderGallery.jsx) for the same behaviour and fix it there too if it shares the cause. Reported by the maintainer; suspected from `showMemories` (`apps/desktop/src/app.js` ~3395): `box.hidden = Boolean(state.month)` keeps the section hidden while the month filter that `seekMonth` sets stays on, and nothing shows it again; not reproduced.
+_None._
 
 ## In progress
 

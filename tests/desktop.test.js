@@ -7321,6 +7321,22 @@ test("the gallery heads each month once with no day labels, with On this day, an
   w.document.querySelector(".photo-thumb .photo-open").click();
   await until(() => w.document.querySelector(".photo-viewer-image"));
   assert.equal(flights.length, count, "a thumbnail scrolled out of view opens with the plain fade");
+  w.document.querySelector("#cancel-dialog").click();
+  await until(() => !w.document.querySelector("#dialog").hasAttribute("open"));
+  const wallRequests = () => routes.filter((route) => route.startsWith("/v1/gallery?")).length;
+  w.document.querySelector(".memory-card").click();
+  await until(() => routes.some((route) => route.includes("month=")));
+  const toggle = () => w.document.querySelector('[data-action="gallery-mode"]').click();
+  toggle();
+  await until(() => !w.document.querySelector(".photo-timeline"));
+  toggle();
+  await until(() => w.document.querySelectorAll(".photo-thumb").length === 17);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.equal(w.document.querySelector(".photo-memories").hidden, false, "leaving the wall and coming back brings On this day back");
+  assert.equal(w.document.querySelectorAll(".memory-card").length, 2, "with the same cards");
+  const settled = wallRequests();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(wallRequests(), settled, "the wall stays still: no re-fetch loop");
 });
 
 test("the wall files each photo under the local day its date names, sharpens tiles and lays out only what changed", async (t) => {

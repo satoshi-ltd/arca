@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.60 — 2026-10-13
+
+- On the desktop and web photo wall, On this day no longer disappears for good after you open one of its cards and come back to the wall: it stays above the wall and is there when you scroll to the top.
+
+Needs: desktop build
+
 ## 0.7.59 — 2026-10-12
 
 - Large HEIC photos that Android cannot decode no longer leave "previews could not be made" on the phone: the grid and the background preparation pass both take the hub's preview, which is remembered, so Retry does not repeat the failing local attempt and the phone stops flooding its log.
