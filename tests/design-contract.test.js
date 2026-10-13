@@ -573,3 +573,13 @@ test("a primary icon button keeps its accent fill on hover, so its icon stays vi
   assert.ok(block.indexOf(".icon-button:hover:not(:disabled)") < block.indexOf(".primary.icon-button:hover:not(:disabled)"), "the primary rule follows the generic one");
   assert.match(block, /\.primary\.icon-button:hover:not\(:disabled\) \{\s+background: var\(--green\);\s+\}/);
 });
+
+test("the onboarding rail drops its brand below the macOS window controls only in the native Mac app", () => {
+  const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  const tokens = fs.readFileSync(new URL("../apps/desktop/src/tokens.css", import.meta.url), "utf8");
+  assert.match(tokens, /--window-controls-drop: 44px;/, "the same 44 px the shell sidebar's brand sits at (14 padding, 12 drag strip, 18 gap)");
+  const base = css.match(/\n\.onboarding-rail \{([^}]*)\}/)[1];
+  assert.doesNotMatch(base, /window-controls-drop/, "the web and other platforms keep the rail's own padding");
+  assert.match(css, /\n\.mac-native \.onboarding-rail \{\s+padding-top: var\(--window-controls-drop\);\s+\}/);
+  assert.ok(css.indexOf("\n.mac-native .onboarding-rail {") > css.indexOf("\n.onboarding-rail {"), "the native rule comes after the base rule");
+});
