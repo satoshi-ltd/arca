@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.67 — 2026-10-14
+
+- On the desktop, a podcast show's page shows Pause while one of its episodes is playing, instead of Continue, and goes back to Continue when you pause it.
+
+Needs: desktop build
+
 ## 0.7.66 — 2026-10-13
 
 - The Arca Synchronization notification and its Android service now appear only while a file is really being downloaded or uploaded; before, every sync cycle started them, so they flashed on and off all day even with nothing to transfer.

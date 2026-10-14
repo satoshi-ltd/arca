@@ -1562,6 +1562,18 @@ test("podcast episodes get their own tab with shows and episodes newest first, a
   assert.equal($(".music-track-head .music-track-play > span").textContent, "", "the header has no # either");
   assert.deepEqual($$(".music-tracks .music-track[data-path] .music-length").map((el) => el.textContent), ["5 h 10 min", "2 h 5 min"], "episode lengths read in hours and minutes");
   assert.equal($(".music-tracks .music-track[data-path] .music-track-play > .mono:last-child"), null);
+  const header = () => $(".music-head .heading-actions .primary").textContent.trim();
+  const headerButton = $(".music-head .heading-actions .primary");
+  assert.equal(header(), "Play", "nothing plays yet");
+  await ui.click(".music-tracks .music-track[data-path] .music-track-play", () => $("audio").playing);
+  await until(() => header() === "Pause");
+  assert.equal($(".music-head .heading-actions .primary").dataset.action, "music-tile-play", "the same button pauses what plays");
+  assert.equal($(".music-head .heading-actions .primary"), headerButton, "the button is patched in place so keyboard focus stays on it");
+  const playing = $(".music-tracks .music-track[data-path] .music-track-play").closest(".music-track").dataset.path;
+  $("audio").pause();
+  await until(() => header() === "Continue");
+  assert.equal($(".music-head .heading-actions .primary").dataset.id, playing, "a paused episode resumes that very episode, not the first one of the show");
+  assert.equal($(".music-head .heading-actions .primary"), headerButton);
 });
 
 test("a folder of only podcasts opens on its shows and offers no music tabs", async (t) => {

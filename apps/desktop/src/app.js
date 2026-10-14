@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.66";
+const APP_VERSION = "0.7.67";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5525,12 +5525,36 @@ const hoursLength = (seconds) => {
   const minutes = Math.round((seconds || 0) / 60);
   return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : minutes ? `${minutes} min` : "";
 };
-function musicShow(v, show) {
-  const summary = [musicCount(show.tracks.length, "episode"), hoursLength(show.duration)].filter(Boolean);
+function musicShowPlay(v, show) {
+  const loaded = musicPlayer?.volume === v.id ? musicPlayer.loadedTrack : null;
+  if (loaded && show.tracks.some((track) => track.path === loaded.path))
+    return musicAudio().paused
+      ? button("Continue", "music-tile-play", loaded.path, "primary", "play")
+      : button("Pause", "music-tile-play", loaded.path, "primary", "pause");
   const saved = show.tracks.find((track) => !track.pending && audioPositions.get(positionKey(v.id, track.path))?.hash === track.hash);
-  const play = saved
+  return saved
     ? button("Continue", "music-resume", saved.path, "primary", "play")
     : button("Play", "music-play", "", "primary", "play");
+}
+function refreshShowPlay() {
+  const host = document.querySelector("#content .music-head .heading-actions");
+  const v = status?.volumes?.find((item) => item.id === detailId);
+  const entry = v && musicLibraries.get(musicKey(v.id));
+  const show = entry?.library && musicView.show && entry.library.shows.find((item) => item.id === musicView.show);
+  const old = host?.querySelector('.primary[data-action^="music-"]');
+  if (!show || !old) return;
+  const holder = document.createElement("div");
+  holder.innerHTML = musicShowPlay(v, show);
+  const next = holder.firstElementChild;
+  if (next.dataset.action === old.dataset.action && next.dataset.id === old.dataset.id && next.textContent === old.textContent) return;
+  old.dataset.action = next.dataset.action;
+  old.dataset.id = next.dataset.id;
+  old.innerHTML = next.innerHTML;
+  icons();
+}
+function musicShow(v, show) {
+  const summary = [musicCount(show.tracks.length, "episode"), hoursLength(show.duration)].filter(Boolean);
+  const play = musicShowPlay(v, show);
   const shown = show.tracks.slice(0, musicView.pages * MUSIC_LIST_PAGE);
   return `<div class="music-head">${musicCover(v.id, show.cover, "arca", " large")}<div class="music-head-info"><div><h2>${escape(show.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${play}</div></div></div></div>${musicRows(
     v,
@@ -6263,6 +6287,7 @@ function renderPlayer() {
 }
 function markMusicPlaying() {
   const track = musicCurrent();
+  refreshShowPlay();
   for (const play of document.querySelectorAll("#content .music-continue-play")) {
     const here = !!track && musicPlayer.volume === play.dataset.volume && track.path === play.dataset.id;
     const playing = here && !musicAudio().paused;
