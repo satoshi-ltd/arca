@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.68 — 2026-10-14
+
+- On the desktop, Play on an album or playlist page now reads Pause while that album or playlist plays, and Play resumes the loaded track once paused instead of restarting the album.
+
+Needs: desktop build
+
 ## 0.7.67 — 2026-10-14
 
 - On the desktop, a podcast show's page shows Pause while one of its episodes is playing, instead of Continue, and goes back to Continue when you pause it.

@@ -419,6 +419,14 @@ test("Artists open the artist's albums and then the album, and an album plays sh
   await until(() => ui.played.length === 1 && ui.idle());
   assert.equal(ui.text(".music-player-track strong"), "Freddie Freeloader", "Shuffle starts from a random track of the album");
   assert.equal($('#music-player [data-player="shuffle"]').getAttribute("aria-pressed"), "true");
+  const primary = () => $(".music-head .heading-actions .primary");
+  const headButton = primary();
+  await until(() => primary().textContent.trim() === "Pause");
+  assert.equal(primary().dataset.action, "music-toggle", "while the album plays its Play button pauses it");
+  assert.equal(primary(), headButton, "and is patched in place, so keyboard focus stays");
+  $("audio").pause();
+  await until(() => primary().textContent.trim() === "Play" && primary().dataset.action === "music-toggle");
+  assert.equal(primary(), headButton, "a paused album's Play resumes the loaded track instead of restarting the album");
   const key = `arca-music-recent:${ui.status().id}:${ui.volume.id}`;
   const saved = JSON.parse(w.localStorage.getItem(key));
   assert.deepEqual(saved.map((entry) => entry.kind), ["album"]);
@@ -2094,4 +2102,30 @@ test("when the hub already holds a newer row the card's removal changes nothing 
   $('.resume-card [data-action="music-resume-clear"]').click();
   await until(() => /50:00/.test($(".resume-card")?.textContent || ""));
   assert.match($(".resume-card").textContent, /Episode 1.*Other/s);
+});
+
+test("album and playlist pages share one Play button that follows playback", () => {
+  const source = fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8");
+  assert.match(source, /\$\{musicHeadPlay\(v, album\)\}\$\{button\("Shuffle"/);
+  assert.match(source, /list\.tracks\.length \? musicHeadPlay\(v, list\) \+ button\("Shuffle"/);
+  assert.match(source, /if \(name === "music-toggle"\) return musicPlayPause\(\);/);
+  assert.match(source, /"music-tile-play",\s+"music-toggle",/, "the toggle is a navigation action like the tile's");
+});
+
+test("an album page's Play follows any playback of its tracks, and starts the album again once it has ended", async (t) => {
+  const ui = await open(t);
+  const { $, w } = ui;
+  await until(() => $(".music-page .music-artist-row") && ui.idle());
+  await ui.click('.music-artist-row[data-id*="miles davis"]', () => $('.music-head [data-action="music-shuffle-artist"]'));
+  $('.music-head [data-action="music-shuffle-artist"]').click();
+  await until(() => ui.played.length === 1 && ui.idle());
+  await ui.click('.music-card[data-action="music-album"]', () => $('.music-head [data-action="music-toggle"], .music-head [data-action="music-play"]'));
+  const primary = () => $(".music-head .heading-actions .primary");
+  await until(() => primary().textContent.trim() === "Pause");
+  assert.equal(primary().dataset.action, "music-toggle", "a track of this album plays from an artist shuffle, so its page offers Pause");
+  Object.defineProperty($("audio"), "ended", { configurable: true, get: () => true });
+  $("audio").pause();
+  await until(() => primary().dataset.action === "music-play");
+  assert.equal(primary().textContent.trim(), "Play", "after the last track ended Play starts the album from the top");
+  delete $("audio").ended;
 });

@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.67";
+const APP_VERSION = "0.7.68";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5385,7 +5385,7 @@ function musicTracks(v, album) {
     formatDuration(album.duration),
   ].filter(Boolean);
   const shown = album.tracks.slice(0, musicView.pages * MUSIC_LIST_PAGE);
-  return `<div class="music-head">${musicCover(v.id, album.cover, "arca", " large")}<div class="music-head-info"><div><h2>${escape(album.title)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${button("Play", "music-play", "", "primary", "play")}${button("Shuffle", "music-shuffle", "", "secondary", "shuffle")}</div></div></div></div>${musicRows(
+  return `<div class="music-head">${musicCover(v.id, album.cover, "arca", " large")}<div class="music-head-info"><div><h2>${escape(album.title)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${musicHeadPlay(v, album)}${button("Shuffle", "music-shuffle", "", "secondary", "shuffle")}</div></div></div></div>${musicRows(
     v,
     shown.map((track, index) => ({ track, id: index, subtitle: track.artist })),
     "music-track",
@@ -5414,7 +5414,7 @@ function musicPlaylist(v, list) {
           remove: editable,
         },
   );
-  return `<div class="music-head">${musicCover(v.id, list.cover, "list-music", " large")}<div class="music-head-info"><div><h2>${escape(list.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${list.tracks.length ? button("Play", "music-play", "", "primary", "play") + button("Shuffle", "music-shuffle", "", "secondary", "shuffle") : ""}${menu}</div></div></div></div>${musicRows(v, rows, "music-track", { head: musicHeadRow(true), playlist: list.id, album: true })}${list.entries.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
+  return `<div class="music-head">${musicCover(v.id, list.cover, "list-music", " large")}<div class="music-head-info"><div><h2>${escape(list.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${list.tracks.length ? musicHeadPlay(v, list) + button("Shuffle", "music-shuffle", "", "secondary", "shuffle") : ""}${menu}</div></div></div></div>${musicRows(v, rows, "music-track", { head: musicHeadRow(true), playlist: list.id, album: true })}${list.entries.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
 }
 function musicRecent(v, library) {
   const played = playedItems(library, musicHistory(v.id));
@@ -5525,26 +5525,46 @@ const hoursLength = (seconds) => {
   const minutes = Math.round((seconds || 0) / 60);
   return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : minutes ? `${minutes} min` : "";
 };
+function musicHeadState(v, tracks) {
+  const state = musicPlayer?.volume === v.id ? musicPlayer : null;
+  const loaded = state?.loadedTrack;
+  if (!loaded || state.loading || !tracks.some((track) => track.path === loaded.path)) return null;
+  const audio = musicAudio();
+  if (audio.ended) return null;
+  return { loaded, playing: !audio.paused };
+}
 function musicShowPlay(v, show) {
-  const loaded = musicPlayer?.volume === v.id ? musicPlayer.loadedTrack : null;
-  if (loaded && show.tracks.some((track) => track.path === loaded.path))
-    return musicAudio().paused
-      ? button("Continue", "music-tile-play", loaded.path, "primary", "play")
-      : button("Pause", "music-tile-play", loaded.path, "primary", "pause");
+  const here = musicHeadState(v, show.tracks);
+  if (here)
+    return here.playing
+      ? button("Pause", "music-tile-play", here.loaded.path, "primary", "pause")
+      : button("Continue", "music-tile-play", here.loaded.path, "primary", "play");
   const saved = show.tracks.find((track) => !track.pending && audioPositions.get(positionKey(v.id, track.path))?.hash === track.hash);
   return saved
     ? button("Continue", "music-resume", saved.path, "primary", "play")
     : button("Play", "music-play", "", "primary", "play");
 }
-function refreshShowPlay() {
+function musicHeadPlay(v, item) {
+  const here = musicHeadState(v, item.tracks);
+  if (here)
+    return here.playing
+      ? button("Pause", "music-toggle", "", "primary", "pause")
+      : button("Play", "music-toggle", "", "primary", "play");
+  return button("Play", "music-play", "", "primary", "play");
+}
+function refreshHeadPlay() {
   const host = document.querySelector("#content .music-head .heading-actions");
   const v = status?.volumes?.find((item) => item.id === detailId);
-  const entry = v && musicLibraries.get(musicKey(v.id));
-  const show = entry?.library && musicView.show && entry.library.shows.find((item) => item.id === musicView.show);
+  const library = v && musicLibraries.get(musicKey(v.id))?.library;
   const old = host?.querySelector('.primary[data-action^="music-"]');
-  if (!show || !old) return;
+  if (!library || !old) return;
+  const album = musicView.album && library.albums.get(musicView.album);
+  const list = !album && musicView.playlist && library.playlists.find((item) => item.id === musicView.playlist);
+  const show = !album && !list && musicView.show && library.shows.find((item) => item.id === musicView.show);
+  const html = album ? musicHeadPlay(v, album) : list ? musicHeadPlay(v, list) : show ? musicShowPlay(v, show) : null;
+  if (!html) return;
   const holder = document.createElement("div");
-  holder.innerHTML = musicShowPlay(v, show);
+  holder.innerHTML = html;
   const next = holder.firstElementChild;
   if (next.dataset.action === old.dataset.action && next.dataset.id === old.dataset.id && next.textContent === old.textContent) return;
   old.dataset.action = next.dataset.action;
@@ -6287,7 +6307,7 @@ function renderPlayer() {
 }
 function markMusicPlaying() {
   const track = musicCurrent();
-  refreshShowPlay();
+  refreshHeadPlay();
   for (const play of document.querySelectorAll("#content .music-continue-play")) {
     const here = !!track && musicPlayer.volume === play.dataset.volume && track.path === play.dataset.id;
     const playing = here && !musicAudio().paused;
@@ -6492,6 +6512,7 @@ async function handleMusic(name, id) {
   }
   const playlist = (path) => library.playlists.find((item) => item.id === path);
   const edit = (body) => api("/v1/music/playlist", { volume: v.id, ...body });
+  if (name === "music-toggle") return musicPlayPause();
   if (name === "music-tile-play") {
     const loaded = musicPlayer?.loadedTrack;
     if (loaded?.path === id && musicPlayer.volume === v.id) return musicPlayPause();
@@ -9272,6 +9293,7 @@ const navigationActions = new Set([
   "music-resume",
   "music-resume-start",
   "music-tile-play",
+  "music-toggle",
   "music-delete",
   "music-crumb",
   "music-more",
