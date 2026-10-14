@@ -2129,3 +2129,32 @@ test("an album page's Play follows any playback of its tracks, and starts the al
   assert.equal(primary().textContent.trim(), "Play", "after the last track ended Play starts the album from the top");
   delete $("audio").ended;
 });
+
+test("only the track that plays carries live progress: a row that stops being current gets its length back", async (t) => {
+  const ui = await open(t);
+  const { $, $$ } = ui;
+  await until(() => $(".music-page .music-artist-row") && ui.idle());
+  await ui.click('.music-artist-row[data-id*="miles davis"]', () => $('.music-head [data-action="music-shuffle-artist"]'));
+  await ui.click('.music-card[data-action="music-album"]', () => $('.music-head [data-action="music-play"]'));
+  const rows = () => $$(".music-tracks .music-track[data-path]");
+  const first = rows()[0];
+  const before = first.querySelector(".music-track-play > .mono:last-child").textContent;
+  $('.music-head [data-action="music-play"]').click();
+  await until(() => ui.played.length === 1 && first.classList.contains("playing"));
+  const audio = $("audio");
+  Object.defineProperty(audio, "duration", { configurable: true, get: () => 200 });
+  Object.defineProperty(audio, "currentTime", { configurable: true, get: () => 3 });
+  audio.dispatchEvent(new ui.w.Event("timeupdate"));
+  await until(() => first.querySelector(".music-progress"));
+  assert.match(first.querySelector(".music-track-play > .mono:last-child").textContent, /min left$/, "the current track shows its progress");
+  $('#music-player [data-player="next"]').click();
+  await until(() => !first.classList.contains("playing"));
+  assert.equal(first.querySelector(".music-progress"), null, "the track that stopped being current keeps no bar");
+  assert.equal(first.querySelector(".music-track-play > .mono:last-child").textContent, before, "and shows its length again");
+  assert.equal(first.querySelector(".music-left"), null);
+});
+
+test("a long episode that earned a saved position while playing keeps its bar when you skip away", () => {
+  const source = fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8");
+  assert.match(source, /if \(!playing && !audioPositions\.has\(positionKey\(list\.dataset\.volume, row\.dataset\.path\)\)\) \{\s+row\.querySelector\("\.music-progress\[data-live\]"\)\?\.remove\(\);/);
+});

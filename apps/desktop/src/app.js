@@ -115,7 +115,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.68";
+const APP_VERSION = "0.7.69";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -6094,6 +6094,7 @@ function paintPlaying(elapsed, total) {
     if (!bar) {
       bar = document.createElement("progress");
       bar.className = "music-progress";
+      bar.dataset.live = "";
       bar.max = 100;
       bar.setAttribute("aria-label", "Played");
       cell.append(bar);
@@ -6101,6 +6102,7 @@ function paintPlaying(elapsed, total) {
     bar.value = Math.round((elapsed / total) * 100);
     const length = row.querySelector(".music-track-play > .mono:last-child");
     if (length) {
+      if (!length.classList.contains("music-left") && length.dataset.was === undefined) length.dataset.was = length.textContent;
       length.classList.add("music-left");
       length.textContent = timeLeft(total - elapsed);
     }
@@ -6326,6 +6328,15 @@ function markMusicPlaying() {
       const playing = here && (ordered ? row.dataset.position === String(position) : row.dataset.path === track.path);
       row.classList.toggle("playing", playing);
       row.classList.toggle("paused", playing && musicAudio().paused);
+      if (!playing && !audioPositions.has(positionKey(list.dataset.volume, row.dataset.path))) {
+        row.querySelector(".music-progress[data-live]")?.remove();
+        const length = row.querySelector(".music-track-play > [data-was]");
+        if (length) {
+          length.textContent = length.dataset.was;
+          length.classList.remove("music-left");
+          delete length.dataset.was;
+        }
+      }
       if (playing) row.setAttribute("aria-current", "true");
       else row.removeAttribute("aria-current");
     }
