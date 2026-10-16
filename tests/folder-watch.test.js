@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { watchTree } from "../packages/daemon/folder-watch.js";
 import { compileIgnore } from "../packages/daemon/exclusions.js";
+import { canWatchDirectory } from "./watch-support.js";
 
 const until = async (check) => {
   for (let i = 0; i < 250 && !check(); i++)
@@ -13,6 +14,10 @@ const until = async (check) => {
 };
 
 test("the tree watcher skips excluded directories and follows new, re-included and removed ones", async (t) => {
+  if (!(await canWatchDirectory(7))) {
+    t.skip("the operating system cannot deliver folder watcher events here");
+    return;
+  }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-watch-"));
   for (const dir of ["src/lib", "repos/big/deep", "node_modules/pkg/lib", ".git/objects", "cache"])
     fs.mkdirSync(path.join(root, dir), { recursive: true });
@@ -50,6 +55,10 @@ test("the tree watcher skips excluded directories and follows new, re-included a
 });
 
 test("an asynchronous error of an existing watcher reaches the daemon's handler instead of silently dropping the watch", async (t) => {
+  if (!(await canWatchDirectory(3))) {
+    t.skip("the operating system cannot deliver folder watcher events here");
+    return;
+  }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-watch-error-"));
   fs.mkdirSync(path.join(root, "src/nested"), { recursive: true });
   const seen = [];
@@ -72,6 +81,10 @@ test("an asynchronous error of an existing watcher reaches the daemon's handler 
 });
 
 test("a watcher error with no listener, or after close, never throws", async (t) => {
+  if (!(await canWatchDirectory(2))) {
+    t.skip("the operating system cannot deliver folder watcher events here");
+    return;
+  }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-watch-quiet-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   const w = watchTree(root, () => false, () => {});

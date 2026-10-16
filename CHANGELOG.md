@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.70 — 2026-10-17
+
+- Desktop and web refresh playback positions every 30 seconds while an audio library is open, so podcast progress, remaining time and Continue details catch up with other devices.
+
+Needs: desktop build
+
 ## 0.7.69 — 2026-10-14
 
 - On the desktop, a song's row no longer keeps its progress bar and "N min left" after you move to another track: only the song that plays shows live progress, and the others show their length again. Podcast episodes still keep their saved position.

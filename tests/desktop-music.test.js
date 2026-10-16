@@ -10,6 +10,7 @@ import { savePosition } from "../packages/daemon/audio-positions.js";
 import {
   artistGroups,
   artistLetter,
+  audioPositionSignature,
   buildLibrary,
   formatDuration,
   nextRepeat,
@@ -96,6 +97,7 @@ async function open(t, { role = "hub", selected = true, folders = ["Music"], man
   const ui = { patch: (value) => value, poll: null, timers: new Map(), observed: new Set(), listeners: {}, emitted: [], edits: [], answers: {} };
   w.setInterval = (callback, ms) => {
     if (ms === 5000) ui.poll = callback;
+    if (ms === 30000) ui.audioPositionRefresh = callback;
     return 0;
   };
   const setTimer = w.setTimeout.bind(w);
@@ -1546,6 +1548,41 @@ test("a long track shows its progress, offers to pick it up and asks before it i
   w.document.querySelector('[data-action="music-delete"]').click();
   await until(() => w.document.querySelector("#dialog").hasAttribute("open"));
   assert.match(w.document.querySelector("#dialog").textContent, /Delete Episode 412\?.*removed from every device.*History keeps it/s);
+});
+
+test("audio position refresh detects progress within a minute and changes in device or completion", () => {
+  const positions = new Map([["a", { volume: "music", path: "Show/episode.mp3", hash: "h1", position: 1200, updated: 1, device: "phone", name: "Phone" }]]);
+  const finished = new Map();
+  const before = audioPositionSignature(positions, finished, "music");
+  positions.set("a", { ...positions.get("a"), position: 1215, updated: 2 });
+  assert.notEqual(audioPositionSignature(positions, finished, "music"), before, "a fifteen-second save redraws the displayed progress");
+  positions.set("a", { ...positions.get("a"), device: "laptop", name: "Laptop" });
+  assert.notEqual(audioPositionSignature(positions, finished, "music"), before, "the Continue card refreshes its device label");
+  positions.clear();
+  finished.set("a", { volume: "music", path: "Show/episode.mp3", hash: "h1", updated: 3 });
+  assert.notEqual(audioPositionSignature(positions, finished, "music"), before, "completion removes stale progress");
+});
+
+test("an open library refreshes Continue from the hub every 30 seconds", async (t) => {
+  const episode = track("Show/2026-10-06 Episode.mp3", { title: "Episode 412", album: "Show", genre: "Podcast", duration: 18612 });
+  const song = track("Miles/01 So What.mp3", { title: "So What", artist: "Miles Davis", album: "Kind of Blue", duration: 562 });
+  const ui = await open(t, {
+    library: () => ({ version: "v1", indexing: false, tracks: [episode, song] }),
+    positions: (volume) => [{ volume: volume.id, path: episode.path, hash: episode.hash, position: 1200, duration: episode.duration, at: Date.now() - 60000 }],
+  });
+  await until(() => ui.$(".resume-card") && ui.idle());
+  assert.match(ui.$(".resume-card").textContent, /20:00/);
+  savePosition(ui.daemon.engine.store, { id: "other-device", name: "Phone" }, {
+    volume: ui.volume.id,
+    path: episode.path,
+    hash: episode.hash,
+    position: 1215,
+    duration: episode.duration,
+    at: Date.now(),
+  });
+  ui.audioPositionRefresh();
+  await until(() => /20:15/.test(ui.$(".resume-card")?.textContent || ""));
+  assert.match(ui.$(".resume-card").textContent, /Phone/);
 });
 
 test("podcast episodes get their own tab with shows and episodes newest first, and stay out of the music tabs", async (t) => {

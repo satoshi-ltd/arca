@@ -6,6 +6,7 @@ import path from "node:path";
 import { init, Store } from "../packages/daemon/storage.js";
 import { recoverBackup } from "../packages/daemon/recovery.js";
 import { start } from "../packages/daemon/server.js";
+import { canWatchDirectory } from "./watch-support.js";
 
 test("restore a fresh hub and its history from an offline backup", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-recover-"));
@@ -71,6 +72,10 @@ test("restart persists identity and revisions; second daemon refuses the state l
 });
 
 test("filesystem events detect edits before the periodic fallback deadline", async (t) => {
+  if (!(await canWatchDirectory())) {
+    t.skip("the operating system cannot deliver folder watcher events here");
+    return;
+  }
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-watch-"));
   init(home, { port: 0 });
   const s = new Store(home);

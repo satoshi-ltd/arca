@@ -4,6 +4,19 @@ export const VARIOUS_ARTISTS = "Various artists";
 export const RECENTLY_ADDED = 30;
 export const RECENTLY_PLAYED = 20;
 
+export function audioPositionSignature(positions, finished, volume) {
+  return [...positions.values()]
+    .filter((row) => row.volume === volume)
+    .map((row) => `${row.path}:${row.hash || ""}:${row.position}:${row.updated || 0}:${row.device || ""}:${row.name || ""}`)
+    .concat(
+      [...finished.values()]
+        .filter((row) => row.volume === volume)
+        .map((row) => `${row.path}:${row.hash || ""}:done:${row.updated || 0}`),
+    )
+    .sort()
+    .join("|");
+}
+
 const musicCollator = new Intl.Collator("en", {
   sensitivity: "base",
   numeric: true,

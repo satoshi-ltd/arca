@@ -12,6 +12,7 @@ import { applyFolderRetention } from "../packages/daemon/maintenance.js";
 import { FIXED_POLICY } from "../packages/core/builtin-exclusions.js";
 import { release } from "../packages/daemon/network.js";
 import { machineReport } from "../packages/daemon/machines.js";
+import { canWatchDirectory } from "./watch-support.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-test-"));
@@ -2192,6 +2193,10 @@ test("change pagination has a stable upper bound and catches edits made between 
 });
 
 test("real watcher debounces local edits into a partial scan and remains quiet afterwards", async (t) => {
+  if (!(await canWatchDirectory())) {
+    t.skip("the operating system cannot deliver folder watcher events here");
+    return;
+  }
   const { hub, volume } = await setup(t, { timer: true });
   write(hub, volume, "node_modules/ignored.txt", "one");
   const waitFor = async (predicate) => {

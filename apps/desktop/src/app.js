@@ -15,6 +15,7 @@ import {
 import {
   artistGroups,
   artistId,
+  audioPositionSignature,
   buildLibrary,
   formatDuration,
   nextRepeat,
@@ -115,7 +116,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.69";
+const APP_VERSION = "0.7.70";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -5094,6 +5095,8 @@ let musicCoverObserver,
   audioPositions = new Map(),
   audioFinished = new Map(),
   audioPlayedAt = new Map(),
+  audioPositionsFlight = null,
+  audioPositionViews = new Map(),
   musicContinuing = null,
   showOrder = null,
   audioSavedAt = 0;
@@ -5103,23 +5106,32 @@ const timeLeft = (seconds) => {
   const minutes = Math.max(1, Math.round(seconds / 60));
   return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min left` : `${minutes} min left`;
 };
-async function loadAudioPositions(volume) {
-  try {
-    const { positions, finished = [] } = await api("/v1/audio-positions");
-    const before = audioSignature(volume);
-    audioPositions = new Map(positions.map((row) => [positionKey(row.volume, row.path), row]));
-    audioFinished = new Map(finished.map((row) => [positionKey(row.volume, row.path), row]));
-    if (before === audioSignature(volume)) return;
-    if (showOrder?.volume === volume) showOrder = null;
-    if (musicShowing(volume)) renderMusic(status.volumes.find((v) => v.id === volume));
-  } catch {}
+function loadAudioPositions(volume) {
+  if (audioPositionsFlight) {
+    if (!audioPositionViews.has(volume)) audioPositionViews.set(volume, audioSignature(volume));
+    return audioPositionsFlight;
+  }
+  audioPositionViews = new Map([[volume, audioSignature(volume)]]);
+  const flight = (async () => {
+    try {
+      const { positions, finished = [] } = await api("/v1/audio-positions");
+      audioPositions = new Map(positions.map((row) => [positionKey(row.volume, row.path), row]));
+      audioFinished = new Map(finished.map((row) => [positionKey(row.volume, row.path), row]));
+      for (const [target, before] of audioPositionViews) {
+        if (before === audioSignature(target)) continue;
+        if (showOrder?.volume === target) showOrder = null;
+        if (musicShowing(target)) renderMusic(status.volumes.find((v) => v.id === target));
+      }
+    } catch {
+    } finally {
+      if (audioPositionsFlight === flight) audioPositionsFlight = null;
+      audioPositionViews.clear();
+    }
+  })();
+  audioPositionsFlight = flight;
+  return flight;
 }
-const audioSignature = (volume) =>
-  [...audioPositions.values()]
-    .filter((row) => row.volume === volume)
-    .map((row) => `${row.path}:${Math.floor(row.position / 60)}`)
-    .concat([...audioFinished.values()].filter((row) => row.volume === volume).map((row) => `${row.path}:done`))
-    .join("|");
+const audioSignature = (volume) => audioPositionSignature(audioPositions, audioFinished, volume);
 function saveAudioPosition(force = false) {
   const loaded = musicPlayer?.loadedTrack;
   const audio = musicElement;
@@ -5219,6 +5231,26 @@ async function loadMusicLibrary(volume) {
 }
 const musicShowing = (volume) =>
   view === "folders" && detailId === volume && folderTab === "library";
+const AUDIO_POSITION_REFRESH_MS = 30000;
+let audioPositionRefreshTimer = null;
+let audioPositionRefreshVolume = null;
+function watchAudioPositions(volume) {
+  if (audioPositionRefreshVolume === volume && audioPositionRefreshTimer !== null) return;
+  if (audioPositionRefreshTimer !== null) clearInterval(audioPositionRefreshTimer);
+  audioPositionRefreshVolume = volume;
+  audioPositionRefreshTimer = setInterval(() => {
+    if (
+      !musicShowing(volume) ||
+      document.visibilityState === "hidden" ||
+      busy ||
+      pointerPressed ||
+      $("#dialog")?.open ||
+      document.querySelector('.details-menu[open], .dropdown [aria-expanded="true"]')
+    )
+      return;
+    void loadAudioPositions(volume);
+  }, AUDIO_POSITION_REFRESH_MS);
+}
 function armMusicIndex(volume) {
   clearTimeout(musicIndexTimers.get(volume));
   musicIndexTimers.set(
@@ -5616,6 +5648,7 @@ function musicHeading(v, entry) {
 }
 function renderMusic(v, scroll = null) {
   if (!v) return;
+  watchAudioPositions(v.id);
   const key = musicKey(v.id);
   const entry = musicLibraries.get(key);
   const failure = musicFailures.get(key);

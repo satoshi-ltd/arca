@@ -9,6 +9,7 @@ import path from "node:path";
 import { init, digest } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 import { HUB_UNAVAILABLE } from "../packages/daemon/engine.js";
+import { canWatchDirectory } from "./watch-support.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-availability-"));
@@ -615,6 +616,10 @@ test("a successful event poll ends the offline backoff at once", async (t) => {
 });
 
 test("a file saved while the hub is away shows within seconds, not at the next retry", async (t) => {
+  if (!(await canWatchDirectory(2))) {
+    t.skip("the operating system cannot deliver folder watcher events here");
+    return;
+  }
   const { hub, volume, connect } = await setup(t);
   write(hub, volume, "a.txt", "alpha");
   await hub.sync();
