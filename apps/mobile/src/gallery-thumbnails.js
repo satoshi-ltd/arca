@@ -50,31 +50,78 @@ AppState.addEventListener("change", (state) => {
   }
 });
 let rendered = 0;
+let pruning = null;
+let prunePending = null;
+const activeDerivatives = new Map();
+const cachePause = () => new Promise((resolve) => setTimeout(resolve, 0));
+const activeDerivative = (uri) =>
+  activeDerivatives.has(uri.endsWith(".part") ? uri.slice(0, -5) : uri);
 // Derivatives are regenerable and flat; originals live elsewhere, so nested directories are disposable.
-function pruneCache(directory, keep) {
+async function pruneCache(directory, keep) {
   const entries = directory.list();
-  for (const entry of entries)
-    if (entry instanceof Directory)
-      try {
+  const files = [];
+  for (let index = 0; index < entries.length; index++) {
+    if (index % 32 === 0) await cachePause();
+    const entry = entries[index];
+    if (activeDerivative(entry.uri)) continue;
+    try {
+      if (entry instanceof Directory) {
         entry.delete();
-      } catch {
-        /* A concurrent pass already removed it. */
+        continue;
       }
-  for (const entry of entries)
-    if (
-      entry instanceof File &&
-      entry.name.endsWith(".part") &&
-      Date.now() - (entry.modificationTime || 0) > 600000
-    )
-      try {
-        entry.delete();
-      } catch {
-        /* A concurrent pass already removed it. */
+      if (!(entry instanceof File)) continue;
+      const modified = entry.modificationTime || 0;
+      if (entry.name.endsWith(".part")) {
+        if (Date.now() - modified > 600000) entry.delete();
+      } else {
+        files.push({
+          file: entry,
+          name: entry.name,
+          uri: entry.uri,
+          size: entry.size,
+          modified,
+        });
       }
-  const files = entries
-    .filter((file) => file instanceof File && !file.name.endsWith(".part"))
-    .sort((a, b) => (a.modificationTime || 0) - (b.modificationTime || 0));
-  for (const file of cacheEvictions(files, keep)) file.delete();
+    } catch {
+      /* A concurrent renderer may have replaced or removed the file. */
+    }
+  }
+  files.sort((a, b) => a.modified - b.modified);
+  const evictions = cacheEvictions(files, keep);
+  for (let index = 0; index < evictions.length; index++) {
+    if (index % 32 === 0) await cachePause();
+    const entry = evictions[index];
+    if (activeDerivative(entry.uri)) continue;
+    try {
+      if (
+        entry.file.modificationTime !== entry.modified ||
+        entry.file.size !== entry.size
+      ) continue;
+      entry.file.delete();
+    } catch {
+      /* The disposable file may already be gone. */
+    }
+  }
+}
+function queuePrune(keep) {
+  if (pruning) {
+    if (pruning === "running") prunePending = keep;
+    return;
+  }
+  pruning = "queued";
+  setTimeout(() => {
+    pruning = "running";
+    void pruneCache(root, keep)
+      .catch(() => {})
+      .finally(() => {
+        pruning = null;
+        if (prunePending) {
+          const next = prunePending;
+          prunePending = null;
+          queuePrune(next);
+        }
+      });
+  }, 0);
 }
 function cachedDerivative(
   entry,
@@ -95,9 +142,22 @@ function cachedDerivative(
   if (jobs.has(key)) return jobs.get(key);
   const job = (async () => {
     root.create({ intermediates: true, idempotent: true });
+    const render = async () => {
+      activeDerivatives.set(
+        target.uri,
+        (activeDerivatives.get(target.uri) || 0) + 1,
+      );
+      try {
+        return await produce(target);
+      } finally {
+        const remaining = activeDerivatives.get(target.uri) - 1;
+        if (remaining) activeDerivatives.set(target.uri, remaining);
+        else activeDerivatives.delete(target.uri);
+      }
+    };
     const produced = await (unlimited
-      ? produce(target)
-      : limiter.run(() => produce(target), !background));
+      ? render()
+      : limiter.run(render, !background));
     if (produced) {
       const temporary = new File(produced);
       try {
@@ -108,7 +168,7 @@ function cachedDerivative(
         if (temporary.exists) temporary.delete();
       }
     } else if (!target.exists) throw new Error("Thumbnail unavailable");
-    if (rendered++ % 200 === 0) pruneCache(root, target.uri);
+    if (rendered++ % 200 === 0) queuePrune(target.uri);
     return target.uri;
   })().finally(() => jobs.delete(key));
   jobs.set(key, job);

@@ -950,7 +950,7 @@ test("an open photo folder prepares every local preview in the background and sa
   has(gallery, '{downloading > 0 && density !== "years" && ( <StatusRow icon="download"', "still downloading`}", 'caption="Previews appear as each one reaches this phone."');
   has(gallery, 'progress.failed > 0 && ( <StatusRow icon="image"', "could not be made", 'caption="The photos are on this phone."', '<Button label="Retry" icon="refresh" onPress={retryPreviews} />');
   has(gallery, "const retryPreviews = () => { thumbnailFiles.retry(); previews.clear(); accepted.clear(); failedPaths.current = new Set(); setFailedCount(0); setAttempt((value) => value + 1); };");
-  has(thumbnails, "const limiter = createLimiter(3, 30000);", "limiter.run(() => produce(target), !background)", "const hubLimiter = createLimiter(3, 60000);");
+  has(thumbnails, "const limiter = createLimiter(3, 30000);", "limiter.run(render, !background)", "const hubLimiter = createLimiter(3, 60000);");
   assert.match(thumbnails, /retry\(\) \{\s+posterAttempt\.clear\(\);\s+renderAttempt\.clear\(\);\s+\},/);
   assert.match(components, /export function StatusRow\([\s\S]*?<View style=\{\[s\.card, s\.folderRow\]\}/);
 });

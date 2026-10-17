@@ -1227,7 +1227,7 @@ test("the phone's derivative cache is flat, so older nested caches are never reu
   assert.equal(isFlatCacheFile(null, root), false);
   const source = fs.readFileSync(new URL("../apps/mobile/src/gallery-thumbnails.js", import.meta.url), "utf8");
   assert.match(source, /return isFlatCacheFile\(uri, root\.uri\) && new File\(uri\)\.exists;/);
-  assert.match(source, /for \(const entry of entries\)\s*if \(entry instanceof Directory\)\s*try \{\s*entry\.delete\(\);/);
+  assert.match(source, /if \(entry instanceof Directory\) \{\s*entry\.delete\(\);/);
 });
 
 test("thumbnails prepare in parallel, stop when cancelled and never fail an original", async () => {
@@ -1283,9 +1283,9 @@ test("the gallery grid never decodes originals and keeps preparing thumbnails wh
   assert.match(app, /\}, \[\s*folder\?\.id,\s*listedFolder\?\.files,\s*listedFolder\?\.bytes,\s*listedFolder\?\.changes,\s*\]\);/, "remote renames and same-size edits refresh the listing");
   const open = app.slice(app.indexOf("  async function openFolder(f) {"), app.indexOf("  async function getHistory("));
   assert.doesNotMatch(open, /listFiles\(/, "the folder effect lists once, after the new folder is shown");
-  assert.match(thumbnails, /if \(rendered\+\+ % 200 === 0\) pruneCache\(root, target\.uri\);/);
-  assert.match(thumbnails, /for \(const file of cacheEvictions\(files, keep\)\) file\.delete\(\);/);
-  assert.match(thumbnails, /!file\.name\.endsWith\("\.part"\)/);
+  assert.match(thumbnails, /if \(rendered\+\+ % 200 === 0\) queuePrune\(target\.uri\);/);
+  assert.match(thumbnails, /const evictions = cacheEvictions\(files, keep\);/);
+  assert.match(thumbnails, /if \(entry\.name\.endsWith\("\.part"\)\) \{/);
   const swift = fs.readFileSync(new URL("../apps/mobile/modules/arca-network/ios/Thumbnails.swift", import.meta.url), "utf8");
   assert.doesNotMatch(swift, /\? try await/, "Swift rejects try to the right of a ternary");
   assert.doesNotMatch(app, /status\.syncingVolume, status\.last\]/);

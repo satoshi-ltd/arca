@@ -27,9 +27,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 ## Queue
 
 
-- **MOB-COLD-THUMBNAIL-PRUNE** — Keep cache maintenance out of the first thumbnail's completion
-  `bug · agent · high`
-  accept: creating the first missing derivative after a restart does not synchronously enumerate, stat and sort the entire derivative cache before returning its URI. Cache budgets and partial-file cleanup remain bounded; tests with a large synthetic cache show that visible thumbnails complete before deferred maintenance and that cleanup preserves originals and active derivatives.
 - **MOB-PREVIEW-TIMEOUT-LIMIT** — A timed-out thumbnail keeps its execution slot until its renderer stops
   `bug · agent · normal`
   accept: `createLimiter` can reject a caller on its deadline without starting additional native renderers while timed-out work is still running, unless it has actually cancelled that work. A deferred-work test proves that three timed-out requests under a concurrency of one never run three renderers simultaneously; pending visible requests retain priority and all slots eventually recover.
