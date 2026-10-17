@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.73 — 2026-10-17
+
+- Mobile preview timeouts no longer start extra renderers while earlier work is still running, keeping thumbnail generation within its concurrency limit and prioritizing visible photos.
+
 ## 0.7.72 — 2026-10-17
 
 - Mobile thumbnails appear before cache cleanup starts. Large caches are maintained in small batches, and cleanup preserves files still being rendered.

@@ -143,31 +143,30 @@ function cachedDerivative(
   const job = (async () => {
     root.create({ intermediates: true, idempotent: true });
     const render = async () => {
+      if (target.exists) return;
       activeDerivatives.set(
         target.uri,
         (activeDerivatives.get(target.uri) || 0) + 1,
       );
       try {
-        return await produce(target);
+        const produced = await produce(target);
+        if (produced) {
+          const temporary = new File(produced);
+          try {
+            if (!new File(entry.uri).exists)
+              throw new Error("Original no longer available");
+            await temporary.copy(target);
+          } finally {
+            if (temporary.exists) temporary.delete();
+          }
+        } else if (!target.exists) throw new Error("Thumbnail unavailable");
       } finally {
         const remaining = activeDerivatives.get(target.uri) - 1;
         if (remaining) activeDerivatives.set(target.uri, remaining);
         else activeDerivatives.delete(target.uri);
       }
     };
-    const produced = await (unlimited
-      ? render()
-      : limiter.run(render, !background));
-    if (produced) {
-      const temporary = new File(produced);
-      try {
-        if (!new File(entry.uri).exists)
-          throw new Error("Original no longer available");
-        await temporary.copy(target);
-      } finally {
-        if (temporary.exists) temporary.delete();
-      }
-    } else if (!target.exists) throw new Error("Thumbnail unavailable");
+    await (unlimited ? render() : limiter.run(render, !background));
     if (rendered++ % 200 === 0) queuePrune(target.uri);
     return target.uri;
   })().finally(() => jobs.delete(key));

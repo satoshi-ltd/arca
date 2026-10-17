@@ -186,12 +186,43 @@ test("preparation keeps the caller's order, reports each failure and counts done
   assert.deepEqual(previewProgress([], {}, new Set()), { total: 0, done: 0, failed: 0, waiting: 0 });
 });
 
-test("a render that never settles frees its slot after the limiter's timeout", async () => {
+test("timed-out callers retain their actual render slots and visible work keeps priority", async () => {
   const limiter = createLimiter(1, 20);
-  const stuck = limiter.run(() => new Promise(() => {}), true);
-  const next = limiter.run(async () => "after", false);
-  await assert.rejects(stuck, /timed out/);
-  assert.equal(await next, "after");
+  const gates = Array.from({ length: 3 }, () => {
+    let resolve, reject;
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+    return { promise, resolve, reject };
+  });
+  let active = 0;
+  let peak = 0;
+  const order = [];
+  const calls = gates.map((gate, index) => limiter.run(async () => {
+    order.push(`slow${index}`);
+    peak = Math.max(peak, ++active);
+    try { return await gate.promise; }
+    finally { active--; }
+  }, false).then(() => null, (error) => error));
+  try {
+    assert.match((await calls[0]).message, /timed out/);
+    assert.equal(active, 1);
+    assert.deepEqual(order, ["slow0"], "a deadline does not start another native renderer");
+    const visible = limiter.run(async () => { order.push("visible"); return "visible"; });
+    gates[0].resolve();
+    assert.equal(await visible, "visible");
+    assert.match((await calls[1]).message, /timed out/);
+    assert.equal(active, 1);
+    gates[1].reject(new Error("late native failure"));
+    assert.match((await calls[2]).message, /timed out/);
+    assert.equal(active, 1);
+    gates[2].resolve();
+    assert.equal(await limiter.run(async () => "after", false), "after");
+    assert.equal(peak, 1);
+    assert.deepEqual(order, ["slow0", "visible", "slow1", "slow2"]);
+    assert.equal(active, 0);
+  } finally {
+    for (const gate of gates) gate.resolve();
+    await Promise.all(calls);
+  }
 });
 
 test("delta preparation reports only what changed, and null for a preview that could not be made", async () => {

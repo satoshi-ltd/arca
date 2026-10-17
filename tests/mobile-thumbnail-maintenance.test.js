@@ -154,3 +154,30 @@ test("a burst arriving during maintenance triggers one follow-up pass", async ()
   const total = [...cache.disk.values()].reduce((sum, row) => sum + row.size, 0);
   assert.ok(total <= PREVIEW_VARIANTS.thumb.budget, "the follow-up pass includes the burst's new derivatives");
 });
+
+test("a retry after timeout reuses the completed output and temporary files are cleaned", async () => {
+  for (const temporary of [false, true]) {
+    const cache = cacheHarness(createLimiter(1, 10));
+    const entry = { uri: "file:///slow.jpg", size: 1, mtime: 1 };
+    cache.disk.set(entry.uri, { size: 1, mtime: 1 });
+    let release, renders = 0;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const produce = async (target) => {
+      renders++;
+      await gate;
+      cache.disk.set(temporary ? "file:///temporary.jpg" : target.uri, { size: 100, mtime: 1 });
+      return temporary ? "file:///temporary.jpg" : null;
+    };
+    const first = cache.render(entry, "thumb", produce);
+    try {
+      await assert.rejects(first, /Render timed out/);
+      const retry = cache.render(entry, "thumb", produce);
+      release();
+      const uri = await retry;
+      assert.equal(renders, 1, "a queued retry rechecks the completed derivative");
+      assert.ok(cache.disk.has(uri));
+      assert.equal(cache.disk.has("file:///temporary.jpg"), false);
+      await cache.drain();
+    } finally { release(); }
+  }
+});

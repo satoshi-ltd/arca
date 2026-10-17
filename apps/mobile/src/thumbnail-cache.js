@@ -281,11 +281,13 @@ export function createLimiter(limit, timeout = 0) {
                 }),
               ])
             : work;
-          guarded.then(resolve, reject).finally(() => {
+          guarded.then(resolve, reject);
+          const release = () => {
             clearTimeout(timer);
             running--;
             drain();
-          });
+          };
+          work.then(release, release);
         });
         drain();
       });

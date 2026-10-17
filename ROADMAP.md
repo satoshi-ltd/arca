@@ -27,9 +27,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 ## Queue
 
 
-- **MOB-PREVIEW-TIMEOUT-LIMIT** — A timed-out thumbnail keeps its execution slot until its renderer stops
-  `bug · agent · normal`
-  accept: `createLimiter` can reject a caller on its deadline without starting additional native renderers while timed-out work is still running, unless it has actually cancelled that work. A deferred-work test proves that three timed-out requests under a concurrency of one never run three renderers simultaneously; pending visible requests retain priority and all slots eventually recover.
 - **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
   `bug · agent · high`
   accept: `publish-docker.yml` pushes `latest` only for the current eligible release at publication time; older, delayed or forced runs still publish their version tag without moving `latest` backwards. Tests cover out-of-order completion, reruns and a newer release arriving during a build; checking only at job start is insufficient.
