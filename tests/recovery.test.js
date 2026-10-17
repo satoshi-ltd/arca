@@ -6,7 +6,7 @@ import path from "node:path";
 import { init, Store } from "../packages/daemon/storage.js";
 import { recoverBackup } from "../packages/daemon/recovery.js";
 import { start } from "../packages/daemon/server.js";
-import { canWatchDirectory } from "./watch-support.js";
+import { canWatchDirectory, withWatchEvent } from "./watch-support.js";
 
 test("restore a fresh hub and its history from an offline backup", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-recover-"));
@@ -72,7 +72,7 @@ test("restart persists identity and revisions; second daemon refuses the state l
 });
 
 test("filesystem events detect edits before the periodic fallback deadline", async (t) => {
-  if (!(await canWatchDirectory())) {
+  if (!(await canWatchDirectory(2))) {
     t.skip("the operating system cannot deliver folder watcher events here");
     return;
   }
@@ -91,14 +91,17 @@ test("filesystem events detect edits before the periodic fallback deadline", asy
   for (let i = 0; i < 100 && !daemon.engine.lastSync; i++)
     await new Promise((r) => setTimeout(r, 20));
   assert.ok(daemon.engine.lastSync);
-  fs.writeFileSync(path.join(v.path, "watched.txt"), "event");
-  for (
-    let i = 0;
-    i < 200 && !daemon.engine.store.current(v.id, "watched.txt");
-    i++
-  )
-    await new Promise((r) => setTimeout(r, 20));
-  assert.ok(daemon.engine.store.current(v.id, "watched.txt"));
+  await withWatchEvent(t, v.path, "watched.txt", async () => {
+    fs.writeFileSync(path.join(v.path, "watched.txt"), "event");
+  }, async () => {
+    for (
+      let i = 0;
+      i < 200 && !daemon.engine.store.current(v.id, "watched.txt");
+      i++
+    )
+      await new Promise((r) => setTimeout(r, 20));
+    assert.ok(daemon.engine.store.current(v.id, "watched.txt"));
+  });
 });
 
 test("promotion survives configuration-write failure after committed history transition", async () => {

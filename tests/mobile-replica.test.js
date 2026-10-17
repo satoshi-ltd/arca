@@ -7,7 +7,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { Replica, CHUNK } from "../apps/mobile/src/replica.js";
+import { Replica, CHUNK, HEADROOM } from "../apps/mobile/src/replica.js";
 import { ReplicaStore } from "../apps/mobile/src/replica-store.js";
 import {
   gallerySettingsChanged,
@@ -312,6 +312,80 @@ test("mobile resumes a partial download, rejects corruption, and applies storage
   fs.writeFileSync(files.object(replica.scope, hash), "corrupt");
   await replica.download(hash, data.length);
   assert.equal(await files.hash(files.object(replica.scope, hash)), hash);
+});
+
+test("mobile selection reserves other folders' remaining downloads and reuses applied bytes", async (t) => {
+  const f = await fixture(t);
+  const second = f.daemon.engine.store.addVolume("Second");
+  fs.writeFileSync(path.join(f.volume.path, "first.txt"), "a".repeat(80));
+  fs.writeFileSync(path.join(second.path, "second.txt"), "b".repeat(60));
+  await f.daemon.engine.cycle();
+  await f.client.refresh();
+  const firstRemote = f.client.state().catalog.volumes.find((v) => v.id === f.volume.id);
+  const secondRemote = f.client.state().catalog.volumes.find((v) => v.id === second.id);
+  let free = HEADROOM + 100;
+  f.files.free = async () => free;
+  await f.replica.select(firstRemote);
+  await assert.rejects(f.replica.select(secondRemote), /storage/);
+  assert.equal(await f.store.folder(f.replica.scope, second.id), undefined);
+  assert.equal(fs.existsSync(f.files.folder(f.replica.scope, second.id)), false);
+  await sync(f);
+  free = HEADROOM + 60;
+  await f.replica.select(secondRemote);
+  await f.replica.select(firstRemote);
+  assert.equal((await f.store.folders(f.replica.scope)).filter((v) => v.selected).length, 2);
+});
+
+test("mobile selection does not count unapplied rows as local storage and serializes simultaneous choices", async (t) => {
+  const f = await fixture(t);
+  const second = f.daemon.engine.store.addVolume("Second");
+  fs.writeFileSync(path.join(f.volume.path, "first.txt"), "a".repeat(80));
+  fs.writeFileSync(path.join(second.path, "second.txt"), "b".repeat(60));
+  await f.daemon.engine.cycle();
+  await f.client.refresh();
+  const firstRemote = f.client.state().catalog.volumes.find((v) => v.id === f.volume.id);
+  const secondRemote = f.client.state().catalog.volumes.find((v) => v.id === second.id);
+  f.files.free = async () => HEADROOM + 100;
+  const results = await Promise.allSettled([f.replica.select(firstRemote), f.replica.select(secondRemote)]);
+  assert.deepEqual(results.map((result) => result.status), ["fulfilled", "rejected"]);
+  const row = f.daemon.engine.store.current(f.volume.id, "first.txt");
+  await f.store.put(f.replica.scope, { ...row, unapplied: true, localHash: null });
+  await assert.rejects(f.replica.select(secondRemote), /storage/);
+  await f.store.put(f.replica.scope, { ...row, deleted: true });
+  await assert.rejects(f.replica.select(secondRemote), /storage/);
+  await f.store.put("another-hub", { ...row, size: 1e9 });
+  await sync(f);
+  f.files.free = async () => HEADROOM + 60;
+  await f.replica.select(secondRemote);
+});
+
+test("mobile selection releases its turn after a storage refusal", async (t) => {
+  const f = await fixture(t);
+  const second = f.daemon.engine.store.addVolume("Second");
+  fs.writeFileSync(path.join(f.volume.path, "first.txt"), "a".repeat(80));
+  fs.writeFileSync(path.join(second.path, "second.txt"), "b".repeat(60));
+  await f.daemon.engine.cycle();
+  await f.client.refresh();
+  const firstRemote = f.client.state().catalog.volumes.find((v) => v.id === f.volume.id);
+  const secondRemote = f.client.state().catalog.volumes.find((v) => v.id === second.id);
+  let release, entered, reads = 0;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { entered = resolve; });
+  f.files.free = async () => {
+    if (++reads === 1) { entered(); await gate; }
+    return HEADROOM + 70;
+  };
+  const choices = Promise.allSettled([f.replica.select(firstRemote), f.replica.select(secondRemote)]);
+  try {
+    await started;
+    for (let turn = 0; turn < 10; turn++) await new Promise(setImmediate);
+    assert.equal(reads, 1, "the second choice waits for the first capacity check");
+  } finally { release(); }
+  assert.deepEqual((await choices).map((result) => result.status), ["rejected", "fulfilled"]);
+  assert.equal(await f.store.folder(f.replica.scope, f.volume.id), undefined);
+  f.files.free = async () => HEADROOM + 200;
+  await f.replica.select(firstRemote);
+  assert.equal((await f.store.folders(f.replica.scope)).length, 2);
 });
 
 test("mobile honors synchronized ignore rules while syncing local edits", async (t) => {

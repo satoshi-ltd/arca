@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.75 — 2026-10-17
+
+- Selecting a mobile folder now accounts for downloads still pending in other selected folders, so several selections cannot promise more storage than is available. Completed local files reduce the estimate, and simultaneous selections are checked in order.
+
 ## 0.7.74 — 2026-10-17
 
 - Delayed or repeated Docker releases keep their version tags without moving `latest` back to an older release. Pending publications stay queued, and a failed promotion can retry without rebuilding the image.

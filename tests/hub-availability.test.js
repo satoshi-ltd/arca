@@ -9,7 +9,7 @@ import path from "node:path";
 import { init, digest } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 import { HUB_UNAVAILABLE } from "../packages/daemon/engine.js";
-import { canWatchDirectory } from "./watch-support.js";
+import { canWatchDirectory, withWatchEvent } from "./watch-support.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-availability-"));
@@ -629,16 +629,22 @@ test("a file saved while the hub is away shows within seconds, not at the next r
   replica.engine.config.hub.url = link.url;
   await replica.api("/v1/sync", { background: true });
   await waitFor(() => replica.engine.status().phase === "offline", 20000);
-  write(replica, volume, "saved-offline.txt", "made while away");
-  await waitFor(
-    async () => (await listing(replica, volume)).some(([name, size]) => name === "saved-offline.txt" && size === 15),
-    10000,
-  );
-  write(replica, volume, "while-backing-off.txt", "second");
-  await waitFor(
-    async () => (await listing(replica, volume)).some(([name, size]) => name === "while-backing-off.txt" && size === 6),
-    10000,
-  );
+  if (!(await withWatchEvent(t, replica.engine.store.volume(volume.id).path, "saved-offline.txt", async () => {
+    write(replica, volume, "saved-offline.txt", "made while away");
+  }, async () => {
+    await waitFor(
+      async () => (await listing(replica, volume)).some(([name, size]) => name === "saved-offline.txt" && size === 15),
+      10000,
+    );
+  }))) return;
+  if (!(await withWatchEvent(t, replica.engine.store.volume(volume.id).path, "while-backing-off.txt", async () => {
+    write(replica, volume, "while-backing-off.txt", "second");
+  }, async () => {
+    await waitFor(
+      async () => (await listing(replica, volume)).some(([name, size]) => name === "while-backing-off.txt" && size === 6),
+      10000,
+    );
+  }))) return;
 });
 
 test("interrupted desktop snapshots release their hub leases", async (t) => {

@@ -37,7 +37,7 @@ async function probe(deliver) {
       return id;
     }, clearTimeout: (id) => timers.delete(id) });
   const source = fs.readFileSync(new URL("./watch-support.js", import.meta.url), "utf8");
-  vm.runInContext(source.replace(/^import .*;\n/gm, "").replace("export async function", "async function") + "\nthis.probe = canWatchDirectory;", context);
+  vm.runInContext(source.replace(/^import .*;\n/gm, "").replaceAll("export async function", "async function") + "\nthis.probe = canWatchDirectory;", context);
   let result;
   const pending = context.probe(2).then((value) => { result = value; });
   for (let turn = 0; result === undefined && turn < 100; turn++) {
@@ -67,3 +67,64 @@ test("watcher capability also checks delivery after closing and reopening stream
 test("healthy watcher streams deliver both pulses in every generation", async () => {
   assert.deepEqual(await probe(() => true), { result: true, opened: 6 });
 });
+
+for (const observed of [false, true])
+  test(`a native-event failure is classified using an independent observer, observed=${observed}`, async (t) => {
+    const { withWatchEvent } = await import("./watch-support.js");
+    const watcher = new EventEmitter();
+    let closed = false;
+    watcher.close = () => { closed = true; };
+    t.mock.method(fs, "watch", (_directory, _options, callback) => {
+      watcher.on("change", callback);
+      return watcher;
+    });
+    const skips = [];
+    const failure = new assert.AssertionError({ message: "Arca did not process the event" });
+    const run = () => withWatchEvent({ skip: (reason) => skips.push(reason) }, "folder", "file.txt", async () => {
+      watcher.emit("change", "change", observed ? "file.txt" : "unrelated.txt");
+    }, async () => {
+      throw failure;
+    });
+    if (observed) {
+      await assert.rejects(run(), (error) => error === failure);
+      assert.equal(skips.length, 0, "an Arca failure remains a failure when native events arrived");
+    } else {
+      assert.equal(await run(), false);
+      assert.equal(skips.length, 1, "missing native delivery is reported as unavailable");
+    }
+    assert.equal(closed, true);
+  });
+
+test("the independent native observer closes after a successful assertion", async (t) => {
+  const { withWatchEvent } = await import("./watch-support.js");
+  const watcher = new EventEmitter();
+  let closed = false;
+  watcher.close = () => { closed = true; };
+  t.mock.method(fs, "watch", (_directory, _options, callback) => {
+    watcher.on("change", callback);
+    return watcher;
+  });
+  assert.equal(await withWatchEvent({ skip: () => assert.fail("must not skip") }, "folder", "file.txt", async () => {
+    watcher.emit("change", "change", "file.txt");
+  }, async () => {}), true);
+  assert.equal(closed, true);
+});
+
+for (const source of ["trigger", "observer", "assertion"]) {
+  test(`native event classification preserves ${source} errors`, async (t) => {
+    const { withWatchEvent } = await import("./watch-support.js");
+    const watcher = new EventEmitter();
+    let closed = false;
+    watcher.close = () => { closed = true; };
+    t.mock.method(fs, "watch", () => watcher);
+    const failure = Object.assign(new Error("permission refused"), { code: "EACCES" });
+    await assert.rejects(withWatchEvent({ skip: () => assert.fail("must not skip") }, "folder", "file.txt", async () => {
+      if (source === "trigger") throw failure;
+      if (source === "observer") watcher.emit("error", failure);
+    }, async () => {
+      if (source === "assertion") throw failure;
+      assert.fail("event absent");
+    }), (error) => error === failure);
+    assert.equal(closed, true);
+  });
+}

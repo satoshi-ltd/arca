@@ -26,7 +26,9 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **SYNC-REPLAY-SELF-CONFLICT** — A replayed proposal never conflicts with its own accepted revision
+  `bug · agent · low`
+  accept: a replica that re-sends an edit the hub already accepted, after a newer edit of its own on the same stale base, gets no conflict copy of its own older content (scenario D11 of the sync audit); receipts still refuse unsafe replays.
 
 ## In progress
 
@@ -206,15 +208,11 @@ Suggested order for approval: preservation of user files, synchronization recove
   `feature · agent · low`
   accept: on the Fold's widest columns and other layouts where a wall tile exceeds 360 device px, the tile asks for the 720 px medium preview once it is on screen and idle, keeping the 360 px thumbnail as its first paint; scrolling performance and cache budgets are covered by tests.
 
-- **MOB-SPACE-PENDING-FOLDERS** — Selection counts what other selected folders still have to download
-  `feature · agent · low`
-  accept: selecting a second folder while the first is still downloading checks free space against both folders' remaining bytes plus headroom, so the refusal comes at selection instead of file by file during the sync.
+
 
 ### File preservation and synchronization
 
-- **SYNC-REPLAY-SELF-CONFLICT** — A replayed proposal never conflicts with its own accepted revision
-  `bug · agent · low`
-  accept: a replica that re-sends an edit the hub already accepted, after a newer edit of its own on the same stale base, gets no conflict copy of its own older content (scenario D11 of the sync audit); receipts still refuse unsafe replays.
+
 
 ### Release and native reliability
 

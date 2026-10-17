@@ -62,3 +62,36 @@ export async function canWatchDirectory(count = 1) {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 }
+
+// Observe the exact event independently of Arca. A transient native outage
+// cannot be detected by an earlier capability probe; an Arca failure still
+// fails when the independent observer received that event.
+export async function withWatchEvent(t, directory, filename, trigger, assertion) {
+  let observed = false, watcher, nativeError;
+  try {
+    watcher = fs.watch(directory, { recursive: false }, (_type, name) => {
+      if (name == null || String(name).split(path.sep).join("/") === filename)
+        observed = true;
+    });
+  } catch (error) {
+    if (!["EMFILE", "ENOSPC", "ENOSYS", "ENOTSUP", "EOPNOTSUPP"].includes(error.code)) throw error;
+    t.skip("the operating system cannot open the independent native event observer");
+    return false;
+  }
+  watcher.on("error", (error) => { nativeError = error; });
+  try {
+    await trigger();
+    try {
+      await assertion();
+      if (nativeError) throw nativeError;
+      return true;
+    } catch (error) {
+      if (nativeError) throw nativeError;
+      if (observed || error.code !== "ERR_ASSERTION") throw error;
+      t.skip(`the independent native observer also received no event for ${filename}`);
+      return false;
+    }
+  } finally {
+    watcher.close();
+  }
+}

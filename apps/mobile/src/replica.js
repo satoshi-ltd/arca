@@ -272,16 +272,36 @@ export class Replica {
       throw new Error("Not enough storage. Free space to continue.");
   }
   async select(volume) {
-    await this.requireActiveReplica();
-    if (!this.scope) throw new Error("Connect to a hub first");
-    if (await this.store.get(`removing:${this.scope}:${volume.id}`, false))
-      throw new Error(
-        "Remove the remaining local copy before selecting this folder again.",
+    const previous = this.selecting;
+    let release;
+    const selection = this.selecting = new Promise((resolve) => { release = resolve; });
+    await previous;
+    try {
+      await this.requireActiveReplica();
+      if (!this.scope) throw new Error("Connect to a hub first");
+      if (await this.store.get(`removing:${this.scope}:${volume.id}`, false))
+        throw new Error(
+          "Remove the remaining local copy before selecting this folder again.",
+        );
+      const folders = await this.store.selectionBytes(this.scope);
+      const catalog = new Map(
+        (this.client.state().catalog?.volumes || []).map((folder) => [folder.id, folder]),
       );
-    await this.space(volume.bytes);
-    await this.files.mkdir(this.files.folder(this.scope, volume.id));
-    await this.store.select(this.scope, volume);
-    this.changed();
+      const local = folders.find((folder) => folder.id === volume.id);
+      let required = Math.max(0, volume.bytes - (local?.bytes || 0));
+      for (const folder of folders) {
+        if (!folder.selected || folder.id === volume.id) continue;
+        const remote = catalog.get(folder.id);
+        if (remote) required += Math.max(0, remote.bytes - folder.bytes);
+      }
+      await this.space(required);
+      await this.files.mkdir(this.files.folder(this.scope, volume.id));
+      await this.store.select(this.scope, volume);
+      this.changed();
+    } finally {
+      release();
+      if (this.selecting === selection) this.selecting = null;
+    }
   }
   async unselect(id) {
     await this.requireActiveReplica();

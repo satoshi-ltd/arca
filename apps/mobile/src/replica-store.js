@@ -201,6 +201,17 @@ export class ReplicaStore {
       id,
     );
   }
+  selectionBytes(scope) {
+    return this.db.getAllAsync(
+      `SELECT f.id, f.selected, COALESCE(SUM(json_extract(x.row, '$.size')), 0) AS bytes
+       FROM folders f LEFT JOIN files x ON x.scope=f.scope AND x.volume=f.id
+         AND COALESCE(json_extract(x.row, '$.deleted'), 0)=0
+         AND COALESCE(json_extract(x.row, '$.directory'), 0)=0
+         AND COALESCE(json_extract(x.row, '$.unapplied'), 0)=0
+       WHERE f.scope=? GROUP BY f.id, f.selected`,
+      scope,
+    );
+  }
   async select(scope, volume) {
     await this.db.runAsync(
       "INSERT INTO folders(scope,id,name) VALUES(?,?,?) ON CONFLICT(scope,id) DO UPDATE SET selected=1,name=excluded.name,completed=NULL",

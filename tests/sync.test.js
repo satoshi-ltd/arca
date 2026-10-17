@@ -12,7 +12,7 @@ import { applyFolderRetention } from "../packages/daemon/maintenance.js";
 import { FIXED_POLICY } from "../packages/core/builtin-exclusions.js";
 import { release } from "../packages/daemon/network.js";
 import { machineReport } from "../packages/daemon/machines.js";
-import { canWatchDirectory } from "./watch-support.js";
+import { canWatchDirectory, withWatchEvent } from "./watch-support.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-test-"));
@@ -2193,7 +2193,7 @@ test("change pagination has a stable upper bound and catches edits made between 
 });
 
 test("real watcher debounces local edits into a partial scan and remains quiet afterwards", async (t) => {
-  if (!(await canWatchDirectory())) {
+  if (!(await canWatchDirectory(2))) {
     t.skip("the operating system cannot deliver folder watcher events here");
     return;
   }
@@ -2221,12 +2221,15 @@ test("real watcher debounces local edits into a partial scan and remains quiet a
   write(hub, volume, "node_modules/ignored.txt", "two");
   await new Promise((r) => setTimeout(r, 1300));
   assert.equal(calls.length, 0, "ignored events do not schedule scans");
-  write(hub, volume, "event.txt", "one");
-  write(hub, volume, "event.txt", "two");
-  await waitFor(
-    () =>
-      hub.engine.store.current(volume.id, "event.txt")?.hash === digest("two"),
-  );
+  if (!(await withWatchEvent(t, hub.engine.store.volume(volume.id).path, "event.txt", async () => {
+    write(hub, volume, "event.txt", "one");
+    write(hub, volume, "event.txt", "two");
+  }, async () => {
+    await waitFor(
+      () =>
+        hub.engine.store.current(volume.id, "event.txt")?.hash === digest("two"),
+    );
+  }))) return;
   assert.ok(calls.length > 0);
   assert.ok(
     calls.every((paths) => Array.isArray(paths) && paths.includes("event.txt")),

@@ -656,20 +656,26 @@ test("replicas render selected local previews and never ask the hub for photos t
     replica.engine.json = remote;
     replica.engine.previewTimeoutMs = 150;
     replica.engine.largePreviewTimeoutMs = 600;
+    const deadlines = [];
+    const nativeTimeout = AbortSignal.timeout;
+    const timeout = t.mock.method(AbortSignal, "timeout", (milliseconds) => {
+      deadlines.push(milliseconds);
+      return nativeTimeout(milliseconds);
+    });
     try {
       const slow = async (suffix) => {
-        const started = Date.now();
+        deadlines.length = 0;
         const error = await call(`${f.preview("photo.jpg", hash)}&rev=${rev + 1}${suffix}`).catch((e) => e);
-        return { error, elapsed: Date.now() - started };
+        return { error, deadlines: [...deadlines] };
       };
       const small = await slow("");
       assert.equal(small.error.status, 504);
       assert.match(small.error.message, /The hub took too long to prepare this preview/);
       assert.doesNotMatch(small.error.message, /unavailable/i);
-      assert.ok(small.elapsed < 500, `the thumbnail cap is short (${small.elapsed} ms)`);
+      assert.deepEqual(small.deadlines, [150], "the thumbnail uses its short abort deadline");
       const large = await slow("&size=large");
       assert.equal(large.error.status, 504);
-      assert.ok(large.elapsed >= 550, `size=large waits longer (${large.elapsed} ms)`);
+      assert.deepEqual(large.deadlines, [600], "size=large uses its longer abort deadline");
       assert.equal(replica.engine.hubUnavailable, false, "a slow answer never marks a reachable hub as down");
       globalThis.fetch = (url, options) =>
         String(url).startsWith(`http://127.0.0.1:${f.daemon.port}/v1/gallery/preview?`)
@@ -679,6 +685,7 @@ test("replicas render selected local previews and never ask the hub for photos t
       assert.equal(down.error.status, 503, "an unreachable hub still reads as unavailable");
       assert.match(down.error.message, /Hub unavailable/);
     } finally {
+      timeout.mock.restore();
       silent = false;
       globalThis.fetch = realFetch;
       replica.engine.json = async (route, ...args) => {

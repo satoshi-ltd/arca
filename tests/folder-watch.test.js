@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { watchTree } from "../packages/daemon/folder-watch.js";
 import { compileIgnore } from "../packages/daemon/exclusions.js";
-import { canWatchDirectory } from "./watch-support.js";
+import { canWatchDirectory, withWatchEvent } from "./watch-support.js";
 
 const until = async (check) => {
   for (let i = 0; i < 250 && !check(); i++)
@@ -14,7 +14,7 @@ const until = async (check) => {
 };
 
 test("the tree watcher skips excluded directories and follows new, re-included and removed ones", async (t) => {
-  if (!(await canWatchDirectory(7))) {
+  if (!(await canWatchDirectory(8))) {
     t.skip("the operating system cannot deliver folder watcher events here");
     return;
   }
@@ -29,28 +29,46 @@ test("the tree watcher skips excluded directories and follows new, re-included a
     fs.rmSync(root, { recursive: true, force: true });
   });
   assert.deepEqual(w.watched().sort(), ["", "cache", "src", "src/lib"]);
-  await until(() => {
+  if (!(await withWatchEvent(t, path.join(root, "src"), "ready.txt", async () => {
     fs.writeFileSync(path.join(root, "src/ready.txt"), String(Date.now()));
-    return seen.includes("src/ready.txt");
-  });
-  fs.mkdirSync(path.join(root, "src/new"));
-  await until(() => w.watched().includes("src/new"));
-  await until(() => {
+  }, async () => {
+    await until(() => {
+      fs.writeFileSync(path.join(root, "src/ready.txt"), String(Date.now()));
+      return seen.includes("src/ready.txt");
+    });
+  }))) return;
+  if (!(await withWatchEvent(t, path.join(root, "src"), "new", async () => {
+    fs.mkdirSync(path.join(root, "src/new"));
+  }, async () => {
+    await until(() => w.watched().includes("src/new"));
+  }))) return;
+  if (!(await withWatchEvent(t, path.join(root, "src/new"), "file.txt", async () => {
     fs.writeFileSync(path.join(root, "src/new/file.txt"), String(Date.now()));
-    return seen.includes("src/new/file.txt");
-  });
+  }, async () => {
+    await until(() => {
+      fs.writeFileSync(path.join(root, "src/new/file.txt"), String(Date.now()));
+      return seen.includes("src/new/file.txt");
+    });
+  }))) return;
   rules = compileIgnore("cache/\n");
   w.refresh();
   assert.deepEqual(w.watched().sort(), ["", "repos", "repos/big", "repos/big/deep", "src", "src/lib", "src/new"]);
   if (process.platform !== "win32") {
     // refresh() replaces every watcher; wait for the new parent watcher to
     // receive events before performing the one-shot directory deletion.
-    await until(() => {
+    if (!(await withWatchEvent(t, path.join(root, "src"), "after-refresh.txt", async () => {
       fs.writeFileSync(path.join(root, "src/after-refresh.txt"), String(Date.now()));
-      return seen.includes("src/after-refresh.txt");
+    }, async () => {
+      await until(() => {
+        fs.writeFileSync(path.join(root, "src/after-refresh.txt"), String(Date.now()));
+        return seen.includes("src/after-refresh.txt");
+      });
+    }))) return;
+    await withWatchEvent(t, path.join(root, "src"), "new", async () => {
+      fs.rmSync(path.join(root, "src/new"), { recursive: true });
+    }, async () => {
+      await until(() => !w.watched().includes("src/new"));
     });
-    fs.rmSync(path.join(root, "src/new"), { recursive: true });
-    await until(() => !w.watched().includes("src/new"));
   }
 });
 
