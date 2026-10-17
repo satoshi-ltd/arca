@@ -27,6 +27,7 @@ permissions:
 concurrency:
   group: arca-docker-${{ github.event.pull_request.number || 'release' }}
   cancel-in-progress: false
+  queue: max
 jobs:
   gate:
     if: >-
@@ -141,16 +142,57 @@ jobs:
           file: deploy/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            satoshiltd/arca:${{ needs.gate.outputs.version }}
-            satoshiltd/arca:latest
+          tags: satoshiltd/arca:${{ needs.gate.outputs.version }}
           provenance: false
-  record:
+  promote:
     needs: [gate, docker]
     if: >-
       always() &&
       (needs.gate.outputs.record == 'true' ||
        (needs.gate.outputs.publish == 'true' && needs.docker.result == 'success'))
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - name: Sign in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Promote latest only for the newest published release
+        uses: actions/github-script@v8
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        with:
+          script: |
+            const { execFileSync } = require("node:child_process");
+            const version = process.env.VERSION;
+            const valid = /^\d+\.\d+\.\d+$/;
+            if (!valid.test(version)) throw new Error(`Invalid version: ${version}`);
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              ...context.repo, per_page: 100,
+            });
+            const newer = (left, right) => {
+              const a = left.split(".").map(Number);
+              const b = right.split(".").map(Number);
+              for (let index = 0; index < 3; index++)
+                if (a[index] !== b[index]) return a[index] > b[index];
+              return false;
+            };
+            let newest = null;
+            for (const release of releases) {
+              if (release.draft || !release.published_at) continue;
+              const candidate = release.tag_name?.startsWith("v") ? release.tag_name.slice(1) : "";
+              if (valid.test(candidate) && (!newest || newer(candidate, newest))) newest = candidate;
+            }
+            const promoted = version === newest;
+            if (promoted)
+              execFileSync("docker", ["buildx", "imagetools", "create", "--tag", "satoshiltd/arca:latest", `satoshiltd/arca:${version}`], { stdio: "inherit" });
+            core.notice(promoted ? `Promoted ${version} to latest` : `Kept latest: newest published release is ${newest || "none"}`);
+            return { promoted, newest };
+
+  record:
+    needs: [gate, docker, promote]
+    if: always() && needs.promote.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

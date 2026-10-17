@@ -26,11 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-
-- **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
-  `bug · agent · high`
-  accept: `publish-docker.yml` pushes `latest` only for the current eligible release at publication time; older, delayed or forced runs still publish their version tag without moving `latest` backwards. Tests cover out-of-order completion, reruns and a newer release arriving during a build; checking only at job start is insufficient.
-
+_None._
 
 ## In progress
 
@@ -39,6 +35,10 @@ _None._
 ## Needs maintainer
 
 ### Builds and deployments
+
+- **VERIFY-LOCAL-WATCHERS** — Native filesystem notifications on the maintainer Mac
+  `verify · maintainer · high`
+  accept: raw `fs.watch` delivers repeated changes in recursive and per-directory modes on this Mac, including after streams close and reopen, and the native watcher integration tests execute without capability skips. Identify the OS or resource cause if delivery stays silent; an independent probe reproduced the loss without loading Arca. The capability guard now checks sustained delivery and reopening, while deterministic tests cover the guard itself; passing source suites does not establish that this host's native notifications recovered.
 
 - **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on Casa
   `verify · maintainer · normal`

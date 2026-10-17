@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.74 — 2026-10-17
+
+- Delayed or repeated Docker releases keep their version tags without moving `latest` back to an older release. Pending publications stay queued, and a failed promotion can retry without rebuilding the image.
+
 ## 0.7.73 — 2026-10-17
 
 - Mobile preview timeouts no longer start extra renderers while earlier work is still running, keeping thumbnail generation within its concurrency limit and prioritizing visible photos.

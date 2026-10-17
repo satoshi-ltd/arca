@@ -337,14 +337,14 @@ test("the check command exits 0 only for a stamp that matches the files", (t) =>
   assert.equal(unreadable.status, 1, "anything unreadable means the suite runs");
 });
 
-test("the Docker workflow records its tag with retries, and a version already on Docker Hub only needs the tag", () => {
+test("the Docker workflow records its tag with retries after guarded promotion, including an existing version image", () => {
   const read = (file) => fs.readFileSync(path.join(repository, file), "utf8").replace(/\r\n/g, "\n");
   const docker = read(".github/workflows/publish-docker.yml");
   assert.equal(docker.match(/bash scripts\/record-docker-tag\.sh/g).length, 1, "one job records the tag");
   assert.doesNotMatch(docker, /gh api/, "no step calls the refs API without the retry");
   assert.match(docker, /https:\/\/hub\.docker\.com\/v2\/repositories\/satoshiltd\/arca\/tags\/\$version/);
   assert.match(docker, /echo 'record=true' >> "\$GITHUB_OUTPUT"/);
-  assert.match(docker, /\n  record:\n    needs: \[gate, docker\]\n    if: >-\n      always\(\) &&\n      \(needs\.gate\.outputs\.record == 'true' \|\|\n       \(needs\.gate\.outputs\.publish == 'true' && needs\.docker\.result == 'success'\)\)\n/, "a failed tag step re-runs alone, after a successful publish");
+  assert.match(docker, /\n  record:\n    needs: \[gate, docker, promote\]\n    if: always\(\) && needs\.promote\.result == 'success'\n/, "a failed tag step re-runs alone, after a successful promotion decision");
   const record = docker.slice(docker.indexOf("\n  record:\n"));
   assert.match(record, /permissions:\n      contents: write/);
   const buildJob = docker.slice(docker.indexOf("\n  docker:\n"), docker.indexOf("\n  record:\n"));
