@@ -435,7 +435,7 @@ export default function App() {
           folderLists.current.delete(folderLists.current.keys().next().value);
         if (shown()) setEntries(sorted);
         await r.store
-          .set(`gallery-list:${scope}:${id}`, sorted.slice(0, 2000))
+          .set(`gallery-list:${scope}:${id}`, sorted)
           .catch(() => {});
       },
       () => {

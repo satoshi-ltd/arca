@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { coalescedRun } from "../apps/mobile/src/folder-listing.js";
+import { timelineItem } from "../apps/mobile/src/gallery-timeline.js";
+import { savedThumbnail } from "../apps/mobile/src/thumbnail-cache.js";
 import { browseEntries } from "../apps/mobile/src/browse.js";
 import {
   sidebarLayout,
@@ -14,6 +16,62 @@ import {
 } from "../apps/mobile/src/layout.js";
 import { icons, iconNames } from "../apps/mobile/src/icons.js";
 import { musicSheet } from "../apps/mobile/src/music-library.js";
+
+test("a cold gallery restores photos beyond the first 2000 paths before its disk walk completes", async () => {
+  const source = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
+  const method = source.slice(source.indexOf("  function listFiles("), source.indexOf("  const notices ="));
+  const saved = new Map();
+  const old = Array.from({ length: 3000 }, (_, index) => ({
+    path: `Archive/${String(index).padStart(5, "0")}.jpg`,
+    uri: `file:///archive/${index}.jpg`, size: 10, mtime: 1,
+  }));
+  const latest = { path: "Trips/2026/10/newest.jpg", uri: "file:///trips/newest.jpg", size: 20, mtime: 2 };
+  function launch(rows, wait = async () => {}) {
+    let painted = [];
+    const context = {
+      engine: { current: {
+        scope: "hub",
+        store: {
+          get: async (key, fallback) => JSON.parse(saved.get(key) ?? JSON.stringify(fallback)),
+          set: async (key, value) => saved.set(key, JSON.stringify(value)),
+        },
+        files: {
+          folder: () => "local-folder", exists: async () => true,
+          walk: async function* () { await wait(); yield* rows; },
+        },
+      } },
+      mounted: { current: true }, listing: { current: new Map() },
+      shownFolder: { current: "hub:photos" }, folderLists: { current: new Map() },
+      coalescedRun, setEntries: (value) => { painted = value; }, setFilesLoading: () => {},
+    };
+    vm.createContext(context);
+    vm.runInContext(method + "\nthis.readFolder = listFiles;", context);
+    return { read: () => context.readFolder("photos"), entries: () => painted };
+  }
+  await launch([...old, latest]).read();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const changed = { ...latest, mtime: 3 };
+  const cold = launch([old[0], changed], () => gate);
+  const reading = cold.read();
+  try {
+    await new Promise(setImmediate);
+    const entry = cold.entries().find((row) => row.path === latest.path);
+    const item = timelineItem({ path: latest.path, hash: "accepted", date: "2026-10-17" }, entry);
+    assert.equal(item.uri, latest.uri, "a downloaded photo has its URI before any disk or network read finishes");
+    const thumbnails = { [latest.path]: { signature: "20:2", uri: "file:///cache/newest.jpg" } };
+    assert.equal(savedThumbnail(thumbnails, item), "file:///cache/newest.jpg", "the saved thumbnail can paint on the first cold render");
+  } finally {
+    release();
+    await reading;
+  }
+  assert.equal(cold.entries().length, 2, "the completed walk removes stale cached paths");
+  assert.equal(cold.entries().find((row) => row.path === latest.path).mtime, 3);
+  const again = launch([], () => gate);
+  const reread = again.read();
+  await reread;
+  assert.equal(again.entries().length, 0, "an empty completed walk replaces the snapshot too");
+});
 
 test("fold/tablet layout uses available space, preserves hysteresis and excludes short landscape phones", () => {
   assert.equal(sidebarLayout(false, 393, 852), false);

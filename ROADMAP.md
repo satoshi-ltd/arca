@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-11 · Phase 1 functional, not release-qualified.
+Updated 2026-10-17 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -26,7 +26,17 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+
+- **MOB-COLD-THUMBNAIL-PRUNE** — Keep cache maintenance out of the first thumbnail's completion
+  `bug · agent · high`
+  accept: creating the first missing derivative after a restart does not synchronously enumerate, stat and sort the entire derivative cache before returning its URI. Cache budgets and partial-file cleanup remain bounded; tests with a large synthetic cache show that visible thumbnails complete before deferred maintenance and that cleanup preserves originals and active derivatives.
+- **MOB-PREVIEW-TIMEOUT-LIMIT** — A timed-out thumbnail keeps its execution slot until its renderer stops
+  `bug · agent · normal`
+  accept: `createLimiter` can reject a caller on its deadline without starting additional native renderers while timed-out work is still running, unless it has actually cancelled that work. A deferred-work test proves that three timed-out requests under a concurrency of one never run three renderers simultaneously; pending visible requests retain priority and all slots eventually recover.
+- **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
+  `bug · agent · high`
+  accept: `publish-docker.yml` pushes `latest` only for the current eligible release at publication time; older, delayed or forced runs still publish their version tag without moving `latest` backwards. Tests cover out-of-order completion, reruns and a newer release arriving during a build; checking only at job start is insufficient.
+
 
 ## In progress
 
@@ -50,7 +60,7 @@ _None._
   accept: after sync and a restart, account separately for complete working copies, pending originals, transfer staging, databases and derivative caches. No unexplained second full copy or unbounded staging growth remains; low-space recovery preserves pending originals and existing working files. Never remove live files to meet a storage target.
 - **FOLD-THUMBNAILS** — Gallery thumbnails, posters and viewer
   `verify · maintainer · high`
-  accept: on the candidate, grid thumbnails and video posters fill in while folders sync; HEIC photos open and the viewer shows the thumbnail immediately. Offline, downloaded photos remain viewable, unavailable originals are identified and failed derivatives can recover. Record timings and native errors for persistent grey tiles or crashes, including after suspension and cold start.
+  accept: identify the candidate SHA and installed binary; with originals fully synchronized and thumbnails already generated, measure process launch, first photo rows and first visible thumbnails after force-stop, both connected and in airplane mode, on a gallery above 2,000 photos. Also check grid thumbnails and video posters while folders sync, HEIC, the viewer's immediate thumbnail, offline originals and recovery of failed derivatives. Record timings, cache presence and native errors for grey tiles or crashes after suspension and cold start; source fixes alone do not close this task.
 - **WIN-UPDATE-WATCHER** — A failed Windows update gets the daemon back
   `verify · maintainer · high`
   accept: on a real Windows machine, with an update that fails after Arca closes (for example a locked installation file), the daemon is running again within about a minute without opening Arca, `update-watch.log` in the state directory says `restored` and `%TEMP%\arca-update-watch-*` is gone; a successful update logs `relaunched` and starts no second daemon.
@@ -174,13 +184,11 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 - **DEC-CONVERTING-LEGACY** — Remove the legacy `converting` mode on phones?
   `decision · maintainer · normal`
   accept: a yes or no. `replica.js`, `App.jsx` and a test still recover a folder interrupted mid-way through the former upload-only-to-working-copy transition (`converting` mode, restoring missing indexed files before switching to `source`); AGENTS.md forbids legacy modes, yet a phone could still hold that state.
-- **DEC-DESKTOP-DISK-ENTRIES** — Merge on-disk entries into desktop browsing?
-  `decision · maintainer · low`
-- **DEC-OFFLINE-DELETE** — Allow offline deletion of unsynced files?
-  `decision · maintainer · low`
+- **DEC-PHOTO-PLACES** — Approve offline photo place indexing and place search as described by PHOTO-PLACES?
+  `decision · maintainer · normal`
 - **DEC-RENAME-MODIFIED** — Allow renaming modified synced files?
   `decision · maintainer · low`
-- **DEC-OFFLINE-DISCONNECT** — Allow Disconnect while offline?
+- **DEC-OFFLINE-DISCONNECT** — Allow desktop/server Disconnect while offline? Mobile already persists a pending leave.
   `decision · maintainer · low`
 - **DEC-PICKER-GALLERY** — Remove the unreachable picker-only gallery path?
   `decision · maintainer · low`
@@ -216,12 +224,11 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 ### Release and native reliability
 
+
 - **DESK-TRAY-UNUSED-COMMAND** — Remove the unused `main_window_open` Tauri command
   `chore · agent · low`
   accept: `main_window_open` (`apps/desktop/src-tauri/src/main.rs`, its function and its `invoke_handler` entry) is deleted now that the tray keeps Open Arca in its footer and never calls it; `tests/tray.test.js` keeps asserting the tray never invokes it, and a source test asserts `main.rs` no longer defines or registers it. Needs a desktop build to prove it compiles and the tray still opens the main window.
-- **DOCKER-LATEST-ORDER** — An older release's Docker run can move `latest` back
-  `bug · agent · high`
-  accept: `publish-docker.yml` pushes `latest` only for the current eligible release at publication time; older, delayed or forced runs still publish their version tag without moving `latest` backwards. Tests cover out-of-order completion, reruns and a newer release arriving during a build; checking only at job start is insufficient.
+
 - **NAT-F03-IOS-CANCEL** — iOS cancel/session race
   `bug · agent · normal`
   accept: a per-request cancelled flag, set under the lock and checked before the URL session task is created, so cancelling during session setup throws a cancellation instead of creating a task on an invalidated session; source-contract and cancellation tests cover the race, with native/device evidence under P2-MOBILE.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.71 — 2026-10-17
+
+- Mobile galleries restore local paths for every previously listed photo after a restart, so large synchronized folders can reuse their existing thumbnails before the filesystem refresh finishes.
+
 ## 0.7.70 — 2026-10-17
 
 - Desktop and web refresh playback positions every 30 seconds while an audio library is open, so podcast progress, remaining time and Continue details catch up with other devices.
