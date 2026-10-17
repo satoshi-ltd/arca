@@ -600,7 +600,7 @@ export class Engine {
       if (saved.revision === revision()) return saved.result;
     }
     const replayed = s.db
-      .prepare("SELECT 1 FROM accepted_proposals WHERE id=?")
+      .prepare("SELECT revision,volume,device,base FROM accepted_proposals WHERE id=?")
       .get(op);
     // Persist before a mutation: a crash can cause a conservative conflict, never an unsafe replay.
     const remember = () =>
@@ -609,7 +609,7 @@ export class Engine {
           "INSERT OR IGNORE INTO accepted_proposals(id,volume,device,base) VALUES(?,?,?,?)",
         )
         .run(op, volume, device.id, base);
-    // A request already applied is judged stale, so only a new edit takes the lost-reply shortcut.
+    // An applied request cannot take the lost-reply mutation shortcut.
     const stale =
       (old?.rev ?? 0) !== base &&
       !(
@@ -622,7 +622,19 @@ export class Engine {
     const moved = stale && hash && !replayed && name !== IGNORE_FILE
       ? this.renameTarget(volume, name, old, base, { hash, size })
       : null;
-    if (old?.path === name && entryKey(old) === entryKey(item))
+    // Replaying an acknowledged write must not conflict with its own later
+    // write on the same base. Return the original ACK so replicas can pull the
+    // newer head using the content they actually proposed as their baseline.
+    const superseded = hash && !directory && name !== IGNORE_FILE &&
+      replayed?.revision > base && replayed.revision < old?.rev &&
+      replayed.volume === volume && replayed.device === device.id && replayed.base === base &&
+      this.ownProposalAtBase(volume, name, old, base, device);
+    if (superseded)
+      result = {
+        row: { volume, path: name, hash, size, rev: replayed.revision, deleted: 0, directory: 0 },
+        conflict: false,
+      };
+    else if (old?.path === name && entryKey(old) === entryKey(item))
       result = { row: old || null, conflict: false };
     else if (!item && old?.directory && !old.deleted && s.liveDescendant(volume, name))
       result = {

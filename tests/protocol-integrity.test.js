@@ -1137,3 +1137,107 @@ test("pruned foreign edits cannot be mistaken for a lost reply from the same rep
   assert.equal(result.conflict, true);
   assert.equal(read(hub, volume, "note.txt"), "newest");
 });
+
+for (const prune of [false, true])
+  for (const initial of [false, true])
+  test(`an accepted edit replayed after a newer edit on the same base is acknowledged without a self-conflict, pruned=${prune}, initial=${initial}`, async (t) => {
+    const { hub, volume, connect } = await setup(t);
+    if (initial) write(hub, volume, "note.txt", "original");
+    await hub.sync();
+    const phone = await connect("same-base-replay");
+    await phone.sync();
+    const base = hub.engine.store.current(volume.id, "note.txt")?.rev ?? 0;
+    const proposal = (text) => {
+      const hash = digest(text);
+      fs.writeFileSync(hub.engine.store.blob(hash), text);
+      return { volume: volume.id, path: "note.txt", base, hash, size: Buffer.byteLength(text) };
+    };
+    const first = proposal("first edit");
+    const later = proposal("later edit");
+    const accepted = await hub.api("/v1/propose", first, phone.invite.token);
+    const newer = await hub.api("/v1/propose", later, phone.invite.token);
+    assert.equal(newer.conflict, false);
+    const db = hub.engine.store.db;
+    if (prune) {
+      const { applyRetention } = await import("../packages/daemon/maintenance.js");
+      applyRetention(hub.engine.store, { versions: 1 }, false);
+      assert.equal(db.prepare("SELECT 1 FROM revisions WHERE rev=?").get(accepted.row.rev), undefined);
+    }
+    const revision = db.prepare("SELECT MAX(rev) AS n FROM revisions").get().n;
+    db.exec("DELETE FROM proposals");
+    const reopened = new Engine(hub.engine.store.home);
+    try {
+      const result = await reopened.propose(first, { id: phone.invite.id, role: "replica" });
+      assert.equal(result.conflict, false, "the receipt acknowledges the previously accepted edit");
+      assert.equal(result.row.rev, accepted.row.rev);
+      assert.equal(result.row.hash, first.hash);
+      assert.equal(db.prepare("SELECT MAX(rev) AS n FROM revisions").get().n, revision);
+    } finally { reopened.close(); }
+    const cached = await hub.api("/v1/propose", first, phone.invite.token);
+    assert.equal(cached.conflict, false);
+    assert.equal(cached.row.rev, accepted.row.rev);
+    assert.equal(cached.row.hash, first.hash);
+    assert.equal(hub.engine.store.current(volume.id, "note.txt").rev, newer.row.rev);
+    assert.equal(read(hub, volume, "note.txt"), "later edit");
+    assert.deepEqual(conflicts(hub, volume), []);
+    write(phone, volume, "note.txt", "first edit");
+    db.exec("DELETE FROM proposals");
+    await phone.sync();
+    assert.equal(read(phone, volume, "note.txt"), "later edit", "the original acknowledgment is a safe baseline for the pull");
+    assert.deepEqual(conflicts(phone, volume), []);
+    assert.deepEqual(conflicts(hub, volume), []);
+    const op = digest(JSON.stringify([phone.invite.id, volume.id, first.path, base, first.hash, false]));
+    const receipt = db.prepare("SELECT revision,volume,device,base FROM accepted_proposals WHERE id=?").get(op);
+    for (const invalid of [{ revision: null }, { revision: base }, { device: "another-device" }, { volume: "another-folder" }, { base: base + 1 }]) {
+      const row = { ...receipt, ...invalid };
+      db.prepare("UPDATE accepted_proposals SET revision=?,volume=?,device=?,base=? WHERE id=?")
+        .run(row.revision, row.volume, row.device, row.base, op);
+      db.exec("DELETE FROM proposals");
+      const result = await hub.api("/v1/propose", first, phone.invite.token);
+      assert.equal(result.conflict, true, "an incomplete receipt never bypasses conflict preservation");
+      assert.equal(read(hub, volume, "note.txt"), "later edit");
+    }
+    const restored = await hub.api("/v1/propose", { ...first, base: newer.row.rev }, phone.invite.token);
+    assert.equal(restored.conflict, false, "an intentional edit using the current base still applies");
+    assert.ok(restored.row.rev > newer.row.rev);
+    assert.equal(read(hub, volume, "note.txt"), "first edit");
+  });
+
+for (const head of ["deleted", "another-device"])
+  test(`an accepted replay preserves a newer ${head} head`, async (t) => {
+    const { hub, volume, connect } = await setup(t);
+    write(hub, volume, "note.txt", "original");
+    await hub.sync();
+    const replica = await connect("replay-edge");
+    await replica.sync();
+    const base = hub.engine.store.current(volume.id, "note.txt").rev;
+    const first = { volume: volume.id, path: "note.txt", base, hash: digest("first edit"), size: 10 };
+    fs.writeFileSync(hub.engine.store.blob(first.hash), "first edit");
+    const accepted = await hub.api("/v1/propose", first, replica.invite.token);
+    let newer;
+    if (head === "deleted") {
+      newer = await hub.api("/v1/propose", { volume: volume.id, path: "note.txt", base }, replica.invite.token);
+      assert.equal(newer.row.deleted, 1);
+    } else {
+      const other = await connect("other-author");
+      const hash = digest("other edit");
+      fs.writeFileSync(hub.engine.store.blob(hash), "other edit");
+      newer = await hub.api("/v1/propose", { ...first, base: accepted.row.rev, hash }, other.invite.token);
+    }
+    assert.equal(newer.conflict, false);
+    hub.engine.store.db.exec("DELETE FROM proposals");
+    const replay = await hub.api("/v1/propose", first, replica.invite.token);
+    assert.equal(replay.conflict, head !== "deleted");
+    assert.equal(hub.engine.store.current(volume.id, "note.txt").rev, newer.row.rev);
+    if (head === "deleted") {
+      assert.equal(replay.row.rev, accepted.row.rev);
+      write(replica, volume, "note.txt", "first edit");
+      await replica.sync();
+      assert.equal(fs.existsSync(path.join(replica.engine.store.volume(volume.id).path, "note.txt")), false);
+      assert.deepEqual(conflicts(replica, volume), []);
+      assert.deepEqual(conflicts(hub, volume), []);
+    } else {
+      assert.equal(read(hub, volume, "note.txt"), "other edit");
+      assert.ok(conflicts(hub, volume).length > 0);
+    }
+  });

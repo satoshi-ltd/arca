@@ -6041,3 +6041,44 @@ test("a phone keeps the hub's audio library, its covers and the car's library fi
   assert.equal(fs.existsSync(files.musicHistory()), false, "a play recorded while erasing does not survive it");
   assert.equal(fs.existsSync(files.musicPositions()), false, "queued positions, even one the service queued while reloading, do not survive an erase");
 });
+
+
+test("mobile pulls the newer own edit after an already accepted edit is retried", async (t) => {
+  const f = await fixture(t);
+  const { replica, volume, daemon, files } = f;
+  fs.writeFileSync(path.join(volume.path, "note.txt"), "original");
+  await daemon.engine.cycle();
+  await f.client.refresh();
+  await replica.select(f.client.state().catalog.volumes[0]);
+  await sync(f);
+  const base = daemon.engine.store.current(volume.id, "note.txt").rev;
+  const device = { id: f.client.state().connection.id, role: "replica" };
+  const proposal = (text) => {
+    const hash = crypto.createHash("sha256").update(text).digest("hex");
+    fs.writeFileSync(daemon.engine.store.blob(hash), text);
+    return { volume: volume.id, path: "note.txt", base, hash, size: Buffer.byteLength(text) };
+  };
+  const first = proposal("first edit");
+  const accepted = await daemon.engine.propose(first, device);
+  const later = proposal("later edit");
+  const newer = await daemon.engine.propose(later, device);
+  assert.equal(newer.conflict, false);
+  daemon.engine.store.db.exec("DELETE FROM proposals");
+  fs.writeFileSync(files.work(replica.scope, volume.id, "note.txt"), "first edit");
+  let acknowledgment;
+  const api = f.client.api;
+  f.client.api = async (route, ...args) => {
+    const result = await api(route, ...args);
+    if (route === "/v1/propose" && args[0].path === "note.txt") acknowledgment = result;
+    return result;
+  };
+  await sync(f);
+  assert.equal(acknowledgment.conflict, false);
+  assert.equal(acknowledgment.row.rev, accepted.row.rev);
+  assert.equal(acknowledgment.row.hash, first.hash);
+  assert.equal(fs.readFileSync(files.work(replica.scope, volume.id, "note.txt"), "utf8"), "later edit");
+  assert.equal((await f.store.current(replica.scope, volume.id, "note.txt")).hash, later.hash);
+  assert.equal(daemon.engine.store.current(volume.id, "note.txt").rev, newer.row.rev);
+  assert.equal((await f.store.rows(replica.scope, volume.id)).some((row) => row.path.includes(".conflict-")), false);
+  assert.equal(fs.readdirSync(volume.path).some((name) => name.includes(".conflict-")), false);
+});

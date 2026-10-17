@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SYNC-REPLAY-SELF-CONFLICT** — A replayed proposal never conflicts with its own accepted revision
-  `bug · agent · low`
-  accept: a replica that re-sends an edit the hub already accepted, after a newer edit of its own on the same stale base, gets no conflict copy of its own older content (scenario D11 of the sync audit); receipts still refuse unsafe replays.
+_None._
 
 ## In progress
 

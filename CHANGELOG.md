@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.76 — 2026-10-17
+
+- Retrying an edit after the same device has already sent a newer change no longer creates a conflict copy of its own older content. The newer file or deletion stays unchanged, and the device can finish synchronizing safely.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.75 — 2026-10-17
 
 - Selecting a mobile folder now accounts for downloads still pending in other selected folders, so several selections cannot promise more storage than is available. Completed local files reduce the estimate, and simultaneous selections are checked in order.
