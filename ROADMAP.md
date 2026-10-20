@@ -26,7 +26,13 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **DESK-EMPTY-HEADING** — The "All folders are syncing here" empty state is the only one with an unstyled heading
+  `bug · agent · low`
+  accept: that empty state uses the `h2` every other `.empty` styles (or the stylesheet styles it), so its heading matches the others; a desktop test asserts the heading element.
+
+- **DESK-INFO-PANEL-MOTION** — The photo Info panel slides with opacity and transform only
+  `bug · agent · low`
+  accept: the Info panel in the photo viewer slides in and out with transform and opacity, and the image area resizes at once, as SPEC's motion rule requires, instead of transitioning `width` and `right`; reduced motion makes it instant; `tests/motion.test.js` bans transitions on `width`, `left` and `right` and decides what to do with the progress bar at `style.css:2397`, which breaks the same rule.
 
 ## In progress
 
@@ -232,16 +238,9 @@ Suggested order for approval: preservation of user files, synchronization recove
   `feature · agent · normal · depends: DEC-PHOTO-PLACES`
   accept: the hub reads GPS during gallery indexing and stores only a place label and a folded search text (city, district, province, country), never coordinates; names come from a bundled offline GeoNames extract (CC BY, attributed; no cloud geocoding, no new npm dependency), including Spanish and English alternate names for countries and first-level regions so "thailand" and "tailandia" both match; existing photos re-index once; Search Arca gains a Places group (one row per place with its count, opening the gallery filtered to it) on desktop, web and phone, offline on the phone from the synchronized labels; photos without GPS are explained in the empty result; tests cover lookup (Hua Hin, open sea, antimeridian, invalid coordinates), indexing with and without GPS, and the "hua hin"/"thailand"/"tailandia" queries on hub and phone. Feasibility study: GPS read 0.17 ms per photo, compact dataset about 2.5 MB plus alternate names, grid lookup about 13 µs.
 
-- **DESK-ONBOARDING-HUB-ADDRESS** — The onboarding Hub address field loses its placeholder and is forced to monospace
-  `bug · agent · low`
-  accept: the onboarding "Pair with your hub" step passes its placeholder `https://arca.your-network` in the placeholder position, as the Connect to hub dialog does, so the field shows it and only the typed value is monospace; a desktop test asserts the placeholder. Found by the design audit: `textField` takes no placeholder, so the sixth argument lands in `mono`.
-- **DESK-EMPTY-HEADING** — The "All folders are syncing here" empty state is the only one with an unstyled heading
-  `bug · agent · low`
-  accept: that empty state uses the `h2` every other `.empty` styles (or the stylesheet styles it), so its heading matches the others; a desktop test asserts the heading element.
 
-- **DESK-INFO-PANEL-MOTION** — The photo Info panel slides with opacity and transform only
-  `bug · agent · low`
-  accept: the Info panel in the photo viewer slides in and out with transform and opacity, and the image area resizes at once, as SPEC's motion rule requires, instead of transitioning `width` and `right`; reduced motion makes it instant; `tests/motion.test.js` bans transitions on `width`, `left` and `right` and decides what to do with the progress bar at `style.css:2397`, which breaks the same rule.
+
+
 - **SITE-HERO-TRUE-UI** — The site hero draws the real app and covers no text on a phone
   `chore · agent · low`
   accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), at 390 px its floating "Phone & tablet" card covers no text, and a site test lists the elements.

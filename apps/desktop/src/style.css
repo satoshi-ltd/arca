@@ -6191,3 +6191,7 @@ label.toggle {
 .music-progress::-moz-progress-bar {
   background: var(--green);
 }
+
+.field-with-icon input::placeholder {
+  font-family: var(--font-ui);
+}

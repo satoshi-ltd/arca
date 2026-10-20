@@ -4306,6 +4306,8 @@ test("replica onboarding follows welcome, name, role, pairing and root, and resu
   assert.ok(w.document.querySelector('[name="role"][value="replica"]').checked);
   submit();
   await waitFor('[name="url"]');
+  assert.equal(w.document.querySelector('[name="url"]').placeholder, "https://arca.your-network");
+  assert.equal(w.document.querySelector('[name="url"]').classList.contains("mono"), true);
   assert.equal(w.document.querySelector('[name="root"]'), null);
   w.document.querySelector('[name="url"]').value =
     `http://127.0.0.1:${hub.port}`;

@@ -116,7 +116,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.76";
+const APP_VERSION = "0.7.77";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -7857,8 +7857,8 @@ function bindDialog(dialog) {
   };
 }
 bindDialog($("#dialog"));
-function textField(label, name, value = "", symbol = "folder", mono = false) {
-  return `<label for="field-${name}">${label}</label><div class="field-with-icon">${icon(symbol)}<input id="field-${name}" aria-label="${label}" class="${mono ? "mono" : ""}" name="${name}" value="${escape(value)}" required></div>`;
+function textField(label, name, value = "", symbol = "folder", mono = false, placeholder = "") {
+  return `<label for="field-${name}">${label}</label><div class="field-with-icon">${icon(symbol)}<input id="field-${name}" aria-label="${label}" class="${mono ? "mono" : ""}" name="${name}" value="${escape(value)}"${placeholder ? ` placeholder="${escape(placeholder)}"` : ""} required></div>`;
 }
 function pathInput(label, name, value = "", symbol = "folder") {
   return `<label for="field-${name}">${label}</label><div class="field-with-icon">${native ? pathPicker(name, label, symbol) : icon(symbol)}<input id="field-${name}" aria-label="${label}" class="mono" name="${name}" value="${escape(value)}" required></div>`;
@@ -9813,7 +9813,7 @@ function renderOnboarding() {
   if (o.step === "access")
     body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p>${o.setupCodePath ? '<p><a href="/umbrel" target="_blank" rel="noopener">Get a code from Umbrel</a>, then return here.</p>' : `<p>On the server, run:</p><div class="settings-card">${setting("Command", `<span class="mono">${escape(webCodeCommand)}</span>`, button("Copy", "copy", webCodeCommand, "secondary small-button", "copy"))}</div><p class="hint">The command prints a result that includes a six-digit code. Enter that code below.</p>`}<label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
   if (o.step === 2 && !o.paired)
-    body = `<h1>Pair with your hub</h1><p>Connect with a single-use code from your hub.</p>${textField("Hub address", "url", o.url, "server", "https://arca.your-network", "mono")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">${icon("clock")}Single use · valid ten minutes.</p>`;
+    body = `<h1>Pair with your hub</h1><p>Connect with a single-use code from your hub.</p>${textField("Hub address", "url", o.url, "server", true, "https://arca.your-network")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">${icon("clock")}Single use · valid ten minutes.</p>`;
   if (o.step === 2 && o.paired)
     body = `<h1>Finish setup</h1><p>Paired with ${escape(o.hubName || "your hub")}. Your connection is saved.</p><p>No folders have been downloaded. Choose them after setup.</p>`;
   if (o.step === 3)

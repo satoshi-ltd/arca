@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.77 — 2026-10-20
+
+- Desktop setup now shows an example hub address before you type, with normal placeholder text and a monospace address.
+
+Needs: desktop build
+
 ## 0.7.76 — 2026-10-17
 
 - Retrying an edit after the same device has already sent a newer change no longer creates a conflict copy of its own older content. The newer file or deletion stays unchanged, and the device can finish synchronizing safely.
