@@ -21,7 +21,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.7.78 · device macbook-pro · hub casa</span>
+      <span class="kit-version">v0.7.79 · device macbook-pro · hub casa</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -246,6 +246,16 @@
           </div>
         </div>
         <p class="kit-note">Zoom is the trackpad pinch alone (Years · Months · Small · Medium · Large), with no control in the header. Each month is its heading and one continuous flow, newest first, with no day labels; the heading sticks while its month is on screen and a soft fade appears under it only while photos pass beneath. On this day cards are 4:3 photos at the wall’s current row height, in one row that scrolls sideways when they do not fit. Tiles keep their aspect ratios in complete rows; placeholders share the media placeholder token. A device renders only its own files: a photo not downloaded yet stays a placeholder and never loads from the hub. The end of the loaded range is a passive loader that continues by itself while it stays in view; failures retry after five seconds.</p>
+        <p class="kit-caption">Photo viewer · Info open. The photo area resizes at once; only the panel fades and slides on entry and exit.</p>
+        <div class="kit-dialog-stage">
+          <dialog open class="photo-viewer photo-info-open" aria-label="Photo viewer with Info">
+            <form><div id="background-dialog-content">
+              <div class="photo-viewer-head"><div class="photo-viewer-operations"><button type="button" class="icon-button" aria-label="Download photo"><span data-icon="download"></span></button><button type="button" class="icon-button photo-info-toggle" aria-label="Photo information" aria-expanded="true"><span data-icon="info"></span></button></div></div>
+              <div class="photo-viewer-stage"><div class="photo-viewer-image"><div class="kit-viewer-placeholder" aria-label="Photo placeholder"><svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z"/><rect x="226" y="284" width="60" height="96" rx="6"/></svg></div></div><button type="button" class="icon-button photo-previous" aria-label="Previous photo"><span data-icon="chevron-left"></span></button><button type="button" class="icon-button photo-next" aria-label="Next photo"><span data-icon="chevron-right"></span></button></div>
+              <aside class="photo-info"><header><h2>Info</h2><button type="button" class="icon-button photo-info-close" aria-label="Close information"><span data-icon="x"></span></button></header><div class="photo-info-body"><div class="photo-info-summary"><p class="mono">IMG_4401.jpg</p><p class="hint">3.1 MB · 4032 × 3024 · JPEG</p></div><section class="photo-info-section"><h3 class="section-label">Capture</h3><dl><div class="photo-info-row"><span data-icon="calendar"></span><div><dt>Taken</dt><dd>September 12, 2026</dd></div></div></dl></section><section class="photo-info-section"><h3 class="section-label">In Arca</h3><dl><div class="photo-info-row"><span data-icon="folder"></span><div><dt>File path</dt><dd>photos/IMG_4401.jpg</dd></div></div></dl></section></div><footer class="photo-info-footer"><button type="button" class="secondary photo-file"><span data-icon="history"></span>File history</button></footer></aside>
+            </div><div class="dialog-actions"><button type="button" class="icon-button" aria-label="Back to gallery"><span data-icon="chevron-left"></span></button></div></form>
+          </dialog>
+        </div>
       </section>
 
       <section class="kit-section">

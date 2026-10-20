@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.79 — 2026-10-20
+
+- Photo Info slides and fades while the photo area switches immediately to its final size, including when the panel closes. Progress bars update directly instead of animating their width.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.78 — 2026-10-20
 
 - When all folders are selected, the Choose folders message now uses the same heading style as other empty states.

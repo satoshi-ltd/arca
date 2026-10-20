@@ -103,3 +103,18 @@ test("desktop motion never reanimates photo resolution upgrades and every exit g
   assert.match(app, /function leave\(element, role, done\) \{/);
   assert.doesNotMatch(app, /\$\("#dialog"\)\.close\(\);\n\s*(return|\})/, "dialogs close through closeDialog");
 });
+
+
+test("desktop transitions never animate width, left or right", () => {
+  const layout = [...style.matchAll(/\btransition(?:-property)?\s*:\s*([^;{}]+);/g)]
+    .map((match) => match[1])
+    .filter((value) => /(?:^|,)\s*(?:width|left|right)(?:\s|,|$)/.test(value));
+  assert.deepEqual(layout, [], "photo layout and native progress update without dimension transitions");
+});
+
+test("photo Info retains opacity and transform entry and exit with motion tokens", () => {
+  assert.match(app, /opacity: 0, transform: `translateX\(\$\{tokenPixels\("--motion-panel-shift", 0\)\}px\)`/);
+  assert.match(app, /open \? frames : \[\.\.\.frames\]\.reverse\(\)/);
+  assert.match(app, /duration: motionDuration\(open \? "--motion-enter" : "--motion-exit"\)/);
+  assert.match(app, /classList\.toggle\("photo-info-open", open\)/);
+});

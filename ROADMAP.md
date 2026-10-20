@@ -26,11 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-
-
-- **DESK-INFO-PANEL-MOTION** — The photo Info panel slides with opacity and transform only
-  `bug · agent · low`
-  accept: the Info panel in the photo viewer slides in and out with transform and opacity, and the image area resizes at once, as SPEC's motion rule requires, instead of transitioning `width` and `right`; reduced motion makes it instant; `tests/motion.test.js` bans transitions on `width`, `left` and `right` and decides what to do with the progress bar at `style.css:2397`, which breaks the same rule.
+_None._
 
 ## In progress
 
@@ -242,9 +238,9 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **SITE-HERO-TRUE-UI** — The site hero draws the real app and covers no text on a phone
   `chore · agent · low`
   accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), at 390 px its floating "Phone & tablet" card covers no text, and a site test lists the elements.
-- **DESIGN-COVERAGE** — Draw the few shipped views the design kit still lacks
+- **DESIGN-COVERAGE** — Draw the shipped Daemon stopped desktop page
   `chore · agent · low`
-  accept: `design/desktop.html` draws the gallery viewer with Info and the Daemon stopped page, and `design/mobile.html` draws History, Devices and Settings as the app renders them (the viewer is the "Now" that open motion tasks need); the design tests keep passing and no board is added.
+  accept: `design/desktop.html` draws the Daemon stopped page as the app renders it; the design tests keep passing and no board is added.
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; the dated or status passages (about 16, for example "September 10 checkout", "implemented locally", "prepared locally, not deployed") and feature narration that SPEC already owns become short descriptions or pointers into SPEC; the three orphan sections after Public website are folded in or removed, the documents list names the five documents, line 152's "No commit or push without explicit authorization" no longer contradicts AGENTS' loop, and Casa's LAN IP no longer appears in the public README.

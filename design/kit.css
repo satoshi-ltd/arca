@@ -804,3 +804,17 @@ body.kit {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.kit-dialog-stage dialog.photo-viewer {
+  position: relative;
+  width: 100%;
+  height: calc(var(--space-6) * 20);
+}
+.kit-viewer-placeholder {
+  display: grid;
+  place-items: center;
+  width: 70%;
+  height: 70%;
+  background: var(--placeholder);
+  color: var(--line);
+}

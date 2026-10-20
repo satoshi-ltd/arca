@@ -2928,9 +2928,6 @@ summary {
   left: 2px;
   transform: translateX(14px);
 }
-progress::-webkit-progress-value {
-  transition: width var(--motion-fast) linear;
-}
 .menu-items {
   animation: menu-enter var(--motion-fast) var(--motion-ease);
 }
@@ -4000,12 +3997,6 @@ dialog.photo-viewer {
   width: auto;
   border-radius: var(--r-control);
   border: 1px solid var(--line);
-}
-.photo-viewer-stage {
-  transition: width var(--motion-enter) var(--motion-ease);
-}
-.photo-viewer-head {
-  transition: right var(--motion-enter) var(--motion-ease);
 }
 .photo-info-open .photo-viewer-stage {
   width: calc(100% - 360px);
