@@ -4,6 +4,8 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+  <!-- expo-network's ACCESS_WIFI_STATE implies Wi-Fi; Arca also syncs over mobile data and Ethernet. -->
+  <uses-feature android:name="android.hardware.wifi" android:required="false" />
   <application>
     <service android:name=".TransferService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="true" />
     <service android:name=".MusicService" android:exported="true" android:foregroundServiceType="mediaPlayback">

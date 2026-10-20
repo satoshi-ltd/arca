@@ -97,6 +97,12 @@ Ideas not yet approved, from the source audit of 2026-11-11 and later ones, revi
 - **SEC-RUNTIME-CHECKSUMS** — The desktop's FFmpeg is current and pinned by a committed checksum
   `chore · agent · normal` · medium
   The desktop bundles `ffmpeg-static` (FFmpeg 6.1.1, December 2023), fetched without a checksum, and runs it on every probe, thumbnail and stream; the Docker image uses the distribution's package and is not affected. Accept: a maintained static build chosen at implementation, with a committed checksum per platform that `stage-runtime.js` and `verify-bundle.js` check (a test swaps a byte and the stage fails). Node keeps its official checksum file.
+- **DAEMON-BACKSLASH-PATHS** — The daemon reads a backslash in a request path as a slash
+  `bug · agent · normal` · small
+  Node's URL parser turns `/v1/..\auth/login` into `/auth/login`, so a reverse proxy that publishes only `/v1/` (nginx on Linux treats `\` as an ordinary character) would also publish the web administration. Found by the review of the store review hub, whose nginx rejects backslashes. Accept: the server answers 400 to a request target containing `\` (raw or `%5C`) before routing, with a test.
+- **DAEMON-TRUSTED-PROXY** — Per-address limits behind a reverse proxy
+  `feature · agent · normal` · medium
+  Behind a proxy every client shares one address, so a few failed attempts block pairing for everyone, as on the store review hub. Accept: an explicit setting names trusted proxy addresses, and only for requests from them the daemon takes the client address from `X-Forwarded-For` for its per-address limits on pairing, web codes and approvals (never for LAN HTTP policy or authorization); tests cover trusted, untrusted and spoofed headers.
 
 ### Security — native
 

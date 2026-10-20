@@ -1,0 +1,277 @@
+/* Store images: the design kit's phone and Fold screens on Arca's paper, with the
+   onboarding headline style. Colours come from the mobile tokens only. */
+body.store {
+  margin: 0;
+  overflow: hidden;
+  background: var(--m-paper);
+}
+.store-canvas {
+  position: relative;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: radial-gradient(120% 70% at 50% 100%, var(--m-tint), var(--m-paper) 70%);
+  color: var(--m-ink);
+  font-family: var(--font-ui);
+}
+.store-copy {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 56px 28px 30px;
+}
+.store-copy .m-display {
+  font-size: 37px;
+  line-height: 40px;
+}
+.store-copy p {
+  margin: 0;
+  max-width: 340px;
+  color: var(--m-soft);
+  font-size: 16px;
+  line-height: 23px;
+}
+.store-lockup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  color: var(--m-ink);
+}
+.store-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 0 20px 28px;
+}
+.store-stage > .m-device {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%) scale(var(--fit, 1));
+  transform-origin: top center;
+}
+.store-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* The app draws the video badge's icon white in both themes. */
+.m-photo .m-photo-badge {
+  z-index: 1;
+  color: var(--m-notice-info-fg);
+}
+
+/* Play's 9:16 phone canvas is shorter: tighter copy. */
+.store-play-phone .store-copy {
+  padding: 40px 28px 22px;
+  gap: 10px;
+}
+.store-play-phone .store-copy .m-display {
+  font-size: 32px;
+  line-height: 35px;
+}
+.store-play-phone .store-copy p {
+  font-size: 15px;
+  line-height: 21px;
+}
+
+/* Tablets: a portrait Fold-style frame with the icon rail. */
+.m-device.m-fold.store-tablet {
+  width: 640px;
+  height: 853px;
+  border-radius: 30px;
+}
+.store-tablet .m-grid {
+  --columns: 5;
+}
+.store-tablet .m-body {
+  padding: 0 24px 24px;
+}
+.store-tablet .m-header {
+  padding-left: 24px;
+  padding-right: 24px;
+}
+.store-ios-ipad .store-copy,
+.store-play-tablet .store-copy {
+  padding: 84px 64px 44px;
+  gap: 18px;
+}
+.store-ios-ipad .store-copy .m-display,
+.store-play-tablet .store-copy .m-display {
+  font-size: 58px;
+  line-height: 62px;
+  letter-spacing: -2px;
+}
+.store-ios-ipad .store-copy p,
+.store-play-tablet .store-copy p {
+  max-width: 620px;
+  font-size: 22px;
+  line-height: 31px;
+}
+.store-ios-ipad .store-stage,
+.store-play-tablet .store-stage {
+  margin: 0 48px 56px;
+}
+.store-play-tablet .store-copy .m-display {
+  font-size: 46px;
+  line-height: 50px;
+  letter-spacing: -1.6px;
+}
+.store-play-tablet .store-copy p {
+  max-width: 560px;
+  font-size: 19px;
+  line-height: 27px;
+}
+
+/* Play's phone canvas is short: the phone rises from the bottom edge. */
+.store-play-phone .store-stage {
+  margin-bottom: 0;
+}
+
+/* On dark paper the device's dark bezel needs a hairline to read. */
+[data-theme="dark"] .store-stage > .m-device {
+  box-shadow: 0 0 0 1.5px var(--m-line), var(--shadow-window);
+}
+
+/* Play feature graphic: lockup and promise on the left, the gallery on the right. */
+.store-play-feature {
+  flex-direction: row;
+  align-items: center;
+  background: radial-gradient(90% 140% at 85% 50%, var(--m-tint), var(--m-paper) 70%);
+}
+.store-play-feature .store-copy {
+  align-items: flex-start;
+  text-align: left;
+  padding: 0 0 0 36px;
+  gap: 10px;
+  width: 270px;
+}
+.store-play-feature .store-copy .m-display {
+  font-size: 30px;
+  line-height: 32px;
+  letter-spacing: -1px;
+}
+.store-play-feature .store-copy p {
+  font-size: 13px;
+  line-height: 18px;
+}
+.store-play-feature .store-stage {
+  align-self: stretch;
+  margin: 0;
+}
+.store-play-feature .store-stage > .m-device {
+  top: 22px;
+  transform: translateX(-50%) scale(0.47);
+}
+
+/* App Store header (21:9): a mosaic of photos and files around the promise, which sits
+   inside Apple's centred art safe area. */
+.store-ios-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: radial-gradient(
+    ellipse 34% 52% at 50% 50%,
+    color-mix(in srgb, var(--m-paper) 97%, transparent),
+    color-mix(in srgb, var(--m-paper) 88%, transparent) 58%,
+    color-mix(in srgb, var(--m-paper) 30%, transparent)
+  );
+}
+.store-mosaic {
+  position: absolute;
+  inset: -30px -80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 22px;
+}
+.store-mosaic-row {
+  display: flex;
+  gap: 22px;
+}
+.store-mosaic-row:nth-child(even) {
+  transform: translateX(-110px);
+}
+.store-mosaic .m-photo,
+.store-file {
+  flex: none;
+  width: 196px;
+  height: 196px;
+  border-radius: 22px;
+}
+.store-file {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px;
+  background: var(--m-surface);
+  border: 1px solid var(--m-divider);
+}
+.store-file .m-tile {
+  margin-bottom: auto;
+}
+.store-file .m-row-title {
+  font-size: 19px;
+  line-height: 24px;
+}
+.store-file .m-caption {
+  font-size: 15px;
+}
+.store-center {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  justify-content: center;
+  padding: 0;
+  gap: 22px;
+}
+.store-ios-header .store-lockup {
+  gap: 14px;
+  font-size: 46px;
+  letter-spacing: -1px;
+}
+.store-ios-header .store-copy .m-display {
+  font-size: 104px;
+  line-height: 106px;
+  letter-spacing: -4px;
+}
+
+/* App Store search result (3:2): the app itself, three phones centred. */
+.store-trio > div {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+.store-trio-main {
+  z-index: 2;
+  transform: translate(-50%, -50%) scale(1.22);
+}
+.store-trio-side:first-child {
+  transform: translate(calc(-50% - 430px), calc(-50% + 40px)) scale(1.06);
+}
+.store-trio-side:last-child {
+  transform: translate(calc(-50% + 430px), calc(-50% + 40px)) scale(1.06);
+}
+
+/* Review aid only (?safe=1). */
+.store-safe {
+  position: absolute;
+  z-index: 9;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  outline: 3px dashed var(--m-accent);
+}

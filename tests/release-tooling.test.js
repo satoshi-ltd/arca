@@ -260,7 +260,7 @@ test("a validation stamp matches only the exact files it was written for", (t) =
   const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe", env: gitFreeEnv() });
   git("init", "-q");
   fs.writeFileSync(path.join(root, ".gitignore"), "ignored.txt\nnode_modules\n");
-  fs.writeFileSync(path.join(root, ".node-version"), "24.21.0\n");
+  fs.writeFileSync(path.join(root, ".node-version"), "24.22.1\n");
   fs.writeFileSync(path.join(root, "tracked.txt"), "one");
   git("add", "-A");
   const run = (fn) => {
