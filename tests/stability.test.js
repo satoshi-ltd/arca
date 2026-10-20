@@ -80,7 +80,7 @@ test("retention preserves current revisions and versions not yet acknowledged by
 });
 test("cleanup counts kept versions like Settings: older versions only, never a file's current version", (t) => {
   const { s, v } = fixture(t);
-  for (const text of ["one", "two", "three"]) {
+  for (const text of ["1", "22", "333"]) {
     fs.writeFileSync(path.join(v.path, "a"), text);
     s.scanHub();
   }

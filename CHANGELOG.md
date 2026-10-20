@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.82 — 2026-10-20
+
+- An automated retention test no longer fails intermittently on Windows build machines: its successive edits now differ in size, so they are detected whatever the file-time resolution.
+
 ## 0.7.81 — 2026-10-20
 
 - Mobile Erase this device deletes local data even when background-task cleanup fails. Failed system cleanup stays pending and retries on launch; Arca also clears its scheduled and delivered notifications and forgets old notification responses before completing the reset.
