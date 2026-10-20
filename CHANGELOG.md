@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.80 — 2026-10-20
+
+- Erase this device and Erase this hub clear desktop searches, listening history and cached thumbnails, as well as diagnostic logs and abandoned configuration files. Interrupted interface cleanup resumes on launch when the browser allows its retry marker.
+- Erasing desktop and mobile devices removes old database pages and waits for pending music writes, so local metadata and player files do not survive a completed reset. Hub content, Photos originals, exports and detached folders stay outside a device erase.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.79 — 2026-10-20
 
 - Photo Info slides and fades while the photo area switches immediately to its final size, including when the panel closes. Progress bars update directly instead of animating their width.

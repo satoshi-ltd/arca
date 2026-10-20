@@ -46,6 +46,10 @@ _None._
 
 ### Device checks
 
+- **VERIFY-ERASE-PRIVACY** — Erase privacy on installed desktop and mobile clients
+  `verify · maintainer · high`
+  accept: identify the candidate SHA and installed binaries; using disposable Arca folders, erase online and with the hub unreachable on desktop, Android and iOS. Check unsynced local files, recent searches/listening history, thumbnails, catalog state and a playing track; interrupted cleanup resumes on launch. Photos originals, exports, detached folders, hub files and other devices remain. Source tests cover database free pages/WAL, configuration temporaries, open logs and late writes/reads; they do not establish the installed clients' OS storage and player behavior.
+
 - **VERIFY-SHARE-CACHE** — Incoming shares on the Fold
   `verify · maintainer · high`
   accept: sharing one and several files, a large file and a file named like a path from another app into Arca on the Fold lists them in the Save sheet with their real names, saves them, and leaves nothing under the app's cache except generated names (`arca-incoming/<id>-<n>`) while the sheet is open and nothing after Save or Cancel.
@@ -213,6 +217,10 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 
 ### Release and native reliability
+
+- **MOB-ERASE-OS-CLEANUP** — Erase recovery around background tasks and notifications
+  `bug · agent · high`
+  accept: isolated runtime tests inject background-task unregister and notification cleanup failures; a background-task error does not prevent starting confirmed local erasure, and notification failures do not report a complete cleanup or strand retries after the replica journal is cleared. Photos originals and unrelated OS notifications remain outside the operation; native behavior is verified under VERIFY-ERASE-PRIVACY.
 
 
 - **DESK-TRAY-UNUSED-COMMAND** — Remove the unused `main_window_open` Tauri command

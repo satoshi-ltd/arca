@@ -854,14 +854,73 @@ test("confirmed desktop destruction works with an unreachable hub and preserves 
     "delete only on confirmation",
   );
   fs.writeFileSync(path.join(f.volume.path, "hub.txt"), "retained");
+  const db = replica.engine.store.db;
+  const marker = "old-device-private-history";
+  db.exec("PRAGMA secure_delete=OFF; CREATE TABLE erase_probe (value TEXT)");
+  db.prepare("INSERT INTO erase_probe VALUES (?)").run(marker.repeat(500));
+  db.exec("DELETE FROM erase_probe; PRAGMA wal_checkpoint(TRUNCATE)");
+  const databaseFile = db.prepare("PRAGMA database_list").get().file;
+  assert.ok(fs.readFileSync(databaseFile).includes(Buffer.from(marker)));
+  const home = replica.engine.store.home;
+  const residue = [
+    "daemon.log",
+    "service.log",
+    "update-watch.log",
+    "config.json.12345678-1234-1234-1234-123456789abc.tmp",
+  ];
+  for (const name of residue)
+    fs.writeFileSync(path.join(home, name), "private-old-device-marker");
+  const log = fs.openSync(path.join(home, "daemon.log"), "a");
+  t.after(() => fs.closeSync(log));
+  fs.writeFileSync(path.join(home, "unrelated.tmp"), "keep");
   replica.engine.config.hub.url = "http://127.0.0.1:1";
   await replica.api("/v1/destroy-replica", { confirmed: true });
+  assert.equal(
+    fs.readFileSync(databaseFile).includes(Buffer.from(marker)),
+    false,
+    "historical database pages erased",
+  );
+  for (const name of residue)
+    if (name.endsWith(".log"))
+      assert.equal(fs.readFileSync(path.join(home, name), "utf8"), "");
+    else
+      assert.equal(
+        fs.existsSync(path.join(home, name)),
+        false,
+        `${name} is erased`,
+      );
+  fs.writeSync(log, "fresh installation");
+  assert.equal(
+    fs.readFileSync(path.join(home, "daemon.log"), "utf8"),
+    "fresh installation",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(home, "unrelated.tmp"), "utf8"),
+    "keep",
+  );
   assert.equal(fs.existsSync(folder), false);
   assert.equal(replica.engine.config.needsSetup, true);
   assert.equal(
     fs.readFileSync(path.join(f.volume.path, "hub.txt"), "utf8"),
     "retained",
   );
+});
+
+test("desktop erase refuses hardlinked logs without changing external files", async (t) => {
+  const f = await setup(t);
+  const replica = await f.connect("hardlinked-log");
+  const home = replica.engine.store.home;
+  const external = path.join(f.volume.path, "external-log.txt");
+  const logfile = path.join(home, "daemon.log");
+  fs.writeFileSync(external, "keep outside Arca state");
+  fs.linkSync(external, logfile);
+  await assert.rejects(replica.api("/v1/destroy-replica", { confirmed: true }), /log location changed/);
+  assert.equal(fs.readFileSync(external, "utf8"), "keep outside Arca state");
+  assert.ok(replica.engine.config.destroyPending);
+  fs.unlinkSync(logfile);
+  await replica.api("/v1/destroy-replica", { confirmed: true });
+  assert.equal(replica.engine.config.needsSetup, true);
+  assert.equal(fs.readFileSync(external, "utf8"), "keep outside Arca state");
 });
 
 test("destroy hub deletes its files/history and returns to setup without deleting replica copies", async (t) => {

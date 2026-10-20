@@ -53,13 +53,21 @@ export class ReplicaStore {
         "folders",
         "settings",
       ])
-        await this.db.execAsync(`DELETE FROM ${table}`);
+        await this.db.execAsync(
+          table === "settings"
+            ? "DELETE FROM settings WHERE key != 'destroyPending'"
+            : `DELETE FROM ${table}`,
+        );
       await this.db.execAsync("COMMIT");
     } catch (error) {
       await this.db.execAsync("ROLLBACK");
       throw error;
     }
-    await this.db.execAsync("PRAGMA wal_checkpoint(TRUNCATE)");
+    await this.db.execAsync("VACUUM; PRAGMA wal_checkpoint(TRUNCATE)");
+    // A process exit during compaction must retain the retry marker.
+    await this.db.execAsync(
+      "DELETE FROM settings WHERE key='destroyPending'; PRAGMA wal_checkpoint(TRUNCATE)",
+    );
   }
   async quarantineGallery(scope) {
     const corrupt = `scope=? AND CASE WHEN json_valid(row) THEN (CASE WHEN json_type(row)='object' THEN (CASE WHEN json_type(row,'$.resources') IS NULL OR (json_type(row,'$.resources')='array' AND NOT EXISTS(SELECT 1 FROM json_each(row,'$.resources') WHERE type!='object')) THEN 1 ELSE 0 END) ELSE 0 END) ELSE 0 END=0`;

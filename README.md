@@ -2,7 +2,7 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.7.79 · Functional, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing, audio libraries with desktop, web and Android playback and Android Auto, and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.7.80 · Functional, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing, audio libraries with desktop, web and Android playback and Android Auto, and per-folder history retention. Updating source does not update running daemon or app binaries.
 
 ## How it works
 
@@ -124,10 +124,6 @@ The default container command uses `daemon --setup`: it prepares empty state for
 `deploy/umbrel/arca/` is a separate App Store package under preparation, pinned to the published **0.4.1** multiarch Docker image. It does not replace `compose.yaml`, `deploy/Dockerfile`, the Docker release pipeline or the Casa installation. Newer releases are not in that image.
 
 The package opens the shared first-run wizard to choose a hub or replica, with app-owned persistent storage and adds a browser page that exchanges Umbrel's per-install Arca app password for Arca's existing single-use sign-in code. Companion clients retain Arca pairing and credentials. Local checks and a real amd64 Umbrel installation, web sign-in, bidirectional sync and restart persistence have passed. The pilot opens at `http://umbrel.local:17831/`, with its app-password code page at `/umbrel`; App Store submission remains pending. See [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission) for package layout, test commands and remaining requirements.
-
-## Update the private pilots
-
-The maintainer's Casa hub and Umbrel pilot are updated from this checkout with private, Git-ignored helpers: `npm run update-docker` and `npm run update-umbrel`, each with a read-only `--check`. Procedures and safeguards live in SPEC: [Update Casa Docker from this checkout](SPEC.md#update-casa-docker-from-this-checkout), [Casa pilot](SPEC.md#casa-pilot) and [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission). Deploying is the maintainer's decision; preparing or checking a helper deploys nothing.
 
 ## Release and remaining work
 

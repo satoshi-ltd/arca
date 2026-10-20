@@ -1206,6 +1206,28 @@ test("mobile destruction works offline and preserves hub content", async (t) => 
   );
 });
 
+test("mobile destruction drains music writers before removing their entire directory", async (t) => {
+  const f = await fixture(t);
+  const root = path.dirname(f.files.folder("scope", "folder"));
+  const residue = path.join(root, "music-synced.json.part");
+  let release;
+  f.replica.musicPublishing = new Promise((resolve) => {
+    release = resolve;
+  }).then(() => {
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(residue, "private positions");
+  });
+  const erasing = f.replica.destroy(true);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  release();
+  await erasing;
+  assert.equal(
+    fs.existsSync(residue),
+    false,
+    "late music staging cannot survive erase",
+  );
+});
+
 test("mobile destruction resumes interrupted local cleanup while offline", async (t) => {
   const f = await fixture(t);
   await f.replica.select(f.volume);
@@ -1224,6 +1246,31 @@ test("mobile destruction resumes interrupted local cleanup while offline", async
   assert.equal(fs.existsSync(local), false);
   assert.equal(await f.store.get("destroyPending"), null);
   assert.deepEqual(f.client.state(), { connection: null, catalog: null });
+});
+
+test("mobile erase cannot succeed until the player acknowledges its empty library", async (t) => {
+  const f = await fixture(t);
+  f.replica.player = { reload: async () => { throw new Error("player bridge unavailable"); } };
+  await assert.rejects(f.replica.destroy(true), /player bridge unavailable/);
+  assert.equal(await f.store.get("destroyPending"), true);
+  f.replica.player.reload = async () => {};
+  await f.replica.destroy(true);
+  assert.equal(await f.store.get("destroyPending"), null);
+});
+
+test("mobile erase retains its journal when database compaction fails after row deletion", async (t) => {
+  const f = await fixture(t);
+  const reset = f.store.reset.bind(f.store);
+  f.store.reset = async () => {
+    await reset();
+    throw new Error("compaction failed");
+  };
+  await assert.rejects(f.replica.destroy(true), /compaction failed/);
+  assert.equal(await f.store.get("destroyPending"), true);
+  f.store.reset = reset;
+  await f.replica.load();
+  assert.equal(await f.store.get("destroyPending"), null);
+  assert.equal(f.replica.scope, null);
 });
 
 test("mobile onboarding downloads only explicitly chosen folders and preflights space", async (t) => {
@@ -6028,15 +6075,20 @@ test("a phone keeps the hub's audio library, its covers and the car's library fi
   };
   replica.player.reload = async (value) => {
     reloads.push(value ?? null);
+    fs.mkdirSync(path.dirname(files.musicPositions()), { recursive: true });
     fs.writeFileSync(files.musicPositions(), "{}");
     throw new Error("service gone");
   };
+  await assert.rejects(replica.destroy(true), /service gone/);
+  assert.equal(await f.store.get("destroyPending"), true, "a failed player bridge keeps erasure pending");
+  assert.equal(fs.existsSync(files.musicPositions()), false, "failed player reload still cleans its final writes");
+  replica.player.reload = async () => reloads.push(null);
   await replica.destroy(true);
   assert.ok(late, "erasing waits for a car library write already running");
   assert.equal(replica.publishedMusic, null, "erasing forgets what the car was given");
   assert.deepEqual([replica.publishedSynced, replica.musicEpisodes, replica.audioPositions], [null, null, null], "and the synced places, so a re-pair to the same hub writes them again");
   assert.equal(reloads.at(-1), null, "and tells the car service to reload");
-  assert.equal(replica.lastFullScan, 0, "a service that cannot reload never stops the reset");
+  assert.equal(replica.lastFullScan, 0, "a successful retry clears cached scan state");
   assert.equal(fs.existsSync(files.musicLibrary()), false);
   assert.equal(fs.existsSync(files.musicHistory()), false, "a play recorded while erasing does not survive it");
   assert.equal(fs.existsSync(files.musicPositions()), false, "queued positions, even one the service queued while reloading, do not survive an erase");

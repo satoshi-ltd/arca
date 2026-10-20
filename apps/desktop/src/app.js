@@ -116,7 +116,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.79";
+const APP_VERSION = "0.7.80";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -3108,9 +3108,10 @@ function galleryDisk() {
   }));
 }
 async function storedGallery(key, value) {
+  const epoch = galleryEpoch;
   try {
     const db = await galleryDisk();
-    if (!db) return null;
+    if (!db || (value !== undefined && epoch !== galleryEpoch)) return null;
     return await new Promise((resolve) => {
       const tx = db.transaction(
         "views",
@@ -3146,12 +3147,51 @@ async function storedGallery(key, value) {
     return null;
   }
 }
-function clearStoredGallery() {
-  void galleryDisk()
-    .then((db) => {
-      if (db) db.transaction("views", "readwrite").objectStore("views").clear();
-    })
-    .catch(() => {});
+async function clearStoredGallery(required = false) {
+  try {
+    const db = await galleryDisk();
+    if (!db) {
+      if (required && globalThis.indexedDB)
+        throw new Error(
+          "Could not clear Arca's gallery cache. Retry Erase this device.",
+        );
+      return;
+    }
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("views", "readwrite");
+      tx.oncomplete = resolve;
+      tx.onerror = tx.onabort = () =>
+        reject(tx.error || new Error("Gallery cache cleanup failed"));
+      tx.objectStore("views").clear();
+    });
+  } catch (error) {
+    if (required) {
+      galleryDatabase = undefined;
+      throw error;
+    }
+  }
+}
+async function eraseInterfaceData() {
+  stopMusic();
+  viewLoadSerial++;
+  historyCache.clear();
+  clearGalleryPages();
+  photoRequests.clear();
+  for (const pool of Object.values(photoCaches)) {
+    pool.entries.clear();
+    pool.bytes = 0;
+  }
+  viewReads.clear();
+  folderCacheEpoch++;
+  folderPages.clear();
+  recentSaved.clear();
+  recentFailed.clear();
+  galleryDeletions = {};
+  for (const key of Object.keys(localStorage))
+    if (key.startsWith("arca-") && key !== "arca-erase-pending")
+      localStorage.removeItem(key);
+  await clearStoredGallery(true);
+  localStorage.removeItem("arca-erase-pending");
 }
 // Content-addressed session cache survives leaving a gallery; never persisted with credentials.
 const photoCaches = {
@@ -3166,8 +3206,10 @@ async function galleryPage(route, fresh = false) {
   const epoch = galleryEpoch;
   const cached =
     galleryPages.get(key) || (!fresh && (await storedGallery(`page:${key}`)));
+  if (epoch !== galleryEpoch) throw new Error("Gallery view changed");
   const refresh = async () => {
     const data = await api(route);
+    if (epoch !== galleryEpoch) throw new Error("Gallery view changed");
     if (!data.indexing && epoch === galleryEpoch) {
       galleryPages.delete(key);
       const entry = { time: Date.now(), data };
@@ -3191,6 +3233,7 @@ async function galleryPage(route, fresh = false) {
   return visibleGalleryPage(route, await refresh());
 }
 async function cachedPhoto(route, kind) {
+  const epoch = galleryEpoch;
   const size =
     new URLSearchParams(route.slice(route.indexOf("?") + 1)).get("size") ||
     "thumb";
@@ -3208,8 +3251,10 @@ async function cachedPhoto(route, kind) {
   }
   if (size === "thumb") {
     const stored = await storedGallery(`thumb:${key}`);
+    if (epoch !== galleryEpoch) return {};
     if (stored?.data) return stored;
   }
+  if (epoch !== galleryEpoch) return {};
   if (photoRequests.has(key)) return photoRequests.get(key);
   const pending = api(
     size === "large"
@@ -3218,7 +3263,9 @@ async function cachedPhoto(route, kind) {
   )
     .then((value) => {
       if (value.url) value = { data: value.url, expires: value.expires };
-      if (photoRequests.get(key) !== pending || !value.data) return value;
+      if (epoch !== galleryEpoch || photoRequests.get(key) !== pending)
+        return {};
+      if (!value.data) return value;
       if (size === "thumb" && value.data?.startsWith("data:image/"))
         void storedGallery(`thumb:${key}`, value);
       photoCache.set(key, value);
@@ -8816,13 +8863,19 @@ async function handle(name, id, control) {
       ) +
         `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to other devices." : "Works offline. If the hub cannot be reached, remove this device from its Devices list separately."} An interrupted cleanup can be retried.</p>`,
       async () => {
+        try {
+          localStorage.setItem("arca-erase-pending", "true");
+        } catch {
+          /* A blocked retry marker must not prevent confirmed file erasure.
+             Interface cleanup below still reports inaccessible storage. */
+        }
         await api(destroyingHub ? "/v1/destroy-hub" : "/v1/destroy-replica", {
           confirmed: true,
         });
         ready = false;
         detailId = null;
         onboarding = null;
-        localStorage.removeItem("arca-theme");
+        await eraseInterfaceData();
         theme("system");
         if (native) await boot();
         else
@@ -9946,6 +9999,13 @@ function renderOnboarding() {
   icons();
 }
 async function boot() {
+  let erasePending = false;
+  try {
+    erasePending = !!localStorage.getItem("arca-erase-pending");
+  } catch {
+    /* The app remains usable when this browser refuses local storage. */
+  }
+  if (erasePending) await eraseInterfaceData();
   if (!native) {
     try {
       await refresh();

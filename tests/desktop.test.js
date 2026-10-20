@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { JSDOM } from "jsdom";
+import { IDBFactory } from "fake-indexeddb";
 import { init } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
 const html = fs.readFileSync(
@@ -4116,7 +4117,8 @@ test("a version preview that waits on the hub shows a clock whose tooltip and la
   }
 });
 
-test("desktop destroy confirmation cancels safely and returns to first-run onboarding after deletion", async (t) => {
+for (const storageDenied of [false, true])
+test(`desktop destroy confirmation cancels safely and returns to first-run onboarding after deletion${storageDenied ? " with storage denied" : ""}`, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-destroy-ui-"));
   const nodes = [];
   for (const role of ["hub", "replica"]) {
@@ -4155,6 +4157,32 @@ test("desktop destroy confirmation cancels safely and returns to first-run onboa
     for (const n of nodes.reverse()) await n.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
+  w.indexedDB = new IDBFactory();
+  const cache = await new Promise((resolve) => {
+    const request = w.indexedDB.open("arca-gallery", 1);
+    request.onupgradeneeded = () =>
+      request.result
+        .createObjectStore("views", { keyPath: "key" })
+        .createIndex("time", "time");
+    request.onsuccess = () => resolve(request.result);
+  });
+  await new Promise((resolve) => {
+    const tx = cache.transaction("views", "readwrite");
+    tx.objectStore("views").put({
+      key: "thumb:private",
+      value: { data: "private-image" },
+      time: 1,
+    });
+    tx.oncomplete = resolve;
+  });
+  const privateKeys = [
+    "arca-palette-recent",
+    "arca-music-recent:old-hub:folder",
+    "arca-gallery-deletions",
+    "arca-theme",
+  ];
+  for (const key of privateKeys) w.localStorage.setItem(key, "[]");
+  w.localStorage.setItem("unrelated", "keep");
   w.setInterval = () => 0;
   w.HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute("open", "");
@@ -4204,12 +4232,34 @@ test("desktop destroy confirmation cancels safely and returns to first-run onboa
   await until(() => w.document.body.getAttribute("aria-busy") === "false");
   w.document.querySelector('[data-action="destroy-replica"]').click();
   await until(() => w.document.querySelector("#dialog").open);
+  const storageMethods = new Map();
+  if (storageDenied)
+    for (const method of ["getItem", "setItem", "removeItem"]) {
+      storageMethods.set(method, w.Storage.prototype[method]);
+      w.Storage.prototype[method] = () => { throw new w.DOMException("Storage is disabled", "SecurityError"); };
+    }
   w.document.querySelector("#submit-dialog").click();
+  if (storageDenied) {
+    await until(() => replica.engine.config.needsSetup && w.document.body.getAttribute("aria-busy") === "false");
+    assert.equal(fs.existsSync(destination), false, "browser storage cannot block confirmed file erasure");
+    assert.equal(w.document.querySelector("#dialog").open, true, "blocked interface cleanup is not reported as complete");
+    for (const [method, original] of storageMethods) w.Storage.prototype[method] = original;
+    w.document.querySelector("#submit-dialog").click();
+  }
   await until(
     () =>
       w.document.querySelector("#setup-form") &&
       w.document.body.getAttribute("aria-busy") === "false",
   );
+  for (const key of privateKeys)
+    assert.equal(w.localStorage.getItem(key), null, `${key} erased`);
+  assert.equal(w.localStorage.getItem("unrelated"), "keep");
+  const cached = await new Promise((resolve) => {
+    const request = cache.transaction("views").objectStore("views").count();
+    request.onsuccess = () => resolve(request.result);
+  });
+  assert.equal(cached, 0, "persistent thumbnails erased before setup");
+  cache.close();
   assert.equal(fs.existsSync(destination), false);
   assert.equal(replica.engine.config.needsSetup, true);
   assert.match(

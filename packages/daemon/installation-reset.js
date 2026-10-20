@@ -51,6 +51,35 @@ export function finishInstallationReset(store) {
       );
     fs.rmSync(target.path, { recursive: true });
   }
+  // Keep service-owned open descriptors valid, including on Windows.
+  for (const name of ["daemon.log", "service.log", "update-watch.log"]) {
+    const location = path.join(store.home, name);
+    let stat;
+    try {
+      stat = fs.lstatSync(location);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (stat.isSymbolicLink()) {
+      fs.unlinkSync(location);
+      continue;
+    }
+    if (!stat.isFile() || stat.nlink !== 1)
+      fail(`Arca log location changed: ${location}`, 409);
+    const fd = fs.openSync(
+      location,
+      fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW || 0),
+    );
+    try {
+      const current = fs.fstatSync(fd);
+      if (current.dev !== stat.dev || current.ino !== stat.ino || current.nlink !== 1)
+        fail(`Arca log location changed: ${location}`, 409);
+      fs.ftruncateSync(fd, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
   for (const name of fs.readdirSync(store.home)) {
     if (
       [
@@ -62,6 +91,9 @@ export function finishInstallationReset(store) {
         "promotion.json",
       ].includes(name) ||
       /^before-(promotion|reconnect)-[a-f0-9-]+\.sqlite$/.test(name) ||
+      /^config\.json\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.tmp$/.test(
+        name,
+      ) ||
       /^config\.before-[a-z0-9-]+\.json$/.test(name) ||
       name === "pre-onboarding-config.json"
     )
@@ -80,7 +112,7 @@ export function finishInstallationReset(store) {
     store.db.exec("ROLLBACK");
     throw error;
   }
-  store.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  store.db.exec("VACUUM; PRAGMA wal_checkpoint(TRUNCATE)");
   const old = store.config;
   const next = {
     protocol: 1,

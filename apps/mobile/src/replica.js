@@ -165,22 +165,32 @@ export class Replica {
       );
   }
   async finishDestroy() {
-    await this.files.destroy();
-    await this.client.destroy();
-    await this.store.reset();
+    // Stop new publications and drain writers before removing their directory.
     this.scope = null;
     await this.musicPublishing?.catch(() => {});
     await this.musicHistoryWriting?.catch(() => {});
-    for (const target of [this.files.musicLibrary?.(), this.files.musicHistory?.()])
-      if (target) await this.files.remove(target).catch(() => {});
+    await this.files.destroy();
+    await this.client.destroy();
     this.publishedMusic = null;
-    this.publishedSynced = this.publishedProgress = this.musicEpisodes = this.audioPositions = null;
+    this.publishedSynced =
+      this.publishedProgress =
+      this.musicEpisodes =
+      this.audioPositions =
+        null;
     this.journalCut = new Map();
     try {
       await this.player?.reload?.();
-    } catch {}
-    const positions = this.files.musicPositions?.();
-    if (positions) await this.files.remove(positions).catch(() => {});
+    } finally {
+      // Reload may flush final player positions, even when the bridge fails.
+      // Keep the journal until the player and local cleanup both acknowledge.
+      await this.files.destroy();
+    }
+    try {
+      await this.store.reset();
+    } catch (error) {
+      await this.store.set("destroyPending", true);
+      throw error;
+    }
     this.paused = false;
     this.error = this.progress = null;
     this.hashCache.clear();

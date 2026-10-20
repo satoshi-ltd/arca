@@ -38,9 +38,14 @@ export const client = createClient({
       return row ? JSON.parse(row.value) : null;
     },
     async write(value) {
-      await (
-        await db()
-      ).runAsync(
+      const database = await db();
+      if (value === null) {
+        await database.execAsync(
+          "PRAGMA secure_delete=ON; DELETE FROM cache; VACUUM; PRAGMA wal_checkpoint(TRUNCATE)",
+        );
+        return;
+      }
+      await database.runAsync(
         "INSERT OR REPLACE INTO cache VALUES (?, ?)",
         "catalog",
         JSON.stringify(value),
