@@ -48,7 +48,7 @@ _None._
 
 - **VERIFY-ERASE-PRIVACY** — Erase privacy on installed desktop and mobile clients
   `verify · maintainer · high`
-  accept: identify the candidate SHA and installed binaries; using disposable Arca folders, erase online and with the hub unreachable on desktop, Android and iOS. Check unsynced local files, recent searches/listening history, thumbnails, catalog state and a playing track; interrupted cleanup resumes on launch. Photos originals, exports, detached folders, hub files and other devices remain. Source tests cover database free pages/WAL, configuration temporaries, open logs and late writes/reads; they do not establish the installed clients' OS storage and player behavior.
+  accept: identify the candidate SHA and installed binaries; using disposable Arca folders, erase online and with the hub unreachable on desktop, Android and iOS. Check unsynced local files, recent searches/listening history, thumbnails, catalog state and a playing track; interrupted cleanup resumes on launch; on Android and iOS, Arca's scheduled and delivered notifications and its background-sync registration are gone, and tapping an old notification during or after the erase does nothing. Photos originals, exports, detached folders, hub files and other devices remain. Source tests cover database free pages/WAL, configuration temporaries, open logs and late writes/reads; they do not establish the installed clients' OS storage and player behavior.
 
 - **VERIFY-SHARE-CACHE** — Incoming shares on the Fold
   `verify · maintainer · high`
@@ -217,11 +217,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 
 
 ### Release and native reliability
-
-- **MOB-ERASE-OS-CLEANUP** — Erase recovery around background tasks and notifications
-  `bug · agent · high`
-  accept: isolated runtime tests inject background-task unregister and notification cleanup failures; a background-task error does not prevent starting confirmed local erasure, and notification failures do not report a complete cleanup or strand retries after the replica journal is cleared. Photos originals and unrelated OS notifications remain outside the operation; native behavior is verified under VERIFY-ERASE-PRIVACY.
-
 
 - **DESK-TRAY-UNUSED-COMMAND** — Remove the unused `main_window_open` Tauri command
   `chore · agent · low`

@@ -53,9 +53,12 @@ export class Replica {
     version = null,
     media = null,
     player = null,
+    cleanupDevice = async () => {},
     transfer = { begin: async () => false, end: async () => {} },
   }) {
-    Object.assign(this, { store, files, platform, version, transfer, player });
+    Object.assign(this, {
+      store, files, platform, version, transfer, player, cleanupDevice,
+    });
     this.changed = changed;
     this.lastChangeAt = Date.now();
     this.discoveryMs = DISCOVERY_MS;
@@ -185,6 +188,7 @@ export class Replica {
       // Keep the journal until the player and local cleanup both acknowledge.
       await this.files.destroy();
     }
+    await this.cleanupDevice();
     try {
       await this.store.reset();
     } catch (error) {

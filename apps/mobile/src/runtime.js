@@ -73,6 +73,7 @@ let galleryTimer;
 let currentReplica;
 const noticeState = new Map();
 let pendingResponse = null;
+let notificationEpoch = 0;
 const responseListeners = new Set();
 export function subscribeNotificationResponse(listener) {
   responseListeners.add(listener);
@@ -83,6 +84,8 @@ export function subscribeNotificationResponse(listener) {
   return () => responseListeners.delete(listener);
 }
 function receivedResponse(response) {
+  if (currentReplica?.removing) return;
+  if (notificationEpoch && !client.state().connection?.linked) return;
   const item = response?.notification?.request?.content?.data?.notice;
   if (
     !item ||
@@ -99,8 +102,11 @@ function receivedResponse(response) {
   else pendingResponse = destination;
 }
 Notifications.addNotificationResponseReceivedListener(receivedResponse);
+const initialNotificationEpoch = notificationEpoch;
 Notifications.getLastNotificationResponseAsync()
-  .then(receivedResponse)
+  .then((response) => {
+    if (notificationEpoch === initialNotificationEpoch) receivedResponse(response);
+  })
   .catch(() => {});
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -192,6 +198,7 @@ export function runtime() {
         transfer,
         media: mediaLibrary,
         player: Platform.OS === "android" ? player : null,
+        cleanupDevice: () => cleanupDevice(store),
         files,
         client,
         platform: Platform.OS,
@@ -251,14 +258,51 @@ export async function setBackground(enabled) {
     await transfer.end().catch(() => {});
   }
 }
-export async function destroyReplica() {
-  const replica = await runtime();
-  await setBackground(false);
-  await replica.destroy(true);
-  await Notifications.cancelAllScheduledNotificationsAsync();
-  await Notifications.dismissAllNotificationsAsync();
+async function cleanupDevice(store) {
+  backgroundAllowed = false;
+  notificationEpoch++;
+  pendingResponse = null;
   for (const state of noticeState.values()) clearTimeout(state.timer);
   noticeState.clear();
+  const steps = [
+    ["background setting", () => store.set("background", false)],
+    [
+      "background task",
+      async () => {
+        if (await TaskManager.isTaskRegisteredAsync(BACKGROUND_TASK))
+          await BackgroundTask.unregisterTaskAsync(BACKGROUND_TASK);
+      },
+    ],
+    [
+      "scheduled notifications",
+      () => Notifications.cancelAllScheduledNotificationsAsync(),
+    ],
+    [
+      "delivered notifications",
+      () => Notifications.dismissAllNotificationsAsync(),
+    ],
+    [
+      "notification response",
+      () => Notifications.clearLastNotificationResponseAsync(),
+    ],
+  ];
+  const results = await Promise.allSettled(
+    steps.map(([, work]) => Promise.resolve().then(work)),
+  );
+  const failed = steps.filter(
+    (_, index) => results[index].status === "rejected",
+  );
+  if (failed.length)
+    throw new Error(
+      `Device files were erased, but cleanup could not finish: ${failed.map(([name]) => name).join(", ")}. Retry Erase this device.`,
+    );
+}
+export async function destroyReplica() {
+  const replica = await runtime();
+  backgroundAllowed = false;
+  notificationEpoch++;
+  pendingResponse = null;
+  await replica.destroy(true);
 }
 async function registerNotificationCategories() {
   for (const [action, label] of [

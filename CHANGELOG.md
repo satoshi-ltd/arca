@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.81 — 2026-10-20
+
+- Mobile Erase this device deletes local data even when background-task cleanup fails. Failed system cleanup stays pending and retries on launch; Arca also clears its scheduled and delivered notifications and forgets old notification responses before completing the reset.
+
+Needs: native build
+
 ## 0.7.80 — 2026-10-20
 
 - Erase this device and Erase this hub clear desktop searches, listening history and cached thumbnails, as well as diagnostic logs and abandoned configuration files. Interrupted interface cleanup resumes on launch when the browser allows its retry marker.
