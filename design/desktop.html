@@ -21,7 +21,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.7.77 · device macbook-pro · hub casa</span>
+      <span class="kit-version">v0.7.78 · device macbook-pro · hub casa</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -110,6 +110,14 @@
               <div class="callout"><span data-icon="info"></span><p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</p></div>
             </div>
             <div class="dialog-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary"><span data-icon="refresh-cw"></span>Start syncing</button></div>
+          </dialog>
+        </div>
+        <p class="kit-caption">Choose folders · every shared folder is already selected</p>
+        <div class="kit-dialog-stage">
+          <dialog open aria-labelledby="choose-all-title">
+            <div class="modal-title"><div class="tile"><span data-icon="folder"></span></div><div><h2 id="choose-all-title">Choose folders</h2><p>Keep complete copies on this device.</p></div></div>
+            <div class="empty"><span data-icon="folder-check"></span><h2>All folders are syncing here</h2><p>New shared folders will appear here when the hub creates them.</p></div>
+            <div class="dialog-actions"><button type="button" class="primary">Done</button></div>
           </dialog>
         </div>
       </section>

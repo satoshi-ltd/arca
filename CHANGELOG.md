@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.78 — 2026-10-20
+
+- When all folders are selected, the Choose folders message now uses the same heading style as other empty states.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.77 — 2026-10-20
 
 - Desktop setup now shows an example hub address before you type, with normal placeholder text and a monospace address.

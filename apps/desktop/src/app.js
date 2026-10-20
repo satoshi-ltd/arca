@@ -116,7 +116,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.77";
+const APP_VERSION = "0.7.78";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -9103,7 +9103,7 @@ async function handle(name, id, control) {
         "beforeend",
         '<div class="empty">' +
           icon("folder-check") +
-          "<h3>All folders are syncing here</h3><p>New shared folders will appear here when the hub creates them.</p></div>",
+          "<h2>All folders are syncing here</h2><p>New shared folders will appear here when the hub creates them.</p></div>",
       );
       icons();
       return;

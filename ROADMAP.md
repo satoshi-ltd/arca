@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-EMPTY-HEADING** — The "All folders are syncing here" empty state is the only one with an unstyled heading
-  `bug · agent · low`
-  accept: that empty state uses the `h2` every other `.empty` styles (or the stylesheet styles it), so its heading matches the others; a desktop test asserts the heading element.
+
 
 - **DESK-INFO-PANEL-MOTION** — The photo Info panel slides with opacity and transform only
   `bug · agent · low`

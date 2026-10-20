@@ -1465,6 +1465,12 @@ test("an empty Folders shows its one action in the header and the empty state on
   assert.match(bare.querySelector(".empty").textContent, /Pick folders from your hub\. Full copies/);
   assert.doesNotMatch(bare.querySelector(".empty").textContent, /select one below/);
 
+  bare.defaultView.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  bare.querySelector('#content [data-action="add"]').click();
+  await until(() => bare.querySelector("#dialog .empty"));
+  assert.equal(bare.querySelector("#dialog .empty h2")?.textContent, "All folders are syncing here");
+  assert.equal(bare.querySelector("#dialog .empty h3"), null);
+
   const hub = await open({ role: "hub", hub: "", hubName: "" }, []);
   assert.deepEqual(header(hub), ["share"], "Create shared folder once, in the header");
   assert.equal(hub.querySelector(".empty button"), null);
