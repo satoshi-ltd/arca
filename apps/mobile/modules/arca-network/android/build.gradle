@@ -6,7 +6,7 @@ group = 'expo.modules.arcanetwork'
 version = '0.9.47'
 android {
   namespace 'expo.modules.arcanetwork'
-  defaultConfig { versionCode 28; versionName '0.9.47' }
+  defaultConfig { versionCode 32; versionName '0.9.47' }
 }
 dependencies {
   implementation("com.facebook.react:react-android")

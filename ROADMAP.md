@@ -103,6 +103,9 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 
 ### High priority — medium effort
 
+- **DAEMON-STALE-LOCK** — A daemon killed inside a container cannot start again
+  `bug · agent · high`
+  accept: `start()` in `packages/daemon/server.js` treats a `daemon.lock` whose PID is its own, or that belongs to a process that is not an Arca daemon, as stale, so a Docker hub killed by OOM or `docker kill` restarts; today the new container's PIDs repeat the old ones (`--init` makes them predictable), `process.kill(pid, 0)` succeeds and the daemon exits with "A daemon already owns this state directory" until the PIDs happen to differ. Seen on the store review hub on 2026-10-08, whose unit now removes the lock; Casa and Umbrel run the same image. A test covers both cases.
 - **MOB-MASS-DELETE** — The phone holds a sudden mass disappearance as the hub and computers do
   `bug · agent · high`
   Since 0.9.40 the hub and desktop or server replicas hold a scan's mass deletion until someone confirms it, but the phone still queues a deletion for every indexed file missing from its app storage (`replica.js` around the inventory), guarded only by a missing root. Accept: the same rule (at least 50 files and more than a quarter of the folder within a rolling hour, renames excused one to one, empty files never a move) holds the phone's deletions, persisted across launches; the folder row shows the attention and a confirmation sheet offers Check again and Delete from every device with the desktop's words; source-contract and fake-engine tests.
@@ -139,6 +142,9 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 
 ### Normal priority — small effort
 
+- **DAEMON-BACKSLASH-PATHS** — The daemon reads a backslash in a request path as a slash
+  `bug · agent · normal`
+  accept: the server rejects request targets containing `\` (raw or `%5C`) with 400 before routing, because Node's URL parser turns `/v1/..\auth/login` into `/auth/login` and a reverse proxy that allows only `/v1/` (nginx on Linux treats `\` as an ordinary character) would publish the web administration; a test covers it. Found by the review of the store review hub, which rejects backslashes in nginx.
 - **SYNC-DIRTY-INVALID** — An invalid-name error clears when the file is renamed
   `bug · agent · normal`
   An incremental scan validates a dirty path before checking that it still exists, so after renaming `Why not?.docx` the folder keeps failing on the old name until the next full scan, up to six hours. Accept: a dirty path that is invalid and absent is dropped and the folder syncs on the next incremental cycle; one still present still stops the scan.
@@ -187,6 +193,9 @@ Ideas not yet approved, from the source audit of 2026-11-11 and earlier ones. Th
 
 ### Normal priority — medium effort
 
+- **DAEMON-TRUSTED-PROXY** — Per-address limits behind a reverse proxy
+  `feature · agent · normal`
+  accept: an explicit setting names trusted proxy addresses, and only for requests from them the daemon takes the client address from `X-Forwarded-For` for its per-address limits on pairing, web codes and approvals (never for LAN HTTP policy or authorization); without it, everything behind a proxy shares one bucket and a few addresses can block pairing, as on the store review hub. Tests cover trusted, untrusted and spoofed headers.
 - **SYNC-SCAN-RESUME** — An interrupted scan keeps the hashes it computed
   `feature · agent · normal`
   The scanner worker writes its hash cache only after the whole scan returns, so a pause, a restore or a restart during the first scan of a large folder throws away hours of hashing. Accept: a scan interrupted after N files re-hashes none of them the next time.
