@@ -421,6 +421,7 @@ The phone and Fold app (`apps/mobile`) is an Expo/React Native JavaScript replic
 
 - Expo SDK **57.0.24**, React Native **0.86.3**, React **19.2.3**; iOS 16.4 minimum (`ArcaNetwork.podspec`). `expo-file-system` `copy()` and `move()` are awaited; paginated media-library calls come from `expo-media-library/legacy` through `media-library.js`. React Native 0.86 has only `StyleSheet.absoluteFill`, and the text-scaling pass skips anything that is not a style object so a future removal degrades instead of crashing at launch.
 - The local `ArcaNetwork` module (Kotlin and Swift) is required directly, with no optional-module fallback. It provides network requests whose block transfers read and write app-owned temporary files with range and length validation and no payload base64 across the bridge; streaming SHA-256 on Android; `replaceFile` (fsync the source, then an atomic rename; iOS also fsyncs the parent directory and raises every failed open or flush, so a failure before the rename leaves the destination untouched and the phone keeps its recovery record, and a retry completes the replacement); `receiveShared` (Android, `SharedFiles.kt`: copies a shared `content://` file into the private inbox under a generated name); gallery export (`GalleryExport.kt`, `GalleryExport.swift`); thumbnails (`ArcaNetwork.thumbnail(source, destination, size, cover, video)` in `Thumbnails.kt` and `Thumbnails.swift`); non-recursive `removeEmptyDirectory`; opening files (Android `ACTION_VIEW` with a temporary read-only content URI, iOS Open In); APK installation (`REQUEST_INSTALL_PACKAGES` with the APK MIME type, explaining and opening settings only on an explicit tap); the Android transfer session; and the clipboard. Android network, hashing and export run on coroutines on `Dispatchers.IO`; iOS uses async URLSession. Metro cannot add native methods: native changes need a new binary.
+- **Permissions and store compliance** (`app.json`): photo and video library read access with media location (Android `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `ACCESS_MEDIA_LOCATION`; no audio media); local network on iOS; notifications; the Android `dataSync` foreground service and APK installation from the native module. Camera, microphone and `SYSTEM_ALERT_WINDOW` are blocked. iOS still carries purpose strings saying Arca does not use the camera and never saves to the photo library, because `expo-image-picker` and `expo-media-library` link those APIs and App Store processing refuses binaries without them; Arca never asks for either. The photo-library purpose string says Arca reads the linked albums or the whole library to upload them to the hub. `ITSAppUsesNonExemptEncryption` is false because Arca has no encryption of its own, only SHA-256 hashing and the platform's TLS when a hub is reached over HTTPS, and the iOS privacy manifest declares disk-space reason `E174.1` for the free-space check in `GalleryExport.swift`. ATS allows arbitrary loads because pairing and sync use plain HTTP to Tailscale and private LAN addresses. `tests/mobile-store-config.test.js` guards these keys.
 
 ### Replica cycle
 
@@ -667,6 +668,26 @@ echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/60-arca-inotify
 sudo sysctl --system
 ```
 
+### Store review hub
+
+App Store and Google Play reviewers have no hub, Tailscale or LAN, and a pairing code lasts ten minutes, so they pair with a disposable hub on the `satoshi-ltd` droplet at `https://arca-review.satoshi-ltd.com`, behind Cloudflare and nginx. `deploy/review/` holds everything; run it as root from `/srv/arca-review/kit`:
+
+```sh
+ssh root@satoshi-ltd install -d /srv/arca-review/kit
+scp deploy/review/*.sh deploy/review/*.mjs deploy/review/*.py root@satoshi-ltd:/srv/arca-review/kit/
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh up 0.6.119      # install or update; seeds an empty hub
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh remove-devices  # after a review: unpair reviewers' phones
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh down            # after approval: hub, page and site off, data kept
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh wipe --yes      # delete the data; the next up seeds again
+ssh root@satoshi-ltd /srv/arca-review/kit/arca-review.sh status          # also: devices
+```
+
+- **Hub.** `satoshiltd/arca:VERSION`, the version under review or newer, runs from systemd (`arca-review.service`) as the dedicated system user `arca-review-hub` with `--init`, a read-only root, no capabilities, `no-new-privileges`, 512 MiB, half a CPU and 256 processes, on its own IPv4-only Docker network (`172.30.77.0/24`) published only on `127.0.0.1:17841`. Its data is a 2 GB ext4 image under the root-only `/srv/arca-review/private`, so uploads cannot fill the droplet and no other account can read the hub's admin token. `firewall.sh` drops every connection the hub starts: Internet, host, tailnet and private networks. Allow HTTP on local network is on because nginx arrives from the Docker gateway, a private address. Starting the unit removes `daemon.lock`, which a killed container leaves behind.
+- **Content.** `seed.mjs` runs once inside the image on an empty hub: Photos is a gallery of 30 generated landscapes and two videos dated 2024 to 2026; Documents has Markdown, text, CSV, JSON, PDF, SVG and a WAV, with two edited files and one deletion so History has versions to show and a file to restore; Phone uploads is empty, for a linked album. `up` refuses a hub whose seed never finished.
+- **Page.** `codes.py` (`arca-review-codes.service`, user `arca-review`, localhost only) asks the hub for a pairing code with its admin token and shows the hub address, the six digits and their countdown, and warns that other reviewers see what is uploaded; a new code replaces the previous one. nginx serves it at `/review` behind basic authentication (`appreview` and the password in `/root/arca-review-credentials.txt`, kept across `up` so the store notes stay valid).
+- **Exposure.** `up` regenerates the nginx site from the script, keeps the previous one if `nginx -t` fails, and renews its Let's Encrypt certificate through `/srv/arca-review/acme`. Only Cloudflare's published ranges reach the site; limits use `CF-Connecting-IP`: six page requests and, for `/pair`, four attempts and then one a minute per visitor. nginx forwards only `/pair`, `/v1/` and `/.well-known/arca`, the routes the phone uses, rejects backslashes in the request target (Node reads them as slashes and would leave `/v1/`), and answers 404 elsewhere; `tests/review-hub.test.js` checks the routes against the mobile client. The hub itself sees every visitor as the Docker gateway, so its own pairing limit (five requests a minute per address) and failure budget (the active code is discarded after five wrong codes) are shared by everyone: a handful of addresses sending wrong codes can keep reviewers from pairing until they stop. If that happens, `down` the hub and bring it back later.
+- The review hub is not part of the pilot; its reviewers' uploads go to every device that selects Phone uploads, so `wipe` it before the next review.
+
 ### Umbrel packaging and submission
 
 `deploy/umbrel/arca/` is an independent App Store package pinned to the published `satoshiltd/arca:0.4.1` multiarch index `sha256:e1f71386da5541c21c500e139d1ba9ca5ad01d389f4845bd0865467946d02ac4` (amd64 and arm64). Its version describes that image, not the checkout. It does not replace `compose.yaml`, `deploy/Dockerfile` or the Docker pipeline.
@@ -715,7 +736,7 @@ The target must not exist. Recovery verifies stored objects and rebuilds receive
 - **Settings → History** has one row, Older versions (the number of kept older versions: each file's current version and current deletions are not counted, so untouched files add nothing; superseded folder entries are included), with Clean up… and a hint stating that cleanup shows what it would remove first and never removes current files, pending changes or history not yet backed up. The Clean up older versions dialog asks "Remove versions older than (days)" and "But always keep the last (versions per file)" (0 skips a rule), shows Would remove, Keeps and Protected after See the count (Keeps and each folder's kept figure count older versions only, like the Older versions row, so the two numbers agree; Protected still counts current, pending and unbacked versions), and removes nothing until Apply cleanup; editing either field after the count clears the counts and the button reads See the count again, so Apply cleanup only ever applies the figures on screen. Per-folder retention sits in the hub's folder detail, in its Version history panel.
 - **Settings → Hub recovery** promotes a replica holding every last-known share after the old hub is stopped for good; other replicas use **Reconnect to replacement hub**.
 
-### Android builds
+### Mobile builds
 
 From `apps/mobile` (Android SDK, mobile dependencies and an Expo login):
 
@@ -724,10 +745,15 @@ npm run build:local:dev    # compile locally with EAS signing and install
 npm run build:local:prod   # signed APK in apps/mobile/release-assets/
 npm run build:dev          # the same development build on EAS cloud, downloaded and installed
 npm run build:prod         # the same signed APK on EAS cloud
+npx -y eas-cli build --platform android --profile store   # Play app bundle (AAB) on EAS cloud
+npx -y eas-cli build --platform ios --profile store       # App Store build on EAS cloud
+npx -y eas-cli submit --platform ios --profile store --latest   # upload the latest App Store build to App Store Connect
 npm run build:local:dev -- --install-only
 ```
 
 Development builds install on the first USB device, else a running emulator, else they boot `Pixel_9_Pro_Fold` (`ANDROID_AVD`, `ANDROID_SERIAL` override); installation uses `adb install -r`, keeps app data and stops on a signature mismatch without uninstalling. Development builds compile only `arm64-v8a`; production keeps every ABI. Local builds use `eas build --local` with the remote signing credentials; cloud builds use the `satoshi-ltd/arca` EAS project and consume quota. Every build runs `check:release` first, writes `arca-<version>-android.apk` (production) or `arca-<version>-android-dev.apk` (development), and `apps/mobile/scripts/release-assets.mjs` keeps only the latest development and production APK. EAS profiles pin the `.node-version` Node. `.easignore` must include every shared module mobile imports (such as `apps/desktop/src/notice-contract.js` and `file-icons.js`); a root test checks it. Metro is user-managed and never started by builds. Launcher and splash assets come from `node apps/mobile/scripts/generate-brand-assets.mjs` (needs librsvg) and need a new binary.
+
+The `store` profile is the only one that builds for the stores: Android gets an app bundle for Google Play, iOS an App Store build, and `production` stays the sideloaded APK. It bypasses `android-build.mjs`, so run `npm run check:release` first. The `store` submit profile sends a finished build; EAS asks for the Apple account and the App Store Connect app the first time, and Google Play takes its first bundle only through Play Console. Google Play re-signs bundles with its own key unless the existing EAS keystore is enrolled as the app signing key; without that, a phone running the sideloaded APK cannot update from Play and must uninstall, which deletes its app-owned copies.
 
 ### Android Auto testing
 

@@ -12,7 +12,7 @@
         "dark": "./assets/icon-dark.png",
         "tinted": "./assets/icon-tinted.png"
       },
-      "buildNumber": "28",
+      "buildNumber": "31",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -20,15 +20,30 @@
         },
         "UIFileSharingEnabled": true,
         "LSSupportsOpeningDocumentsInPlace": true,
-        "NSLocalNetworkUsageDescription": "Connect to your Arca hub over your private network."
+        "NSLocalNetworkUsageDescription": "Connect to your Arca hub over your private network.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "E174.1"
+            ]
+          }
+        ]
       }
     },
     "android": {
       "package": "com.satoshilimited.arca",
-      "versionCode": 28,
+      "versionCode": 31,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.CAMERA",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -52,8 +67,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Arca to read selected albums for photo uploads.",
-          "cameraPermission": false,
+          "photosPermission": "Arca reads the albums you link, or your whole library, to upload their photos and videos to your hub.",
+          "cameraPermission": "Arca does not use the camera.",
           "microphonePermission": false
         }
       ],
@@ -107,8 +122,8 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow Arca to read selected albums for photo uploads.",
-          "savePhotosPermission": false,
+          "photosPermission": "Arca reads the albums you link, or your whole library, to upload their photos and videos to your hub.",
+          "savePhotosPermission": "Arca never saves to your photo library.",
           "granularPermissions": [
             "photo",
             "video"

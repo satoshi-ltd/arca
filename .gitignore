@@ -19,3 +19,5 @@ apps/mobile/modules/**/android/.gradle/
 /site/release.json
 CLAUDE.md
 design/CLAUDE.md
+/apps/mobile/store/out/
+/apps/mobile/store/photos/
