@@ -44,6 +44,11 @@ test("design pages use the production stylesheets and only classes the app or ki
   }
 });
 
+test("design pages carry no inline styles", () => {
+  for (const page of fs.readdirSync(path.join(root, "design")).filter((name) => name.endsWith(".html")))
+    assert.ok(!/\sstyle\s*=/i.test(read("design", page)), `${page}: move inline styles into kit.css`);
+});
+
 test("design styles take every colour and size from defined tokens", () => {
   const defined = new Set(
     [
@@ -62,7 +67,7 @@ test("design styles take every colour and size from defined tokens", () => {
   for (const [, name] of sources.matchAll(/var\((--[\w-]+)/g))
     assert.ok(names.has(name), `${name} is not a defined token`);
   for (const css of kitStyles)
-    assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "kit styles use tokens, not literal colours");
+    assert.doesNotMatch(css, /(?<![\w-])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b(?![\w-])|\b(?:rgba?|hsla?)\(|[:\s](?:white|black)\b(?![\w-])/, "kit styles use tokens, not literal colours");
 });
 
 test("every design page links a favicon inside design/ that equals the project icon", () => {

@@ -13,6 +13,7 @@ import {
   useDesign,
 } from "./components";
 import { ErrorNotice } from "./Notice";
+import { count } from "./format";
 import {
   allPhotosNote,
   gallerySettingsChanged,
@@ -146,7 +147,7 @@ export function GallerySetup({ gallery, source, locked, enable }) {
     ? allLabel
     : albums.length === 1
       ? albums[0].title
-      : `${albums.length} albums`;
+      : count(albums.length, "album", "albums");
   if (choosing && options)
     return (
       <>

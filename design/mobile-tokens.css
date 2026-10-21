@@ -30,6 +30,17 @@
   --m-danger-bg: #f7e2df;
   --m-toast-bg: #121a16;
   --m-toast-fg: #f4f6f1;
+  --m-backdrop: rgba(18, 26, 22, 0.32);
+  --m-shadow: #000000;
+  --m-switch-thumb: #ffffff;
+  --m-media: #000000;
+  --m-on-media: #ffffff;
+  --m-media-scrim: rgba(0, 0, 0, 0.55);
+  --m-media-bar: rgba(0, 0, 0, 0.6);
+  --m-media-control: rgba(255, 255, 255, 0.18);
+  --m-media-thumb: rgba(255, 255, 255, 0.12);
+  --m-media-glyph: rgba(255, 255, 255, 0.6);
+  --m-media-caption: rgba(255, 255, 255, 0.72);
   --m-approval-reference-font: 28px;
   --m-reference-tracking: 4px;
   --m-row-gap: 12px;
@@ -117,4 +128,15 @@
   --m-danger-bg: #3a2321;
   --m-toast-bg: #121a16;
   --m-toast-fg: #f4f6f1;
+  --m-backdrop: rgba(18, 26, 22, 0.32);
+  --m-shadow: #000000;
+  --m-switch-thumb: #ffffff;
+  --m-media: #000000;
+  --m-on-media: #ffffff;
+  --m-media-scrim: rgba(0, 0, 0, 0.55);
+  --m-media-bar: rgba(0, 0, 0, 0.6);
+  --m-media-control: rgba(255, 255, 255, 0.18);
+  --m-media-thumb: rgba(255, 255, 255, 0.12);
+  --m-media-glyph: rgba(255, 255, 255, 0.6);
+  --m-media-caption: rgba(255, 255, 255, 0.72);
 }

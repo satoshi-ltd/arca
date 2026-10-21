@@ -97,6 +97,15 @@ test("mobile icons use the exact desktop Lucide geometry", () => {
     );
 });
 
+test("mobile colours live only in the palette, and the backdrop matches desktop", async () => {
+  const { palettes } = await import("../apps/mobile/src/palette.js");
+  const dir = new URL("../apps/mobile/src/", import.meta.url);
+  for (const name of fs.readdirSync(dir).filter((file) => /\.jsx?$/.test(file) && file !== "palette.js"))
+    assert.doesNotMatch(fs.readFileSync(new URL(name, dir), "utf8"), /(?<![\w&-])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b(?![\w-])|\b(?:rgba?|hsla?)\(|["`'](?:white|black|red|green|blue|gr[ae]y)["`']/, `${name} takes its colours from the palette`);
+  const desktop = fs.readFileSync(new URL("../apps/desktop/src/tokens.css", import.meta.url), "utf8");
+  for (const theme of ["light", "dark"]) assert.equal(palettes[theme].backdrop, desktop.match(/--backdrop:\s*([^;]+);/)[1], `${theme}.backdrop`);
+});
+
 test("mobile surface and text colors match the desktop light and dark tokens", async () => {
   const { palettes } = await import("../apps/mobile/src/palette.js");
   const css = fs.readFileSync(

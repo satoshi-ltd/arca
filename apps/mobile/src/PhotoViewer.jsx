@@ -255,7 +255,7 @@ function Page({
   onDragEnd,
   onAction,
 }) {
-  const { s } = useDesign();
+  const { s, c } = useDesign();
   const compatiblePreview = !item.nativeSource && /\.hei[cf]$/i.test(item.path);
   const [uri, setUri] = useState(compatiblePreview ? null : item.uri);
   const [failed, setFailed] = useState(false);
@@ -300,7 +300,7 @@ function Page({
   if (failed || (!uri && !item.hash && !compatiblePreview))
     return (
       <View style={frame}>
-        <Icon name="image" color="rgba(255,255,255,0.6)" size={32} />
+        <Icon name="image" color={c.mediaGlyph} size={32} />
         <Text style={s.viewerCaption}>
           {item.uri
             ? "This photo could not be displayed."
@@ -318,7 +318,7 @@ function Page({
             style={s.viewerPreview}
           />
         )}
-        <Busy color="#fff" />
+        <Busy color={c.onMedia} />
       </View>
     );
   return (
@@ -476,7 +476,7 @@ export function PhotoViewer({
   deleteReason,
   origin,
 }) {
-  const { s, wide } = useDesign();
+  const { s, c, wide } = useDesign();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { duration, easing } = useMotion();
@@ -660,7 +660,7 @@ export function PhotoViewer({
       statusBarTranslucent
       supportedOrientations={["portrait", "landscape"]}
     >
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <StatusBar barStyle="light-content" backgroundColor={c.media} />
       <Animated.View
         style={[s.viewerRoot, s.viewerTransparent, { opacity: appear }]}
         pointerEvents={closing ? "none" : "auto"}
@@ -756,7 +756,7 @@ export function PhotoViewer({
               style={s.viewerIconButton}
               onPress={closeToOrigin}
             >
-              <Icon name="back" color="#fff" />
+              <Icon name="back" color={c.onMedia} />
             </Pressable>
             <Text style={[s.viewerTitle, s.flex]} numberOfLines={1}>
               {item.upload
@@ -779,7 +779,7 @@ export function PhotoViewer({
               style={[s.viewerIconButton, !canShare && s.disabled]}
               onPress={() => share(item)}
             >
-              <Icon name="export" color="#fff" />
+              <Icon name="export" color={c.onMedia} />
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -788,7 +788,7 @@ export function PhotoViewer({
               style={s.viewerIconButton}
               onPress={() => setInfoOpen((value) => !value)}
             >
-              <Icon name="info" color="#fff" />
+              <Icon name="info" color={c.onMedia} />
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -804,7 +804,7 @@ export function PhotoViewer({
               style={[s.viewerIconButton, !canDelete && s.disabled]}
               onPress={() => remove(item)}
             >
-              <Icon name="trash" color="#fff" />
+              <Icon name="trash" color={c.onMedia} />
             </Pressable>
           </Animated.View>
         )}

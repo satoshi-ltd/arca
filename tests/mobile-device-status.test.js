@@ -58,7 +58,7 @@ test("the device row and the Fold block read the last sync to screen readers", a
   assert.equal(deviceLabel("Pixel", { word: "Offline", last: "Last sync at 10:12" }), "Pixel, Replica, Offline, Last sync at 10:12");
   assert.equal(deviceLabel("Pixel", { word: "Not synced yet", last: "" }), "Pixel, Replica, Not synced yet");
   const components = source("components.jsx");
-  assert.match(components, /import \{ deviceLabel, folderState, machineTone \} from "\.\/home-data\.js";/);
+  assert.match(components, /import \{ deviceLabel, folderState, historyTone, machineTone \} from "\.\/home-data\.js";/);
   for (const name of ["export function DeviceStatus(", "export function DeviceRow("]) {
     const block = components.slice(components.indexOf(name));
     assert.match(block.slice(0, 200), /accessibilityLabel=\{deviceLabel\(name, device\)\}/, name);
@@ -69,7 +69,7 @@ test("the phone shows the launch check apart from syncing and restarts its event
   const app = source("App.jsx");
   assert.match(app, /busy: r\.activity,\s*checking: hubChecking\(r\),/);
   assert.match(app, /if \(!pulling \|\| pullHeld\(status\)\) return;/);
-  assert.match(app, /import \{ deviceStatus, folderSections, historyTone, hubChecking, pullHeld \} from "\.\/home-data";/);
+  assert.match(app, /import \{ deviceStatus, folderSections, historyCaption, hubChecking, pullHeld \} from "\.\/home-data";/);
   assert.doesNotMatch(app, /checking: r\.checking/);
   assert.match(app, /\}, \[connected, connection\?\.hubId, catalog\?\.changeEvents, status\.offline\]\);/);
 });

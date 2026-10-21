@@ -116,7 +116,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.82";
+const APP_VERSION = "0.7.83";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -9340,7 +9340,7 @@ async function handle(name, id, control) {
                 ? !v.selected
                   ? selectFolderButton(v.id)
                   : pill("Needs attention", "wa", "triangle-alert")
-                : pill("Available", "ok", "check"),
+                : pill("Available", "id", "check"),
             );
           })
           .join(

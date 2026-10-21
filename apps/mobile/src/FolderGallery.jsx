@@ -105,6 +105,7 @@ import {
   galleryCounts,
   shownMonths,
 } from "./gallery-days";
+import { count } from "./format";
 
 const StickyMonth = memo(function StickyMonth({ month, top, height, start, scrollY }) {
   const { s } = useDesign();
@@ -140,7 +141,7 @@ const Tile = memo(function Tile({
   selected,
   found,
 }) {
-  const { s } = useDesign();
+  const { s, c } = useDesign();
   const frame = useRef(null);
   const { duration, easing } = useMotion();
   const settle = useRef(new Animated.Value(selected ? 0.94 : 1)).current;
@@ -219,7 +220,7 @@ const Tile = memo(function Tile({
       {found && <Animated.View pointerEvents="none" style={[s.photoFound, { opacity: glow }]} />}
       {selected && (
         <Pop style={s.photoBadge}>
-          <Icon name="check" size={14} color="#fff" />
+          <Icon name="check" size={14} color={c.onMedia} />
         </Pop>
       )}
       {!selected &&
@@ -229,7 +230,7 @@ const Tile = memo(function Tile({
         <View style={s.photoBadge}>
           <Icon
             size={14}
-            color="#fff"
+            color={c.onMedia}
             name={
               item.upload
                 ? item.upload === "failed"
@@ -1406,7 +1407,7 @@ export function FolderGallery({
               <Pressable
                 key={memory.year}
                 accessibilityRole="button"
-                accessibilityLabel={`On this day in ${memory.year}, ${memory.count} ${memory.count === 1 ? "photo" : "photos"}`}
+                accessibilityLabel={`On this day in ${memory.year}, ${count(memory.count, "photo", "photos")}`}
                 style={({ pressed }) => [s.memoryCard, { width: card.width, height: card.height }, pressed && s.pressedFade]}
                 onPress={() => {
                   const month = `${memory.year}-${memoryDay.day.slice(0, 2)}`;
@@ -1461,7 +1462,7 @@ export function FolderGallery({
             {!!uploads?.dismissLost && !!lostCount && (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Dismiss ${lostCount} unavailable ${lostCount === 1 ? "photo" : "photos"}`}
+                accessibilityLabel={`Dismiss ${count(lostCount, "unavailable photo", "unavailable photos")}`}
                 onPress={uploads.dismissLost}
                 hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
               >
@@ -1488,7 +1489,7 @@ export function FolderGallery({
             <Text style={s.caption}>
               {lostCount === 1
                 ? "1 photo is no longer on this phone."
-                : `${lostCount} photos are no longer on this phone.`}{" "}
+                : `${count(lostCount, "photo", "photos")} are no longer on this phone.`}{" "}
               Pick {lostCount === 1 ? "it" : "them"} again to upload, or
               dismiss {lostCount === 1 ? "it" : "them"}.
             </Text>

@@ -92,6 +92,7 @@ import {
   SettingsGroup,
   SegmentedControl,
   Icon,
+  HistoryGlyph,
   Button,
   Field,
   Card,
@@ -161,10 +162,10 @@ import {
   shortName,
 } from "./recent-cache";
 import { sidebarLayout, fileMenuPosition } from "./layout";
-import { bytes, folderSize, unbroken } from "./format";
+import { bytes, count, fileCount, folderSize, unbroken } from "./format";
 import { deviceCells, deviceSegments, presence, rosterPresence } from "./device-line.js";
 import { FIRST_ROWS, browseEntries, revealWindow } from "./browse";
-import { deviceStatus, folderSections, historyTone, hubChecking, pullHeld } from "./home-data";
+import { deviceStatus, folderSections, historyCaption, hubChecking, pullHeld } from "./home-data";
 import { FavoritesDrawer, FavoritesSection } from "./Favorites";
 import {
   FAVORITE_ICONS,
@@ -1391,7 +1392,7 @@ export default function App() {
       divider={index > 0}
       name={f.name}
       icon={favoriteFolderIcon(f)}
-      description={unbroken(`${f.files} files · ${bytes(f.bytes)} local`)}
+      description={Number.isFinite(f.files) ? unbroken(`${fileCount(f.files)} · ${bytes(f.bytes)} local`) : "Not counted yet"}
       conflict={!!catalog?.volumes?.find((v) => v.id === f.id)?.conflicts}
       progress={
         status.busy &&
@@ -1646,7 +1647,7 @@ export default function App() {
     return new Promise((resolve) =>
       confirm(
         Array.isArray(item)
-          ? `Delete ${item.length} photos?`
+          ? `Delete ${count(item.length, "photo", "photos")}?`
           : "Delete this photo?",
         "Deletes the selected photos and their Live Photo resources from the shared gallery for everyone. Originals stay in Photos. Recovery depends on this folder’s version retention.",
         () =>
@@ -1895,7 +1896,7 @@ export default function App() {
     }),
     [entries],
   );
-  const folderSubtitle = unbroken(`${photoFolder ? (mediaCounts ? mediaSummary(mediaCounts.photos, mediaCounts.videos) : "— photos") : musicView && shownMusic ? librarySummary(shownMusic.library) : `${entrySummary.files} files`} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`);
+  const folderSubtitle = unbroken(`${photoFolder ? (mediaCounts ? mediaSummary(mediaCounts.photos, mediaCounts.videos) : "— photos") : musicView && shownMusic ? librarySummary(shownMusic.library) : fileCount(entrySummary.files)} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`);
   const musicShown = musicView && shownMusic?.library?.tracks.size ? shownMusic.library : null;
   const searchable = !!connection && locals.some((f) => f.selected);
   const musicAt = musicShown ? musicPane(musicRoute, wide) : null;
@@ -2778,7 +2779,7 @@ export default function App() {
                                             else
                                               favoriteSheet(
                                                 { folder: folder.id, kind: "directory", target: e.path, label: e.label },
-                                                { detail: `${e.count} ${e.count === 1 ? "file" : "files"}`, open: () => setDirectory(e.path + "/") },
+                                                { detail: `${fileCount(e.count)}`, open: () => setDirectory(e.path + "/") },
                                               );
                                           }}
                                           accessibilityActions={
@@ -2813,7 +2814,7 @@ export default function App() {
                                               </Text>
                                               <Text style={s.caption}>
                                                 {e.directory
-                                                  ? `${e.count} ${e.count === 1 ? "file" : "files"} · ${bytes(e.size)}`
+                                                  ? `${fileCount(e.count)} · ${bytes(e.size)}`
                                                   : bytes(e.size)}
                                               </Text>
                                             </View>
@@ -3338,30 +3339,7 @@ export default function App() {
                                       s.row,
                                     ]}
                                   >
-                                    <View
-                                      style={[
-                                        s.historyGlyph,
-                                        historyTone(row) === "warning" && s.tileWarning,
-                                        historyTone(row) === "neutral" && s.tileNeutral,
-                                      ]}
-                                    >
-                                      <Icon
-                                        name={
-                                          row.deleted
-                                            ? "trash"
-                                            : row.path.includes(".conflict-")
-                                              ? "conflict"
-                                              : "revision"
-                                        }
-                                        color={
-                                          row.deleted
-                                            ? c.soft
-                                            : historyTone(row) === "warning"
-                                              ? c.warning
-                                              : c.accent
-                                        }
-                                      />
-                                    </View>
+                                    <HistoryGlyph row={row} />
                                     <View style={[s.flex, s.stack]}>
                                       <Text
                                         numberOfLines={1}
@@ -3374,13 +3352,7 @@ export default function App() {
                                       </Text>
                                       <Text style={s.caption}>
                                         {!wide && `${row.folder} · `}
-                                        {row.deleted
-                                          ? "Deleted · recoverable"
-                                          : row.path.includes(".conflict-")
-                                            ? row.resolved
-                                              ? "Conflict resolved · copy kept"
-                                              : "Conflict copy retained"
-                                            : `${bytes(row.size)}`}
+                                        {historyCaption(row, bytes(row.size))}
                                         {!wide && (
                                           <Text style={s.tabularTime}>
                                             {` · ${clockTime(row.created)}`}

@@ -27,7 +27,6 @@
   --notice-width: 360px;
   --toast-bg: #121a16;
   --toast-fg: #f4f6f1;
-  --toast-accent: #accb80;
   --notice-inset: 16px;
   --notice-radius: 14px;
   --notice-padding: 16px;
@@ -138,6 +137,12 @@
   --layer-notice: 100;
   --layer-progress: 110;
   --backdrop: rgba(18, 26, 22, 0.32);
+  --media: #000000;
+  --onMedia: #ffffff;
+  --mediaFade: #00000099;
+  --mediaNav: #00000055;
+  --mediaHover: #ffffff26;
+  --switchThumb: #ffffff;
   /* surfaces */
   --paper: #f4f6f1; /* window / canvas */
   --surface: #ffffff; /* cards, rows, inputs */
@@ -196,6 +201,8 @@
     0 24px 64px rgba(18, 26, 22, 0.28), 0 0 0 1px rgba(18, 26, 22, 0.1);
   --shadow-window:
     0 24px 64px rgba(18, 26, 22, 0.24), 0 0 0 1px rgba(18, 26, 22, 0.1);
+  --shadow-control: 0 1px 2px #00000014;
+  --shadow-thumb: 0 1px 2px #00000022;
   --focus-ring: 0 0 0 3px var(--tint);
 }
 [data-theme="dark"] {

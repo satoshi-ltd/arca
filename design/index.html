@@ -23,7 +23,7 @@
         <a href="auto.html">Auto</a>
         <a href="proposals.html">Proposals</a>
       </nav>
-      <span class="kit-version">v0.7.82 · production</span>
+      <span class="kit-version">v0.7.83 · production</span>
       <div class="segmented" role="group" aria-label="Theme">
         <button type="button" data-kit-theme="light"><span data-icon="sun"></span>Light</button>
         <button type="button" data-kit-theme="dark"><span data-icon="moon"></span>Dark</button>
@@ -87,6 +87,7 @@
             <div class="kit-swatch" data-token="surface"><i></i><div><strong>Surface</strong><code></code></div></div>
             <div class="kit-swatch" data-token="side"><i></i><div><strong>Sidebar</strong><code></code></div></div>
             <div class="kit-swatch" data-token="hover"><i></i><div><strong>Hover</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="press"><i></i><div><strong>Press · one step past hover</strong><code></code></div></div>
             <div class="kit-swatch" data-token="track"><i></i><div><strong>Track · menu hover</strong><code></code></div></div>
             <div class="kit-swatch" data-token="desk"><i></i><div><strong>Desk · behind the window</strong><code></code></div></div>
             <div class="kit-swatch" data-token="placeholder"><i></i><div><strong>Media placeholder</strong><code></code></div></div>
@@ -120,6 +121,22 @@
           </div>
         </div>
         <div class="kit-card">
+          <h3>Media overlay · both themes</h3>
+          <div class="kit-swatches">
+            <div class="kit-swatch" data-token="toast-bg"><i></i><div><strong>Shade</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="toast-fg"><i></i><div><strong>Text on media</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="media"><i></i><div><strong>Viewer</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="onMedia"><i></i><div><strong>On viewer</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="mediaFade"><i></i><div><strong>Viewer top fade</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="mediaNav"><i></i><div><strong>Viewer arrows</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="mediaHover"><i></i><div><strong>Viewer button press</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="m-media-scrim"><i></i><div><strong>Phone badge, filmstrip</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="m-media-bar"><i></i><div><strong>Phone viewer bar</strong><code></code></div></div>
+            <div class="kit-swatch" data-token="m-media-control"><i></i><div><strong>Phone video play</strong><code></code></div></div>
+          </div>
+          <p class="kit-note">Memory cards and period tiles fade the photo into the shade from 30% down and set their title in the overlay text; the photo viewer and media badges draw on the media tokens. None of these change between light and dark.</p>
+        </div>
+        <div class="kit-card">
           <h3>Phone only</h3>
           <div class="kit-swatches">
             <div class="kit-swatch" data-token="m-raised"><i></i><div><strong>Raised · sheets, dialogs</strong><code></code></div></div>
@@ -139,8 +156,10 @@
             <div class="kit-type-row"><span class="kit-mono">notice-surface · notice-info-* · notice-link</span><span class="kit-mono">noticeSurface · noticeInfo* · noticeLink</span></div>
             <div class="kit-type-row"><span class="kit-mono">idBg · idFg</span><span class="kit-mono">hover · soft (neutral badges)</span></div>
             <div class="kit-type-row"><span class="kit-mono">mark-tile · mark-arch · mark-door</span><span class="kit-mono">brandMark.tile · arch · door</span></div>
-            <div class="kit-type-row"><span class="kit-mono">track · desk · ok · wa · er · id · backdrop · toast-*</span><span class="kit-mono">desktop only</span></div>
-            <div class="kit-type-row"><span class="kit-mono">raised · raisedEdge</span><span class="kit-mono">phone only</span></div>
+            <div class="kit-type-row"><span class="kit-mono">toast-bg · toast-fg</span><span class="kit-mono">toastBg · toastFg</span></div>
+            <div class="kit-type-row"><span class="kit-mono">backdrop · media · onMedia · switchThumb</span><span class="kit-mono">backdrop · media · onMedia · switchThumb</span></div>
+            <div class="kit-type-row"><span class="kit-mono">track · press · desk · ok · wa · er · id · mediaFade · mediaNav · mediaHover · shadow-control · shadow-thumb</span><span class="kit-mono">desktop only</span></div>
+            <div class="kit-type-row"><span class="kit-mono">raised · raisedEdge · mediaScrim · mediaBar · mediaControl · mediaThumb · mediaGlyph · mediaCaption · shadow</span><span class="kit-mono">phone only</span></div>
           </div>
           <p class="kit-note">Phone keys are written <code class="kit-mono">palette.js</code> in camelCase and reach the kit as <code class="kit-mono">--m-*</code> custom properties. A filled destructive button is the error fill on desktop and the text-grade danger tone on the phone.</p>
         </div>
@@ -149,9 +168,9 @@
           <div class="kit-stack">
             <div class="kit-row"><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span><span class="kit-note">Done and verified. Only a completed, hash-checked state gets the green fill.</span></div>
             <div class="kit-row"><span class="pill sy busy-status"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing</span><span class="kit-note">Working: green text with the busy grid, no fill, until the last byte is verified.</span></div>
-            <div class="kit-row"><span class="pill wa"><span data-icon="triangle-alert"></span>Conflict</span><span class="pill wa"><span data-icon="clock"></span>Pending</span><span class="kit-note">Attention: a decision is needed, or sync is waiting for you.</span></div>
-            <div class="kit-row"><span class="pill er"><span data-icon="circle-alert"></span>Needs attention</span><span class="kit-note">Error: something needs a fix.</span></div>
-            <div class="kit-row"><span class="pill id"><span data-icon="link"></span>Linked</span><span class="pill id"><span data-icon="pause"></span>Paused</span><span class="pill id"><span data-icon="wifi-off"></span>Offline</span><span class="pill id"><span data-icon="unplug"></span>Disconnected</span><span class="pill id"><span data-icon="clock"></span>Checking sync</span><span class="pill id"><span data-icon="clock"></span>Checking hub…</span><span class="pill id"><span data-icon="folder"></span>No shared folders</span><span class="kit-note">Neutral: a fact without a verdict. Checking hub… holds from launch until the hub first answers or fails, without the busy animation. Paused, Offline and Disconnected are global and nothing on a folder needs fixing, so they read neutral on rows; the sidebar status and the tray heading keep Paused and Offline in the warning ink.</span></div>
+            <div class="kit-row"><span class="pill wa"><span data-icon="triangle-alert"></span>Conflicts to review</span><span class="pill wa"><span data-icon="clock"></span>Pending</span><span class="pill wa"><span data-icon="clock"></span>Invitation only</span><span class="kit-note">Attention: a decision is needed, or sync is waiting for you.</span></div>
+            <div class="kit-row"><span class="pill er"><span data-icon="circle-alert"></span>Needs attention</span><span class="pill er"><span data-icon="power"></span>Service stopped</span><span class="pill er"><span data-icon="unplug"></span>Removed</span><span class="kit-note">Error: something needs a fix.</span></div>
+            <div class="kit-row"><span class="pill id"><span data-icon="link"></span>Connected</span><span class="pill id"><span data-icon="check"></span>Current</span><span class="pill id"><span data-icon="circle-dashed"></span>Catalog only</span><span class="pill id"><span data-icon="pause"></span>Paused</span><span class="pill id"><span data-icon="wifi-off"></span>Offline</span><span class="pill id"><span data-icon="unplug"></span>Disconnected</span><span class="pill id"><span data-icon="clock"></span>Checking sync</span><span class="pill id"><span data-icon="clock"></span>Checking hub…</span><span class="pill id"><span data-icon="folder"></span>No shared folders</span><span class="kit-note">Neutral: a fact without a verdict. Checking hub… holds from launch until the hub first answers or fails, without the busy animation. Paused, Offline and Disconnected are global and nothing on a folder needs fixing, so they read neutral on rows; the sidebar status and the tray heading keep Paused, Offline and Disconnected in the warning ink.</span></div>
           </div>
         </div>
       </section>
@@ -162,12 +181,12 @@
         <div class="kit-grid wide">
           <div class="kit-card">
             <h3>Desktop · web</h3>
-            <div class="kit-type-row"><span class="kit-mono">title 20/26 · 600</span><strong style="font-size: var(--text-title); line-height: var(--text-title-line)">Folders</strong></div>
-            <div class="kit-type-row"><span class="kit-mono">dialog 16/22 · 600</span><strong style="font-size: var(--dialog-title); line-height: var(--dialog-title-line)">Stop syncing “photos”?</strong></div>
-            <div class="kit-type-row"><span class="kit-mono">row 14 · 600</span><strong style="font-size: var(--text-row)">photos-yuri</strong></div>
-            <div class="kit-type-row"><span class="kit-mono">control 13</span><span style="font-size: var(--text-control)">Start syncing</span></div>
-            <div class="kit-type-row"><span class="kit-mono">body 12</span><span style="font-size: var(--text-body)">138 files · 1.6 GB</span></div>
-            <div class="kit-type-row"><span class="kit-mono">caption 11</span><span style="font-size: var(--text-caption)">Completed just now</span></div>
+            <div class="kit-type-row"><span class="kit-mono">title 20/26 · 600</span><strong class="kit-text-title">Folders</strong></div>
+            <div class="kit-type-row"><span class="kit-mono">dialog 16/22 · 600</span><strong class="kit-text-dialog">Stop syncing “photos”?</strong></div>
+            <div class="kit-type-row"><span class="kit-mono">row 14 · 600</span><strong class="kit-text-row">photos-yuri</strong></div>
+            <div class="kit-type-row"><span class="kit-mono">control 13</span><span class="kit-text-control">Start syncing</span></div>
+            <div class="kit-type-row"><span class="kit-mono">body 12</span><span class="kit-text-body">138 files · 1.6 GB</span></div>
+            <div class="kit-type-row"><span class="kit-mono">caption 11</span><span class="kit-text-caption">Completed just now</span></div>
             <div class="kit-type-row"><span class="kit-mono">mono 11–12</span><span class="mono">/Users/javi/arca/photos · rev 165764</span></div>
           </div>
           <div class="kit-card">
@@ -176,7 +195,7 @@
             <div class="kit-type-row"><span class="kit-mono">row 16/22 · 600</span><span class="m-row-title">photos-yuri</span></div>
             <div class="kit-type-row"><span class="kit-mono">body 15/22</span><span class="m-text">Download this folder and keep it in sync.</span></div>
             <div class="kit-type-row"><span class="kit-mono">caption 14/20</span><span class="m-caption">138 files · 1.6 GB</span></div>
-            <div class="kit-type-row"><span class="kit-mono">control 15/20 · 600</span><span class="m-row-title" style="font-size: var(--m-touch-control-font)">Start syncing</span></div>
+            <div class="kit-type-row"><span class="kit-mono">control 15/20 · 600</span><span class="m-row-title kit-text-touch-control">Start syncing</span></div>
             <div class="kit-type-row"><span class="kit-mono">eyebrow mono 12/18</span><span class="m-eyebrow">On hub · not selected</span></div>
           </div>
         </div>
@@ -187,7 +206,7 @@
         <p>Lucide, stroke 1.75, round caps. 16 px in rows and buttons, 20 px in navigation and dialogs, 24 px in empty states. Icons take the text colour next to them; only state icons carry colour.</p>
         <div class="kit-card">
           <div class="kit-row">
-            <span data-icon="folder" data-size="20"></span><span data-icon="images" data-size="20"></span><span data-icon="monitor-smartphone" data-size="20"></span><span data-icon="history" data-size="20"></span><span data-icon="settings" data-size="20"></span><span data-icon="server" data-size="20"></span><span data-icon="monitor" data-size="20"></span><span data-icon="smartphone" data-size="20"></span><span data-icon="refresh-cw" data-size="20"></span><span data-icon="download" data-size="20"></span><span data-icon="upload" data-size="20"></span><span data-icon="unlink" data-size="20"></span><span data-icon="trash-2" data-size="20"></span><span data-icon="git-commit-horizontal" data-size="20"></span><span data-icon="undo-2" data-size="20"></span><span data-icon="key-round" data-size="20"></span><span data-icon="shield-check" data-size="20"></span><span data-icon="wifi-off" data-size="20"></span><span data-icon="circle-check" data-size="20"></span><span data-icon="circle-alert" data-size="20"></span><span data-icon="copy" data-size="20"></span><span data-icon="search" data-size="20"></span><span data-icon="image" data-size="20"></span><span data-icon="play" data-size="20"></span><span data-icon="chevron-right" data-size="20"></span><span data-icon="unplug" data-size="20"></span><span data-icon="triangle-alert" data-size="20"></span><span data-icon="pause" data-size="20"></span><span data-icon="clock" data-size="20"></span><span data-icon="link" data-size="20"></span><span data-icon="circle-dashed" data-size="20"></span><span data-icon="ellipsis" data-size="20"></span><span data-icon="x" data-size="20"></span><span data-icon="info" data-size="20"></span><span data-icon="video" data-size="20"></span><span data-icon="folder-open" data-size="20"></span><span data-icon="folder-plus" data-size="20"></span><span data-icon="folder-check" data-size="20"></span><span data-icon="pencil" data-size="20"></span><span data-icon="arrow-left" data-size="20"></span><span data-icon="chevron-left" data-size="20"></span><span data-icon="chevron-down" data-size="20"></span><span data-icon="external-link" data-size="20"></span><span data-icon="log-in" data-size="20"></span><span data-icon="log-out" data-size="20"></span><span data-icon="shield-alert" data-size="20"></span><span data-icon="shield-off" data-size="20"></span><span data-icon="wifi" data-size="20"></span><span data-icon="power" data-size="20"></span><span data-icon="image-off" data-size="20"></span><span data-icon="hard-drive" data-size="20"></span><span data-icon="map-pin" data-size="20"></span><span data-icon="calendar" data-size="20"></span><span data-icon="camera" data-size="20"></span><span data-icon="share" data-size="20"></span><span data-icon="circle-dot" data-size="20"></span><span data-icon="sun" data-size="20"></span><span data-icon="moon" data-size="20"></span>
+            <span data-icon="folder" data-size="20"></span><span data-icon="images" data-size="20"></span><span data-icon="monitor-smartphone" data-size="20"></span><span data-icon="history" data-size="20"></span><span data-icon="settings" data-size="20"></span><span data-icon="server" data-size="20"></span><span data-icon="monitor" data-size="20"></span><span data-icon="smartphone" data-size="20"></span><span data-icon="refresh-cw" data-size="20"></span><span data-icon="download" data-size="20"></span><span data-icon="upload" data-size="20"></span><span data-icon="unlink" data-size="20"></span><span data-icon="trash-2" data-size="20"></span><span data-icon="git-commit-horizontal" data-size="20"></span><span data-icon="undo-2" data-size="20"></span><span data-icon="key-round" data-size="20"></span><span data-icon="shield-check" data-size="20"></span><span data-icon="wifi-off" data-size="20"></span><span data-icon="circle-check" data-size="20"></span><span data-icon="circle-alert" data-size="20"></span><span data-icon="copy" data-size="20"></span><span data-icon="search" data-size="20"></span><span data-icon="image" data-size="20"></span><span data-icon="play" data-size="20"></span><span data-icon="chevron-right" data-size="20"></span><span data-icon="unplug" data-size="20"></span><span data-icon="triangle-alert" data-size="20"></span><span data-icon="pause" data-size="20"></span><span data-icon="clock" data-size="20"></span><span data-icon="link" data-size="20"></span><span data-icon="circle-dashed" data-size="20"></span><span data-icon="ellipsis" data-size="20"></span><span data-icon="x" data-size="20"></span><span data-icon="info" data-size="20"></span><span data-icon="video" data-size="20"></span><span data-icon="folder-open" data-size="20"></span><span data-icon="folder-plus" data-size="20"></span><span data-icon="folder-check" data-size="20"></span><span data-icon="pencil" data-size="20"></span><span data-icon="arrow-left" data-size="20"></span><span data-icon="chevron-left" data-size="20"></span><span data-icon="chevron-down" data-size="20"></span><span data-icon="external-link" data-size="20"></span><span data-icon="log-in" data-size="20"></span><span data-icon="log-out" data-size="20"></span><span data-icon="shield-alert" data-size="20"></span><span data-icon="shield-off" data-size="20"></span><span data-icon="wifi" data-size="20"></span><span data-icon="power" data-size="20"></span><span data-icon="image-off" data-size="20"></span><span data-icon="hard-drive" data-size="20"></span><span data-icon="map-pin" data-size="20"></span><span data-icon="calendar" data-size="20"></span><span data-icon="camera" data-size="20"></span><span data-icon="share" data-size="20"></span><span data-icon="circle-dot" data-size="20"></span><span data-icon="sun" data-size="20"></span><span data-icon="moon" data-size="20"></span><span data-icon="check" data-size="20"></span><span data-icon="plus" data-size="20"></span><span data-icon="shield" data-size="20"></span><span data-icon="music" data-size="20"></span><span data-icon="podcast" data-size="20"></span><span data-icon="disc-3" data-size="20"></span><span data-icon="mic-vocal" data-size="20"></span><span data-icon="list-music" data-size="20"></span><span data-icon="list-plus" data-size="20"></span><span data-icon="list-minus" data-size="20"></span><span data-icon="skip-back" data-size="20"></span><span data-icon="skip-forward" data-size="20"></span><span data-icon="shuffle" data-size="20"></span><span data-icon="repeat" data-size="20"></span><span data-icon="repeat-1" data-size="20"></span><span data-icon="rotate-ccw" data-size="20"></span><span data-icon="rotate-cw" data-size="20"></span><span data-icon="star" data-size="20"></span><span data-icon="star-off" data-size="20"></span><span data-icon="circle-arrow-up" data-size="20"></span><span data-icon="circle-minus" data-size="20"></span><span data-icon="folder-input" data-size="20"></span><span data-icon="folder-search" data-size="20"></span><span data-icon="file" data-size="20"></span><span data-icon="file-text" data-size="20"></span><span data-icon="globe" data-size="20"></span><span data-icon="cloud" data-size="20"></span><span data-icon="audio-lines" data-size="20"></span><span data-icon="panel-left-open" data-size="20"></span>
           </div>
         </div>
       </section>
@@ -198,37 +217,37 @@
           <div class="kit-card">
             <h3>Spacing · 4 px base</h3>
             <div class="kit-scale">
-              <div><b style="width: var(--space-1); height: var(--space-1)"></b>4</div>
-              <div><b style="width: var(--space-2); height: var(--space-2)"></b>8</div>
-              <div><b style="width: var(--space-3); height: var(--space-3)"></b>12</div>
-              <div><b style="width: var(--space-4); height: var(--space-4)"></b>16</div>
-              <div><b style="width: var(--space-5); height: var(--space-5)"></b>20</div>
-              <div><b style="width: var(--space-6); height: var(--space-6)"></b>24</div>
+              <div><b class="kit-space-1"></b>4</div>
+              <div><b class="kit-space-2"></b>8</div>
+              <div><b class="kit-space-3"></b>12</div>
+              <div><b class="kit-space-4"></b>16</div>
+              <div><b class="kit-space-5"></b>20</div>
+              <div><b class="kit-space-6"></b>24</div>
             </div>
-            <p class="kit-note">Rows pad 12 × 16 and lead with a 40 px tile or a 16 px icon, then 12. Section labels sit 8 above their list, sections 24 apart, header bottom 16. The phone uses the same logical values.</p>
+            <p class="kit-note">Rows pad 12 × 16 and lead with a 40 px tile or a 16 px icon, then 12. Section labels sit 8 above their list, sections 24 apart, header bottom 16. The phone uses the same logical values, except that its rows stand at least 74 dp (desktop 66 px); compact rows are 48 on both.</p>
           </div>
           <div class="kit-card">
             <h3>Radius</h3>
             <div class="kit-scale">
-              <div><b style="width: 48px; height: 32px; border-radius: var(--r-tag)"></b>tag 6</div>
-              <div><b style="width: 48px; height: 32px; border-radius: var(--r-control)"></b>control 8</div>
-              <div><b style="width: 48px; height: 32px; border-radius: var(--r-card)"></b>card 12</div>
-              <div><b style="width: 48px; height: 32px; border-radius: var(--r-dialog)"></b>dialog 14</div>
-              <div><b style="width: 48px; height: 32px; border-radius: var(--r-pill)"></b>pill</div>
+              <div><b class="kit-radius-tag"></b>tag 6</div>
+              <div><b class="kit-radius-control"></b>control 8</div>
+              <div><b class="kit-radius-card"></b>card 12</div>
+              <div><b class="kit-radius-dialog"></b>dialog 14</div>
+              <div><b class="kit-radius-pill"></b>pill</div>
             </div>
             <p class="kit-note">Never mix radii in one row. Windows are 12 and segmented thumbs 6. Desktop photo tiles use 8; phone photo tiles use 4, or 2 when denser than 40 px.</p>
           </div>
           <div class="kit-card">
             <h3>Elevation</h3>
             <div class="kit-row">
-              <span class="panel" style="box-shadow: var(--shadow-menu)">Menu</span>
-              <span class="panel" style="box-shadow: var(--shadow-dialog)">Dialog</span>
+              <span class="panel kit-shadow-menu">Menu</span>
+              <span class="panel kit-shadow-dialog">Dialog</span>
             </div>
             <p class="kit-note">Flat with a border by default. Shadows only for things that float: menus, dialogs, the window (<code class="kit-mono">--shadow-window</code>; in dark they also sit on a raised fill with a hairline ring), the mobile scrub thumb.</p>
           </div>
           <div class="kit-card">
             <h3>Motion</h3>
-            <p class="kit-note">Fast 120 ms, enter 200 ms, exit 140 ms, one ease. Desktop route changes fade and lift in over 200 ms, their first rows cascading 20 ms apart on first paint only (Folders, Devices, Settings, History and the music lists), never on a status refresh; hover and press change fill only (press fills one step past hover with --press at once and releases over 120 ms), never position; a count rolls only when its value changes after first sight; opening an album, artist, playlist or show, changing a music tab and the History folder dropdown fade only the list in 120 ms; the player cross-fades its play and pause glyphs in 120 ms; a photo or folder tile travels into its view over 280 ms, a new row settles once over 1.8 s, and every transient surface enters and exits through its role (below); mobile tabs fade, details push 30 dp, sheets slide from the edge, dialogs scale from 0.9. On the phone track rows and the mini player press at the shared .98 scale, album tiles at 85 % opacity, Library tabs cross-fade in 120 ms and the mini player rises 8 dp once per session. Only opacity and transform animate; reduced motion collapses to zero. The brand draws once on launch (560 ms) and its door breathes over 1.2 s while Arca waits or works; with the busy grid and the playing row's three accent bars these are the only loops; paused holds the bars still.</p>
+            <p class="kit-note">Fast 120 ms, enter 200 ms, exit 140 ms, one ease. Desktop route changes fade and lift in over 200 ms, their first rows cascading 20 ms apart on first paint only (Folders, Devices, Settings, History and the music lists), never on a status refresh; hover and press change fill only (press fills one step past hover with --press at once and releases over 120 ms), never position; a count rolls only when its value changes after first sight; opening an album, artist, playlist or show, changing a music tab and the History folder dropdown fade only the list in 120 ms; the player cross-fades its play and pause glyphs in 120 ms; a photo or folder tile travels into its view over 280 ms, a new row settles once over 1.8 s, and every transient surface enters and exits through its role (below); mobile tabs fade, details push 30 dp, sheets slide from the edge, dialogs fade and scale from .985. On the phone track rows and the mini player press at the shared .98 scale, album tiles at 85 % opacity, Library tabs cross-fade in 120 ms and the mini player rises 8 dp once per session. Only opacity and transform animate; reduced motion collapses to zero. The brand draws once on launch (560 ms) and its door breathes over 1.2 s while Arca waits or works; with the busy grid and the playing row's three accent bars these are the only loops; paused holds the bars still.</p>
           </div>
           <div class="kit-card kit-span">
             <h3>Motion roles · desktop and web</h3>
@@ -274,7 +293,7 @@
               <button type="button" class="text-button"><span data-icon="undo-2"></span>Restore</button>
               <button type="button" class="ghost icon-button" aria-label="Sync now"><span data-icon="refresh-cw"></span></button>
             </div>
-            <p class="kit-note">One primary per screen, 32 px controls. Back, text and ghost buttons are borderless green actions. Pressed: secondary and icon buttons fill with the hover tone, primary drops to 85% opacity; on a touch screen icon buttons grow to 44 px. Destructive actions are red, name the action and always say what stays.</p>
+            <p class="kit-note">One primary per screen, 32 px controls. Back, text and ghost buttons are borderless green actions. Pressed: secondary and icon buttons fill with --press at once, one step past hover, primary drops to 85% opacity; on a touch screen icon buttons grow to 44 px. Destructive actions are red, name the action and always say what stays.</p>
           </div>
           <div class="kit-card">
             <h3>Role tags · inputs</h3>
@@ -324,13 +343,13 @@
               <button type="button" class="ghost icon-button" data-tooltip="Sync now" aria-label="Sync now"><span data-icon="refresh-cw"></span></button>
               <div class="tooltip" role="tooltip">Sync now</div>
             </div>
-            <p class="kit-note">Menus and dropdowns float on the raised surface with the menu shadow; the selected option sits on the tint with a check, and menu rows fill with the track tone on hover. Tooltips are mono on ink and open after 200 ms.</p>
+            <p class="kit-note">Menus and dropdowns float on the raised surface with the menu shadow; the selected option sits on the tint with a check, and menu rows fill with the track tone on hover. Tooltips are mono on ink, open after a 400 ms hold (at once within 800 ms of the previous one) and name every icon-only control.</p>
           </div>
           <div class="kit-card">
             <h3>Folder rows</h3>
             <div class="kit-stack">
               <div class="section-label">Photos</div>
-              <div class="folder-list"><article class="folder-card" role="button" tabindex="0"><div class="tile large"><span data-icon="images"></span></div><div class="row-main"><strong>photos</strong><p class="meta">3,598 files · 26.0 GB · /Users/javi/Pictures</p></div><span data-icon="chevron-right" class="chevron"></span></article><article class="folder-card" role="button" tabindex="0"><div class="tile large" role="status" aria-label="Syncing"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div><div class="row-main"><strong>photos-ana</strong><p class="meta">402 / 1,269 files sent · 4.3 GB / 14.0 GB · IMG_0042.jpg</p><progress aria-label="Files sent" value="402" max="1269"></progress></div><span data-icon="chevron-right" class="chevron"></span></article></div>
+              <div class="folder-list"><article class="folder-card" role="button" tabindex="0"><div class="home-lead"><div class="tile large"><span data-icon="images"></span></div></div><div class="row-main"><strong>photos</strong><p class="meta">3,598 files · 26.0 GB · /Users/javi/Pictures</p></div><span data-icon="chevron-right" class="chevron"></span></article><article class="folder-card" role="button" tabindex="0"><div class="home-lead" role="status" aria-label="Files sent: 402 of 1,269"><svg class="home-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="home-ring-track" cx="24" cy="24" r="22" /><circle class="home-ring-fill" cx="24" cy="24" r="22" pathLength="100" stroke-dasharray="32 100" /></svg><div class="tile large"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div></div><div class="row-main"><strong>photos-ana</strong><p class="meta">402 / 1,269 files sent · 4.3 GB / 14.0 GB · IMG_0042.jpg</p></div><span data-icon="chevron-right" class="chevron"></span></article></div>
               <div class="section-label">Folders</div>
               <div class="folder-list"><article class="folder-card" role="button" tabindex="0"><div class="home-lead"><div class="tile large wa"><span data-icon="triangle-alert"></span></div></div><div class="row-main"><strong>documents</strong><p class="meta"><span class="state-word state-wa">2 conflicts</span> · 20 files · 14.2 MB</p></div><button type="button" class="secondary small-button">Review</button><span data-icon="chevron-right" class="chevron"></span></article><article class="folder-card" role="button" tabindex="0"><div class="home-lead"><div class="tile large er"><span data-icon="circle-alert"></span></div></div><div class="row-main"><strong>scans</strong><p class="meta"><span class="state-word state-er">Needs attention</span> · EACCES: permission denied</p></div><button type="button" class="secondary small-button"><span data-icon="circle-alert"></span>Review</button><span data-icon="chevron-right" class="chevron"></span></article><article class="folder-card" role="button" tabindex="0"><div class="home-lead"><div class="tile large id"><span data-icon="folder"></span></div></div><div class="row-main"><strong>notes</strong><p class="meta"><span class="state-word">Paused</span> · 62 files · 4.8 MB</p></div><span data-icon="chevron-right" class="chevron"></span></article><article class="folder-card" role="button" tabindex="0"><div class="home-lead"><div class="tile large"><span data-icon="music"></span></div></div><div class="row-main"><strong>music</strong><p class="meta"><span class="state-word">Pending</span> · 1,284 files · 9.6 GB</p></div><span data-icon="chevron-right" class="chevron"></span></article></div>
               <div class="section-label">On hub · not selected</div>
@@ -340,7 +359,7 @@
           </div>
           <div class="kit-card">
             <h3>Devices</h3>
-            <div class="device-list" style="--device-end: 162px"><article class="device-row device-entry"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span><span>Tailscale</span><span>100.99.29.84:17831</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.38</span></div><div class="device-cell device-folders"><span>9 folders</span><span class="device-size">412.0 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot" aria-hidden="true"></span>Connected</span></div></div><div class="row-end device-end"><button type="button" class="secondary small-button danger"><span data-icon="unplug"></span>Disconnect…</button><span class="role-set"><span class="tag hub">Hub</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>umbrel</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.38</span></div><div class="device-cell device-folders"><span>9 folders</span><span class="device-size">401.0 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot" aria-hidden="true"></span>Connected</span></div></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span><span class="tag full-backup"><span data-icon="shield-check"></span>Full backup</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span class="device-older" data-tooltip="Older than the hub’s v0.7.38" aria-label="v0.7.35, older than the hub’s v0.7.38"><span data-icon="circle-arrow-up"></span>v0.7.35</span></div><div class="device-cell device-folders"><span>6 folders</span><span class="device-size">18.2 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot id" aria-hidden="true"></span>Seen Oct 11, 09:12</span></div></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span></span></div></article><article class="device-row device-entry"><div class="tile large er"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>tablet-yuri</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.30</span></div><div class="device-cell device-folders"><span>1 folder</span><span class="device-size">3.4 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot id" aria-hidden="true"></span>Seen Sep 28, 18:05</span></div></div><div class="row-end device-end"><span class="pill er"><span data-icon="unplug"></span>Removed</span><span class="role-set"><span class="tag">Replica</span></span></div></article></div></div>
+            <div class="device-list kit-device-end-162"><article class="device-row device-entry"><div class="tile large hub"><span data-icon="server"></span></div><div class="row-main"><div class="row-tags"><strong>casa</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span><span>Tailscale</span><span>100.99.29.84:17831</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.38</span></div><div class="device-cell device-folders"><span>9 folders</span><span class="device-size">412.0 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot" aria-hidden="true"></span>Connected</span></div></div><div class="row-end device-end"><button type="button" class="secondary small-button danger"><span data-icon="unplug"></span>Disconnect…</button><span class="role-set"><span class="tag hub">Hub</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="monitor"></span></div><div class="row-main"><div class="row-tags"><strong>umbrel</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Linux</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.38</span></div><div class="device-cell device-folders"><span>9 folders</span><span class="device-size">401.0 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot" aria-hidden="true"></span>Connected</span></div></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span><span class="tag full-backup"><span data-icon="shield-check"></span>Full backup</span></span></div></article><article class="device-row device-entry"><div class="tile large"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>phone-fold</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span class="device-older" data-tooltip="Older than the hub’s v0.7.38" aria-label="v0.7.35, older than the hub’s v0.7.38"><span data-icon="circle-arrow-up"></span>v0.7.35</span></div><div class="device-cell device-folders"><span>6 folders</span><span class="device-size">18.2 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot id" aria-hidden="true"></span>Seen Oct 11, 09:12</span></div></div><div class="row-end device-end"><span class="role-set"><span class="tag">Replica</span></span></div></article><article class="device-row device-entry"><div class="tile large er"><span data-icon="smartphone"></span></div><div class="row-main"><div class="row-tags"><strong>tablet-yuri</strong></div><p class="connection-line device-line"><span class="device-segs"><span>Android</span></span></p></div><div class="device-cells"><div class="device-cell device-version"><span>v0.7.30</span></div><div class="device-cell device-folders"><span>1 folder</span><span class="device-size">3.4 GB</span></div><div class="device-cell device-seen"><span class="device-seen-text"><span class="status-dot id" aria-hidden="true"></span>Seen Sep 28, 18:05</span></div></div><div class="row-end device-end"><span class="pill er"><span data-icon="unplug"></span>Removed</span><span class="role-set"><span class="tag">Replica</span></span></div></article></div>
             <p class="kit-note">One grouped list: the hub first, then this device, then the others. The name block keeps the name (and This device) over the OS; the hub adds Tailscale and its address there. Three aligned columns follow at the caption size: the version, always shown, with the circled up-arrow, warning ink and the tooltip “Older than the hub’s vX” when it is older; the folder count over the size in mute (the local bytes of the folders that device selected; the hub’s shared folders); and last seen, “Connected” with the green dot within two minutes of the device’s last contact, otherwise “Seen” and its date and time with a grey dot. A value a device has not reported leaves its cell empty, never 0. The right edge is one column of role chips: Hub filled, Replica outlined, a full-backup replica with an attached shield segment; the row’s action, Removed or Invitation only sits just before it, and a removed device tints its tile and never shows the up-arrow.</p>
           </div>
           <div class="kit-card">
@@ -400,10 +419,10 @@
           </div>
           <div class="kit-card">
             <h3>Gallery tiles · media placeholder</h3>
-            <div class="photo-flow" style="--flow-height: 90px">
-              <div class="photo-thumb" style="--photo-left: 0px; --photo-top: 0px; --photo-width: 120px; --photo-height: 90px"><button type="button" class="photo-open" aria-label="Open IMG_0001.jpg"><svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z"/><rect x="226" y="284" width="60" height="96" rx="6"/></svg></button></div>
-              <div class="photo-thumb" style="--photo-left: 126px; --photo-top: 0px; --photo-width: 120px; --photo-height: 90px"><button type="button" class="photo-open" aria-label="Open VID_0002.mp4"><span data-icon="play"></span></button><span class="photo-video-badge" aria-label="Video"><span data-icon="video"></span></span></div>
-              <div class="photo-thumb" style="--photo-left: 252px; --photo-top: 0px; --photo-width: 120px; --photo-height: 90px"><button type="button" class="photo-open" aria-label="Open IMG_0003.jpg"><svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z"/><rect x="226" y="284" width="60" height="96" rx="6"/></svg></button></div>
+            <div class="photo-flow kit-flow-90">
+              <div class="photo-thumb kit-thumb-0"><button type="button" class="photo-open" aria-label="Open IMG_0001.jpg"><svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z"/><rect x="226" y="284" width="60" height="96" rx="6"/></svg></button></div>
+              <div class="photo-thumb kit-thumb-126"><button type="button" class="photo-open" aria-label="Open VID_0002.mp4"><span data-icon="play"></span></button><span class="photo-video-badge" aria-label="Video"><span data-icon="video"></span></span></div>
+              <div class="photo-thumb kit-thumb-252"><button type="button" class="photo-open" aria-label="Open IMG_0003.jpg"><svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z"/><rect x="226" y="284" width="60" height="96" rx="6"/></svg></button></div>
             </div>
             <div class="photo-more" role="status" aria-label="Loading gallery" aria-busy="true"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
             <p class="kit-note">One placeholder everywhere: the <code class="kit-mono">placeholder</code> fill with the arch, or a play glyph for a video, in <code class="kit-mono">line</code>. Videos show the first frame of the local file with a play badge once it is ready, and open already playing. The gallery loads by scrolling; its end is a passive loading indicator, never a “Load more” button.</p>
@@ -425,24 +444,41 @@
         <div class="kit-grid wide">
           <div class="kit-card">
             <h3>Folder rows and buttons</h3>
-            <div class="m-screen" style="padding: 16px; height: auto">
-              <div class="m-list">
-                <div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos</span><span class="m-caption">3,598 photos · 26.0 GB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
-                <div class="m-row"><div class="m-tile" aria-label="Syncing"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div><div class="m-stack"><span class="m-row-title">documents</span><span class="m-caption">20 files · 14.2 MB local</span></div><div class="m-row-action"><span class="m-chip m-warning"><span data-icon="pause" data-size="13"></span></span><span data-icon="chevron-right" data-size="20"></span></div></div>
-                <div class="m-row m-available"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos-yuri</span><span class="m-caption">138 files · 1.6 GB</span></div><span class="m-button"><span data-icon="refresh-cw"></span>Start syncing</span></div>
-              </div>
-              <div class="kit-row" style="margin-top: 16px">
-                <span class="m-button m-primary">Start syncing</span><span class="m-button">Cancel</span><span class="m-button m-danger">Delete</span>
-              </div>
-            </div>
+            <div class="kit-fragments"><div class="m-screen m-fragment"><div class="m-body">
+              <div class="m-section"><span class="m-eyebrow">Folders</span><div class="m-group">
+                <div class="m-row"><div class="m-home-lead"><div class="m-tile"><span data-icon="images"></span></div></div><div class="m-stack"><span class="m-row-title">photos</span><span class="m-caption">3,598 files · 26.0 GB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                <div class="m-row"><div class="m-home-lead" role="status" aria-label="Syncing"><div class="m-tile"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div></div><div class="m-stack"><span class="m-row-title">music</span><span class="m-caption">1,284 files · 9.6 GB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                <div class="m-row"><div class="m-home-lead"><div class="m-tile m-tile-warning"><span data-icon="triangle-alert"></span></div></div><div class="m-stack"><span class="m-row-title">documents</span><span class="m-caption"><span class="m-state-word m-warning-ink">Conflict</span> · 20 files · 14.2 MB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                <div class="m-row"><div class="m-home-lead"><div class="m-tile m-tile-danger"><span data-icon="circle-alert"></span></div></div><div class="m-stack"><span class="m-row-title">scans</span><span class="m-caption"><span class="m-state-word m-danger-ink">Needs attention</span> · 4 files · 2.1 MB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                <div class="m-row"><div class="m-home-lead"><div class="m-tile m-tile-neutral"><span data-icon="folder"></span></div></div><div class="m-stack"><span class="m-row-title">notes</span><span class="m-caption"><span class="m-state-word">Paused</span> · 62 files · 4.8 MB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+              </div></div>
+              <div class="m-section"><span class="m-eyebrow">On hub · not selected</span><div class="m-group">
+                <div class="m-row m-available"><div class="m-tile"><span data-icon="images" data-size="20"></span></div><div class="m-stack"><span class="m-row-title">photos-yuri</span><span class="m-caption">138 files · 1.6 GB</span></div><span class="m-button"><span data-icon="refresh-cw" data-size="20"></span>Start syncing</span></div>
+              </div></div>
+              <div class="kit-row"><span class="m-button m-primary">Start syncing</span><span class="m-button">Cancel</span><span class="m-button m-caution"><span data-icon="unlink" data-size="20"></span>Stop syncing…</span><span class="m-button m-danger">Delete</span></div>
+              <div class="kit-row"><span class="m-button m-square" aria-label="Sync now"><span data-icon="refresh-cw" data-size="20"></span></span><span class="m-button m-ghost" aria-label="Search Arca"><span data-icon="search" data-size="20"></span></span><span class="m-button m-primary" aria-busy="true"><span class="busy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Syncing…</span><span class="m-button m-quiet"><span data-icon="chevron-left" data-size="20"></span>Back</span></div>
+            </div></div></div>
+            <p class="kit-note">Rows mirror the desktop contract at touch sizes: no state pill, a conflict tints the tile with the warning tone, an error with the danger tone, Paused, Offline and Disconnected read neutral, and the caption starts with the state word in that ink. Syncing swaps the glyph for the busy grid, with the progress ring once totals are known. Buttons are 48 dp: primary, secondary, outlined danger for a named destructive verb, filled danger only to confirm it, 48 dp square icon buttons, 44 dp ghost icons and a borderless quiet accent action. Pressed fills with hover; primary drops to 85% opacity and pressable rows scale to .98.</p>
+          </div>
+          <div class="kit-card">
+            <h3>Tags, switches, segments, fields</h3>
+            <div class="kit-fragments"><div class="m-screen m-fragment"><div class="m-body">
+              <div class="kit-row"><span class="m-roleset"><span class="m-tag m-hub">Hub</span></span><span class="m-roleset"><span class="m-tag">Replica</span></span><span class="m-roleset"><span class="m-tag m-tag-joined">Replica</span><span class="m-tag m-backup-tag" aria-label="Full backup"><span data-icon="shield-check" data-size="12"></span></span></span><span class="m-tag m-self">This device</span><span class="m-tag">Album source</span><span class="m-chip m-danger">Removed</span></div>
+              <div class="m-toggle"><div class="m-stack m-grow"><span class="m-heading">Background refresh</span><span class="m-text">When the system allows.</span></div><span class="m-switch-target"><span class="m-switch m-on" role="switch" aria-checked="true" aria-label="Background refresh"></span></span></div>
+              <div class="m-toggle"><div class="m-stack m-grow"><span class="m-heading">Include videos</span></div><span class="m-switch-target"><span class="m-switch" role="switch" aria-checked="false" aria-label="Include videos"></span></span></div>
+              <div class="m-segments"><span class="m-segment m-selected">Files</span><span class="m-segment">Recent</span><span class="m-segment">Gallery</span></div>
+              <div class="m-field m-filled"><span data-icon="smartphone" data-size="20"></span>Android</div>
+              <div class="m-code"><span class="m-cell">1</span><span class="m-cell">2</span><span class="m-cell m-focused"></span><span class="m-code-separator">–</span><span class="m-cell"></span><span class="m-cell"></span><span class="m-cell"></span></div>
+            </div></div></div>
+            <p class="kit-note">Role tags are the desktop chips in mono caps: Hub filled, Replica outlined, a full-backup replica with an attached shield segment, This device on the tint. Switches sit in a 44 dp target and slide in 120 ms; segments fill their track; fields and code cells are 48 dp and 54 dp with the control border, and the focused cell takes the accent border with the tint ring.</p>
           </div>
           <div class="kit-card">
             <h3>Sheet · compact menu</h3>
-            <div class="m-screen" style="height: 470px">
+            <div class="m-screen kit-screen-470">
               <div class="m-backdrop">
                 <div class="m-sheet">
                   <div class="m-handle"></div>
-                  <div class="m-sheet-header"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-heading">photos</span><span class="m-caption">3,598 photos · 13.4 GB local</span></div><span class="m-button m-icon" aria-label="Close"><span data-icon="x" data-size="20"></span></span></div>
+                  <div class="m-sheet-header"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-heading">photos</span><span class="m-caption">3,598 photos · 26.0 GB local</span></div><span class="m-button m-icon" aria-label="Close"><span data-icon="x" data-size="20"></span></span></div>
                   <div class="m-sheet-menu">
                     <div class="m-action"><span data-icon="upload" data-size="20"></span><span>Add files…</span></div>
                     <div class="m-action"><span data-icon="image" data-size="20"></span><span>Add photos…</span></div>
@@ -458,7 +494,7 @@
           </div>
           <div class="kit-card">
             <h3>Confirmation</h3>
-            <div class="m-screen" style="height: 300px">
+            <div class="m-screen kit-screen-300">
               <div class="m-backdrop m-centered">
                 <div class="m-sheet m-confirm">
                   <div class="m-confirm-body">
@@ -471,7 +507,7 @@
           </div>
           <div class="kit-card">
             <h3>Gallery · placeholder and scrub thumb</h3>
-            <div class="m-screen" style="height: 420px; padding: 0 16px">
+            <div class="m-screen kit-screen-420">
               <div class="m-month">September 2026</div>
               <div class="m-grid">
                 <div class="m-photo m-shot"></div>
@@ -483,17 +519,17 @@
                 <div class="m-photo m-shot"></div>
                 <div class="m-photo"><span class="m-placeholder"><svg class="m-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z"/><rect x="226" y="284" width="60" height="96" rx="6"/></svg></span></div>
               </div>
-              <div class="m-month" style="margin-top: 12px">August 2026</div>
-              <div class="m-grid m-dense" style="--columns: 10">
+              <div class="m-month kit-month-gap">August 2026</div>
+              <div class="m-grid m-dense kit-columns-10">
                 <div class="m-photo"></div><div class="m-photo m-shot"></div><div class="m-photo"></div><div class="m-photo"></div><div class="m-photo m-shot m-warm"></div><div class="m-photo"></div><div class="m-photo"></div><div class="m-photo m-shot m-cool"></div><div class="m-photo"></div><div class="m-photo"></div>
               </div>
               <div class="m-scrub">
                 <div class="m-scrub-track"></div>
-                <span class="m-scrub-year" style="top: 24px">2026</span>
-                <span class="m-scrub-year" style="top: 180px">2024</span>
-                <span class="m-scrub-year" style="top: 372px">2014</span>
-                <span class="m-scrub-bubble" style="top: 124px">Aug 2026</span>
-                <div class="m-scrub-thumb" style="top: 116px"><span class="m-flipped"><span data-icon="chevron-down" data-size="16"></span></span><span data-icon="chevron-down" data-size="16"></span></div>
+                <span class="m-scrub-year kit-scrub-24">2026</span>
+                <span class="m-scrub-year kit-scrub-180">2024</span>
+                <span class="m-scrub-year kit-scrub-372">2014</span>
+                <span class="m-scrub-bubble kit-scrub-124">Aug 2026</span>
+                <div class="m-scrub-thumb kit-scrub-116"><span class="m-flipped"><span data-icon="chevron-down" data-size="16"></span></span><span data-icon="chevron-down" data-size="16"></span></div>
               </div>
             </div>
             <p class="kit-note">Unfetched and still-loading tiles share the placeholder; the arch (or play) appears from 48 dp, dense grids read as calm fills. While dragging, the thumb shows a track, the month bubble and sparse year chips; it is the only touch target.</p>
@@ -507,8 +543,8 @@
         <div class="kit-theme" data-theme="dark">
           <div class="kit-grid wide">
             <div class="kit-stack">
-              <article class="folder-card"><div class="tile"><span data-icon="images"></span></div><div class="row-main"><strong>photos</strong><p class="meta">3,598 files · 26.0 GB · /Users/javi/Pictures</p></div><span data-icon="chevron-right" class="chevron"></span></article>
-              <article class="folder-card unselected"><div class="tile"><span data-icon="images"></span></div><div class="row-main"><strong>photos-yuri</strong><p class="meta">138 files · 1.6 GB</p></div><button type="button" class="secondary small-button"><span data-icon="refresh-cw"></span>Start syncing</button></article>
+              <article class="folder-card" role="button" tabindex="0"><div class="home-lead"><div class="tile large"><span data-icon="images"></span></div></div><div class="row-main"><strong>photos</strong><p class="meta">3,598 files · 26.0 GB · /Users/javi/Pictures</p></div><span data-icon="chevron-right" class="chevron"></span></article>
+              <article class="folder-card unselected"><div class="tile large"><span data-icon="images"></span></div><div class="row-main"><strong>photos-yuri</strong><p class="meta">138 files · 1.6 GB</p></div><button type="button" class="secondary small-button"><span data-icon="refresh-cw"></span>Start syncing</button></article>
               <div class="kit-row"><button type="button" class="primary">Choose folders</button><button type="button" class="secondary">Sync now</button><span class="pill ok"><span data-icon="circle-check"></span>Up to date</span><span class="pill id"><span data-icon="wifi-off"></span>Offline</span><span class="tag hub">Hub</span></div>
             </div>
             <div class="kit-stack">
@@ -529,12 +565,16 @@
                 <article class="notice-card notice-warning" role="alert"><div class="notice-main"><span data-icon="triangle-alert"></span><div class="notice-content"><strong>Conflict in photos-yuri</strong><p>Files were edited on two devices. Both files were kept.</p><div class="notice-actions"><button class="notice-link">Review</button><button class="notice-link notice-muted">Dismiss</button></div></div><button class="notice-close" aria-label="Dismiss notification"><span data-icon="x"></span></button></div></article>
               </div>
             </div>
-            <div class="m-screen" style="height: 250px; padding: 16px">
-              <div class="m-list">
-                <div class="m-row"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos</span><span class="m-caption">3,598 photos · 26.0 GB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
-                <div class="m-row m-available"><div class="m-tile"><span data-icon="images"></span></div><div class="m-stack"><span class="m-row-title">photos-yuri</span><span class="m-caption">138 files · 1.6 GB</span></div><span class="m-button"><span data-icon="refresh-cw"></span>Start syncing</span></div>
+            <div class="kit-fragments"><div class="m-screen m-fragment"><div class="m-body">
+              <div class="m-group">
+                <div class="m-row"><div class="m-home-lead"><div class="m-tile"><span data-icon="images"></span></div></div><div class="m-stack"><span class="m-row-title">photos</span><span class="m-caption">3,598 files · 26.0 GB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
+                <div class="m-row"><div class="m-home-lead"><div class="m-tile m-tile-warning"><span data-icon="triangle-alert"></span></div></div><div class="m-stack"><span class="m-row-title">documents</span><span class="m-caption"><span class="m-state-word m-warning-ink">Conflict</span> · 20 files · 14.2 MB local</span></div><div class="m-row-action"><span data-icon="chevron-right" data-size="20"></span></div></div>
               </div>
-            </div>
+              <div class="m-group">
+                <div class="m-row m-available"><div class="m-tile"><span data-icon="images" data-size="20"></span></div><div class="m-stack"><span class="m-row-title">photos-yuri</span><span class="m-caption">138 files · 1.6 GB</span></div><span class="m-button"><span data-icon="refresh-cw" data-size="20"></span>Start syncing</span></div>
+              </div>
+              <div class="kit-row"><span class="m-roleset"><span class="m-tag m-hub">Hub</span></span><span class="m-switch-target"><span class="m-switch m-on" role="switch" aria-checked="true" aria-label="Background refresh"></span></span><span class="m-button m-primary">Start syncing</span></div>
+            </div></div></div>
           </div>
         </div>
       </section>

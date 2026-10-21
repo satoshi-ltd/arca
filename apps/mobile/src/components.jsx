@@ -11,7 +11,7 @@ import {
   brandSplashBox,
 } from "../../../packages/core/brand-mark.js";
 import { putFlight } from "./flight.js";
-import { deviceLabel, folderState, machineTone } from "./home-data.js";
+import { deviceLabel, folderState, historyTone, machineTone } from "./home-data.js";
 import { foldRowFits, machineLabel, platformName, segmentText } from "./device-line.js";
 import React, {
   createContext,
@@ -683,6 +683,19 @@ export function Tag({ children, variant }) {
       >
         {children}
       </Text>
+    </View>
+  );
+}
+
+export function HistoryGlyph({ row }) {
+  const { s, c } = useDesign();
+  const tone = historyTone(row);
+  return (
+    <View style={[s.historyGlyph, tone === "warning" && s.tileWarning, tone === "neutral" && s.tileNeutral]}>
+      <Icon
+        name={row.deleted ? "trash" : row.path.includes(".conflict-") ? "conflict" : "revision"}
+        color={row.deleted ? c.soft : tone === "warning" ? c.warning : c.accent}
+      />
     </View>
   );
 }

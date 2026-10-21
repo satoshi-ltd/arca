@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 import { MediaPlaceholder, useDesign } from "./components";
 import { mergeTimeline } from "./gallery-timeline";
+import { count } from "./format";
 
 // Bounded samples: opening Years never downloads the complete photo catalog.
 export function GalleryYear({
@@ -82,11 +83,11 @@ export function GalleryYear({
       onPress={onPress}
       onLayout={onLayout}
       accessibilityRole="button"
-      accessibilityLabel={`${year.year}, ${year.count} photos. Open year`}
+      accessibilityLabel={`${year.year}, ${count(year.count, "photo", "photos")}. Open year`}
     >
       <View style={s.timelineStatus}>
         <Text style={[s.timelineMonth, s.flex]}>{year.year}</Text>
-        <Text style={s.caption}>{year.count.toLocaleString("en")} photos</Text>
+        <Text style={s.caption}>{count(year.count, "photo", "photos")}</Text>
       </View>
       <View style={s.yearMosaic} pointerEvents="none">
         {Array.from({ length: Math.min(24, year.count) }, (_, index) => {

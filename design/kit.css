@@ -343,6 +343,20 @@ body.kit {
   justify-content: flex-end;
   padding-top: 176px;
 }
+.kit-context {
+  position: relative;
+}
+.kit-draw > .detail-page {
+  container-type: normal;
+}
+.sidebar.kit-sidebar-strip {
+  width: var(--sidebar-width);
+}
+.kit-context .menu-items.context-menu {
+  position: absolute;
+  top: calc(100% - var(--space-2));
+  left: calc(var(--space-6) * 4);
+}
 .kit-board-pair .m-device {
   width: 100%;
   max-width: 392px;
@@ -436,7 +450,7 @@ body.kit {
 }
 .kit-pressed-state .secondary,
 .kit-pressed-state .icon-button {
-  background: var(--hover);
+  background: var(--press);
 }
 .kit-pressed-state .primary {
   opacity: 0.85;
@@ -508,6 +522,9 @@ body.kit {
 }
 .music-range.kit-fill-17 {
   --music-fill: 17%;
+}
+.music-range.kit-fill-38 {
+  --music-fill: 38%;
 }
 .music-range.kit-fill-70 {
   --music-fill: 70%;
@@ -817,4 +834,280 @@ body.kit {
   height: 70%;
   background: var(--placeholder);
   color: var(--line);
+}
+
+.kit-text-title {
+  font-size: var(--text-title);
+  line-height: var(--text-title-line);
+}
+.kit-text-dialog {
+  font-size: var(--dialog-title);
+  line-height: var(--dialog-title-line);
+}
+.kit-text-row {
+  font-size: var(--text-row);
+}
+.kit-text-control {
+  font-size: var(--text-control);
+}
+.kit-text-body {
+  font-size: var(--text-body);
+}
+.kit-text-caption {
+  font-size: var(--text-caption);
+}
+.m-row-title.kit-text-touch-control {
+  font-size: var(--m-touch-control-font);
+}
+.kit-scale .kit-space-1 {
+  width: var(--space-1);
+  height: var(--space-1);
+}
+.kit-scale .kit-space-2 {
+  width: var(--space-2);
+  height: var(--space-2);
+}
+.kit-scale .kit-space-3 {
+  width: var(--space-3);
+  height: var(--space-3);
+}
+.kit-scale .kit-space-4 {
+  width: var(--space-4);
+  height: var(--space-4);
+}
+.kit-scale .kit-space-5 {
+  width: var(--space-5);
+  height: var(--space-5);
+}
+.kit-scale .kit-space-6 {
+  width: var(--space-6);
+  height: var(--space-6);
+}
+.kit-scale .kit-radius-tag,
+.kit-scale .kit-radius-control,
+.kit-scale .kit-radius-card,
+.kit-scale .kit-radius-dialog,
+.kit-scale .kit-radius-pill {
+  width: calc(var(--space-6) * 2);
+  height: calc(var(--space-4) * 2);
+}
+.kit-scale .kit-radius-tag {
+  border-radius: var(--r-tag);
+}
+.kit-scale .kit-radius-control {
+  border-radius: var(--r-control);
+}
+.kit-scale .kit-radius-card {
+  border-radius: var(--r-card);
+}
+.kit-scale .kit-radius-dialog {
+  border-radius: var(--r-dialog);
+}
+.kit-scale .kit-radius-pill {
+  border-radius: var(--r-pill);
+}
+.panel.kit-shadow-menu {
+  box-shadow: var(--shadow-menu);
+}
+.panel.kit-shadow-dialog {
+  box-shadow: var(--shadow-dialog);
+}
+.kit-device-end-162 {
+  --device-end: 162px;
+}
+.kit-device-end-228 {
+  --device-end: 228px;
+}
+.kit-flow-90 {
+  --flow-height: 90px;
+}
+.kit-thumb-0,
+.kit-thumb-126,
+.kit-thumb-252 {
+  --photo-top: 0px;
+  --photo-width: 120px;
+  --photo-height: 90px;
+}
+.kit-thumb-0 {
+  --photo-left: 0px;
+}
+.kit-thumb-126 {
+  --photo-left: 126px;
+}
+.kit-thumb-252 {
+  --photo-left: 252px;
+}
+.m-screen.kit-screen-470 {
+  height: 470px;
+}
+.m-screen.kit-screen-300 {
+  height: 300px;
+}
+.m-screen.kit-screen-420 {
+  height: 420px;
+  padding: 0 var(--space-4);
+}
+.m-month.kit-month-gap {
+  margin-top: var(--space-3);
+}
+.m-grid.kit-columns-10 {
+  --columns: 10;
+}
+.kit-scrub-24 {
+  top: 24px;
+}
+.kit-scrub-116 {
+  top: 116px;
+}
+.kit-scrub-124 {
+  top: 124px;
+}
+.kit-scrub-180 {
+  top: 180px;
+}
+.kit-scrub-372 {
+  top: 372px;
+}
+.kit-photo-row-158 {
+  --photo-row: 158px;
+}
+.kit-flow-628 {
+  --flow-height: 628.5px;
+}
+.kit-flow-140 {
+  --flow-height: 140.36px;
+}
+.kit-photo-a1 {
+  --photo-left: 0px;
+  --photo-top: 0px;
+  --photo-width: 227.95px;
+  --photo-height: 151.97px;
+}
+.kit-photo-a2 {
+  --photo-left: 233.95px;
+  --photo-top: 0px;
+  --photo-width: 113.97px;
+  --photo-height: 151.97px;
+}
+.kit-photo-a3 {
+  --photo-left: 353.93px;
+  --photo-top: 0px;
+  --photo-width: 227.95px;
+  --photo-height: 151.97px;
+}
+.kit-photo-a4 {
+  --photo-left: 587.88px;
+  --photo-top: 0px;
+  --photo-width: 202.11px;
+  --photo-height: 151.97px;
+}
+.kit-photo-a5 {
+  --photo-left: 0px;
+  --photo-top: 157.97px;
+  --photo-width: 153.47px;
+  --photo-height: 153.48px;
+}
+.kit-photo-a6 {
+  --photo-left: 159.48px;
+  --photo-top: 157.97px;
+  --photo-width: 230.21px;
+  --photo-height: 153.48px;
+}
+.kit-photo-a7 {
+  --photo-left: 395.7px;
+  --photo-top: 157.97px;
+  --photo-width: 115.1px;
+  --photo-height: 153.48px;
+}
+.kit-photo-a8 {
+  --photo-left: 516.81px;
+  --photo-top: 157.97px;
+  --photo-width: 273.19px;
+  --photo-height: 153.48px;
+}
+.kit-photo-a9 {
+  --photo-left: 0px;
+  --photo-top: 317.45px;
+  --photo-width: 220.57px;
+  --photo-height: 147.05px;
+}
+.kit-photo-a10 {
+  --photo-left: 226.57px;
+  --photo-top: 317.45px;
+  --photo-width: 220.57px;
+  --photo-height: 147.05px;
+}
+.kit-photo-a11 {
+  --photo-left: 453.14px;
+  --photo-top: 317.45px;
+  --photo-width: 110.28px;
+  --photo-height: 147.05px;
+}
+.kit-photo-a12 {
+  --photo-left: 569.43px;
+  --photo-top: 317.45px;
+  --photo-width: 220.57px;
+  --photo-height: 147.05px;
+}
+.kit-photo-a13 {
+  --photo-left: 0px;
+  --photo-top: 470.5px;
+  --photo-width: 210.14px;
+  --photo-height: 158px;
+}
+.kit-photo-b1 {
+  --photo-left: 0px;
+  --photo-top: 0px;
+  --photo-width: 210.54px;
+  --photo-height: 140.36px;
+}
+.kit-photo-b2 {
+  --photo-left: 216.55px;
+  --photo-top: 0px;
+  --photo-width: 140.36px;
+  --photo-height: 140.36px;
+}
+.kit-photo-b3 {
+  --photo-left: 362.91px;
+  --photo-top: 0px;
+  --photo-width: 210.54px;
+  --photo-height: 140.36px;
+}
+.kit-photo-b4 {
+  --photo-left: 579.45px;
+  --photo-top: 0px;
+  --photo-width: 210.54px;
+  --photo-height: 140.36px;
+}
+.kit-segment-1 {
+  --segment-top: 0px;
+  --segment-height: 40px;
+}
+.kit-segment-2 {
+  --segment-top: 40px;
+  --segment-height: 30px;
+}
+.kit-segment-3 {
+  --segment-top: 70px;
+  --segment-height: 30px;
+}
+.kit-segment-4 {
+  --segment-top: 120px;
+  --segment-height: 50px;
+}
+.kit-segment-5 {
+  --segment-top: 170px;
+  --segment-height: 40px;
+}
+.kit-segment-6 {
+  --segment-top: 250px;
+  --segment-height: 60px;
+}
+.kit-segment-7 {
+  --segment-top: 360px;
+  --segment-height: 50px;
+}
+.kit-segment-8 {
+  --segment-top: 470px;
+  --segment-height: 40px;
 }

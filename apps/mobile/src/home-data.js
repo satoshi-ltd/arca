@@ -35,6 +35,14 @@ export function historyTone(row) {
   if (row.path.includes(".conflict-") && !row.resolved) return "warning";
   return null;
 }
+export const historyCaption = (row, size) =>
+  row.deleted
+    ? "Deleted · recoverable"
+    : row.path.includes(".conflict-")
+      ? row.resolved
+        ? "Conflict resolved · copy kept"
+        : "Conflict copy retained"
+      : size;
 const DEVICE_WARNINGS = ["Paused", "Offline", "Disconnected"];
 export const deviceLabel = (name, device) => [name, "Replica", device.word, device.last].filter(Boolean).join(", ");
 

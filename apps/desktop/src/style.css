@@ -1038,7 +1038,7 @@ main {
 .segmented button.active {
   background: var(--segmentSelected);
   color: var(--ink);
-  box-shadow: 0 1px 2px #00000014;
+  box-shadow: var(--shadow-control);
 }
 .segmented {
   position: relative;
@@ -1047,7 +1047,7 @@ main {
   position: absolute;
   background: var(--segmentSelected);
   border-radius: var(--r-tag);
-  box-shadow: 0 1px 2px #00000014;
+  box-shadow: var(--shadow-control);
   pointer-events: none;
 }
 .segmented.has-thumb > button {
@@ -1280,8 +1280,8 @@ main {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: white;
-  box-shadow: 0 1px 2px #0002;
+  background: var(--switchThumb);
+  box-shadow: var(--shadow-thumb);
 }
 .toggle input:checked + span {
   background: var(--green);
@@ -3860,8 +3860,8 @@ dialog.photo-viewer {
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: #000;
-  color: #fff;
+  background: var(--media);
+  color: var(--onMedia);
   box-shadow: none;
 }
 .photo-viewer form,
@@ -3884,7 +3884,7 @@ dialog.photo-viewer {
   height: 64px;
   padding: var(--space-3) var(--space-4);
   z-index: 2;
-  background: linear-gradient(#0009, transparent);
+  background: linear-gradient(var(--mediaFade), transparent);
 }
 .photo-viewer-operations {
   display: flex;
@@ -3929,7 +3929,7 @@ dialog.photo-viewer {
 }
 .photo-viewer button {
   background: transparent;
-  color: #fff;
+  color: var(--onMedia);
   border: 0;
   border-radius: 50%;
   width: 40px;
@@ -3937,14 +3937,14 @@ dialog.photo-viewer {
   padding: 8px;
 }
 .photo-viewer button:hover {
-  background: #ffffff26;
+  background: var(--mediaHover);
 }
 .photo-viewer .photo-previous,
 .photo-viewer .photo-next {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  background: #0005;
+  background: var(--mediaNav);
 }
 .photo-viewer .photo-previous {
   left: var(--space-4);
@@ -4141,7 +4141,7 @@ dialog.photo-viewer {
   border: 1px solid var(--control);
 }
 .photo-viewer-image > .busy-grid {
-  color: #fff;
+  color: var(--onMedia);
 }
 
 .photo-info-summary .mono {
@@ -4752,7 +4752,7 @@ dialog.photo-viewer {
 }
 .photo-viewer button:hover:not(:disabled),
 .photo-viewer button:active:not(:disabled) {
-  background: #ffffff26;
+  background: var(--mediaHover);
 }
 .photo-viewer .photo-info button:hover:not(:disabled),
 .photo-viewer .photo-info button:active:not(:disabled) {

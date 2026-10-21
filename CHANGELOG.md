@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.83 — 2026-10-21
+
+- On the phone, podcast episode rows give the title the full width: the length moves to the second line beside the date ("Sep 24, 2026 · 1 h 20 min"), and once an episode is started that line shows the time left instead. Up next on Now Playing follows the same layout; songs keep their length column.
+- Phone folder captions group thousands ("3,598 files"), and a folder's Recent rows use the same tinted glyph tiles and captions as History.
+- In Replace hub, a folder whose local copy can be recovered shows a neutral Available pill, since green is reserved for verified states.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.7.82 — 2026-10-20
 
 - An automated retention test no longer fails intermittently on Windows build machines: its successive edits now differ in size, so they are detected whatever the file-time resolution.

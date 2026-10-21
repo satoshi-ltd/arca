@@ -579,6 +579,17 @@ test("captions keep each value whole and bind each separator to the part after i
   assert.equal(caption, "2\u00a0episodes ·\u00a02\u00a0shows ·\u00a080.6\u00a0MB\u00a0local");
   assert.deepEqual(caption.split(" "), ["2\u00a0episodes", "·\u00a02\u00a0shows", "·\u00a080.6\u00a0MB\u00a0local"], "the only break points fall before a separator");
   assert.equal(folderSize({ files: 3, bytes: 1048576 * 2 }), "3\u00a0files ·\u00a02.0\u00a0MB");
+  assert.equal(folderSize({ files: 3598, bytes: 0 }), "3,598\u00a0files ·\u00a00\u00a0B", "every file count groups its thousands");
+  const { count, fileCount } = await import("../apps/mobile/src/format.js");
+  assert.equal(fileCount(1), "1 file");
+  assert.equal(count(12000, "photo", "photos"), "12,000 photos");
+  const dir = new URL("../apps/mobile/src/", import.meta.url);
+  for (const name of fs.readdirSync(dir).filter((file) => /\.jsx?$/.test(file)))
+    assert.doesNotMatch(
+      fs.readFileSync(new URL(name, dir), "utf8"),
+      /\$\{[\w.?\s]+\} (?:\$\{[^}]*=== 1 \?|(?:files|photos|videos|folders|albums|songs|episodes|items|previews|tracks)\b)/,
+      `${name} prints every count through count() or toLocaleString`,
+    );
   const components = fs.readFileSync(new URL("../apps/mobile/src/components.jsx", import.meta.url), "utf8");
   assert.match(components, /description\.replace\(\/ ·\[ \\u00a0\]\/g, ", "\)/, "screen readers hear commas, not the bound separators");
 });

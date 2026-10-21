@@ -2,7 +2,8 @@ import { Scaffold } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { EmptyState, Icon, OfflineEmpty, useDesign } from "./components";
+import { EmptyState, HistoryGlyph, Icon, OfflineEmpty, useDesign } from "./components";
+import { historyCaption } from "./home-data";
 import { bytes } from "./format";
 import { knownRecent, rememberRecent } from "./recent-cache";
 
@@ -87,22 +88,7 @@ export function FolderRecent({
               onPress={() => open(row)}
               style={[s.settingRow, s.row, index > 0 && s.separator]}
             >
-              <Icon
-                name={
-                  row.deleted
-                    ? "trash"
-                    : row.path.includes(".conflict-")
-                      ? "conflict"
-                      : "revision"
-                }
-                color={
-                  row.deleted
-                    ? c.mute
-                    : row.path.includes(".conflict-") && !row.resolved
-                      ? c.warning
-                      : c.accent
-                }
-              />
+              <HistoryGlyph row={row} />
               <View style={[s.flex, s.stack]}>
                 <Text
                   numberOfLines={wide ? 1 : undefined}
@@ -111,13 +97,7 @@ export function FolderRecent({
                   {row.path}
                 </Text>
                 <Text style={s.caption}>
-                  {row.deleted
-                    ? "Deleted · recoverable"
-                    : row.resolved
-                      ? "Resolved · copy kept"
-                      : row.path.includes(".conflict-")
-                        ? "Conflict copy retained"
-                        : `${bytes(row.size)}`}
+                  {historyCaption(row, bytes(row.size))}
                 </Text>
               </View>
               {wide && <Text style={s.mono}>rev {row.rev}</Text>}

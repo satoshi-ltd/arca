@@ -412,6 +412,22 @@ test("sync activity uses the accent and the palette has no separate blue state",
   assert.doesNotMatch(read("app.js"), /pill\("Arca detected", "sy"/);
 });
 
+test("desktop styles take every colour from tokens, and the phone mirrors the shared media and switch colours", async () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
+  assert.doesNotMatch(read("style.css"), /(?<![\w-])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b(?![\w-])|\b(?:rgba?|hsla?)\(|[:\s](?:white|black)\b(?![\w-])/);
+  const tokens = read("tokens.css");
+  const { palettes } = await import("../apps/mobile/src/palette.js");
+  for (const name of ["media", "onMedia", "switchThumb"])
+    for (const theme of ["light", "dark"]) assert.equal(palettes[theme][name], tokens.match(new RegExp(`--${name}:\\s*([^;]+);`))[1], `${theme}.${name}`);
+});
+
+test("only verified states get the green fill: a recoverable local copy reads neutral, and the toast keeps only shade and text", () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
+  assert.match(read("app.js"), /: pill\("Available", "id", "check"\),/);
+  assert.doesNotMatch(read("app.js"), /pill\("Available", "ok"/);
+  assert.deepEqual([...read("tokens.css").matchAll(/--(toast-[\w-]+):/g)].map((m) => m[1]), ["toast-bg", "toast-fg"]);
+});
+
 test("dialogs share one default width and one wide variant", () => {
   const read = (file) =>
     fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
@@ -502,7 +518,7 @@ test("every control answers a press, the viewer keeps its own fills and icon but
   assert.match(active, /background: var\(--press\);\s+transition-duration: 0ms;/, "a press fills at once and releases over the fast transition");
   assert.ok(active.includes(".menu-items button:active:not(:disabled)"));
   assert.match(tail, /\.primary:active:not\(:disabled\),\s+\.photo-thumb \.photo-open:active \{\s+opacity: 0\.85;/);
-  assert.match(tail, /\.photo-viewer button:hover:not\(:disabled\),\s+\.photo-viewer button:active:not\(:disabled\) \{\s+background: #ffffff26;/, "viewer buttons keep their translucent fill");
+  assert.match(tail, /\.photo-viewer button:hover:not\(:disabled\),\s+\.photo-viewer button:active:not\(:disabled\) \{\s+background: var\(--mediaHover\);/, "viewer buttons keep their translucent fill");
   assert.match(tail, /\.photo-viewer \.photo-info button:hover:not\(:disabled\),\s+\.photo-viewer \.photo-info button:active:not\(:disabled\) \{\s+background: var\(--tint\);/, "the Info panel keeps its tint");
   const coarse = tail.slice(tail.indexOf("@media (pointer: coarse) {"));
   assert.match(coarse, /@media \(pointer: coarse\) \{\s+\.icon-button,\s+\.ghost\.icon-button \{\s+width: var\(--touch-target-min\);/);

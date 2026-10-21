@@ -44,6 +44,19 @@ test("a folder row carries its state in the leading tile and the caption's first
   const machine = components.slice(components.indexOf("export function MachineRow("), components.indexOf("export function SettingsGroup("));
   assert.match(machine, /<Badge>\{state\}<\/Badge>/, "devices keep their chip");
   assert.match(machine, /tone === "danger" && s\.tileDanger/);
-  const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
-  assert.match(app, /historyTone\(row\) === "warning" && s\.tileWarning/, "history conflicts tint their glyph tile");
+});
+
+test("Recent and History draw a revision the same way: one tinted glyph tile and one caption", async () => {
+  const { historyCaption } = await import("../apps/mobile/src/home-data.js");
+  assert.equal(historyCaption({ path: "a.md", deleted: true }, "1.0 KB"), "Deleted · recoverable");
+  assert.equal(historyCaption({ path: "a.conflict-x.md" }, "1.0 KB"), "Conflict copy retained");
+  assert.equal(historyCaption({ path: "a.conflict-x.md", resolved: true }, "1.0 KB"), "Conflict resolved · copy kept");
+  assert.equal(historyCaption({ path: "a.md", resolved: true }, "1.0 KB"), "1.0 KB", "only a conflict copy reads resolved");
+  const read = (name) => fs.readFileSync(new URL(`../apps/mobile/src/${name}`, import.meta.url), "utf8");
+  for (const name of ["App.jsx", "FolderRecent.jsx"]) {
+    assert.match(read(name), /<HistoryGlyph row=\{row\} \/>/, name);
+    assert.match(read(name), /\{historyCaption\(row, bytes\(row\.size\)\)\}/, name);
+  }
+  const glyph = read("components.jsx").match(/export function HistoryGlyph[\s\S]*?\n\}/)[0];
+  assert.match(glyph, /s\.historyGlyph, tone === "warning" && s\.tileWarning, tone === "neutral" && s\.tileNeutral/);
 });

@@ -16,7 +16,7 @@ import {
   useDesign,
 } from "./components";
 import { runtime } from "./runtime";
-import { bytes } from "./format";
+import { bytes, fileCount, unbroken } from "./format";
 import {
   IncomingSession,
   incomingDestination,
@@ -349,7 +349,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
                         disabled={busy}
                         key={v.id}
                         name={v.name}
-                        description={`${v.files ?? 0} files · ${bytes(v.bytes)} local`}
+                        description={Number.isFinite(v.files) ? unbroken(`${fileCount(v.files)} · ${bytes(v.bytes)} local`) : "Not counted yet"}
                         onPress={() => {
                           setVolume(v);
                           setDirectory("");

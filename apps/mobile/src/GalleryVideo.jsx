@@ -13,7 +13,7 @@ const video = requireOptionalNativeModule("ExpoVideo")
 const { useVideoPlayer, VideoView } = video || {};
 
 function Playback({ uri, held }) {
-  const { s } = useDesign();
+  const { s, c } = useDesign();
   const insets = useSafeAreaInsets();
   const player = useVideoPlayer(null);
   const [loadError, setLoadError] = useState(null);
@@ -57,7 +57,7 @@ function Playback({ uri, held }) {
       />
       {(status === "loading" || status === "idle") && (
         <View pointerEvents="none" style={s.viewerVideoLoading}>
-          <Busy color="#fff" />
+          <Busy color={c.onMedia} />
         </View>
       )}
     </View>
@@ -65,7 +65,7 @@ function Playback({ uri, held }) {
 }
 
 export function GalleryVideo({ item, active, held, resolveVideo, frame }) {
-  const { s } = useDesign();
+  const { s, c } = useDesign();
   const [attempt, setAttempt] = useState(0);
   const [uri, setURI] = useState(null);
   const [error, setError] = useState("");
@@ -99,7 +99,7 @@ export function GalleryVideo({ item, active, held, resolveVideo, frame }) {
             />
           )}
           {active && video && !error ? (
-            <Busy color="#fff" />
+            <Busy color={c.onMedia} />
           ) : (
             <>
               <Pressable
@@ -116,7 +116,7 @@ export function GalleryVideo({ item, active, held, resolveVideo, frame }) {
                   setAttempt((value) => value + 1);
                 }}
               >
-                <Icon name="play" color="#fff" size={32} />
+                <Icon name="play" color={c.onMedia} size={32} />
               </Pressable>
               {!!error && (
                 <Text accessibilityRole="alert" style={s.viewerCaption}>

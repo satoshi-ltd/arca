@@ -20,9 +20,8 @@ import {
   albumSummary,
   artistGroups,
   baseContext,
-  formatDay,
+  episodeCaption,
   formatDuration,
-  formatLength,
   folderContext,
   LIBRARY_CONTEXT,
   libraryTracks,
@@ -380,11 +379,9 @@ export function RowMeta({ track, caption, saved, live, style }) {
   );
 }
 
-const trackCaption = (track, numbered, withAlbum) =>
+const trackCaption = (track, numbered, withAlbum, started) =>
   track.podcast
-    ? withAlbum
-      ? [track.artist, formatDay(track.date)].filter(Boolean).join(" · ")
-      : formatDay(track.date) || track.artist
+    ? episodeCaption(track, withAlbum, started)
     : numbered && !withAlbum
       ? track.artist
       : `${track.artist} · ${track.album}`;
@@ -495,7 +492,7 @@ function TrackList({
                 {!compact && (
                   <RowMeta
                     track={track}
-                    caption={trackCaption(track, numbered, withAlbum)}
+                    caption={trackCaption(track, numbered, withAlbum, !!saved || current)}
                     saved={saved}
                     live={current}
                     style={s.caption}
@@ -503,10 +500,8 @@ function TrackList({
                 )}
               </View>
               {!numbered && current && <NowGlyph />}
-              {!!track.duration && !saved && !current && (
-                <Text style={s.caption}>
-                  {track.podcast ? formatLength(track.duration) : formatDuration(track.duration)}
-                </Text>
+              {!track.podcast && !!track.duration && !saved && !current && (
+                <Text style={s.caption}>{formatDuration(track.duration)}</Text>
               )}
               {actions && (
                 <Pressable

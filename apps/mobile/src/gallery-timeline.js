@@ -97,7 +97,7 @@ export function pendingUploadLabel(items, summary = {}) {
   );
   return [
     waiting ? `${waiting} remaining` : "",
-    failed ? `${failed} ${failed === 1 ? "needs" : "need"} attention` : "",
+    failed ? `${failed.toLocaleString("en")} ${failed === 1 ? "needs" : "need"} attention` : "",
   ]
     .filter(Boolean)
     .join(" · ");

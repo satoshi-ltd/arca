@@ -3,7 +3,7 @@ import { Animated, Modal, PanResponder, Pressable, ScrollView, Text, View, useWi
 import { SafeAreaView } from "react-native-safe-area-context";
 import { EmptyState, Icon, PressScale, Sheet, useDesign } from "./components";
 import { Cover, NowGlyph, RowMeta } from "./MusicLibrary";
-import { artistFor, formatDay, formatDuration, nextRepeat, parseTrackNode, upNext } from "./music-library.js";
+import { artistFor, episodeCaption, formatDay, formatDuration, nextRepeat, parseTrackNode, upNext } from "./music-library.js";
 import { ChangeFade, useFlight, useMotion, useRetained } from "./motion";
 import { motion } from "./design-tokens.js";
 import { hasFlight } from "./flight.js";
@@ -18,7 +18,7 @@ const clock = (ms) =>
 
 function Row({ track, current, saved, onPress }) {
   const { s, c } = useDesign();
-  const caption = track.podcast ? formatDay(track.date) || track.artist : track.artist;
+  const caption = track.podcast ? episodeCaption(track, false, current || !!saved) : track.artist;
   return (
     <ChangeFade token={current ? track.id : "row"} ms={motion.fast}>
       <PressScale
@@ -35,7 +35,7 @@ function Row({ track, current, saved, onPress }) {
           </Text>
           <RowMeta track={track} caption={caption} saved={saved} live={current} style={s.caption} />
         </View>
-        {!current && !saved && !!track.duration && <Text style={s.caption}>{formatDuration(track.duration)}</Text>}
+        {!track.podcast && !current && !saved && !!track.duration && <Text style={s.caption}>{formatDuration(track.duration)}</Text>}
       </PressScale>
     </ChangeFade>
   );

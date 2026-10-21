@@ -65,6 +65,11 @@ export function formatLength(seconds) {
   return hours ? `${hours} h ${minutes % 60} min` : `${minutes} min`;
 }
 
+export function episodeCaption(track, withAlbum, started) {
+  const head = withAlbum ? [track.artist, formatDay(track.date)] : [formatDay(track.date) || track.artist];
+  return [...head, started ? "" : formatLength(track.duration)].filter(Boolean).join(" · ");
+}
+
 export function trackTitle(track) {
   if (track.title) return track.title;
   const name = base(track.path);

@@ -225,7 +225,6 @@ test("Now playing is a full page whose artist and album go to their screens, and
   assert.match(opening, /setNowPlayingOpen\(false\);[\s\S]*setFileView\("music"\);\s+setMusicRoute\(route\);/, "it closes the page and opens the album in the library, even from View files");
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
   assert.match(library, /: numbered && !withAlbum\s+\? track\.artist\s+: `\$\{track\.artist\} · \$\{track\.album\}`;/);
-  assert.match(list, /caption=\{trackCaption\(track, numbered, withAlbum\)\}/);
   const screen = library.slice(library.indexOf('const playlist = item.kind === "playlist"'), library.indexOf("const gone ="));
   assert.match(screen, /removable=\{playlist\.editable\}\s+withAlbum/, "a playlist's rows read “artist · album”");
   const album = library.slice(library.indexOf('item.kind === "album"'), library.indexOf('const playlist = item.kind === "playlist"'));
@@ -388,7 +387,6 @@ test("Now playing reads the playing track's own folder and its links open that f
 test("the library draws no search results of its own", () => {
   assert.doesNotMatch(library, /item\.kind === "search"|results\.shows|results\.episodes/);
   assert.match(library, /open=\{\(value\) => open\(\{ kind: "show", id: value\.id \}\)\}/, "a show opens in the right pane on the Fold");
-  assert.match(library, /\? withAlbum\s+\? \[track\.artist, formatDay\(track\.date\)\]\.filter\(Boolean\)\.join\(" · "\)/, "an episode in a playlist names its show");
 });
 
 test("on the Fold the open show or album is the pane's own list, without a card inside the card", () => {
@@ -400,13 +398,19 @@ test("on the Fold the open show or album is the pane's own list, without a card 
   assert.match(theme, /borderRadius: g\.cardRadius,\s+backgroundColor: c\.surface,\s+\},\s+musicPaneList/);
 });
 
-test("episode rows give their length in hours and minutes as desktop does, music keeps m:ss", () => {
-  assert.match(library, /\{track\.podcast \? formatLength\(track\.duration\) : formatDuration\(track\.duration\)\}/);
+test("episode rows keep their length on the caption line so the title takes the full width, music keeps its m:ss column", () => {
+  const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
+  assert.match(list, /caption=\{trackCaption\(track, numbered, withAlbum, !!saved \|\| current\)\}/);
+  assert.match(library, /track\.podcast\s+\? episodeCaption\(track, withAlbum, started\)/);
+  assert.match(list, /\{!track\.podcast && !!track\.duration && !saved && !current && \(\s+<Text style=\{s\.caption\}>\{formatDuration\(track\.duration\)\}<\/Text>/);
+  const page = read("src/NowPlayingPage.jsx");
+  assert.match(page, /const caption = track\.podcast \? episodeCaption\(track, false, current \|\| !!saved\) : track\.artist;/);
+  assert.match(page, /\{!track\.podcast && !current && !saved && !!track\.duration && <Text style=\{s\.caption\}>\{formatDuration\(track\.duration\)\}<\/Text>\}/);
 });
 
 test("header and folder captions only wrap between their · segments", () => {
   assert.match(app, /const folderSubtitle = unbroken\(`/);
-  assert.match(app, /description=\{unbroken\(`\$\{f\.files\} files · \$\{bytes\(f\.bytes\)\} local`\)\}/);
+  assert.match(app, /description=\{Number\.isFinite\(f\.files\) \? unbroken\(`\$\{fileCount\(f\.files\)\} · \$\{bytes\(f\.bytes\)\} local`\) : "Not counted yet"\}/);
   assert.match(app, /segments=\{deviceSegments\(\{/, "device lines wrap only between segments");
-  assert.match(read("src/format.js"), /\? unbroken\(`\$\{folder\.files/);
+  assert.match(read("src/format.js"), /\? unbroken\(`\$\{fileCount\(folder\.files\)\}/);
 });

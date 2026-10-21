@@ -1,4 +1,5 @@
 import { GalleryDeletions } from "./gallery-deletions.js";
+import { fileCount } from "./format.js";
 import {
   DISCOVERY_MS,
   FULL_SCAN_MS,
@@ -1561,7 +1562,7 @@ export class Replica {
           const failed = this.rowIssues.get(folder.id);
           if (failed?.length)
             throw new Error(
-              `Could not sync ${failed.length === 1 ? "1 file" : `${failed.length} files`}: ${failed.slice(0, 3).join("; ")}`,
+              `Could not sync ${fileCount(failed.length)}: ${failed.slice(0, 3).join("; ")}`,
             );
           if (galleryError) throw galleryError;
         } catch (e) {

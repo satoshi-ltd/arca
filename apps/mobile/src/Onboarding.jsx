@@ -11,7 +11,7 @@ import {
   Icon,
 } from "./components";
 import { PairingForm } from "./PairingForm";
-import { bytes, folderSize } from "./format";
+import { bytes, count, folderSize } from "./format";
 export function Onboarding({
   step,
   name,
@@ -145,7 +145,7 @@ export function Onboarding({
         ))}
       </View>
       <Text style={[s.caption, s.centerText]}>
-        {chosen.length === 1 ? chosen[0].name : `${chosen.length} folders`} ·{" "}
+        {chosen.length === 1 ? chosen[0].name : count(chosen.length, "folder", "folders")} ·{" "}
         {bytes(size)} ·{" "}
         {Number.isFinite(free)
           ? `${bytes(free)} free on this ${device}`
@@ -153,7 +153,7 @@ export function Onboarding({
       </Text>
       <View style={s.flex} />
       <Button
-        label={`Download ${chosen.length} ${chosen.length === 1 ? "folder" : "folders"}`}
+        label={`Download ${count(chosen.length, "folder", "folders")}`}
         icon="download"
         primary
         disabled={!chosen.length}

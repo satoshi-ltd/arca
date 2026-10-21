@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildLibrary,
+  episodeCaption,
   episodeDate,
   folderContext,
   formatDay,
@@ -137,6 +138,17 @@ test("an episode date comes from the YYYY-MM-DD filename prefix and lengths read
   assert.equal(formatLength(5400), "1 h 30 min");
   assert.equal(formatLength(2520), "42 min");
   assert.equal(formatLength(0), "");
+});
+
+test("an episode row reads date and length on its second line until it is started, then the date alone", () => {
+  const episode = { title: "#384 · El futuro de la energía nuclear en Europa", artist: "The Wild Project", date: "2026-09-24", duration: 4800 };
+  assert.equal(episodeCaption(episode, false, false), "Sep 24, 2026 · 1 h 20 min");
+  assert.equal(episodeCaption(episode, false, true), "Sep 24, 2026", "a started episode leaves the time to its time left");
+  assert.equal(episodeCaption(episode, true, false), "The Wild Project · Sep 24, 2026 · 1 h 20 min", "in a playlist it names its show first");
+  assert.equal(episodeCaption({ ...episode, date: null }, false, false), "The Wild Project · 1 h 20 min", "an undated episode falls back to its show");
+  assert.equal(episodeCaption({ ...episode, duration: 0 }, false, false), "Sep 24, 2026");
+  assert.equal(episodeCaption(episode, true, true), "The Wild Project · Sep 24, 2026", "a started episode in a playlist keeps its show and date only");
+  assert.equal(episodeCaption({ ...episode, date: null, duration: 0 }, false, false), "The Wild Project");
 });
 
 test("the Podcasts tab joins the music tabs and is the only tab of a library without music", () => {
