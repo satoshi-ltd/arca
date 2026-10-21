@@ -57,6 +57,7 @@ export const iconNames = {
   back: "ChevronLeft",
   server: "Server",
   phone: "Smartphone",
+  tv: "Tv",
   restore: "Undo2",
   play: "Play",
   "map-pin": "MapPin",
@@ -918,6 +919,25 @@ export const icons = {
         x2: "6.01",
         y1: "18",
         y2: "18",
+      },
+    ],
+  ],
+  tv: [
+    [
+      "rect",
+      {
+        width: "20",
+        height: "15",
+        x: "2",
+        y: "7",
+        rx: "2",
+        ry: "2",
+      },
+    ],
+    [
+      "polyline",
+      {
+        points: "17 2 12 7 7 2",
       },
     ],
   ],

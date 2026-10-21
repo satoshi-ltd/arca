@@ -144,7 +144,7 @@ test("phone rows carry presence as a tile badge and the Fold lays the row out in
   assert.match(row, /<Text style=\{\[s\.machineCellText, s\.machineCellMute\]\}>\{cells\.totals\[1\]\}<\/Text>/, "the size sits under the folder count in mute");
   assert.match(row, /<View style=\{\[s\.presenceDot, !presence\.connected && s\.presenceOff\]\} \/>\s+<Text style=\{s\.machineCellText\}>\{presence\.label\}<\/Text>/);
   assert.match(row, /\[os, address\]\.filter\(Boolean\)/, "the Fold's hub address shares its OS line");
-  assert.match(row, /segments: wide \? segments\.filter\(\(segment\) => !segment\.warning\) : segments,[\s\S]{0,80}version: wide \? cells\?\.version\?\.label : "",/, "the Fold reads the version it shows, once");
+  assert.match(row, /segments: wide \? segments\.filter\(\(segment\) => !segment\.warning && !segment\.version\) : segments,[\s\S]{0,80}version: wide \? cells\?\.version\?\.label : "",/, "the Fold reads the version it shows, once");
   const theme = read("theme.js");
   assert.match(theme, /presenceBadge: \{\s+position: "absolute",\s+top: -6,\s+right: -6,\s+width: 12,\s+height: 12,\s+borderRadius: 6,\s+borderWidth: 2,\s+borderColor: c\.surface,\s+backgroundColor: c\.accent,\s+\}/);
   assert.match(theme, /presenceOff: \{ backgroundColor: c\.mute \}/);
@@ -166,7 +166,10 @@ test("phone rows carry presence as a tile badge and the Fold lays the row out in
   assert.equal((app.match(/presence=\{devicePresence\.hub\}/g) || []).length, 2, "Devices and Settings both show the hub's presence");
   assert.match(app, /presence=\{presence\(\{ self: true \}\)\}/);
   assert.match(app, /presence=\{devicePresence\.of\(m\)\}/);
-  assert.match(app, /revoked: m\.revoked,\s+\}\)\}\s+cells=\{deviceCells\(\{/);
+  assert.match(app, /revoked: m\.revoked,\s+player: m\.role === "player",\s+\}\)\}\s+cells=\{deviceCells\(\{/);
+  assert.match(app, /role=\{m\.role === "player" \? "Player" : m\.role \|\| "Replica"\}/);
+  assert.match(app, /!m\.isHub &&\s+m\.role !== "player" &&\s+m\.credentialId !== connection\?\.id/, "a player is never listed as holding a copy");
+  assert.match(read("components.jsx"), /name=\{hub \? "server" : player \? "tv" : /);
   assert.match(read("icons.js"), /"circle-arrow-up": "CircleArrowUp"/);
 });
 
@@ -183,4 +186,13 @@ test("the Fold keeps its cell row only while it fits 690 dp, and falls back to t
   assert.match(row, /const \{ s, c, wide: wideLayout, fontScale = 1 \} = useDesign\(\);\s+const wide = wideLayout && foldRowFits\(fontScale\);/);
   assert.match(read("HubConnection.jsx"), /const wide = wideLayout && foldRowFits\(fontScale\);/, "the hub's Disconnect follows the same layout");
   assert.match(read("App.jsx"), /fontScale: fontScale \* textScale\(prefs\.textSize\),/, "the scale is the system font scale times the app text size");
+});
+
+test("a player reads its app and own version, the folders it streams, and never the hub's version warning", () => {
+  const player = { platform: "android", app: "Arca TV", version: "1.0.0", hubVersion: "0.7.84", folders: 2, size: 0, player: true };
+  assert.deepEqual(deviceSegments(player), [{ parts: ["Arca TV"] }, { parts: ["v1.0.0"], label: "v1.0.0", version: true }, { parts: ["2 folders", "Streaming"] }]);
+  assert.match(read("components.jsx"), /segments\.filter\(\(segment\) => !segment\.warning && !segment\.version\)/, "the Fold reads a player's version once, from its cell");
+  assert.deepEqual(deviceCells(player), { version: { text: "v1.0.0", older: false, label: "v1.0.0" }, totals: ["2 folders", "Streaming"] });
+  assert.deepEqual(deviceSegments({ ...player, app: "" })[0], { parts: ["Android"] }, "without an app it falls back to the OS");
+  assert.deepEqual(deviceSegments({ platform: "android", app: "Arca TV", folders: 2, size: GB }), [{ parts: ["Android"] }, { parts: ["2 folders", "1.0 GB"] }], "a replica keeps its OS and size");
 });

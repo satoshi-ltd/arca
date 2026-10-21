@@ -21,7 +21,7 @@ import { watchFolder } from "./folder-watch.js";
 import { folderPreview } from "./folder-preview.js";
 import { filePreview } from "./file-preview.js";
 import { searchLocal } from "./search.js";
-import { acceptReport, machines } from "./machines.js";
+import { acceptReport, machines, playerRoute } from "./machines.js";
 import { clearPosition, listPositions, mergePositions, savePosition } from "./audio-positions.js";
 import { listFavorites, saveFavorites } from "./favorites.js";
 import { shortCode, normalizeCode, Attempts } from "./codes.js";
@@ -386,6 +386,8 @@ export async function start(home, options = {}) {
             b.name.trim().length > 100)
         )
           fail("Choose a device name of up to 100 characters");
+        if (b.kind !== undefined && !["replica", "player"].includes(b.kind))
+          fail("Invalid pairing request", 400);
         return send(
           201,
           await engine.exclusive(() => {
@@ -423,15 +425,25 @@ export async function start(home, options = {}) {
               s.db.prepare("DELETE FROM pairing WHERE code_hash=?").run(code);
               s.db
                 .prepare(
-                  "INSERT INTO devices(id,name,token_hash,role) VALUES(?,?,?,'replica')",
+                  "INSERT INTO devices(id,name,token_hash,role) VALUES(?,?,?,?)",
                 )
-                .run(id, b.name?.trim() || invitation.name, digest(secret));
+                .run(
+                  id,
+                  b.name?.trim() || invitation.name,
+                  digest(secret),
+                  b.kind === "player" ? "player" : "replica",
+                );
               s.db.exec("COMMIT");
             } catch (e) {
               s.db.exec("ROLLBACK");
               throw e;
             }
-            return { id, token: secret, hubId: config.id };
+            return {
+              id,
+              token: secret,
+              hubId: config.id,
+              role: b.kind === "player" ? "player" : "replica",
+            };
           }),
         );
       }
@@ -441,7 +453,7 @@ export async function start(home, options = {}) {
           (config.webApprovers?.includes(id) &&
             Boolean(
               s.db
-                .prepare("SELECT id FROM devices WHERE id=? AND revoked=0")
+                .prepare("SELECT id FROM devices WHERE id=? AND revoked=0 AND role='replica'")
                 .get(id),
             ));
         web.hasApprovers = () => Boolean(config.webApprovers?.some(allowed));
@@ -480,7 +492,7 @@ export async function start(home, options = {}) {
         : s.db
             .prepare("SELECT * FROM devices WHERE token_hash=? AND revoked=0")
             .get(digest(credential));
-      if (!device || (!admin && device.role !== "replica"))
+      if (!device || (!admin && !["replica", "player"].includes(device.role)))
         fail("Unauthorized", 401);
       if (!admin) requireLanAccess();
       if (!admin)
@@ -493,6 +505,8 @@ export async function start(home, options = {}) {
           );
       const url = new URL(req.url, "http://localhost");
       const route = url.pathname;
+      if (device?.role === "player" && !playerRoute(req.method, route))
+        fail("A player can only stream from the hub", 403);
       if (
         (engine.destroying || config.destroyPending || config.needsSetup) &&
         ![
@@ -574,7 +588,7 @@ export async function start(home, options = {}) {
         (config.webApprovers?.includes(id) &&
           Boolean(
             s.db
-              .prepare("SELECT id FROM devices WHERE id=? AND revoked=0")
+              .prepare("SELECT id FROM devices WHERE id=? AND revoked=0 AND role='replica'")
               .get(id),
           ));
       if (req.method === "GET" && route === "/v1/images") {
@@ -1411,7 +1425,9 @@ export async function start(home, options = {}) {
           if (
             typeof b.enabled !== "boolean" ||
             !s.db
-              .prepare("SELECT id FROM devices WHERE id=? AND revoked=0")
+              .prepare(
+                "SELECT id FROM devices WHERE id=? AND revoked=0 AND role='replica'",
+              )
               .get(b.id)
           )
             fail("Invalid device", 400);

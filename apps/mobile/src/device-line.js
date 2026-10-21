@@ -19,17 +19,23 @@ export function olderVersion(version, hubVersion) {
   return false;
 }
 
-const folderParts = (folders, size) =>
-  Number.isSafeInteger(folders) && Number.isSafeInteger(size)
-    ? [`${folders.toLocaleString("en")} ${folders === 1 ? "folder" : "folders"}`, bytes(size)]
-    : null;
+const folderCount = (folders) => `${folders.toLocaleString("en")} ${folders === 1 ? "folder" : "folders"}`;
 
-export function deviceSegments({ platform, version, hubVersion, folders, size, revoked = false }) {
-  const os = platformName(platform);
-  const totals = folderParts(folders, size);
+const folderParts = (folders, size, player = false) =>
+  player && Number.isSafeInteger(folders)
+    ? [folderCount(folders), "Streaming"]
+    : Number.isSafeInteger(folders) && Number.isSafeInteger(size)
+      ? [folderCount(folders), bytes(size)]
+      : null;
+
+export function deviceSegments({ platform, app, version, hubVersion, folders, size, revoked = false, player = false }) {
+  const os = (player && app) || platformName(platform);
+  const totals = folderParts(folders, size, player);
   return [
     os && { parts: [os] },
+    player && version && { parts: [`v${versionCore(version)}`], label: `v${version}`, version: true },
     !revoked &&
+      !player &&
       olderVersion(version, hubVersion) && {
       parts: [`v${version}`],
       warning: true,
@@ -39,13 +45,13 @@ export function deviceSegments({ platform, version, hubVersion, folders, size, r
   ].filter(Boolean);
 }
 
-export function deviceCells({ version, hubVersion, folders, size, revoked = false }) {
-  const older = !revoked && olderVersion(version, hubVersion);
+export function deviceCells({ version, hubVersion, folders, size, revoked = false, player = false }) {
+  const older = !revoked && !player && olderVersion(version, hubVersion);
   return {
     version: version
       ? { text: `v${versionCore(version)}`, older, label: older ? `v${version}, older than the hub’s v${hubVersion}` : `v${version}` }
       : null,
-    totals: folderParts(folders, size),
+    totals: folderParts(folders, size, player),
   };
 }
 

@@ -116,7 +116,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.84";
+const APP_VERSION = "0.7.85";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1248,6 +1248,7 @@ function renderCopies() {
   const known = (copiesRoster?.machines || []).filter(
     (m) =>
       m.machineId !== status.id &&
+      m.role !== "player" &&
       (m.folderIds?.includes(v.id) || m.albumFolderIds?.includes(v.id)),
   );
   if (v.selected)
@@ -1275,7 +1276,7 @@ function renderCopies() {
           ? '<p class="hint">No working copies reported.</p>'
           : "") +
     (copiesRoster?.machines.some(
-      (m) => !m.isHub && !m.revoked && !Array.isArray(m.folderIds),
+      (m) => !m.isHub && !m.revoked && m.role !== "player" && !Array.isArray(m.folderIds),
     )
       ? '<p class="hint">Some devices have not reported their folders yet.</p>'
       : "");
@@ -7022,8 +7023,8 @@ function presence({ seen = [], now, offline = false, self = false }) {
   const reference = Number.isFinite(now) ? now : Date.now();
   return { connected: !offline && reference - at < PRESENCE_WINDOW, at };
 }
-function deviceCells({ version, hubVersion, folders, size, revoked = false, seen = null }) {
-  const older = !revoked && olderVersion(version, hubVersion);
+function deviceCells({ version, hubVersion, folders, size, revoked = false, seen = null, player = false }) {
+  const older = !revoked && !player && olderVersion(version, hubVersion);
   const core = /^\d+\.\d+\.\d+/.exec(version || "")?.[0] || version;
   const versionCell = !version
     ? ""
@@ -7033,20 +7034,22 @@ function deviceCells({ version, hubVersion, folders, size, revoked = false, seen
         ? `<span>v${escape(version)}</span>`
         : `<span data-tooltip="v${escape(version)}" aria-label="v${escape(version)}">v${escape(core)}</span>`;
   const totals =
-    Number.isSafeInteger(folders) && Number.isSafeInteger(size)
-      ? `<span>${countLabel(folders, "folder")}</span><span class="device-size">${bytes(size)}</span>`
-      : "";
+    player && Number.isSafeInteger(folders)
+      ? `<span>${countLabel(folders, "folder")}</span><span class="device-size">Streaming</span>`
+      : Number.isSafeInteger(folders) && Number.isSafeInteger(size)
+        ? `<span>${countLabel(folders, "folder")}</span><span class="device-size">${bytes(size)}</span>`
+        : "";
   const seenCell = seen
     ? `<span class="device-seen-text"><span class="status-dot${seen.connected ? "" : " id"}" aria-hidden="true"></span>${seen.connected ? "Connected" : `Seen ${escape(date(seen.at))}`}</span>`
     : "";
   return `<div class="device-cells"><div class="device-cell device-version">${versionCell}</div><div class="device-cell device-folders">${totals}</div><div class="device-cell device-seen">${seenCell}</div></div>`;
 }
 function roleChip(role, backup = false) {
-  const label = role === "hub" ? "Hub" : !role || role === "replica" ? "Replica" : role;
+  const label = role === "hub" ? "Hub" : role === "player" ? "Player" : !role || role === "replica" ? "Replica" : role;
   return `<span class="role-set"><span class="tag${role === "hub" ? " hub" : ""}">${escape(label)}</span>${backup ? `<span class="tag full-backup">${icon("shield-check")}Full backup</span>` : ""}</span>`;
 }
 const deviceRow = ({ name, role, self = false, backup = false, platform = "", line, cells = "", end = "", tone = "", dashed = false }) =>
-  `<article class="device-row device-entry${dashed ? " discovered" : ""}"><div class="tile large${role === "hub" ? " hub" : ""}${tone ? ` ${tone}` : ""}">${icon(role === "hub" ? "server" : self ? managedGlyph() : /ios|android|iphone|ipad/i.test(platform) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${self ? '<span class="tag self">This device</span>' : ""}</div>${line}</div>${cells}<div class="row-end device-end">${end}${roleChip(role, backup)}</div></article>`;
+  `<article class="device-row device-entry${dashed ? " discovered" : ""}"><div class="tile large${role === "hub" ? " hub" : ""}${tone ? ` ${tone}` : ""}">${icon(role === "hub" ? "server" : role === "player" ? "tv" : self ? managedGlyph() : /ios|android|iphone|ipad/i.test(platform) ? "smartphone" : "monitor")}</div><div class="row-main"><div class="row-tags"><strong>${escape(name)}</strong>${self ? '<span class="tag self">This device</span>' : ""}</div>${line}</div>${cells}<div class="row-end device-end">${end}${roleChip(role, backup)}</div></article>`;
 let rosterReadAt = 0,
   rosterReadClock = 0,
   devicesWatch = 0;
@@ -7230,18 +7233,19 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         platform,
         dashed: !d.last_seen,
         tone: d.revoked ? "er" : !d.last_seen ? "wa" : "",
-        line: deviceLine({ platform }),
+        line: deviceLine(d.role === "player" && report?.app ? { extra: [report.app] } : { platform }),
         cells: deviceCells({
           version: report?.version,
           hubVersion,
           folders: report?.selectedFolders,
           size: report?.indexedBytes,
           revoked: !!d.revoked,
+          player: d.role === "player",
           seen: presence({ seen: [d.last_seen, report?.lastContact, report?.reportedAt], now: rosterNow(), offline: !!d.revoked }),
         }),
         end: d.revoked
           ? pill("Removed", "er", "unplug")
-          : `${d.last_seen ? "" : pill("Invitation only", "wa", "clock")}<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Remove device", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
+          : `${d.last_seen ? "" : pill("Invitation only", "wa", "clock")}<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${d.role === "player" ? "" : button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Remove device", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
       });
     }
     machineRows += records;
@@ -7259,13 +7263,14 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
               backup: !!m.backup?.enabled,
               platform: m.platform || "",
               tone: m.revoked ? "er" : "",
-              line: deviceLine({ platform: m.platform }),
+              line: deviceLine(m.role === "player" && m.app ? { extra: [m.app] } : { platform: m.platform }),
               cells: deviceCells({
                 version: m.version,
                 hubVersion,
                 folders: m.selectedFolders,
                 size: m.indexedBytes,
                 revoked: !!m.revoked,
+                player: m.role === "player",
                 seen: presence({
                   seen: [m.lastContact, m.reportedAt],
                   now: rosterNow(),

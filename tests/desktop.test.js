@@ -2522,6 +2522,33 @@ test("the hub's own Devices page draws its row like the others, keeps ⋯ before
   assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Linked|Backs up hub|Running|Offline|100\.84\.10\.2/);
 });
 
+test("a player draws its TV glyph, app, own version, the folders it streams and the Player chip, with Remove device as its only action", async (t) => {
+  const clock = Date.parse("2026-10-11T09:40:00.000Z");
+  const now = new Date(clock - 10000).toISOString();
+  const { named, segments, cells } = await devicesPage(t, {
+    status: () => ({
+      role: "hub",
+      name: "casa",
+      platform: "linux",
+      phase: "idle",
+      volumes: [{ id: "a", name: "a", selected: 1, bytes: 1024, files: 1 }],
+      devices: [{ id: "tv", name: "salon-tv", role: "player", last_seen: now, last_address: "192.168.1.40", backup_enabled: null, revoked: 0 }],
+    }),
+    machines: [
+      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.84", selectedFolders: 1, indexedBytes: 1024, reportedAt: now },
+      { credentialId: "tv", name: "salon-tv", role: "player", platform: "android", app: "Arca TV", version: "1.0.0", selectedFolders: 2, indexedBytes: 0, folderIds: ["a"] },
+    ],
+    ready: (text) => text.includes("Arca TV"),
+  });
+  const tv = named("salon-tv");
+  assert.equal(tv.querySelector(".tile [data-icon]").dataset.icon, "tv");
+  assert.deepEqual(segments(tv), ["Arca TV"], "the app it reports replaces the OS");
+  assert.deepEqual(cells(tv), ["v1.0.0", ["2 folders", "Streaming"], "Connected"]);
+  assert.equal(tv.querySelector(".device-older"), null, "a player's version is never compared with the hub's");
+  assert.equal(tv.querySelector(".role-set").textContent, "Player");
+  assert.deepEqual([...tv.querySelectorAll(".menu-items button")].map((b) => b.textContent.trim()), ["Remove device"]);
+});
+
 test("a LAN hub's own web page shows the address it is reached at, in host form", async (t) => {
   const GB = 1024 ** 3;
   const { named, segments } = await devicesPage(t, {

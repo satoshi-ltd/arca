@@ -46,6 +46,9 @@ _None._
 
 ### Device checks
 
+- **VERIFY-DEV-PLAYER** — The TV pairs as a Player on Casa
+  `verify · maintainer · normal`
+  accept: after a Casa redeploy and an arca TV build, the TV removed and paired again with the hub shows as arca TV, Player, with its version and its folders in Devices and still streams photos and music.
 - **VERIFY-ERASE-PRIVACY** — Erase privacy on installed desktop and mobile clients
   `verify · maintainer · high`
   accept: identify the candidate SHA and installed binaries; using disposable Arca folders, erase online and with the hub unreachable on desktop, Android and iOS. Check unsynced local files, recent searches/listening history, thumbnails, catalog state and a playing track; interrupted cleanup resumes on launch; on Android and iOS, Arca's scheduled and delivered notifications and its background-sync registration are gone, and tapping an old notification during or after the erase does nothing. Photos originals, exports, detached folders, hub files and other devices remain. Source tests cover database free pages/WAL, configuration temporaries, open logs and late writes/reads; they do not establish the installed clients' OS storage and player behavior.
@@ -247,6 +250,12 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **DOC-README-SLIM** — Keep README to orientation and entry commands
   `chore · agent · low`
   accept: README keeps only its one-line status banner; the dated or status passages (about 16, for example "September 10 checkout", "implemented locally", "prepared locally, not deployed") and feature narration that SPEC already owns become short descriptions or pointers into SPEC; the three orphan sections after Public website are folded in or removed, the documents list names the five documents, line 152's "No commit or push without explicit authorization" no longer contradicts AGENTS' loop, and Casa's LAN IP no longer appears in the public README.
+### Devices
+
+- **DEV-PLAYER-LEAVE** — A player can unlink itself from the hub
+  `feature · agent · low`
+  accept: `POST /v1/leave` joins the player allow-list so forgetting the hub on arca TV deletes its own credential instead of leaving a stale Player row; the TV calls it on disconnect; a test shows a player leaving and its row gone.
+
 ### Music
 
 - **MUSIC-CAR-SEARCH** — Search and voice requests in the car

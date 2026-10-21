@@ -1529,6 +1529,7 @@ export function MachineRow({
   presence = null,
   address = "",
   role = "Replica",
+  app = "",
   self,
   hub,
   backup,
@@ -1540,7 +1541,8 @@ export function MachineRow({
   const { s, c, wide: wideLayout, fontScale = 1 } = useDesign();
   const wide = wideLayout && foldRowFits(fontScale);
   const tone = machineTone(state);
-  const os = platformName(platform);
+  const player = role === "Player";
+  const os = (player && app) || platformName(platform);
   const identity = (
     <View style={[s.machineIdentity, s.machineIdentityWrap]}>
       <Text numberOfLines={1} style={[s.rowTitle, s.machineName]}>
@@ -1562,7 +1564,7 @@ export function MachineRow({
     >
       <Icon
         color={tone === "danger" ? c.danger : tone === "neutral" ? c.soft : hub ? c.onAccent : undefined}
-        name={hub ? "server" : /android|ios/i.test(platform) ? "phone" : "monitor"}
+        name={hub ? "server" : player ? "tv" : /android|ios/i.test(platform) ? "phone" : "monitor"}
       />
       {!wide && !!presence && <View style={[s.presenceBadge, !presence.connected && s.presenceOff]} />}
     </View>
@@ -1576,7 +1578,7 @@ export function MachineRow({
         role,
         self,
         backup,
-        segments: wide ? segments.filter((segment) => !segment.warning) : segments,
+        segments: wide ? segments.filter((segment) => !segment.warning && !segment.version) : segments,
         address,
         state,
         presence,

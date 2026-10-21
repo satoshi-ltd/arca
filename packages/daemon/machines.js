@@ -2,6 +2,17 @@ import os from "node:os";
 import { fail } from "./storage.js";
 import { release } from "./network.js";
 const VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:[-+][0-9A-Za-z.-]{1,40})?$/;
+const PLAYER_READS = new Set([
+  "/v1/catalog",
+  "/v1/gallery",
+  "/v1/gallery/preview",
+  "/v1/music/library",
+  "/v1/music/cover",
+]);
+export const playerRoute = (method, route) =>
+  method === "GET"
+    ? PLAYER_READS.has(route) || route.startsWith("/v1/blobs/")
+    : method === "POST" && route === "/v1/machine-report";
 export function machineReport(engine) {
   const status = engine.status(),
     volumes = status.volumes.filter((v) => v.selected);
@@ -47,6 +58,13 @@ export function acceptReport(store, device, body) {
   }
   if (typeof body.version === "string" && VERSION.test(body.version))
     clean.version = body.version;
+  if (
+    typeof body.app === "string" &&
+    body.app.trim() &&
+    body.app.length <= 40 &&
+    !/[\x00-\x1f]/.test(body.app)
+  )
+    clean.app = body.app.trim();
   if (
     body.lastSync !== null &&
     (!Number.isFinite(Date.parse(body.lastSync)) ||

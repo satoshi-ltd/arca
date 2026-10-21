@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.85 — 2026-10-21
+
+- A device that only streams, such as arca TV, can pair as a Player: Devices shows it with a TV glyph, its app and version, and the folders it plays, instead of an empty Replica.
+- A player's credential is read-only: it can browse and stream photos and music but cannot upload, delete, resolve conflicts or approve web sign-ins. A TV paired earlier must be removed and paired again to become a player.
+
+Needs: desktop build · native build · Casa redeploy
+
 ## 0.7.84 — 2026-10-21
 
 - On desktop and web, the ⋯ menu of the last device row is no longer cut off by its list, and a ⋯ menu near the bottom of the page now opens upward so every action stays visible.

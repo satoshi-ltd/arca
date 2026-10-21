@@ -403,6 +403,14 @@ body.kit {
 .kit-board-pair .m-device.m-tall {
   height: 780px;
 }
+.kit-board-pair .m-device.m-fold {
+  width: 760px;
+  max-width: 100%;
+  height: 640px;
+}
+.kit-board-pair .m-device.m-fold.m-fold-tall {
+  height: 840px;
+}
 .kit-board-pair .onboarding {
   min-height: 0;
   grid-template-columns: 168px minmax(0, 1fr);

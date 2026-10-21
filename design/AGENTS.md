@@ -26,7 +26,7 @@ Every page carries the same nav in the same order and marks only itself with `ar
 <article class="kit-board" data-board="ID">
 ```
 
-with, in this order: the ID (`<code>ID</code>`), the area, the title (`<h3>`), the why (`<strong>Why.</strong>`), a "Now" drawing of what exists (`<figcaption>Now</figcaption>`), a "Proposed" drawing (`<figcaption>Proposed</figcaption>`), both built from the kit's own classes, and what proves it done (`<strong>Accept</strong>`). A mobile board draws the phone in that pair and adds a second pair captioned `Fold · Now` and `Fold · Proposed` for the unfolded Fold; its area reads `Phone · Fold`. Board IDs are unique.
+with, in this order: the ID (`<code>ID</code>`), the area, the title (`<h3>`), the why (`<strong>Why.</strong>`), a "Now" drawing of what exists (`<figcaption>Now</figcaption>`), a "Proposed" drawing (`<figcaption>Proposed</figcaption>`), both built from the kit's own classes, and what proves it done (`<strong>Accept</strong>`). A mobile board draws the phone in that pair and adds a second pair captioned `Fold · Now` and `Fold · Proposed` for the unfolded Fold; its area reads `Phone · Fold`. Phone drawings sit side by side; desktop, web and Fold drawings stack Now above Proposed (`kit-board-pair kit-board-stack`) so each keeps its full width. Board IDs are unique.
 
 ## Lifecycle
 

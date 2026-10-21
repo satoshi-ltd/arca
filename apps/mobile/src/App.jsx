@@ -2905,6 +2905,7 @@ export default function App() {
                                       .filter(
                                         (m) =>
                                           !m.isHub &&
+                                          m.role !== "player" &&
                                           m.credentialId !== connection?.id &&
                                           (m.folderIds?.includes(folder.id) ||
                                             m.albumFolderIds?.includes(
@@ -3237,13 +3238,16 @@ export default function App() {
                                       divider
                                       name={m.name}
                                       platform={m.platform}
+                                      app={m.app}
                                       segments={deviceSegments({
                                         platform: m.platform,
+                                        app: m.app,
                                         version: m.version,
                                         hubVersion: machines.find((hub) => hub.isHub)?.version,
                                         folders: m.selectedFolders,
                                         size: m.indexedBytes,
                                         revoked: m.revoked,
+                                        player: m.role === "player",
                                       })}
                                       cells={deviceCells({
                                         version: m.version,
@@ -3251,9 +3255,10 @@ export default function App() {
                                         folders: m.selectedFolders,
                                         size: m.indexedBytes,
                                         revoked: m.revoked,
+                                        player: m.role === "player",
                                       })}
                                       presence={devicePresence.of(m)}
-                                      role={m.role || "Replica"}
+                                      role={m.role === "player" ? "Player" : m.role || "Replica"}
                                       backup={!!m.backup?.enabled}
                                       state={m.revoked ? "Removed" : ""}
                                     />
