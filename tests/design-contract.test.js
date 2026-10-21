@@ -428,6 +428,51 @@ test("only verified states get the green fill: a recoverable local copy reads ne
   assert.deepEqual([...read("tokens.css").matchAll(/--(toast-[\w-]+):/g)].map((m) => m[1]), ["toast-bg", "toast-fg"]);
 });
 
+test("an open ⋯ menu is never clipped by its list and opens upward when the room below runs out", async () => {
+  const read = (file) => fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");
+  const css = read("style.css");
+  const lists = css.match(/\n\.folder-list,\n\.device-list \{([^}]*)\}/)[1];
+  assert.doesNotMatch(lists, /overflow/, "device rows hold ⋯ menus, so the device list must not clip");
+  assert.match(css, /\n\.folder-list \{\n  overflow: hidden;\n\}/, "folder rows have no ⋯ menu and keep their exit motion inside the list");
+  assert.match(css, /\n\.device-list > \.device-row:last-child \{\n  border-bottom-left-radius: calc\(var\(--r-card\) - 1px\);/);
+  assert.match(css, /\.details-menu\.menu-up > \.menu-items \{\n  animation-name: menu-enter-up;\n  top: auto;\n  bottom: calc\(100% \+ var\(--space-1\)\);/);
+  const app = read("app.js");
+  const code = app.slice(app.indexOf("function menuRoom("), app.indexOf("new MutationObserver((records) => {\n  for (const { target } of records) if (target.matches(\".details-menu\")"));
+  const { JSDOM } = await import("jsdom");
+  const { window } = new JSDOM(`<div class="page"><details class="details-menu" open><summary></summary><div class="menu-items"></div></details></div>`, { runScripts: "outside-only" });
+  const menu = window.document.querySelector(".details-menu");
+  const page = window.document.querySelector(".page");
+  const panel = menu.querySelector(".menu-items");
+  window.getComputedStyle = (node) => ({ overflowY: node === page ? "auto" : "visible" });
+  page.getBoundingClientRect = () => ({ top: 0, bottom: 600 });
+  const place = (at, height) => {
+    menu.getBoundingClientRect = () => ({ top: at });
+    Object.defineProperty(panel, "offsetHeight", { configurable: true, get: () => height });
+    Object.defineProperty(panel, "offsetTop", { configurable: true, get: () => (menu.classList.contains("menu-up") ? -height - 4 : 36) });
+    panel.getBoundingClientRect = () => ({ top: -1000, bottom: -1000 });
+    window.eval(`const menuPanel = (menu) => menu.querySelector(":scope > .menu-items");${code};placeMenu(document.querySelector(".details-menu"))`);
+    return menu.classList.contains("menu-up");
+  };
+  window.innerHeight = 800;
+  assert.equal(place(500, 80), true, "a menu that would leave the scrolling page opens upward");
+  assert.equal(place(484, 80), false, "a menu that ends exactly at the bottom stays below, measured from layout and not the entry animation");
+  menu.classList.add("menu-up");
+  assert.equal(place(100, 80), false, "a menu with room below opens downward again");
+  assert.equal(place(300, 500), true, "a menu that fits neither side opens where less of it is cut");
+  assert.equal(place(60, 600), false);
+  const live = new JSDOM(`<div class="page"><details class="details-menu"><summary></summary><div class="menu-items"></div></details><dialog></dialog></div>`, { runScripts: "outside-only" }).window;
+  const observer = app.slice(app.indexOf("new MutationObserver((records) => {\n  for (const { target } of records) if (target.matches(\".details-menu\")"));
+  live.eval(`var placed = []; function placeMenu(menu) { placed.push(menu.tagName); }${observer.slice(0, observer.indexOf("});\n") + 4)}`);
+  live.document.querySelector("dialog").setAttribute("open", "");
+  live.document.querySelector("details").open = true;
+  await Promise.resolve();
+  assert.equal(live.eval("placed.join()"), "DETAILS", "opening a ⋯ menu places it within the same task; other open attributes are ignored");
+  live.document.querySelector("details").open = false;
+  await Promise.resolve();
+  assert.equal(live.eval("placed.join()"), "DETAILS", "closing does not place again");
+  assert.match(app, /new MutationObserver\(\(records\) => \{\n  for \(const \{ target \} of records\) if \(target\.matches\("\.details-menu"\) && target\.open\) placeMenu\(target\);\n\}\)\.observe\(document\.documentElement, \{ subtree: true, attributes: true, attributeFilter: \["open"\] \}\);/, "placement runs before the first frame of the open menu");
+});
+
 test("dialogs share one default width and one wide variant", () => {
   const read = (file) =>
     fs.readFileSync(new URL(`../apps/desktop/src/${file}`, import.meta.url), "utf8");

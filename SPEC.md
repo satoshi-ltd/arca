@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.7.83 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.7.84 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -738,7 +738,7 @@ Use existing tokens and shared components; keep controls stable while loading; p
 | Rhythm     | 4, 8, 12, 16, 20 and 24px spacing tokens. Sections get more separation than fields.                                                                                                                                                   |
 | Shape      | Tags 6px, controls 8px, cards 12px, dialogs 14px, pills fully rounded.                                                                                                                                                                |
 | Controls   | Desktop `--control-height: 32px`; small controls 32px with 16px icons. Primary for the main next step, secondary for supporting actions, text buttons for contextual navigation.                                                      |
-| Elevation  | Menus and dialogs use shadow tokens; ordinary cards use borders. Dialogs use the native top layer.                                                                                                                                    |
+| Elevation  | Menus and dialogs use shadow tokens; ordinary cards use borders. Dialogs use the native top layer. A ⋯ menu drops below its button and opens upward instead when its scrolling page has no room below (or wherever less of it would be cut); the device list never clips it.                                                                                                                                    |
 | Layout     | 200px desktop sidebar (`--sidebar-width`); fixed heading and independently scrolling content. Dialogs are `--dialog-width` (480px); only conflict comparison, the `.arcaignore` editor and Destroy use `--dialog-wide-width` (640px). |
 | Responsive | At 760px headers stack, details become one column and rows wrap; at 480px navigation is compact and dialog actions wrap. Long names and paths never push actions out of view.                                                         |
 | Brand      | One arch with its door on one module (see Brand below), three optical drawings, two lockups, one motion. Nothing is ever drawn inside the arch or the door.                                                                          |

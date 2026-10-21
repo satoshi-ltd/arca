@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.84 — 2026-10-21
+
+- On desktop and web, the ⋯ menu of the last device row is no longer cut off by its list, and a ⋯ menu near the bottom of the page now opens upward so every action stays visible.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.83 — 2026-10-21
 
 - On the phone, podcast episode rows give the title the full width: the length moves to the second line beside the date ("Sep 24, 2026 · 1 h 20 min"), and once an episode is started that line shows the time left instead. Up next on Now Playing follows the same layout; songs keep their length column.

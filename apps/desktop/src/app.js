@@ -116,7 +116,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.83";
+const APP_VERSION = "0.7.84";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -10400,6 +10400,28 @@ let menuReturn = null,
   menuByKeyboard = false;
 const menuPanel = (menu) => menu.querySelector(":scope > .menu-items");
 const menuItems = (panel) => [...panel.querySelectorAll("button:not(:disabled), [role^='menuitem']:not([aria-disabled='true'])")];
+function menuRoom(menu) {
+  for (let node = menu.parentElement; node; node = node.parentElement) {
+    if (!/auto|scroll|hidden|clip/.test(getComputedStyle(node).overflowY)) continue;
+    const box = node.getBoundingClientRect();
+    return { top: Math.max(box.top, 0), bottom: Math.min(box.bottom, window.innerHeight) };
+  }
+  return { top: 0, bottom: window.innerHeight };
+}
+function placeMenu(menu) {
+  const panel = menuPanel(menu);
+  menu.classList.remove("menu-up");
+  if (!panel || menu.matches(".sleep-menu")) return;
+  const room = menuRoom(menu);
+  const top = () => menu.getBoundingClientRect().top + panel.offsetTop;
+  const spill = top() + panel.offsetHeight - room.bottom;
+  if (spill <= 0) return;
+  menu.classList.add("menu-up");
+  if (room.top - top() > spill) menu.classList.remove("menu-up");
+}
+new MutationObserver((records) => {
+  for (const { target } of records) if (target.matches(".details-menu") && target.open) placeMenu(target);
+}).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["open"] });
 function closeMenu(menu, focusSummary = false) {
   if (!menu.open) return;
   if (focusSummary) menu.querySelector("summary")?.focus();

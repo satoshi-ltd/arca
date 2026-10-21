@@ -508,6 +508,8 @@ main {
   background: var(--surface);
   border: 1px solid var(--div);
   border-radius: var(--r-card);
+}
+.folder-list {
   overflow: hidden;
 }
 .folder-list > .folder-card,
@@ -515,6 +517,14 @@ main {
   margin: 0;
   border: 0;
   border-radius: 0;
+}
+.device-list > .device-row:first-child {
+  border-top-left-radius: calc(var(--r-card) - 1px);
+  border-top-right-radius: calc(var(--r-card) - 1px);
+}
+.device-list > .device-row:last-child {
+  border-bottom-left-radius: calc(var(--r-card) - 1px);
+  border-bottom-right-radius: calc(var(--r-card) - 1px);
 }
 .folder-list > .folder-card + .folder-card,
 .device-list > .device-row + .device-row {
@@ -2930,6 +2940,11 @@ summary {
 }
 .menu-items {
   animation: menu-enter var(--motion-fast) var(--motion-ease);
+}
+.details-menu.menu-up > .menu-items {
+  animation-name: menu-enter-up;
+  top: auto;
+  bottom: calc(100% + var(--space-1));
 }
 @keyframes menu-enter {
   from {
