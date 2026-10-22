@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **MOB-WALL-SHARP-TILES** — Photo wall tiles larger than 360 device px use the medium preview
-  `feature · agent · low`
-  accept: on the Fold's widest columns and other layouts where a wall tile exceeds 360 device px, the tile asks for the 720 px medium preview once it is on screen and idle, keeping the 360 px thumbnail as its first paint; scrolling performance and cache budgets are covered by tests.
 - **DESK-TRAY-UNUSED-COMMAND** — Remove the unused `main_window_open` Tauri command
   `chore · agent · low`
   accept: `main_window_open` (`apps/desktop/src-tauri/src/main.rs`, its function and its `invoke_handler` entry) is deleted now that the tray keeps Open Arca in its footer and never calls it; `tests/tray.test.js` keeps asserting the tray never invokes it, and a source test asserts `main.rs` no longer defines or registers it. Needs a desktop build to prove it compiles and the tray still opens the main window.

@@ -96,6 +96,15 @@ export function memoryCard(layout, pixelRatio) {
     size: previewSize(pixels),
   };
 }
+export function wallCard(layout, pixelRatio) {
+  const side = Math.ceil(layout.tile * pixelRatio);
+  return {
+    width: layout.tile,
+    height: layout.tile,
+    pixels: { width: side, height: side },
+    size: previewSize(side) === "thumb" ? "thumb" : "medium",
+  };
+}
 export const mediaAspect = (item) =>
   item?.width > 0 && item?.height > 0 ? item.width / item.height : null;
 export function hubCardSize(card, aspect) {

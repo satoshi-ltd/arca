@@ -4,7 +4,8 @@ import fs from "node:fs";
 import * as galleryDays from "../apps/mobile/src/gallery-days.js";
 import { galleryComplete, galleryCounts, mediaSummary, localMonths, memoryText, monthSections, shownMonths } from "../apps/mobile/src/gallery-days.js";
 import { monthLabel, railMonthLabel } from "../apps/mobile/src/gallery-timeline.js";
-import { GALLERY_HEADER, GALLERY_SECTION_GAP, galleryLayout, galleryWindow, hubCardSize, itemOffset, mediaAspect, memoryCard, stickyHeading } from "../apps/mobile/src/gallery-layout.js";
+import { GALLERY_HEADER, GALLERY_SECTION_GAP, galleryLayout, galleryWindow, hubCardSize, itemOffset, mediaAspect, memoryCard, stickyHeading, wallCard } from "../apps/mobile/src/gallery-layout.js";
+import { SHARP_BATCH, SHARP_IDLE_MS, SHARP_KEEP, keepRecent, sharpenTiles, tileSources } from "../apps/mobile/src/gallery-sharp.js";
 import { levelColumns } from "../apps/mobile/src/gallery-scale.js";
 import { mediaSummary as desktopSummary } from "../apps/desktop/src/gallery-timeline-layout.js";
 
@@ -277,4 +278,115 @@ test("an On this day card falls back to the hub's large preview when the 720 px 
   const fold = memoryCard(galleryLayout([], 1000, 6), 2.6);
   assert.deepEqual(fold.pixels, { width: 565, height: Math.ceil(fold.height * 2.6) });
   assert.equal(hubCardSize(fold, null), "large", "a Fold card of unknown aspect asks the hub for large");
+});
+
+test("a wall tile beyond 360 device px asks for the medium preview and never the large one", () => {
+  const phone = galleryLayout([], 380, 4);
+  assert.equal(wallCard(phone, 2).size, "thumb", "a 2x phone tile fits the 360 px thumbnail");
+  const fold = galleryLayout([], 1000, 6);
+  assert.ok(Math.ceil(fold.tile * 2.6) > 360);
+  assert.equal(wallCard(fold, 2.6).size, "medium", "a Fold column wider than 360 device px uses the medium preview");
+  const wide = galleryLayout([], 1000, 2);
+  assert.ok(Math.ceil(wide.tile * 2.6) > 720);
+  assert.equal(wallCard(wide, 2.6).size, "medium", "a huge tile still stops at the medium preview");
+  assert.equal(wallCard(fold, 2.6).pixels.width, Math.ceil(fold.tile * 2.6));
+});
+
+test("sharpening tiles waits for idle, renders one at a time, skips what it cannot sharpen and stops when scrolled away", async () => {
+  assert.ok(SHARP_IDLE_MS >= 250, "scrolling restarts the wait");
+  const items = [
+    { key: "a", kind: "image" },
+    { key: "v", kind: "video" },
+    { key: "u", kind: "image", upload: "pending" },
+    { key: "k", kind: "image" },
+    { key: "bad", kind: "image" },
+    ...Array.from({ length: SHARP_BATCH + 2 }, (_, i) => ({ key: `p${i}`, kind: "image" })),
+  ];
+  let running = 0;
+  let peak = 0;
+  const rendered = [];
+  const batches = [];
+  await sharpenTiles({
+    items,
+    known: { k: "file:///known.jpg" },
+    active: () => true,
+    render: async (item) => {
+      peak = Math.max(peak, ++running);
+      await Promise.resolve();
+      running--;
+      rendered.push(item.key);
+      if (item.key === "bad") throw new Error("decode failed");
+      return `file:///${item.key}.jpg`;
+    },
+    done: (found) => batches.push(Object.keys(found)),
+  });
+  assert.equal(peak, 1, "one render at a time keeps scrolling smooth");
+  assert.deepEqual(rendered.filter((key) => ["v", "u", "k"].includes(key)), [], "videos, uploads and tiles already sharp are skipped");
+  assert.ok(rendered.includes("bad") && batches.flat().includes("p0"), "a failed render never stops the others");
+  assert.ok(!batches.flat().includes("bad"));
+  assert.equal(batches[0].length, SHARP_BATCH, "tiles are published in batches, not one repaint each");
+  assert.equal(batches.flat().length, rendered.length - 1);
+
+  let live = true;
+  const seen = [];
+  await sharpenTiles({
+    items: [{ key: "x", kind: "image" }, { key: "y", kind: "image" }],
+    active: () => live,
+    render: async (item) => {
+      live = false;
+      seen.push(item.key);
+      return "file:///x.jpg";
+    },
+    done: () => assert.fail("nothing is published after the view moved on"),
+  });
+  assert.deepEqual(seen, ["x"]);
+});
+
+test("a tile that failed to sharpen is not retried on every idle, and the sharp map stays bounded", async () => {
+  const failed = new Set();
+  const calls = [];
+  const run = () =>
+    sharpenTiles({
+      items: [{ key: "bad", kind: "image" }, { key: "none", kind: "image" }, { key: "ok", kind: "image" }],
+      failed,
+      active: () => true,
+      render: async (item) => {
+        calls.push(item.key);
+        if (item.key === "bad") throw new Error("undecodable");
+        return item.key === "none" ? null : "file:///ok.jpg";
+      },
+      done: () => {},
+    });
+  await run();
+  await run();
+  assert.deepEqual(calls, ["bad", "none", "ok", "ok"], "a failure or an empty answer is remembered; a success is only skipped through `known`");
+  assert.deepEqual([...failed].sort(), ["bad", "none"]);
+  const big = Object.fromEntries(Array.from({ length: SHARP_KEEP + 25 }, (_, i) => [`k${i}`, `file:///${i}.jpg`]));
+  const kept = keepRecent(big);
+  assert.equal(Object.keys(kept).length, SHARP_KEEP);
+  assert.ok(!("k0" in kept) && `k${SHARP_KEEP + 24}` in kept, "the oldest entries go first");
+  assert.equal(keepRecent({ a: "x" }).a, "x");
+});
+
+test("a tile never lists the same image twice, so a failed thumbnail reaches the placeholder", () => {
+  assert.deepEqual(tileSources("file:///t.jpg", "file:///t.jpg"), ["file:///t.jpg"]);
+  assert.deepEqual(tileSources("file:///sharp.jpg", "file:///t.jpg"), ["file:///sharp.jpg", "file:///t.jpg"]);
+  assert.deepEqual(tileSources(null, "file:///t.jpg"), ["file:///t.jpg"]);
+  assert.deepEqual(tileSources(undefined, null), []);
+});
+
+test("the wall keeps the 360 px thumbnail as first paint and swaps in the sharp tile, never asking the hub for the large preview", () => {
+  const gallery = read("../apps/mobile/src/FolderGallery.jsx");
+  assert.match(gallery, /wallCard\(layout, PixelRatio\.get\(\)\), \[layout\.tile\]/);
+  assert.match(gallery, /if \(wall\.size === "thumb" \|\| density === "years" \|\| !layout\.tile\) return;/);
+  assert.match(gallery, /displayRef\.current\(item, wall\.size, true, wall\.size\)/);
+  assert.doesNotMatch(gallery, /hubCardSize\(wall/, "the wall never takes the memory-card route to the large preview");
+  assert.match(gallery, /uri=\{sharp\[sharpKey\(item\)\] \|\| thumb\(item\)\}\s+fallback=\{thumb\(item\)\}/);
+  assert.match(gallery, /const sources = tileSources\(uri, fallback\);/);
+  assert.match(gallery, /const source = sources\[failed\.key === sourceKey \? failed\.count : 0\];/);
+  assert.match(gallery, /failed: sharpFailed\.current,/);
+  assert.match(gallery, /\}, \[scope, volume, wall\.size\]\);/);
+  assert.match(gallery, /sharpFailed\.current = new Set\(\);\s+\}, \[attempt\]\);/, "a retry forgets the failures but keeps the sharp tiles on screen");
+  assert.match(gallery, /known: sharpRef\.current,/);
+  assert.match(gallery, /\}, \[visibleKey, wall\.size, wall\.pixels\.width, density, scope, volume, attempt\]\);/);
 });

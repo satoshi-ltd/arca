@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.89 — 2026-10-22
+
+- On the Fold and other wide layouts, photo wall tiles wider than 360 device pixels now sharpen to the 720 px preview once the wall stops moving, so large tiles stop looking soft.
+
+Needs: native build
+
 ## 0.7.88 — 2026-10-22
 
 - Desktop and server replicas that were already synced before the hub started sending each photo's added date now learn them once, with one metadata-only pass over the change feed that downloads nothing, so photos without a capture date stop showing "Date unknown" there. A replica paired with an older hub waits for it to be redeployed.

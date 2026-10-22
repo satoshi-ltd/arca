@@ -96,7 +96,9 @@ import {
   neededMonth,
   sectionAt,
   stickyHeading,
+  wallCard,
 } from "./gallery-layout";
+import { SHARP_IDLE_MS, keepRecent, sharpenTiles, tileSources } from "./gallery-sharp";
 import {
   localMonths,
   memoryText,
@@ -133,6 +135,7 @@ const StickyMonth = memo(function StickyMonth({ month, top, height, start, scrol
 const Tile = memo(function Tile({
   item,
   uri,
+  fallback,
   size,
   top,
   left,
@@ -164,8 +167,10 @@ const Tile = memo(function Tile({
       useNativeDriver: true,
     }).start();
   }, [found]);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [uri]);
+  const sources = tileSources(uri, fallback);
+  const sourceKey = sources.join("|");
+  const [failed, setFailed] = useState({ key: "", count: 0 });
+  const source = sources[failed.key === sourceKey ? failed.count : 0];
   return (
     <Pressable
       ref={frame}
@@ -205,13 +210,18 @@ const Tile = memo(function Tile({
       accessibilityState={{ selected: !!selected }}
     >
       <Animated.View style={[s.galleryImage, { transform: [{ scale: settle }] }]}>
-      {uri && !failed ? (
+      {source ? (
         <Image
-          source={{ uri }}
+          source={{ uri: source }}
           style={s.galleryImage}
           resizeMode="cover"
           resizeMethod="resize"
-          onError={() => setFailed(true)}
+          onError={() =>
+            setFailed((current) => ({
+              key: sourceKey,
+              count: (current.key === sourceKey ? current.count : 0) + 1,
+            }))
+          }
         />
       ) : (
         <MediaPlaceholder size={size} video={item.kind === "video"} />
@@ -742,6 +752,40 @@ export function FolderGallery({
       active = false;
     };
   }, [memories, card.size, card.width, !card.height, io, entryByPath]);
+  const wall = useMemo(() => wallCard(layout, PixelRatio.get()), [layout.tile]);
+  const sharpKey = (item) => `${item.path}:${item.signature}`;
+  const [sharp, setSharp] = useState({});
+  const sharpFailed = useRef(new Set());
+  const sharpRef = useRef(sharp);
+  sharpRef.current = sharp;
+  useEffect(() => {
+    sharpFailed.current = new Set();
+    sharpRef.current = {};
+    setSharp((current) => (Object.keys(current).length ? {} : current));
+  }, [scope, volume, wall.size]);
+  useEffect(() => {
+    sharpFailed.current = new Set();
+  }, [attempt]);
+  useEffect(() => {
+    if (wall.size === "thumb" || density === "years" || !layout.tile) return;
+    let active = true;
+    const timer = setTimeout(
+      () =>
+        sharpenTiles({
+          items: visibleItems.map((item) => ({ ...withNative(item), key: sharpKey(item) })),
+          known: sharpRef.current,
+          failed: sharpFailed.current,
+          render: (item) => displayRef.current(item, wall.size, true, wall.size),
+          active: () => active,
+          done: (found) => setSharp((current) => keepRecent({ ...current, ...found })),
+        }),
+      SHARP_IDLE_MS,
+    );
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [visibleKey, wall.size, wall.pixels.width, density, scope, volume, attempt]);
   const backgroundIo = useMemo(() => {
     const local = localPreviewIo(thumbnailFiles);
     return {
@@ -1606,7 +1650,8 @@ export function FolderGallery({
                 size={layout.tile}
                 top={cell.top}
                 left={cell.left}
-                uri={thumb(item)}
+                uri={sharp[sharpKey(item)] || thumb(item)}
+                fallback={thumb(item)}
                 selected={selection.some((photo) => photo.path === item.path)}
                 found={item.path === foundPath}
                 onPress={handlers.press}
