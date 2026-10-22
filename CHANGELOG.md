@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.88 — 2026-10-22
+
+- Desktop and server replicas that were already synced before the hub started sending each photo's added date now learn them once, with one metadata-only pass over the change feed that downloads nothing, so photos without a capture date stop showing "Date unknown" there. A replica paired with an older hub waits for it to be redeployed.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.87 — 2026-10-22
 
 - A player can unlink itself from the hub: forgetting the hub on arca TV will delete its own device row instead of leaving a stale Player entry. arca TV must call `POST /v1/leave` when it disconnects.

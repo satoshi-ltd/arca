@@ -980,6 +980,7 @@ export async function start(home, options = {}) {
           music: true,
           changes: true,
           retainedRevisions: true,
+          addedDates: true,
           changeEvents: true,
           conflictResolution: true,
           blobRanges: true,

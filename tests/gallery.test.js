@@ -1862,21 +1862,59 @@ test("a replica keeps the hub's per-path added date when the same bytes were acc
   }
 });
 
-test("a photo a replica already synced is not backfilled with the added date until it changes", async (t) => {
+test("a replica synced before the hub sent added dates learns them once, then walks the feed normally", async (t) => {
   const f = await fixture(t);
   await f.api("/v1/gallery/link", { volume: f.v.id });
   const { hash } = await f.photo("plain.jpg");
   const { replica, call } = await syncedReplica(f, "replica-synced");
   try {
-    replica.engine.store.db.prepare("DELETE FROM added_dates WHERE hash=?").run(hash);
+    const db = replica.engine.store.db;
+    const stamp = () => db.prepare("SELECT dates FROM sync_state WHERE volume=?").get(f.v.id).dates;
+    assert.equal(stamp(), 1, "a replica that walked the feed with added dates is stamped");
+    db.prepare("DELETE FROM added_dates WHERE hash=?").run(hash);
+    db.prepare("UPDATE sync_state SET dates=0 WHERE volume=?").run(f.v.id);
     await f.photo("other.jpg", undefined, "blue");
     await replica.engine.cycle({ incremental: true });
     await replica.engine.gallery.background;
     const item = (await call(f.route)).items.find((row) => row.path === "plain.jpg");
-    assert.equal(item.date, null);
-    assert.equal(item.dateSource, null);
-    const other = (await call(f.route)).items.find((row) => row.path === "other.jpg");
-    assert.equal(other.dateSource, "date added");
+    assert.equal(item.dateSource, "date added");
+    assert.ok(item.date);
+    assert.equal(stamp(), 1);
+    db.prepare("DELETE FROM added_dates WHERE hash=?").run(hash);
+    await f.photo("third.jpg", undefined, "green");
+    await replica.engine.cycle({ incremental: true });
+    await replica.engine.gallery.background;
+    const again = (await call(f.route)).items.find((row) => row.path === "plain.jpg");
+    assert.equal(again.dateSource, null, "the backfill ran once and is not repeated");
+  } finally {
+    await replica.close();
+  }
+});
+
+test("a replica paired with a hub that does not announce added dates never re-walks the feed", async (t) => {
+  const f = await fixture(t);
+  await f.api("/v1/gallery/link", { volume: f.v.id });
+  await f.photo("plain.jpg");
+  const { replica } = await syncedReplica(f, "replica-old-hub");
+  try {
+    const db = replica.engine.store.db;
+    const request = replica.engine.json.bind(replica.engine);
+    const walked = [];
+    replica.engine.json = async (route, ...args) => {
+      if (route.startsWith("/v1/changes") || route.startsWith("/v1/snapshot")) walked.push(route);
+      const result = await request(route, ...args);
+      return route === "/v1/catalog" ? { ...result, addedDates: undefined } : result;
+    };
+    replica.engine.metadata = replica.engine.json;
+    db.prepare("UPDATE sync_state SET dates=0 WHERE volume=?").run(f.v.id);
+    const before = db.prepare("SELECT cursor FROM sync_state WHERE volume=?").get(f.v.id).cursor;
+    assert.ok(before > 0);
+    await f.photo("other.jpg", undefined, "blue");
+    await replica.engine.cycle({ incremental: true });
+    const state = db.prepare("SELECT dates,cursor FROM sync_state WHERE volume=?").get(f.v.id);
+    assert.equal(state.dates, 0, "no stamp without the hub's announcement");
+    assert.ok(state.cursor > before, "the cursor kept advancing");
+    assert.ok(walked.length > 0 && walked.every((route) => !route.includes("after=0")), "no walk restarted from the beginning");
   } finally {
     await replica.close();
   }

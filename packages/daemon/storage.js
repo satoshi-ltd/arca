@@ -337,6 +337,15 @@ export class Store {
         .some((column) => column.name === "modified")
     )
       this.db.exec("ALTER TABLE gallery_metadata ADD COLUMN modified TEXT");
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(sync_state)")
+        .all()
+        .some((column) => column.name === "dates")
+    )
+      this.db.exec(
+        "ALTER TABLE sync_state ADD COLUMN dates INTEGER NOT NULL DEFAULT 0",
+      );
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS added_dates(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,added TEXT NOT NULL,PRIMARY KEY(volume,path))",
     );

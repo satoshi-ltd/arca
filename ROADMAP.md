@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **REPLICA-ADDED-BACKFILL** — Replicas already synced learn each photo's added date
-  `feature · agent · low`
-  accept: one-time re-walk of the change feed on a replica when the hub starts sending `added` (for example reset the stored cursor once on a hub-version change), skipping downloads when `entryKey` matches; a test shows an already-synced undated photo gaining the hub's date.
 - **MOB-WALL-SHARP-TILES** — Photo wall tiles larger than 360 device px use the medium preview
   `feature · agent · low`
   accept: on the Fold's widest columns and other layouts where a wall tile exceeds 360 device px, the tile asks for the 720 px medium preview once it is on screen and idle, keeping the 360 px thumbnail as its first paint; scrolling performance and cache budgets are covered by tests.

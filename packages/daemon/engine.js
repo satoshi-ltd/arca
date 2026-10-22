@@ -37,7 +37,7 @@ import {
   applyFolderRetention,
   releaseReplicaObjects,
 } from "./maintenance.js";
-import { SyncWork, covers } from "./sync-work.js";
+import { ADDED_DATES_FEED, SyncWork, covers } from "./sync-work.js";
 import { Scanner } from "./scanner.js";
 import { moveToTrash } from "./trash.js";
 import fs from "node:fs";
@@ -1006,6 +1006,7 @@ export class Engine {
       } else if (this.config.hub) {
         const catalog = await this.metadata("/v1/catalog");
         this.hubListsRetained = catalog.retainedRevisions === true;
+        this.hubSendsAdded = catalog.addedDates === true;
         this.hubUnavailable = false;
         this.hubVerified = hubIdentity(this.config.hub);
         this.phase = "syncing";
@@ -1103,6 +1104,13 @@ export class Engine {
             const policy = this.policyKey(v);
             if (this.work.state(v.id).policy !== policy) {
               s.forgetExcluded(v.id);
+              this.work.mark(v.id);
+              this.work.cursor(v.id, 0);
+            }
+            const backfillDates =
+              this.hubSendsAdded === true &&
+              this.work.state(v.id).dates < ADDED_DATES_FEED;
+            if (backfillDates) {
               this.work.mark(v.id);
               this.work.cursor(v.id, 0);
             }
@@ -1461,6 +1469,8 @@ export class Engine {
             }
             if (!skipped && (useChanges ? through : snapshotThrough) !== undefined)
               this.work.cursor(v.id, useChanges ? through : snapshotThrough);
+            if (backfillDates && !skipped)
+              this.work.dates(v.id, ADDED_DATES_FEED);
             this.work.complete(v, plan);
             if (plan.acknowledge) s.clearLocal(v.id, plan.paths);
             for (const name of blocked.values()) this.work.mark(v.id, name);

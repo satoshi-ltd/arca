@@ -15,6 +15,7 @@ export function covers(paths, name) {
     })
   );
 }
+export const ADDED_DATES_FEED = 1;
 export class SyncWork {
   constructor(store) {
     this.store = store;
@@ -54,7 +55,7 @@ export class SyncWork {
     return (
       this.store.db
         .prepare("SELECT * FROM sync_state WHERE volume=?")
-        .get(volume) || { cursor: 0, full_at: 0, policy: null }
+        .get(volume) || { cursor: 0, full_at: 0, policy: null, dates: 0 }
     );
   }
   plan(v, incremental = false, paths) {
@@ -102,6 +103,13 @@ export class SyncWork {
         "INSERT INTO sync_state(volume,cursor) VALUES(?,?) ON CONFLICT(volume) DO UPDATE SET cursor=excluded.cursor",
       )
       .run(volume, cursor);
+  }
+  dates(volume, dates) {
+    this.store.db
+      .prepare(
+        "INSERT INTO sync_state(volume,dates) VALUES(?,?) ON CONFLICT(volume) DO UPDATE SET dates=excluded.dates",
+      )
+      .run(volume, dates);
   }
   policy(volume, policy) {
     this.store.db
