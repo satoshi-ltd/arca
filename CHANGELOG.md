@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.92 — 2026-10-22
+
+- In Devices on desktop, an outdated device's up-arrow now sits to the left of its version, so every version number lines up in the same column.
+- The website's hero window now draws the real app (Folders, a photos row, a project syncing) and its floating phone card no longer covers the last row on a phone.
+
+Needs: desktop build
+
 ## 0.7.91 — 2026-10-22
 
 - Videos streamed to arca TV and other players start more smoothly: the hub now answers suffix ranges (`bytes=-N`) that players use to read the index of phone-recorded MP4s, and reads files in larger chunks.

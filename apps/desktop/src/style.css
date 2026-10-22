@@ -958,9 +958,12 @@ main {
   gap: var(--space-1);
 }
 .device-older {
+  position: relative;
   color: var(--waFg);
 }
 .device-older svg {
+  position: absolute;
+  right: 100%;
   width: var(--pill-icon);
   height: var(--pill-icon);
 }

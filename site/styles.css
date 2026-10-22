@@ -319,8 +319,8 @@ small {
   overflow: hidden;
 }
 .window-bar {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   padding: 12px 18px;
   background: var(--bar);
   font-size: 11px;
@@ -343,40 +343,41 @@ small {
   font-size: 22px;
   letter-spacing: -0.6px;
 }
-.preview-heading small {
-  font-size: 10px;
-}
-.folder-symbol {
-  position: relative;
-  display: inline-block;
-  border: 1.8px solid var(--green);
-  border-radius: 3px;
-  width: 27px;
-  height: 20px;
+.icon {
+  width: 1em;
+  height: 1em;
   flex-shrink: 0;
 }
-.folder-symbol:before {
-  content: "";
-  position: absolute;
-  top: -6px;
-  left: -1.8px;
-  border: 1.8px solid var(--green);
-  border-bottom: 0;
-  width: 11px;
-  height: 5px;
-  border-radius: 3px 3px 0 0;
-  background: var(--surface);
-}
-.folder-symbol.small {
+.file-row > .icon {
   width: 18px;
-  height: 14px;
+  height: 18px;
+  color: var(--green);
 }
-.folder-symbol.small:before {
-  width: 7px;
-  height: 4px;
-  top: -5px;
+.status .icon {
+  width: 11px;
+  height: 11px;
+}
+.check .icon {
+  width: 15px;
+  height: 15px;
+}
+.busy-grid {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--green);
+}
+.busy-grid i {
+  background: currentColor;
+  border-radius: 50%;
 }
 .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 9px;
   color: var(--green);
   background: var(--tint);
@@ -385,15 +386,6 @@ small {
   margin-left: auto;
   white-space: nowrap;
 }
-.breadcrumb {
-  font-size: 11px;
-  color: var(--muted);
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-.breadcrumb span {
-  padding: 0 10px;
-}
 .file-row {
   display: flex;
   align-items: center;
@@ -401,6 +393,9 @@ small {
   padding: 19px 0;
   border-bottom: 1px solid var(--line);
   font-size: 12px;
+}
+.file-row > span {
+  white-space: nowrap;
 }
 .file-row strong {
   font-weight: 500;
@@ -414,18 +409,8 @@ small {
   font-weight: 400;
   color: var(--muted);
 }
-.preview-footer {
-  font-size: 10px;
-  color: var(--muted);
-  padding-top: 18px;
-}
-.preview-footer .dot {
-  width: 5px;
-  height: 5px;
-  margin-right: 6px;
-}
 .phone-note {
-  bottom: 70px;
+  bottom: 30px;
   right: 12px;
   transform: rotate(4deg);
 }
@@ -774,7 +759,7 @@ footer .eyebrow {
     padding: 22px;
   }
   .status {
-    display: block;
+    display: inline-flex;
   }
   .section {
     padding-block: 60px;
@@ -1046,6 +1031,15 @@ footer .eyebrow {
 }
 /* Slow, offset floating rhythms keep the device illustrations alive. */
 @media (prefers-reduced-motion: no-preference) {
+  .busy-grid i {
+    animation: busy-dot 1.4s ease-in-out infinite;
+  }
+  .busy-grid i:nth-child(2n) {
+    animation-delay: -0.5s;
+  }
+  .busy-grid i:nth-child(3n) {
+    animation-delay: -0.9s;
+  }
   .product-scene .device-note {
     animation: hub-float 7s ease-in-out infinite;
   }
@@ -1073,6 +1067,15 @@ footer .eyebrow {
   }
   .network-orbit-outer {
     animation-delay: -4.5s;
+  }
+}
+@keyframes busy-dot {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
   }
 }
 @keyframes hub-float {

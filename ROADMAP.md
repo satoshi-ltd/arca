@@ -26,9 +26,9 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SITE-HERO-TRUE-UI** — The site hero draws the real app and covers no text on a phone
-  `chore · agent · low`
-  accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), at 390 px its floating "Phone & tablet" card covers no text, and a site test lists the elements.
+- **DESK-SEEN-HUMAN** — Devices says when a device was last seen the way people say it
+  `ui · agent · normal`
+  accept: in desktop Devices an offline device seen today reads "Seen at 19:18", yesterday "Seen yesterday at 14:53", any earlier day "Seen Oct 20 at 14:53" (the year only when it is not the current one); a test covers today, yesterday, an older day and a day across midnight in the local time zone; the Devices board in `design/` shows the three forms.
 - **DESIGN-COVERAGE** — Draw the shipped Daemon stopped desktop page
   `chore · agent · low`
   accept: `design/desktop.html` draws the Daemon stopped page as the app renders it; the design tests keep passing and no board is added.
