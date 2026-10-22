@@ -12,7 +12,7 @@ const PLAYER_READS = new Set([
 export const playerRoute = (method, route) =>
   method === "GET"
     ? PLAYER_READS.has(route) || route.startsWith("/v1/blobs/")
-    : method === "POST" && route === "/v1/machine-report";
+    : method === "POST" && (route === "/v1/machine-report" || route === "/v1/leave");
 export function machineReport(engine) {
   const status = engine.status(),
     volumes = status.volumes.filter((v) => v.selected);

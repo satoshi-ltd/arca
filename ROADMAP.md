@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DEV-PLAYER-LEAVE** — A player can unlink itself from the hub
-  `feature · agent · low`
-  accept: `POST /v1/leave` joins the player allow-list so forgetting the hub on arca TV deletes its own credential instead of leaving a stale Player row; the TV calls it on disconnect; a test shows a player leaving and its row gone.
 - **REPLICA-ADDED-BACKFILL** — Replicas already synced learn each photo's added date
   `feature · agent · low`
   accept: one-time re-walk of the change feed on a replica when the hub starts sending `added` (for example reset the stored cursor once on a hub-version change), skipping downloads when `entryKey` matches; a test shows an already-synced undated photo gaining the hub's date.

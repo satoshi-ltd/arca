@@ -113,10 +113,25 @@ test("a player streams a blob with a range, as arca TV plays audio", async (t) =
     assert.notEqual((await call(route, { method: "GET", token: player.token })).status, 403, route);
 });
 
-test("the player allow-list holds only reads and its own report", () => {
+test("a player leaves the hub with its own credential and its row is gone", async (t) => {
+  const { d, call, pair } = await hub(t);
+  const keep = await (await pair({ kind: "player", name: "bedroom-tv" })).json();
+  const leaving = await (await pair({ kind: "player", name: "salon-tv" })).json();
+  const count = (id) => d.engine.store.db.prepare("SELECT count(*) AS n FROM devices WHERE id=?").get(id).n;
+  assert.equal(count(leaving.id), 1);
+  const left = await call("/v1/leave", { body: { id: keep.id }, token: leaving.token });
+  assert.equal(left.status, 200);
+  assert.equal(count(leaving.id), 0, "it deleted its own credential");
+  assert.equal(count(keep.id), 1, "a body naming another device changes nothing");
+  assert.equal((await call("/v1/catalog", { method: "GET", token: leaving.token })).status, 401, "the credential no longer works");
+});
+
+test("the player allow-list holds only reads, its own report and leaving", () => {
   for (const route of ["/v1/catalog", "/v1/gallery", "/v1/gallery/preview", "/v1/music/library", "/v1/music/cover", "/v1/blobs/abc"])
     assert.equal(playerRoute("GET", route), true, route);
   assert.equal(playerRoute("POST", "/v1/machine-report"), true);
+  assert.equal(playerRoute("POST", "/v1/leave"), true);
+  assert.equal(playerRoute("GET", "/v1/leave"), false);
   for (const [method, route] of [["GET", "/v1/search"], ["GET", "/v1/gallery/info"], ["POST", "/v1/catalog"], ["PUT", "/v1/blobs/abc"], ["GET", "/v1/machines"], ["GET", "/v1/history"], ["DELETE", "/v1/blobs/abc"], ["GET", "/v1/machine-report"]])
     assert.equal(playerRoute(method, route), false, `${method} ${route}`);
 });

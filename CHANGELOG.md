@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.87 — 2026-10-22
+
+- A player can unlink itself from the hub: forgetting the hub on arca TV will delete its own device row instead of leaving a stale Player entry. arca TV must call `POST /v1/leave` when it disconnects.
+
+Needs: Casa redeploy
+
 ## 0.7.86 — 2026-10-22
 
 - On iPhone, cancelling a request while it is still being set up now stops it cleanly instead of risking a crash from a task created on a cancelled session.
