@@ -164,26 +164,6 @@ test("missing assets never get guessed download links, and stores and the APK ap
   assert.match(apk, /<span class="eyebrow">Android<\/span>/);
   assert.match(render(template, { ...release, assets: [...release.assets, asset("android.apk")] }, { playStore: "https://play.google.com/store/apps" }), /Outside the store/);
 });
-test("the hero window draws only elements the desktop app has and its phone card covers no text", async () => {
-  const hero = template.slice(template.indexOf('class="preview-window"'), template.indexOf('class="scene-caption"'));
-  const desktop = await readFile(new URL("../design/desktop.html", import.meta.url), "utf8");
-  const text = (hero.match(/>([^<>]+)</g) || []).map((chunk) => chunk.slice(1, -1).trim()).filter((chunk) => chunk && !/^[●›]/.test(chunk) && chunk !== "arca");
-  assert.deepEqual(text.slice(0, 2), ["Folders", "Up to date"]);
-  for (const label of ["Folders", "Up to date", "documents", "photos", "projects"]) assert.ok(desktop.includes(label), `${label} exists in the desktop design`);
-  assert.doesNotMatch(hero, /All the things worth keeping|Complete folders on your laptop|✓|↗|breadcrumb|Everyday/);
-  assert.equal((hero.match(/<svg class="icon"/g) || []).length, 4, "the check, folder and gallery icons are inline Lucide SVGs");
-  assert.match(hero, /M18 22H4a2 2 0 0 1-2-2V6/);
-  assert.match(hero, /M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7\.9/);
-  assert.match(hero, /class="file-row"[\s\S]*?<strong>photos<\/strong>/);
-  assert.equal((hero.match(/<span class="busy-grid"[^>]*>(<i><\/i>){9}<\/span\s*>/g) || []).length, 1, "one row syncs with nine dots");
-  assert.doesNotMatch(template.slice(template.indexOf('class="phone-note"'), template.indexOf('class="scene-caption"')), /✓/);
-  const rule = (selector) => [...css.matchAll(new RegExp(`\\n${selector.replace(/[.]/g, "\\.")} \\{([^}]*)\\}`, "g"))].map((m) => m[1]).join("\n");
-  const scene = Number(rule(".product-scene").match(/padding: \d+px 0 (\d+)px/)[1]);
-  const phoneBottom = Number(rule(".phone-note").match(/bottom: (\d+)px/)[1]);
-  assert.ok(phoneBottom + 70 + 12 <= scene, "the floating card sits below the window, even at 390 px");
-  assert.doesNotMatch(css.slice(css.indexOf("@media (max-width: 720px)")), /\.phone-note \{[^}]*bottom/);
-});
-
 test("the page says it is free and names its license without claiming to be open source", async () => {
   const html = render(template, release);
   assert.match(html, /Free, on purpose/);
@@ -209,6 +189,7 @@ test("the installation note comes before the downloads and the page states what 
 });
 test("the page presents music libraries with the iPhone and Android Auto caveats", () => {
   const html = render(template, release).replace(/\s+/g, " ");
+  assert.match(html, /<strong>Adventures<\/strong><span>16 files<\/span><b>›<\/b> <\/div> <div class="file-row"> <span class="folder-symbol small"><\/span ><strong>Music<\/strong><span>240 files<\/span>/);
   assert.match(html, /<h3>Turn a folder into a music library\.<\/h3>/);
   assert.match(html, /<span>06<\/span> <div> <h3>Check how long history is kept\./);
   assert.match(html, /upload photo albums to your hub and play your music library/);

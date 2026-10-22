@@ -2,7 +2,7 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.7.94 · Functional, not release-qualified.**
+**v0.7.95 · Functional, not release-qualified.**
 
 ## How it works
 
@@ -72,7 +72,7 @@ Open `http://localhost:17831` and follow the wizard: this machine, server access
 
 ## Release
 
-The **publish** workflow tests on macOS, Windows and Linux; a new version on `main` builds the desktop installers and Docker images and publishes a GitHub prerelease and Docker Hub tags.Registry, signing and pipeline details: [release pipelines](SPEC.md#release-pipelines). What remains before distribution is in [ROADMAP.md](ROADMAP.md).
+The **publish** workflow tests on macOS, Windows and Linux; a new version on `main` builds the desktop installers and Docker images and publishes a GitHub prerelease and Docker Hub tags. Registry, signing and pipeline details: [release pipelines](SPEC.md#release-pipelines). What remains before distribution is in [ROADMAP.md](ROADMAP.md).
 
 ## Public website
 

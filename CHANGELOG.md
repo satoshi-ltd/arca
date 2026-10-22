@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.95 — 2026-10-22
+
+- The website's hero is back to the design it had before 0.7.92, which broke the page.
+
 ## 0.7.94 — 2026-10-22
 
 - The README is now a short orientation with the install, run and development commands; status, feature narration and operations point into SPEC, and it no longer lists Casa's address.
