@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.86 — 2026-10-22
+
+- On iPhone, cancelling a request while it is still being set up now stops it cleanly instead of risking a crash from a task created on a cancelled session.
+
+Needs: native build
+
 ## 0.7.85 — 2026-10-21
 
 - A device that only streams, such as arca TV, can pair as a Player: Devices shows it with a TV glyph, its app and version, and the folders it plays, instead of an empty Replica.

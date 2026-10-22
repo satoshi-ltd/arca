@@ -5723,6 +5723,22 @@ test("importing stops with a clear error when every candidate name is taken, and
   assert.equal(fs.existsSync(path.join(path.dirname(work("full.txt")), ".arca-copy-left-behind")), false, "an orphaned staging file is removed before the next import");
 });
 
+test("iOS cancelling a request during session setup throws a cancellation instead of creating a task on an invalidated session", () => {
+  const swift = fs.readFileSync(new URL("../apps/mobile/modules/arca-network/ios/ArcaNetworkModule.swift", import.meta.url), "utf8");
+  const live = swift.slice(swift.indexOf("private func liveRequestSession"), swift.indexOf("private func cancelRequestSession"));
+  assert.match(live, /requestLock\.lock\(\); defer \{ requestLock\.unlock\(\) \}/, "the flag is read under the lock");
+  assert.ok(live.indexOf("cancelledRequests.contains(id)") < live.indexOf("requests[id]"), "the flag is checked before the session is handed out");
+  assert.match(live, /throw URLError\(\.cancelled\)/);
+  const cancel = swift.slice(swift.indexOf("private func cancelRequestSession"), swift.indexOf("private func endRequest"));
+  assert.ok(cancel.indexOf("cancelledRequests.insert(id)") < cancel.indexOf("requestLock.unlock()"), "the flag is set under the lock");
+  assert.ok(cancel.indexOf("requestLock.unlock()") < cancel.indexOf("session?.invalidateAndCancel()"), "the session is invalidated after the lock is released");
+  assert.match(swift, /Function\("cancelRequest"\) \{ \(id: String\) in self\.cancelRequestSession\(id\) \}/);
+  const request = swift.slice(swift.indexOf('AsyncFunction("request")'), swift.indexOf('AsyncFunction("exportDirectory")'));
+  assert.match(request, /let session = try self\.liveRequestSession\(id\)\n\s+let \(data, response\) = try await session\.data\(for: request/, "the check sits right before the task is created");
+  const end = swift.slice(swift.indexOf("private func endRequest"), swift.indexOf("private var documentController"));
+  assert.match(end, /cancelledRequests\.remove\(id\)/, "a finished request leaves no flag behind");
+});
+
 test("iOS replaceFile reports every failed flush and a pre-rename failure never reaches the destination", () => {
   const swift = fs.readFileSync(new URL("../apps/mobile/modules/arca-network/ios/ArcaNetworkModule.swift", import.meta.url), "utf8");
   const start = swift.indexOf('Function("replaceFile")');

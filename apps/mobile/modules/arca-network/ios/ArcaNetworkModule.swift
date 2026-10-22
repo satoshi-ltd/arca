@@ -6,6 +6,7 @@ import Darwin
 public class ArcaNetworkModule: Module {
   private let requestLock = NSLock()
   private var requests: [String: URLSession] = [:]
+  private var cancelledRequests = Set<String>()
   private func privateFile(_ value: String) throws -> URL {
     guard let url = URL(string: value), url.isFileURL else { throw NetworkUnavailable() }
     let target = url.resolvingSymlinksInPath()
@@ -15,13 +16,23 @@ public class ArcaNetworkModule: Module {
     guard roots.contains(where: { target.path.hasPrefix($0 + "/") }) else { throw NetworkUnavailable() }
     return target
   }
-  private func requestSession(_ id: String) -> URLSession? {
+  private func liveRequestSession(_ id: String) throws -> URLSession {
     requestLock.lock(); defer { requestLock.unlock() }
-    return requests[id]
+    guard !cancelledRequests.contains(id) else { throw URLError(.cancelled) }
+    guard let session = requests[id] else { throw NetworkUnavailable() }
+    return session
+  }
+  private func cancelRequestSession(_ id: String) {
+    requestLock.lock()
+    let session = requests[id]
+    if session != nil { cancelledRequests.insert(id) }
+    requestLock.unlock()
+    session?.invalidateAndCancel()
   }
   private func endRequest(_ id: String) {
     requestLock.lock()
     let session = requests.removeValue(forKey: id)
+    cancelledRequests.remove(id)
     requestLock.unlock()
     session?.invalidateAndCancel()
   }
@@ -66,7 +77,7 @@ public class ArcaNetworkModule: Module {
       self.requests[id] = session
       self.requestLock.unlock()
     }
-    Function("cancelRequest") { (id: String) in self.requestSession(id)?.invalidateAndCancel() }
+    Function("cancelRequest") { (id: String) in self.cancelRequestSession(id) }
     AsyncFunction("request") { (address: String, method: String, headers: [String: String], body: String?, id: String, transfer: [String: String]) async throws -> [String: Any] in
       defer { self.endRequest(id) }
       guard let url = URL(string: address), ["http", "https"].contains(url.scheme ?? ""), url.user == nil, url.password == nil else { throw NetworkUnavailable() }
@@ -88,7 +99,7 @@ public class ArcaNetworkModule: Module {
         guard bytes.count == length else { throw NetworkUnavailable() }
         request.httpBody = bytes
       }
-      guard let session = self.requestSession(id) else { throw NetworkUnavailable() }
+      let session = try self.liveRequestSession(id)
       let (data, response) = try await session.data(for: request, delegate: NoRedirect())
       guard let http = response as? HTTPURLResponse, data.count <= 8 * 1024 * 1024 else { throw NetworkUnavailable() }
       var fields = [String: String]()

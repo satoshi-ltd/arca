@@ -26,7 +26,27 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **DEV-PLAYER-LEAVE** — A player can unlink itself from the hub
+  `feature · agent · low`
+  accept: `POST /v1/leave` joins the player allow-list so forgetting the hub on arca TV deletes its own credential instead of leaving a stale Player row; the TV calls it on disconnect; a test shows a player leaving and its row gone.
+- **REPLICA-ADDED-BACKFILL** — Replicas already synced learn each photo's added date
+  `feature · agent · low`
+  accept: one-time re-walk of the change feed on a replica when the hub starts sending `added` (for example reset the stored cursor once on a hub-version change), skipping downloads when `entryKey` matches; a test shows an already-synced undated photo gaining the hub's date.
+- **MOB-WALL-SHARP-TILES** — Photo wall tiles larger than 360 device px use the medium preview
+  `feature · agent · low`
+  accept: on the Fold's widest columns and other layouts where a wall tile exceeds 360 device px, the tile asks for the 720 px medium preview once it is on screen and idle, keeping the 360 px thumbnail as its first paint; scrolling performance and cache budgets are covered by tests.
+- **DESK-TRAY-UNUSED-COMMAND** — Remove the unused `main_window_open` Tauri command
+  `chore · agent · low`
+  accept: `main_window_open` (`apps/desktop/src-tauri/src/main.rs`, its function and its `invoke_handler` entry) is deleted now that the tray keeps Open Arca in its footer and never calls it; `tests/tray.test.js` keeps asserting the tray never invokes it, and a source test asserts `main.rs` no longer defines or registers it. Needs a desktop build to prove it compiles and the tray still opens the main window.
+- **SITE-HERO-TRUE-UI** — The site hero draws the real app and covers no text on a phone
+  `chore · agent · low`
+  accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), at 390 px its floating "Phone & tablet" card covers no text, and a site test lists the elements.
+- **DESIGN-COVERAGE** — Draw the shipped Daemon stopped desktop page
+  `chore · agent · low`
+  accept: `design/desktop.html` draws the Daemon stopped page as the app renders it; the design tests keep passing and no board is added.
+- **DOC-README-SLIM** — Keep README to orientation and entry commands
+  `chore · agent · low`
+  accept: README keeps only its one-line status banner; the dated or status passages (about 16, for example "September 10 checkout", "implemented locally", "prepared locally, not deployed") and feature narration that SPEC already owns become short descriptions or pointers into SPEC; the three orphan sections after Public website are folded in or removed, the documents list names the five documents, line 152's "No commit or push without explicit authorization" no longer contradicts AGENTS' loop, and Casa's LAN IP no longer appears in the public README.
 
 ## In progress
 
@@ -206,28 +226,10 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 Suggested order for approval: preservation of user files, synchronization recovery, release reliability, then usability and cleanup. No task in this lane is approved for implementation.
 
-- **REPLICA-ADDED-BACKFILL** — Replicas already synced learn each photo's added date
-  `feature · agent · low`
-  accept: one-time re-walk of the change feed on a replica when the hub starts sending `added` (for example reset the stored cursor once on a hub-version change), skipping downloads when `entryKey` matches; a test shows an already-synced undated photo gaining the hub's date.
-- **MOB-WALL-SHARP-TILES** — Photo wall tiles larger than 360 device px use the medium preview
-  `feature · agent · low`
-  accept: on the Fold's widest columns and other layouts where a wall tile exceeds 360 device px, the tile asks for the 720 px medium preview once it is on screen and idle, keeping the 360 px thumbnail as its first paint; scrolling performance and cache budgets are covered by tests.
-
-
-
 ### File preservation and synchronization
-
-
 
 ### Release and native reliability
 
-- **DESK-TRAY-UNUSED-COMMAND** — Remove the unused `main_window_open` Tauri command
-  `chore · agent · low`
-  accept: `main_window_open` (`apps/desktop/src-tauri/src/main.rs`, its function and its `invoke_handler` entry) is deleted now that the tray keeps Open Arca in its footer and never calls it; `tests/tray.test.js` keeps asserting the tray never invokes it, and a source test asserts `main.rs` no longer defines or registers it. Needs a desktop build to prove it compiles and the tray still opens the main window.
-
-- **NAT-F03-IOS-CANCEL** — iOS cancel/session race
-  `bug · agent · normal`
-  accept: a per-request cancelled flag, set under the lock and checked before the URL session task is created, so cancelling during session setup throws a cancellation instead of creating a task on an invalidated session; source-contract and cancellation tests cover the race, with native/device evidence under P2-MOBILE.
 - **DESK-UPDATER-TESTS** — The Rust updater tests also run on Windows
   `chore · agent · normal`
   accept: the `rust-tests` job also runs on `windows-2022` with Windows versions of the two Unix-only tests, so the PowerShell listing and non-Unix exit handling execute; both pass in CI. Stubbing `install_update` is out of scope.
@@ -237,24 +239,6 @@ Suggested order for approval: preservation of user files, synchronization recove
 - **PHOTO-PLACES** — Search Arca finds photos by place ("hua hin", "thailand", "tailandia")
   `feature · agent · normal · depends: DEC-PHOTO-PLACES`
   accept: the hub reads GPS during gallery indexing and stores only a place label and a folded search text (city, district, province, country), never coordinates; names come from a bundled offline GeoNames extract (CC BY, attributed; no cloud geocoding, no new npm dependency), including Spanish and English alternate names for countries and first-level regions so "thailand" and "tailandia" both match; existing photos re-index once; Search Arca gains a Places group (one row per place with its count, opening the gallery filtered to it) on desktop, web and phone, offline on the phone from the synchronized labels; photos without GPS are explained in the empty result; tests cover lookup (Hua Hin, open sea, antimeridian, invalid coordinates), indexing with and without GPS, and the "hua hin"/"thailand"/"tailandia" queries on hub and phone. Feasibility study: GPS read 0.17 ms per photo, compact dataset about 2.5 MB plus alternate names, grid lookup about 13 µs.
-
-
-
-
-- **SITE-HERO-TRUE-UI** — The site hero draws the real app and covers no text on a phone
-  `chore · agent · low`
-  accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), at 390 px its floating "Phone & tablet" card covers no text, and a site test lists the elements.
-- **DESIGN-COVERAGE** — Draw the shipped Daemon stopped desktop page
-  `chore · agent · low`
-  accept: `design/desktop.html` draws the Daemon stopped page as the app renders it; the design tests keep passing and no board is added.
-- **DOC-README-SLIM** — Keep README to orientation and entry commands
-  `chore · agent · low`
-  accept: README keeps only its one-line status banner; the dated or status passages (about 16, for example "September 10 checkout", "implemented locally", "prepared locally, not deployed") and feature narration that SPEC already owns become short descriptions or pointers into SPEC; the three orphan sections after Public website are folded in or removed, the documents list names the five documents, line 152's "No commit or push without explicit authorization" no longer contradicts AGENTS' loop, and Casa's LAN IP no longer appears in the public README.
-### Devices
-
-- **DEV-PLAYER-LEAVE** — A player can unlink itself from the hub
-  `feature · agent · low`
-  accept: `POST /v1/leave` joins the player allow-list so forgetting the hub on arca TV deletes its own credential instead of leaving a stale Player row; the TV calls it on disconnect; a test shows a player leaving and its row gone.
 
 ### Music
 
