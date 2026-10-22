@@ -435,12 +435,6 @@ fn hide_tray_on_outside_click(app: &tauri::AppHandle) {
     let clicks = NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
     std::mem::forget(NSEvent::addGlobalMonitorForEventsMatchingMask_handler(clicks, &handler));
 }
-#[tauri::command]
-fn main_window_open(app: tauri::AppHandle) -> bool {
-    app.get_webview_window("main")
-        .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
-        .unwrap_or(false)
-}
 static TRAY_ANCHOR: std::sync::Mutex<Option<(f64, f64)>> = std::sync::Mutex::new(None);
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct ScreenRect {
@@ -743,7 +737,6 @@ fn main() {
             show_main,
             quit_app,
             resize_tray,
-            main_window_open,
             hide_tray,
             check_update,
             install_update

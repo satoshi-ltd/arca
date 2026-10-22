@@ -457,3 +457,8 @@ test("checking the hub after a launch reads as such with the last sync and no pr
   assert.equal(ui.$(".tray-progress"), null);
   assert.equal(ui.$(".tray-heading.tray-warn"), null);
 });
+
+test("the Rust shell no longer defines or registers the unused main_window_open command", () => {
+  const source = fs.readFileSync(new URL("../apps/desktop/src-tauri/src/main.rs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /main_window_open/);
+});

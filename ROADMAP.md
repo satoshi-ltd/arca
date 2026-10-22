@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESK-TRAY-UNUSED-COMMAND** — Remove the unused `main_window_open` Tauri command
-  `chore · agent · low`
-  accept: `main_window_open` (`apps/desktop/src-tauri/src/main.rs`, its function and its `invoke_handler` entry) is deleted now that the tray keeps Open Arca in its footer and never calls it; `tests/tray.test.js` keeps asserting the tray never invokes it, and a source test asserts `main.rs` no longer defines or registers it. Needs a desktop build to prove it compiles and the tray still opens the main window.
 - **SITE-HERO-TRUE-UI** — The site hero draws the real app and covers no text on a phone
   `chore · agent · low`
   accept: the hero window shows only elements that exist in `design/desktop.html` (no invented subtitle, a Lucide icon instead of the text check glyph, a gallery row and one row syncing with nine dots), at 390 px its floating "Phone & tablet" card covers no text, and a site test lists the elements.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.90 — 2026-10-22
+
+- The desktop shell drops an unused internal command, with no change to the tray or to how Open Arca works.
+
+Needs: desktop build
+
 ## 0.7.89 — 2026-10-22
 
 - On the Fold and other wide layouts, photo wall tiles wider than 360 device pixels now sharpen to the 720 px preview once the wall stops moving, so large tiles stop looking soft.
