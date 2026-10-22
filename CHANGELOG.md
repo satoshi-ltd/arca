@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.91 — 2026-10-22
+
+- Videos streamed to arca TV and other players start more smoothly: the hub now answers suffix ranges (`bytes=-N`) that players use to read the index of phone-recorded MP4s, and reads files in larger chunks.
+- A device's last contact is written once every 30 seconds instead of on every request, so a player fetching many ranges no longer competes with sync for the database.
+
+Needs: Casa redeploy
+
 ## 0.7.90 — 2026-10-22
 
 - The desktop shell drops an unused internal command, with no change to the tray or to how Open Arca works.

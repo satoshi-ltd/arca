@@ -6,7 +6,12 @@ import {
 import { cachedActivity, cachedFileHistory } from "./history-cache.js";
 import { ChangeFeed } from "./change-feed.js";
 import { ImageMaintenance } from "./image-maintenance.js";
-import { galleryMedia, streamGalleryMedia } from "./gallery-media.js";
+import {
+  STREAM_CHUNK,
+  byteRange,
+  galleryMedia,
+  streamGalleryMedia,
+} from "./gallery-media.js";
 import { Gallery, mediaKind } from "./gallery.js";
 import { Music } from "./music.js";
 import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
@@ -68,6 +73,8 @@ async function body(req, limit = 1024 * 1024) {
   }
   return Buffer.concat(chunks);
 }
+const LAST_SEEN_REFRESH_MS = 30000;
+
 const previewSize = (value) =>
   value === "medium" || value === "large" ? value : "thumb";
 function equal(a, b) {
@@ -495,14 +502,18 @@ export async function start(home, options = {}) {
       if (!device || (!admin && !["replica", "player"].includes(device.role)))
         fail("Unauthorized", 401);
       if (!admin) requireLanAccess();
-      if (!admin)
+      const address = req.socket.remoteAddress?.replace(/^::ffff:/, "") || null;
+      if (
+        !admin &&
+        (device.last_address !== address ||
+          !(
+            Math.abs(Date.now() - Date.parse(device.last_seen)) <
+            LAST_SEEN_REFRESH_MS
+          ))
+      )
         s.db
           .prepare("UPDATE devices SET last_seen=?,last_address=? WHERE id=?")
-          .run(
-            new Date().toISOString(),
-            req.socket.remoteAddress?.replace(/^::ffff:/, "") || null,
-            device.id,
-          );
+          .run(new Date().toISOString(), address, device.id);
       const url = new URL(req.url, "http://localhost");
       const route = url.pathname;
       if (device?.role === "player" && !playerRoute(req.method, route))
@@ -1315,31 +1326,28 @@ export async function start(home, options = {}) {
         const file = s.blob(hash);
         if (!fs.existsSync(file)) fail("Object not found", 404);
         const size = fs.statSync(file).size;
-        let offset = 0,
-          end = size - 1;
-        if (req.headers.range) {
-          const match = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range);
-          if (!match) fail("Invalid range", 416);
-          offset = Number(match[1]);
-          end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
-          if (
-            ![offset, end].every(Number.isSafeInteger) ||
-            offset >= size ||
-            end < offset
-          )
-            fail("Range exceeds content", 416);
+        const range = req.headers.range;
+        const bounds = byteRange(range, size);
+        if (!bounds) {
+          res.writeHead(416, { "Content-Range": `bytes */${size}` });
+          res.end();
+          return;
         }
-        res.writeHead(req.headers.range ? 206 : 200, {
+        const { start: offset, end } = bounds;
+        res.writeHead(range ? 206 : 200, {
           "Content-Type": "application/octet-stream",
-          "Content-Length": req.headers.range ? end - offset + 1 : size,
+          "Content-Length": end - offset + 1,
           "Accept-Ranges": "bytes",
-          ...(req.headers.range
-            ? { "Content-Range": `bytes ${offset}-${end}/${size}` }
-            : {}),
+          ...(range ? { "Content-Range": `bytes ${offset}-${end}/${size}` } : {}),
         });
+        if (!size) {
+          res.end();
+          return;
+        }
         const stream = fs.createReadStream(file, {
           start: offset,
-          ...(req.headers.range ? { end } : {}),
+          end,
+          highWaterMark: STREAM_CHUNK,
         });
         stream.on("error", () => res.destroy());
         res.on("close", () => stream.destroy());

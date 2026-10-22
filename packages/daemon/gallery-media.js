@@ -30,34 +30,39 @@ export function galleryMedia(store, volume, name, hash) {
           : "video/mp4",
   };
 }
-export function streamGalleryMedia(req, res, media) {
-  let start = 0,
-    end = media.size - 1;
-  const range = req.headers.range;
-  if (range) {
-    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-    if (!match || (!match[1] && !match[2])) {
-      res.writeHead(416, { "Content-Range": `bytes */${media.size}` });
-      res.end();
-      return;
-    }
-    if (!match[1]) start = Math.max(0, media.size - Number(match[2]));
-    else {
-      start = Number(match[1]);
-      if (match[2]) end = Math.min(end, Number(match[2]));
-    }
-    if (
-      !Number.isSafeInteger(start) ||
-      !Number.isSafeInteger(end) ||
-      start < 0 ||
-      start > end ||
-      start >= media.size
-    ) {
-      res.writeHead(416, { "Content-Range": `bytes */${media.size}` });
-      res.end();
-      return;
-    }
+export const STREAM_CHUNK = 256 * 1024;
+
+export function byteRange(header, size) {
+  if (!header) return { start: 0, end: size - 1 };
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header);
+  if (!match || (!match[1] && !match[2])) return null;
+  let start,
+    end = size - 1;
+  if (!match[1]) start = Math.max(0, size - Number(match[2]));
+  else {
+    start = Number(match[1]);
+    if (match[2]) end = Math.min(end, Number(match[2]));
   }
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(end) ||
+    start < 0 ||
+    start > end ||
+    start >= size
+  )
+    return null;
+  return { start, end };
+}
+
+export function streamGalleryMedia(req, res, media) {
+  const range = req.headers.range;
+  const bounds = byteRange(range, media.size);
+  if (!bounds) {
+    res.writeHead(416, { "Content-Range": `bytes */${media.size}` });
+    res.end();
+    return;
+  }
+  const { start, end } = bounds;
   res.writeHead(range ? 206 : 200, {
     "Content-Type": media.type,
     "Content-Length": Math.max(0, end - start + 1),
@@ -72,7 +77,11 @@ export function streamGalleryMedia(req, res, media) {
     res.end();
     return;
   }
-  const stream = fs.createReadStream(media.file, { start, end });
+  const stream = fs.createReadStream(media.file, {
+    start,
+    end,
+    highWaterMark: STREAM_CHUNK,
+  });
   res.on("close", () => stream.destroy());
   stream.on("error", () => res.destroy()).pipe(res);
 }

@@ -113,6 +113,58 @@ test("a player streams a blob with a range, as arca TV plays audio", async (t) =
     assert.notEqual((await call(route, { method: "GET", token: player.token })).status, 403, route);
 });
 
+test("a blob answers suffix and bounded ranges and refuses ones past its end", async (t) => {
+  const { d, pair } = await hub(t);
+  const replica = await (await pair({ name: "phone" })).json();
+  const player = await (await pair({ kind: "player", name: "salon-tv" })).json();
+  const data = Buffer.from("abcdefghijklmnop");
+  const hash = digest(data);
+  await fetch(`http://127.0.0.1:${d.port}/v1/uploads/${hash}?offset=0&size=${data.length}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${replica.token}` },
+    body: data,
+  });
+  const get = (range) => fetch(`http://127.0.0.1:${d.port}/v1/blobs/${hash}`, { headers: { Authorization: `Bearer ${player.token}`, Range: range } });
+  const tail = await get("bytes=-4");
+  assert.equal(tail.status, 206);
+  assert.equal(tail.headers.get("content-range"), "bytes 12-15/16");
+  assert.equal(await tail.text(), "mnop");
+  const middle = await get("bytes=2-5");
+  assert.equal(await middle.text(), "cdef");
+  assert.equal((await get("bytes=16-")).status, 416);
+  assert.equal((await get("bytes=-")).status, 416);
+});
+
+test("a player reads an empty blob as an empty 200", async (t) => {
+  const { d, pair } = await hub(t);
+  const replica = await (await pair({ name: "phone" })).json();
+  const player = await (await pair({ kind: "player", name: "salon-tv" })).json();
+  const hash = digest(Buffer.alloc(0));
+  await fetch(`http://127.0.0.1:${d.port}/v1/uploads/${hash}?offset=0&size=0`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${replica.token}` },
+    body: Buffer.alloc(0),
+  });
+  const r = await fetch(`http://127.0.0.1:${d.port}/v1/blobs/${hash}`, { headers: { Authorization: `Bearer ${player.token}` } });
+  assert.equal(r.status, 200);
+  assert.equal((await r.arrayBuffer()).byteLength, 0);
+});
+
+test("a device's last contact is written once per refresh window, not on every request", async (t) => {
+  const { d, call, pair } = await hub(t);
+  const player = await (await pair({ kind: "player", name: "salon-tv" })).json();
+  const seen = () => d.engine.store.db.prepare("SELECT last_seen FROM devices WHERE id=?").get(player.id).last_seen;
+  await call("/v1/catalog", { method: "GET", token: player.token });
+  const first = seen();
+  assert.ok(first);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await call("/v1/catalog", { method: "GET", token: player.token });
+  assert.equal(seen(), first);
+  d.engine.store.db.prepare("UPDATE devices SET last_seen=? WHERE id=?").run(new Date(Date.now() - 60000).toISOString(), player.id);
+  await call("/v1/catalog", { method: "GET", token: player.token });
+  assert.ok(Date.parse(seen()) > Date.now() - 5000);
+});
+
 test("a player leaves the hub with its own credential and its row is gone", async (t) => {
   const { d, call, pair } = await hub(t);
   const keep = await (await pair({ kind: "player", name: "bedroom-tv" })).json();
