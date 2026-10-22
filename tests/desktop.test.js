@@ -2131,7 +2131,8 @@ async function devicesPage(t, { status, machines, web = "", ready = () => true, 
     );
   return { w, rows, named, segments, cells };
 }
-const seenAt = (value) => `Seen ${new Date(value).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}`;
+const clockText = (value) => new Date(value).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const seenAt = (value) => `Seen ${new Date(value).toLocaleDateString("en", { month: "short", day: "numeric", ...(new Date(value).getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }) })} at ${clockText(value)}`;
 
 test("a replica's device rows read the OS under the name, then version, folders over size and last seen in aligned cells, and end in their role chip", async (t) => {
   const GB = 1024 ** 3;
@@ -2279,12 +2280,40 @@ test("presence ages while Devices stays open: a quiet timer rereads the roster, 
   const before = reads;
   await timers[watch].run();
   assert.equal(reads, before + 1);
-  await until(() => cells(mac())[2] === `Seen ${new Date(at(10)).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}`);
+  await until(() => cells(mac())[2] === seenAt(at(10)));
   w.document.querySelector('[data-view="folders"]').click();
   await until(() => cleared.includes(watch + 1));
   const after = reads;
   await timers[watch].run();
   assert.equal(reads, after, "a stopped watch reads nothing");
+});
+
+test("a device seen today reads only the time, yesterday says so, and older days name the date", async (t) => {
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const noon = (daysAgo) => {
+    const day = new Date(midnight);
+    day.setDate(day.getDate() - daysAgo);
+    day.setHours(daysAgo === 1 ? 23 : 12, daysAgo === 1 ? 59 : 34, 0, 0);
+    return day;
+  };
+  const earlier = new Date(midnight.getFullYear() - 1, 5, 3, 8, 5);
+  const { named, cells } = await devicesPage(t, {
+    status: () => ({ role: "replica", phase: "idle", hubName: "casa", hubId: "hub", hub: "http://127.0.0.1:49999", backup: { enabled: false }, volumes: [], id: "mac" }),
+    machines: [
+      { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024, reportedAt: new Date(midnight.getTime() + 3600000).toISOString() },
+      { name: "Local Mac", role: "replica", platform: process.platform, machineId: "mac" },
+      { name: "today", role: "replica", platform: "linux", machineId: "today", lastContact: midnight.toISOString() },
+      { name: "yesterday", role: "replica", platform: "linux", machineId: "yesterday", lastContact: noon(1).toISOString() },
+      { name: "older", role: "replica", platform: "linux", machineId: "older", lastContact: noon(5).toISOString() },
+      { name: "lastyear", role: "replica", platform: "linux", machineId: "lastyear", lastContact: earlier.toISOString() },
+    ],
+    ready: (text) => text.includes("lastyear"),
+  });
+  assert.equal(cells(named("today"))[2], `Seen at ${clockText(midnight)}`, "a contact just after midnight is today");
+  assert.equal(cells(named("yesterday"))[2], "Seen yesterday at 23:59", "a contact just before midnight is yesterday");
+  assert.equal(cells(named("older"))[2], `Seen ${noon(5).toLocaleDateString("en", { month: "short", day: "numeric", ...(noon(5).getFullYear() === midnight.getFullYear() ? {} : { year: "numeric" }) })} at 12:34`);
+  assert.equal(cells(named("lastyear"))[2], `Seen Jun 3, ${earlier.getFullYear()} at 08:05`);
 });
 
 test("after the computer sleeps the hub connection row ages by the wall clock too, so it never reads Connected on wake", async (t) => {

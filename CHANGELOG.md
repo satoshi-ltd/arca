@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.93 — 2026-10-22
+
+- In desktop Devices, a device seen today reads just the time ("Seen at 19:18"), one seen yesterday says "Seen yesterday at 14:53", and older days name the date.
+
+Needs: desktop build
+
 ## 0.7.92 — 2026-10-22
 
 - In Devices on desktop, an outdated device's up-arrow now sits to the left of its version, so every version number lines up in the same column.

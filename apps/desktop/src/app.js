@@ -116,7 +116,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.92";
+const APP_VERSION = "0.7.93";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -213,6 +213,10 @@ const clockTime = (value) =>
     minute: "2-digit",
     hourCycle: "h23",
   });
+function seenLabel(value, now = new Date()) {
+  const day = dayLabel(value, now);
+  return `Seen ${day === "Today" ? "" : `${day === "Yesterday" ? "yesterday" : day} `}at ${clockTime(value)}`;
+}
 const icon = (name) => `<span data-icon="${name}" aria-hidden="true"></span>`;
 const brandArch = () => brandArchFor(48);
 const brandArchFor = (size) =>
@@ -7040,7 +7044,7 @@ function deviceCells({ version, hubVersion, folders, size, revoked = false, seen
         ? `<span>${countLabel(folders, "folder")}</span><span class="device-size">${bytes(size)}</span>`
         : "";
   const seenCell = seen
-    ? `<span class="device-seen-text"><span class="status-dot${seen.connected ? "" : " id"}" aria-hidden="true"></span>${seen.connected ? "Connected" : `Seen ${escape(date(seen.at))}`}</span>`
+    ? `<span class="device-seen-text"><span class="status-dot${seen.connected ? "" : " id"}" aria-hidden="true"></span>${seen.connected ? "Connected" : escape(seenLabel(seen.at))}</span>`
     : "";
   return `<div class="device-cells"><div class="device-cell device-version">${versionCell}</div><div class="device-cell device-folders">${totals}</div><div class="device-cell device-seen">${seenCell}</div></div>`;
 }
