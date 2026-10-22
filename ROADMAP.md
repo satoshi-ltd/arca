@@ -27,7 +27,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 ## Queue
 
 - **DESK-SEEN-HUMAN** — Devices says when a device was last seen the way people say it
-  `ui · agent · normal`
+  `feature · agent · normal`
   accept: in desktop Devices an offline device seen today reads "Seen at 19:18", yesterday "Seen yesterday at 14:53", any earlier day "Seen Oct 20 at 14:53" (the year only when it is not the current one); a test covers today, yesterday, an older day and a day across midnight in the local time zone; the Devices board in `design/` shows the three forms.
 - **DESIGN-COVERAGE** — Draw the shipped Daemon stopped desktop page
   `chore · agent · low`
