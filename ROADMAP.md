@@ -26,12 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **DESIGN-COVERAGE** — Draw the shipped Daemon stopped desktop page
-  `chore · agent · low`
-  accept: `design/desktop.html` draws the Daemon stopped page as the app renders it; the design tests keep passing and no board is added.
-- **DOC-README-SLIM** — Keep README to orientation and entry commands
-  `chore · agent · low`
-  accept: README keeps only its one-line status banner; the dated or status passages (about 16, for example "September 10 checkout", "implemented locally", "prepared locally, not deployed") and feature narration that SPEC already owns become short descriptions or pointers into SPEC; the three orphan sections after Public website are folded in or removed, the documents list names the five documents, line 152's "No commit or push without explicit authorization" no longer contradicts AGENTS' loop, and Casa's LAN IP no longer appears in the public README.
+_None._
 
 ## In progress
 

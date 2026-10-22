@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.94 — 2026-10-22
+
+- The README is now a short orientation with the install, run and development commands; status, feature narration and operations point into SPEC, and it no longer lists Casa's address.
+
 ## 0.7.93 — 2026-10-22
 
 - In desktop Devices, a device seen today reads just the time ("Seen at 19:18"), one seen yesterday says "Seen yesterday at 14:53", and older days name the date.

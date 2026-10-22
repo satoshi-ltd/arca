@@ -2,34 +2,17 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.7.93 · Functional, not release-qualified.** Includes mobile photo uploads, desktop/web gallery browsing, audio libraries with desktop, web and Android playback and Android Auto, and per-folder history retention. Updating source does not update running daemon or app binaries.
+**v0.7.94 · Functional, not release-qualified.**
 
 ## How it works
 
-- The **hub** creates shared folders and owns their catalog and history. Each other **device** (a replica in the protocol) starts syncing whole folders independently. Desktop copies use chosen local paths; mobile copies live in persistent app-owned storage. Existing edits synchronize in both directions; there are no placeholders.
-- **Erase this hub** in Settings → Danger zone permanently deletes this hub’s Arca folders, history and configuration, then returns to setup to set up a hub or connect to one. Other devices keep their local files and lose their connection to the old hub. Confirmation is required.
-- **Web** administers the server it connects to. **Tauri** manages its local daemon, which does not serve a web panel. **Mobile** is always a replica. Pairing never grants remote hub administration.
-- **Pause** keeps copies linked. Desktop **Stop syncing** deletes the verified synced copy by default; turning that option off keeps the files on disk. Mobile **Stop syncing** removes the app-owned copy after confirmation including unsynced changes; it works offline even if the hub share is gone. Hub **Delete share** removes catalog/history while retaining physical files. These operations are distinct.
-- **Disconnect** preserves local files and selections for fresh-code pairing. **Erase this device**, in Settings → Danger zone, requires confirmation and permanently deletes that device's local folders (including unsynced files), configured full backup and synchronization state, attempts to remove its hub registration and returns to first-run setup. Destruction works offline; an unreachable hub may retain a machine entry that you can remove separately. Hub files/history and other machines remain.
-- **Rename…** in the file-detail **⋯** menu on web, desktop and mobile changes a filename within its folder and syncs the change. Occupied names and unsynced local edits are rejected; retained history remains under the previous name. Mobile can rename a synced local file offline. Gallery-source originals stay managed in Photos.
-- Conflicts preserve both files and their histories. Choosing a version records the resolution; editing the conflict copy again reopens it. Replicas resolve only selected folders. Restore creates a new revision.
-- Mobile (phone and Fold) is exclusively a replica: it cannot act as a hub or keep a full hub backup. Optional desktop/server **full backup** is independent of working copies and requires explicit enablement. Quit leaves the desktop daemon running.
+- The **hub** creates shared folders and owns their catalog and history. Every other device, a replica in the protocol, chooses its own local destinations and keeps complete copies of the folders it selects; edits synchronize in both directions and there are no placeholders. Phones are always replicas.
+- **Web** administers the server it connects to, **Tauri** manages its local daemon and the **CLI** is auxiliary. Pairing never grants hub administration.
+- Pause, Stop syncing, hub Stop syncing here and hub Delete share are different operations; conflicts preserve both versions; history retention is per folder; full backup is optional and only for desktop and server replicas.
+- Phones add photo-library uploads to a complete two-way copy, and hub folders can be opened as a gallery or an audio library.
+- Shared folders honor a synchronized `.arcaignore`; a fixed list of OS metadata, temporaries and caches is always excluded.
 
-Desktop/server sync uses incremental remote changes, changed local paths and periodic reconciliation: 15-second active checks, 60-second idle checks. Mobile resumes durable work on launch/resume and through OS-scheduled background tasks; it is not a continuously running daemon. The current Android source keeps foreground-started folder downloads/uploads running after screen-off through its existing transfer service, releasing it on completion, pause or failure. OS time limits still apply; this correction requires an updated client and physical-device qualification.
-
-The current checkout adds hub change notifications with polling fallback, persistent mobile hash verification, bounded turns between mobile folders, and native file-block transfers with cancellation. These changes require an updated hub/desktop daemon and rebuilt mobile apps; a Metro reload alone cannot install the native transport.
-
-Files and directories, including empty nested directories, are synchronized in the current checkout. Safe file/directory replacements and case-only renames require updated hub and replica clients advertising `pathTransitions`; older clients receive an upgrade error. File counts exclude directories.
-
-The September 10 checkout includes synchronization-integrity fixes: pause/deadline persist across daemon restarts; failed folders do not block healthy ones; recovery preserves the archive's exclusion policy; stale proposal retries cannot silently delete recreated files. These changes are verified locally, not deployed by changing source. Full audit closure and remaining qualification are in SPEC.
-
-`.arcaignore` is synchronized and editable; new hub folders start with a rule-free one, and the hub's `.arcaignore…` button creates it if missing. OS metadata, temporary files, regenerable caches (`node_modules`, `.venv`, `.cache`…), `.git` and `.obsidian` are always excluded by the shared core. Obsidian notes and attachments remain synchronized.
-
-First-run desktop and server setup walks through welcome, this machine (name and role), pairing and an empty/new folder root; hubs skip pairing. Mobile pairs and then offers whole-folder selection or Skip for now, using app-owned storage. An interrupted first catalog load retains the accepted pairing; no folders download until setup permits it.
-
-In-app feedback shares one notice contract across web, desktop and mobile: info, warning and error, with grouped incidents and optional collapsible diagnostics. Mobile confirmations use the shared in-app dialog. System alerts retain OS styling and are reserved for unresolved conditions while Arca is in the background.
-
-Hub Settings → Images shows gallery counts and sizes and rebuilds disposable previews. Originals are never converted or recompressed.
+SPEC.md owns the contracts: [product decisions](SPEC.md#1-product-decisions), [synchronization](SPEC.md#3-synchronization), [desktop, server and web](SPEC.md#4-desktop-server-and-web) and [mobile](SPEC.md#5-mobile).
 
 ## Development
 
@@ -38,26 +21,21 @@ Requires Node.js 24+. Desktop also requires Rust and the platform's Tauri prereq
 ```sh
 npm ci
 npm start --prefix apps/desktop
-```
-
-Desktop start, build and release clean the Cargo cache first when `apps/desktop/src-tauri/target` outgrows 10 GB (`ARCA_CARGO_BUDGET_GB` changes the budget): incremental caches go first, and the whole `target` is removed only if that is not enough. Each environment owns its commands: the repository root keeps the daemon, tests and site, `apps/desktop` the desktop app and `apps/mobile` the phone app. Run them with `--prefix` or from inside the directory. `npm run start:clean --prefix apps/desktop` clears only Vite caches before the same desktop startup. It preserves state, pairing, files and pause. Startup checks port 1425 first and stops with a clear error if another session owns it; it never kills an unknown port owner. When the same checkout/state is managed by the macOS login service, the launcher unloads and reloads that service around runtime preparation, preserving its login setting and avoiding automatic-restart races. Each start stops the existing local daemon, stages the current runtime, starts it and waits for readiness before opening Tauri. It uses `ARCA_HOME` when set, otherwise the real `~/.arca`, preserving pairing, folders and pause. First-run setup still initializes a new state directory. Closing the app leaves the daemon running; the next development launch replaces it. Automated tests use isolated state. Vite serves development UI on port 1425. The daemon uses 17831; Docker/server installations also serve web there.
-
-```sh
 npm test
 npm run build --prefix apps/desktop
 npm run verify:bundle --prefix apps/desktop
 ```
 
-Releases bump every manifest at once and validate a clean copy with the CI's Node version before pushing:
+Each environment owns its commands: the repository root keeps the daemon, tests, site and design kit, `apps/desktop` the desktop app and `apps/mobile` the phone app. Run them with `--prefix` or from inside the directory. `npm run start:clean --prefix apps/desktop` clears only Vite caches before the same startup. Development uses the real `~/.arca` unless `ARCA_HOME` is set; tests use isolated state. Vite serves the UI on port 1425 and the daemon uses 17831, where Docker and server installations also serve web. Closing the app leaves the daemon running, and building a bundle does not replace a running app. Details: [desktop development](SPEC.md#desktop-development).
+
+Enable the hooks once per clone with `git config core.hooksPath .githooks`. Releases bump every manifest at once and validate a clean copy with the CI's Node version:
 
 ```sh
 node scripts/bump-version.js            # next patch, or pass x.y.z
 npx -y node@$(cat .node-version) scripts/validate-local.js
 ```
 
-For isolated hub metadata/API load qualification, run `node scripts/verify-hub-load.js . 100000`. It creates temporary state and a child daemon, tests three concurrent snapshots alongside a verified 1 MiB upload/download, checks HTTP responsiveness and pause/resume, then removes only its fixtures. It never uses the live `~/.arca`. The Docker command and its scope are in [isolated qualification](SPEC.md#isolated-qualification).
-
-Web/Tauri share `apps/desktop/src`. Vite reloads frontend changes; daemon changes require deployment/restart. Building a bundle does not replace an already running app. macOS local bundles are ad-hoc signed, not notarized.
+Hub load qualification (`node scripts/verify-hub-load.js . 100000`) is described in [isolated qualification](SPEC.md#isolated-qualification).
 
 ## Mobile
 
@@ -69,111 +47,54 @@ npm start --prefix apps/mobile
 npm run check --prefix apps/mobile
 ```
 
-`start` starts Metro for the installed development client with the `arca` scheme; it does not build or launch an emulator. `check` exports Android/iOS JavaScript, not native installers. Do not restart a user-managed Metro session just to refresh JavaScript.
-
-Implemented locally: secure pairing, persistent whole-folder sync with verified resumable transfers, offline files, imports, history/restore/conflicts, themes and OS background/notification integration. Files, Recent and History lead to one file-detail view. Phone uses bottom navigation and stacked content; wide/Fold uses a sidebar and desktop-style composition with touch-sized controls.
-
-**Photo uploads:** selecting a shared folder keeps a complete local Arca copy. “Link album…” adds automatic uploads from a phone album without removing that copy. Every selected participant downloads all included shared files, including photos and videos from other machines, into app-owned storage for offline use. The system Photos library remains separate: deleting there does not delete the uploaded Arca copy, and incoming files are not imported into Photos. Disabling album uploads leaves folder synchronization active. Existing upload-only selections start downloading with the updated client; allow storage for the whole folder and keep Arca open for the initial transfer. Exports include Live Photo pairs; detected gallery edits create new hub revisions. Physical-device qualification remains required.
-
-**Shared gallery deletion:** any participant can explicitly delete a shared photo, including a source phone or a copy that has not downloaded it. Verified Live Photo resources are deleted together. Mobile supports long-press selection. All clients send confirmed deletions directly to the hub; failures are shown without queuing or automatic retries. Sources suppress automatic re-upload of explicitly deleted assets. Originals stay in the system Photos library. Recovery follows the folder’s ordinary revision retention. There is no separate deletion-review workflow. Source changes do not deploy Casa or update an installed app. Physical-device qualification remains open.
-
-**Audio libraries:** Enable audio library in a hub folder's ⋯ menu opens that folder on its artists, albums and recent plays on desktop, web and phones, with search and shuffle; desktop, web and Android play it, and Android lists it in Android Auto (turn on Unknown sources in Android Auto's developer settings for a sideloaded build).
-
-**Desktop/web gallery:** gallery folders use the Images icon and open in Gallery; View folder switches to Files and Recent (with All history). Gallery provides a dated thumbnail grid and a month/year navigation rail. Accepted photo uploads prepare reusable thumbnails in the hub’s background queue. Existing gallery folders are prepared in the background on activation and hub startup; metadata and thumbnails survive restart. Navigation reuses gallery pages and separate thumbnail/large-preview caches. Clicking an image opens a larger preview; videos open an authenticated streaming player with seek controls. This requires the updated hub daemon and desktop runtime, including production dependencies. It is implemented and tested locally, not deployed to Casa. Unsupported browser/OS video codecs and image formats retain original download.
-
-**Receiving files:** Share → Arca → selected folder → subfolder → Save. Receiving is transient: X, Cancel or Android Back discards the unsaved temporary copies without touching the originals. Nothing waits in an inbox or reopens after cancellation/restart. **Save a copy** exports local folder files outside Arca; it does not export synchronized history or create another syncing copy. Native picker/export and background behavior still require real-device qualification. Android incoming intent reception has been exercised; the iOS share extension is experimental.
-
-Native modules, incoming-share registration and icon/splash changes require a new binary. Metro does not install them. The hub needs the bounded-download `blobRanges` capability, which current releases include.
-
-### Android builds
-
-From `apps/mobile` (Android Studio/SDK, mobile dependencies and an Expo login):
-
-```sh
-npm run build:local:dev    # Compile on this machine and install on the device
-npm run build:local:prod   # Signed standalone APK in apps/mobile/release-assets/
-npm run build:dev          # Same development build on EAS cloud, downloaded and installed
-npm run build:prod         # Same signed APK built on EAS cloud and downloaded
-npm run build:local:dev -- --install-only  # Reinstall the existing dev APK
-```
-
-Development builds install on the first USB device, otherwise on a running emulator, otherwise they boot `Pixel_9_Pro_Fold`; set `ANDROID_AVD` for another emulator or `ANDROID_SERIAL` to pin a device. Installation uses `adb install -r`, preserves app data and stops on a signature mismatch; it never uninstalls the app. Start Metro yourself with `npm start`.
-
-Development builds compile only `arm64-v8a`, the ABI of every supported phone and of the Apple Silicon emulator, so the debug APK stays small enough for a crowded emulator; production keeps all ABIs. Local builds use `eas build --local`: compilation runs on this Mac, consumes no cloud build quota and retrieves the existing EAS signing credentials; native toolchain versions come from the machine. Cloud builds run in the [satoshi-ltd/arca](https://expo.dev/accounts/satoshi-ltd/projects/arca) EAS project, consume quota and download the finished APK. Every build runs `check:release` first, rerunning replaces its APK, and a finished build keeps only the latest dev and the latest production APK in `release-assets/`. Do not replace the signing key when updating an installed app. The repository root has no mobile scripts, and CI never builds or tests mobile installers: `npm test` inside `apps/mobile` checks the build script wiring.
-
-Build profiles use the Node version in `.node-version` and APK output. Increasing native build numbers and store distribution remain release work. The installed pilot APK predates the latest icon/splash and other native refinements; do not infer native acceptance from a successful export.
+`start` serves Metro for the installed development client; it does not build or launch an emulator. `check` exports Android and iOS JavaScript, not installers. Native modules and icon or splash changes need a new binary; Metro does not install them. Android build commands and their behavior are in [Android builds](SPEC.md#android-builds).
 
 ## Desktop updates
 
-The packaged desktop application checks for a signed update at startup, every six hours and when the machine reconnects. When one exists, a card appears at the bottom of the sidebar with the current and offered versions and a single action that downloads it, installs it and restarts the app. The daemon runs from inside the installation, so it stops just before the install and starts again from the new files; synchronization resumes as soon as it answers. Updates are verified against the public key built into the application; the browser interface never updates itself.
+The packaged desktop app checks for a signed update at startup, every six hours and when the machine reconnects, and installs it with one action in the sidebar. The browser interface never updates itself. See [desktop updates](SPEC.md#desktop-updates).
 
 ## Connect over the local network
 
-Enable the hub's **Settings → Local network → Allow HTTP connections**, then use its private IPv4 address. The listener and Docker binding must also be reachable. This is unencrypted local traffic, not public Internet hosting. Tailscale/HTTPS remain alternatives. A Tailscale hostname/address requires Tailscale connectivity on the mobile device itself.
-
-Casa's pilot LAN endpoint is `http://192.168.1.190:17831`; Tailscale is `http://casa:17831`. Android LAN pairing and sync have been exercised on the existing emulator. Pairing and browser access use separate six-digit, single-use, ten-minute codes.
+Enable the hub's **Settings → Local network → Allow HTTP connections**, then use its private IPv4 address; the listener and Docker binding must be reachable. This is unencrypted local traffic, not public hosting; Tailscale or HTTPS are the alternatives, and a Tailscale address needs Tailscale on the phone itself. Pairing and browser access use separate six-digit, single-use, ten-minute codes.
 
 ## Docker first run
 
-Build/start with `docker compose up -d --build`, then open `http://localhost:17831`. Complete welcome → this machine (name and hub or replica) → confirm server access → pairing (replicas only) → folder root → Finish. For access confirmation, run `docker compose exec arca node packages/cli/arca.js web-code` and paste its single-use code into the wizard. A replica selects folders after setup; no working files download during onboarding.
+```sh
+docker compose up -d --build
+docker compose exec arca node packages/cli/arca.js web-code
+```
 
-The default container command uses `daemon --setup`: it prepares empty state for authenticated setup and leaves existing configurations unchanged. Explicit CLI `init --role hub|replica` remains available. State and files retain their separate persistent Docker volumes. Setup destinations must be empty/new and inside `/data/files`; for a custom deployment, set `ARCA_FILES` to the persistent files mount visible inside that container. This is a server path, not a folder on the browser computer. These Docker source changes require rebuilding the image; they do not update existing containers or published images.
+Open `http://localhost:17831` and follow the wizard: this machine, server access (paste the code), pairing for replicas, folder root. `ARCA_FILES` names the persistent files mount inside a custom container and `ARCA_PORT` the published port. Details: [fresh Docker server](SPEC.md#fresh-docker-server).
 
 ## Umbrel package
 
-`deploy/umbrel/arca/` is a separate App Store package under preparation, pinned to the published **0.4.1** multiarch Docker image. It does not replace `compose.yaml`, `deploy/Dockerfile`, the Docker release pipeline or the Casa installation. Newer releases are not in that image.
+`deploy/umbrel/arca/` is the Umbrel App Store package; see [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission).
 
-The package opens the shared first-run wizard to choose a hub or replica, with app-owned persistent storage and adds a browser page that exchanges Umbrel's per-install Arca app password for Arca's existing single-use sign-in code. Companion clients retain Arca pairing and credentials. Local checks and a real amd64 Umbrel installation, web sign-in, bidirectional sync and restart persistence have passed. The pilot opens at `http://umbrel.local:17831/`, with its app-password code page at `/umbrel`; App Store submission remains pending. See [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission) for package layout, test commands and remaining requirements.
+## Release
 
-## Release and remaining work
-
-The **publish** workflow runs tests/version checks on macOS, Windows and Linux. Pull requests stop there. A new version on `main` builds and verifies macOS arm64 DMG, Windows x64 NSIS, Linux x64 AppImage/deb and Docker amd64/arm64, then publishes a GitHub prerelease and Docker Hub versioned images plus `latest`. Android builds remain manual through the EAS commands above and do not block this workflow. Existing version tags skip republishing. Manual artifact-only runs are available. `latest` follows the newest release and is not a stable-release guarantee.
-
-macOS is ad-hoc signed and Windows unsigned by default; Developer ID signing/notarization is optional. Desktop installs update themselves from published releases with signed payloads; store submission and pilot deployment are not part of publication. Detailed registry/signing setup belongs in [release operations](SPEC.md#release-setup-and-publication).
-
-Before distribution: complete cross-client/offline/conflict workflows; real iOS/Android networking, background, import/export/share and launch acceptance; actual desktop installer/upgrade testing; accessibility and long-content visual review; sustained load and independent backup/recovery; native mobile CI qualification. See [ROADMAP.md](ROADMAP.md) for scope and evidence. Passing tests or producing packages does not close those gates.
-
-## Documentation and change policy
-
-- [README.md](README.md): orientation and entry commands.
-- [AGENTS.md](AGENTS.md): contributor instructions, the autonomous task workflow and operational boundaries.
-- [SPEC.md](SPEC.md): current state, contracts, operations and shared design system.
-- [ROADMAP.md](ROADMAP.md): the task pool — approved work, maintainer tasks and proposals.
-
-`AGENTS.md` contains contributor instructions; `CHANGELOG.md` records versions. The original visual assets are references, not another specification. Third-party documentation/licenses remain with their dependencies.
-
-Every commit requires a version bump and matching changelog entry, with package/lockfiles and Tauri manifests aligned. **No commit or push without explicit authorization.**
-
-## License and contributions
-
-Arca is free for personal and non-commercial use under the [PolyForm Strict License 1.0.0](LICENSE): you may use it, but not modify or redistribute it. That is deliberate: the project wants help, not forks.
-
-To contribute, open an issue or a pull request on GitHub. Satoshi Ltd., the licensor, gives you permission to modify and copy the software only as far as needed to prepare and submit a contribution to this repository. By submitting one you confirm it is your own work and grant Satoshi Ltd. a perpetual, worldwide, royalty-free, irrevocable license to use, modify, sublicense and relicense it as part of Arca, with no obligation to accept it. Third-party dependencies keep their own licenses.
+The **publish** workflow tests on macOS, Windows and Linux; a new version on `main` builds the desktop installers and Docker images and publishes a GitHub prerelease and Docker Hub tags.Registry, signing and pipeline details: [release pipelines](SPEC.md#release-pipelines). What remains before distribution is in [ROADMAP.md](ROADMAP.md).
 
 ## Public website
 
-The single page in `site/` is static HTML/CSS with local brand fonts and no navigation menu, client-side framework, telemetry or runtime API. Illustration motion is CSS-only, with no cursor response, and respects reduced-motion preferences; the only script is the small theme switch. It follows `../alf`'s Node-build → GitHub Actions → Cloudflare Pages direct-upload approach.
+The single page in `site/` is static HTML and CSS with no framework, telemetry or runtime API.
 
 ```sh
 npm run site:build
 python3 -m http.server --directory site/dist 4178
 ```
 
-`npm run site:build` works locally without GitHub access: it reads `site/release.json`, or the file specified by `RELEASE_JSON`, and otherwise derives the version from `package.json` with the expected desktop installer URLs for tag `v<version>` and no APK link. With published metadata, version and buttons come from actual release assets, including prereleases. Platform availability is independent of missing deployment configuration; missing destinations are non-interactive, never labeled Coming soon. `SITE_URL`, `APP_STORE_URL` and `PLAY_STORE_URL` configure the canonical domain and real store listings. Without them the page says the mobile apps are not in the stores yet, and it shows the Android APK only when the release contains it; these are not Arca listing links.
+`npm run site:release` writes `site/release.json` from published releases (it needs `GH_TOKEN`, `GITHUB_TOKEN` or an authenticated GitHub CLI). Configuration and publication are in [website publication](SPEC.md#website-publication).
 
-To build from published metadata locally, provide `GH_TOKEN` or `GITHUB_TOKEN` (or an authenticated GitHub CLI) and run:
+## Documentation
 
-```sh
-npm run site:release
-npm run site:build
-```
+- [README.md](README.md): what Arca is and how to install, run and develop it.
+- [AGENTS.md](AGENTS.md): the rules for working here, including the autonomous task workflow.
+- [ROADMAP.md](ROADMAP.md): what is left to do.
+- [SPEC.md](SPEC.md): how Arca works today.
+- [CHANGELOG.md](CHANGELOG.md): what each version shipped.
 
-The lookup calls the GitHub REST API and writes `site/release.json`. CI always sets `RELEASE_JSON`, and an explicitly configured file that is missing stops the build, so production never deploys the package.json fallback.
+## License and contributions
 
-`.github/workflows/publish-site.yml` runs after a successful `publish` workflow on `main` (push or manual run), or manually from `main`. Automatic runs check out the exact successful commit; failed/cancelled runs and pull requests do not deploy. It reads published release metadata through the GitHub REST API with the workflow token, uses each installer’s actual `browser_download_url`, then deploys the static page to Pages. Downloads stay in GitHub Releases, as in alf; no R2 mirror is used. See SPEC's website publication section for required configuration.
+Arca is free for personal and non-commercial use under the [PolyForm Strict License 1.0.0](LICENSE): you may use it, but not modify or redistribute it. That is deliberate: the project wants help, not forks.
 
-**Version history:** hub folder headers offer Off, 1 day, 1 week, 1 month (30 days), or Forever. 30 days is the default; explicit choices are preserved. Shortening retention previews existing revisions to remove; automatic cleanup runs hourly while the hub is active. Current files and protected work remain, and unreferenced content has a 24-hour grace period before disk reclamation. Requires the updated hub daemon.
-
-**Web sign-in approval:** an authenticated hub administrator can enable “Allow web approval” in a machine’s actions. The login page can then request access from those machines. Open foreground clients show the shared confirmation with a matching reference, requester IP and reported browser details. Requests expire after ten minutes. Shell sign-in codes remain available for initial access and recovery. Updated hub and client code is required; mobile background push delivery is not included.
-
-Docker upgrades: the image listens on container port 17831 explicitly, including with existing state. Compose accepts `ARCA_PORT` for the published port. For an installation whose clients already use 47831, run Compose with `ARCA_PORT=47831` to retain that external address. Do not change configured client addresses merely to upgrade.
+To contribute, open an issue or a pull request on GitHub. Satoshi Ltd., the licensor, gives you permission to modify and copy the software only as far as needed to prepare and submit a contribution to this repository. By submitting one you confirm it is your own work and grant Satoshi Ltd. a perpetual, worldwide, royalty-free, irrevocable license to use, modify, sublicense and relicense it as part of Arca, with no obligation to accept it. Third-party dependencies keep their own licenses.
