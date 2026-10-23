@@ -963,7 +963,7 @@ main {
 }
 .device-older svg {
   position: absolute;
-  right: 100%;
+  right: calc(100% + var(--space-1));
   width: var(--pill-icon);
   height: var(--pill-icon);
 }

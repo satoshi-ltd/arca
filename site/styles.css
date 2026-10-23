@@ -551,6 +551,8 @@ h3 {
   margin-top: 28px;
 }
 .download-card {
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 32px;
@@ -578,16 +580,22 @@ h3 {
 .download-card p {
   font-size: 16px;
   color: var(--muted);
-  max-width: 360px;
+  max-width: 460px;
   margin-bottom: 27px;
 }
 .download-card > small {
   margin-top: 17px;
 }
+.download-card > .card-note {
+  margin-top: auto;
+  padding-top: 19px;
+  border-top: 1px solid var(--rule);
+}
 .store-row {
   display: flex;
+  flex-direction: column;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 .store {
   border: 1px solid var(--line);
@@ -940,14 +948,13 @@ footer .eyebrow {
   align-items: center;
   gap: 10px;
 }
+.store-soon {
+  border-style: dashed;
+  color: var(--muted);
+}
 .store .platform-icon {
   width: 23px;
   height: 23px;
-}
-@media (max-width: 480px) {
-  .store-row {
-    flex-direction: column;
-  }
 }
 
 /* Shared controls keep preview and live-download icons on the same center line. */
@@ -973,10 +980,10 @@ footer .eyebrow {
 }
 .download-alternatives-list {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
   margin-top: 9px;
-  gap: 2px;
+  gap: 2px 32px;
 }
 .download-alternatives-list .button {
   border: 0;

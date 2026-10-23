@@ -2635,7 +2635,7 @@ test("device cells are fixed-width caption columns after a fixed name block, so 
   assert.match(rule(".device-older"), /color: var\(--waFg\);/);
   assert.match(rule(".device-older svg"), /width: var\(--pill-icon\);/);
   assert.match(rule(".device-older"), /position: relative;/, "the warning icon hangs off the version so the text keeps the column edge");
-  assert.match(rule(".device-older svg"), /position: absolute;[\s\S]*right: 100%;/);
+  assert.match(rule(".device-older svg"), /position: absolute;[\s\S]*right: calc\(100% \+ var\(--space-1\)\);/);
   assert.match(rule(".device-seen .status-dot"), /display: block;\s+position: static;/, "the presence dot shows at every width");
   const narrow = style.slice(style.indexOf("@container (max-width: 580px) {"), style.indexOf("\n}\n", style.indexOf("@container (max-width: 580px) {")));
   assert.match(narrow, /\.device-cells \{[^}]*flex-wrap: wrap;[^}]*margin-left: calc\(var\(--detail-tile\) \+ var\(--space-3\)\);/, "a narrow list moves the cells under the name, beside the tile column");

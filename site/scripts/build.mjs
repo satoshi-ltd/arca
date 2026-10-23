@@ -84,10 +84,12 @@ export function render(template, release, config = {}) {
     throw new Error("Invalid Google Play URL");
   }
   const stores = [
-    appStoreUrl &&
-      `<a class="store" href="${escape(appStoreUrl)}">${icon("apple")}<span>App Store<small>iPhone &amp; iPad ↗</small></span></a>`,
     playUrl &&
       `<a class="store" href="${escape(playUrl.href)}">${icon("android")}<span>Google Play<small>Android ↗</small></span></a>`,
+    appStoreUrl
+      ? `<a class="store" href="${escape(appStoreUrl)}">${icon("apple")}<span>App Store<small>iPhone &amp; iPad ↗</small></span></a>`
+      : playUrl &&
+        `<span class="store store-soon">${icon("apple")}<span>App Store<small>iPhone &amp; iPad · Coming soon</small></span></span>`,
   ].filter(Boolean);
   const apk = assets.get(`arca-${version}-android.apk`);
   const tokens = {
@@ -147,7 +149,9 @@ if (
       repository,
       siteUrl: process.env.SITE_URL,
       appStore: process.env.APP_STORE_URL,
-      playStore: process.env.PLAY_STORE_URL,
+      playStore:
+        process.env.PLAY_STORE_URL ||
+        "https://play.google.com/store/apps/details?id=com.satoshilimited.arca",
     },
   );
   if (!process.env.SITE_OUTPUT) await rm(output, { recursive: true, force: true });

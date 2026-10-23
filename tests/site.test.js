@@ -142,6 +142,12 @@ test("downloads use actual GitHub release assets and Linux appears once", () => 
   assert.doesNotMatch(html, /\.deb|Coming soon|\{\{[A-Z_]+\}\}|<nav/);
   assert.equal((html.match(/Linux · AppImage/g) || []).length, 1);
 });
+test("the desktop card lists Linux before Windows and the mobile note sits at the bottom of its card", () => {
+  const html = render(template, release);
+  assert.ok(html.indexOf("Linux · AppImage") < html.indexOf("Windows · x64"));
+  assert.match(html, /<small class="card-note">/);
+  assert.match(css, /\.download-alternatives-list \{[^}]*flex-wrap: wrap;/);
+});
 test("the Docker command never pins a version the registry may not have yet", () => {
   const html = render(template, release);
   assert.match(html, /docker pull satoshiltd\/arca:latest/);
@@ -159,6 +165,12 @@ test("missing assets never get guessed download links, and stores and the APK ap
   assert.match(stores, /href="https:\/\/apps\.apple\.com\/app\/id1"/);
   assert.match(stores, /href="https:\/\/play\.google\.com\/store\/apps\/details\?id=com\.arca"/);
   assert.doesNotMatch(stores, /not in the app stores yet/);
+  const playOnly = render(template, release, { playStore: "https://play.google.com/store/apps/details?id=com.arca" });
+  assert.match(playOnly, /class="store store-soon"[^>]*>[\s\S]*?Coming soon/);
+  assert.doesNotMatch(stores, /Coming soon/);
+  assert.ok(stores.indexOf("Google Play") < stores.indexOf("App Store"));
+  assert.match(css, /\.store-soon \{[^}]*border-style: dashed;/);
+  assert.doesNotMatch(playOnly, /not in the app stores yet|<a class="store"[^>]*apps\.apple/);
   const apk = render(template, { ...release, assets: [...release.assets, asset("android.apk")] });
   assert.match(apk, /href="[^"]+arca-0\.3\.1-android\.apk"/);
   assert.match(apk, /<span class="eyebrow">Android<\/span>/);

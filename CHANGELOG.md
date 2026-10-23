@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.96 — 2026-10-23
+
+- The website's mobile card now links to Arca on Google Play, with a dashed Coming soon in place of the App Store button until the iPhone app is listed; the desktop card shows Linux and Windows side by side and the mobile card's note sits at its bottom.
+- In desktop Devices, the up-arrow of an outdated device no longer touches its version number.
+
+Needs: desktop build
+
 ## 0.7.95 — 2026-10-22
 
 - The website's hero is back to the design it had before 0.7.92, which broke the page.
