@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.97 — 2026-10-23
+
+- Security updates for the image library (sharp), the TLS and QUIC crates desktop uses for updates and outbound connections, and development-only tooling in the root and mobile projects (Vite, shell-quote, brace-expansion, source-map-js).
+
+Needs: desktop build · Casa redeploy
+
 ## 0.7.96 — 2026-10-23
 
 - The website's mobile card now links to Arca on Google Play, with a dashed Coming soon in place of the App Store button until the iPhone app is listed; the desktop card shows Linux and Windows side by side and the mobile card's note sits at its bottom.
