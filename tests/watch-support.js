@@ -59,7 +59,7 @@ export async function canWatchDirectory(count = 1) {
     return false;
   } finally {
     for (const watcher of watchers) watcher.close();
-    fs.rmSync(directory, { recursive: true, force: true });
+    fs.rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 

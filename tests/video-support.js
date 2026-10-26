@@ -9,7 +9,7 @@ import { start } from "../packages/daemon/server.js";
 
 const clips = new Map();
 const clipRoot = fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-clips-"));
-process.on("exit", () => fs.rmSync(clipRoot, { recursive: true, force: true }));
+process.on("exit", () => fs.rmSync(clipRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
 export function clip({ seconds = 1, size = "320x240", container = "mp4", tone = 440 } = {}) {
   const key = JSON.stringify([seconds, size, container, tone]);
@@ -58,7 +58,7 @@ export async function hub(t, options = {}) {
     await daemon.engine.video?.background;
     await daemon.engine.video?.matcher;
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const s = daemon.engine.store;
   const v = s.addVolume("Videos");

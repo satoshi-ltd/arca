@@ -45,7 +45,7 @@ test("restore a fresh hub and its history from an offline backup", () => {
       /must not exist/,
     );
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -67,7 +67,7 @@ test("restart persists identity and revisions; second daemon refuses the state l
     assert.equal(daemon.engine.store.history(v.id, "a").length, 1);
   } finally {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -81,7 +81,7 @@ test("a lock left with this process's own PID, as after a container was killed a
     await assert.rejects(start(home, { timer: false }), /already owns/, "the live daemon still holds it");
   } finally {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
   assert.equal(fs.existsSync(path.join(home, "daemon.lock")), false);
 });
@@ -101,7 +101,7 @@ test("filesystem events detect edits before the periodic fallback deadline", asy
   const daemon = await start(home);
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   for (let i = 0; i < 100 && !daemon.engine.lastSync; i++)
     await new Promise((r) => setTimeout(r, 20));
@@ -150,7 +150,7 @@ test("promotion survives configuration-write failure after committed history tra
     assert.equal(fs.existsSync(path.join(home, "promotion.json")), false);
   } finally {
     engine.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -197,6 +197,6 @@ test("promotion rejects active backup and stale success with errors or pending t
     assert.equal(engine.promotionPlan().ready, true);
   } finally {
     engine.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });

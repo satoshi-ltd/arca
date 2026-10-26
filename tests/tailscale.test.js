@@ -102,7 +102,7 @@ test("host-file status expires instead of retaining a stale connected tailnet", 
     fs.writeFileSync(file, "not json");
     assert.equal((await ts.read(true)).state, "unavailable");
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 test("probe validates Arca response, never sends credentials and skips offline peers", async () => {
@@ -265,7 +265,7 @@ test("discovery is admin-only; tailnet API stays authenticated and closes on dis
     );
   } finally {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -335,7 +335,7 @@ test("a stale Tailscale status answers as temporarily unavailable, never as a re
     peer.closeAllConnections();
     await new Promise((resolve) => peer.close(resolve));
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = async () => {
     const response = await fetch(
@@ -394,7 +394,7 @@ test("a slow Tailscale check never holds the daemon start or its first hub reque
     for (const socket of sockets) socket.destroy();
     await closed;
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   assert.ok(Date.now() - started < 5000, `start took ${Date.now() - started} ms`);
   while (!connections && Date.now() - started < 8000) await new Promise((resolve) => setTimeout(resolve, 10));

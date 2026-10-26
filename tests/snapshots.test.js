@@ -16,7 +16,7 @@ test("large snapshots resolve tombstones by path without revision-range scans", 
   const store = new Store(home);
   t.after(() => {
     store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volume = store.addVolume("Documents").id;
   const put = (name, deleted, rev, directory = false) =>
@@ -85,7 +85,7 @@ test("snapshot batches yield, retain captured revisions and clean up cancellatio
   const store = new Store(home);
   t.after(() => {
     store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volume = store.addVolume("Documents").id;
   store.db.exec("BEGIN");
@@ -166,7 +166,7 @@ test("conflict summaries only visit conflict entries and keep resolution semanti
   const store = new Store(home);
   t.after(() => {
     store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volume = store.addVolume("Documents").id;
   const put = (name, rev, deleted = 0) =>
@@ -209,7 +209,7 @@ test("retention preserves captured content until asynchronous snapshot pins are 
   const store = new Store(home);
   t.after(() => {
     store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volume = store.addVolume("Documents").id;
   const hash = digest("captured bytes");
@@ -255,7 +255,7 @@ test("folder totals count the index and forgetting excluded rows updates them", 
   const store = new Store(home);
   t.after(() => {
     store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volume = store.addVolume("Documents");
   const plan = store.db
@@ -295,7 +295,7 @@ test("retention changes preserve sync tombstones and snapshot counts across rest
   let store = new Store(home);
   t.after(() => {
     store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const folder = store.addVolume("Short history");
   const other = store.addVolume("Forever");
@@ -351,7 +351,7 @@ test("existing snapshot leases gain durable counts when the store upgrades", asy
   let store = new Store(home);
   t.after(() => {
     store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volume = store.addVolume("Documents").id;
   store.setFile({
@@ -383,7 +383,7 @@ test("snapshot worker releases SQLite before reporting completion", async (t) =>
   t.after(() => {
     scanner.close();
     if (!closed) store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volume = store.addVolume("Documents").id;
   store.setFile({ volume, path: "entry", hash: null, size: 0, deleted: 1, rev: 1 });
@@ -401,7 +401,7 @@ test("a device's new first page supersedes its abandoned lease for that folder o
   const store = new Store(home);
   t.after(() => {
     store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volumes = Array.from(
     { length: 9 },
@@ -438,7 +438,7 @@ test("reading a snapshot page renews its lease for long resumable downloads", as
   const store = new Store(home);
   t.after(() => {
     store.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volume = store.addVolume("Documents").id;
   for (const name of ["a", "b", "c"])

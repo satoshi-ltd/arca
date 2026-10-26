@@ -12,7 +12,7 @@ async function hub(t) {
   const daemon = await start(home, { timer: false });
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const volume = daemon.engine.store.addVolume("Podcasts");
   const api = async (route, body) => {
@@ -220,7 +220,7 @@ test("a replica's route queues the clear for the hub instead of writing it", asy
   const daemon = await start(home, { timer: false });
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const response = await fetch(`http://127.0.0.1:${daemon.port}/v1/audio-position/clear`, {
     method: "POST",

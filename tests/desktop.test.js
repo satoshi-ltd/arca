@@ -143,7 +143,7 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
   });
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const v = daemon.engine.store.addVolume("Documents");
   const file = path.join(v.path, "note.txt");
@@ -729,7 +729,7 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
   t.after(async () => {
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   issueWebCode(home);
   atomic(
@@ -916,7 +916,7 @@ test("folder errors use one floating notification through refresh, dismissal and
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -1039,7 +1039,7 @@ test("local folders render while the hub catalog is still pending", async (t) =>
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -1093,7 +1093,7 @@ test("hub-only actions are disabled with a reason while the hub is unavailable a
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -1158,7 +1158,7 @@ test("the hub's folder menu makes an ordinary folder an audio library, which the
     dom.window.close();
     await daemon.engine.music?.background;
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   let poll = null;
@@ -1230,7 +1230,7 @@ test("a replica's folder header offers Open in Finder alone: no Enable gallery a
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -1277,7 +1277,7 @@ test("the status card opens with the device glyph, name and role, and the lockup
     await drainRequests(requests);
     for (const window of windows) window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const open = async (state, native) => {
     const dom = new JSDOM(html, { runScripts: "outside-only", url: native ? "http://tauri.localhost" : "http://127.0.0.1:17831" });
@@ -1356,7 +1356,7 @@ test("the Devices row tagged This device draws the same glyph as the status card
     await drainRequests(requests);
     for (const window of windows) window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const open = async (state, native) => {
     const dom = new JSDOM(html, { runScripts: "outside-only", url: native ? "http://tauri.localhost" : "http://127.0.0.1:17831" });
@@ -1427,7 +1427,7 @@ test("an empty Folders shows its one action in the header and the empty state on
     await drainRequests(requests);
     for (const window of windows) window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const open = async (state, remote) => {
     const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
@@ -1496,7 +1496,7 @@ test("the file detail reveals the file on every platform with the platform's own
     await drainRequests(requests);
     for (const window of windows) window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const open = async (platform) => {
     const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
@@ -1591,7 +1591,7 @@ test("Settings offers Clean up…, and the dialog shows the count before Apply c
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   assert.equal(older, before - 1, "note.txt keeps one current revision");
   const w = dom.window;
@@ -1723,7 +1723,7 @@ test("the folder summary has three cells: Status, Last change with file and devi
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -1784,7 +1784,7 @@ test("offline labels: this machine reads Offline, saved machines say last known 
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -1902,7 +1902,7 @@ test("Folders has no Just arrived row, keeps type icons and shows no path or las
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -1970,7 +1970,7 @@ test("a paused replica's Devices rows carry roles and full backup, never sync, p
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -2017,7 +2017,7 @@ test("offline, an empty saved History reads its normal empty state and Copies sa
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.setInterval = () => 0;
   w.__TAURI__ = {
@@ -2058,7 +2058,7 @@ test("online, the machines list keeps real states and never says last known", as
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -2094,7 +2094,7 @@ async function devicesPage(t, { status, machines, web = "", ready = () => true, 
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -2651,7 +2651,7 @@ test("hub-only controls follow the hub's availability and a status-less 'Hub una
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -2718,7 +2718,7 @@ test("replica folder history uses the hub policy when local status omits it", as
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   let mode = "off";
   w.__TAURI__ = {
@@ -2796,7 +2796,7 @@ test("share web routes survive reload and history navigation; hub edits use real
     await new Promise((resolve) => setImmediate(resolve));
     for (const dom of doms) dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   async function open(hash) {
     const dom = new JSDOM(html, {
@@ -3142,7 +3142,7 @@ test("unlink confirms and completes while a native background status read is pen
     await new Promise((resolve) => setImmediate(resolve));
     w.close();
     for (const daemon of nodes.reverse()) await daemon.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   hold = true;
@@ -3245,7 +3245,7 @@ test("a replica shows full-backup progress, waits quietly for the hub and never 
     await drainRequests(requests);
     w.close();
     for (const daemon of nodes.reverse()) await daemon.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   const q = (selector) => w.document.querySelector(selector);
@@ -3317,7 +3317,7 @@ test("folder progress shows files and bytes for the current phase", async (t) =>
     await drainRequests(requests);
     w.close();
     for (const daemon of nodes.reverse()) await daemon.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   const q = (selector) => w.document.querySelector(selector);
@@ -3391,7 +3391,7 @@ test("unlink can also delete the replica files the hub already has", async (t) =
     await drainRequests(requests);
     w.close();
     for (const daemon of nodes.reverse()) await daemon.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   const q = (selector) => w.document.querySelector(selector);
@@ -3437,7 +3437,7 @@ for (const surface of ["web", "desktop"]) {
         await drainRequests(requests);
         dom.window.close();
         await daemon.close();
-        fs.rmSync(home, { recursive: true, force: true });
+        fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       });
       const w = dom.window;
       w.HTMLDialogElement.prototype.showModal = function () {
@@ -3624,7 +3624,7 @@ test("desktop connection confirms disconnect, retains files and offers a fresh p
     );
     dom.window.close();
     for (const n of nodes.reverse()) await n.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.setInterval = () => 0;
   w.HTMLDialogElement.prototype.showModal = function () {
@@ -3709,7 +3709,7 @@ test("pairing shows two addresses and copies each inside the active HTTP dialog"
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.setInterval = () => 0;
   w.HTMLDialogElement.prototype.showModal = function () {
@@ -3849,7 +3849,7 @@ test("Machines refreshes backup acknowledgements without navigation", async (t) 
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   await until(() => w.document.querySelector("#devices-list"));
@@ -3953,7 +3953,7 @@ test("LAN mobile metadata appears on hub and other machines appear read-only on 
   t.after(async () => {
     doms.forEach((d) => d.window.close());
     await hub.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   for (const role of ["hub", "replica"]) {
     const dom = new JSDOM(html, {
@@ -4023,7 +4023,7 @@ test("conflict file detail opens a guarded version choice and restores the selec
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -4214,7 +4214,7 @@ test(`desktop destroy confirmation cancels safely and returns to first-run onboa
   t.after(async () => {
     dom.window.close();
     for (const n of nodes.reverse()) await n.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.indexedDB = new IDBFactory();
   const cache = await new Promise((resolve) => {
@@ -4352,7 +4352,7 @@ test("replica onboarding follows welcome, name, role, pairing and root, and resu
   t.after(async () => {
     for (const w of windows) w.close();
     for (const n of nodes.reverse()) await n.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const calls = [];
   async function request(node, route, body) {
@@ -4576,7 +4576,7 @@ test("navigation paints before slow reads, retains updating feedback and ignores
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   const title = () => w.document.querySelector("#content h1")?.textContent;
@@ -4755,7 +4755,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -5285,7 +5285,7 @@ test("web approval uses the shared confirmation and closes after another machine
   t.after(async () => {
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
@@ -5350,7 +5350,7 @@ for (const role of ["hub", "replica"])
       t.after(async () => {
         w.close();
         await daemon.close();
-        fs.rmSync(home, { recursive: true, force: true });
+        fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       });
       await w.eval(`(async()=>{${script}\n})()`);
       await until(() => w.document.querySelector("#setup-form"));
@@ -5430,7 +5430,7 @@ test("configured server hides unavailable machine approval and displays the chos
   t.after(async () => {
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   await until(() =>
@@ -5471,7 +5471,7 @@ test("hub danger zone cancels safely and returns to onboarding after local destr
   t.after(async () => {
     dom.window.close();
     for (const n of nodes.reverse()) await n.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.setInterval = () => 0;
   w.HTMLDialogElement.prototype.showModal = function () {
@@ -5629,7 +5629,7 @@ test("Tauri gallery opens video before its poster and stops media when closed", 
     releasePoster?.({ unavailable: true });
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   w.document.querySelector('[data-action="folder-detail"]').click();
@@ -5776,7 +5776,7 @@ test("folder reentry keeps known files and revision while the brand shows refres
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const click = (action, id) =>
     w.document
@@ -5910,7 +5910,7 @@ test("the Last change cell says Not available when nothing could be read and rec
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const click = (action, id) =>
     w.document
@@ -5980,7 +5980,7 @@ test("folder detail lists local files while the hub-backed Recent never answers"
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   w.document
@@ -6060,7 +6060,7 @@ test("a late Recent answer patches the open folder without rebuilding it, and a 
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   w.document
@@ -6139,7 +6139,7 @@ test("a late Recent answer fills the open Recent tab in place", async (t) => {
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   w.document
@@ -6223,7 +6223,7 @@ test("Review opens the folder error details without navigating away", async (t) 
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await w.eval(`(async()=>{${script}\n})()`);
   w.document.querySelector('[data-action="folder-problem"]').click();
@@ -6361,7 +6361,7 @@ test("the status card shows the last sync only when the machine is not up to dat
   daemon.engine.store.addVolume("Documents");
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const card = async (phase) => {
     const dom = new JSDOM(html, {
@@ -6541,7 +6541,7 @@ test("web admin reads time out into the connection notice while a stalled submis
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   let poll;
   w.setInterval = (fn, ms) => {
@@ -6646,7 +6646,7 @@ test("web admin marks the card unreachable when a background status read fails a
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   let poll;
   w.setInterval = (fn, ms) => {
@@ -6710,7 +6710,7 @@ test("web admin leaves Offline as soon as an events read answers, without waitin
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   let poll, events;
   Object.defineProperty(w.document, "hidden", { configurable: true, get: () => false });
@@ -6770,7 +6770,7 @@ test("Tauri replaces the stale view with Start service when the daemon stops and
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const intervals = [];
   w.setInterval = (fn, ms) => {
@@ -6859,7 +6859,7 @@ test("file rename and delete send the newest known revision when saved history i
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.setInterval = () => 0;
   w.HTMLDialogElement.prototype.showModal = function () {
@@ -6957,7 +6957,7 @@ test("a file only this replica holds is renamed and deleted with revision 0, not
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.setInterval = () => 0;
   w.HTMLDialogElement.prototype.showModal = function () {
@@ -7027,7 +7027,7 @@ test("a replica's web conflict dialog downloads the local copies it holds and hi
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   let poll;
   w.setInterval = (fn, ms) => {
@@ -7093,7 +7093,7 @@ test("web admin reports gateway failures as an unreachable machine and keeps the
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   let poll;
   w.setInterval = (fn, ms) => {
@@ -7175,7 +7175,7 @@ test("the photo timeline scales months by count, keeps year labels apart and scr
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.__TAURI__ = {
     core: {
@@ -7280,7 +7280,7 @@ test("the photo timeline appears and seeks while the gallery is still indexing",
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.__TAURI__ = {
     core: {
@@ -7341,7 +7341,7 @@ test("the gallery heads each month once with no day labels, with On this day, an
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const item = (day, n) => ({ path: `${day}-${n}.jpg`, hash: `h${day}${n}`, kind: "image", date: `${day}T10:00:00.000Z`, cursor: `${day}T10:00:00.000Z|${day}-${n}.jpg`, size: 1, rev: 1, dateSource: "capture date" });
   const plan = [["2026-09-12", 9], ["2026-09-10", 2], ["2026-09-09", 1], ["2026-09-05", 5]];
@@ -7491,7 +7491,7 @@ test("the wall files each photo under the local day its date names, sharpens til
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     if (zone === undefined) delete process.env.TZ;
     else process.env.TZ = zone;
   });
@@ -7622,7 +7622,7 @@ async function mountWall(t, { zone, page, preview, prepare = () => {}, memories 
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     if (previousZone === undefined) delete process.env.TZ;
     else process.env.TZ = previousZone;
   });
@@ -8063,7 +8063,7 @@ test("Space opens a Quick Look with the file's preview, arrows move through the 
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   w.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new w.Event("close")); };
@@ -8133,7 +8133,7 @@ test("Command-K opens one palette with typed groups and no scopes, walks results
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   w.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new w.Event("close")); };
@@ -8281,7 +8281,7 @@ test("rows cascade in on a new route, a new arrival settles once and a folder's 
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const base = { selected: 1, sync: { state: "idle", lastCompleted: new Date().toISOString() }, conflicts: 0, files: 1, bytes: 1, path: "/x" };
   const volumes = Array.from({ length: 8 }, (_, i) => ({ ...base, id: `v${i}`, name: `folder-${i}` }));
@@ -8373,7 +8373,7 @@ test("the gallery retries a failed first page and loads pages whose sentinel sta
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.__TAURI__ = {
     core: {
@@ -8453,7 +8453,7 @@ test("the gallery header counts photos that are still waiting for a date", async
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.__TAURI__ = {
     core: {
@@ -8534,7 +8534,7 @@ test("after seeking a month the gallery loads newer photos above when scrolling 
     await drainRequests(requests);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   w.__TAURI__ = {
     core: {
@@ -8662,7 +8662,7 @@ for (const umbrel of [false, true]) {
     t.after(async () => {
       w.close();
       await daemon.close();
-      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       if (previous === undefined) delete process.env.ARCA_SETUP_CODE_PATH;
       else process.env.ARCA_SETUP_CODE_PATH = previous;
     });
@@ -8735,7 +8735,7 @@ test("a server replica's web file detail downloads the file from its own copy, t
     await new Promise((resolve) => setImmediate(resolve));
     for (const dom of doms) dom.window.close();
     for (const daemon of nodes.reverse()) await daemon.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   async function open(daemon, hash) {
     const dom = new JSDOM(html, { runScripts: "outside-only", url: daemon.base + "/" + hash });
@@ -8801,7 +8801,7 @@ test("offline file history shows only the saved rows, says they are recent entri
   t.after(async () => {
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   let poll = null;
@@ -8881,7 +8881,7 @@ test("the Files list appends pages under one Show more files button, has no sear
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -8952,7 +8952,7 @@ test("Show more still lists every file when the folder gained one at the top mea
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -9020,7 +9020,7 @@ test("History groups rows under Today, Yesterday and a short date and shows each
     await drainRequests(requests);
     dom.window.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   w.setInterval = () => 0;
@@ -9105,7 +9105,7 @@ test("an event that arrives while a status read is running still gets its own re
     await drainRequests(pending);
     w.close();
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   let poll, events;
   Object.defineProperty(w.document, "hidden", { configurable: true, get: () => false });

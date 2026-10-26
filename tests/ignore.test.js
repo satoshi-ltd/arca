@@ -41,7 +41,7 @@ test("root rules support gitignore patterns and parent-directory negation", () =
 
 test("a missing or empty policy keeps only the fixed exclusions", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-ignore-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   assert.equal(readIgnore(root), "");
   fs.writeFileSync(path.join(root, ".arcaignore"), "");
   assert.equal(readIgnore(root), "");
@@ -53,7 +53,7 @@ test("a missing or empty policy keeps only the fixed exclusions", (t) => {
 
 test("the seeded .arcaignore has no rules and never replaces an existing one", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-ignore-seed-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   ensureIgnore(root);
   assert.equal(readIgnore(root), DEFAULT_IGNORE);
   assert.ok(
@@ -69,7 +69,7 @@ test("the seeded .arcaignore has no rules and never replaces an existing one", (
 
 test("ignore reads reject a dangling symlink", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-ignore-link-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   try {
     fs.symlinkSync(
       path.join(root, "missing"),

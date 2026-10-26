@@ -16,7 +16,7 @@ async function setup(t, options = { timer: false }) {
   const nodes = [];
   t.after(async () => {
     for (const n of nodes.reverse()) await n.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   async function node(name, role, extra = {}) {
     const home = path.join(root, name);

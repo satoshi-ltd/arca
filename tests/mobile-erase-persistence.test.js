@@ -14,7 +14,7 @@ test("mobile catalog erasure securely deletes rows and truncates its WAL offline
   db.exec("PRAGMA journal_mode=WAL; PRAGMA secure_delete=OFF");
   t.after(() => {
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const adapter = {
     execAsync: async (sql) => db.exec(sql),
@@ -55,7 +55,7 @@ test("mobile replica reset removes historical free pages as well as current rows
   const db = new DatabaseSync(filename);
   t.after(() => {
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const store = new ReplicaStore({ execAsync: async (sql) => db.exec(sql) });
   await store.init();
@@ -74,7 +74,7 @@ test("mobile replica reset removes historical free pages as well as current rows
 test("mobile erase keeps its durable journal through database compaction", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-erase-journal-"));
   const db = new DatabaseSync(path.join(root, "replica.sqlite"));
-  t.after(() => { db.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  t.after(() => { db.close(); fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
   let compacting = false;
   const store = new ReplicaStore({
     execAsync: async (sql) => {

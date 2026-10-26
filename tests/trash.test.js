@@ -7,7 +7,7 @@ import { moveToTrash } from "../packages/daemon/trash.js";
 
 const setup = (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-trash-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const folder = path.join(root, "folder");
   fs.mkdirSync(folder);
   const file = (name, content) => {

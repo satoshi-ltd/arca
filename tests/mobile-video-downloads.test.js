@@ -41,7 +41,7 @@ function setup(t) {
   const db = new DatabaseSync(path.join(root, "replica.sqlite"));
   t.after(() => {
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const store = new ReplicaStore({
     execAsync: async (sql) => db.exec(sql),
@@ -558,7 +558,7 @@ test("erasing the device stops downloads before deleting their storage, and noth
     files: {
       destroy: async () => {
         order.push("files destroyed");
-        fs.rmSync(storage, { recursive: true, force: true });
+        fs.rmSync(storage, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       },
     },
     client: { destroy: async () => order.push("client destroyed") },

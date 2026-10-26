@@ -23,7 +23,7 @@ async function phone(t) {
   t.after(async () => {
     await daemon.close();
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const yielded =
     (work) =>
@@ -74,7 +74,7 @@ async function phone(t) {
   const local = path.join(root, "mobile");
   const hashes = [];
   const files = {
-    destroy: async () => fs.rmSync(local, { recursive: true, force: true }),
+    destroy: async () => fs.rmSync(local, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
     folder: (s, v) => path.join(local, s, "folders", v),
     work: (s, v, p) => path.join(local, s, "folders", v, ...p.split("/")),
     object: (s, h) => path.join(local, s, "objects", h),
@@ -94,7 +94,7 @@ async function phone(t) {
     removeDirectory: async (p) => fs.rmdirSync(p),
     remove: async (p) => fs.rmSync(p, { force: true }),
     removeFolder: async (s, v) =>
-      fs.rmSync(path.join(local, s, "folders", v), { recursive: true, force: true }),
+      fs.rmSync(path.join(local, s, "folders", v), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
     copy: async (a, b) => fs.copyFileSync(a, b),
     clearStaged: async () => {},
     move: async (a, b) => fs.renameSync(a, b),

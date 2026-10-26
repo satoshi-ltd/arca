@@ -34,7 +34,7 @@ async function fixture(t, { timeout } = {}) {
   t.after(async () => {
     await daemon.close();
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const yielded =
     (work) =>
@@ -90,7 +90,7 @@ async function fixture(t, { timeout } = {}) {
   });
   const local = path.join(root, "mobile");
   const files = {
-    destroy: async () => fs.rmSync(local, { recursive: true, force: true }),
+    destroy: async () => fs.rmSync(local, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
     folder: (s, v) => path.join(local, s, "folders", v),
     work: (s, v, p) => path.join(local, s, "folders", v, p),
     object: (s, h) => path.join(local, s, "objects", h),
@@ -786,7 +786,7 @@ test("mobile synchronizes empty directories both ways", async (t) => {
   fs.mkdirSync(path.join(localRoot, "new/deep/empty"), { recursive: true });
   await sync(f);
   assert.ok(fs.statSync(path.join(hubRoot, "new/deep/empty")).isDirectory());
-  fs.rmSync(path.join(hubRoot, "new"), { recursive: true });
+  fs.rmSync(path.join(hubRoot, "new"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await f.daemon.engine.cycle();
   await sync(f);
   assert.equal(fs.existsSync(path.join(localRoot, "new")), false);
@@ -1086,7 +1086,7 @@ for (const origin of ["hub", "mobile"])
       fs.readFileSync(f.files.work(r.scope, f.volume.id, "item/child"), "utf8"),
       "nested",
     );
-    fs.rmSync(path.join(root, "item"), { recursive: true });
+    fs.rmSync(path.join(root, "item"), { recursive: true, maxRetries: 10, retryDelay: 100 });
     fs.writeFileSync(path.join(root, "item"), "last");
     if (origin === "hub") await f.daemon.engine.cycle();
     await sync(f);
@@ -1319,7 +1319,7 @@ async function galleryFixture(
   files.galleryStage = (s, v) =>
     path.join(f.root, "mobile", s, "gallery-stage", v);
   files.clearGalleryStage = async (s, v) =>
-    fs.rmSync(files.galleryStage(s, v), { recursive: true, force: true });
+    fs.rmSync(files.galleryStage(s, v), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   files.picked = (s, v, k) => {
     for (const part of [s, v, k])
       if (typeof part !== "string" || !/^[a-zA-Z0-9-]+$/.test(part)) throw new Error("Invalid folder identity");
@@ -4592,7 +4592,7 @@ test("a snapshot whose listing finished drops its saved position before deferred
   await f.daemon.engine.cycle();
   await r.select(f.volume);
   await sync(f);
-  fs.rmSync(path.join(f.volume.path, "a-dir"), { recursive: true });
+  fs.rmSync(path.join(f.volume.path, "a-dir"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   fs.writeFileSync(path.join(f.volume.path, "b.txt"), "hub b.txt");
   await f.daemon.engine.cycle();
   await f.store.resetCursor(r.scope, f.volume.id);
@@ -4623,7 +4623,7 @@ test("resuming a snapshot twice keeps one copy of each deferred directory deleti
   await f.daemon.engine.cycle();
   await r.select(f.volume);
   await sync(f);
-  fs.rmSync(path.join(f.volume.path, "a-dir"), { recursive: true });
+  fs.rmSync(path.join(f.volume.path, "a-dir"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   for (const name of ["b.txt", "c.txt"])
     fs.writeFileSync(path.join(f.volume.path, name), `hub ${name}`);
   await f.daemon.engine.cycle();
@@ -5957,7 +5957,7 @@ test("a phone keeps the hub's audio library, its covers and the car's library fi
   assert.equal(f.requests.filter((route) => route === "/v1/music/cover").length, covers, "covers already on the phone are not fetched again");
   assert.equal(reloads.length, 1, "an unchanged library is not republished");
 
-  fs.rmSync(path.join(volume.path, "Bo"), { recursive: true });
+  fs.rmSync(path.join(volume.path, "Bo"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await daemon.engine.cycle();
   await sync(f);
   const after = JSON.parse(fs.readFileSync(files.musicLibrary(), "utf8"));

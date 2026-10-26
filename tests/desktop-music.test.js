@@ -91,7 +91,7 @@ async function open(t, { role = "hub", selected = true, folders = ["Music"], man
     dom.window.close();
     await daemon.engine.music?.background;
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const w = dom.window;
   const ui = { patch: (value) => value, poll: null, timers: new Map(), observed: new Set(), listeners: {}, emitted: [], edits: [], answers: {} };

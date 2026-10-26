@@ -11,7 +11,7 @@ import { api, hub } from "./video-support.js";
 import { extractSubtitles, SUBTITLE_BYTES } from "../packages/daemon/video.js";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "arca-embedded-subtitles-"));
-process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
+process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
 test("oversized extracted subtitles are rejected before reading them into memory", async (t) => {
   const source = path.join(scratch, "large.srt");
@@ -98,7 +98,7 @@ test("a replica without a local copy forwards embedded subtitles to the hub", as
   const replica = await start(home, { timer: false });
   t.after(async () => {
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = api(replica.port, replica.engine.config.adminToken);
   const desk = await f.call("/v1/devices", { name: "Desk", role: "replica" });
@@ -126,7 +126,7 @@ test("extraction survives a restart from its disk cache, starts by itself when t
   const extractAll = video.extractAll;
   video.extractAll = () => assert.fail("a saved extraction is never repeated");
   assert.match((await f.subtitles(1)).text, /Hola/);
-  fs.rmSync(path.join(f.home, "video-subtitles"), { recursive: true, force: true });
+  fs.rmSync(path.join(f.home, "video-subtitles"), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   video.extractAll = () => Promise.reject(new Error("Command failed: /opt/ffmpeg -i /srv/secret/Heat.mkv"));
   const failed = await fetch(`http://127.0.0.1:${f.daemon.port}/v1/video/subtitles?${new URLSearchParams({ volume: f.v.id, path: f.name, hash: f.hash, stream: "0", format: "json" })}`, {
     headers: { Authorization: `Bearer ${f.daemon.engine.config.adminToken}` },
@@ -158,12 +158,12 @@ test("a client that polls gets “preparing” at once, also through a replica, 
   const replica = await start(home, { timer: false });
   t.after(async () => {
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = api(replica.port, replica.engine.config.adminToken);
   const desk = await f.call("/v1/devices", { name: "Desk", role: "replica" });
   await call("/v1/connect", { url: `http://127.0.0.1:${f.daemon.port}`, token: desk.token });
   await replica.engine.cycle();
-  fs.rmSync(path.join(f.home, "video-subtitles"), { recursive: true, force: true });
+  fs.rmSync(path.join(f.home, "video-subtitles"), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   assert.deepEqual(await f.subtitles(1, { poll: "1" }, call), { preparing: true }, "the replica passes “preparing” through instead of waiting on the hub");
 });

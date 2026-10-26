@@ -63,7 +63,7 @@ test("Umbrel ships the same setup module as Docker; persistent roots reject esca
   } finally {
     if (previous === undefined) delete process.env.ARCA_FILES;
     else process.env.ARCA_FILES = previous;
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -83,7 +83,7 @@ for (const role of ["hub", "replica"])
       t.after(async () => {
         await daemon.close();
         if (hub) await hub.close();
-        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       });
       let cookie;
       const call = async (route, data, authenticated = true) => {
@@ -207,7 +207,7 @@ for (const role of ["hub", "replica"])
 
 test("Docker's daemon --setup starts fresh state and preserves explicit CLI initialization", async (t) => {
   const root = temporary();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   for (const configured of [false, true]) {
     const home = path.join(root, configured ? "existing" : "fresh");
     if (configured)

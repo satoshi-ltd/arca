@@ -12,7 +12,7 @@ const env = Object.fromEntries(
 );
 test("EAS archive includes every shared source imported by the mobile app and excludes built APKs", (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "arca-eas-inputs-"));
-  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   assert.equal(spawnSync("git", ["init", "-q", fixture], { env }).status, 0);
   fs.copyFileSync(
     path.join(root, ".easignore"),

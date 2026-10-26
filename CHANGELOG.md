@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.3 — 2026-10-26
+
+- No change for people using Arca: the test suite retries removing its temporary folders, so a file Windows has not released yet no longer fails a release.
+
 ## 0.8.2 — 2026-10-26
 
 - A refined Arca mark everywhere: the door is now an arch inside the arch, the legs are a little lighter, the tile corners rounder and the door a brighter green, so it reads clearly at every size. The app icons, tray, launch animation, phone splash, favicon and website carry it.

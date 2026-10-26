@@ -6,7 +6,7 @@ import path from "node:path";
 import { folderPreview } from "../packages/daemon/folder-preview.js";
 test("preview counts metadata using ignore rules without creating files or following symlinks", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "arca-preview-"));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  t.after(() => fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   assert.deepEqual(await folderPreview(path.join(root, "missing")), {
     files: 0,
     bytes: 0,

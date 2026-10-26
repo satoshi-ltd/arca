@@ -18,8 +18,8 @@ async function fixture(t) {
   t.after(async () => {
     await daemon.engine.music?.background;
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const s = daemon.engine.store;
   const v = s.addVolume("Music");
@@ -265,7 +265,7 @@ test("a paired phone reads the hub's library and covers with its device credenti
   const replica = await start(home, { timer: false });
   t.after(async () => {
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = async (route, body) => {
     const response = await fetch(`http://127.0.0.1:${replica.port}${route}`, {
@@ -404,7 +404,7 @@ test("only a hub reading a library adds the revision index, and an older tag tab
   const replica = await start(home, { timer: false });
   t.after(async () => {
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const index = (db) =>
     db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='music_revision_hash'").get();
@@ -586,7 +586,7 @@ test("a desktop replica indexes, lists and plays its own copy of a selected audi
   t.after(async () => {
     await replica.engine.music?.background;
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = async (route, body) => {
     const response = await fetch(`http://127.0.0.1:${replica.port}${route}`, {
@@ -971,7 +971,7 @@ test("a replica edits playlists in its own copy and the file syncs to the hub; w
   t.after(async () => {
     await replica.engine.music?.background;
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = async (route, body) => {
     const response = await fetch(`http://127.0.0.1:${replica.port}${route}`, {
@@ -1057,7 +1057,7 @@ test("a replica without its hub lists a track added on disk, plays it and adds i
   t.after(async () => {
     await replica.engine.music?.background;
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = async (route, body) => {
     const response = await fetch(`http://127.0.0.1:${replica.port}${route}`, {

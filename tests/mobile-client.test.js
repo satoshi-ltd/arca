@@ -51,7 +51,7 @@ test("mobile pairs only as replica, reads real catalog/history and disconnects o
   const daemon = await start(root, { timer: false });
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const base = `http://127.0.0.1:${daemon.port}`;
   const volume = daemon.engine.store.addVolume("Documents");
@@ -358,7 +358,7 @@ test("hub change waits authenticate, wake on committed files and recheck revocat
   const daemon = await start(root, { timer: false });
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const base = `http://127.0.0.1:${daemon.port}`;
   const volume = daemon.engine.store.addVolume("Events");

@@ -13,7 +13,7 @@ async function replicaOf(t, f) {
   const replica = await start(home, { timer: false });
   t.after(async () => {
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = api(replica.port, replica.engine.config.adminToken);
   const desk = await f.call("/v1/devices", { name: "Desk", role: "replica" });

@@ -15,7 +15,7 @@ import { playerRoute } from "../packages/daemon/machines.js";
 import { api, clip, hub } from "./video-support.js";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "arca-compatible-"));
-process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
+process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 const made = new Map();
 function film(kind) {
   if (made.has(kind)) return made.get(kind);
@@ -178,7 +178,7 @@ test("a replica without a local copy forwards the request and proxies the hub's 
   const replica = await start(home, { timer: false });
   t.after(async () => {
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = api(replica.port, replica.engine.config.adminToken);
   const desk = await f.call("/v1/devices", { name: "Desk", role: "replica" });
@@ -207,7 +207,7 @@ test("leftover conversion files are deleted when the daemon starts", async (t) =
   const daemon = await start(home, { timer: false });
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   assert.deepEqual(fs.readdirSync(path.join(home, "transcodes")), []);
 });
@@ -217,7 +217,7 @@ test("a request waiting for a segment keeps its session alive, and init.mp4 wait
   const sessions = new VideoSessions(home, { idleMs: 30, sweepMs: 5, waitMs: 30000 });
   t.after(() => {
     sessions.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const directory = path.join(home, "transcodes", "a".repeat(32));
   fs.mkdirSync(directory);
@@ -320,7 +320,7 @@ test("conversion pauses far ahead of the viewer, keeps watched sessions under th
   const sessions = new VideoSessions(home, { sweepMs: 3600000, aheadSegments: 30, behindSegments: 100, capBytes: 50 });
   t.after(() => {
     sessions.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const watched = fakeSession(sessions, "a", 40);
   sessions.pace(watched);
@@ -341,7 +341,7 @@ test("a heavy stream is bounded by bytes too: it pauses with little ahead and ke
   const sessions = new VideoSessions(home, { sweepMs: 3600000, aheadSegments: 30, behindSegments: 100, aheadBytes: 100, behindBytes: 100 });
   t.after(() => {
     sessions.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const heavy = fakeSession(sessions, "h", 8, { highest: 4 });
   for (let n = 0; n < 8; n++) fs.writeFileSync(path.join(heavy.directory, `seg-${n}.m4s`), Buffer.alloc(40));
@@ -389,7 +389,7 @@ test("a segment already pruned answers 404 at once instead of waiting for it", a
   const sessions = new VideoSessions(home, { sweepMs: 3600000, behindSegments: 2, waitMs: 30000 });
   t.after(() => {
     sessions.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const session = fakeSession(sessions, "p", 10, { highest: 9 });
   fs.writeFileSync(path.join(session.directory, "index.m3u8"), "#EXTM3U\n");
@@ -404,7 +404,7 @@ test("a session folder is deleted only after FFmpeg has exited, and a failing sw
   const sessions = new VideoSessions(home, { sweepMs: 5 });
   t.after(() => {
     sessions.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const session = fakeSession(sessions, "d", 2);
   sessions.end(session.id);
@@ -464,7 +464,7 @@ test("a replica passes on the hub's conversion error and keeps only its newest f
   const replica = await start(home, { timer: false });
   t.after(async () => {
     await replica.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = api(replica.port, replica.engine.config.adminToken);
   const desk = await f.call("/v1/devices", { name: "Desk", role: "replica" });

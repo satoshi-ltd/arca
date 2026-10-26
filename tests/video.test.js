@@ -635,7 +635,7 @@ test("search finds movies, shows and episodes in a Videos group, not their files
 
 test("a database created before video gains every video table when opened", (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-old-"));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   init(home, { port: 0 });
   new Store(home).close();
   const tables = ["video_folders", "video_items", "video_meta", "video_overrides", "video_positions", "video_watched"];
@@ -840,7 +840,7 @@ test("the library lists a file's audio tracks and embedded subtitles with langua
   const f = await hub(t);
   await f.call("/v1/video/mark", { volume: f.v.id });
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-streams-"));
-  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const srt = path.join(scratch, "es.srt");
   fs.writeFileSync(srt, "1\n00:00:00,100 --> 00:00:00,900\nHola\n");
   const output = path.join(scratch, "film.mkv");
@@ -889,7 +889,7 @@ test("language summaries list only real languages, never track placeholders or t
   const f = await hub(t);
   await f.call("/v1/video/mark", { volume: f.v.id });
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-summary-"));
-  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const output = path.join(scratch, "lost.mkv");
   execFileSync(ffmpeg, [
     "-hide_banner", "-loglevel", "error", "-y",

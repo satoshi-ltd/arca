@@ -187,7 +187,7 @@ test("the phone's stored search finds accented names for plain, accented and mul
   const db = new DatabaseSync(path.join(root, "store.sqlite"));
   t.after(() => {
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const store = new ReplicaStore({
     execAsync: async (sql) => db.exec(sql),
@@ -209,7 +209,7 @@ test("the phone's stored search keeps older plain matches when many newer names 
   const db = new DatabaseSync(path.join(root, "store.sqlite"));
   t.after(() => {
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const store = new ReplicaStore({
     execAsync: async (sql) => db.exec(sql),

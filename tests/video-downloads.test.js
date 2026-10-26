@@ -11,7 +11,7 @@ import { start } from "../packages/daemon/server.js";
 import { api, clip, hub, image } from "./video-support.js";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-downloads-"));
-process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
+process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
 function subtitledFilm() {
   const srt = path.join(scratch, "en.srt");
@@ -47,7 +47,7 @@ async function replicaOf(t, f, options) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-video-download-replica-"));
   init(home, { port: 0, name: "Desk", role: "replica" });
   const r = await replicaAt(t, f, home, options);
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const desk = await f.call("/v1/devices", { name: "Desk", role: "replica" });
   await r.call("/v1/connect", { url: `http://127.0.0.1:${f.daemon.port}`, token: desk.token });
   await r.replica.engine.cycle();
@@ -347,7 +347,7 @@ test("a copy the hub has since changed can still be removed, and a title gone fr
   await s.call("/v1/video/download", { volume: g.v.id, paths: [second.name] });
   await idle(s);
   assert.ok(stored(s).some((file) => file.endsWith(".part")));
-  fs.rmSync(path.join(g.v.path, "Heat (1995)"), { recursive: true });
+  fs.rmSync(path.join(g.v.path, "Heat (1995)"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await g.daemon.engine.cycle();
   await g.settled();
   await s.downloads.wake();
@@ -588,7 +588,7 @@ test("downloads disappear when a fresh hub library no longer has them, and stay 
   assert.equal((await rows(r, f)).filter((row) => row.state === "done").length, 2);
 
   fs.writeFileSync(path.join(f.v.path, other.path), clip({ seconds: 2, tone: 778 }));
-  fs.rmSync(path.join(f.v.path, "Heat (1995)"), { recursive: true });
+  fs.rmSync(path.join(f.v.path, "Heat (1995)"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await f.daemon.engine.cycle();
   await f.settled();
   const hubUrl = r.replica.engine.config.hub.url;

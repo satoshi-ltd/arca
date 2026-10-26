@@ -73,7 +73,7 @@ test("a video folder whose disk is missing is unavailable, never emptied", async
   await f.daemon.engine.cycle();
   const before = f.s.current(f.v.id, "Heat (1995).mp4");
   assert.ok(before && !before.deleted);
-  for (const name of fs.readdirSync(f.v.path)) fs.rmSync(path.join(f.v.path, name), { recursive: true, force: true });
+  for (const name of fs.readdirSync(f.v.path)) fs.rmSync(path.join(f.v.path, name), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   await assert.rejects(f.daemon.engine.cycle(), /marker|ENOENT|unavailable/i);
   const after = f.s.current(f.v.id, "Heat (1995).mp4");
   assert.equal(after.deleted, before.deleted, "an unmounted disk records no deletions");
@@ -102,7 +102,7 @@ test("edits that would need a second copy are refused in a video folder, and the
 test("the quick identity reads only the ends of a big video and still tells files apart", async (t) => {
   const os = await import("node:os");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arca-quick-"));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const big = Buffer.alloc(12 * 1024 * 1024, 7);
   const a = path.join(dir, "a.mkv");
   const b = path.join(dir, "b.mkv");

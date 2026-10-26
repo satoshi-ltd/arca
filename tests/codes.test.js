@@ -32,7 +32,7 @@ test("web and pairing failure budgets persist across daemon restarts", async (t)
   let daemon = await start(home, { timer: false });
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const post = (route, b, web = false) =>
     fetch(`http://127.0.0.1:${daemon.port}${route}`, {
@@ -81,7 +81,7 @@ test("issuing a new pairing code replaces the old invitation; grouped code works
   const d = await start(home, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const post = (route, b) =>
     fetch(`http://127.0.0.1:${d.port}${route}`, {

@@ -13,7 +13,7 @@ import {
 
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "arca-incoming-"));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  t.after(() => fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const temporary = path.join(root, "cache");
   const source = path.join(root, "source.fit"),
     saved = path.join(root, "saved.fit");
@@ -28,7 +28,7 @@ async function fixture(t) {
       copy: (a, b) => fs.copyFile(fileURLToPath(a), b),
       remove: (p) => fs.rm(p, { force: true }),
       clearIncoming: async () => {
-        await fs.rm(temporary, { recursive: true, force: true });
+        await fs.rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       },
     },
   };

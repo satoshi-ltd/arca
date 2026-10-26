@@ -12,7 +12,7 @@ test("design APIs: bounded filtered history, permissions, session revocation and
   const d = await start(home, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const url = `http://127.0.0.1:${d.port}`;
   const token = d.engine.config.adminToken;
@@ -173,7 +173,7 @@ test("conflict review restores chosen content and rejects stale decisions withou
   const d = await start(home, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const s = d.engine.store,
     v = s.addVolume("Docs");
@@ -273,7 +273,7 @@ test("background sync acknowledges before completion, coalesces requests and exp
   t.after(async () => {
     release();
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   let cycles = 0;
   d.engine.cycle = async () => {
@@ -307,7 +307,7 @@ test("replica credentials cannot administer the hub; replica administrators cann
   const hub = await start(home, { timer: false });
   t.after(async () => {
     await hub.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = (route, token, body) =>
     fetch(`http://127.0.0.1:${hub.port}${route}`, {

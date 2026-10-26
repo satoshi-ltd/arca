@@ -29,7 +29,7 @@ test("setup root inspection is read-only, checks existing ancestors, rejects non
     home = path.join(root, "state"),
     destination = path.join(root, "new", "folders");
   fs.mkdirSync(home);
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const info = inspectSetupRoot(destination, home);
   assert.equal(info.root, destination);
   assert.ok(info.freeBytes > 0);
@@ -71,7 +71,7 @@ test("desktop saves accepted pairing before catalog failure and completes root s
   t.after(async () => {
     await replica.close();
     await new Promise((resolve) => hub.close(resolve));
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const response = await post(replica, "/v1/connect", {
     url: `http://127.0.0.1:${hub.address().port}`,
@@ -114,7 +114,7 @@ test("pairing expires and concurrent redemption issues only one credential", asy
   const hub = await start(root, { timer: false });
   t.after(async () => {
     await hub.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const expired = await (
     await post(hub, "/v1/pairing", { name: "Phone" })

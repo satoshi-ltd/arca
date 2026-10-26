@@ -12,7 +12,7 @@ async function fixture(t) {
   const daemon = await start(home, { timer: false });
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const v = daemon.engine.store.addVolume("Docs");
   const api = async (route, token = daemon.engine.config.adminToken, body) => {

@@ -43,7 +43,7 @@ function sqliteStore(t) {
   const db = new DatabaseSync(path.join(root, "replica.sqlite"));
   t.after(() => {
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   return new ReplicaStore({
     execAsync: async (sql) => db.exec(sql),

@@ -13,7 +13,7 @@ async function hub(t) {
   const d = await start(home, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = (route, { method = "POST", body, token = d.engine.config.adminToken } = {}) =>
     fetch(`http://127.0.0.1:${d.port}${route}`, {

@@ -12,7 +12,7 @@ async function daemon(t) {
   const d = await start(home, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = async (route, body, token = d.engine.config.adminToken) => {
     const response = await fetch(`http://127.0.0.1:${d.port}${route}`, {
@@ -122,7 +122,7 @@ test("a replica can pin a hub-only Movies & TV folder it streams, but not an ord
   const d = await start(home, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = async (route, body) => {
     const response = await fetch(`http://127.0.0.1:${d.port}${route}`, {

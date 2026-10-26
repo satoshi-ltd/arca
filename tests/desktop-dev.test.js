@@ -93,7 +93,7 @@ test("desktop dev replaces its local daemon while retaining identity, pairing, p
 
 test("desktop dev refuses a lock naming another process and leaves fresh installs for onboarding", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-dev-lock-"));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   fs.writeFileSync(path.join(home, "daemon.lock"), String(process.pid));
   await assert.rejects(stopDaemon(home), /refusing to stop/);
   assert.equal(

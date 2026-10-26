@@ -13,7 +13,7 @@ async function setup(t, options = { timer: false }) {
   const nodes = [];
   t.after(async () => {
     for (const n of nodes.reverse()) await n.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   async function node(name, role) {
     const home = path.join(root, name);
@@ -97,7 +97,7 @@ for (const clear of [false, true])
   });
 test("SYNC-02 backup recovery ignore", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-audit-backup-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const home = path.join(root, "source"),
     targetHome = path.join(root, "target");
   init(home, { role: "backup" });
@@ -289,7 +289,7 @@ test("SYNC-12 pause restart", async (t) => {
   let d = await start(root, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const res = await fetch(`http://127.0.0.1:${d.port}/v1/pause`, {
     method: "POST",
@@ -342,7 +342,7 @@ test("hub reselection does not apply directory tombstones to retained local file
   const { hub, volume } = await setup(t);
   write(hub, volume, "docs/note.txt", "old");
   await hub.sync();
-  fs.rmSync(localPath(hub, volume, "docs"), { recursive: true });
+  fs.rmSync(localPath(hub, volume, "docs"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await hub.sync();
   await hub.api("/v1/unselect", { id: volume.id });
   write(hub, volume, "docs/note.txt", "new");
@@ -373,7 +373,7 @@ test("failed watcher registration uses bounded fallback instead of repeated full
   t.after(async () => {
     if (daemon) await daemon.close();
     fs.watch = original;
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   daemon = await start(root);
   const scan = daemon.engine.scanner.scan.bind(daemon.engine.scanner);
@@ -404,7 +404,7 @@ for (const incremental of [false, true])
       await r.engine.cycle({ incremental });
       await other.engine.cycle({ incremental });
       assert.equal(read(other, volume, "item/child"), "nested");
-      fs.rmSync(localPath(n, volume, "item"), { recursive: true });
+      fs.rmSync(localPath(n, volume, "item"), { recursive: true, maxRetries: 10, retryDelay: 100 });
       write(n, volume, "item", "last");
       n.engine.work.mark(volume.id);
       await n.engine.cycle({ incremental });
@@ -540,7 +540,7 @@ test("timed pause persists its deadline and expires durably after restart", asyn
   let d = await start(root, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   d.engine.setPaused(true, Date.now() + 1000);
   const deadline = d.engine.pauseUntil;
@@ -798,7 +798,7 @@ test("destroy after disconnect deletes replica folders and configured backup but
 
 test("a restarted daemon resumes its durable replica destruction before allowing setup", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-destroy-restart-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   init(root, { role: "replica", port: 0 });
   const first = new Engine(root);
   const folder = first.store.addVolume("Saved");

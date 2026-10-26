@@ -16,7 +16,7 @@ async function fixture(t) {
   t.after(async () => {
     await daemon.engine.gallery?.background;
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const s = daemon.engine.store;
   const v = s.addVolume("Camera");

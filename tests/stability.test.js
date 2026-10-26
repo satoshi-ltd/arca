@@ -19,7 +19,7 @@ function fixture(t) {
   const engine = new Engine(home);
   t.after(() => {
     engine.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const v = engine.store.addVolume("Docs");
   return { home, engine, s: engine.store, v };
@@ -145,7 +145,7 @@ test("SIGKILL after durable journal commit recovers accepted content", async (t)
   fs.writeFileSync(path.join(v.path, "a"), "old");
   s.scanHub();
   s.close();
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const module = new URL("../packages/daemon/storage.js", import.meta.url).href;
   const script = `import fs from 'node:fs';import{Store}from ${JSON.stringify(module)};const s=new Store(${JSON.stringify(home)});const v=s.volume(${JSON.stringify(v.id)});fs.writeFileSync(s.config.root+'/new','new');const item=s.capture(s.config.root+'/new');s.materialize=()=>{process.stdout.write('journal-ready\\n');setInterval(()=>{},1000);};s.commit(v.id,'a',item,'test',true,s.current(v.id,'a').hash);`;
   const child = spawn(process.execPath, ["--input-type=module", "-e", script], {
@@ -289,7 +289,7 @@ test("adopting an existing folder preserves files and never mkdirs that folder",
   const { engine: e } = fixture(t);
   const target = path.join(e.store.home, "..", `arca-existing-${Date.now()}`);
   fs.mkdirSync(target);
-  t.after(() => fs.rmSync(target, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   fs.writeFileSync(path.join(target, "keep.txt"), "existing content");
   const mkdir = fs.mkdirSync;
   fs.mkdirSync = (location, ...args) => {

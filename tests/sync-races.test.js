@@ -11,7 +11,7 @@ async function setup(t) {
   const nodes = [];
   t.after(async () => {
     for (const n of nodes.reverse()) await n.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   async function node(name, role) {
     const home = path.join(root, name);
@@ -84,7 +84,7 @@ test("D10 a remote directory deletion removes Finder metadata instead of freezin
   await mac.sync();
   await other.sync();
   write(mac, "album/.DS_Store", "finder");
-  fs.rmSync(file(other, "album"), { recursive: true });
+  fs.rmSync(file(other, "album"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await other.sync();
   assert.equal(head("album").deleted, 1);
   await mac.sync();
@@ -111,7 +111,7 @@ test("D12 an orphan transfer temporary never blocks a remote directory deletion"
   await a.sync();
   await b.sync();
   write(a, "d/.arca-00000000-0000-0000-0000-000000000000", "partial");
-  fs.rmSync(file(b, "d"), { recursive: true });
+  fs.rmSync(file(b, "d"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await b.sync();
   await a.sync();
   await a.sync();
@@ -125,7 +125,7 @@ test("D15 the hub accepts a directory deletion when its own copy only holds OS m
   await hub.sync();
   await a.sync();
   write(hub, "album/.DS_Store", "finder");
-  fs.rmSync(file(a, "album"), { recursive: true });
+  fs.rmSync(file(a, "album"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   write(a, "unrelated.txt", "new");
   await a.sync();
   await a.sync();
@@ -174,7 +174,7 @@ test("D21 deleting a directory that gained a file elsewhere answers a conflict a
   await b.sync();
   write(b, "proj/new.txt", "from-b");
   await b.sync();
-  fs.rmSync(file(a, "proj"), { recursive: true });
+  fs.rmSync(file(a, "proj"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   write(a, "a-new.txt", "a");
   await a.sync();
   await a.sync();
@@ -195,7 +195,7 @@ test("D5b a file added under a directory deleted elsewhere revives the directory
   await b.sync();
   await a.incremental();
   await b.incremental();
-  fs.rmSync(file(a, "proj"), { recursive: true });
+  fs.rmSync(file(a, "proj"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   a.engine.work.mark(volume.id, "proj");
   await a.incremental();
   write(b, "proj/new.txt", "new-from-b");
@@ -224,7 +224,7 @@ test("H1 hub Stop syncing here then re-select removes stale copies instead of re
   write(a, "keep.txt", "v2-from-a");
   fs.unlinkSync(file(a, "remove.txt"));
   fs.unlinkSync(file(a, "edited.txt"));
-  fs.rmSync(file(a, "sub"), { recursive: true });
+  fs.rmSync(file(a, "sub"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   write(a, "added.txt", "added");
   await a.sync();
   write(hub, "edited.txt", "edited on the hub while unselected");
@@ -588,7 +588,7 @@ test("D22 a remote directory deletion keeps local .arca- files that are not tran
   await a.sync();
   await b.sync();
   write(a, "d/.arca-notes", "mine");
-  fs.rmSync(file(b, "d"), { recursive: true });
+  fs.rmSync(file(b, "d"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await b.sync();
   await a.sync();
   assert.equal(read(a, "d/.arca-notes"), "mine");
@@ -745,7 +745,7 @@ test("R1 a hub cycle that ends with an isolated issue keeps the hub's last sync"
 
 test("F6 a recovery sweep removes a transfer temporary even when its timestamp is ahead of the clock", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arca-sweep-"));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const orphan = path.join(dir, ".arca-00000000-0000-0000-0000-000000000000");
   fs.writeFileSync(orphan, "orphan");
   const ahead = new Date(Date.now() + 5000);

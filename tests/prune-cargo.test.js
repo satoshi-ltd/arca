@@ -8,7 +8,7 @@ import { budgetFromEnvironment, pruneCargo } from "../scripts/prune-cargo.js";
 
 test("desktop builds drop incremental caches first and remove the measured target only if still over budget", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-cargo-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const target = path.join(root, "target");
   const file = (relative, size) => {
     fs.mkdirSync(path.dirname(path.join(target, relative)), { recursive: true });

@@ -13,7 +13,7 @@ test("single port web, discovery, one-time login, CSRF rejection and logout", as
   const d = await start(home, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const url = `http://127.0.0.1:${d.port}`;
   assert.equal((await fetch(url)).status, 200);
@@ -111,7 +111,7 @@ test("explicit HTTPS proxy origin accepts matching host, uses Secure cookies and
   });
   t.after(async () => {
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const { code } = issueWebCode(home),
     url = `http://127.0.0.1:${d.port}`;
@@ -161,7 +161,7 @@ for (const role of ["hub", "replica"]) {
     const d = await start(home, { timer: false });
     t.after(async () => {
       await d.close();
-      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     });
     const base = `http://127.0.0.1:${d.port}`;
     const admin = { Authorization: `Bearer ${config.adminToken}` };
@@ -236,7 +236,7 @@ test("server replicas retain web access independently of machine role", async (t
   const d = await start(home, { timer: false });
   t.after(async () => {
     await d.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   assert.equal((await fetch(`http://127.0.0.1:${d.port}/`)).status, 200);
   assert.match(issueWebCode(home).code, /^\d{6}$/);

@@ -15,7 +15,7 @@ const repository = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
 
 test("bump-version moves every release manifest to the next version together", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-bump-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const files = [...new Set(targets("0", "0").map(([file]) => file))];
   for (const file of files) {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -38,7 +38,7 @@ test("bump-version moves every release manifest to the next version together", (
 
 test("check-release verifies every location bump-version writes, whatever the line endings", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-check-release-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const files = new Set([
     ...manifests.map(([file]) => file),
     "CHANGELOG.md",
@@ -95,7 +95,7 @@ test("check-release verifies every location bump-version writes, whatever the li
 
 test("validation copies the working tree exactly, including case-only renames, deletions and new files", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-clean-copy-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const source = path.join(root, "source");
   const destination = path.join(root, "destination");
   fs.mkdirSync(source);
@@ -171,7 +171,7 @@ test("every workflow uses the same checkout and setup-node majors and closes its
 
 test("the clean copy ignores git variables exported by hooks and never touches the caller's repository", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-hook-env-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const source = path.join(root, "source");
   const destination = path.join(root, "destination");
   const foreign = path.join(root, "foreign.git");
@@ -223,7 +223,7 @@ test("local full runs cap test parallelism while CI keeps the default", () => {
       });
       assert.equal(linked.trim(), "2", "a symlinked checkout still prints the number");
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   }
   const read = (file) => fs.readFileSync(path.join(repository, file), "utf8").replace(/\r\n/g, "\n");
@@ -256,7 +256,7 @@ test("the Docker workflow builds and tags the commit of the release that trigger
 
 test("a validation stamp matches only the exact files it was written for", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-stamp-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe", env: gitFreeEnv() });
   git("init", "-q");
   fs.writeFileSync(path.join(root, ".gitignore"), "ignored.txt\nnode_modules\n");
@@ -313,7 +313,7 @@ test("the pre-push hook still checks the release and skips the suite only on a m
 
 test("the check command exits 0 only for a stamp that matches the files", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-stamp-cli-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const env = gitFreeEnv();
   const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe", env });
   git("init", "-q");
@@ -362,7 +362,7 @@ test("the Docker workflow records its tag with retries after guarded promotion, 
 
 test("the tag script retries, treats an existing tag as done and names the manual command when it gives up", { skip: process.platform === "win32" }, (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-tag-script-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const bin = path.join(root, "bin");
   fs.mkdirSync(bin);
   const log = path.join(root, "calls");

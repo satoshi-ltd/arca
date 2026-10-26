@@ -26,7 +26,7 @@ test("the tree watcher skips excluded directories and follows new, re-included a
   const w = watchTree(root, (name, directory) => rules(name, directory), (name) => seen.push(name));
   t.after(() => {
     w.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   assert.deepEqual(w.watched().sort(), ["", "cache", "src", "src/lib"]);
   if (!(await withWatchEvent(t, path.join(root, "src"), "ready.txt", async () => {
@@ -65,7 +65,7 @@ test("the tree watcher skips excluded directories and follows new, re-included a
       });
     }))) return;
     await withWatchEvent(t, path.join(root, "src"), "new", async () => {
-      fs.rmSync(path.join(root, "src/new"), { recursive: true });
+      fs.rmSync(path.join(root, "src/new"), { recursive: true, maxRetries: 10, retryDelay: 100 });
     }, async () => {
       await until(() => !w.watched().includes("src/new"));
     });
@@ -83,7 +83,7 @@ test("an asynchronous error of an existing watcher reaches the daemon's handler 
   const w = watchTree(root, () => false, (name) => seen.push(name));
   t.after(() => {
     w.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   assert.deepEqual(w.watched().sort(), ["", "src", "src/nested"]);
   const errors = [];
@@ -108,7 +108,7 @@ test("a watcher error with no listener, or after close, never throws", async (t)
   const w = watchTree(root, () => false, () => {});
   t.after(() => {
     w.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const watcher = w.dirs.get("src");
   assert.doesNotThrow(() => watcher.emit("error", new Error("no listener")));

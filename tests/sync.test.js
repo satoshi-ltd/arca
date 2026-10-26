@@ -19,7 +19,7 @@ async function setup(t, options = { timer: false }) {
   const nodes = [];
   t.after(async () => {
     for (const n of nodes.reverse()) await n.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   async function node(name, role) {
     const home = path.join(root, name);
@@ -855,7 +855,7 @@ test("backup starts in an empty mounted folder and restarts there after its data
   assert.equal(backedUp(mac, volume, "note"), "kept");
   mac.engine.closeBackup();
   for (const entry of fs.readdirSync(mount))
-    fs.rmSync(path.join(mount, entry), { recursive: true, force: true });
+    fs.rmSync(path.join(mount, entry), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   await mac.sync();
   assert.match(mac.engine.status().backup.error, /Backup data is missing from .*Disable and enable backup/);
   await mac.api("/v1/backup", { enabled: false });
@@ -869,7 +869,7 @@ test("backup starts in an empty mounted folder and restarts there after its data
   assert.equal(mac.engine.status().backup.error, null);
   assert.equal(backedUp(mac, volume, "note"), "kept");
   await mac.api("/v1/backup", { enabled: false });
-  fs.rmSync(mount, { recursive: true, force: true });
+  fs.rmSync(mount, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   await assert.rejects(mac.api("/v1/backup", { enabled: true }), /unavailable/);
   assert.equal(fs.existsSync(mount), false, "a missing backup disk is never recreated on the system disk");
 });
@@ -1173,7 +1173,7 @@ test(
     t.after(async () => {
       for (const server of servers)
         await new Promise((resolve) => server.close(resolve));
-      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     });
     const v = await hub.api("/v1/volumes", {
       name: "Runtime",
@@ -1226,7 +1226,7 @@ test(
     const server = net.createServer();
     t.after(async () => {
       await new Promise((resolve) => server.close(resolve));
-      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     });
     await new Promise((resolve, reject) =>
       server.once("error", reject).listen(path.join(root, "endpoint"), resolve),
@@ -2568,7 +2568,7 @@ test("empty directories synchronize bidirectionally, browse and survive restore 
   assert.ok(fs.statSync(directory(hub, "workouts/empty")).isDirectory());
   assert.ok(fs.statSync(directory(other, "workouts/empty")).isDirectory());
   const revision = hub.engine.store.current(volume.id, "workouts/empty");
-  fs.rmSync(directory(mac, "workouts"), { recursive: true });
+  fs.rmSync(directory(mac, "workouts"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await mac.sync();
   await other.sync();
   assert.equal(fs.existsSync(directory(hub, "workouts")), false);
@@ -3540,7 +3540,7 @@ test("a failed saved-history write never fails the file sync", async (t) => {
 test("Stop syncing cleanup never follows a planned directory or an ancestor replaced by a link", async (t) => {
   const { deleteSyncedCopy } = await import("../packages/daemon/storage.js");
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "arca-unlink-")));
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const root = path.join(base, "root");
   const outside = path.join(base, "outside");
   fs.mkdirSync(path.join(root, "plain"), { recursive: true });
@@ -3554,9 +3554,9 @@ test("Stop syncing cleanup never follows a planned directory or an ancestor repl
     files: [],
     directories: [path.join(root, "plain"), path.join(root, "swapped"), path.join(root, "ancestor", "child"), path.join(root, "ancestor")],
   };
-  fs.rmSync(path.join(root, "swapped"), { recursive: true });
+  fs.rmSync(path.join(root, "swapped"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   fs.symlinkSync(outside, path.join(root, "swapped"), "junction");
-  fs.rmSync(path.join(root, "ancestor"), { recursive: true });
+  fs.rmSync(path.join(root, "ancestor"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   fs.symlinkSync(outside, path.join(root, "ancestor"), "junction");
   await deleteSyncedCopy(plan);
   assert.equal(fs.existsSync(path.join(outside, ".DS_Store")), true, "the directory behind the link keeps its files");

@@ -173,7 +173,7 @@ test("started from the command line it runs main, also through a symlinked direc
   assert.match(direct.stderr, /non-negative/);
   if (process.platform === "win32") return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-prune-link-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   fs.symlinkSync(path.join(repository, "scripts"), path.join(root, "linked"));
   const linked = spawnSync(process.execPath, [path.join(root, "linked", "prune-actions.js"), "--keep=-1"], { encoding: "utf8" });
   assert.equal(linked.status, 2);

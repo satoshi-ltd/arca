@@ -377,7 +377,7 @@ test("the daemon publishes when a timed pause ends, and nothing once it is resum
   daemon.engine.store.addVolume("Docs");
   t.after(async () => {
     await daemon.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const post = (body) =>
     fetch(`http://127.0.0.1:${daemon.port}/v1/pause`, {

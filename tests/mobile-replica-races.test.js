@@ -24,7 +24,7 @@ async function fixture(t) {
     for (const n of desktops) await n.close();
     await daemon.close();
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const yielded =
     (work) =>
@@ -61,7 +61,7 @@ async function fixture(t) {
   });
   const local = path.join(root, "mobile");
   const files = {
-    destroy: async () => fs.rmSync(local, { recursive: true, force: true }),
+    destroy: async () => fs.rmSync(local, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
     folder: (s, v) => path.join(local, s, "folders", v),
     work: (s, v, p) => path.join(local, s, "folders", v, ...p.split("/")),
     object: (s, h) => path.join(local, s, "objects", h),
@@ -81,7 +81,7 @@ async function fixture(t) {
     removeDirectory: async (p) => fs.rmdirSync(p),
     remove: async (p) => fs.rmSync(p, { force: true }),
     removeFolder: async (s, v) =>
-      fs.rmSync(path.join(local, s, "folders", v), { recursive: true, force: true }),
+      fs.rmSync(path.join(local, s, "folders", v), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
     copy: async (a, b) => fs.copyFileSync(a, b),
     clearStaged: async () => {},
     move: async (a, b) => fs.renameSync(a, b),
@@ -200,7 +200,7 @@ test("M4 a file the phone adds under a directory deleted elsewhere revives it in
   await f.selectAll();
   const desk = await f.desktop("desk");
   await desk.sync();
-  fs.rmSync(desk.file("proj"), { recursive: true });
+  fs.rmSync(desk.file("proj"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await desk.sync();
   f.write(f.phone("proj/new.txt"), "phone-new");
   assert.equal(await f.sync(), null);
@@ -223,7 +223,7 @@ test("M11 a remote directory deletion clears OS metadata and transfer leftovers 
   await desk.sync();
   f.write(f.phone("album/.DS_Store"), "x");
   f.write(f.phone("album/.arca-transfer-0000"), "partial");
-  fs.rmSync(desk.file("album"), { recursive: true });
+  fs.rmSync(desk.file("album"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await desk.sync();
   assert.equal(await f.sync(), null);
   assert.equal(await f.sync(), null);
@@ -235,7 +235,7 @@ test("M11 a directory holding only excluded content stays as unmanaged local con
   f.write(f.hubFile("proj/a.txt"), "a");
   await f.selectAll();
   f.write(f.phone("proj/node_modules/x.js"), "excluded");
-  fs.rmSync(f.hubFile("proj"), { recursive: true });
+  fs.rmSync(f.hubFile("proj"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await f.daemon.engine.cycle();
   assert.equal(await f.sync(), null);
   assert.equal(await f.sync(), null);
@@ -273,7 +273,7 @@ test("M13 the phone deleting a directory that gained a file elsewhere gets a con
   await desk.sync();
   f.write(desk.file("proj/new.txt"), "desk-new");
   await desk.sync();
-  fs.rmSync(f.phone("proj"), { recursive: true });
+  fs.rmSync(f.phone("proj"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   f.write(f.hubFile("other.txt"), "unrelated hub change");
   await f.daemon.engine.cycle();
   assert.equal(await f.sync(), null);
@@ -370,7 +370,7 @@ test("M11 a remote directory deletion keeps phone .arca- files that are not tran
   f.write(f.hubFile("album/a.jpg"), "a");
   await f.selectAll();
   f.write(f.phone("album/.arca-notes"), "mine");
-  fs.rmSync(f.hubFile("album"), { recursive: true });
+  fs.rmSync(f.hubFile("album"), { recursive: true, maxRetries: 10, retryDelay: 100 });
   await f.daemon.engine.cycle();
   await f.sync();
   await f.sync();

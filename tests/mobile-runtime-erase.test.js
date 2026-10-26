@@ -54,7 +54,7 @@ async function fixture(t, { platform = "android" } = {}) {
   const files = {
     destroy: async () => {
       await state.destroying;
-      fs.rmSync(local, { recursive: true, force: true });
+      fs.rmSync(local, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
   const create = (lastResponse = Promise.resolve(null)) => {
@@ -120,7 +120,7 @@ async function fixture(t, { platform = "android" } = {}) {
   };
   t.after(() => {
     db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const api = create();
   const replica = await api.runtime();

@@ -35,7 +35,7 @@ test("site build uses package.json version without metadata, release.json when p
   const root = await realpath(
     await mkdtemp(path.join(os.tmpdir(), "arca-site-build-")),
   );
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   await mkdir(path.join(root, "site/scripts"), { recursive: true });
   for (const file of [
     "scripts/build.mjs",
@@ -508,7 +508,7 @@ test("theme follows the system until the reader picks one, then remembers the pi
 });
 test("site build ships theme.js", async (t) => {
   const output = await mkdtemp(path.join(os.tmpdir(), "arca-site-theme-"));
-  t.after(() => rm(output, { recursive: true, force: true }));
+  t.after(() => rm(output, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const run = spawnSync(
     process.execPath,
     [fileURLToPath(new URL("../site/scripts/build.mjs", import.meta.url))],

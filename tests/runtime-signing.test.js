@@ -17,7 +17,7 @@ test(
     const temporary = await fs.mkdtemp(
       path.join(os.tmpdir(), "arca-signed-node-"),
     );
-    t.after(() => fs.rm(temporary, { recursive: true, force: true }));
+    t.after(() => fs.rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
     const node = path.join(temporary, "bin", "node");
     await fs.mkdir(path.dirname(node));
     const libraries = path.resolve(
