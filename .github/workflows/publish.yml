@@ -199,7 +199,8 @@ jobs:
           mount="$RUNNER_TEMP/arca-dmg"
           mkdir -p "$mount"
           hdiutil attach apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg -readonly -nobrowse -mountpoint "$mount"
-          trap 'hdiutil detach "$mount"' EXIT
+          detach() { for attempt in 1 2 3 4 5 6; do hdiutil detach "$mount" && return 0; sleep 2; done; hdiutil detach -force "$mount" || true; }
+          trap detach EXIT
           node scripts/verify-bundle.js "$mount/Arca.app/Contents/Resources/runtime"
       - name: Verify runtimes inside Linux packages
         if: runner.os == 'Linux'

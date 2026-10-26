@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.4 — 2026-10-26
+
+- No change for people using Arca: a release no longer fails when macOS keeps the verified installer's disk image busy for a moment after checking it.
+
 ## 0.8.3 — 2026-10-26
 
 - No change for people using Arca: the test suite retries removing its temporary folders, so a file Windows has not released yet no longer fails a release.

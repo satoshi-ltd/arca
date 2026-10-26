@@ -191,3 +191,14 @@ test("publication waits for the desktop Rust unit tests", () => {
   assert.doesNotMatch(job, /\n +if:|continue-on-error|\|\|/);
   assert.match(workflow, /\n  prepare:\n    needs: \[tests, rust-tests\]\n/);
 });
+
+test("a busy disk image never fails a verified macOS installer, and a failed verification still does", () => {
+  const workflow = fs
+    .readFileSync(path.join(repo, ".github/workflows/publish.yml"), "utf8")
+    .replace(/\r\n/g, "\n");
+  const step = workflow.slice(workflow.indexOf("- name: Verify runtime inside macOS installer"), workflow.indexOf("- name: Verify runtimes inside Linux packages"));
+  assert.match(step, /set -euo pipefail/);
+  assert.match(step, /detach\(\) \{ for attempt in 1 2 3 4 5 6; do hdiutil detach "\$mount" && return 0; sleep 2; done; hdiutil detach -force "\$mount" \|\| true; \}\n +trap detach EXIT\n +node scripts\/verify-bundle\.js/);
+  assert.doesNotMatch(step, /trap 'hdiutil detach/, "a bare detach under set -e turns a busy volume into a failed release");
+  assert.doesNotMatch(step, /verify-bundle\.js[^\n]*\|\|/, "the verification itself is never excused");
+});
