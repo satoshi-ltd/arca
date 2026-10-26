@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.1";
+const APP_VERSION = "0.8.2";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -257,11 +257,11 @@ const icon = (name) => `<span data-icon="${name}" aria-hidden="true"></span>`;
 const brandArch = () => brandArchFor(48);
 const brandArchFor = (size) =>
   size >= 24 && size < 48
-    ? '<svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-68V242a52 52 0 0 0-104 0v138z"/><rect x="226" y="280" width="60" height="100" rx="4"/></svg>'
-    : '<svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z"/><rect x="226" y="284" width="60" height="96" rx="6"/></svg>';
+    ? '<svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M144 380V233a112 112 0 0 1 224 0v147h-60V233a52 52 0 0 0-104 0v147z"/><path d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg>'
+    : '<svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M144 380V233a112 112 0 0 1 224 0v147h-52V233a60 60 0 0 0-120 0v147z"/><path d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg>';
 const EMPTY_ARCH = 40;
 const brandDraw = (tile) =>
-  `<svg viewBox="${tile ? "0 0 512 512" : "116 100 280 296"}" aria-hidden="true">${tile ? '<rect x="8" y="8" width="496" height="496" rx="116" fill="var(--mark-tile)"/>' : ""}<path class="brand-draw-band" pathLength="100" d="M166 380V242A90 90 0 0 1 256 152h2"/><path class="brand-draw-band" pathLength="100" d="M346 380V242A90 90 0 0 0 256 152h-2"/><rect class="brand-draw-door" x="226" y="284" width="60" height="96" rx="6"/></svg>`;
+  `<svg viewBox="${tile ? "0 0 512 512" : "116 100 280 296"}" aria-hidden="true">${tile ? '<rect x="8" y="8" width="496" height="496" rx="128" fill="var(--mark-tile)"/>' : ""}<path class="brand-draw-band" pathLength="100" d="M170 380V233A86 86 0 0 1 256 147h2"/><path class="brand-draw-band" pathLength="100" d="M342 380V233A86 86 0 0 0 256 147h-2"/><path class="brand-draw-door" d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg>`;
 const launchMark = () =>
   `<div class="launch-mark" role="status" aria-label="Starting Arca">${brandDraw(false)}</div>`;
 const busyIcon = () =>

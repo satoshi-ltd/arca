@@ -9,7 +9,7 @@ const icons = path.join(import.meta.dirname, "..", "apps", "desktop", "src-tauri
 const rect = (r, attrs = "") =>
   `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="${r.rx}"${attrs}/>`;
 const glyph = (d, arch = brandColors.arch, door = brandColors.door) =>
-  `<path d="${d.arch}" fill="${arch}"/>${rect(d.door, ` fill="${door}"`)}`;
+  `<path d="${d.arch}" fill="${arch}"/><path d="${d.door}" fill="${door}"/>`;
 
 function fullTile(size) {
   const d = brandDrawing(size);
@@ -69,7 +69,7 @@ const badgeMarks = {
 
 function tray(state) {
   const p = brandDrawings.pixel;
-  const arch = `<g${state === "paused" ? ' opacity="0.45"' : ""}${state ? ' mask="url(#k)"' : ""}><g transform="translate(-7 -3) scale(3)"><path d="${p.arch}"/>${rect(p.door)}</g></g>`;
+  const arch = `<g${state === "paused" ? ' opacity="0.45"' : ""}${state ? ' mask="url(#k)"' : ""}><g transform="translate(-7 -3) scale(3)"><path d="${p.arch}"/><path d="${p.door}"/></g></g>`;
   const badge = state
     ? `<mask id="k" maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="36"><rect width="48" height="36" fill="#fff"/><circle cx="36" cy="11" r="12" fill="#000"/></mask><mask id="b" maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="36"><rect width="48" height="36" fill="#fff"/><path d="${badgeMarks[state][1]}" fill="none" stroke="#000" stroke-width="${badgeMarks[state][0]}" stroke-linecap="round" stroke-linejoin="round"/></mask>`
     : "";

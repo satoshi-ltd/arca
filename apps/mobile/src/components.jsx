@@ -5,6 +5,7 @@ import { ChangeFade, Pop, RollText, useBreathe, useFlight, useMotion } from "./m
 import {
   brandDraw,
   brandDrawLength,
+  brandDrawWidth,
   brandDrawing,
   brandDrawings,
   brandGlyphBox,
@@ -190,7 +191,7 @@ export function BrandArch({ size, band, door, style }) {
   return (
     <Svg width={size} height={size} viewBox={brandGlyphBox} style={style}>
       <Path d={glyph.arch} fill={band} />
-      <Rect {...glyph.door} fill={door || band} />
+      <Path d={glyph.door} fill={door || band} />
     </Svg>
   );
 }
@@ -224,7 +225,7 @@ export function Logo({ size = 76, breathe = false }) {
       </Svg>
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: door }]}>
         <Svg width={size} height={size} viewBox={drawing.viewBox}>
-          <Rect {...drawing.door} fill={brandMark.door} />
+          <Path d={drawing.door} fill={brandMark.door} />
         </Svg>
       </Animated.View>
     </View>
@@ -259,7 +260,7 @@ function DrawnArch({ size, progress, door, band }) {
             d={d}
             fill="none"
             stroke={band}
-            strokeWidth={60}
+            strokeWidth={brandDrawWidth}
             strokeDasharray={[brandDrawLength, brandDrawLength]}
             strokeDashoffset={offset}
           />
@@ -267,7 +268,7 @@ function DrawnArch({ size, progress, door, band }) {
       </Svg>
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: door }]}>
         <Svg width={size} height={size} viewBox={brandGlyphBox}>
-          <Rect {...glyph.door} fill={brandMark.door} />
+          <Path d={glyph.door} fill={brandMark.door} />
         </Svg>
       </Animated.View>
     </View>
@@ -317,7 +318,7 @@ export function LaunchHold({ leaving = false, onLeft }) {
         </Svg>
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: reduce ? 1 : door }]}>
           <Svg width={160} height={160} viewBox={brandSplashBox}>
-            <Rect {...glyph.door} fill={brandMark.door} />
+            <Path d={glyph.door} fill={brandMark.door} />
           </Svg>
         </Animated.View>
       </View>

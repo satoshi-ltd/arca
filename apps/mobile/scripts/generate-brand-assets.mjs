@@ -6,11 +6,10 @@ import { brandColors, brandDrawings, brandSplashBox } from "../../../packages/co
 const assets = fileURLToPath(new URL("../assets/", import.meta.url));
 const display = brandDrawings.display;
 const pixel = brandDrawings.pixel;
-const door = (d, fill) =>
-  `<rect x="${d.door.x}" y="${d.door.y}" width="${d.door.width}" height="${d.door.height}" rx="${d.door.rx}" fill="${fill}"/>`;
+const door = (d, fill) => `<path d="${d.door}" fill="${fill}"/>`;
 const glyph = (d, arch, doorFill) => `<path d="${d.arch}" fill="${arch}"/>${door(d, doorFill)}`;
-const archWidth = 240;
-const archCentre = 251;
+const archWidth = 224;
+const archCentre = 250.5;
 
 function launcher({ background, visible = 1, arch = brandColors.arch, doorFill = brandColors.door }) {
   const scale = (512 * visible * 0.5) / archWidth;

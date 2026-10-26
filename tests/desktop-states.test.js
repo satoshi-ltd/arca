@@ -189,7 +189,7 @@ test("an empty state's 40 px arch uses the small drawing", async () => {
   const drawing = brandDrawing(size);
   assert.equal(drawing, brandDrawing(40));
   assert.ok(markup.includes(`d="${drawing.arch}"`), "the arch is the drawing for its size");
-  assert.ok(markup.includes(`<rect x="${drawing.door.x}" y="${drawing.door.y}" width="${drawing.door.width}" height="${drawing.door.height}" rx="${drawing.door.rx}"/>`));
+  assert.ok(markup.includes(`<path d="${drawing.door}"/>`));
 });
 
 test("a replica checking its hub after a launch says so in the sidebar, without the busy animation", async (t) => {

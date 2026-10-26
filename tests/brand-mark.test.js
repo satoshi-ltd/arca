@@ -16,24 +16,26 @@ import { motion } from "../apps/mobile/src/design-tokens.js";
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
 const bytes = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url));
 const { display, small, pixel } = brandDrawings;
-const doorAttrs = (door) =>
-  `x="${door.x}" y="${door.y}" width="${door.width}" height="${door.height}"${door.rx ? ` rx="${door.rx}"` : ""}`;
+const doorAttrs = (door) => `d="${door}"`;
 
 test("the mark is built on one module and sits 1% above the tile's centre", () => {
   assert.equal(brandModule, 60);
-  assert.deepEqual(brandTile, { x: 8, y: 8, width: 496, height: 496, rx: 116 });
-  assert.equal(display.arch, "M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z");
-  assert.deepEqual(display.door, { x: 226, y: 284, width: brandModule, height: brandModule * 1.6, rx: 6 });
-  const top = 242 - 2 * brandModule;
+  assert.deepEqual(brandTile, { x: 8, y: 8, width: 496, height: 496, rx: 128 });
+  assert.equal(display.arch, "M144 380V233a112 112 0 0 1 224 0v147h-52V233a60 60 0 0 0-120 0v147z");
+  assert.equal(display.door, "M228 380V294a28 28 0 0 1 56 0v86z", "the door is an arch of its own, echoing the outer one");
+  assert.equal(small.door, display.door);
+  const top = 233 - 112;
   const centre = (top + 380) / 2;
   assert.ok(Math.abs((256 - centre) / 512 - 0.01) < 0.001, "glyph 1% above the tile's centre");
-  assert.equal(small.arch, "M136 380V242a120 120 0 0 1 240 0v138h-68V242a52 52 0 0 0-104 0v138z");
+  assert.equal(brandModule, 112 - 52, "the opening's radius is the module");
+  assert.equal(small.arch, "M144 380V233a112 112 0 0 1 224 0v147h-60V233a52 52 0 0 0-104 0v147z", "the small drawing thickens the legs");
   assert.equal(pixel.arch, "M4 12V8a4 4 0 0 1 8 0v4h-2V8a2 2 0 0 0-4 0v4z");
+  assert.equal(pixel.door, "M7 12V10a1 1 0 0 1 2 0v2z");
   assert.deepEqual(brandColors, brandMark);
   for (const [name, colour] of Object.entries(brandColors))
     assert.match(read("apps/desktop/src/tokens.css"), new RegExp(`--mark-${name}: ${colour};`));
-  assert.equal(brandDraw[0].startsWith("M166 380V242A90 90 0 0 1 256 152"), true, "draws from the left foot");
-  assert.equal(brandDraw[1].startsWith("M346 380V242A90 90 0 0 0 256 152"), true, "and from the right foot");
+  assert.equal(brandDraw[0].startsWith("M170 380V233A86 86 0 0 1 256 147"), true, "draws from the left foot");
+  assert.equal(brandDraw[1].startsWith("M342 380V233A86 86 0 0 0 256 147"), true, "and from the right foot");
 });
 
 test("each rendered size uses the drawing for its range", () => {
@@ -52,10 +54,10 @@ test("each rendered size uses the drawing for its range", () => {
   const html = read("apps/desktop/src/index.html");
   const sidebar = html.slice(html.indexOf('class="brand-mark"'), html.indexOf("</svg>", html.indexOf('class="brand-mark"')));
   assert.ok(sidebar.includes(`d="${small.arch}"`), "the 28 px sidebar mark uses the small drawing");
-  assert.match(sidebar, /class="brand-door"\s+x="226"\s+y="280"\s+width="60"\s+height="100"\s+rx="4"/);
+  assert.match(sidebar, new RegExp(`<path\\s+class="brand-door"\\s+d="${small.door}"`), "the sidebar door is the arched door");
   assert.doesNotMatch(html, /brand-busy|brand-glyph|M136 370/);
   for (const file of ["apps/desktop/src/app.js", "apps/desktop/src/tray.js"])
-    assert.ok(read(file).includes(`<path d="${display.arch}"/><rect ${doorAttrs(display.door)}/>`), `${file} draws the display arch as its placeholder`);
+    assert.ok(read(file).includes(`<path d="${display.arch}"/><path ${doorAttrs(display.door)}/>`), `${file} draws the display arch as its placeholder`);
   assert.match(read("apps/desktop/src/tray.js"), /class="tray-brand-icon" src="assets\/arca-icon-small\.svg" width="28"/);
   assert.match(read("apps/desktop/src/app.js"), /<div class="brand"><img src="assets\/arca-icon-small\.svg" width="28" height="28" alt="Arca"><b>arca<\/b><\/div>/);
   const components = read("apps/mobile/src/components.jsx");
@@ -134,7 +136,7 @@ test("the busy mark keeps its drawing and breathes its door instead of the grid"
   assert.doesNotMatch(brand, /<Busy/);
   const logo = components.slice(components.indexOf("export function Logo("), components.indexOf("export function BrandActivity()"));
   assert.match(logo, /const door = useBreathe\(breathe\);/);
-  assert.match(logo, /<Animated\.View style=\{\[StyleSheet\.absoluteFill, \{ opacity: door \}\]\}>\s+<Svg width=\{size\} height=\{size\} viewBox=\{drawing\.viewBox\}>\s+<Rect \{\.\.\.drawing\.door\} fill=\{brandMark\.door\} \/>/);
+  assert.match(logo, /<Animated\.View style=\{\[StyleSheet\.absoluteFill, \{ opacity: door \}\]\}>\s+<Svg width=\{size\} height=\{size\} viewBox=\{drawing\.viewBox\}>\s+<Path d=\{drawing\.door\} fill=\{brandMark\.door\} \/>/);
 });
 
 test("desktop placeholders and content empty states draw the arch; video, artists and errors keep glyphs", () => {
@@ -169,8 +171,8 @@ test("desktop placeholders and content empty states draw the arch; video, artist
   for (const title of ["No photos yet", "No music yet", "Reading this library"])
     assert.match(app, new RegExp(`empty\\(\\s*"${title}",\\s*"[^"]+",\\s*"",\\s*"arca",?\\s*\\)`), title);
   const style = read("apps/desktop/src/style.css");
-  assert.match(style, /\.empty > \.brand-arch > path \{\s+fill: var\(--line\);/);
-  assert.match(style, /\.empty > \.brand-arch > rect \{\s+fill: var\(--green\);/);
+  assert.match(style, /\.empty > \.brand-arch > :first-child \{\s+fill: var\(--line\);/, "the arch is the first shape");
+  assert.match(style, /\.empty > \.brand-arch > :last-child \{\s+fill: var\(--green\);/, "the door is the last shape, now a path too");
   assert.match(style, /\.photo-open \{[^}]*background: var\(--placeholder\);\s+color: var\(--line\);/);
   assert.match(style, /\.music-cover \{[^}]*background: var\(--placeholder\);\s+color: var\(--line\);/);
 });
@@ -184,7 +186,7 @@ test("phone placeholders, covers without art and content empty states draw the a
   assert.match(cover, /<View style=\{s\.coverMark\}>\s+<BrandArch size="100%" band=\{c\.line\} \/>/);
   assert.match(read("apps/mobile/src/theme.js"), /coverMark: \{ width: "34%", aspectRatio: 1 \},/);
   const arch = components.slice(components.indexOf("export function BrandArch("), components.indexOf("export function MediaPlaceholder("));
-  assert.match(arch, /<Svg width=\{size\} height=\{size\} viewBox=\{brandGlyphBox\} style=\{style\}>\s+<Path d=\{glyph\.arch\} fill=\{band\} \/>\s+<Rect \{\.\.\.glyph\.door\} fill=\{door \|\| band\} \/>/);
+  assert.match(arch, /<Svg width=\{size\} height=\{size\} viewBox=\{brandGlyphBox\} style=\{style\}>\s+<Path d=\{glyph\.arch\} fill=\{band\} \/>\s+<Path d=\{glyph\.door\} fill=\{door \|\| band\} \/>/);
   assert.match(read("apps/mobile/src/history-empty.js"), /icon: "arca",\s+title: "No history yet",/);
   assert.match(read("apps/mobile/src/MusicLibrary.jsx"), /icon="arca"\s+title="No music on this phone yet"/);
   assert.match(read("apps/mobile/src/MusicLibrary.jsx"), /icon="arca"\s+title="Loading the library"/);

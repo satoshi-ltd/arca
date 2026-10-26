@@ -61,7 +61,7 @@ function coverFor(key, folder) {
 const coverMarkup = (cover) =>
   cover
     ? `<img alt="" src="${escape(cover)}">`
-    : '<svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M136 380V242a120 120 0 0 1 240 0v138h-60V242a60 60 0 0 0-120 0v138z"/><rect x="226" y="284" width="60" height="96" rx="6"/></svg>';
+    : '<svg class="brand-arch" viewBox="116 100 280 296" aria-hidden="true"><path d="M144 380V233a112 112 0 0 1 224 0v147h-52V233a60 60 0 0 0-120 0v147z"/><path d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg>';
 const clock = (value) =>
   new Date(value).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;

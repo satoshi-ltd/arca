@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2 — 2026-10-26
+
+- A refined Arca mark everywhere: the door is now an arch inside the arch, the legs are a little lighter, the tile corners rounder and the door a brighter green, so it reads clearly at every size. The app icons, tray, launch animation, phone splash, favicon and website carry it.
+
+Needs: native build · desktop build
+
 ## 0.8.1 — 2026-10-26
 
 - On Windows the compatible stream for MKV, AC3 and DTS files now starts: FFmpeg wrote its first part beside the running app instead of in the stream's own folder, so playback never began.

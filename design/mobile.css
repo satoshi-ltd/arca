@@ -647,10 +647,10 @@
   width: 40px;
   height: 40px;
 }
-.m-empty > .m-arch > path {
+.m-empty > .m-arch > :first-child {
   fill: var(--m-line);
 }
-.m-empty > .m-arch > rect {
+.m-empty > .m-arch > :last-child {
   fill: var(--m-accent);
 }
 .m-launch {
@@ -663,13 +663,13 @@
   width: 75px;
   height: auto;
 }
-.m-launch-mark > path {
+.m-launch-mark > :first-child {
   fill: var(--mark-tile);
 }
-[data-theme="dark"] .m-launch-mark > path {
+[data-theme="dark"] .m-launch-mark > :first-child {
   fill: var(--mark-arch);
 }
-.m-launch-mark > rect {
+.m-launch-mark > :last-child {
   fill: var(--mark-door);
 }
 .m-pull {

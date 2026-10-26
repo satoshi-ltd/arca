@@ -2787,7 +2787,7 @@ label {
 .brand-draw-band {
   fill: none;
   stroke: var(--mark-arch);
-  stroke-width: 60;
+  stroke-width: 52;
   stroke-dasharray: 100 100;
   animation: brand-draw var(--motion-draw) var(--motion-draw-ease) both;
 }
@@ -2830,10 +2830,10 @@ label {
   width: 40px;
   height: 40px;
 }
-.empty > .brand-arch > path {
+.empty > .brand-arch > :first-child {
   fill: var(--line);
 }
-.empty > .brand-arch > rect {
+.empty > .brand-arch > :last-child {
   fill: var(--green);
 }
 .photo-open > .brand-arch,
