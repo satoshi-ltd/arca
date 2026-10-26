@@ -273,6 +273,7 @@ export class Web {
       "/notice-contract.js": "notice-contract.js",
       "/file-icons.js": "file-icons.js",
       "/music-library.js": "music-library.js",
+      "/video-library.js": "video-library.js",
       "/favorite-order.js": "favorite-order.js",
       "/gallery-timeline-layout.js": "gallery-timeline-layout.js",
       "/style.css": "style.css",

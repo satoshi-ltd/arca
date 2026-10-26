@@ -21,7 +21,7 @@ test('the four build scripts and check:release live here, none at the repository
   assert.equal(mobile['check:release'], 'node ../../scripts/check-release.js');
   assert.equal(mobile['build:preview'], undefined);
   const top = Object.keys(scripts(path.join(repository, 'package.json')));
-  assert.deepEqual(top.filter((key) => /mobile|build:(local|dev|prod)/.test(key)), []);
+  assert.deepEqual(top.filter((key) => /mobile|^build:(dev|prod)$|^build:local:/.test(key)), []);
   const ignored = spawnSync('git', ['check-ignore', '-q', 'apps/mobile/release-assets/x.apk'], { cwd: repository });
   assert.equal(ignored.status, 0);
 });

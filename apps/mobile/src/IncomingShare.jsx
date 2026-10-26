@@ -1,6 +1,7 @@
 import { Busy } from "./components";
 import { useRetained } from "./motion";
 import { galleryConfig } from "./gallery.js";
+import { acceptsWrites } from "./video-sync.js";
 import { Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useRef, useState } from "react";
@@ -158,7 +159,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
     let active = true;
     (async () => {
       const r = await runtime();
-      const choices = locals.filter((f) => f.selected && !galleryConfig(f));
+      const choices = locals.filter((f) => acceptsWrites(catalog, f) && !galleryConfig(f));
       const entries =
         r.scope && r.scope === connection?.hubId
           ? await loadDestinations(r.store, r.scope, choices)
@@ -240,7 +241,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
       setBusy(false);
     }
   }
-  const destinations = locals.filter((f) => f.selected && !galleryConfig(f));
+  const destinations = locals.filter((f) => acceptsWrites(catalog, f) && !galleryConfig(f));
   const children = directories.filter(
     (p) =>
       p.startsWith(directory ? `${directory}/` : "") &&

@@ -5,13 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f4f6f1" />
     <meta name="color-scheme" content="light dark" />
-    <title>Arca — Your files. Your devices.</title>
+    <title>Arca — Free self-hosted cloud for files, photos, music &amp; movies</title>
     <meta
       name="description"
-      content="A free personal drive. Your devices keep complete copies of your folders and sync through a computer you run. No account, no telemetry."
+      content="Sync your folders and enjoy your photos, music and movies on your laptop, phone, tablet and TV from one computer you run. Free, no account, no telemetry."
     />
+    <meta name="application-name" content="Arca" />
+    <meta name="author" content="Satoshi Ltd." />
     {{CANONICAL}}
+    {{SOCIAL}}
     <link rel="icon" href="assets/arca-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    {{STRUCTURED_DATA}}
     <link
       rel="preload"
       href="assets/instrument-sans.woff2"
@@ -37,13 +42,12 @@
     <main>
       <section class="hero wrap">
         <div class="hero-copy">
-          <p class="eyebrow">Free · No account · No telemetry</p>
+          <p class="eyebrow">Free · Self-hosted · No account · No telemetry</p>
           <h1>Your files.<br /><em>Your devices.</em></h1>
           <p class="intro">
-            Arca keeps the folders you choose in sync across your laptop, phone
-            and tablet through one computer you run: your hub. Complete files
-            stay on your own devices, ready to use offline. There is no company
-            server in the middle.
+            One computer you run, your hub, keeps your folders, photos, music
+            and movies. Your laptop, phone, tablet and TV reach all of it, with
+            no company server in the middle.
           </p>
           <div class="hero-download">
             {{MAC_DOWNLOAD}}<a class="setup-link" href="#setup"
@@ -57,7 +61,7 @@
         </div>
         <div
           class="product-scene"
-          aria-label="Illustration of a folder synchronized between your devices"
+          aria-label="Illustration of your folders and libraries on your devices"
         >
           <div class="orbit orbit-one"></div>
           <div class="orbit orbit-two"></div>
@@ -76,76 +80,106 @@
               <div class="preview-heading">
                 <span class="folder-symbol"></span>
                 <div>
-                  <strong>Everyday</strong
+                  <strong>Folders</strong
                   ><small>All the things worth keeping.</small>
                 </div>
                 <span class="status">✓ Up to date</span>
               </div>
-              <div class="breadcrumb">Everyday <span>›</span> Files</div>
-              <div class="file-row">
-                <span class="folder-symbol small"></span
-                ><strong>Projects</strong><span>12 files</span><b>›</b>
-              </div>
+              <div class="breadcrumb">Home server <span>›</span> Folders</div>
               <div class="file-row">
                 <span class="folder-symbol small"></span
                 ><strong>Documents</strong><span>28 files</span><b>›</b>
               </div>
               <div class="file-row">
                 <span class="folder-symbol small"></span
-                ><strong>Adventures</strong><span>16 files</span><b>›</b>
+                ><strong>Photos</strong><span>1,204 photos</span><b>›</b>
               </div>
               <div class="file-row">
                 <span class="folder-symbol small"></span
-                ><strong>Music</strong><span>240 files</span><b>›</b>
+                ><strong>Music</strong><span>240 tracks</span><b>›</b>
+              </div>
+              <div class="file-row">
+                <span class="folder-symbol small"></span
+                ><strong>Movies &amp; TV</strong><span>86 titles</span><b>›</b>
               </div>
               <div class="preview-footer">
                 <span class="dot"></span> Complete folders on your laptop.
               </div>
             </div>
           </div>
+          <div class="tv-note">
+            <svg class="tv-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="15" x="2" y="7" rx="2" ry="2" /><polyline points="17 2 12 7 7 2" /></svg>
+            <div>Living room TV<small>Watch next, from your hub</small></div>
+            <span class="check">▶</span>
+          </div>
           <div class="phone-note">
             <span class="phone-icon"></span>
             <div>
-              Phone &amp; tablet<small>Your synced folders, offline</small>
+              Phone &amp; tablet<small>Your folders, offline</small>
             </div>
             <span class="check">✓</span>
           </div>
           <p class="scene-caption">Choose what belongs on each device.</p>
         </div>
       </section>
-      <section class="section wrap free" id="free">
+      <section class="section wrap">
         <div class="section-heading">
-          <p class="eyebrow">Free, on purpose</p>
-          <h2>Nothing to buy.<br />Nothing to sign up for.</h2>
+          <p class="eyebrow">01 / One hub. Four libraries.</p>
+          <h2>Everything you keep.<br />One home.</h2>
           <p>
-            Arca is a personal project. It costs nothing, has no account or
-            subscription, and nobody earns anything from it. The
-            only goal is that you govern your own data: your files stay on your
-            devices and their history stays on a computer you control.
+            A private, self-hosted cloud on your own hardware. Files sync to the
+            devices you choose; photos, music and movies open in their own
+            library, with covers, posters and a play button instead of a list of
+            files.
           </p>
         </div>
-        <div class="ownership">
-          <h3>Free to use. Not free to copy.</h3>
-          <p>
-            Arca is free for personal and non-commercial use under the
-            <a href="https://github.com/satoshi-ltd/arca/blob/main/LICENSE"
-              >PolyForm Strict License</a
-            >. The source is public so you can read it, but Arca is not open
-            source: the license does not allow modifying or redistributing it,
-            and using it for a business or at work is not covered. Ideas, bug
-            reports and improvements are welcome
-            <a href="https://github.com/satoshi-ltd/arca">on GitHub</a>.
-          </p>
+        <div class="feature-grid library-grid">
+          <article>
+            <span class="feature-number"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg></span>
+            <h3>Files.</h3>
+            <p>
+              Folders that sync both ways and work offline. Edit on your laptop,
+              open it on your phone, and go back to an earlier version when you
+              need it.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg></span>
+            <h3>Photos.</h3>
+            <p>
+              Link a phone album and new photos and videos upload at full
+              quality. Browse them by date on your phone, your computer, the web
+              and your TV.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg></span>
+            <h3>Music.</h3>
+            <p>
+              Artists, albums, playlists and podcasts from your own files. Each
+              device plays its own copy, offline too, and Android Auto plays it
+              in the car from your phone.
+            </p>
+          </article>
+          <article>
+            <span class="feature-number"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z" /><path d="m6.2 5.3 3.1 3.9" /><path d="m12.4 3.4 3.1 4" /><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg></span>
+            <h3>Movies &amp; TV.</h3>
+            <p>
+              Posters, ratings and a Watch next row that follows you from laptop
+              to phone to TV. It all streams from your hub; download a title to
+              your phone or laptop for the road.
+            </p>
+          </article>
         </div>
       </section>
       <section class="section wrap">
         <div class="section-heading">
-          <p class="eyebrow">01 / One person. More than one device.</p>
+          <p class="eyebrow">02 / One person. More than one device.</p>
           <h2>Edit on one device.<br />Continue on another.</h2>
           <p>
-            Keep working in the apps you already use. Arca carries folder
-            changes between devices, so you can pick up where you left off
-            without emailing yourself a copy.
+            Keep working in the apps you already use. Arca carries your changes
+            between devices, so you pick up where you left off without emailing
+            yourself a copy.
           </p>
         </div>
         <div class="feature-grid">
@@ -153,8 +187,8 @@
             <span class="feature-number">↔</span>
             <h3>Edit here. Pick up there.</h3>
             <p>
-              Edit on your laptop or save a file from your phone. Changes travel
-              through your hub to every device that keeps that folder.
+              Edit on your laptop or save a file from your phone. The change
+              reaches every device that keeps that folder, through your hub.
             </p>
           </article>
           <article>
@@ -162,45 +196,46 @@
             <h3>Offline is a normal day.</h3>
             <p>
               Once a folder finishes syncing, its files are on your device. Open
-              them offline. Your edits sync when the hub is reachable again.
+              them anywhere; your edits sync when the hub is reachable again.
             </p>
           </article>
           <article>
             <span class="feature-number">↶</span>
             <h3>A way back.</h3>
             <p>
-              Changed your mind about an edit? Restore an earlier version from
-              your hub’s history, kept for 30 days by default and adjustable per
-              folder. Restoring needs the hub to be reachable. If edits
-              conflict, Arca keeps both versions for you to review.
+              Restore an earlier version from your hub’s history, kept for 30
+              days by default and adjustable per folder. Restoring needs the hub
+              to be reachable. When two edits collide, Arca keeps both for you
+              to review.
             </p>
           </article>
         </div>
         <div class="ownership">
           <h3>You run it, so you keep it.</h3>
           <p>
-            Your working folders are ordinary files on your own disks, with no
-            Arca account, public relay or telemetry. The trade-off: you run the
-            hub and look after its storage and backups. The hub’s history is
-            kept in Arca’s own format, so Arca is what reads it.
+            Your folders are ordinary files on your own disks, with no Arca
+            account, public relay or telemetry. The trade-off: you look after
+            the hub, its storage and its backups. Its history is kept in Arca’s
+            own format, so Arca is what reads it.
           </p>
         </div>
       </section>
+
       <section class="how-section" id="setup">
         <div class="wrap how-layout">
           <div>
-            <p class="eyebrow">02 / Bring your devices together</p>
+            <p class="eyebrow">03 / Bring your devices together</p>
             <h2>One hub.<br />Your devices around it.</h2>
             <p class="intro">
-              One computer or server is your hub: it keeps your shared folders
-              and their history. An always-on computer lets your devices sync
-              without waiting for your laptop to wake up. A phone or tablet
-              cannot be the hub.
+              One computer or server is your hub: it keeps your folders, your
+              libraries and their history, and every device you pair talks to
+              it. Leave it on and nothing waits for your laptop to wake up.
+              Phones, tablets and TVs connect to a hub; they cannot be one.
             </p>
             <figure class="network">
               <svg
                 class="network-diagram"
-                viewBox="0 0 520 430"
+                viewBox="0 0 580 490"
                 role="img"
                 aria-labelledby="network-title network-description"
               >
@@ -208,9 +243,8 @@
                   Your devices, with a home in common
                 </title>
                 <desc id="network-description">
-                  A laptop, phone, tablet and second server keep selected
-                  folders through a central hub. A linked phone album uploads
-                  photos to the hub. The hub holds shared folders and history.
+                  A laptop, phone, tablet, TV and second server connect to a
+                  central hub that keeps your folders, libraries and history.
                 </desc>
                 <defs>
                   <linearGradient id="device-shell" x2="0.7" y2="1">
@@ -239,27 +273,28 @@
                 </defs>
                 <ellipse
                   class="network-orbit"
-                  cx="260"
-                  cy="226"
-                  rx="212"
-                  ry="153"
-                  transform="rotate(-16 260 226)"
+                  cx="290"
+                  cy="262"
+                  rx="250"
+                  ry="178"
+                  transform="rotate(-14 290 262)"
                 />
                 <ellipse
                   class="network-orbit network-orbit-outer"
-                  cx="260"
-                  cy="226"
-                  rx="160"
-                  ry="110"
-                  transform="rotate(-16 260 226)"
+                  cx="290"
+                  cy="262"
+                  rx="185"
+                  ry="124"
+                  transform="rotate(-14 290 262)"
                 />
                 <g class="network-links">
-                  <path d="M139 111Q240 100 258 225" />
-                  <path d="M407 116Q346 143 278 222" />
-                  <path d="M105 305Q183 338 241 249" />
-                  <path d="M397 330Q320 342 278 255" />
+                  <path d="M160 150Q236 150 262 228" />
+                  <path d="M456 150Q388 172 322 232" />
+                  <path d="M142 350Q224 366 258 296" />
+                  <path d="M424 354Q356 366 322 298" />
+                  <path d="M292 132Q290 176 290 214" />
                 </g>
-                <g transform="translate(44 48) rotate(-8 86 50)">
+                <g transform="translate(16 66) rotate(-8 86 50)">
                   <g class="network-device network-laptop">
                     <rect
                       class="device-shell"
@@ -311,7 +346,7 @@
                     <text class="device-label" x="83" y="139">Your laptop</text>
                   </g>
                 </g>
-                <g transform="translate(365 53) rotate(9 42 60)">
+                <g transform="translate(448 48) rotate(9 42 60)">
                   <g class="network-device network-phone">
                     <rect
                       class="device-shell"
@@ -355,7 +390,27 @@
                     <text class="device-label" x="39" y="154">Your phone</text>
                   </g>
                 </g>
-                <g transform="translate(187 178) rotate(-4 73 57)">
+                <g transform="translate(226 4) rotate(-2 62 40)">
+                  <g class="network-device network-tv">
+                    <rect class="device-shell" width="128" height="80" rx="9" />
+                    <rect
+                      class="device-screen"
+                      x="7"
+                      y="7"
+                      width="114"
+                      height="66"
+                      rx="4"
+                    />
+                    <path class="screen-rule" d="M17 20H52" />
+                    <rect class="server-slot" x="17" y="30" width="28" height="30" rx="3" />
+                    <rect class="server-slot" x="50" y="30" width="28" height="30" rx="3" />
+                    <rect class="server-slot" x="83" y="30" width="28" height="30" rx="3" />
+                    <circle class="device-light" cx="108" cy="19" r="3" />
+                    <path class="device-shell" d="M48 80H80L84 90H44Z" />
+                    <text class="device-label" x="64" y="110">Your TV</text>
+                  </g>
+                </g>
+                <g transform="translate(217 214) rotate(-4 73 57)">
                   <g class="network-hub">
                     <rect
                       class="hub-depth"
@@ -378,11 +433,11 @@
                       Your hub
                     </text>
                     <text class="network-hub-caption" x="17" y="96">
-                      Folders + history
+                      Libraries + history
                     </text>
                   </g>
                 </g>
-                <g transform="translate(34 275) rotate(7 67 48)">
+                <g transform="translate(30 340) rotate(7 67 48)">
                   <g class="network-device network-tablet">
                     <rect
                       class="device-shell"
@@ -422,7 +477,7 @@
                     <text class="device-label" x="71" y="121">Your tablet</text>
                   </g>
                 </g>
-                <g transform="translate(361 286) rotate(-7 47 44)">
+                <g transform="translate(420 350) rotate(-7 47 44)">
                   <g class="network-device network-server">
                     <rect class="device-shell" width="99" height="89" rx="12" />
                     <rect
@@ -473,10 +528,10 @@
               <div>
                 <h3>Pair your devices.</h3>
                 <p>
-                  Connect each device with a single-use pairing code. At home use
-                  your local network, which you switch on in the hub’s settings
-                  and which is plain HTTP. Away from home, use a private network
-                  you control, such as Tailscale.
+                  Each device joins with a single-use pairing code from the hub.
+                  At home, switch on local network access in the hub’s settings;
+                  it is plain HTTP. Away from home, use a private network you
+                  control, such as Tailscale.
                 </p>
               </div>
             </li>
@@ -485,60 +540,71 @@
               <div>
                 <h3>Choose your folders.</h3>
                 <p>
-                  Select whole folders independently on each device. On desktop
-                  you choose the local path; on a phone, Arca keeps its copies
-                  in app storage.
+                  Each device picks whole folders on its own. On a computer you
+                  choose where they go; on a phone, Arca keeps them in app
+                  storage.
                 </p>
               </div>
             </li>
             <li>
               <span>04</span>
               <div>
-                <h3>Link your photo albums.</h3>
+                <h3>Set up your libraries.</h3>
                 <p>
-                  Link a phone album to upload its photos and videos to your
-                  hub. That phone then also keeps the complete shared folder in
-                  app storage, including photos from your other devices; Arca
-                  never imports them into your Photos library. Explore the
-                  gallery by date on desktop or the web.
+                  On the hub, choose Set up as library… on a folder and pick
+                  Photos, Audio or Movies &amp; TV. A phone that links an album
+                  fills a gallery and keeps the complete shared folder in
+                  app storage; Arca never imports into your phone’s Photos. For
+                  posters and details, add your own free TMDB key in Settings.
                 </p>
               </div>
             </li>
             <li>
               <span>05</span>
               <div>
-                <h3>Turn a folder into a music library.</h3>
-                <p>
-                  On the hub, choose Enable music library in the folder’s ⋯
-                  menu. Every device that keeps the folder browses it by
-                  artist, album, playlist and recent plays, and plays its own
-                  complete copy: on desktop, on the web and on Android, in the
-                  car with Android Auto. iPhone browses it and opens tracks in
-                  other apps for now.
-                </p>
-              </div>
-            </li>
-            <li>
-              <span>06</span>
-              <div>
                 <h3>Check how long history is kept.</h3>
                 <p>
-                  Each folder keeps earlier versions for 30 days by default.
-                  Change it per folder to Off, 1 day, 1 week, 30 days or
-                  Forever. A shorter window removes older versions for good.
+                  Each synced folder keeps earlier versions for 30 days by
+                  default; change it per folder to Off, 1 day, 1 week, 30 days
+                  or Forever. A shorter window removes older versions for good.
+                  Movies &amp; TV keeps no history.
                 </p>
               </div>
             </li>
           </ol>
         </div>
       </section>
+      <section class="section wrap free" id="free">
+        <div class="section-heading">
+          <p class="eyebrow">Free, on purpose</p>
+          <h2>Nothing to buy.<br />Nothing to sign up for.</h2>
+          <p>
+            Arca is a personal project. It has no price, no account and no
+            subscription, and nobody earns anything from it. The only goal is
+            that your data stays yours.
+          </p>
+        </div>
+        <div class="ownership">
+          <h3>Free to use. Not free to copy.</h3>
+          <p>
+            Arca is free for personal and non-commercial use under the
+            <a href="https://github.com/satoshi-ltd/arca/blob/main/LICENSE"
+              >PolyForm Strict License</a
+            >. You can read the source, but it is not open source: the license
+            does not allow modifying or redistributing it,
+            and using it for a business or at work is not covered.
+            Ideas and bug reports are welcome
+            <a href="https://github.com/satoshi-ltd/arca">on GitHub</a>.
+          </p>
+        </div>
+      </section>
       <section class="section wrap download-section" id="download">
         <div class="section-heading">
-          <p class="eyebrow">03 / Start with the devices you own</p>
+          <p class="eyebrow">04 / Start with the devices you own</p>
           <h2>Download Arca.</h2>
           <p>
-            Start with a desktop or Docker hub, then add your phone, tablet and
-            other computers.
+            Start with a desktop or Docker hub, then add your phone, tablet,
+            other computers and TV.
           </p>
         </div>
         <p class="install-note">
@@ -556,63 +622,82 @@
               ><span class="badge">Start here</span>
             </div>
             <h3>Arca for desktop</h3>
-            <p>Local folders in your file manager. Sync and history in Arca.</p>
-            {{MAC_DOWNLOAD}}<small>Apple Silicon · Version {{VERSION}}</small>
-            <div class="download-alternatives">
-              <span class="eyebrow">Also for your desktop</span>
+            <p>
+              Your folders in your file manager and your libraries in Arca, on
+              macOS, Windows and Linux. It can also be your hub.
+            </p>
+            <div class="card-action">{{MAC_DOWNLOAD}}</div>
+            <small class="card-hint">Apple Silicon · Version {{VERSION}}</small>
+            <div class="card-extra">
               <div class="download-alternatives-list">
                 {{LINUX_DOWNLOAD}}{{WINDOWS_DOWNLOAD}}
               </div>
             </div>
           </article>
-          <article class="download-card">
-            <span class="eyebrow">In your pocket</span>
+          <article class="download-card mobile-card">
+            <div class="card-top"><span class="eyebrow">Phone &amp; tablet</span></div>
             <h3>Arca for mobile</h3>
             <p>
-              Take folders offline, save files from other apps, upload photo
-              albums to your hub and play your music library.
+              Take folders offline, upload photo albums, play your music and
+              watch your movies. In the car, Android Auto plays your music.
             </p>
-            {{MOBILE_ACCESS}}
-            {{ANDROID_APK}}
-            <small class="card-note">
-              Mobile connects to your hub. Background sync follows your phone’s
-              system limits.
-            </small>
+            <div class="card-action">{{MOBILE_ACCESS}}</div>
+            <small class="card-hint">Phones, tablets and foldables · Free, no account</small>
+            <div class="card-extra">
+              <small>
+                Mobile connects to your hub. Background sync follows your phone’s
+                system limits.
+              </small>
+              {{ANDROID_APK}}
+            </div>
+          </article>
+          <article class="download-card">
+            <div class="card-top"><span class="eyebrow">Server</span></div>
+            <h3>Arca with Docker</h3>
+            <p>
+              Run your hub on an always-on computer or a NAS, managed from your
+              browser, or add a second server with its own copy.
+            </p>
+            <div class="card-action">
+              <a class="button card-button" href="https://hub.docker.com/r/satoshiltd/arca"
+                >{{DOCKER_ICON}}<span>Get the Docker image</span
+                ><span class="download-arrow" aria-hidden="true">↗</span></a
+              >
+            </div>
+            <small class="card-hint">Or run <code>docker pull satoshiltd/arca:latest</code></small>
+            <div class="card-extra">
+              <small
+                >Keep its storage persistent, then open the setup wizard on port
+                17831 and enter the one-time code you print inside the container.
+                <a href="https://github.com/satoshi-ltd/arca#docker-first-run"
+                  >First-run guide ↗</a
+                ></small
+              >
+            </div>
+          </article>
+          <article class="download-card">
+            <div class="card-top"><span class="eyebrow">TV</span></div>
+            <h3>Arca for TV</h3>
+            <p>
+              A calm home screen for Google TV and Android TV that brings your
+              hub’s photos, music and movies to the big screen.
+            </p>
+            <div class="card-action">
+              <a class="button card-button" href="https://arca-tv.satoshi-ltd.com/"
+                >{{ANDROID_ICON}}<span>Visit arca TV</span
+                ><span class="download-arrow" aria-hidden="true">↗</span></a
+              >
+            </div>
+            <small class="card-hint">Google TV · Android TV · Free for personal use, no ads</small>
+            <div class="card-extra">
+              <small
+                >arca TV is a separate app with its own site and pairs with your hub
+                the same way as your phone. Its Home shows Watch next, your photos
+                and your music.</small
+              >
+            </div>
           </article>
         </div>
-        <article class="hub-download">
-          <div class="hub-download-copy">
-            <span class="eyebrow">Your server</span>
-            <h3>{{DOCKER_ICON}} Arca with Docker</h3>
-            <p>
-              Install Arca with Docker on an always-on computer or a compatible
-              NAS. Manage it in your browser and choose its role during setup:
-              create a hub or join an existing hub.
-            </p>
-            <p class="hub-platforms">
-              Linux · macOS and Windows with Docker Desktop<br />Linux
-              containers · amd64 (arm64 is still being qualified)
-            </p>
-          </div>
-          <div class="hub-download-action">
-            <code>docker pull satoshiltd/arca:latest</code
-            ><a class="button" href="https://hub.docker.com/r/satoshiltd/arca"
-              >{{DOCKER_ICON}}<span>Get the Docker image</span
-              ><span aria-hidden="true">↗</span></a
-            ><small
-              >Use persistent storage for your files and history, then open the
-              setup wizard in your browser on port 17831, from the Docker host or
-              over a private network. It asks for a one-time code that you
-              print with a command inside the container.
-              <a href="https://github.com/satoshi-ltd/arca#docker-first-run"
-                >First-run guide ↗</a
-              >
-              <a href="https://hub.docker.com/r/satoshiltd/arca"
-                >View Docker image ↗</a
-              ></small
-            >
-          </div>
-        </article>
         <details class="release-notes">
           <summary>Release notes · {{VERSION}}</summary>
           <pre>{{RELEASE_NOTES}}</pre>
@@ -627,7 +712,7 @@
           <details open>
             <summary>Is Arca really free?</summary>
             <p>
-              Yes. There is no price, no account and no subscription, and nobody earns anything from it. It is free for personal and non-commercial use under the PolyForm Strict License: you can read the source, but you may not modify or redistribute it, so it is not open source, and using it for a business or at work is not covered. If you want to help, bug reports and improvements are welcome on GitHub.
+              Yes. There is no price, no account and no subscription. It is free for personal and non-commercial use under the PolyForm Strict License, so using it for a business or at work is not covered; you can read the source, but it is not open source.
             </p>
           </details>
           <details>
@@ -639,37 +724,37 @@
           <details>
             <summary>What happens if my hub breaks?</summary>
             <p>
-              Your devices keep complete copies of the folders they chose, so your files are still there. The history lives on the hub, so it is lost with the hub unless you turned on the optional full backup, which is off by default and runs on a desktop or server. A desktop or server device that holds a complete copy of every shared folder can take over as the new hub once you confirm the old one is gone for good; it starts a fresh history, and your other devices reconnect to it.
+              Your devices keep complete copies of the folders they chose. Folders no device chose and the history live only on the hub, unless you turned on the optional full backup on a desktop or server. Movies &amp; TV stays only on the hub: it keeps no history and the backup skips it, so keep your own copy of your video files. A desktop or server with a complete copy of every shared folder can take over as the new hub, with a fresh history.
             </p>
           </details>
           <details>
             <summary>Is sync a backup?</summary>
             <p>
-              Sync also carries file deletions between ordinary folder copies. Retained history offers a way back, but keep an independent backup. Arca’s optional full hub backup is off by default and runs on a desktop or server, separately from working copies.
+              Sync also carries file deletions between ordinary folder copies. Retained history offers a way back, but keep an independent backup. Arca’s optional full hub backup is off by default and runs on a desktop or server, separately from working copies; it does not include Movies &amp; TV.
             </p>
           </details>
           <details>
             <summary>Who can see my data?</summary>
             <p>
-              Only you and the devices you pair. Your files travel between your devices and your hub; Arca has no company server in the middle and no telemetry. The desktop app does check GitHub for signed updates, and downloads come from GitHub and Docker Hub. Arca does not claim end-to-end encryption: your hub and paired devices are trusted with your files, and on a local network without HTTPS the traffic is plain HTTP. Open in Maps on a photo opens Google Maps with its location. If you cannot trust your network, use a private network such as Tailscale.
+              Only you and the devices you pair: there is no company server in the middle and no telemetry. If you add a TMDB key, the hub sends the titles and years of your movies and shows to TMDB for posters and details. The desktop app checks GitHub for signed updates, and Open in Maps on a photo opens Google Maps. Arca is not end-to-end encrypted: paired devices are trusted with your files and a local network without HTTPS carries plain HTTP, so if you cannot trust your network, use a private network such as Tailscale.
             </p>
           </details>
           <details>
             <summary>Where do my files live?</summary>
             <p>
-              On your hub and on the devices that sync them. Working folders are ordinary files you can open with any app; desktop copies use local paths you choose and phone copies live in app storage. The hub’s history and optional backup are kept in Arca’s own format, so Arca is what reads them. Your own disks set the capacity.
+              On your hub and on the devices that sync them, as ordinary files any app can open: desktop copies in folders you choose, phone copies in app storage. The hub’s history and optional backup use Arca’s own format. Your own disks set the capacity.
             </p>
           </details>
           <details>
             <summary>Does every device need to keep everything?</summary>
             <p>
-              No. Each device chooses whole folders independently, and the folders you sync download as complete files, ready for offline use. A linked phone album adds its photos to a shared folder, and that phone then keeps the complete folder in app storage like any other device.
+              No. Each device chooses whole folders independently, and the folders you sync download as complete files, ready for offline use. Movies &amp; TV stays on the hub and streams; download a single title when you want it offline. A linked phone album adds its photos to a shared folder, and that phone then keeps the complete folder in app storage like any other device.
             </p>
           </details>
           <details>
             <summary>Does my hub have to stay on?</summary>
             <p>
-              Only to exchange changes. Once a folder finishes syncing, its local files work offline. Edits wait until the hub is reachable again. An always-on hub makes syncing more convenient.
+              To exchange changes and to stream. Once a folder finishes syncing, its local files work offline, and edits wait until the hub is reachable again. Movies &amp; TV and everything on arca TV stream from the hub, so they need it, except a title you downloaded beforehand. An always-on hub keeps all of it within reach.
             </p>
           </details>
           <details>
@@ -681,7 +766,13 @@
           <details>
             <summary>How is Arca different from Dropbox, Nextcloud or Syncthing?</summary>
             <p>
-              Cloud drives such as Dropbox, iCloud or Google Drive keep your files on a company’s servers. Nextcloud is a full self-hosted platform for many people. Syncthing syncs directly between devices, with no hub. Arca keeps complete copies of the folders each device chooses, and a hub you run keeps the shared folders and their history. It has no accounts or per-person permissions: every device you pair is trusted with all the shared folders, so it suits one person, or a group that trusts each other. It is a different trade-off, not a better one: for per-person sharing, or for no setup at all, those tools may suit you better.
+              Dropbox, iCloud and Google Drive keep your files on a company’s servers; Nextcloud is a self-hosted platform for many people; Syncthing syncs device to device, with no hub. Arca keeps complete copies of the folders each device chooses, around a hub you run that keeps their history. It has no accounts or per-person permissions, so it suits one person or a group that trusts each other; for per-person sharing or no setup at all, those tools may suit you better.
+            </p>
+          </details>
+          <details>
+            <summary>Can Arca replace Google Photos, iCloud or Plex?</summary>
+            <p>
+              For one person, or a household that trusts each other, it covers the same ground on your own hardware: photo and video uploads from your phone, a music and podcast library, and movies and shows with posters and Watch next on your laptop, phone and TV. It has no face recognition or AI search, no sharing links for people outside your devices, and it never re-encodes video: a file whose audio a device cannot play gets a compatible audio track.
             </p>
           </details>
           <details>
@@ -693,7 +784,13 @@
           <details>
             <summary>How does music work?</summary>
             <p>
-              Turn on Enable music library for a hub folder and every device that keeps it plays its own complete copy, offline too. The playlists you make are saved as ordinary files in that folder, so they sync like everything else and still work in other music players. An Android app installed outside the Play Store needs Unknown sources turned on in Android Auto’s developer settings.
+              Choose Set up as library… → Audio on a hub folder. Every device that keeps it browses artists, albums, playlists and recent plays and plays its own complete copy, offline too, on desktop, the web, Android and Android Auto; iPhone browses it and opens tracks in other apps for now. The playlists you make are saved as ordinary files in that folder. An Android app installed outside the Play Store needs Unknown sources turned on in Android Auto’s developer settings.
+            </p>
+          </details>
+          <details>
+            <summary>How do Movies &amp; TV work?</summary>
+            <p>
+              Choose Set up as library… → Movies &amp; TV on a hub folder. The hub names movies and shows from their files, and with your own free TMDB key adds posters, overviews, ratings and cast. Every device streams from the hub without re-encoding the video, picking up where you left off on another; the phone and the desktop app can download a title to watch offline, and arca TV plays it on your television.
             </p>
           </details>
           <details>
@@ -711,7 +808,7 @@
           <details>
             <summary>How do I update Arca?</summary>
             <p>
-              The desktop app updates itself from signed releases. Update a Docker server by pulling the new image, and phones by installing the new build. Check the release notes for any requirement to update the hub and its devices together.
+              The desktop app updates itself from signed releases. Update a Docker server by pulling the new image; Android updates through Google Play. Check the release notes for any requirement to update the hub and its devices together.
             </p>
           </details>
         </div>

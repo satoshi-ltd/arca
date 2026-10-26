@@ -13,14 +13,22 @@ function pathGone(store, source, item) {
     .get(item.folder, item.target, `${item.target}/`, `${item.target}0`);
 }
 
+const streamed = (store, id) =>
+  store.config.role !== "hub" && (store.config.catalog || []).find((v) => v.id === id && v.video);
+
 function reconcile(store, items) {
   const selected = store.volumes().filter((v) => v.selected);
   const ids = new Set(selected.map((v) => v.id));
+  const named = (id) => selected.find((v) => v.id === id)?.name || streamed(store, id)?.name;
   const indexed = new Set(selected.filter((v) => store.config.role === "hub" || v.last_sync).map((v) => v.id));
   const source = store.fileSource();
-  const kept = items.filter((item) => ids.has(item.folder) && !(item.kind === "path" && indexed.has(item.folder) && pathGone(store, source, item)));
+  const kept = items.filter(
+    (item) =>
+      (ids.has(item.folder) && !(item.kind === "path" && indexed.has(item.folder) && pathGone(store, source, item))) ||
+      (item.kind === "folder" && !ids.has(item.folder) && streamed(store, item.folder)),
+  );
   return {
-    items: kept.map((item) => (item.kind === "folder" ? { ...item, label: selected.find((v) => v.id === item.folder).name } : item)),
+    items: kept.map((item) => (item.kind === "folder" ? { ...item, label: named(item.folder) } : item)),
   };
 }
 
@@ -64,6 +72,7 @@ export function saveFavorites(store, config, body) {
   for (const item of items) {
     if (seen.has(key(item))) fail("Already in Favorites", 409);
     seen.add(key(item));
+    if (item.kind === "folder" && streamed(store, item.folder)) continue;
     const v = store.volume(item.folder);
     if (!v.selected) fail("Only folders synced on this device can be favorites", 409);
   }

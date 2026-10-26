@@ -43,6 +43,8 @@ const blockTimeout = (length) => 15000 + Math.ceil(length / 32768) * 1000;
 const transientSnapshot = (error) =>
   ["SNAPSHOT_BUSY", "SNAPSHOT_EXPIRED"].includes(error?.code);
 
+export const STREAM_ONLY = "Movies & TV folders live only on the hub. Play them from the library.";
+export const VIDEO_STOPPED = "Stopped syncing: Movies & TV live only on the hub";
 export class Replica {
   constructor({
     store,
@@ -171,6 +173,8 @@ export class Replica {
   async finishDestroy() {
     // Stop new publications and drain writers before removing their directory.
     this.scope = null;
+    await this.videoDownloads?.stop().catch(() => {});
+    await Promise.allSettled([...(this.videoWrites || [])]);
     await this.musicPublishing?.catch(() => {});
     await this.musicHistoryWriting?.catch(() => {});
     await this.files.destroy();
@@ -294,6 +298,7 @@ export class Replica {
     try {
       await this.requireActiveReplica();
       if (!this.scope) throw new Error("Connect to a hub first");
+      if (volume.video) throw new Error(STREAM_ONLY);
       if (await this.store.get(`removing:${this.scope}:${volume.id}`, false))
         throw new Error(
           "Remove the remaining local copy before selecting this folder again.",
@@ -1469,6 +1474,11 @@ export class Replica {
         this.check();
         if (await this.store.get(`removing:${this.scope}:${folder.id}`, false)) {
           settled.add(folder.id);
+          continue;
+        }
+        if (catalog.volumes.some((v) => v.id === folder.id && v.video)) {
+          settled.add(folder.id);
+          if (folder.issue !== VIDEO_STOPPED) await this.store.issue(this.scope, folder.id, VIDEO_STOPPED);
           continue;
         }
         if (!catalog.volumes.some((v) => v.id === folder.id)) {

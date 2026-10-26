@@ -26,6 +26,42 @@ import {
   syncedSeek,
   tagsRead,
 } from "./music-library.js";
+import {
+  buildVideoLibrary,
+  episodeAfter,
+  videoFinished,
+  episodeCode,
+  episodeMeta,
+  episodeName,
+  inProgress,
+  itemDuration,
+  nextEpisode,
+  progressPercent,
+  showSubtitle,
+  fullyWatched,
+  sortVideos,
+  grownUp,
+  audioOptions,
+  channelLabel,
+  needsCompatible,
+  sameLanguage,
+  upNextDue,
+  videoClock,
+  videoFacts,
+  videoFormat,
+  languageChips,
+  posterSubtitle,
+  ratingLabel,
+  videoLength,
+  videoProgressLabel,
+  videoShelves,
+  downloadedTitles,
+  RECENT_VIDEOS,
+  videoTabs,
+  videoTechLine,
+  VIDEO_SORTS,
+  VIDEO_TABS,
+} from "./video-library.js";
 import { favoriteOrder, nameOrder } from "./favorite-order.js";
 import {
   createNoticeStore,
@@ -116,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.7.97";
+const APP_VERSION = "0.8.0";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -298,6 +334,7 @@ const PALETTE_GROUPS = {
   episodes: ["Episodes", "episode", "episode"],
   playlists: ["Playlists", "playlist", "playlist"],
   photos: ["Photos", "photo", "photo"],
+  videos: ["Movies & TV", "video", "title"],
   files: ["Files", "file", "file"],
 };
 const PALETTE_SHOWN = 3;
@@ -349,6 +386,10 @@ function paletteSubtitle(row) {
   }
   if (row.type === "playlist") return `${countLabel(row.songs, "song")} · ${row.folder}`;
   if (row.type === "period") return `${row.folder} · ${countLabel(row.count, "photo and video", "photos and videos")}`;
+  if (row.type === "video") {
+    if (row.kind === "episode") return [row.show, episodeCode(row)].filter(Boolean).join(" · ");
+    return [row.kind === "show" ? "TV show" : "Movie", row.year, row.folder].filter(Boolean).join(" · ");
+  }
   return `${row.path.includes("/") ? row.path.slice(0, row.path.lastIndexOf("/")) : row.folder} · ${bytes(row.size)}`;
 }
 function paletteLead(row) {
@@ -358,6 +399,8 @@ function paletteLead(row) {
   if (row.type === "artist") return cover("mic-vocal", " pal-round");
   if (row.type === "show" || row.type === "episode") return cover("podcast");
   if (row.type === "playlist") return `<span class="pal-icon pal-plain">${icon("list-music")}</span>`;
+  if (row.type === "video")
+    return `<span class="pal-icon pal-cover">${videoArt(row.volume, row.kind === "episode" ? row.still || row.poster || null : row.poster || null, row.kind === "movie" ? "clapperboard" : "tv", row.kind === "episode" ? " video-still" : " video-poster")}</span>`;
   if (row.type === "folder") return `<span class="pal-icon">${icon("folder")}</span>`;
   if (row.type === "period") return `<span class="pal-icon">${icon("images")}</span>`;
   if (row.type === "more" || row.type === "page") return `<span class="pal-icon pal-plain">${icon("list")}</span>`;
@@ -393,7 +436,7 @@ function paintPalette(data) {
   const body = document.querySelector("#palette .pal-body");
   const query = palette.query.trim();
   if (query && data && !rows.length) {
-    body.innerHTML = empty(`No matches for “${escape(query)}”`, "Search covers folders, files, photos, music and podcasts held on this device.", "", "search");
+    body.innerHTML = empty(`No matches for “${escape(query)}”`, "Search covers folders, files, photos, music, podcasts and videos held on this device.", "", "search");
   } else {
     let html = "";
     let group = "";
@@ -421,6 +464,7 @@ function paintPalette(data) {
   paintPaletteField();
   icons();
   mountMusicCovers();
+  mountVideoArt();
   document.querySelector("#palette .pal-input")?.setAttribute("aria-activedescendant", rows.length ? `pal-${palette.active}` : "");
   document.querySelectorAll("#palette [data-pal-photo]").forEach(async (node) => {
     const row = rows[Number(node.dataset.palPhoto)];
@@ -603,6 +647,12 @@ async function paletteRun(row, query, reveal) {
   if (row.type === "artist") return paletteLibrary(row, { tab: "artists", artist: row.id });
   if (row.type === "show") return paletteLibrary(row, { tab: "podcasts", show: row.id });
   if (row.type === "playlist") return paletteLibrary(row, { tab: "playlists", playlist: row.id });
+  if (row.type === "video") {
+    const folder = folderVolume(row.volume);
+    if (!videoAvailable(folder)) return row.path ? paletteReveal({ ...row, type: "file" }) : undefined;
+    const title = row.kind === "episode" ? row.showId : row.id;
+    return videoReveal(row.volume, { tab: row.kind === "movie" ? "movies" : "shows", title });
+  }
   if ((row.type === "photo" || row.type === "period") && library?.gallery) return paletteGallery(row.volume, row.cursor, row.type === "photo" ? row.path : null);
   if (row.type === "period") return;
   await handle("activity-file", JSON.stringify({ volume: row.volume, path: row.path, rev: row.rev, deleted: false }));
@@ -622,6 +672,7 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+    if (videoPlayer) return;
     event.preventDefault();
     openPalette();
     return;
@@ -905,6 +956,8 @@ const hubOnlyActions = new Set([
   "restore",
   "review-conflict",
   "disconnect-hub",
+  "video-download",
+  "video-download-season",
 ]);
 function hubOffline() {
   return status?.role === "replica" && !!status.hubUnavailable;
@@ -1613,10 +1666,15 @@ function pruneFavorites(volume, library) {
   const kept = favorites.filter((item) => item.folder !== volume || !exists[item.kind] || exists[item.kind](item.target));
   if (kept.length !== favorites.length) void saveFavorites(kept);
 }
+function favoriteVolume(id) {
+  const v = folderVolume(id);
+  return v?.selected || (v?.video && status.role !== "hub") ? v : null;
+}
 function favoriteHere() {
   if (view !== "folders" || !detailId) return null;
-  const v = status.volumes.find((item) => item.id === detailId);
-  if (!v?.selected) return null;
+  const v = favoriteVolume(detailId);
+  if (!v) return null;
+  if (!v.selected) return { folder: v.id, kind: "folder", target: "", label: v.name };
   if (folderTab === "library") {
     const library = musicLibraries.get(musicKey(v.id))?.library;
     const named = {
@@ -1657,10 +1715,10 @@ function updateFavoriteStars() {
   }
 }
 function favoriteRow(item, index, active) {
-  const v = status.volumes.find((volume) => volume.id === item.folder);
+  const v = favoriteVolume(item.folder);
   if (!v) return "";
   const glyph = item.kind === "folder" ? folderSymbol(v) : item.kind === "path" ? (v.gallery ? "images" : "folder") : FAVORITE_GLYPHS[item.kind];
-  const state = item.kind === "folder" ? stateFor(v) : null;
+  const state = item.kind === "folder" && v.selected ? stateFor(v) : null;
   const mark = !state
     ? ""
     : state[2] === "busy"
@@ -1682,7 +1740,7 @@ function renderFavorites() {
     return;
   }
   const active = activeFavorite();
-  const html = favoriteOrder(favorites, status.volumes)
+  const html = favoriteOrder(favorites, [...status.volumes, ...catalog.filter((v) => v.video && !status.volumes.some((x) => x.id === v.id))])
     .map((index) => favoriteRow(favorites[index], index, index === active))
     .join("");
   region.hidden = !html;
@@ -1712,7 +1770,7 @@ function syncFavorites() {
   renderFavorites();
 }
 async function openFavorite(item) {
-  const v = status.volumes.find((volume) => volume.id === item.folder);
+  const v = favoriteVolume(item.folder);
   if (!v) return;
   historyPath = null;
   if (FAVORITE_GLYPHS[item.kind]) {
@@ -1819,6 +1877,7 @@ document.addEventListener("focusin", (event) => {
 document.getElementById("favorites")?.addEventListener("scroll", fadeFavorites, { passive: true });
 window.addEventListener("focus", () => {
   if (ready && favorites) void loadFavorites();
+  if (ready && detailId && videoShowing(detailId)) void refreshVideo(detailId);
 });
 window.addEventListener("resize", () => {
   fadeFavorites();
@@ -2122,6 +2181,9 @@ const folderRetentionChoices = [
     effect: "Every older version of every file in this folder is kept from now on.",
   },
 ];
+function hubCopyPanel(v) {
+  return `<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>`;
+}
 function folderRetentionMode(volume) {
   return (
     (status.role === "hub"
@@ -2131,6 +2193,8 @@ function folderRetentionMode(volume) {
   );
 }
 function folderRetentionSummary(volume) {
+  if (volume.video)
+    return `<div class="stat folder-history-status"><span>Version history</span><strong>Off</strong><p>Movies &amp; TV keep current files only</p></div>`;
   const mode = folderRetentionMode(volume);
   const label =
     folderRetentionChoices.find((choice) => choice.id === mode)?.summary ||
@@ -2292,15 +2356,13 @@ function folderRow(v, available = false) {
             )
           : "";
   const meta = available
-    ? Number.isFinite(v.files)
-      ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`
-      : "Not counted yet"
+    ? `${Number.isFinite(v.files) ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}` : "Not counted yet"}${available === "streamed" ? " · Streams from hub" : ""}`
     : folderMeta(v, state, p);
   const word = available || p ? "" : stateWord(v, state);
   const lead = available
     ? `<div class="tile large"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
     : homeLead(v, state, p);
-  return `<article class="folder-card ${available ? "unselected" : ""}" ${available ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details${word ? `, ${escape(word)}` : ""}"`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p></div>${available ? selectFolderButton(v.id) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${icon("chevron-right")}`}</article>`;
+  return `<article class="folder-card ${available && available !== "streamed" ? "unselected" : ""}" ${available && !videoAvailable(v) ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details${word ? `, ${escape(word)}` : ""}"`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p></div>${available ? (v.video ? icon("chevron-right") : selectFolderButton(v.id)) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${icon("chevron-right")}`}</article>`;
 }
 async function loadCatalog() {
   if (status.role !== "hub" && !status.hub) {
@@ -2867,15 +2929,18 @@ async function renderView(
     html += '<div class="page">';
     if (status.role !== "hub" && !status.hub)
       html += hubConnectionSection();
-    const shown = [...(status.role === "hub" ? status.volumes : selected)].sort((a, b) => nameOrder(a.name, b.name));
+    const streamed = status.role === "hub" ? [] : available.filter((v) => v.video);
+    const syncable = available.filter((v) => !streamed.includes(v));
+    const shown = [...(status.role === "hub" ? status.volumes : [...selected, ...streamed])].sort((a, b) => nameOrder(a.name, b.name));
     const kinds = [
-      ["Folders", shown.filter((v) => !v.gallery && !v.music)],
+      ["Folders", shown.filter((v) => !v.gallery && !v.music && !v.video)],
       ["Photos", shown.filter((v) => v.gallery)],
       ["Audio", shown.filter((v) => v.music && !v.gallery)],
+      ["Movies &amp; TV", shown.filter((v) => v.video && !v.gallery && !v.music)],
     ].filter(([, list]) => list.length);
     if (shown.length)
       for (const [label, list] of kinds)
-        html += section(label, `<div class="folder-list">${list.map((v) => folderRow(v)).join("")}</div>`);
+        html += section(label, `<div class="folder-list">${list.map((v) => folderRow(v, streamed.includes(v) ? "streamed" : false)).join("")}</div>`);
     else html += section(
       status.role === "hub"
         ? "Shared folders"
@@ -2886,15 +2951,15 @@ async function renderView(
               : `No folders on ${machineLabel()} yet`,
             status.role === "hub"
               ? "Share an existing or new folder. Other devices choose where to sync it."
-              : `Pick folders from your hub${status.hub && available.length ? ", or start syncing one below" : ""}. Full copies are kept on disk and work offline.`,
+              : `Pick folders from your hub${status.hub && syncable.length ? ", or start syncing one below" : ""}. Full copies are kept on disk and work offline.`,
             "",
             "arca",
           ),
     );
-    if (status.role !== "hub" && status.hub && available.length)
+    if (status.role !== "hub" && status.hub && syncable.length)
       html += section(
         "On hub · not selected",
-        `<div class="folder-list">${available.map((v) => folderRow(v, true)).join("")}</div>`,
+        `<div class="folder-list">${syncable.map((v) => folderRow(v, true)).join("")}</div>`,
       );
     if (
       status.role !== "hub" &&
@@ -3019,7 +3084,7 @@ function fileHistoryHeader() {
           "external-link",
         )
       : available && !native && status.role === "hub"
-        ? `<a class="secondary" href="/v1/blobs/${escape(current.hash)}" download="${escape(filename)}">${icon("download")}Download file</a>`
+        ? `<a class="secondary" href="${escape(volume?.video ? `/v1/gallery/download?${new URLSearchParams({ volume: historyVolume, path: historyPath, hash: current.hash })}` : `/v1/blobs/${current.hash}`)}" download="${escape(filename)}">${icon("download")}Download file</a>`
         : available && !native && volume?.selected && historyLocal?.hash
           ? `<a class="secondary" href="/v1/gallery/download?${escape(new URLSearchParams({ volume: historyVolume, path: historyPath, hash: historyLocal.hash }))}" download="${escape(filename)}">${icon("download")}Download file</a>`
           : "";
@@ -3052,7 +3117,7 @@ function fileHistoryHeader() {
     !current.directory &&
     (status.role === "hub" || volume?.selected);
   const actions = canModify
-    ? `${historyPath !== ".arcaignore" ? button("Rename…", "rename-file", "", "secondary", "pencil") : ""}${button("Delete file…", "delete-file", "", "secondary danger menu-item-separated", "trash-2")}`
+    ? `${historyPath !== ".arcaignore" && !volume?.video ? button("Rename…", "rename-file", "", "secondary", "pencil") : ""}${button("Delete file…", "delete-file", "", "secondary danger menu-item-separated", "trash-2")}`
     : "";
   const fileMenu =
     finder || actions
@@ -3158,7 +3223,7 @@ async function clearStoredGallery(required = false) {
     if (!db) {
       if (required && globalThis.indexedDB)
         throw new Error(
-          "Could not clear Arca's gallery cache. Retry Erase this device.",
+          "Could not clear Arca's photo cache. Retry Erase this device.",
         );
       return;
     }
@@ -3166,7 +3231,7 @@ async function clearStoredGallery(required = false) {
       const tx = db.transaction("views", "readwrite");
       tx.oncomplete = resolve;
       tx.onerror = tx.onabort = () =>
-        reject(tx.error || new Error("Gallery cache cleanup failed"));
+        reject(tx.error || new Error("Photo cache cleanup failed"));
       tx.objectStore("views").clear();
     });
   } catch (error) {
@@ -4136,7 +4201,7 @@ function mountGallery(volume) {
       failed = false;
     const more = root.querySelector(".photo-more");
     more.innerHTML = busyIcon();
-    more.setAttribute("aria-label", "Loading gallery");
+    more.setAttribute("aria-label", "Loading photos");
     more.setAttribute("aria-busy", "true");
     try {
       const data = await galleryPage(
@@ -4154,7 +4219,7 @@ function mountGallery(volume) {
         updateTimeline(data);
         if (!state.items.length) addItems(data.items);
         more.innerHTML = busyIcon();
-        more.setAttribute("aria-label", "Preparing gallery");
+        more.setAttribute("aria-label", "Preparing photos");
         waiting = true;
         state.poll = setTimeout(() => {
           state.poll = null;
@@ -4550,7 +4615,7 @@ function deleteGalleryPhotos(items) {
   modal(
     modalHeader(
       `Delete ${items.length === 1 ? "this photo" : `${items.length} photos`}?`,
-      "Deletes from the shared gallery for everyone, including Live Photo resources. Originals stay in Photos. Recovery depends on this folder’s version retention.",
+      "Deletes from the shared Photos library for everyone, including Live Photo resources. Originals stay in Photos. Recovery depends on this folder’s version retention.",
       "trash-2",
     ),
     async () => {
@@ -4770,7 +4835,7 @@ async function openGalleryPhoto(index) {
   );
   $("#submit-dialog").hidden = true;
   $("#cancel-dialog").innerHTML = icon("arrow-left");
-  $("#cancel-dialog").setAttribute("aria-label", "Back to gallery");
+  $("#cancel-dialog").setAttribute("aria-label", "Back to photos");
   $(".photo-download").onclick = () => action(() => downloadGalleryPhoto(item));
   $(".photo-delete")?.addEventListener("click", (event) =>
     event.currentTarget.getAttribute("aria-disabled") === "true" ? hubOnlyBlocked() : deleteGalleryPhotos([item]),
@@ -5008,17 +5073,17 @@ document.addEventListener("keydown", (event) => {
 
 function folderSymbol(volume) {
   if (volume.gallery) return "images";
+  if (volume.video) return "clapperboard";
   if (!volume.music) return "folder";
   const library = musicLibraries.get(musicKey(volume.id))?.library;
   return library && library.shows.length && !library.albumList.length ? "podcast" : "music";
 }
 function folderActionsMenu(volume) {
   if (status.role !== "hub") return "";
-  const ordinary = !volume.gallery && !volume.music;
+  const ordinary = !volume.gallery && !volume.music && !volume.video;
   const items =
     (ordinary
-      ? button("Enable gallery", "enable-gallery", volume.id, "secondary", "images") +
-        button("Enable audio library", "enable-music", volume.id, "secondary", "music")
+      ? button("Set up as library…", "setup-library", volume.id, "secondary", "library-big")
       : "") +
     button("Rename", "rename-share", volume.id, "secondary", "pencil") +
     button(".arcaignore…", "edit-ignore", volume.id, "secondary", "file-pen-line");
@@ -5028,7 +5093,7 @@ let galleryZoom = "medium";
 function galleryModeButton(volume) {
   if (!volume.gallery) return "";
   return button(
-    folderTab === "gallery" ? "View folder" : "Gallery",
+    folderTab === "gallery" ? "View folder" : "Photos",
     "gallery-mode",
     volume.id,
     "primary gallery-mode-toggle",
@@ -5723,7 +5788,7 @@ function renderMusic(v, scroll = null) {
   const body = entry
     ? musicBody(v, entry)
     : failure
-      ? empty("Library unavailable", "Arca could not read this audio library. Try again.", button("Retry", "music-retry", "", "secondary"), "music")
+      ? empty("Library unavailable", "Arca could not read this Audio library. Try again.", button("Retry", "music-retry", "", "secondary"), "music")
       : scaffoldRow("card");
   const moved = !!page && musicShown.place !== place();
   const head = heading();
@@ -6764,16 +6829,1683 @@ async function handleMusic(name, id) {
   if (name === "music-crumb") window.history.replaceState(musicEntry(v.id, 0, scroll), "", location.hash);
   renderMusic(v, scroll);
 }
+const VIDEO_TAB_SYMBOLS = { home: "house", movies: "film", shows: "tv", kids: "smile", other: "video" };
+const VIDEO_HOME = { tab: "home", title: null, season: null, sort: "az" };
+const videoLibraries = new Map();
+const videoFailures = new Map();
+const videoLoading = new Map();
+const videoIndexTimers = new Map();
+const videoStale = new Set();
+const VIDEO_IDLE_REFRESH = 60000;
+const videoArtCache = new Map();
+const observedVideoArt = new Set();
+const videoArtQueue = [];
+const videoDownloadRows = new Map();
+const videoDownloadTimers = new Map();
+const videoDownloadPending = new Set();
+const VIDEO_DOWNLOAD_POLL = 2000;
+let videoArtObserver,
+  videoArtWorkers = 0,
+  videoShown = {},
+  videoView = { ...VIDEO_HOME },
+  videoPlayer = null,
+  videoSerial = 0,
+  videoMatching = null,
+  videoTmdb = { key: "", state: "" };
+function folderVolume(id) {
+  return status.volumes.find((v) => v.id === id) || (status.role !== "hub" ? catalog.find((v) => v.id === id && v.video) : null) || null;
+}
+function videoAvailable(volume) {
+  return !!volume?.video && !volume.gallery && !volume.music && (status.role === "hub" || !!status.hub);
+}
+const videoBrowsable = (volume) => status.role === "hub" || !!volume?.selected;
+const videoEditable = (volume) => status.role === "hub" || !!volume?.selected;
+function videoModeButton(volume) {
+  if (!videoAvailable(volume) || !videoBrowsable(volume)) return "";
+  return button(
+    folderTab === "video" ? "View folder" : "Library",
+    "video-mode",
+    volume.id,
+    "primary",
+    folderTab === "video" ? "folder" : "clapperboard",
+  );
+}
+const videoTmdbScope = () => `${status.id}:${status.hubId || ""}`;
+const videoTmdbWorks = () => videoTmdb.key === videoTmdbScope() && ["connected", "matching"].includes(videoTmdb.state);
+function rememberVideoTmdb(state) {
+  const changed = videoTmdb.state !== (state || "") || videoTmdb.key !== videoTmdbScope();
+  videoTmdb = { key: videoTmdbScope(), state: state || "" };
+  return changed;
+}
+async function loadVideoTmdb() {
+  if (status.role !== "hub") return false;
+  try {
+    return rememberVideoTmdb((await api("/v1/video/settings")).state);
+  } catch {
+    return false;
+  }
+}
+const videoKey = (volume) => `${status.id}:${status.hubId || ""}:${volume}`;
+const videoShowing = (volume) => view === "folders" && detailId === volume && folderTab === "video";
+const videoEntry = (volume, scroll = 0) => ({ video: volume, view: videoView, scroll });
+async function loadVideoLibrary(volume) {
+  const key = videoKey(volume);
+  const known = videoLibraries.get(key);
+  const query = new URLSearchParams({ volume });
+  if (known) query.set("version", known.version);
+  const data = await api("/v1/video/library?" + query);
+  if (data.unchanged && known) {
+    known.indexing = data.indexing || false;
+    known.matching = data.matching || false;
+    if (data.tmdb !== undefined) known.tmdb = data.tmdb;
+    known.checked = Date.now();
+    return known;
+  }
+  const entry = {
+    version: data.version,
+    indexing: data.indexing || false,
+    matching: data.matching || false,
+    checked: Date.now(),
+    stamp: 0,
+    tmdb: data.tmdb,
+    library: buildVideoLibrary(data),
+  };
+  videoLibraries.delete(key);
+  videoLibraries.set(key, entry);
+  while (videoLibraries.size > 8) videoLibraries.delete(videoLibraries.keys().next().value);
+  return entry;
+}
+const videoWorking = (entry) => !!(entry?.indexing || entry?.matching);
+const videoDownloadable = () => native && status.role === "replica";
+const videoDownloadList = (volume) => [...(videoDownloadRows.get(videoKey(volume))?.values() || [])];
+const videoDownloadActive = (row) => row?.state === "queued" || row?.state === "downloading";
+const videoDownloadPercent = (row) => (row.size > 0 ? Math.min(99, Math.floor((row.done / row.size) * 100)) : 0);
+const videoDownloadStamp = (volume) =>
+  videoDownloadable() ? JSON.stringify(videoDownloadList(volume).map((row) => [row.path, row.hash, row.state, videoDownloadActive(row) ? videoDownloadPercent(row) : 0])) : "";
+function videoDownloadOf(volume, item) {
+  const row = videoDownloadable() && item?.path ? videoDownloadRows.get(videoKey(volume))?.get(item.path) : null;
+  if (!row || (row.state === "done" && row.hash !== item.hash)) return null;
+  return row;
+}
+function videoLeftover(volume, item) {
+  const row = videoDownloadable() && item?.path ? videoDownloadRows.get(videoKey(volume))?.get(item.path) : null;
+  return !!row && !videoDownloadActive(row) && videoDownloadOf(volume, item)?.state !== "done";
+}
+function videoNeedsDownload(volume, item) {
+  const row = videoDownloadOf(volume, item);
+  return !!item?.path && !videoDownloadActive(row) && row?.state !== "done";
+}
+function armVideoDownloads(volume) {
+  if (videoDownloadTimers.has(volume)) return;
+  videoDownloadTimers.set(
+    volume,
+    setTimeout(async () => {
+      videoDownloadTimers.delete(volume);
+      const changed = await loadVideoDownloads(volume);
+      if (!videoShowing(volume) || videoPlayer || !(changed || videoDownloadPending.has(volume))) return;
+      if (document.querySelector("#content details[open], #dialog[open]")) {
+        videoDownloadPending.add(volume);
+        armVideoDownloads(volume);
+        return;
+      }
+      videoDownloadPending.delete(volume);
+      renderVideo(folderVolume(volume));
+    }, VIDEO_DOWNLOAD_POLL),
+  );
+}
+async function loadVideoDownloads(volume, given = null) {
+  if (!videoDownloadable()) return false;
+  let rows = given;
+  if (!rows)
+    try {
+      rows = (await api(`/v1/video/downloads?${new URLSearchParams({ volume })}`))?.downloads;
+    } catch {
+      if (videoDownloadList(volume).some(videoDownloadActive)) armVideoDownloads(volume);
+      return false;
+    }
+  if (!Array.isArray(rows)) return false;
+  const key = videoKey(volume);
+  const before = videoDownloadStamp(volume);
+  const previous = videoDownloadRows.get(key);
+  videoDownloadRows.set(key, new Map(rows.map((row) => [row.path, row])));
+  for (const row of rows)
+    if (row.state === "failed" && videoDownloadActive(previous?.get(row.path))) notice(row.error || "This video could not be downloaded", true, { id: "video-download" });
+  if (rows.some(videoDownloadActive)) armVideoDownloads(volume);
+  return videoDownloadStamp(volume) !== before;
+}
+const videoMenuOpen = () => !!document.querySelector("#content details[open], #dialog[open]");
+function armVideoIndex(volume, wait = 5000) {
+  clearTimeout(videoIndexTimers.get(volume));
+  videoIndexTimers.set(
+    volume,
+    setTimeout(() => {
+      videoIndexTimers.delete(volume);
+      if (!videoShowing(volume)) return;
+      if (videoStale.has(volume) && !videoMenuOpen() && !videoPlayer) {
+        videoStale.delete(volume);
+        renderVideo(folderVolume(volume));
+      }
+      void refreshVideo(volume, true);
+    }, wait),
+  );
+}
+function refreshVideo(volume, force = false) {
+  const key = videoKey(volume);
+  const known = videoLibraries.get(key);
+  if (videoLoading.has(key)) return videoLoading.get(key);
+  if (!force && known && Date.now() - known.checked < 10000) return Promise.resolve();
+  const job = readVideo(volume, key, known);
+  videoLoading.set(key, job);
+  return job;
+}
+async function readVideo(volume, key, known) {
+  const before = JSON.stringify([known?.indexing, known?.matching]);
+  try {
+    const entry = await loadVideoLibrary(volume);
+    const downloadsChanged = await loadVideoDownloads(volume);
+    const tmdbChanged = entry.tmdb !== undefined ? rememberVideoTmdb(entry.tmdb) : await loadVideoTmdb();
+    if (tmdbChanged) videoTouched(volume);
+    videoFailures.delete(key);
+    armVideoIndex(volume, videoWorking(entry) ? 5000 : VIDEO_IDLE_REFRESH);
+    if ((entry !== known || tmdbChanged || downloadsChanged || JSON.stringify([entry.indexing, entry.matching]) !== before) && videoShowing(volume)) {
+      if (known && !videoWorking(entry) && (videoMenuOpen() || videoPlayer)) videoStale.add(volume);
+      else renderVideo(folderVolume(volume));
+    }
+  } catch (error) {
+    if (known) return void armVideoIndex(volume, videoWorking(known) ? 5000 : VIDEO_IDLE_REFRESH);
+    videoFailures.set(key, error.message);
+    if (videoShowing(volume)) renderVideo(folderVolume(volume));
+  } finally {
+    videoLoading.delete(key);
+  }
+}
+function videoTouched(volume) {
+  const entry = videoLibraries.get(videoKey(volume));
+  if (entry) entry.stamp++;
+}
+const videoSymbol = (item) => (item.kind === "show" || item.kind === "episode" ? "tv" : item.kind === "other" ? "video" : "clapperboard");
+function videoArt(volume, key, symbol, cls = "", size = "small", extra = "") {
+  const query = key ? new URLSearchParams({ volume, key, size }).toString() : "";
+  return `<span class="music-cover${cls}"${query ? ` data-video-art="${escape(query)}"` : ""}>${symbol === "arca" ? brandArch() : icon(symbol)}${extra}</span>`;
+}
+const videoBar = (item, label = "Watched so far") =>
+  inProgress(item) ? `<progress class="music-progress music-cover-bar" max="100" value="${progressPercent(item)}" aria-label="${label}"></progress>` : "";
+const videoWatchedMark = (item) => (fullyWatched(item) ? `<span class="video-watched" role="img" aria-label="Watched">${icon("check")}</span>` : "");
+function videoStill(library, item) {
+  if (item.kind !== "episode") return item.still || item.backdrop || null;
+  const show = library.items.get(item.show);
+  return item.still || show?.backdrop || null;
+}
+function videoCard(v, action, id, art, title, subtitle, spoken = [title, subtitle]) {
+  return `<button type="button" class="music-card" data-action="${action}" data-id="${escape(id)}" aria-label="${escape(spoken.filter(Boolean).join(", "))}">${art}<strong>${escape(title)}</strong><span>${escape(subtitle)}</span></button>`;
+}
+function videoPosterCard(v, item, downloaded = false) {
+  const subtitle = posterSubtitle(item) || (item.kind === "show" ? showSubtitle(item) : videoLength(itemDuration(item)));
+  const rating = ratingLabel(item.rating);
+  const badge = downloaded
+    ? `<span class="video-watched" role="img" aria-label="Downloaded">${icon("download")}</span>`
+    : videoWatchedMark(item) + (rating ? `<span class="video-rating" aria-label="Rated ${escape(rating.slice(2))}"><span>${escape(rating)}</span></span>` : "") + videoBar(item);
+  const card = videoCard(v, "video-title", item.id, videoArt(v.id, item.poster, videoSymbol(item), " video-poster", "small", badge), item.title, subtitle);
+  if (downloaded || (item.kind !== "movie" && item.kind !== "show")) return card;
+  const watched = fullyWatched(item);
+  const label = `${watched ? "Mark as unwatched" : "Mark as watched"}: ${item.title}`;
+  return `<div class="video-card">${card}<button type="button" class="video-quick-watched${watched ? " is-watched" : ""}" data-action="video-quick-watched" data-id="${escape(item.id)}" data-tooltip="${watched ? "Mark as unwatched" : "Mark as watched"}" aria-label="${escape(label)}">${icon(watched ? "eye-off" : "check")}</button></div>`;
+}
+function videoWatchCard(v, entry) {
+  const tag = entry.tag === "next" ? '<span class="video-rating video-next"><span>Next</span></span>' : entry.tag === "new" ? '<span class="video-rating video-next"><span>New</span></span>' : "";
+  const bar = entry.progress == null ? "" : `<progress class="music-progress music-cover-bar" max="100" value="${entry.progress}" aria-label="Watched so far"></progress>`;
+  const play = entry.reason === "resume" || entry.reason === "next";
+  const card = videoCard(v, play ? "video-play" : "video-title", entry.item.id, videoArt(v.id, entry.art, videoSymbol(entry.item), " video-still", "small", tag + bar), entry.title, entry.caption, [entry.title, entry.caption, entry.tag]);
+  return `<div class="video-card">${card}<button type="button" class="video-quick-watched" data-action="video-watch-remove" data-id="${escape(entry.item.id)}" data-tooltip="Remove from Watch next" aria-label="${escape(`Remove from Watch next: ${entry.title}`)}">${icon("x")}</button></div>`;
+}
+function videoOtherCard(v, item) {
+  return videoCard(
+    v,
+    "video-play",
+    item.id,
+    videoArt(v.id, item.still || null, "video", " video-still", "small", videoWatchedMark(item) + videoBar(item)),
+    item.title,
+    inProgress(item) ? videoProgressLabel(item) : videoLength(itemDuration(item)),
+  );
+}
+function videoGrid(cards, cls = "") {
+  return `<div class="music-grid${cls}">${cards.join("")}</div>`;
+}
+function videoCaptionText(entry) {
+  const reading = entry?.indexing;
+  const matching = entry?.matching;
+  const counted = (state, verb, noun) =>
+    Number.isFinite(state?.total) && state.total > 0
+      ? `${verb} ${Number(state.done || 0).toLocaleString("en")} of ${state.total.toLocaleString("en")} ${noun}…`
+      : `${verb} ${noun}…`;
+  return reading ? counted(reading, "Reading", "videos") : matching ? counted(matching, "Matching", "titles") : "";
+}
+function videoCaption(entry) {
+  const text = videoCaptionText(entry);
+  return text ? `<p class="music-caption" role="status">${escape(text)}</p>` : "";
+}
+function videoDownloadCard(v, item) {
+  const badge = `<span class="video-watched" role="img" aria-label="Downloaded">${icon("download")}</span>`;
+  return videoCard(v, "video-play", item.id, videoArt(v.id, item.still || null, "video", " video-poster", "small", badge), item.title, videoLength(itemDuration(item)));
+}
+function videoHome(v, library) {
+  const shelves = videoShelves(library, RECENT_VIDEOS, videoDownloadable() ? downloadedTitles(library, videoDownloadList(v.id)) : []);
+  if (!shelves.length) return empty("Nothing to watch yet", "Movies and shows appear here as Arca reads them.", "", "clapperboard");
+  return `<div class="video-shelves">${shelves
+    .map((shelf) => {
+      const posters = shelf.id !== "watch-next";
+      const cards = shelf.id === "watch-next"
+        ? shelf.entries.map((entry) => videoWatchCard(v, entry))
+        : shelf.items.map((item) =>
+            shelf.id === "downloads" && item.kind !== "movie" && item.kind !== "show"
+              ? videoDownloadCard(v, item)
+              : videoPosterCard(v, item, shelf.id === "downloads"),
+          );
+      return `<section aria-label="${escape(shelf.label)}"><div class="section-label">${escape(shelf.label)}</div><div class="video-shelf${posters ? " video-posters" : ""}">${cards.join("")}</div></section>`;
+    })
+    .join("")}</div>`;
+}
+const VIDEO_SORTED = new Set(["movies", "shows", "kids", "other"]);
+function videoTabContent(v, library) {
+  const sort = videoView.sort;
+  if (videoView.tab === "movies") return videoGrid(sortVideos(grownUp(library.movies), sort).map((item) => videoPosterCard(v, item)), " video-poster-grid");
+  if (videoView.tab === "shows") return videoGrid(sortVideos(library.shows, sort).map((show) => videoPosterCard(v, show)), " video-poster-grid");
+  if (videoView.tab === "kids")
+    return videoGrid(sortVideos(library.movies.filter((item) => item.kids), sort).map((item) => videoPosterCard(v, item)), " video-poster-grid");
+  if (videoView.tab === "other") return videoGrid(sortVideos(library.other, sort).map((item) => videoOtherCard(v, item)), " video-still-grid");
+  return videoHome(v, library);
+}
+function videoTabsMarkup(tabs) {
+  const sorted = VIDEO_SORTED.has(videoView.tab);
+  if (tabs.length < 2 && !sorted) return "";
+  const tabRow =
+    tabs.length > 1
+      ? segmented(
+          "Library",
+          tabs.map((id) => ({ id, label: VIDEO_TABS[id], symbol: VIDEO_TAB_SYMBOLS[id], action: "video-tab", active: videoView.tab === id })),
+        )
+      : "";
+  const sort = sorted
+    ? segmented(
+        "Sort",
+        Object.entries(VIDEO_SORTS).map(([id, label]) => ({ id, label, action: "video-sort", active: videoView.sort === id })),
+        "video-sort",
+      )
+    : "";
+  return `<div class="folder-browser-tools video-tools"><div class="music-tools">${tabRow}</div>${sort}</div>`;
+}
+function videoMenu(v, item, label) {
+  const editable = videoEditable(v);
+  const curating = status.role === "hub";
+  const items =
+    (curating && videoTmdbWorks() ? button("Fix match…", "video-match", item.id, "secondary", "search") : "") +
+    (curating && item.kind === "movie" && (item.matched === false || item.kidsOverride != null) ? button(item.kids ? "Not for kids" : "Mark as kids", "video-kids", item.id, "secondary", "smile") : "") +
+    (curating && item.kidsOverride != null ? button("Use automatic Kids", "video-kids-auto", item.id, "secondary", "rotate-ccw") : "") +
+    (videoDownloadOf(v.id, item)?.state === "done" || videoLeftover(v.id, item) ? button("Remove download", "video-download-remove", item.id, "secondary", "trash") : "") +
+    (editable && item.kind !== "show" ? button("Delete…", "video-delete", item.id, "secondary danger menu-item-separated", "trash-2") : "");
+  return items
+    ? `<details class="details-menu file-actions-menu video-menu"><summary class="icon-button" aria-label="${label}">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`
+    : "";
+}
+function videoBand(v, item, actions) {
+  const facts = videoFacts(item)
+    .map((fact) => (fact.badge ? `<span class="video-badge"><span>${escape(fact.text)}</span></span>` : `<span>${escape(fact.text)}</span>`))
+    .join("");
+  const chips = languageChips(item);
+  const group = (symbol, label, codes) =>
+    codes.length ? `<span class="video-language-group" role="group" aria-label="${escape(label)}">${icon(symbol)}${codes.map((code) => `<span class="video-badge" aria-hidden="true"><span>${escape(code)}</span></span>`).join("")}</span>` : "";
+  const spoken = chips ? group("audio-lines", chips.audioLabel, chips.audio) + group("captions", chips.subtitleLabel, chips.subtitles) : "";
+  const cast = (item.cast || []).slice(0, 5);
+  return `<div class="video-backdrop">${videoArt(v.id, item.backdrop, "arca", " video-backdrop-art", "large")}${videoArt(v.id, item.poster, videoSymbol(item), " video-poster", "small", videoWatchedMark(item))}<div class="music-head-info"><div><h2>${escape(item.title)}</h2>${facts ? `<p class="video-facts">${facts}</p>` : ""}${spoken ? `<p class="video-languages">${spoken}</p>` : ""}${item.overview ? `<p class="video-hero-overview">${escape(item.overview)}</p>` : ""}${cast.length ? `<p class="video-line video-cast"><strong>Cast</strong>${escape(cast.join(", "))}</p>` : ""}<div class="heading-actions">${actions}</div></div></div></div>`;
+}
+function videoMovie(v, item) {
+  const play = inProgress(item)
+    ? button(`Resume from ${videoClock(item.position.position)}`, "video-resume", item.id, "primary", "play") +
+      button("Start over", "video-start", item.id, "secondary", "rotate-ccw")
+    : button("Play", "video-start", item.id, "primary", "play");
+  const watched = button(item.watched ? "Mark as unwatched" : "Mark as watched", "video-watched", item.id, "secondary", item.watched ? "eye-off" : "check");
+  return videoBand(v, item, play + watched + videoDownloadButton(v, item) + videoMenu(v, item, "Movie actions"));
+}
+function videoDownloadButton(v, item) {
+  if (!videoDownloadable()) return "";
+  const row = videoDownloadOf(v.id, item);
+  if (row?.state === "done") return `<button type="button" class="secondary">${icon("circle-check")}Downloaded</button>`;
+  if (!videoDownloadActive(row)) return button("Download", "video-download", item.id, "secondary", "download");
+  const percent = videoDownloadPercent(row);
+  return `<button type="button" class="secondary" aria-label="Downloading, ${percent}%">${icon("loader-circle")}Downloading · ${percent}%</button><button type="button" class="ghost icon-button" data-action="video-download-cancel" data-id="${escape(item.id)}" data-tooltip="Cancel download" aria-label="Cancel download">${icon("x")}</button>`;
+}
+function videoEpisodeDownload(v, episode) {
+  const row = videoDownloadOf(v.id, episode);
+  const control = (action, label, tip, symbol) =>
+    `<button type="button" class="ghost icon-button" data-action="${action}" data-id="${escape(episode.id)}" data-tooltip="${tip}" aria-label="${label}">${icon(symbol)}</button>`;
+  if (row?.state === "done") return control("video-download-remove", "Downloaded", "Remove download", "circle-check");
+  if (videoDownloadActive(row)) return control("video-download-cancel", `Downloading, ${videoDownloadPercent(row)}%`, "Cancel download", "loader-circle");
+  return control("video-download", "Download", "Download", "download") + (videoLeftover(v.id, episode) ? control("video-download-remove", "Remove download", "Remove download", "trash") : "");
+}
+function videoRelated(v, library, item) {
+  const related = (item.related || []).map((id) => library.items.get(id)).filter((title) => title && title.kind !== "episode");
+  if (!related.length) return "";
+  return `<section class="video-more" aria-label="Related"><div class="section-label">Related</div><div class="video-shelf video-posters">${related.map((title) => videoPosterCard(v, title)).join("")}</div></section>`;
+}
+function videoEpisodeRow(v, library, show, episode, current) {
+  const toggle = episode.watched
+    ? `<button type="button" class="ghost icon-button video-check" data-action="video-watched" data-id="${escape(episode.id)}" aria-pressed="true" aria-label="Mark as unwatched">${icon("circle-check")}</button>`
+    : `<button type="button" class="ghost icon-button" data-action="video-watched" data-id="${escape(episode.id)}" aria-pressed="false" aria-label="Mark as watched">${icon("circle")}</button>`;
+  const actions = videoDownloadable() ? `<span class="row-actions">${videoEpisodeDownload(v, episode)}${toggle}</span>` : toggle;
+  return `<div class="video-episode"${current ? ' aria-current="true"' : ""}><button type="button" class="video-episode-play" data-action="video-play" data-id="${escape(episode.id)}" aria-label="${escape(`Play ${episodeName(episode)}, ${episodeMeta(episode)}`)}">${videoArt(v.id, episode.still || show.backdrop, "tv", " video-still", "small", videoBar(episode))}<span class="video-episode-main"><strong>${escape(episodeName(episode))}</strong><span class="video-meta">${escape(episodeMeta(episode))}</span>${episode.overview ? `<span class="video-overview">${escape(episode.overview)}</span>` : ""}</span></button>${actions}</div>`;
+}
+function videoShow(v, library, show) {
+  const next = nextEpisode(show);
+  const play = next ? button(`Play ${episodeCode(next)}`, "video-play", next.id, "primary", "play") : "";
+  const seasons = show.seasons.filter((season) => season.episodes.length);
+  const chosen = seasons.find((season) => season.season === videoView.season) || seasons.find((season) => season.episodes.includes(next)) || seasons[0];
+  const control =
+    seasons.length > 1
+      ? segmented(
+          "Season",
+          seasons.map((season) => ({ id: String(season.season), label: season.name, action: "video-season", active: season === chosen })),
+          "video-seasons",
+        )
+      : "";
+  const rows = chosen ? `<div class="history-group video-episodes">${chosen.episodes.map((episode) => videoEpisodeRow(v, library, show, episode, episode === next)).join("")}</div>` : "";
+  const season = videoDownloadable() && chosen?.episodes.some((episode) => videoNeedsDownload(v.id, episode)) ? `<div class="heading-actions">${button("Download season", "video-download-season", String(chosen.season), "secondary", "download")}</div>` : "";
+  const watched = fullyWatched(show);
+  const mark = button(watched ? "Mark as unwatched" : "Mark as watched", "video-quick-watched", show.id, "secondary", watched ? "eye-off" : "check");
+  return videoBand(v, show, play + mark + videoMenu(v, show, "Show actions")) + control + season + rows;
+}
+function videoTrail(v, library) {
+  const item = library && videoView.title && library.items.get(videoView.title);
+  const levels = [];
+  if (item) levels.push([VIDEO_TABS[videoView.tab] || "Home", "video-crumb", "tab"], [item.title]);
+  const crumbs = [["Folders", "back-folders", ""], [v.name, "video-crumb", "root"], ...levels];
+  return `<nav class="folder-breadcrumb music-trail" aria-label="Library location">${crumbs
+    .map(([label, action, id], index) =>
+      (index ? icon("chevron-right") : "") +
+      (index === crumbs.length - 1 ? `<span aria-current="location">${escape(label)}</span>` : button(escape(label), action, id, "text-button")),
+    )
+    .join("")}</nav>`;
+}
+const videoDeep = () => !!videoView.title;
+function videoHeading(v, entry) {
+  const library = entry?.library;
+  const summary = library
+    ? [
+        library.movies.length ? countLabel(library.movies.length, "movie") : "",
+        library.shows.length ? countLabel(library.shows.length, "show") : "",
+        library.other.length ? countLabel(library.other.length, "other video", "other videos") : "",
+        Number.isFinite(v.bytes) ? bytes(v.bytes) : "",
+      ]
+        .filter(Boolean)
+        .join(" · ") || "No videos yet"
+    : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)}`;
+  return `<div class="heading"><div class="detail-title"><div class="tile large">${icon("clapperboard")}</div><div><h1>${escape(v.name)}</h1><p>${escape(summary)}</p></div></div><div class="heading-actions">${favoriteStar()}${videoModeButton(v)}${folderActionsMenu(v)}</div></div>`;
+}
+function videoBody(v, entry) {
+  const library = entry.library;
+  if (videoView.title) {
+    const item = library.items.get(videoView.title);
+    if (item?.kind === "movie") return `<div class="music-view video-view">${videoMovie(v, item)}${videoRelated(v, library, item)}</div>`;
+    if (item?.kind === "show") return `<div class="music-view video-view">${videoShow(v, library, item)}${videoRelated(v, library, item)}</div>`;
+    videoView.title = null;
+  }
+  const tabs = videoTabs(library);
+  if (!tabs.length)
+    return (
+      videoCaption(entry) +
+      (videoWorking(entry)
+        ? empty("Reading this library", "Movies and shows appear as Arca reads the files.", "", "arca")
+        : empty("No videos yet", "Video files added to this folder appear here.", "", "clapperboard"))
+    );
+  if (!tabs.includes(videoView.tab)) videoView = { ...videoView, tab: tabs[0] };
+  return `${videoTabsMarkup(tabs)}${videoCaption(entry)}<div class="music-view video-view">${videoTabContent(v, library)}</div>`;
+}
+const videoPlace = (v) => JSON.stringify([v.id, videoView.tab, videoView.title, videoView.season, videoView.sort]);
+const videoState = (v, entry, failure) => JSON.stringify([videoPlace(v), entry?.version, entry?.stamp, videoWorking(entry), failure, videoDownloadStamp(v.id)]);
+function renderVideo(v, scroll = null) {
+  if (!v) return;
+  const key = videoKey(v.id);
+  const entry = videoLibraries.get(key);
+  const failure = videoFailures.get(key);
+  const content = $("#content");
+  const page = content.querySelector(".video-page");
+  const heading = () => videoTrail(v, entry?.library) + (entry && videoDeep() ? "" : videoHeading(v, entry));
+  if (scroll === null && page && content.dataset.detail === v.id && videoShown.state === videoState(v, entry, failure)) {
+    const head = heading();
+    if (videoShown.head !== head) {
+      content.querySelector(".detail-head").innerHTML = head;
+      videoShown.head = head;
+      icons();
+    }
+    const caption = content.querySelector(".video-page .music-caption");
+    const text = videoCaptionText(entry);
+    if (caption && caption.textContent !== text) caption.textContent = text;
+    markNav();
+    return;
+  }
+  const keep = scroll ?? (videoShown.place === videoPlace(v) && page ? page.scrollTop : 0);
+  const body = entry
+    ? videoBody(v, entry)
+    : failure
+      ? empty("Library unavailable", escape(failure), button("Retry", "video-retry", "", "secondary"), "clapperboard")
+      : scaffoldRow("card");
+  const head = heading();
+  content.innerHTML = `<div class="detail-head">${head}</div><div class="page music-page video-page">${body}</div>`;
+  content.dataset.detail = v.id;
+  videoShown = { place: videoPlace(v), state: videoState(v, entry, failure), head };
+  icons();
+  mountVideoArt();
+  markNav();
+  if (keep) $("#content .video-page").scrollTop = keep;
+  if (videoDownloadList(v.id).some(videoDownloadActive)) armVideoDownloads(v.id);
+}
+function paintVideoArt(el, data) {
+  if (!data || !el.isConnected || el.querySelector("img")) return;
+  const img = new Image();
+  img.alt = "";
+  img.onload = () => el.classList.add("has-cover");
+  img.src = data;
+  el.append(img);
+}
+function mountVideoArt() {
+  for (const el of observedVideoArt)
+    if (!el.isConnected) {
+      videoArtObserver?.unobserve(el);
+      observedVideoArt.delete(el);
+    }
+  const drain = () => {
+    while (videoArtWorkers < 4 && videoArtQueue.length) {
+      const el = videoArtQueue.shift();
+      const route = el.dataset.videoArt ? `/v1/video/art?${el.dataset.videoArt}` : el.dataset.videoTmdb;
+      if (!el.isConnected || !route) continue;
+      if (videoArtCache.has(route)) {
+        paintVideoArt(el, videoArtCache.get(route));
+        continue;
+      }
+      videoArtWorkers++;
+      api(route)
+        .then((value) => {
+          if (value?.retry) return;
+          videoArtCache.delete(route);
+          videoArtCache.set(route, value?.data || null);
+          while (videoArtCache.size > 400) videoArtCache.delete(videoArtCache.keys().next().value);
+          paintVideoArt(el, value?.data);
+        })
+        .catch(() => {})
+        .finally(() => {
+          videoArtWorkers--;
+          drain();
+        });
+    }
+  };
+  if (!videoArtObserver && typeof IntersectionObserver !== "undefined")
+    videoArtObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries)
+          if (entry.isIntersecting) {
+            videoArtObserver.unobserve(entry.target);
+            observedVideoArt.delete(entry.target);
+            videoArtQueue.push(entry.target);
+          }
+        drain();
+      },
+      { rootMargin: "200px" },
+    );
+  for (const el of document.querySelectorAll("[data-video-art]:not([data-observed]), [data-video-tmdb]:not([data-observed])")) {
+    el.dataset.observed = "true";
+    const route = el.dataset.videoArt ? `/v1/video/art?${el.dataset.videoArt}` : el.dataset.videoTmdb;
+    if (videoArtCache.has(route)) paintVideoArt(el, videoArtCache.get(route));
+    else if (videoArtObserver) {
+      observedVideoArt.add(el);
+      videoArtObserver.observe(el);
+    } else {
+      videoArtQueue.push(el);
+      drain();
+    }
+  }
+}
+async function videoReveal(volume, next) {
+  view = "folders";
+  detailId = folderViewId = volume;
+  folderTab = "video";
+  folderPrefix = "";
+  folderPageCount = 1;
+  folderReturn = { tab: "files", scroll: 0 };
+  videoView = { ...VIDEO_HOME, ...next };
+  await render();
+  window.history.replaceState(videoEntry(volume), "", location.hash);
+  updateShell();
+}
+function videoPlayerRoot() {
+  let root = $("#video-player");
+  if (root) return root;
+  root = document.createElement("div");
+  root.id = "video-player";
+  root.className = "video-player";
+  root.hidden = true;
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.addEventListener("pointermove", videoWake);
+  root.addEventListener("pointerdown", videoWake);
+  document.body.append(root);
+  return root;
+}
+const videoElement = () => $("#video-player video");
+const videoButton = (name, label, symbol, extra = "") =>
+  `<button type="button" class="icon-button" data-video="${name}" aria-label="${label}" data-tooltip="${label}"${extra}>${icon(symbol)}</button>`;
+function videoSubtitleMenu(state) {
+  if (!state.subtitles.length) return "";
+  const option = (id, label, checked, symbol) =>
+    `<button type="button" class="secondary" role="menuitemradio" aria-checked="${checked}" data-video="subtitle" data-id="${id}">${icon(checked ? "check" : symbol)}${escape(label)}</button>`;
+  return `<details class="details-menu video-subtitles"><summary class="icon-button" aria-label="Subtitles" data-tooltip="Subtitles">${icon("captions")}</summary><div class="menu-items" role="menu">${option("off", "Off", state.subtitle < 0, "captions-off")}${state.subtitles
+    .map((row, index) => option(String(index), row.label || row.language || `Track ${index + 1}`, state.subtitle === index, "captions"))
+    .join("")}</div></details>`;
+}
+const videoAudioChoices = new Map();
+function videoAudioMenu(state) {
+  if (!state.audioOptions) return "";
+  return `<details class="details-menu video-audio"><summary class="icon-button" aria-label="Audio" data-tooltip="Audio">${icon("audio-lines")}</summary><div class="menu-items" role="menu">${state.audioOptions
+    .map((option, index) => {
+      const checked = state.audio === index;
+      return `<button type="button" class="secondary" role="menuitemradio" aria-checked="${checked}" data-video="audio" data-id="${index}">${icon(checked ? "check" : "audio-lines")}${escape(option.label)}</button>`;
+    })
+    .join("")}</div></details>`;
+}
+function paintVideoAudio() {
+  const state = videoPlayer;
+  const host = $("#video-player .video-audio");
+  if (!state) return;
+  const markup = videoAudioMenu(state);
+  if (!host) {
+    if (markup) $("#video-player .video-spacer")?.insertAdjacentHTML("afterend", markup);
+  } else if (!markup) host.remove();
+  else {
+    const open = host.open;
+    host.outerHTML = markup;
+    if (open) $("#video-player .video-audio").open = true;
+  }
+  icons();
+}
+function videoReadAudio() {
+  const state = videoPlayer;
+  const list = videoElement()?.audioTracks;
+  if (!state) return;
+  if (state.mode === "compatible") {
+    const tracks = state.item.audioTracks || [];
+    state.audioOptions =
+      tracks.length > 1
+        ? tracks.map((track, index) => {
+            const channels = channelLabel(Number(track.channels) || 0);
+            const name = track.label || track.language || `Track ${index + 1}`;
+            return { index, label: channels ? `${name} · ${channels}` : name, language: track.language, default: !!track.default };
+          })
+        : null;
+    const fallback = tracks.findIndex((track) => track.default);
+    state.audio = Number.isSafeInteger(state.stream) ? state.stream : fallback >= 0 ? fallback : 0;
+    return paintVideoAudio();
+  }
+  const options = list ? audioOptions(list, state.item.audioTracks) : null;
+  const before = JSON.stringify(state.audioOptions?.map((option) => option.label) || null);
+  state.audioOptions = options;
+  if (options) {
+    const remembered = state.show && videoAudioChoices.get(state.show.id);
+    const preferred = remembered ? options.findIndex((option) => sameLanguage(option.language, remembered)) : -1;
+    const enabled = [...list].findIndex((track) => track?.enabled);
+    if (state.audio === null || state.audio >= options.length)
+      state.audio = preferred >= 0 ? preferred : options.findIndex((option) => option.default) >= 0 ? options.findIndex((option) => option.default) : Math.max(0, enabled);
+    videoApplyAudio();
+  }
+  if (before !== JSON.stringify(options?.map((option) => option.label) || null) || options) paintVideoAudio();
+}
+function videoApplyAudio() {
+  const state = videoPlayer;
+  const list = videoElement()?.audioTracks;
+  if (!state?.audioOptions || !list || !list[state.audio]) return;
+  if (!list[state.audio].enabled) list[state.audio].enabled = true;
+  for (let index = 0; index < list.length; index++) if (index !== state.audio && list[index].enabled) list[index].enabled = false;
+}
+function videoChooseAudio(id) {
+  const state = videoPlayer;
+  const option = state?.audioOptions?.[Number(id)];
+  if (!option) return;
+  if (state.mode === "compatible") {
+    if (state.audio === Number(id)) return;
+    state.audio = Number(id);
+    if (state.show && option.language) videoAudioChoices.set(state.show.id, option.language);
+    paintVideoAudio();
+    state.renewed = null;
+    return void videoRestart(state.pendingSeek ?? videoNow(), Number(id));
+  }
+  const list = videoElement()?.audioTracks;
+  if (!list?.[Number(id)]) return;
+  state.audio = Number(id);
+  if (state.show && option.language) videoAudioChoices.set(state.show.id, option.language);
+  videoApplyAudio();
+  paintVideoAudio();
+}
+function paintVideoSubtitles() {
+  const state = videoPlayer;
+  const host = $("#video-player .video-subtitles");
+  if (!state || !host) return;
+  const open = host.open;
+  host.outerHTML = videoSubtitleMenu(state);
+  if (open) $("#video-player .video-subtitles").open = true;
+  icons();
+}
+function videoControls() {
+  const state = videoPlayer;
+  const video = videoElement();
+  if (!state || !video) return;
+  const playing = !video.paused && !state.failed;
+  const toggle = $('#video-player [data-video="toggle"]');
+  if (toggle && toggle.dataset.state !== String(playing)) {
+    toggle.dataset.state = String(playing);
+    toggle.setAttribute("aria-label", playing ? "Pause" : "Play");
+    toggle.dataset.tooltip = playing ? "Pause" : "Play";
+    toggle.innerHTML = icon(playing ? "pause" : "play");
+    icons();
+  }
+  const mute = $('#video-player [data-video="mute"]');
+  const silent = video.muted || video.volume === 0;
+  if (mute && mute.dataset.state !== String(silent)) {
+    mute.dataset.state = String(silent);
+    mute.setAttribute("aria-label", silent ? "Unmute" : "Mute");
+    mute.dataset.tooltip = silent ? "Unmute" : "Mute";
+    mute.innerHTML = icon(silent ? "volume-x" : "volume-2");
+    icons();
+  }
+  const level = $('#video-player [data-video="volume"]');
+  if (level) {
+    level.value = String(silent ? 0 : video.volume);
+    level.style.setProperty("--music-fill", `${(silent ? 0 : video.volume) * 100}%`);
+  }
+  $("#video-player")?.classList.toggle("video-paused", !playing);
+  if (!playing) videoWake();
+}
+function videoProgress() {
+  const state = videoPlayer;
+  const video = videoElement();
+  if (!state || !video) return;
+  const total = videoTotal();
+  if (state.renewed != null && !state.failed && videoNow() > state.renewed) state.renewed = null;
+  const elapsed = state.pendingSeek ?? Math.min(videoNow(), total || Infinity);
+  const seek = $('#video-player [data-video="seek"]');
+  if (seek) {
+    seek.max = String(total || 1);
+    seek.value = String(elapsed);
+    seek.setAttribute("aria-valuetext", `${videoClock(elapsed)} of ${videoClock(total)}`);
+    seek.style.setProperty("--music-fill", `${total ? (elapsed / total) * 100 : 0}%`);
+  }
+  const shown = $('#video-player [data-video-time="elapsed"]');
+  if (shown) shown.textContent = videoClock(elapsed);
+  const length = $('#video-player [data-video-time="total"]');
+  if (length) length.textContent = videoClock(total);
+  if (!video.paused && Date.now() - state.savedAt >= 10000) saveVideoPosition();
+  if (state.next && !state.cancelled && !state.countdown && upNextDue(elapsed, total)) videoUpNext();
+}
+function saveVideoPosition() {
+  const state = videoPlayer;
+  const video = videoElement();
+  if (!state || !state.started || state.failed || !video || !(videoTotal() > 0)) return;
+  state.savedAt = Date.now();
+  const position = videoNow();
+  if (position < 10 || state.savedPosition === Math.round(position)) return;
+  state.savedPosition = Math.round(position);
+  const { item } = state;
+  const duration = videoTotal();
+  if (videoFinished(position, duration)) {
+    item.position = null;
+    item.watched = true;
+  } else item.position = { position, duration, updated: Date.now(), device: status.name };
+  videoTouched(state.volume);
+  api("/v1/video/position", { volume: state.volume, path: item.path, hash: item.hash, position, duration }).catch(() => {});
+}
+let videoIdleTimer = null;
+function videoWake() {
+  const root = $("#video-player");
+  if (!root || root.hidden) return;
+  root.classList.remove("video-idle");
+  clearTimeout(videoIdleTimer);
+  videoIdleTimer = setTimeout(() => {
+    const video = videoElement();
+    if (!video || video.paused || videoPlayer?.failed || root.querySelector(".details-menu[open]")) return;
+    root.classList.add("video-idle");
+  }, 3000);
+}
+function videoStopped(markup) {
+  const state = videoPlayer;
+  const root = $("#video-player");
+  if (!state || !root) return;
+  state.failed = true;
+  const video = videoElement();
+  if (video) {
+    video.pause?.();
+    video.removeAttribute("src");
+  }
+  root.classList.add("video-failed");
+  const message = root.querySelector(".video-message");
+  message.hidden = false;
+  message.innerHTML = markup;
+  icons();
+  root.querySelector('.video-message button, [data-video="back"]')?.focus();
+}
+const videoOfflineError = (error) => error?.status === 503 || hubOffline() || /connect to your hub/i.test(error?.message || "");
+function videoOffline() {
+  videoStopped(`${icon("wifi-off")}<strong>Connect to your hub to watch</strong><p>This video streams from your hub. Arca will play it once the hub is reachable.</p>`);
+}
+function videoCannotPlay() {
+  const state = videoPlayer;
+  if (!state) return;
+  const format = videoFormat(state.item);
+  const local = native && (status.role === "hub" ? !!state.local : !!state.selected);
+  videoStopped(`${icon("video-off")}<strong>This video can’t play in this window</strong><p>${escape(format ? `Its format (${format}) isn’t supported here.` : "Its format isn’t supported here.")} Your file is unchanged.</p>${
+    local
+      ? `<button type="button" class="secondary" data-video="open">${icon("external-link")}Open in default app</button>`
+      : `<p class="hint">Play it in the Arca app or arca TV.</p>`
+  }`);
+}
+function videoUpNext() {
+  const state = videoPlayer;
+  const root = $("#video-player");
+  if (!state?.next || !root) return;
+  const card = root.querySelector(".video-upnext");
+  state.countdown = { left: 10, timer: null };
+  const next = state.next;
+  const paint = () => {
+    card.innerHTML = `${videoArt(state.volume, next.still || state.show?.backdrop, "tv", " video-still")}<div class="video-episode-main"><span class="video-meta">Up next · plays in ${state.countdown.left} s</span><strong>${escape([episodeCode(next), next.title].filter(Boolean).join(" · "))}</strong></div><div class="video-upnext-actions"><button type="button" class="primary small-button" data-video="upnext-play">${icon("play")}Play now</button><button type="button" class="secondary small-button" data-video="upnext-cancel">Cancel</button></div>`;
+    icons();
+    mountVideoArt();
+  };
+  card.hidden = false;
+  paint();
+  const tick = () => {
+    if (videoPlayer !== state || !state.countdown) return;
+    if (videoElement()?.paused) {
+      state.countdown.timer = setTimeout(tick, 1000);
+      return;
+    }
+    state.countdown.left--;
+    if (state.countdown.left <= 0) return void videoPlayNext();
+    const meta = card.querySelector(".video-meta");
+    if (meta) meta.textContent = `Up next · plays in ${state.countdown.left} s`;
+    state.countdown.timer = setTimeout(tick, 1000);
+  };
+  state.countdown.timer = setTimeout(tick, 1000);
+}
+function videoCancelUpNext() {
+  const state = videoPlayer;
+  if (!state) return;
+  clearTimeout(state.countdown?.timer);
+  state.countdown = null;
+  state.cancelled = true;
+  const card = $("#video-player .video-upnext");
+  if (card) {
+    card.hidden = true;
+    card.innerHTML = "";
+  }
+  $('#video-player [data-video="toggle"]')?.focus();
+}
+function videoPlayNext() {
+  const state = videoPlayer;
+  if (!state?.next) return;
+  const v = folderVolume(state.volume);
+  if (!v) return closeVideoPlayer();
+  const entry = videoLibraries.get(videoKey(state.volume));
+  const next = entry?.library.items.get(state.next.id) || state.next;
+  return action(() => videoPlay(v, next, inProgress(next) ? next.position.position : 0));
+}
+function videoEnded() {
+  const state = videoPlayer;
+  if (!state) return;
+  saveVideoPosition();
+  if (state.next && !state.cancelled) return void videoPlayNext();
+  closeVideoPlayer();
+}
+function videoFailed() {
+  const state = videoPlayer;
+  const video = videoElement();
+  if (!state || state.failed || !video?.getAttribute("src")) return;
+  const code = video.error?.code;
+  if (code === 2 && hubOffline()) return videoOffline();
+  if (code === 2 && state.renewed == null) {
+    const at = videoResumePoint();
+    state.renewed = at;
+    if (state.mode === "compatible") return void videoRestart(at, state.stream);
+    const serial = state.serial;
+    api("/v1/video/playback?" + new URLSearchParams({ volume: state.volume, path: state.item.path, hash: state.item.hash })).then(
+      ({ url }) => {
+        if (videoPlayer !== state || serial !== videoSerial) return;
+        state.at = at;
+        video.src = url;
+        video.play?.()?.catch?.(() => videoControls());
+      },
+      (error) => videoPlayer === state && (videoOfflineError(error) ? videoOffline() : notice(error.message, true, { id: "video" })),
+    );
+    return;
+  }
+  if (code === 2) return void notice("Playback stopped. Check the connection to your hub and try again.", true, { id: "video" });
+  if (state.mode === "direct" && state.hls) return void videoFallback();
+  videoCannotPlay();
+}
+function videoInertTargets(root) {
+  const notice = $("#notice");
+  const keep = new Set([root]);
+  for (let node = notice; node && node !== document.body; node = node.parentElement) keep.add(node);
+  const targets = [];
+  const walk = (parent) => {
+    for (const node of parent.children) {
+      if (node === notice || node === root) continue;
+      if (keep.has(node)) walk(node);
+      else targets.push(node);
+    }
+  };
+  walk(document.body);
+  return targets;
+}
+async function videoSubtitleSource(volume, row, file) {
+  if (!native) return row.url || (file?.path ? `/v1/video/subtitles?${new URLSearchParams({ volume, path: file.path })}` : null);
+  if (!file?.path) return null;
+  try {
+    const answer = await api(`/v1/video/subtitles?${new URLSearchParams({ volume, path: file.path, format: "json" })}`);
+    return typeof answer?.text === "string" ? URL.createObjectURL(new Blob([answer.text], { type: "text/vtt" })) : null;
+  } catch {
+    return null;
+  }
+}
+const VIDEO_PREPARING_POLL = 2500;
+async function videoEmbeddedSource(volume, item, stream, alive = () => true) {
+  const query = { volume, path: item.path, hash: item.hash, stream: String(stream) };
+  if (!native) return `/v1/video/subtitles?${new URLSearchParams(query)}`;
+  let answer = await api(`/v1/video/subtitles?${new URLSearchParams({ ...query, poll: "1", format: "json" })}`);
+  while (answer?.preparing) {
+    await new Promise((resolve) => setTimeout(resolve, VIDEO_PREPARING_POLL));
+    if (!alive()) return null;
+    answer = await api(`/v1/video/subtitles?${new URLSearchParams({ ...query, poll: "1", format: "json" })}`);
+  }
+  return typeof answer?.text === "string" ? URL.createObjectURL(new Blob([answer.text], { type: "text/vtt" })) : null;
+}
+async function videoLoadSubtitle(index) {
+  const state = videoPlayer;
+  const row = state?.subtitles[index];
+  if (!row?.embedded || row.src || row.loading) return;
+  row.loading = true;
+  let src = null;
+  try {
+    src = await videoEmbeddedSource(state.volume, state.item, row.stream, () => videoPlayer === state);
+  } catch (error) {
+    if (videoPlayer === state) notice(error?.message || "These subtitles could not be read", true, { id: "video" });
+  }
+  row.loading = false;
+  if (videoPlayer !== state) return src?.startsWith("blob:") && URL.revokeObjectURL(src);
+  if (!src) {
+    if (state.subtitle === index) videoChooseSubtitle("off");
+    return;
+  }
+  row.src = src;
+  const element = videoElement()?.querySelectorAll("track")[index];
+  if (!element) return;
+  element.src = src;
+  videoApplySubtitles();
+}
+async function videoPlay(v, item, at = 0) {
+  if (!v || !item || !item.path) return;
+  if (musicPlayer) musicPause();
+  if (videoPlayer) closeVideoPlayer(false);
+  const serial = ++videoSerial;
+  const entry = videoLibraries.get(videoKey(v.id));
+  const library = entry?.library;
+  const show = item.kind === "episode" ? library?.items.get(item.show) || null : null;
+  const state = {
+    volume: v.id,
+    item,
+    show,
+    next: show ? episodeAfter(show, item) : null,
+    serial,
+    at,
+    savedAt: Date.now(),
+    started: false,
+    failed: false,
+    cancelled: false,
+    countdown: null,
+    subtitles: [],
+    subtitle: -1,
+    offset: 0,
+    duration: null,
+    request: 0,
+    seekTimer: null,
+    pendingSeek: null,
+    stream: null,
+    renewed: null,
+    local: !!v.path,
+    selected: !!v.selected,
+  };
+  videoPlayer = state;
+  const root = videoPlayerRoot();
+  const title = item.kind === "episode" ? item.showTitle : item.title;
+  const line = item.kind === "episode" ? [episodeCode(item), item.title].filter(Boolean).join(" · ") : videoTechLine(item);
+  root.setAttribute("aria-label", title);
+  root.className = "video-player video-paused";
+  root.innerHTML = `<video class="video-element" playsinline preload="metadata"></video><div class="video-top">${videoButton("back", "Back", "arrow-left")}<div><strong>${escape(title)}</strong>${line ? `<p>${escape(line)}</p>` : ""}</div></div><div class="video-message" role="alert" hidden></div><div class="video-upnext" role="status" hidden></div><div class="video-controls"><div class="music-seek"><span class="mono" data-video-time="elapsed">${videoClock(at)}</span><input type="range" class="music-range" data-video="seek" aria-label="Seek" min="0" max="${Math.max(1, Math.round(itemDuration(item)))}" step="1" value="${Math.round(at)}"><span class="mono" data-video-time="total">${videoClock(itemDuration(item))}</span></div><div class="video-buttons">${videoButton("toggle", "Play", "play")}${videoButton("back10", "Back 10 seconds", "rotate-ccw")}${videoButton("forward30", "Forward 30 seconds", "rotate-cw")}${videoButton("mute", "Mute", "volume-2")}<input type="range" class="music-range video-volume" data-video="volume" aria-label="Volume" min="0" max="1" step="0.01" value="1"><span class="video-spacer"></span><details class="details-menu video-subtitles" hidden></details>${document.pictureInPictureEnabled ? videoButton("pip", "Picture in picture", "picture-in-picture-2") : ""}${document.fullscreenEnabled ? videoButton("fullscreen", "Fullscreen", "maximize") : ""}</div></div>`;
+  root.hidden = false;
+  document.body.classList.add("video-open");
+  for (const node of videoInertTargets(root))
+    if (!node.hasAttribute("inert")) {
+      node.setAttribute("inert", "");
+      node.setAttribute("data-video-inert", "");
+    }
+  icons();
+  root.querySelector('[data-video="back"]')?.focus();
+  const video = root.querySelector("video");
+  try {
+    const level = localStorage.getItem("arca-video-volume");
+    if (level !== null && Number(level) >= 0 && Number(level) <= 1) video.volume = Number(level);
+  } catch {}
+  videoControls();
+  state.audioOptions = null;
+  const remembered = show && videoAudioChoices.get(show.id);
+  const spoken = remembered ? (item.audioTracks || []).findIndex((track) => sameLanguage(track.language, remembered)) : -1;
+  state.audio = spoken >= 0 ? spoken : null;
+  state.hls = (() => {
+    try {
+      return video.canPlayType("application/vnd.apple.mpegurl") !== "";
+    } catch {
+      return false;
+    }
+  })();
+  state.mode = state.hls && needsCompatible(item, state.audio) ? "compatible" : "direct";
+  let source = null;
+  if (state.mode === "direct") {
+    try {
+      source = await api("/v1/video/playback?" + new URLSearchParams({ volume: v.id, path: item.path, hash: item.hash }));
+    } catch (error) {
+      if (videoPlayer !== state) return;
+      if (videoOfflineError(error)) return videoOffline();
+      closeVideoPlayer(false);
+      throw error;
+    }
+    if (videoPlayer !== state || serial !== videoSerial) return;
+  }
+  const files = (item.subtitles || []).filter((row) => !row.embedded && !row.image);
+  const subtitles = source ? (source.subtitles || []).filter((row) => row && !row.embedded && !row.image) : files;
+  const sources = await Promise.all(
+    subtitles.map((row, index) => videoSubtitleSource(v.id, row, row.path ? { path: row.path } : files[index])),
+  );
+  if (videoPlayer !== state || serial !== videoSerial) return sources.forEach((url) => url?.startsWith("blob:") && URL.revokeObjectURL(url));
+  state.subtitles = [];
+  subtitles.forEach((row, index) => {
+    if (!sources[index]) return;
+    const label = videoSubtitleLabel(row, row.path || files[index]?.path);
+    const track = document.createElement("track");
+    track.kind = "subtitles";
+    track.label = label;
+    track.default = false;
+    if (row.language) track.srclang = row.language;
+    track.src = sources[index];
+    track.addEventListener("load", videoShiftCues);
+    video.append(track);
+    state.subtitles.push({ ...row, label, src: sources[index] });
+  });
+  for (const row of (item.subtitles || []).filter((entry) => entry.embedded && !entry.image && Number.isSafeInteger(entry.stream))) {
+    const label = row.label || row.language || `Subtitles ${row.stream + 1}`;
+    const track = document.createElement("track");
+    track.kind = "subtitles";
+    track.label = label;
+    track.default = false;
+    if (row.language) track.srclang = row.language;
+    track.addEventListener("load", videoShiftCues);
+    video.append(track);
+    state.subtitles.push({ ...row, label, src: null });
+  }
+  videoApplySubtitles();
+  video.textTracks?.addEventListener?.("addtrack", videoApplySubtitles);
+  video.textTracks?.addEventListener?.("change", videoApplySubtitles);
+  video.audioTracks?.addEventListener?.("addtrack", videoReadAudio);
+  video.audioTracks?.addEventListener?.("removetrack", videoReadAudio);
+  paintVideoSubtitles();
+  video.addEventListener("timeupdate", videoProgress);
+  video.addEventListener("durationchange", videoProgress);
+  video.addEventListener("play", videoControls);
+  video.addEventListener("pause", () => {
+    saveVideoPosition();
+    videoControls();
+  });
+  video.addEventListener("volumechange", videoControls);
+  video.addEventListener("ended", videoEnded);
+  video.addEventListener("error", videoFailed);
+  video.addEventListener("canplay", () => {
+    if (videoPlayer === state && state.mode === "compatible" && Number(item.width) > 0 && video.videoWidth === 0) videoCannotPlay();
+  });
+  video.addEventListener("loadedmetadata", () => {
+    if (videoPlayer !== state) return;
+    if (state.mode === "direct" && Number(item.width) > 0 && video.videoWidth === 0) return void (state.hls ? videoFallback() : videoCannotPlay());
+    state.started = true;
+    if (state.mode === "direct" && state.at > 0) video.currentTime = state.at;
+    if (state.mode === "compatible" && video.currentTime > 0) video.currentTime = 0;
+    state.at = 0;
+    videoApplySubtitles();
+    videoReadAudio();
+    videoProgress();
+  });
+  videoWake();
+  if (state.mode === "compatible") {
+    state.pendingPlay = true;
+    return videoRestart(at, state.audio);
+  }
+  video.src = source.url;
+  video.play?.()?.catch?.(() => videoControls());
+}
+function closeVideoPlayer(repaint = true) {
+  const state = videoPlayer;
+  const root = $("#video-player");
+  if (!state || !root) return;
+  saveVideoPosition();
+  clearTimeout(state.countdown?.timer);
+  clearTimeout(state.seekTimer);
+  clearTimeout(videoIdleTimer);
+  state.request++;
+  videoPlayer = null;
+  videoSerial++;
+  for (const row of state.subtitles) if (row.src?.startsWith("blob:")) URL.revokeObjectURL(row.src);
+  const video = videoElement();
+  if (video) {
+    video.pause?.();
+    video.removeAttribute("src");
+    video.load?.();
+  }
+  if (document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => {});
+  root.hidden = true;
+  root.innerHTML = "";
+  document.body.classList.remove("video-open");
+  for (const node of document.querySelectorAll("[data-video-inert]")) {
+    node.removeAttribute("inert");
+    node.removeAttribute("data-video-inert");
+  }
+  if (!repaint) return;
+  const v = folderVolume(state.volume);
+  if (videoShowing(state.volume)) {
+    renderVideo(v);
+    [...document.querySelectorAll("#content [data-id]")].find((el) => el.dataset.id === state.item.id)?.focus();
+  }
+  void refreshVideo(state.volume, true);
+}
+function videoNow() {
+  const state = videoPlayer;
+  const video = videoElement();
+  return (state?.offset || 0) + (video?.currentTime || 0);
+}
+function videoFallback() {
+  const state = videoPlayer;
+  if (!state) return;
+  const audio = videoHubAudio();
+  state.audioOptions = null;
+  state.audio = Number.isSafeInteger(audio) ? audio : null;
+  return videoRestart(videoResumePoint(), state.audio);
+}
+function videoResumePoint() {
+  const state = videoPlayer;
+  return state && !state.started && state.at > 0 ? state.at : videoNow();
+}
+function videoTotal() {
+  const state = videoPlayer;
+  const video = videoElement();
+  const known = itemDuration(state?.item) || Number(state?.duration) || 0;
+  if (known > 0) return known;
+  return Number.isFinite(video?.duration) && video.duration > 0 ? (state?.offset || 0) + video.duration : 0;
+}
+function videoProduced(video) {
+  const end = (ranges) => (ranges?.length ? Number(ranges.end(ranges.length - 1)) || 0 : 0);
+  return Math.max(end(video.seekable), end(video.buffered), Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0, video.currentTime || 0);
+}
+function videoHubAudio() {
+  const state = videoPlayer;
+  if (!state) return null;
+  if (state.mode === "compatible") return state.audio;
+  const option = state.audioOptions?.[state.audio];
+  return Number.isSafeInteger(option?.stream) ? option.stream : state.audio;
+}
+function videoSeekTo(target) {
+  const state = videoPlayer;
+  const video = videoElement();
+  if (!state || !video || state.failed) return;
+  const total = videoTotal() || Infinity;
+  const at = Math.min(Math.max(0, target), total);
+  const produced = videoProduced(video);
+  if (!state.asking && (state.mode !== "compatible" || (at >= state.offset && at - state.offset <= produced))) {
+    clearTimeout(state.seekTimer);
+    state.pendingSeek = null;
+    video.currentTime = at - (state.mode === "compatible" ? state.offset : 0);
+    return videoProgress();
+  }
+  state.pendingSeek = at;
+  videoProgress();
+  clearTimeout(state.seekTimer);
+  state.seekTimer = setTimeout(() => {
+    if (videoPlayer !== state) return;
+    state.renewed = null;
+    void videoRestart(at, state.stream ?? state.audio);
+  }, 300);
+}
+function videoSeek(delta) {
+  const state = videoPlayer;
+  if (!state || state.failed) return;
+  videoSeekTo((state.pendingSeek ?? videoNow()) + delta);
+}
+const videoCueTimes = new WeakMap();
+function videoShiftCues() {
+  const state = videoPlayer;
+  const video = videoElement();
+  if (!state || !video) return;
+  const offset = state.offset || 0;
+  for (const element of video.querySelectorAll("track")) {
+    const cues = element.track?.cues;
+    if (!cues) continue;
+    for (let index = 0; index < cues.length; index++) {
+      const cue = cues[index];
+      if (!videoCueTimes.has(cue)) videoCueTimes.set(cue, [cue.startTime, cue.endTime]);
+      const [start, end] = videoCueTimes.get(cue);
+      if (cue.startTime !== start - offset) cue.startTime = start - offset;
+      if (cue.endTime !== end - offset) cue.endTime = end - offset;
+    }
+  }
+}
+async function videoRestart(start, audio) {
+  const state = videoPlayer;
+  const video = videoElement();
+  if (!state || !video) return;
+  clearTimeout(state.seekTimer);
+  const request = ++state.request;
+  state.asking = request;
+  const query = new URLSearchParams({ volume: state.volume, path: state.item.path, hash: state.item.hash, start: String(Math.max(0, Math.floor(start))) });
+  if (Number.isSafeInteger(audio) && audio >= 0) query.set("audio", String(audio));
+  query.set("copy", "ac3,eac3");
+  let answer;
+  try {
+    answer = await api("/v1/video/compatible?" + query);
+  } catch (error) {
+    if (state.asking === request) state.asking = null;
+    if (videoPlayer !== state || request !== state.request) return;
+    state.pendingSeek = null;
+    if (hubOffline() || /connect to your hub/i.test(error?.message || "")) return videoOffline();
+    if (/busy/i.test(error?.message || "")) return videoStopped(`${icon("clock")}<strong>The hub is busy</strong><p>${escape(error.message)}</p>`);
+    return videoCannotPlay();
+  }
+  if (state.asking === request) state.asking = null;
+  if (videoPlayer !== state || request !== state.request) return;
+  const playing = state.pendingPlay ?? !video.paused;
+  state.mode = "compatible";
+  state.offset = Number(answer.offset) || 0;
+  state.stream = Number.isSafeInteger(answer.audio) ? answer.audio : Number.isSafeInteger(audio) ? audio : null;
+  if (Number(answer.duration) > 0) state.duration = Number(answer.duration);
+  state.pendingSeek = null;
+  state.at = 0;
+  video.src = answer.url;
+  videoShiftCues();
+  videoReadAudio();
+  if (playing) video.play?.()?.catch?.(() => videoControls());
+  state.pendingPlay = undefined;
+  videoProgress();
+  videoControls();
+}
+function videoToggle() {
+  const video = videoElement();
+  if (!video || videoPlayer?.failed) return;
+  if (video.paused) video.play?.()?.catch?.(() => videoControls());
+  else video.pause();
+}
+function videoSubtitleLabel(row, path) {
+  if (row.language) return row.label || row.language;
+  const name = String(path || "").split("/").pop().replace(/\.[^.]+$/, "");
+  const stem = name.length > 24 ? `${name.slice(0, 23)}…` : name;
+  return stem ? `Subtitles · ${stem}` : "Subtitles";
+}
+function videoApplySubtitles() {
+  const state = videoPlayer;
+  const video = videoElement();
+  if (!state || !video) return;
+  const tracks = [...video.querySelectorAll("track")].map((element) => element.track).filter(Boolean);
+  tracks.forEach((track, index) => {
+    const mode = index === state.subtitle ? "showing" : "disabled";
+    if (track.mode !== mode) track.mode = mode;
+  });
+  const inBand = video.textTracks || [];
+  for (let index = 0; index < inBand.length; index++)
+    if (!tracks.includes(inBand[index]) && inBand[index].mode !== "disabled") inBand[index].mode = "disabled";
+  videoShiftCues();
+}
+function videoChooseSubtitle(id) {
+  const state = videoPlayer;
+  if (!state) return;
+  state.subtitle = id === "off" ? -1 : Number(id);
+  if (state.subtitle >= 0) videoLoadSubtitle(state.subtitle);
+  videoApplySubtitles();
+  paintVideoSubtitles();
+}
+document.addEventListener("click", (event) => {
+  const control = event.target.closest?.("#video-player [data-video]");
+  if (!control || !videoPlayer) return;
+  const video = videoElement();
+  const name = control.dataset.video;
+  videoWake();
+  if (name === "back") return closeVideoPlayer();
+  if (name === "toggle") return videoToggle();
+  if (name === "back10") return videoSeek(-10);
+  if (name === "forward30") return videoSeek(30);
+  if (name === "mute") {
+    video.muted = !video.muted && video.volume > 0;
+    if (!video.muted && !video.volume) video.volume = 1;
+    return videoControls();
+  }
+  if (name === "subtitle") {
+    closeMenu(control.closest("details"));
+    return videoChooseSubtitle(control.dataset.id);
+  }
+  if (name === "audio") {
+    closeMenu(control.closest("details"));
+    return videoChooseAudio(control.dataset.id);
+  }
+  if (name === "pip") {
+    if (document.pictureInPictureElement) return void document.exitPictureInPicture?.()?.catch?.(() => {});
+    return void video.requestPictureInPicture?.()?.catch?.(() => {});
+  }
+  if (name === "fullscreen") {
+    if (document.fullscreenElement) return void document.exitFullscreen?.()?.catch?.(() => {});
+    return void $("#video-player").requestFullscreen?.()?.catch?.(() => {});
+  }
+  if (name === "upnext-play") return void videoPlayNext();
+  if (name === "upnext-cancel") return videoCancelUpNext();
+  if (name === "open") {
+    const { volume, item } = videoPlayer;
+    return void invoke("open_file", { volume, path: item.path }).catch((error) => notice(error?.message || String(error), true, { id: "video" }));
+  }
+});
+document.addEventListener("input", (event) => {
+  const control = event.target;
+  if (!control.matches?.("#video-player [data-video]") || !videoPlayer) return;
+  const video = videoElement();
+  videoWake();
+  if (control.dataset.video === "seek") videoSeekTo(Number(control.value));
+  if (control.dataset.video === "volume") {
+    video.volume = Number(control.value);
+    video.muted = false;
+    try {
+      localStorage.setItem("arca-video-volume", String(video.volume));
+    } catch {}
+    videoControls();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  const root = $("#video-player");
+  if (!videoPlayer || !root || root.hidden || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (document.querySelector("dialog[open]")) return;
+  videoWake();
+  if (event.key === "Escape") {
+    if (root.querySelector(".details-menu[open]") || document.fullscreenElement) return;
+    event.preventDefault();
+    return closeVideoPlayer();
+  }
+  if (event.target.matches?.('input[type="range"]') && event.key !== " ") return;
+  if (event.key === " ") {
+    if (event.target.closest?.("#video-player button, #video-player summary") && !event.target.matches('[data-video="toggle"]')) return;
+    event.preventDefault();
+    if (!event.repeat) videoToggle();
+  } else if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    videoSeek(-10);
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    videoSeek(30);
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || event.defaultPrevented || videoPlayer || !videoShowing(detailId) || !videoDeep()) return;
+  if (event.target.closest?.("input, textarea, select, [contenteditable], .details-menu, .dropdown") || document.querySelector("dialog[open], .details-menu[open]")) return;
+  const up = $("#content .music-trail .text-button:last-of-type");
+  if (!up) return;
+  event.preventDefault();
+  up.click();
+});
+window.addEventListener("popstate", (event) => {
+  if (!ready || !videoShowing(detailId)) return;
+  if (videoPlayer) closeVideoPlayer(false);
+  const saved = event.state?.video === detailId ? event.state : null;
+  videoView = saved ? saved.view : { ...videoView, title: null, season: null };
+  renderVideo(folderVolume(detailId), saved?.scroll || 0);
+});
+function videoMatchRows(results) {
+  return (
+    results
+      .map(
+        (row) =>
+          `<button type="button" class="music-row" data-action="video-match-pick" data-id="${escape(JSON.stringify({ type: row.type, id: row.id }))}"><span class="music-cover video-poster"${row.poster ? ` data-video-tmdb="${escape(row.poster)}"` : ""}>${icon(row.type === "tv" ? "tv" : "clapperboard")}</span><span><strong>${escape(row.title)}</strong><span>${escape([row.year, row.type === "tv" ? "TV" : "Movie"].filter(Boolean).join(" · "))}</span></span>${icon("chevron-right")}</button>`,
+      )
+      .join("") +
+    `<button type="button" class="music-row" data-action="video-match-none"><span class="music-cover">${icon("video")}</span><span><strong>Not a movie or show</strong><span>Moves it to Others and stops matching it</span></span>${icon("chevron-right")}</button>` +
+    `<button type="button" class="music-row" data-action="video-match-reset"><span class="music-cover">${icon("rotate-ccw")}</span><span><strong>Automatic match</strong><span>Forgets this choice and matches it from its file name again</span></span>${icon("chevron-right")}</button>`
+  );
+}
+async function videoMatchSearch(year = "") {
+  const matching = videoMatching;
+  const input = $("#video-match-query");
+  const host = $("#dialog .video-match-results");
+  if (!matching || !input || !host) return;
+  const query = input.value.trim();
+  const serial = ++matching.serial;
+  if (!query) {
+    host.innerHTML = videoMatchRows([]);
+    return icons();
+  }
+  host.setAttribute("aria-busy", "true");
+  let html;
+  try {
+    const data = await api(`/v1/video/tmdb-search?${new URLSearchParams({ query, type: matching.type, ...(year ? { year: String(year) } : {}) })}`);
+    if (videoMatching !== matching || serial !== matching.serial) return;
+    html = (data.results?.length ? "" : `<p class="hint video-match-empty">No titles found on TMDB.</p>`) + videoMatchRows(data.results || []);
+  } catch (error) {
+    if (videoMatching !== matching || serial !== matching.serial) return;
+    html = `<p class="hint video-match-empty">${escape(error.message)}</p>` + videoMatchRows([]);
+  }
+  host.removeAttribute("aria-busy");
+  host.innerHTML = html;
+  icons();
+  mountVideoArt();
+}
+document.addEventListener("input", (event) => {
+  if (!event.target.matches?.("#video-match-query") || !videoMatching) return;
+  clearTimeout(videoMatching.timer);
+  videoMatching.timer = setTimeout(() => void videoMatchSearch(), 300);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !event.target.matches?.("#video-match-query") || !videoMatching) return;
+  event.preventDefault();
+  clearTimeout(videoMatching.timer);
+  void videoMatchSearch();
+});
+function videoMatchDialog(v, item) {
+  const file = item.kind === "show" ? item.episodes[0]?.path.split("/")[0] || item.title : item.path.split("/").pop();
+  videoMatching = { volume: v.id, id: item.id, type: item.kind === "show" ? "tv" : "movie", serial: 0, timer: null };
+  modal(
+    modalHeader("Fix match", escape(`${file} · searched as “${item.title}”${item.year ? ` (${item.year})` : ""}`), "search") +
+      `<div class="field-with-icon">${icon("search")}<input id="video-match-query" aria-label="Search TMDB" value="${escape(item.title)}" autocomplete="off" spellcheck="false"></div><div class="history-group music-picker video-match-results"></div><p class="hint">Only the title and year are sent to TMDB. The choice is kept on the hub, never in the folder.</p>`,
+    async () => {},
+    "Search",
+  );
+  $("#submit-dialog").hidden = true;
+  return videoMatchSearch(item.year || "");
+}
+async function videoMatchApply(body, message) {
+  const matching = videoMatching;
+  if (!matching) return;
+  void closeDialog();
+  videoMatching = null;
+  await api("/v1/video/match", { volume: matching.volume, id: matching.id, ...body });
+  notice(message);
+  await refreshVideo(matching.volume, true);
+}
+let videoSettingsRequest = 0;
+let videoSettingsTimer = null;
+function videoTitlesLine(row, current) {
+  const parts = [row.name, countLabel(row.movies || 0, "movie"), countLabel(row.shows || 0, "show")];
+  if (current.state === "matching") return `${escape([...parts, `matching ${Number(current.matched || 0)} of ${Number(current.total || 0)} with TMDB…`].join(" · "))}`;
+  const unrecognised = Number(row.unrecognised) || 0;
+  return `${escape([...parts, `${unrecognised.toLocaleString("en")} not recognised`].join(" · "))}.${unrecognised ? ` ${button("Show it", "video-show-unmatched", row.volume, "text-button")}` : ""}`;
+}
+async function videoSettings() {
+  const root = $("#video-settings");
+  if (!root) return;
+  const request = ++videoSettingsRequest;
+  clearTimeout(videoSettingsTimer);
+  const active = () => !!window.document && view === "settings" && root.isConnected && request === videoSettingsRequest;
+  try {
+    const current = await api("/v1/video/settings");
+    rememberVideoTmdb(current.state);
+    if (!active()) return;
+    const counts = `${Number(current.matched || 0).toLocaleString("en")} of ${Number(current.total || 0).toLocaleString("en")} titles`;
+    const link = '<a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">themoviedb.org</a>';
+    const tmdb = !current.tokenSet
+      ? setting("TMDB", `Optional. Adds posters, overviews and ratings. Get a free key at ${link}.`, button("Add key…", "video-key", "", "secondary small-button", "plus"))
+      : setting(
+          "TMDB",
+          current.state === "refused"
+            ? "TMDB refused this key. Check it at themoviedb.org → Settings → API; the API key and the Read Access Token both work."
+            : current.state === "matching"
+              ? `Matching ${escape(counts)}…`
+              : `Connected · ${escape(counts)} matched. Posters, overviews and ratings come from TMDB.`,
+          (current.state === "refused"
+            ? pill("Refused", "er", "circle-alert")
+            : current.state === "matching"
+              ? pill("Matching", "wa", "clock")
+              : pill("Connected", "id", "check")) + button("Change…", "video-key", "", "secondary small-button"),
+        );
+    const contents = (current.contents || []).map((row) => ({ id: row.id, name: row.label }));
+    const content =
+      current.tokenSet && contents.length
+        ? setting(
+            "Content",
+            "Language of titles and overviews, and whose age ratings decide which movies are for Kids (G in the US, TP in Spain).",
+            dropdown("video-content", "Content", contents, current.content, "video-content"),
+          )
+        : "";
+    const titles =
+      current.tokenSet && current.state !== "refused"
+        ? `<div class="setting-row image-process-row"><div class="row-main"><strong>Titles</strong><div class="image-process-hint">${
+            (current.libraries || []).map((row) => `<p>${videoTitlesLine(row, current)}</p>`).join("") || "<p>No video libraries yet.</p>"
+          }</div></div><div class="image-process-control"><button type="button" class="secondary small-button" data-action="video-refresh" data-id=""${current.state === "matching" ? " disabled" : ""}>${icon("refresh-cw")}Refresh metadata</button></div></div>`
+        : "";
+    root.innerHTML = `<div class="settings-card video-settings-card">${tmdb}${content}${titles}</div>${
+      current.tokenSet ? `<p class="hint">This product uses the TMDB API but is not endorsed or certified by TMDB. ${link}</p>` : ""
+    }`;
+    root.dataset.key = current.tokenSet ? "set" : "";
+    icons();
+    if (current.state === "matching") videoSettingsTimer = setTimeout(() => active() && void videoSettings(), 2000);
+  } catch (error) {
+    if (active()) root.innerHTML = `<p class="hint">${escape(error.message)}</p>${button("Retry", "video-settings-retry", "", "secondary small-button", "refresh-cw")}`;
+  }
+}
+function videoKeyDialog() {
+  const saved = $("#video-settings")?.dataset.key === "set";
+  modal(
+    modalHeader("TMDB key", "Paste your TMDB API key or Read Access Token. It stays on the hub and is never shown again.", "clapperboard") +
+      '<input type="password" name="tmdbToken" aria-label="TMDB key" placeholder="API key or Read Access Token" autocomplete="off" spellcheck="false" required><p class="hint">Only titles and years are sent to TMDB, never file names of home videos.</p>',
+    async (form) => {
+      const token = String(form.get("tmdbToken") || "").trim();
+      if (!token) throw new Error("Paste a TMDB API key or Read Access Token.");
+      await api("/v1/video/settings", { tmdbToken: token });
+      notice("TMDB key saved. Arca matches your videos in the background.");
+      await videoSettings();
+    },
+    "Save",
+  );
+  if (!saved) return;
+  const extra = document.createElement("div");
+  extra.id = "dialog-extra-actions";
+  extra.innerHTML = button("Remove key", "video-key-remove", "", "secondary danger");
+  $("#dialog-form > .dialog-actions").prepend(extra);
+}
+async function handleVideo(name, id) {
+  if (name === "video-key") return videoKeyDialog();
+  if (name === "video-key-remove") {
+    void closeDialog();
+    await api("/v1/video/settings", { tmdbToken: "" });
+    notice("TMDB key removed. Arca names movies and shows from their files.");
+    return videoSettings();
+  }
+  if (name === "video-content") {
+    await api("/v1/video/settings", { content: id });
+    return videoSettings();
+  }
+  if (name === "video-watch-undo") {
+    const target = JSON.parse(id);
+    await api("/v1/video/watch-next/restore", target);
+    return refreshVideo(target.volume, true);
+  }
+  if (name === "video-refresh") {
+    await api("/v1/video/refresh", {});
+    notice("Refreshing metadata for every title.");
+    return videoSettings();
+  }
+  if (name === "video-show-unmatched") return videoReveal(id, { tab: "other" });
+  if (name === "video-settings-retry") return videoSettings();
+  if (name === "video-match-pick") return videoMatchApply({ tmdb: JSON.parse(id) }, "Match updated.");
+  if (name === "video-match-none") return videoMatchApply({ none: true }, "Moved to Others.");
+  if (name === "video-match-reset") return videoMatchApply({ reset: true }, "Matching from the file name again.");
+  const v = folderVolume(detailId);
+  if (!videoAvailable(v)) return;
+  const page = () => $("#content .video-page");
+  if (name === "video-mode") {
+    if (folderTab === "video") folderTab = folderReturn.tab === "video" ? "files" : folderReturn.tab;
+    else {
+      folderReturn = { tab: folderTab, scroll: $(".page")?.scrollTop || 0 };
+      folderTab = "video";
+    }
+    await render();
+    if (folderTab !== "video" && $(".page")) $(".page").scrollTop = folderReturn.scroll;
+    return;
+  }
+  if (name === "video-retry") {
+    videoFailures.delete(videoKey(v.id));
+    await render();
+    return;
+  }
+  if (name === "video-watch-remove") {
+    await api("/v1/video/watch-next/remove", { volume: v.id, id });
+    notice("Removed from Watch next", false, { id: "video-watch", action: "video-watch-undo", actionLabel: "Undo", volume: JSON.stringify({ volume: v.id, id }) });
+    await refreshVideo(v.id, true);
+    return;
+  }
+  let entry = videoLibraries.get(videoKey(v.id));
+  if (!entry) {
+    await refreshVideo(v.id, true);
+    entry = videoLibraries.get(videoKey(v.id));
+  }
+  if (!entry) return;
+  const library = entry.library;
+  const item = id ? library.items.get(id) : null;
+  if (name === "video-play" || name === "video-resume" || name === "video-start") {
+    if (!item) return;
+    return videoPlay(v, item, name === "video-start" || !inProgress(item) ? 0 : item.position.position);
+  }
+  if (name === "video-download" || name === "video-download-season") {
+    const show = name === "video-download-season" ? library.items.get(videoView.title) : null;
+    const episodes = show?.kind === "show" ? show.seasons.find((season) => String(season.season) === id)?.episodes || [] : item ? [item] : [];
+    const paths = episodes.filter((entry) => videoNeedsDownload(v.id, entry)).map((entry) => entry.path);
+    if (!videoDownloadable() || !paths.length) return;
+    await loadVideoDownloads(v.id, (await api("/v1/video/download", { volume: v.id, paths }))?.downloads);
+    renderVideo(v, page()?.scrollTop || 0);
+    return;
+  }
+  if (name === "video-download-cancel") {
+    if (!item?.path || !videoDownloadable()) return;
+    await loadVideoDownloads(v.id, (await api("/v1/video/download/cancel", { volume: v.id, paths: [item.path] }))?.downloads);
+    renderVideo(v, page()?.scrollTop || 0);
+    return;
+  }
+  if (name === "video-download-remove") {
+    if (!item?.path || !videoDownloadable()) return;
+    modal(
+      modalHeader(`Remove the download of ${escape(item.kind === "episode" ? episodeName(item) : item.title)}?`, "The copy on this computer is deleted to free its space. The video stays on the hub.", "trash"),
+      async () => {
+        await loadVideoDownloads(v.id, (await api("/v1/video/download/remove", { volume: v.id, paths: [item.path] }))?.downloads);
+        notice("Download removed.");
+        renderVideo(v, page()?.scrollTop || 0);
+      },
+      "Remove",
+    );
+    return;
+  }
+  if (name === "video-watched") {
+    if (!item) return;
+    const watched = !item.watched;
+    await api("/v1/video/watched", { volume: v.id, path: item.path, hash: item.hash, watched });
+    item.watched = watched;
+    if (watched) item.position = null;
+    videoTouched(v.id);
+    renderVideo(v, page()?.scrollTop || 0);
+    void refreshVideo(v.id, true);
+    return;
+  }
+  if (name === "video-quick-watched") {
+    if (!item || (item.kind !== "movie" && item.kind !== "show")) return;
+    const watched = !fullyWatched(item);
+    const targets = item.kind === "show" ? item.episodes.filter((episode) => episode.path && !!episode.watched !== watched) : [item];
+    try {
+      for (const target of targets) {
+        await api("/v1/video/watched", { volume: v.id, path: target.path, hash: target.hash, watched });
+        target.watched = watched;
+        if (watched) target.position = null;
+      }
+    } finally {
+      videoTouched(v.id);
+      renderVideo(v, page()?.scrollTop || 0);
+      void refreshVideo(v.id, true);
+    }
+    return;
+  }
+  if (name === "video-kids") {
+    if (!item || status.role !== "hub" || (item.matched !== false && item.kidsOverride == null)) return;
+    await api("/v1/video/kids", { volume: v.id, id: item.id, kids: !item.kids });
+    notice(item.kids ? `${item.title} is no longer in Kids.` : `${item.title} is now in Kids.`);
+    await refreshVideo(v.id, true);
+    return;
+  }
+  if (name === "video-kids-auto") {
+    if (!item || status.role !== "hub" || item.kidsOverride == null) return;
+    await api("/v1/video/kids", { volume: v.id, id: item.id, kids: null });
+    notice(`${item.title} follows the automatic Kids rule again.`);
+    await refreshVideo(v.id, true);
+    return;
+  }
+  if (name === "video-match") {
+    if (!item || status.role !== "hub" || !videoTmdbWorks()) return;
+    return videoMatchDialog(v, item);
+  }
+  if (name === "video-delete") {
+    if (!item?.path || !videoEditable(v)) return;
+    modal(
+      modalHeader(`Delete ${escape(item.kind === "episode" ? episodeName(item) : item.title)}?`, "The file is deleted from the hub’s disk. Movies &amp; TV keep no older versions, so it can’t be restored.", "trash-2"),
+      async () => {
+        const history = await api(`/v1/history?${new URLSearchParams({ volume: v.id, path: item.path, limit: "1" })}`);
+        await api("/v1/delete-file", { volume: v.id, path: item.path, rev: history.versions[0]?.rev });
+        if (videoView.title === item.id) videoView = { ...videoView, title: null };
+        notice("Video deleted.");
+        await refreshVideo(v.id, true);
+      },
+      "Delete",
+    );
+    $("#submit-dialog").classList.add("danger");
+    return;
+  }
+  let scroll = 0;
+  const push = () => {
+    window.history.replaceState(videoEntry(v.id, page()?.scrollTop || 0), "", location.hash);
+  };
+  if (name === "video-tab") videoView = { ...VIDEO_HOME, sort: videoView.sort, tab: VIDEO_TABS[id] ? id : "home" };
+  else if (name === "video-sort") videoView = { ...videoView, sort: VIDEO_SORTS[id] ? id : "az" };
+  else if (name === "video-season") {
+    videoView = { ...videoView, season: Number(id) };
+    scroll = page()?.scrollTop || 0;
+  } else if (name === "video-title") {
+    if (!item) return;
+    push();
+    videoView = { ...videoView, title: id, season: null };
+    window.history.pushState(videoEntry(v.id), "", location.hash);
+  } else if (name === "video-crumb") {
+    if (id === "root") videoView = { ...VIDEO_HOME, sort: videoView.sort };
+    else if (id === "tab") videoView = { ...videoView, title: null, season: null };
+    else return;
+    window.history.replaceState(videoEntry(v.id), "", location.hash);
+  } else return;
+  renderVideo(v, scroll);
+}
 async function renderDetail(pending = false) {
   const serial = renderSerial;
-  const v = status.volumes.find((v) => v.id === detailId);
+  const v = folderVolume(detailId);
   if (!v) {
     detailId = null;
     return render();
   }
   if (folderViewId !== v.id) {
     folderViewId = v.id;
-    folderTab = v.gallery ? "gallery" : musicAvailable(v) ? "library" : "files";
+    folderTab = v.gallery ? "gallery" : musicAvailable(v) ? "library" : videoAvailable(v) ? "video" : "files";
+    videoView = { ...VIDEO_HOME };
     folderPrefix = "";
     folderPageCount = 1;
     folderReturn = { tab: "files", scroll: 0 };
@@ -6782,7 +8514,14 @@ async function renderDetail(pending = false) {
     if (cached) cached.checked = 0;
   }
   if (folderTab === "library" && !musicAvailable(v)) folderTab = "files";
+  if (folderTab === "video" && !videoAvailable(v)) folderTab = "files";
+  if (videoAvailable(v) && !videoBrowsable(v)) folderTab = "video";
   placeMusic();
+  if (folderTab === "video") {
+    renderVideo(v);
+    void refreshVideo(v.id);
+    return;
+  }
   if (folderTab === "library") {
     renderMusic(v);
     void refreshMusic(v.id);
@@ -6799,7 +8538,7 @@ async function renderDetail(pending = false) {
   }
   if (status.role !== "hub" && !status.hub) {
     $("#content").innerHTML =
-      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} local`, (native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "") + galleryModeButton(v) + musicModeButton(v) + folderActionsMenu(v))}</div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}">${folderTab === "gallery" ? "" : hubConnectionSection() + `<div class="stats">${folderRetentionSummary(v)}</div>`}${await folderBrowser(v, [])}</div>`;
+      `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}${title(escape(v.name), `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} local`, (native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : "") + galleryModeButton(v) + musicModeButton(v) + videoModeButton(v) + folderActionsMenu(v))}</div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}">${folderTab === "gallery" ? "" : hubConnectionSection() + `<div class="stats">${folderRetentionSummary(v)}</div>`}${await folderBrowser(v, [])}</div>`;
     icons();
     if (folderTab === "gallery") mountGallery(v.id);
     return;
@@ -6845,7 +8584,7 @@ async function renderDetail(pending = false) {
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" ? section("Version history", folderRetentionPanel(v)) : ""}<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${videoModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" && !v.video ? section("Version history", folderRetentionPanel(v)) : ""}${status.role === "hub" && v.video ? "" : hubCopyPanel(v)}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
   if (!pending && folderTab === "gallery") mountGallery(v.id);
@@ -6942,7 +8681,7 @@ async function renderHistory(
       section(
         "File versions",
         historyVersions.length
-          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
+          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted || folderVolume(historyVolume)?.video ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
           : data.offline
             ? empty(
                 "No saved versions for this file",
@@ -7527,9 +9266,13 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
     );
   if (status.role === "hub")
     html += section(
-      "Images",
-      '<div id="image-settings" class="image-settings"><p class="hint">Loading gallery library…</p></div>',
+      "Photos",
+      '<div id="image-settings" class="image-settings"><p class="hint">Loading photos…</p></div>',
     );
+  html += section(
+    "Movies &amp; TV",
+    status.role === "hub" ? '<div id="video-settings"><p class="hint">Loading video settings…</p></div>' : '<p class="hint">Movies &amp; TV settings live on the hub’s web page.</p>',
+  );
   html += section(
     "Tailscale",
     `<div class="settings-card">${setting(
@@ -7619,6 +9362,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   }
   icons();
   if (status.role === "hub") void imageLibrary();
+  if (status.role === "hub") void videoSettings();
 }
 let imageSettingsRequest = 0;
 async function imageLibrary() {
@@ -7652,12 +9396,12 @@ async function imageLibrary() {
           .map((folder) =>
             setting(
               escape(folder.name),
-              `${folder.photos} ${folder.photos === 1 ? "photo" : "photos"} · ${folder.videos} ${folder.videos === 1 ? "video" : "videos"}`,
+              `${countLabel(Number(folder.photos) || 0, "photo")} · ${countLabel(Number(folder.videos) || 0, "video")}`,
               bytes(folder.bytes),
             ),
           )
           .join("") ||
-        setting("Gallery library", "No indexed gallery media yet.", "");
+        setting("Photos", "No photos indexed yet.", "");
       const job = current.job;
       const target = root.querySelector("#image-regenerate-job");
       target.hidden = !job;
@@ -8343,6 +10087,7 @@ async function reviewConflict(item) {
 }
 async function handle(name, id, control) {
   if (name.startsWith("music-")) return handleMusic(name, id);
+  if (name.startsWith("video-")) return handleVideo(name, id);
   if (name.startsWith("favorite") || name === "context-open") return handleFavorite(name, id, control);
   if (name === "install-update") {
     const button = $("#update-install");
@@ -8460,34 +10205,39 @@ async function handle(name, id, control) {
     updateShell();
     return;
   }
-  if (name === "enable-gallery") {
+  if (name === "setup-library") {
+    const folder = status.volumes.find((v) => v.id === id);
+    if (!folder) return;
+    const kinds = [
+      ["gallery", "images", "Photos", "Photos and videos by date."],
+      ["music", "music", "Audio", "Music and podcasts, with playlists."],
+      ["video", "clapperboard", "Movies &amp; TV", "Films and series. Stays on the hub and streams to your devices; no older versions."],
+    ];
     modal(
-      modalHeader(
-        "Enable gallery?",
-        "Browse this folder’s photos and videos as a gallery. Files and synchronization stay the same.",
-        "images",
-      ),
-      async () => {
-        await api("/v1/gallery/link", { volume: id });
-        folderTab = "gallery";
+      modalHeader("What’s in this folder?", escape(`${folder.name} · ${countLabel(folder.files || 0, "file")} · ${bytes(folder.bytes || 0)}`), "library-big") +
+        kinds
+          .map(([value, symbol, name, text]) => `<label class="role-card"><input name="kind" type="radio" value="${value}">${icon(symbol)}<div><strong>${name}</strong><p>${text}</p></div></label>`)
+          .join("") +
+        '<p class="hint">This can’t be changed later. Your files stay as they are; Movies &amp; TV also removes the folder’s older versions, and other devices stop syncing it and stream it instead.</p>',
+      async (form) => {
+        const kind = form.get("kind");
+        if (kind === "gallery") {
+          await api("/v1/gallery/link", { volume: id });
+          folderTab = "gallery";
+        } else if (kind === "music") {
+          await api("/v1/music/mark", { volume: id });
+          folderTab = "library";
+        } else if (kind === "video") {
+          await api("/v1/video/mark", { volume: id });
+          folderTab = "video";
+          videoView = { ...VIDEO_HOME };
+        }
       },
-      "Enable gallery",
+      "Set up",
     );
-    return;
-  }
-  if (name === "enable-music") {
-    modal(
-      modalHeader(
-        "Enable audio library?",
-        "Browse and play this folder’s music by artist and album here, on your phone and in the car. Files and synchronization stay the same.",
-        "music",
-      ),
-      async () => {
-        await api("/v1/music/mark", { volume: id });
-        folderTab = "library";
-      },
-      "Enable audio library",
-    );
+    $("#submit-dialog").disabled = true;
+    for (const choice of document.querySelectorAll('#dialog [name="kind"]'))
+      choice.addEventListener("change", () => ($("#submit-dialog").disabled = false));
     return;
   }
   if (name === "gallery-mode") {
@@ -8684,7 +10434,9 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         "Delete this file?",
-        "Deletes from all synced copies. Retained history can be restored.",
+        folderVolume(historyVolume)?.video
+          ? "Deletes it from the hub’s disk. Movies &amp; TV keep no older versions, so it can’t be restored."
+          : "Deletes from all synced copies. Retained history can be restored.",
         "trash-2",
       ),
       async () => {
@@ -9149,7 +10901,7 @@ async function handle(name, id, control) {
     }
     await loadCatalog();
     const available = catalog.filter(
-      (v) => !status.volumes.find((x) => x.id === v.id)?.selected,
+      (v) => !v.video && !status.volumes.find((x) => x.id === v.id)?.selected,
     );
     if (!available.length) {
       modal(
@@ -9374,8 +11126,20 @@ const navigationActions = new Set([
   "favorite-open",
   "context-open",
   "unselect",
-  "enable-gallery",
-  "enable-music",
+  "setup-library",
+  "video-show-unmatched",
+  "video-mode",
+  "video-tab",
+  "video-title",
+  "video-crumb",
+  "video-season",
+  "video-sort",
+  "video-retry",
+  "video-play",
+  "video-resume",
+  "video-start",
+  "video-match",
+  "video-delete",
   "delete-share",
   "rename-share",
   "rename-file",

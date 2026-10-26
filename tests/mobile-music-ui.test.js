@@ -18,10 +18,10 @@ test("a music folder opens on its library, keeps View files in the folder menu a
   assert.match(app, /!photoFolder &&\s+!musicView && \(\s+<View style=\{\[s\.group, s\.statsGrid\]\}>/, "the files stats stay out of the library");
   const actions = app.slice(app.indexOf('shownSheet.kind === "folder-actions" &&'), app.indexOf('label="View history"'));
   assert.match(actions, /label=\{musicView \? "View files" : "View library"\}/);
-  assert.match(actions, /\{!!folder\.selected && !musicFolder && \(\s+<ActionRow\s+label="Add photos…"/);
-  assert.match(actions, /\{!musicFolder && \(\s+<ActionRow\s+label=\{source \? "Change album…" : "Link album…"\}/);
-  assert.match(app, /: isMusicFolder\(catalog, f\.id\)\s+\? "audio"\s+: "folders"/, "a selected music folder sits in Audio");
-  assert.match(app, /galleryFolder\(f\) \? "gallery" : isMusicFolder\(catalog, f\.id\) \? audioSymbols\[f\.id\] \|\| "music" : "folders"/, "and shows the music tile, or the podcast tile for a podcasts-only library");
+  assert.match(actions, /\{writable && !musicFolder && \(\s+<ActionRow\s+label="Add photos…"/);
+  assert.match(actions, /\{!musicFolder && !videoFolder && \(\s+<ActionRow\s+label=\{source \? "Change album…" : "Link album…"\}/);
+  assert.match(app, /: isMusicFolder\(catalog, f\.id\) \? "audio" : isVideoFolder\(catalog, f\.id\) \? "video" : "folders"/, "a selected music folder sits in Audio");
+  assert.match(app, /galleryFolder\(f\) \? "gallery" : isMusicFolder\(catalog, f\.id\) \? audioSymbols\[f\.id\] \|\| "music" : isVideoFolder\(catalog, f\.id\) \? "clapperboard" : "folders"/, "and shows the music tile, or the podcast tile for a podcasts-only library");
 });
 
 test("Android back leaves library screens before the folder, and the mini player opens Now playing", () => {

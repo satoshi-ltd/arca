@@ -271,7 +271,7 @@ test("favorites sort by the folder's kind, then by name ignoring case and accent
   assert.deepEqual(labels, ["apuntes", "Écoles", "écrits 9", "écrits 10", "Zeta", "2026 Lisbon", "Álbum", "Acquired", "música"]);
   assert.ok(nameOrder("école", "Ecole") === 0 && nameOrder("b", "A") > 0);
   const app = source("app.js");
-  assert.match(app, /\[\.\.\.\(status\.role === "hub" \? status\.volumes : selected\)\]\.sort\(\(a, b\) => nameOrder\(a\.name, b\.name\)\)/, "Folders uses the same collation");
+  assert.match(app, /\[\.\.\.\(status\.role === "hub" \? status\.volumes : \[\.\.\.selected, \.\.\.streamed\]\)\]\.sort\(\(a, b\) => nameOrder\(a\.name, b\.name\)\)/, "Folders uses the same collation");
   assert.doesNotMatch(app, /moveFavorite|dragstart|favoriteDrag|drop-before/);
   assert.doesNotMatch(source("style.css"), /drop-before|drop-after|\.favorite\.dragging/);
 });

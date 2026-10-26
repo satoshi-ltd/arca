@@ -87,6 +87,10 @@ export function finishInstallationReset(store) {
         "uploads",
         "previews",
         "music-covers",
+        "video-art",
+        "video-subtitles",
+        "video-downloads",
+        "transcodes",
         "web-code.json",
         "promotion.json",
       ].includes(name) ||

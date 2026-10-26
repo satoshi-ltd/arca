@@ -148,7 +148,7 @@ test("favorites order themselves like Folders: folders, photos, then audio, alph
   assert.match(app, /const shownFavorites = sortFavorites\(\s+favorites\.items,[\s\S]*?return f \? folderKind\(f\) : "folders";[\s\S]*?\(entry\) => describeFavorite\(entry\)\.label,/);
   assert.match(app, /<FavoritesSection\s+items=\{shownFavorites\}/, "the phone section");
   assert.match(app, /select=\{selectTab\}\s+items=\{shownFavorites\}/, "and the Fold drawer show the same order");
-  assert.match(app, /const folderKind = \(f\) => \(galleryFolder\(f\) \? "photos" : isMusicFolder\(catalog, f\.id\) \? "audio" : "folders"\);/, "the same kinds as the Folders sections");
+  assert.match(app, /const folderKind = \(f\) => \(galleryFolder\(f\) \? "photos" : isMusicFolder\(catalog, f\.id\) \? "audio" : isVideoFolder\(catalog, f\.id\) \? "video" : "folders"\);/, "the same kinds as the Folders sections");
 });
 
 test("the phone orders favorites and folder sections exactly as the desktop does", async () => {

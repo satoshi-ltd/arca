@@ -351,7 +351,7 @@ export class Gallery {
       r.busy = true;
       const source = await r.store.gallery(r.scope, volume);
       if (!source || source.mode !== "source")
-        throw new Error("Finish configuring this gallery source first.");
+        throw new Error("Finish configuring photo uploads first.");
       await r.store.setGallery(r.scope, volume, {
         ...source,
         enabled: !!enabled,
@@ -983,7 +983,7 @@ export class Gallery {
         (latest?.issue
           ? `${latest.name || "Photo"}: ${latest.issue}`
           : source.summary.failed
-            ? "Some gallery items need attention. Retry to review the next error."
+            ? "Some Photos items need attention. Retry to review the next error."
             : null);
       if (!scanning() && !source.summary.pending)
         source.completed = new Date().toISOString();

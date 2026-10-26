@@ -2,6 +2,7 @@ import { galleryDate, mediaKind, realDate } from "../core/gallery-date.js";
 import { isPlaylistPath } from "../core/playlist.js";
 import { SEARCH_AUDIO, SEARCH_TYPES, dateQuery, searchFold, searchRank as rank, searchTokens } from "../core/search.js";
 import { buildLibrary } from "../../apps/desktop/src/music-library.js";
+import { videoType } from "../core/video-names.js";
 import { fail } from "./storage.js";
 
 const CANDIDATES = 2000;
@@ -29,6 +30,52 @@ function libraryIndex(music, volume) {
   return index;
 }
 
+function videoIndex(video, volume) {
+  let cache = libraries.get(video);
+  if (!cache) libraries.set(video, (cache = new Map()));
+  const raw = video.library(volume);
+  const known = cache.get(volume);
+  if (known?.version === raw.version) return known.index;
+  const text = (...values) => fold(values.filter(Boolean).join(" "));
+  const index = [
+    ...raw.movies.map((movie) => ({
+      name: movie.title,
+      text: text(movie.title, movie.year, movie.collection),
+      row: { id: movie.id, kind: "movie", title: movie.title, year: movie.year, poster: movie.poster, kids: movie.kids, path: movie.path, hash: movie.hash },
+    })),
+    ...raw.shows.map((show) => ({
+      name: show.title,
+      text: text(show.title, show.year),
+      row: { id: show.id, kind: "show", title: show.title, year: show.year, poster: show.poster, kids: show.kids, path: show.seasons[0]?.episodes[0]?.path || null },
+    })),
+    ...raw.shows.flatMap((show) =>
+      show.seasons.flatMap((season) =>
+        season.episodes.map((episode) => ({
+          name: episode.title,
+          text: text(episode.title, show.title),
+          row: {
+            id: episode.id,
+            kind: "episode",
+            title: episode.title,
+            show: show.title,
+            showId: show.id,
+            season: episode.season,
+            episode: episode.episode,
+            still: episode.still,
+            poster: show.poster,
+            kids: show.kids,
+            path: episode.path,
+            hash: episode.hash,
+          },
+        })),
+      ),
+    ),
+  ];
+  cache.set(volume, { version: raw.version, index });
+  if (cache.size > 16) cache.delete(cache.keys().next().value);
+  return index;
+}
+
 const LIBRARY_ROWS = {
   songs: ({ item, album }) => ({ path: item.path, hash: item.hash, title: item.title, artist: item.artist, album: item.album, albumId: album.id, cover: item.cover, duration: item.duration }),
   albums: ({ item }) => ({ id: item.id, path: item.tracks[0]?.path || null, title: item.title, artist: item.artist, cover: item.cover, songs: item.tracks.length }),
@@ -44,7 +91,7 @@ function galleryFolder(store, id) {
     : !!store.config.catalog?.find((row) => row.id === id)?.gallery;
 }
 
-export function searchLocal(store, params, music = null) {
+export function searchLocal(store, params, music = null, video = null) {
   const raw = (params.get("q") || "").trim();
   const type = params.get("type") || "";
   const limit = Number(params.get("limit") || 3);
@@ -82,6 +129,17 @@ export function searchLocal(store, params, music = null) {
       } catch {
         index = null;
       }
+    let videos = null;
+    if (video && !gallery && !index && store.config.role === "hub" && video.isVideo(volume.id))
+      try {
+        videos = videoIndex(video, volume.id);
+      } catch {
+        videos = null;
+      }
+    if (videos && wanted("videos"))
+      for (const entry of videos)
+        if (matches(entry.text))
+          found.videos.push({ score: rank(entry.name, query), name: entry.name, row: { volume: volume.id, folder: volume.name, ...entry.row } });
     if (index)
       for (const group of Object.keys(LIBRARY_ROWS)) {
         if (!wanted(group)) continue;
@@ -94,6 +152,7 @@ export function searchLocal(store, params, music = null) {
       if (seen.has(row.path) || hidden(row.path, false)) return;
       const kind = mediaKind(row.path);
       if (index && !kind && (SEARCH_AUDIO.test(row.path) || isPlaylistPath(row.path))) return;
+      if (videos && videoType(row.path)) return;
       const group = kind ? "photos" : "files";
       if (!wanted(group)) return;
       seen.add(row.path);

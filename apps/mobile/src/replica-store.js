@@ -35,6 +35,9 @@ export class ReplicaStore {
       CREATE TABLE IF NOT EXISTS pending (scope TEXT, volume TEXT, path TEXT, op TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
       CREATE TABLE IF NOT EXISTS applying (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
       CREATE TABLE IF NOT EXISTS music_libraries (scope TEXT, volume TEXT, version TEXT NOT NULL, indexing INTEGER NOT NULL DEFAULT 0, value TEXT NOT NULL, PRIMARY KEY(scope,volume));
+      CREATE TABLE IF NOT EXISTS video_libraries (scope TEXT, volume TEXT, version TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(scope,volume));
+      CREATE TABLE IF NOT EXISTS video_downloads (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
+      CREATE TABLE IF NOT EXISTS video_positions (scope TEXT, volume TEXT, path TEXT, at INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
 `);
   }
   async reset() {
@@ -44,6 +47,9 @@ export class ReplicaStore {
         "view_cache",
         "scan_cache",
         "music_libraries",
+        "video_libraries",
+        "video_downloads",
+        "video_positions",
         "gallery_assets",
         "gallery_corrupt",
         "gallery_sources",
@@ -587,6 +593,139 @@ export class ReplicaStore {
       indexing ? 1 : 0,
       scope,
       volume,
+    );
+  }
+  async videoLibrary(scope, volume) {
+    const row = await this.db.getFirstAsync(
+      "SELECT version,value FROM video_libraries WHERE scope=? AND volume=?",
+      scope,
+      volume,
+    );
+    if (!row) return null;
+    try {
+      return { version: row.version, value: JSON.parse(row.value) };
+    } catch {
+      return null;
+    }
+  }
+  async videoLibraries(scope) {
+    const rows = await this.db.getAllAsync(
+      "SELECT volume,value FROM video_libraries WHERE scope=?",
+      scope,
+    );
+    const libraries = [];
+    for (const row of rows)
+      try {
+        libraries.push({ volume: row.volume, value: JSON.parse(row.value) });
+      } catch {
+        continue;
+      }
+    return libraries;
+  }
+  async saveVideoLibrary(scope, volume, value) {
+    await this.db.runAsync(
+      "INSERT OR REPLACE INTO video_libraries(scope,volume,version,value) VALUES(?,?,?,?)",
+      scope,
+      volume,
+      String(value.version),
+      JSON.stringify({ ...value, unchanged: undefined }),
+    );
+  }
+  async pruneVideoLibraries(scope, keep) {
+    const rows = await this.db.getAllAsync(
+      "SELECT volume FROM video_libraries WHERE scope=?",
+      scope,
+    );
+    for (const row of rows)
+      if (!keep.includes(row.volume))
+        await this.db.runAsync(
+          "DELETE FROM video_libraries WHERE scope=? AND volume=?",
+          scope,
+          row.volume,
+        );
+  }
+  async videoDownloads(scope) {
+    const rows = await this.db.getAllAsync(
+      "SELECT row FROM video_downloads WHERE scope=?",
+      scope,
+    );
+    const list = [];
+    for (const row of rows)
+      try {
+        list.push(JSON.parse(row.row));
+      } catch {
+        continue;
+      }
+    return list;
+  }
+  async saveVideoDownload(scope, row) {
+    await this.db.runAsync(
+      "INSERT OR REPLACE INTO video_downloads(scope,volume,path,row) VALUES(?,?,?,?)",
+      scope,
+      row.volume,
+      row.path,
+      JSON.stringify(row),
+    );
+  }
+  async foreignVideoDownloads(scope) {
+    const rows = await this.db.getAllAsync(
+      "SELECT scope,row FROM video_downloads WHERE scope IS NOT ?",
+      scope,
+    );
+    const list = [];
+    for (const row of rows)
+      try {
+        list.push({ scope: row.scope, row: JSON.parse(row.row) });
+      } catch {
+        await this.db.runAsync(
+          "DELETE FROM video_downloads WHERE scope IS ? AND row=?",
+          row.scope,
+          row.row,
+        );
+      }
+    return list;
+  }
+  async forgetVideoDownload(scope, volume, path) {
+    await this.db.runAsync(
+      "DELETE FROM video_downloads WHERE scope=? AND volume=? AND path=?",
+      scope,
+      volume,
+      path,
+    );
+  }
+  async queueVideoPosition(scope, body, at) {
+    await this.db.runAsync(
+      "INSERT OR REPLACE INTO video_positions(scope,volume,path,at,body) VALUES(?,?,?,?,?)",
+      scope,
+      body.volume,
+      body.path,
+      at,
+      JSON.stringify(body),
+    );
+  }
+  async videoPositions(scope, volume = null) {
+    const rows = await this.db.getAllAsync(
+      volume === null
+        ? "SELECT at,body FROM video_positions WHERE scope=? ORDER BY at"
+        : "SELECT at,body FROM video_positions WHERE scope=? AND volume=? ORDER BY at",
+      ...(volume === null ? [scope] : [scope, volume]),
+    );
+    const list = [];
+    for (const row of rows)
+      try {
+        list.push({ at: row.at, body: JSON.parse(row.body) });
+      } catch {
+        continue;
+      }
+    return list;
+  }
+  async dropVideoPosition(scope, volume, path, at) {
+    await this.db.runAsync(
+      "DELETE FROM video_positions WHERE scope=? AND volume=? AND path=? AND at<=?",
+      scope,
+      volume,
+      path,
+      at,
     );
   }
   async rows(scope, volume) {

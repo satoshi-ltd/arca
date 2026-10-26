@@ -71,6 +71,21 @@ test("restart persists identity and revisions; second daemon refuses the state l
   }
 });
 
+test("a lock left with this process's own PID, as after a container was killed and restarted, is stale", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-stale-lock-"));
+  init(home, { port: 0 });
+  fs.writeFileSync(path.join(home, "daemon.lock"), String(process.pid));
+  const daemon = await start(home, { timer: false });
+  try {
+    assert.equal(fs.readFileSync(path.join(home, "daemon.lock"), "utf8"), String(process.pid));
+    await assert.rejects(start(home, { timer: false }), /already owns/, "the live daemon still holds it");
+  } finally {
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+  assert.equal(fs.existsSync(path.join(home, "daemon.lock")), false);
+});
+
 test("filesystem events detect edits before the periodic fallback deadline", async (t) => {
   if (!(await canWatchDirectory(2))) {
     t.skip("the operating system cannot deliver folder watcher events here");

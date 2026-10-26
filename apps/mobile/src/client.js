@@ -292,6 +292,19 @@ export function createClient({
     cancelRefresh,
     fileTransfers,
     raw: authenticated,
+    async stream(route) {
+      if (!connection || connection.leaving)
+        throw new Error("Connect to your hub first");
+      if (!route.startsWith("/v1/")) throw new Error("Invalid hub route");
+      const { token } = connection;
+      let url = connection.url;
+      if (url.startsWith("http:")) {
+        if (!resolvePrivateURL)
+          throw new Error("Private network verification is unavailable");
+        url = await resolvePrivateURL(url);
+      }
+      return { uri: url + route, headers: { Authorization: `Bearer ${token}` } };
+    },
     async api(route, body, options = {}) {
       const r = await authenticated(route, {
         ...options,

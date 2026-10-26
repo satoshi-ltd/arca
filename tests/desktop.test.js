@@ -1193,14 +1193,15 @@ test("the hub's folder menu makes an ordinary folder an audio library, which the
   w.document.querySelector('.folder-card[data-action="folder-detail"]').click();
   await until(() => w.document.querySelector(".heading-actions .folder-actions-menu") && idle());
   const menu = w.document.querySelector(".heading-actions .folder-actions-menu");
-  const enable = menu.querySelector('[data-action="enable-music"]');
-  assert.match(enable.textContent, /Enable audio library/);
-  assert.equal(enable.querySelector("[data-icon]").dataset.icon, "music");
+  const enable = menu.querySelector('[data-action="setup-library"]');
+  assert.match(enable.textContent, /Set up as library…/);
+  assert.equal(enable.querySelector("[data-icon]").dataset.icon, "library-big");
   menu.open = true;
   enable.click();
-  await until(() => /Enable audio library\?/.test(w.document.querySelector("#dialog-content")?.textContent || "") && idle());
-  assert.match(w.document.querySelector("#dialog-content").textContent, /Files and synchronization stay the same/);
+  await until(() => /What’s in this folder\?/.test(w.document.querySelector("#dialog-content")?.textContent || "") && idle());
+  assert.match(w.document.querySelector("#dialog-content").textContent, /Your files stay as they are/);
   assert.equal(menu.open, false);
+  w.document.querySelector('#dialog input[value="music"]').click();
   w.document.querySelector("#submit-dialog").click();
   await until(() => daemon.engine.status().volumes[0].music && !w.document.querySelector("#dialog").open && idle());
   await poll();
@@ -1211,7 +1212,7 @@ test("the hub's folder menu makes an ordinary folder an audio library, which the
   assert.deepEqual(
     [...w.document.querySelectorAll(".heading-actions .folder-actions-menu [data-action]")].map((el) => el.dataset.action),
     ["rename-share", "edit-ignore"],
-    "an audio library offers neither Enable gallery nor Enable audio library",
+    "an audio library no longer offers Set up as library…",
   );
   w.document.querySelector('[data-action="back-folders"]').click();
   await until(() => w.document.querySelector('.folder-card .tile [data-icon="music"]') && idle());
@@ -1256,7 +1257,7 @@ test("a replica's folder header offers Open in Finder alone: no Enable gallery a
   assert.deepEqual([...actions.querySelectorAll("[data-action]")].map((el) => el.dataset.action), ["favorite-toggle", "open"]);
   assert.match(actions.textContent, /Open in Finder/);
   assert.equal(actions.querySelector("details"), null, "only the hub decides that a folder is a gallery");
-  assert.equal(w.document.querySelector('[data-action="enable-gallery"]'), null);
+  assert.equal(w.document.querySelector('[data-action="setup-library"]'), null);
   assert.equal(w.document.querySelector("#folder-retention"), null, "a replica never edits retention");
   assert.equal(w.document.querySelector(".folder-history-status strong").textContent, "On · 30 days");
   assert.deepEqual(
@@ -4897,7 +4898,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   assert.equal(folderMenu.querySelector("summary").getAttribute("aria-label"), "Folder actions");
   assert.deepEqual(
     [...folderMenu.querySelectorAll(".menu-items [data-action]")].map((el) => el.dataset.action),
-    ["enable-gallery", "enable-music", "rename-share", "edit-ignore"],
+    ["setup-library", "rename-share", "edit-ignore"],
     "configuration actions live in the menu",
   );
   assert.deepEqual(
@@ -4913,13 +4914,14 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   w.document.querySelector('[data-action="back-folders"]').focus();
   assert.equal(folderMenu.open, false, "focus leaving the menu closes it");
   folderMenu.open = true;
-  w.document.querySelector('[data-action="enable-gallery"]').click();
+  w.document.querySelector('[data-action="setup-library"]').click();
   assert.equal(folderMenu.open, false, "the menu closes on selection");
   assert.match(
     w.document.querySelector("#dialog-content").textContent,
-    /Files and synchronization stay the same/,
+    /Photos and videos by date\./,
   );
   await until(() => w.document.body.getAttribute("aria-busy") !== "true");
+  w.document.querySelector('#dialog input[value="gallery"]').click();
   w.document.querySelector("#submit-dialog").click();
   await until(() => w.document.querySelector(".photo-thumb img"));
   assert.equal(
@@ -4938,7 +4940,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   assert.deepEqual(
     [...w.document.querySelectorAll(".heading-actions .folder-actions-menu [data-action]")].map((el) => el.dataset.action),
     ["rename-share", "edit-ignore"],
-    "a gallery folder keeps Rename and .arcaignore… in the menu, without Enable gallery",
+    "a gallery folder keeps Rename and .arcaignore… in the menu, without Set up as library…",
   );
 
   assert.notEqual(
@@ -5025,7 +5027,7 @@ test("gallery folders open a chronological grid, viewer and existing Files tab",
   assert.equal(w.document.querySelector(".photo-previous").disabled, true);
   assert.equal(
     w.document.querySelector("#cancel-dialog").getAttribute("aria-label"),
-    "Back to gallery",
+    "Back to photos",
   );
   assert.ok(w.document.querySelector(".photo-download"));
   w.document.body.dispatchEvent(
@@ -7310,7 +7312,7 @@ test("the photo timeline appears and seeks while the gallery is still indexing",
   if (!w.document.querySelector(".photo-timeline"))
     w.document.querySelector('[data-action="gallery-mode"]').click();
   await until(() => w.document.querySelectorAll(".photo-timeline button").length === 3);
-  assert.equal(w.document.querySelector(".photo-more").getAttribute("aria-label"), "Preparing gallery");
+  assert.equal(w.document.querySelector(".photo-more").getAttribute("aria-label"), "Preparing photos");
   const before = galleryRequests.length;
   await until(() => galleryRequests.length > before + 1);
   w.document.querySelector('.photo-timeline button[data-month="2020-12"]').click();

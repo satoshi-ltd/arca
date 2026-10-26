@@ -1655,7 +1655,7 @@ export function SettingsGroup({ children }) {
   );
 }
 
-export function SegmentedControl({ options, value, onChange }) {
+export function SegmentedControl({ options, value, onChange, scroll = false }) {
   const { s } = useDesign();
   const { duration, easing } = useMotion();
   const [boxes, setBoxes] = useState({});
@@ -1677,8 +1677,8 @@ export function SegmentedControl({ options, value, onChange }) {
         useNativeDriver: true,
       }).start();
   }, [box?.x]);
-  return (
-    <View style={s.segments}>
+  const control = (
+    <View style={[s.segments, scroll && s.segmentsScroll]}>
       {!!box && (
         <Animated.View
           pointerEvents="none"
@@ -1706,7 +1706,7 @@ export function SegmentedControl({ options, value, onChange }) {
                 : { ...boxes, [option.value]: layout };
             })
           }
-          style={[s.segment, value === option.value && !box && s.segmentSelected]}
+          style={[s.segment, scroll && s.segmentScroll, value === option.value && !box && s.segmentSelected]}
         >
           <Text
             style={[
@@ -1720,6 +1720,13 @@ export function SegmentedControl({ options, value, onChange }) {
         </Pressable>
       ))}
     </View>
+  );
+  return scroll ? (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      {control}
+    </ScrollView>
+  ) : (
+    control
   );
 }
 

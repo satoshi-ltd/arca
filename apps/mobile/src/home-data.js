@@ -2,6 +2,7 @@ export const FOLDER_SECTIONS = [
   { kind: "folders", label: "FOLDERS" },
   { kind: "photos", label: "PHOTOS" },
   { kind: "audio", label: "AUDIO" },
+  { kind: "video", label: "MOVIES & TV" },
 ];
 
 const collator = new Intl.Collator("en", { sensitivity: "base", numeric: true });

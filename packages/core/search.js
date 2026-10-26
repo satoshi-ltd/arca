@@ -1,4 +1,4 @@
-export const SEARCH_TYPES = ["folders", "songs", "albums", "artists", "shows", "episodes", "playlists", "photos", "files"];
+export const SEARCH_TYPES = ["folders", "songs", "albums", "artists", "shows", "episodes", "playlists", "videos", "photos", "files"];
 export const SEARCH_AUDIO = /\.(mp3|m4a|flac|wav|ogg|oga|opus|aac|aiff?|wma)$/i;
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 const MONTH_NAMES = MONTHS.map((name) => name[0].toUpperCase() + name.slice(1));

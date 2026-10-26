@@ -8,11 +8,24 @@ const PLAYER_READS = new Set([
   "/v1/gallery/preview",
   "/v1/music/library",
   "/v1/music/cover",
+  "/v1/video/library",
+  "/v1/video/art",
+  "/v1/video/media",
+  "/v1/video/subtitles",
+  "/v1/video/compatible",
+]);
+const PLAYER_WRITES = new Set([
+  "/v1/machine-report",
+  "/v1/leave",
+  "/v1/video/position",
+  "/v1/video/watched",
+  "/v1/video/watch-next/remove",
+  "/v1/video/watch-next/restore",
 ]);
 export const playerRoute = (method, route) =>
-  method === "GET"
-    ? PLAYER_READS.has(route) || route.startsWith("/v1/blobs/")
-    : method === "POST" && (route === "/v1/machine-report" || route === "/v1/leave");
+  method === "GET" || method === "HEAD"
+    ? PLAYER_READS.has(route) || route.startsWith("/v1/blobs/") || route.startsWith("/v1/video/hls/")
+    : method === "POST" && PLAYER_WRITES.has(route);
 export function machineReport(engine) {
   const status = engine.status(),
     volumes = status.volumes.filter((v) => v.selected);

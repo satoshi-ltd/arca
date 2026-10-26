@@ -43,6 +43,12 @@ test("single port web, discovery, one-time login, CSRF rejection and logout", as
       "utf8",
     ),
   );
+  const videoLibrary = await fetch(url + "/video-library.js");
+  assert.equal(videoLibrary.status, 200);
+  assert.equal(
+    await videoLibrary.text(),
+    fs.readFileSync(new URL("../apps/desktop/src/video-library.js", import.meta.url), "utf8"),
+  );
   const favoriteOrder = await fetch(url + "/favorite-order.js");
   assert.equal(favoriteOrder.status, 200, "the web app can load every module app.js imports");
   assert.equal(

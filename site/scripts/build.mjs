@@ -25,6 +25,39 @@ export function publicUrl(value) {
     );
   return url.href.replace(/\/$/, "");
 }
+const text = (html) =>
+  html
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+const json = (value) =>
+  `<script type="application/ld+json">${JSON.stringify(value).replace(/</g, "\\u003c")}</script>`;
+export function questions(template) {
+  return [
+    ...template.matchAll(
+      /<details(?: open)?>\s*<summary>([\s\S]*?)<\/summary>\s*<p>([\s\S]*?)<\/p>\s*<\/details>/g,
+    ),
+  ].map((match) => ({ question: text(match[1]), answer: text(match[2]) }));
+}
+export function seoFiles(siteUrl, published) {
+  const origin = siteUrl ? publicUrl(siteUrl) : "";
+  const day = published ? new Date(published) : null;
+  const lastmod =
+    day && !Number.isNaN(day.getTime())
+      ? `<lastmod>${day.toISOString().slice(0, 10)}</lastmod>`
+      : "";
+  return {
+    robots: `User-agent: *\nAllow: /\n${origin ? `\nSitemap: ${origin}/sitemap.xml\n` : ""}`,
+    sitemap: origin
+      ? `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${escape(origin)}/</loc>${lastmod}</url></urlset>\n`
+      : null,
+  };
+}
 export function expectedRelease(version, repository = "satoshi-ltd/arca") {
   const tag_name = `v${version}`;
   return {
@@ -85,13 +118,65 @@ export function render(template, release, config = {}) {
   }
   const stores = [
     playUrl &&
-      `<a class="store" href="${escape(playUrl.href)}">${icon("android")}<span>Google Play<small>Android ↗</small></span></a>`,
+      `<a class="store" href="${escape(playUrl.href)}">${icon("android")}<span>Google Play<small>Android</small></span><span class="download-arrow" aria-hidden="true">↗</span></a>`,
     appStoreUrl
-      ? `<a class="store" href="${escape(appStoreUrl)}">${icon("apple")}<span>App Store<small>iPhone &amp; iPad ↗</small></span></a>`
+      ? `<a class="store" href="${escape(appStoreUrl)}">${icon("apple")}<span>App Store<small>iPhone &amp; iPad</small></span><span class="download-arrow" aria-hidden="true">↗</span></a>`
       : playUrl &&
         `<span class="store store-soon">${icon("apple")}<span>App Store<small>iPhone &amp; iPad · Coming soon</small></span></span>`,
   ].filter(Boolean);
   const apk = assets.get(`arca-${version}-android.apk`);
+  const origin = config.siteUrl ? publicUrl(config.siteUrl) : "";
+  const absolute = (path) => (origin ? `${origin}/${path}` : path);
+  const title = text(/<title>([\s\S]*?)<\/title>/.exec(template)?.[1] || "Arca");
+  const description = /<meta\s+name="description"\s+content="([^"]*)"/.exec(template)?.[1] || "";
+  const social = [
+    ["property", "og:type", "website"],
+    ["property", "og:site_name", "Arca"],
+    ["property", "og:title", title],
+    ["property", "og:description", description],
+    origin && ["property", "og:url", `${origin}/`],
+    ["property", "og:image", absolute("assets/og-image.png")],
+    ["property", "og:image:width", "1200"],
+    ["property", "og:image:height", "630"],
+    ["property", "og:image:alt", "Arca: your files, your devices. Folders, photos, music and movies on a hub you run."],
+    ["name", "twitter:card", "summary_large_image"],
+    ["name", "twitter:title", title],
+    ["name", "twitter:description", description],
+    ["name", "twitter:image", absolute("assets/og-image.png")],
+  ]
+    .filter(Boolean)
+    .map(([kind, key, value]) => `<meta ${kind}="${key}" content="${escape(text(value))}" />`)
+    .join("\n    ");
+  const faq = questions(template);
+  const structured = [
+    json({
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "Arca",
+      description: text(description),
+      applicationCategory: "UtilitiesApplication",
+      operatingSystem: "macOS, Windows, Linux, Android, Docker",
+      softwareVersion: version,
+      ...(origin ? { url: `${origin}/` } : {}),
+      image: absolute("assets/og-image.png"),
+      downloadUrl: `https://github.com/${repository}/releases/tag/${release.tag_name}`,
+      license: `https://github.com/${repository}/blob/main/LICENSE`,
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      author: { "@type": "Organization", name: "Satoshi Ltd.", url: "https://www.satoshi-ltd.com" },
+    }),
+    faq.length &&
+      json({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: faq.map((entry) => ({
+          "@type": "Question",
+          name: entry.question,
+          acceptedAnswer: { "@type": "Answer", text: entry.answer },
+        })),
+      }),
+  ]
+    .filter(Boolean)
+    .join("\n    ");
   const tokens = {
     VERSION: escape(version),
     RELEASE_NOTES: escape(
@@ -105,6 +190,9 @@ export function render(template, release, config = {}) {
         ? `<div class="download-alternatives"><span class="eyebrow">${stores.length ? "Outside the store" : "Android"}</span><div class="download-alternatives-list">${link("android.apk", "Download Android APK", "android")}</div><small>Install directly, without a store account.</small></div>`
         : "",
     DOCKER_ICON: icon("docker"),
+    SOCIAL: social,
+    STRUCTURED_DATA: structured,
+    ANDROID_ICON: icon("android"),
     MOBILE_ACCESS: stores.length
       ? `<div class="store-row">${stores.join("")}</div>`
       : '<p class="mobile-status">The Android and iOS apps are not in the app stores yet. They are still being qualified.</p>',
@@ -159,10 +247,11 @@ if (
   await writeFile(path.join(output, "index.html"), html);
   await cp(path.join(root, "site/styles.css"), path.join(output, "styles.css"));
   await cp(path.join(root, "site/theme.js"), path.join(output, "theme.js"));
-  await cp(
-    path.join(root, "site/assets/platforms.svg"),
-    path.join(output, "assets/platforms.svg"),
-  );
+  for (const name of ["platforms.svg", "og-image.png", "apple-touch-icon.png"])
+    await cp(path.join(root, "site/assets", name), path.join(output, "assets", name));
+  const seo = seoFiles(process.env.SITE_URL, release.published_at);
+  await writeFile(path.join(output, "robots.txt"), seo.robots);
+  if (seo.sitemap) await writeFile(path.join(output, "sitemap.xml"), seo.sitemap);
   for (const name of [
     "arca-icon.svg",
     "fonts/instrument-sans.woff2",
@@ -175,7 +264,7 @@ if (
   }
   await writeFile(
     path.join(output, "_headers"),
-    "/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n  Content-Security-Policy: default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\n",
+    "/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n  Content-Security-Policy: default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\n/assets/*\n  Cache-Control: public, max-age=604800\n",
   );
   console.log(
     `Built static site: ${output}${published ? "" : ` (expected assets for ${release.tag_name}; run npm run site:release for published metadata)`}`,

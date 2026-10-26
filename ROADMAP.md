@@ -82,7 +82,7 @@ _None._
   accept: infinite scroll both ways, the fast-scroll thumb follows the finger with sparse year chips, pinch density levels (also on iOS), videos autoplay when opened, and Info pauses and resumes a video.
 - **P2-VIDEO** — Video on physical devices
   `verify · maintainer · normal`
-  accept: playback with audio, seeking and rotation on Android and iOS; local posters on iOS.
+  accept: identify the 0.8 candidate and running builds; verify Movies & TV on desktop, web, Android, iOS and arca TV with direct and compatible playback, alternate audio, sidecar and embedded subtitles, long seeks, resume between devices, offline downloads, network loss, rotation and local posters on iOS. On disposable hub state, verify Erase stops active playback and removes temporary media; measure CPU and temporary-disk use during long high-bitrate streams, including Windows. Source tests do not establish these device results.
 - **P2-SHARING** — Incoming sharing
   `verify · maintainer · low`
   accept: the iOS Share Extension works; cold-start, foreground and multiple-file shares work. Known gaps stay documented: text/plain streams, links and text are not imported, and duplicate temporary filenames must be shared separately.
@@ -176,6 +176,9 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 ### Decisions
 
+- **DEC-VIDEO-INTEGRITY** — Require full-file integrity for Movies & TV?
+  `decision · maintainer · high`
+  accept: decide whether video identity and completed-download verification must cover every byte. The current quick identity hashes only the size and first/last 4 MiB, so a same-size change or download corruption confined to the middle is undetected; it also cannot distinguish those versions for resume. If full integrity is required, approve a bounded background full hash and a protocol field for clients to verify, with regression cases changing only the middle and measurements of hub I/O and phone verification cost. Keep this separate from the fast scan fingerprint.
 - **DEC-LAN-PERMISSION** — Cache LAN permission?
   `decision · maintainer · normal`
 - **DEC-FIRST-PAGE** — Serve the first snapshot page without a hub scan?

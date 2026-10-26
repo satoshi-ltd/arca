@@ -158,6 +158,13 @@ export class Music {
         "This folder is a gallery. A folder is a gallery or an audio library, not both.",
         409,
       );
+    if (
+      this.s.db.prepare("SELECT 1 FROM video_folders WHERE volume=?").get(volume)
+    )
+      fail(
+        "This folder is a video library. A folder is a gallery, an audio library or a video library, not more than one.",
+        409,
+      );
     this.s.db
       .prepare("INSERT OR IGNORE INTO music_folders VALUES(?)")
       .run(volume);

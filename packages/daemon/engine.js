@@ -70,6 +70,8 @@ function fileDate(file) {
     ? new Date(time).toISOString()
     : null;
 }
+export const STREAM_ONLY = "Movies & TV folders live only on the hub. Play them from the library.";
+export const STREAM_ONLY_EDIT = "Rename or move files of a Movies & TV folder on the hub's disk; Arca picks the change up.";
 export class Engine {
   constructor(home) {
     this.store = new Store(home);
@@ -237,6 +239,12 @@ export class Engine {
                   .prepare("SELECT 1 FROM music_folders WHERE volume=?")
                   .get(v.id)
               : !!this.config.catalog?.find((row) => row.id === v.id)?.music,
+          video:
+            this.config.role === "hub"
+              ? !!s.db
+                  .prepare("SELECT 1 FROM video_folders WHERE volume=?")
+                  .get(v.id)
+              : !!this.config.catalog?.find((row) => row.id === v.id)?.video,
           sync: totals.policyError
             ? { state: "error", error: totals.policyError, lastCompleted: null }
             : (this.paused || this.hubUnavailable) && v.selected
@@ -958,7 +966,12 @@ export class Engine {
     if (this.paused) {
       await this.reconcileLocal();
       if (!this.hubUnavailable) await this.reportMachine();
+      else
+        void this.requestContext
+          .exit(() => this.reportMachine(true, AbortSignal.timeout(3000)))
+          .then(() => this.videoDownloads?.wake());
       void this.flushPositions();
+      void this.videoDownloads?.wake();
       return;
     }
     if (this.config.role === "hub" && !this.store.volumes().length) {
@@ -1037,13 +1050,17 @@ export class Engine {
           this.catalogEntry(v),
         );
         this.store.saveConfig();
+        if (this.config.role === "replica")
+          this.videoDownloads?.pruneCatalog(catalog.volumes);
         if (this.config.role === "backup")
           for (const v of catalog.volumes) this.registerBackupVolume(v);
         for (const remote of catalog.volumes)
           s.db
             .prepare("UPDATE volumes SET name=? WHERE id=?")
             .run(remote.name, remote.id);
-        const activeIds = new Set(catalog.volumes.map((v) => v.id));
+        const activeIds = new Set(
+          catalog.volumes.filter((v) => !v.video).map((v) => v.id),
+        );
         if (this.config.role === "replica") {
           for (const local of s.volumes()) {
             if (!activeIds.has(local.id)) {
@@ -1642,6 +1659,7 @@ export class Engine {
       if (!this.syncAbort.signal.aborted && !this.hubUnavailable)
         await this.reportMachine();
       void this.flushPositions();
+      void this.videoDownloads?.wake();
       this.syncAbort = null;
     }
   }
@@ -1802,7 +1820,7 @@ export class Engine {
   promotionPlan() {
     if (this.config.role !== "replica")
       fail("Only a device connected to a hub can become a replacement hub", 409);
-    const catalog = this.config.catalog || [];
+    const catalog = (this.config.catalog || []).filter((v) => !v.video);
     const localVolumes = this.store.volumes();
     const folders = catalog.map((v) => {
       const local = localVolumes.find((item) => item.id === v.id);
@@ -2351,12 +2369,16 @@ export class Engine {
         }
         await this.scanner.worker?.terminate();
         this.scanner = new Scanner(this.store.home);
+        await this.videoDownloads?.halt();
+        await this.videoSessions?.halt();
         if (!this.config.destroyPending)
           beginInstallationReset(this.store, resetTargets(this.store));
         this.gallery?.close();
         this.gallery = null;
         this.music?.close();
         this.music = null;
+        this.video?.close();
+        this.video = null;
         finishInstallationReset(this.store);
         this.folderStates.clear();
         this.paused = false;
@@ -2447,6 +2469,7 @@ export class Engine {
       name: v.name,
       gallery: !!v.gallery,
       music: !!v.music,
+      video: !!v.video,
       historyRetention:
         v.historyRetention ??
         this.config.catalog?.find((saved) => saved.id === v.id)
@@ -2478,6 +2501,7 @@ export class Engine {
         : (await this.hubAction("/v1/catalog")).volumes;
     const v = volumes.find((v) => v.id === id);
     if (!v) fail("Unknown remote volume", 404);
+    if (v.video && this.config.role !== "hub") fail(STREAM_ONLY, 409);
     const existing = s.volumes().find((v) => v.id === id);
     if (
       existing?.path &&
@@ -2744,7 +2768,7 @@ export class Engine {
     const file = this.store.filePath(v, name);
     const local = fs.lstatSync(file, { throwIfNoEntry: false });
     if (!local) fail(MISSING_LOCAL, 409);
-    if (!local.isFile() || hashFile(file) !== current.hash)
+    if (!local.isFile() || !(await this.store.holds(volume, file, current.hash)))
       fail("Local file changed. Sync before deleting.", 409);
     const held = this.store.db
       .prepare("SELECT 1 FROM files WHERE volume=? AND hash=? AND deleted=0 LIMIT 1")
@@ -2773,6 +2797,8 @@ export class Engine {
   async restore(volume, name, rev) {
     if (this.config.role !== "hub")
       return this.hubAction("/v1/restore", { volume, path: name, rev }, 25000);
+    if (this.store.streamOnly(volume))
+      fail("Movies & TV folders keep no older versions to restore.", 409);
     await this.scanHub(volume, { paths: [name, IGNORE_FILE] });
     const version = this.store
       .history(volume, name)
@@ -2791,6 +2817,7 @@ export class Engine {
   close() {
     this.gallery?.close();
     this.music?.close();
+    this.video?.close();
     this.closeBackup();
     this.scanner.close();
     this.store.close();

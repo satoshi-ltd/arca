@@ -94,7 +94,7 @@ export function Onboarding({
         <StepIndicator step={1} />
       </>
     );
-  const folders = catalog?.volumes || [];
+  const folders = (catalog?.volumes || []).filter((v) => !v.video);
   const chosen = folders.filter((folder) => selected.includes(folder.id));
   const size = chosen.reduce((total, folder) => total + (folder.bytes || 0), 0);
   return (

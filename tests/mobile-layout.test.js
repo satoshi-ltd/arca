@@ -1037,7 +1037,7 @@ test("folder headers show the folder's kind glyph on phone and Fold; only tab sc
   const components = fs.readFileSync(new URL("../apps/mobile/src/components.jsx", import.meta.url), "utf8");
   const glyph = app.match(/const folderIcon = ([^;]+);/)[1];
   const librarySymbol = (library) => (library?.shows ? "podcast" : "music");
-  const icon = (context) => vm.runInNewContext(glyph, { librarySymbol, shownMusic: null, ...context });
+  const icon = (context) => vm.runInNewContext(glyph, { librarySymbol, shownMusic: null, videoFolder: false, ...context });
   assert.equal(icon({ photoFolder: true, musicFolder: false }), "gallery", "a catalog gallery without a local gallery flag still reads as a gallery");
   assert.equal(icon({ photoFolder: false, musicFolder: true, shownMusic: { library: { shows: 2 } } }), "podcast");
   assert.equal(icon({ photoFolder: false, musicFolder: true }), "music");

@@ -768,7 +768,7 @@ export function MusicLibrary({
       <OfflineEmpty
         icon="music"
         title="You are offline"
-        text="Connect to the hub to load this audio library."
+        text="Connect to the hub to load this Audio library."
         retry={reconnect}
       />
     ) : (

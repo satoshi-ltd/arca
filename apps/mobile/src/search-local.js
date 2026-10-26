@@ -3,6 +3,7 @@ import { isPlaylistPath } from "../../../packages/core/playlist.js";
 import { SEARCH_AUDIO, SEARCH_TYPES, dateMatches, dateQuery, searchFold, searchRank, searchTokens } from "../../../packages/core/search.js";
 import { formatDay, formatLength, plural, searchLibrary } from "./music-library.js";
 import { bytes } from "./format.js";
+import { videoSearchRoute } from "./video-library.js";
 
 export const SEARCH_SHOWN = 3;
 export const SEARCH_PHOTOS = 4;
@@ -15,6 +16,7 @@ export const SEARCH_LABELS = {
   shows: ["Shows", "show", "Show"],
   episodes: ["Episodes", "episode", "Episode"],
   playlists: ["Playlists", "playlist", "Playlist"],
+  videos: ["Movies & TV", "title", "Movies & TV"],
   photos: ["Photos", "photo", "Photo"],
   files: ["Files", "file", "File"],
 };
@@ -34,7 +36,7 @@ function libraryRows(library, query, volume) {
   };
 }
 
-export function buildResults({ query: raw, type = "", volumes, rows = {}, libraries = {}, photos = {}, limit = SEARCH_PHOTOS, offset = 0 }) {
+export function buildResults({ query: raw, type = "", volumes, rows = {}, libraries = {}, photos = {}, videos = [], limit = SEARCH_PHOTOS, offset = 0 }) {
   const { query, tokens } = searchTokens(raw);
   const result = { groups: [] };
   if (!tokens.length) return result;
@@ -75,7 +77,14 @@ export function buildResults({ query: raw, type = "", volumes, rows = {}, librar
     for (const item of rows[volume.id] || []) if (matches(searchFold(item.path))) take(item, searchRank(item.path.split("/").pop(), query));
   }
   const order = new Intl.Collator("en", { sensitivity: "base", numeric: true });
-  for (const group of SEARCH_TYPES) {
+  found.videos = wanted("videos")
+    ? videos.flatMap(({ volume, rows: hits }) =>
+        hits.map((row) => ({ score: searchRank(row.title, query), name: row.title, row: { ...row, volume: volume.id, folder: volume.name } })),
+      )
+    : [];
+  const groups = [...SEARCH_TYPES.filter((group) => group !== "videos")];
+  groups.splice(groups.indexOf("photos"), 0, "videos");
+  for (const group of groups) {
     const list = found[group];
     if (!list.length) continue;
     list.sort((a, b) => b.score - a.score || (b.date || "").localeCompare(a.date || "") || (b.rev || 0) - (a.rev || 0) || order.compare(a.name, b.name));
@@ -97,7 +106,7 @@ export function buildResults({ query: raw, type = "", volumes, rows = {}, librar
   return result;
 }
 
-const ROW_TYPE = { folders: "folder", songs: "song", albums: "album", artists: "artist", shows: "show", episodes: "episode", playlists: "playlist", photos: "photo", files: "file" };
+const ROW_TYPE = { folders: "folder", songs: "song", albums: "album", artists: "artist", shows: "show", episodes: "episode", playlists: "playlist", videos: "video", photos: "photo", files: "file" };
 
 export function searchVerb(item, resume = false) {
   if (item.type === "song") return "Play in album";
@@ -127,6 +136,10 @@ export function searchSubtitle(item, { files = 0, left = null } = {}) {
   if (item.type === "episode") return [item.show, left || formatLength(item.duration)].filter(Boolean).join(" · ");
   if (item.type === "playlist") return `${plural(item.songs, "song", "songs")} · ${item.folder}`;
   if (item.type === "period") return `${item.folder} · ${plural(item.count, "photo and video", "photos and videos")}`;
+  if (item.type === "video")
+    return item.kind === "episode"
+      ? [item.show, item.code, item.folder].filter(Boolean).join(" · ")
+      : [item.kind === "show" ? "TV show" : "Movie", item.year, item.folder].filter(Boolean).join(" · ");
   if (item.type === "photo") return [formatDay((item.date || "").slice(0, 10)), item.folder].filter(Boolean).join(" · ");
   return `${item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")) : item.folder} · ${bytes(item.size || 0)}`;
 }
@@ -163,7 +176,7 @@ export function searchRoute(item) {
   return [{ kind: "podcasts" }, { kind: "show", id: item.type === "show" ? item.id : item.showId }];
 }
 
-export const searchCanReveal = (item) => !item.gallery && !["folder", "artist", "period", "more", "page"].includes(item.type);
+export const searchCanReveal = (item) => !item.gallery && !["folder", "artist", "period", "video", "more", "page"].includes(item.type);
 
 export function searchLanding(item, mode = "default") {
   if (mode === "reveal" && searchCanReveal(item)) {
@@ -171,6 +184,7 @@ export function searchLanding(item, mode = "default") {
     return { to: "files", directory: focus?.includes("/") ? `${parentOf(focus)}/` : "", focus };
   }
   if (item.type === "folder") return { to: "folder" };
+  if (item.type === "video") return { to: "video", route: videoSearchRoute(item) };
   if (LIBRARY_TYPES.has(item.type))
     return { to: "music", route: searchRoute(item), play: mode === "play" || (mode === "default" && (item.type === "song" || item.type === "episode")) };
   if ((item.type === "photo" || item.type === "period") && item.gallery)

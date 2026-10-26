@@ -308,13 +308,14 @@ test("the sleep timer offers 30 minutes, 1 hour and the end of the item, and lab
   assert.equal(sleepLabel(SLEEP_OFF, 1000), "");
 });
 
-test("Folders splits selected folders into Folders, Photos and Audio, leaving out empty sections", () => {
-  const kinds = { a: "folders", b: "audio", c: "photos", d: "audio" };
-  const sections = folderSections(["a", "b", "c", "d"].map((id) => ({ id })), (f) => kinds[f.id]);
+test("Folders splits selected folders into Folders, Photos, Audio and Movies & TV, leaving out empty sections", () => {
+  const kinds = { a: "folders", b: "audio", c: "photos", d: "audio", e: "video" };
+  const sections = folderSections(["a", "b", "c", "d", "e"].map((id) => ({ id })), (f) => kinds[f.id]);
   assert.deepEqual(sections.map((section) => [section.label, section.folders.map((f) => f.id)]), [
     ["FOLDERS", ["a"]],
     ["PHOTOS", ["c"]],
     ["AUDIO", ["b", "d"]],
+    ["MOVIES & TV", ["e"]],
   ]);
   assert.deepEqual(folderSections([{ id: "b" }], (f) => kinds[f.id]).map((section) => section.kind), ["audio"]);
 });

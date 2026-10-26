@@ -1,7 +1,39 @@
 import { galleryVideoURI } from "./video-playback";
+import { requireOptionalNativeModule } from "expo";
+import { VideoLibrary, VideoSheet } from "./VideoLibrary";
+import { VideoPlayer } from "./VideoPlayer";
+import {
+  downloadTargets,
+  followingEpisode,
+  librarySummary as videoSummary,
+  searchVideos,
+  shelfTarget,
+  videoSearchRoute,
+  videoSheet,
+  watchedTargets,
+} from "./video-library.js";
+import {
+  acceptsWrites,
+  cachedVideoLibrary,
+  createArtLoader,
+  flushPositions,
+  isVideoFolder,
+  loadSubtitles,
+  markWatched,
+  pruneVideoArt,
+  pruneVideoLibraries,
+  refreshVideoLibrary,
+  sendPosition,
+  videoArtURI,
+  videoSource,
+  watchPrivateNetwork,
+  withQueuedPositions,
+} from "./video-sync.js";
+import { createVideoDownloads, downloadKey, downloadable, itemDownload, playbackCues, playbackSource } from "./video-downloads.js";
 import {
   DISCOVERY_MS,
   FOREGROUND_DISCOVERY_MS,
+  VIDEO_REFRESH_MS,
   INACTIVE_RESCAN_MS,
 } from "./sync-cadence.js";
 import { thumbnailFiles } from "./gallery-thumbnails";
@@ -187,7 +219,7 @@ import { FilePreview, RowThumb } from "./FilePreview";
 import { GlobalSearch } from "./GlobalSearch";
 import { NowPlayingPage } from "./NowPlayingPage";
 import { SEARCH_PAGE, SEARCH_PHOTOS, buildResults, forgetSearch, rememberSearch, searchLanding } from "./search-local";
-import { searchTokens } from "../../../packages/core/search.js";
+import { searchFold, searchTokens } from "../../../packages/core/search.js";
 import { cachedGalleryItems } from "./hub-gallery.js";
 import { savedPosition, timeLeft as leftLabel } from "./audio-positions.js";
 // Keep the native launch surface until fonts and local startup are ready.
@@ -294,6 +326,15 @@ export default function App() {
   const [musicHistory, setMusicHistory] = useState([]);
   const [historyTick, setHistoryTick] = useState(0);
   const [musicData, setMusicData] = useState(null);
+  const [videoRoute, setVideoRoute] = useState([{ kind: "home" }]);
+  const [videoData, setVideoData] = useState(null);
+  const [videoEdits, setVideoEdits] = useState(0);
+  const [videoSession, setVideoSession] = useState(null);
+  const [, setVideoArtTick] = useState(0);
+  const videoArtLoader = useRef(null);
+  const [videoDownloads, setVideoDownloads] = useState(() => new Map());
+  const downloads = useRef(null);
+  const videoBack = useRef(null);
   const [musicEdits, setMusicEdits] = useState(0);
   const [filesLoading, setFilesLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
@@ -834,6 +875,15 @@ export default function App() {
     );
   const musicFolder =
     !!folder && !photoFolder && isMusicFolder(catalog, folder.id);
+  const videoFolder =
+    !!folder && !photoFolder && !musicFolder && isVideoFolder(catalog, folder.id);
+  const videoView = videoFolder && fileView === "video";
+  const videoStreaming = videoFolder;
+  const writable = acceptsWrites(catalog, folder);
+  const videoDeep = videoView && videoRoute.length > 1;
+  useEffect(() => {
+    if (folder && !folder.selected && currentFolder?.selected) setFolder(currentFolder);
+  }, [folder, currentFolder?.selected]);
   const musicView = musicFolder && fileView === "music";
   const policyEntry = entries.find((entry) => entry.path === ".arcaignore");
   useEffect(() => {
@@ -954,6 +1004,170 @@ export default function App() {
     };
   }, [musicFolder, folder?.id, replica, status.last, status.musicTick, musicEdits]);
   const playingId = usePlayingId(musicFolder && screen === "Folders");
+  useEffect(() => {
+    if (replica && catalog)
+      pruneVideoLibraries(replica, catalog)
+        .then(() => pruneVideoArt(replica))
+        .catch(() => {});
+  }, [replica, catalog]);
+  useEffect(() => {
+    if (!videoFolder || !replica) return undefined;
+    videoArtLoader.current?.stop();
+    videoArtLoader.current = createArtLoader(replica, () => setVideoArtTick((tick) => tick + 1));
+    return () => videoArtLoader.current?.stop();
+  }, [videoFolder, folder?.id, replica]);
+  useEffect(() => {
+    if (!videoFolder || !replica) return undefined;
+    let active = true;
+    const key = `${replica.scope}:${folder.id}`;
+    const controller = new AbortController();
+    (async () => {
+      const cached = await cachedVideoLibrary(replica, folder.id);
+      await withQueuedPositions(replica, folder.id, cached);
+      if (!active) return;
+      setVideoData((old) => (old?.key === key && old.library && !cached ? old : { key, library: cached, offline: false }));
+      if (!connected) {
+        if (active) setVideoData({ key, library: cached, offline: true });
+        return;
+      }
+      try {
+        await flushPositions({ client, replica }).catch(() => 0);
+        const fresh = await refreshVideoLibrary(replica, folder.id, { signal: controller.signal, downloads: downloads.current });
+        await withQueuedPositions(replica, folder.id, fresh.library);
+        if (active) setVideoData({ key, library: fresh.library, offline: false });
+      } catch {
+        if (active) setVideoData({ key, library: cached, offline: true });
+      }
+    })().catch(() => active && setVideoData({ key, library: null, offline: true }));
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [videoFolder, folder?.id, replica, connected, status.offline, videoEdits]);
+  useEffect(() => {
+    if (!videoFolder || !replica || !connected) return undefined;
+    const key = `${replica.scope}:${folder.id}`;
+    let busy = false;
+    const refresh = async () => {
+      if (busy || AppState.currentState !== "active") return;
+      busy = true;
+      try {
+        const fresh = await refreshVideoLibrary(replica, folder.id, { downloads: downloads.current });
+        if (!fresh.changed) return;
+        await withQueuedPositions(replica, folder.id, fresh.library);
+        setVideoData((old) => (old?.key === key && !old.offline ? { key, library: fresh.library, offline: false } : old));
+      } catch {
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = setInterval(refresh, VIDEO_REFRESH_MS);
+    const listener = AppState.addEventListener("change", (value) => value === "active" && refresh());
+    return () => {
+      clearInterval(timer);
+      listener.remove();
+    };
+  }, [videoFolder, folder?.id, replica, connected]);
+  useEffect(() => {
+    if (!replica?.scope) return undefined;
+    const manager = createVideoDownloads({ replica, client, onChange: setVideoDownloads });
+    downloads.current = manager;
+    replica.videoDownloads = manager;
+    manager.load().catch(() => {});
+    return () => {
+      manager.stop().catch(() => {});
+      if (downloads.current === manager) downloads.current = null;
+      if (replica.videoDownloads === manager) replica.videoDownloads = null;
+    };
+  }, [replica, replica?.scope]);
+  useEffect(() => {
+    if (catalog) downloads.current?.pruneVolumes(catalog).catch(() => {});
+  }, [catalog, replica, replica?.scope]);
+  useEffect(() => {
+    if (!connected || status.offline || !replica?.scope) return;
+    downloads.current?.resume().catch(() => {});
+    flushPositions({ client, replica }).catch(() => {});
+  }, [connected, status.offline, replica, replica?.scope]);
+  useEffect(() => {
+    const network = requireOptionalNativeModule("ExpoNetwork") ? require("expo-network") : null;
+    const subscription = network?.addNetworkStateListener(() => downloads.current?.resume().catch(() => {}));
+    return () => subscription?.remove?.();
+  }, []);
+  const videoDownload = (item) => (folder && item?.path ? itemDownload(videoDownloads.get(downloadKey(folder.id, item.path)), item) : null);
+  function startDownload(items) {
+    if (folder) downloads.current?.add(folder.id, items).catch(() => {});
+  }
+  function removeDownloads(volume, items) {
+    return items.reduce((chain, item) => chain.then(() => downloads.current?.remove(volume, item.path)), Promise.resolve()).catch(() => {});
+  }
+  const shownVideo =
+    videoData?.key === `${replica?.scope}:${folder?.id}` ? videoData : null;
+  const videoArt = (key, size) => {
+    if (!key || !replica?.scope) return null;
+    const uri = videoArtURI(replica, key, size);
+    if ((!uri || (size === "large" && !uri.endsWith("-large.jpg"))) && connected && !status.offline && folder)
+      videoArtLoader.current?.request(folder.id, key, size);
+    return uri;
+  };
+  const videoSubtitle = !videoView
+    ? ""
+    : shownVideo?.library
+      ? videoSummary(shownVideo.library)
+      : "Streams from hub · not on this phone";
+  const videoTitleOpen = videoDeep && !!shownVideo?.library;
+  videoBack.current = videoTitleOpen ? () => setVideoRoute(videoRoute.slice(0, 1)) : null;
+  async function networkType() {
+    const network = requireOptionalNativeModule("ExpoNetwork") ? require("expo-network") : null;
+    return network ? network.getNetworkStateAsync() : null;
+  }
+  function playVideo(item, at = 0) {
+    if (!folder || !shownVideo?.library) return;
+    setVideoSession({
+      volume: folder.id,
+      item,
+      at,
+      library: shownVideo.library,
+    });
+  }
+  function closeVideo() {
+    setVideoSession(null);
+    setVideoEdits((count) => count + 1);
+  }
+  function videoAction(name, sheetValue) {
+    const volume = sheetValue.volume;
+    if (sheetValue.kind === "video-watch") {
+      const id = sheetValue.card.item.id;
+      setSheet(null);
+      if (name === "details") {
+        const target = shelfTarget(sheetValue.card.item);
+        if (target.route) setVideoRoute([videoRoute[0] || { kind: "home" }, target.route]);
+        else playVideo(sheetValue.card.item, sheetValue.card.item.position?.position || 0);
+        return;
+      }
+      run(
+        async () => {
+          await client.api("/v1/video/watch-next/remove", { volume, id });
+          setVideoEdits((count) => count + 1);
+          notices.push({ kind: "info", id: "video-watch", title: "Removed from Watch next", action: "video-watch-undo", actionLabel: "Undo", volume, videoId: id });
+        },
+        { hubOnly: true },
+      );
+      return;
+    }
+    const item = sheetValue.item;
+    setSheet(null);
+    if (name === "remove-download") {
+      removeDownloads(volume, downloadTargets(item));
+      return;
+    }
+    run(
+      async () => {
+        await markWatched(client, volume, watchedTargets(item), name === "watched");
+        setVideoEdits((count) => count + 1);
+      },
+      { hubOnly: true },
+    );
+  }
   const musicTab = musicRoute[0]?.kind;
   useEffect(() => {
     if (!musicFolder || !replica || musicTab !== "recent") return undefined;
@@ -969,7 +1183,7 @@ export default function App() {
   }, [musicFolder, musicTab, replica, playingId, historyTick]);
   const shownMusic =
     musicData?.key === `${replica?.scope}:${folder?.id}` ? musicData : null;
-  const folderIcon = photoFolder ? "gallery" : musicFolder ? librarySymbol(shownMusic?.library) : "folder";
+  const folderIcon = photoFolder ? "gallery" : musicFolder ? librarySymbol(shownMusic?.library) : videoFolder ? "clapperboard" : "folder";
   const shownLibrary = useRef(null);
   shownLibrary.current = shownMusic?.library || null;
   const playingVolume = playingFolder(playingId);
@@ -1249,7 +1463,13 @@ export default function App() {
           photos[v.id] = searchPhotos.current.get(v.id);
         }
       }
-    return buildResults({ query, type, volumes, rows, libraries, photos, limit: type ? SEARCH_PAGE : SEARCH_PHOTOS, offset });
+    const videos = [];
+    if (tokens.length && (!type || type === "videos"))
+      for (const v of (catalog?.volumes || []).filter((entry) => isVideoFolder(catalog, entry.id))) {
+        const library = await cachedVideoLibrary(r, v.id);
+        if (library) videos.push({ volume: { id: v.id, name: v.name }, rows: searchVideos(library, tokens, searchFold) });
+      }
+    return buildResults({ query, type, volumes, rows, libraries, photos, videos, limit: type ? SEARCH_PAGE : SEARCH_PHOTOS, offset });
   }
   const persistRecents = (list) => {
     setSearchRecents(list);
@@ -1290,6 +1510,18 @@ export default function App() {
       return;
     }
     persistRecents(rememberSearch(searchRecents, query));
+    if (item.type === "video") {
+      const known = locals.find((f) => f.id === item.volume) || volumes.find((v) => v.id === item.volume);
+      if (!known) return;
+      setView("Folders");
+      openFolder({ ...known, selected: locals.find((f) => f.id === item.volume)?.selected || 0 })
+        .then(() => {
+          setFileView("video");
+          setVideoRoute(videoSearchRoute(item));
+        })
+        .catch((e) => setError(e.message));
+      return;
+    }
     const target = locals.find((f) => f.id === (item.type === "folder" ? item.id : item.volume));
     if (!target) return;
     const cached = searchLibraries.current.get(target.id);
@@ -1357,7 +1589,7 @@ export default function App() {
     };
   }, [favoriteSignature, completedSignature, status.musicTick, status.busy, replica]);
   const favoriteFolderIcon = (f) =>
-    galleryFolder(f) ? "gallery" : isMusicFolder(catalog, f.id) ? audioSymbols[f.id] || "music" : "folders";
+    galleryFolder(f) ? "gallery" : isMusicFolder(catalog, f.id) ? audioSymbols[f.id] || "music" : isVideoFolder(catalog, f.id) ? "clapperboard" : "folders";
   const describeFavorite = (entry) => {
     const f = locals.find((item) => item.id === entry.folder);
     const volume = catalog?.volumes?.find((v) => v.id === entry.folder);
@@ -1376,7 +1608,19 @@ export default function App() {
               : null,
     };
   };
-  const folderKind = (f) => (galleryFolder(f) ? "photos" : isMusicFolder(catalog, f.id) ? "audio" : "folders");
+  const folderKind = (f) => (galleryFolder(f) ? "photos" : isMusicFolder(catalog, f.id) ? "audio" : isVideoFolder(catalog, f.id) ? "video" : "folders");
+  const streamedVolumes = volumes.filter((v) => isVideoFolder(catalog, v.id) && !locals.some((f) => f.id === v.id));
+  const streamedRow = (v, index) => (
+    <FolderRow
+      key={v.id}
+      grouped
+      divider={index > 0}
+      name={v.name}
+      icon="clapperboard"
+      description={`${folderSize(v)} · Streams from hub`}
+      onPress={() => openFolder({ id: v.id, name: v.name, selected: 0 }).catch((e) => setError(e.message))}
+    />
+  );
   const shownFavorites = sortFavorites(
     favorites.items,
     (entry) => {
@@ -1483,9 +1727,12 @@ export default function App() {
         ? "gallery"
         : isMusicFolder(catalog, f.id) && !galleryConfig(f)
           ? "music"
-          : "files",
+          : isVideoFolder(catalog, f.id) && !galleryConfig(f)
+            ? "video"
+            : "files",
     );
     setMusicRoute([{ kind: "artists" }]);
+    setVideoRoute([{ kind: "home" }]);
     setDirectory("");
     setShownRows(FIRST_ROWS);
   }
@@ -1649,7 +1896,7 @@ export default function App() {
         Array.isArray(item)
           ? `Delete ${count(item.length, "photo", "photos")}?`
           : "Delete this photo?",
-        "Deletes the selected photos and their Live Photo resources from the shared gallery for everyone. Originals stay in Photos. Recovery depends on this folder’s version retention.",
+        "Deletes the selected photos and their Live Photo resources from the shared Photos library for everyone. Originals stay in Photos. Recovery depends on this folder’s version retention.",
         () =>
           run(
             async () => {
@@ -2062,6 +2309,10 @@ export default function App() {
         setMusicRoute(musicRoute.slice(0, -1));
         return true;
       }
+      if (folder && view === "Folders" && videoBack.current) {
+        videoBack.current();
+        return true;
+      }
       if (folder && view === "Folders") {
         setFolder(null);
         return true;
@@ -2115,7 +2366,13 @@ export default function App() {
     else notices.clear("action");
   }, [error, status.error, locals, state.catalog, notices, folder?.id]);
   const noticeAction = (item) => {
-    if (item.action === "review" || item.action === "show") {
+    if (item.action === "video-watch-undo") {
+      notices.clear(item.id);
+      client.api("/v1/video/watch-next/restore", { volume: item.volume, id: item.videoId }).then(
+        () => setVideoEdits((count) => count + 1),
+        () => notices.push({ kind: "info", title: "Could not restore it. Try again when connected." }),
+      );
+    } else if (item.action === "review" || item.action === "show") {
       setView("History");
       setHistoryVolume(item.volume || "");
       setHistoryFilter(item.action === "review" ? "conflicts" : "revisions");
@@ -2290,7 +2547,7 @@ export default function App() {
               }
             >
               <KeyboardPane style={s.root}>
-                {!onboarding && (
+                {!onboarding && !videoTitleOpen && (
                   <View
                     style={[
                       s.viewHeader,
@@ -2378,7 +2635,7 @@ export default function App() {
                             <ScreenTitle
                               detail={compactAndroid}
                               contentIcon={folderIcon}
-                              subtitle={folderSubtitle}
+                              subtitle={videoView ? videoSubtitle : folderSubtitle}
                             >
                               {folder.name}
                             </ScreenTitle>
@@ -2451,17 +2708,19 @@ export default function App() {
                                 onPress={() => setGlobalSearch(true)}
                               />
                             )}
-                            <Button
-                              iconOnly
-                              label="Folder actions"
-                              icon="more"
-                              onPress={() =>
-                                setSheet({
-                                  kind: "folder-actions",
-                                  volume: folder,
-                                })
-                              }
-                            />
+                            {(!videoStreaming || !!currentFolder?.selected) && (
+                              <Button
+                                iconOnly
+                                label="Folder actions"
+                                icon="more"
+                                onPress={() =>
+                                  setSheet({
+                                    kind: "folder-actions",
+                                    volume: folder,
+                                  })
+                                }
+                              />
+                            )}
                           </View>
                         )}
                         {screen === "History" && wide && historyControls}
@@ -2543,7 +2802,7 @@ export default function App() {
                   enter={screenEnter}
                   enterStyle={[s.enter, onboarding && s.enterSetup]}
                 >
-                  {folder && screen === "Folders" && !photoFolder && !musicView && (
+                  {folder && screen === "Folders" && !videoView && !photoFolder && !musicView && (
                     <View style={[s.group, s.statsGrid]}>
                       {[
                         [
@@ -2613,7 +2872,7 @@ export default function App() {
                   )}
                   {screen === "Folders" && (
                     <>
-                      {!connected && (
+                      {!connected && !videoView && (
                         <Card
                           title={
                             connection?.leaving
@@ -2648,6 +2907,34 @@ export default function App() {
                       {folder ? (
                         photoFolder ? (
                           timeline
+                        ) : videoView ? (
+                          <VideoLibrary
+                            library={shownVideo?.library || null}
+                            offline={!!shownVideo?.offline || !connected}
+                            hubName={catalog?.name}
+                            route={videoRoute}
+                            setRoute={setVideoRoute}
+                            art={videoArt}
+                            play={playVideo}
+                            more={(item) =>
+                              setSheet({
+                                kind: "video-actions",
+                                item,
+                                volume: folder.id,
+                                folder: folder.name,
+                                downloaded: downloadTargets(item).some((target) => !!videoDownload(target)),
+                              })
+                            }
+                            mark={(item, watched) => videoAction(watched ? "watched" : "unwatched", { item, volume: folder.id })}
+                            hold={(card) => setSheet({ kind: "video-watch", card, volume: folder.id })}
+                            openDevices={() => setView("Devices")}
+                            download={videoDownload}
+                            startDownload={startDownload}
+                            cancelDownload={(items) => removeDownloads(folder.id, items)}
+                            canDownload={(item) => downloadable(item, Platform.OS)}
+                            scrollRef={galleryScroll}
+                            scrollY={galleryScrollY}
+                          />
                         ) : musicView ? (
                           <MusicLibrary
                             library={shownMusic?.library}
@@ -2696,7 +2983,7 @@ export default function App() {
                                     options={[
                                       { label: "Files", value: "files" },
                                       { label: "Recent", value: "recent" },
-                                      { label: "Gallery", value: "gallery" },
+                                      { label: "Photos", value: "gallery" },
                                     ]}
                                     value={fileView}
                                     onChange={(value) => {
@@ -2984,11 +3271,20 @@ export default function App() {
                                     {folderRowFor(f, index)}
                                   </Rise>
                                 ))}
+                                {section.kind === "video" &&
+                                  streamedVolumes.map((v, index) => streamedRow(v, section.folders.length + index))}
                               </View>
                             </Section>
                           ))}
+                          {!!streamedVolumes.length &&
+                            !locals.some((f) => folderKind(f) === "video" && !pinnedFolders.has(f.id)) && (
+                              <Section>
+                                <Text style={s.eyebrow}>MOVIES & TV</Text>
+                                <View style={s.group}>{streamedVolumes.map(streamedRow)}</View>
+                              </Section>
+                            )}
                           {volumes.some(
-                            (v) => !locals.some((f) => f.id === v.id),
+                            (v) => !locals.some((f) => f.id === v.id) && !isVideoFolder(catalog, v.id),
                           ) && (
                             <Section>
                               <Text style={s.eyebrow}>
@@ -2997,7 +3293,7 @@ export default function App() {
                               <View style={s.availableGroup}>
                                 {volumes
                                   .filter(
-                                    (v) => !locals.some((f) => f.id === v.id),
+                                    (v) => !locals.some((f) => f.id === v.id) && !isVideoFolder(catalog, v.id),
                                   )
                                   .map((v, index) => (
                                     <FolderRow
@@ -3788,6 +4084,50 @@ export default function App() {
             openAlbum={(track) => openPlaying([{ kind: "albums" }, { kind: "album", id: track.albumId }])}
             openArtist={(artist) => openPlaying([{ kind: "artists" }, { kind: "artist", id: artist.id }])}
           />
+          <VideoPlayer
+            session={videoSession}
+            resolve={(session) =>
+              playbackSource({
+                downloads: downloads.current,
+                volume: session.volume,
+                item: session.item,
+                mode: session.mode || "auto",
+                audio: session.audio ?? null,
+                stream: () =>
+                  videoSource({
+                    client,
+                    volume: session.volume,
+                    item: session.item,
+                    networkType,
+                    mode: session.mode || "auto",
+                    start: session.start || 0,
+                    audio: session.audio ?? null,
+                  }),
+              })
+            }
+            save={(session, position, duration) =>
+              sendPosition({ client, replica: engine.current, volume: session.volume, item: session.item, position, duration }).catch(() => {})
+            }
+            nextOf={(item) => (videoSession ? followingEpisode(videoSession.library, item) : null)}
+            art={(key, size) => videoArtURI(engine.current, key, size)}
+            loadCues={(session, path) =>
+              playbackCues({
+                downloads: downloads.current,
+                volume: session.volume,
+                item: session.item,
+                key: path,
+                load: () => loadSubtitles({ client, volume: session.volume, path, item: session.item }),
+              })
+            }
+            onNext={(item) => setVideoSession((old) => (old ? { ...old, item, at: item.position?.position || 0 } : old))}
+            watchNetwork={(source, onLeft) =>
+              watchPrivateNetwork(source, (listener) => {
+                const network = requireOptionalNativeModule("ExpoNetwork") ? require("expo-network") : null;
+                return network ? network.addNetworkStateListener(listener) : null;
+              }, onLeft)
+            }
+            onClose={closeVideo}
+          />
           <GlobalSearch
             visible={globalSearch}
             twoPane={wide && !compact}
@@ -3868,7 +4208,7 @@ export default function App() {
                                 subtitle: [describeFavorite(shownSheet.entry).caption, shownSheet.detail].filter(Boolean).join(" · "),
                                 menu: true,
                               }
-                            : musicSheet(shownSheet))}
+                            : musicSheet(shownSheet) || videoSheet(shownSheet))}
               busy={busy}
               busyLabel={actionLabel}
               onClose={() =>
@@ -4022,7 +4362,7 @@ export default function App() {
                 folder?.id === shownSheet.volume.id && (
                   <>
                     <View style={s.actionGroup}>
-                      {!!folder.selected && (
+                      {writable && (
                         <ActionRow
                           label="Add files…"
                           icon="upload"
@@ -4045,7 +4385,19 @@ export default function App() {
                           }}
                         />
                       )}
-                      {!!folder.selected && !musicFolder && (
+                      {videoFolder && !!folder.selected && (
+                        <ActionRow
+                          label={videoView ? "View files" : "View library"}
+                          icon={videoView ? "folder" : "clapperboard"}
+                          onPress={() => {
+                            setSheet(null);
+                            setFileView(videoView ? "files" : "video");
+                            setVideoRoute([{ kind: "home" }]);
+                            setShownRows(FIRST_ROWS);
+                          }}
+                        />
+                      )}
+                      {writable && !musicFolder && (
                         <ActionRow
                           label="Add photos…"
                           icon="image"
@@ -4078,7 +4430,7 @@ export default function App() {
                           }}
                         />
                       )}
-                      {!musicFolder && (
+                      {!musicFolder && !videoFolder && (
                       <ActionRow
                         label={source ? "Change album…" : "Link album…"}
                         note={!source && status.offline ? HUB_ONLY_REASON : undefined}
@@ -4136,6 +4488,9 @@ export default function App() {
                     </View>
                   </>
                 )}
+              {!!videoSheet(shownSheet) && (
+                <VideoSheet sheet={shownSheet} locked={actionLocked} act={(name) => videoAction(name, shownSheet)} />
+              )}
               {shownSheet.kind === "select" && (
                 <>
                   <Card title="Start syncing">

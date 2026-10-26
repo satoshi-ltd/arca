@@ -189,9 +189,12 @@ function collectUnusedObjects(store) {
       .all(Date.now())
       .map((r) => r.hash),
   );
+  // Video folders are read in place, so their rows never pin an object.
   for (const table of ["files", "revisions"])
     for (const r of store.db
-      .prepare(`SELECT hash FROM ${table} WHERE hash IS NOT NULL`)
+      .prepare(
+        `SELECT hash FROM ${table} WHERE hash IS NOT NULL AND volume NOT IN (SELECT volume FROM video_folders)`,
+      )
       .all())
       hashes.add(r.hash);
   for (const table of ["pending", "backup_history"])
@@ -199,6 +202,14 @@ function collectUnusedObjects(store) {
       const row = JSON.parse(r.row);
       if (row.hash) hashes.add(row.hash);
     }
+  const inPlace = new Set(
+    store.db
+      .prepare(
+        "SELECT hash FROM files WHERE hash IS NOT NULL AND volume IN (SELECT volume FROM video_folders)",
+      )
+      .all()
+      .map((r) => r.hash),
+  );
   const cutoff = Date.now() - 24 * 3600000;
   let objectsRemoved = 0;
   for (const name of fs.readdirSync(store.objects))
@@ -208,7 +219,8 @@ function collectUnusedObjects(store) {
       fs.statSync(path.join(store.objects, name)).mtimeMs < cutoff
     ) {
       fs.unlinkSync(path.join(store.objects, name));
-      store.db.prepare("DELETE FROM scan_cache WHERE hash=?").run(name);
+      if (!inPlace.has(name))
+        store.db.prepare("DELETE FROM scan_cache WHERE hash=?").run(name);
       objectsRemoved++;
     }
   return objectsRemoved;
@@ -272,7 +284,9 @@ export function folderRetentionOptions(volume, mode) {
 }
 export function applyFolderRetention(store) {
   for (const volume of store.volumes()) {
-    const mode = store.config.folderRetention?.[volume.id] || "1m";
+    const mode = store.streamOnly(volume.id)
+      ? "off"
+      : store.config.folderRetention?.[volume.id] || "1m";
     if (mode !== "forever")
       applyRetention(store, folderRetentionOptions(volume.id, mode), false);
   }

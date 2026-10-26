@@ -45,6 +45,35 @@ export function validPath(value) {
   }
   return value.normalize("NFC");
 }
+const QUICK_PART = 4 * 1024 * 1024;
+export function quickHashFile(file) {
+  const fd = fs.openSync(
+    file,
+    fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0),
+  );
+  try {
+    const size = fs.fstatSync(fd).size;
+    const hash = crypto.createHash("sha256").update(`arca-quick-1\0${size}\0`);
+    const buffer = Buffer.alloc(Math.min(size, QUICK_PART));
+    const part = (length, position) => {
+      let read = 0;
+      while (read < length) {
+        const count = fs.readSync(fd, buffer, read, length - read, position + read);
+        if (!count) break;
+        read += count;
+      }
+      return buffer.subarray(0, read);
+    };
+    hash.update(part(buffer.length, 0));
+    if (size > QUICK_PART) {
+      const tail = Math.min(QUICK_PART, size - QUICK_PART);
+      hash.update(part(tail, size - tail));
+    }
+    return hash.digest("hex");
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 export function hashFile(file) {
   const hash = crypto.createHash("sha256");
   const fd = fs.openSync(
@@ -260,6 +289,13 @@ export class Store {
       CREATE TABLE IF NOT EXISTS gallery_derivatives(key TEXT PRIMARY KEY,size INTEGER NOT NULL,used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS gallery_folders(volume TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS music_folders(volume TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS video_folders(volume TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS video_items(hash TEXT PRIMARY KEY,duration REAL,width INTEGER,height INTEGER,video_codec TEXT,audio_codec TEXT,container TEXT,checked INTEGER NOT NULL,retry INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS video_meta(key TEXT PRIMARY KEY,data TEXT,fetched INTEGER,error INTEGER);
+      CREATE TABLE IF NOT EXISTS video_overrides(volume TEXT NOT NULL,key TEXT NOT NULL,tmdb TEXT,kind TEXT,kids INTEGER,PRIMARY KEY(volume,key));
+      CREATE TABLE IF NOT EXISTS video_positions(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,position REAL NOT NULL,duration REAL NOT NULL,device TEXT NOT NULL,name TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS video_watched(volume TEXT NOT NULL,path TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(volume,path));
+      CREATE TABLE IF NOT EXISTS video_hidden(volume TEXT NOT NULL,id TEXT NOT NULL,since INTEGER NOT NULL,PRIMARY KEY(volume,id));
       CREATE TABLE IF NOT EXISTS audio_positions(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,position REAL NOT NULL,duration REAL NOT NULL,device TEXT NOT NULL,name TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS audio_outbox(volume TEXT NOT NULL,path TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS music_tracks(hash TEXT PRIMARY KEY,title TEXT,artist TEXT,album_artist TEXT,album TEXT,track INTEGER,disc INTEGER,year INTEGER,genre TEXT,duration REAL,codec TEXT,cover TEXT,checked INTEGER NOT NULL,retry INTEGER NOT NULL DEFAULT 0,release TEXT);
@@ -365,6 +401,14 @@ export class Store {
         .some((column) => column.name === "release")
     )
       this.db.exec("ALTER TABLE music_tracks ADD COLUMN release TEXT");
+    for (const column of ["audio_tracks", "subtitle_streams"])
+      if (
+        !this.db
+          .prepare("PRAGMA table_info(video_items)")
+          .all()
+          .some((row) => row.name === column)
+      )
+        this.db.exec(`ALTER TABLE video_items ADD COLUMN ${column} TEXT`);
     if (
       !this.db
         .prepare("PRAGMA table_info(snapshot_sessions)")
@@ -495,6 +539,10 @@ export class Store {
         "added_dates",
         "audio_positions",
         "audio_outbox",
+        "video_overrides",
+        "video_positions",
+        "video_watched",
+        "video_hidden",
       ])
         this.db.prepare(`DELETE FROM ${table} WHERE volume=?`).run(id);
       this.db
@@ -504,6 +552,7 @@ export class Store {
         .run(id);
       this.db.prepare("DELETE FROM gallery_folders WHERE volume=?").run(id);
       this.db.prepare("DELETE FROM music_folders WHERE volume=?").run(id);
+      this.db.prepare("DELETE FROM video_folders WHERE volume=?").run(id);
       this.db.prepare("DELETE FROM volumes WHERE id=?").run(id);
       if (removeMarker) fs.unlinkSync(marker);
       this.db.exec("COMMIT");
@@ -741,7 +790,21 @@ export class Store {
     if (!/^[a-f0-9]{64}$/.test(hash || "")) fail("Invalid content hash");
     return path.join(this.objects, hash);
   }
-  capture(file, accepted = null) {
+  streamOnly(id) {
+    return (
+      this.config.role === "hub" &&
+      !!this.db.prepare("SELECT 1 FROM video_folders WHERE volume=?").get(id)
+    );
+  }
+  contentHash(volume, file) {
+    return this.streamOnly(volume) ? quickHashFile(file) : hashFile(file);
+  }
+  async holds(volume, file, hash) {
+    if (this.streamOnly(volume) && quickHashFile(file) === hash) return true;
+    return (await hashFileAsync(file)) === hash;
+  }
+  capture(file, accepted = null, inPlace = false) {
+    const hashOf = inPlace ? quickHashFile : hashFile;
     const signature = () => {
       const s = fs.statSync(file, { bigint: true });
       return [s.dev, s.ino, s.size, s.mtimeNs, s.ctimeNs].join(":");
@@ -760,20 +823,30 @@ export class Store {
     if (
       cached &&
       cached.signature === before &&
-      (cached.hash === accepted || fs.existsSync(this.blob(cached.hash)))
+      (inPlace ||
+        cached.hash === accepted ||
+        fs.existsSync(this.blob(cached.hash)))
     ) {
       // Coarse-timestamp filesystems can hide a same-size rewrite, so trusted content is re-hashed every one to two weeks.
       if (Date.now() - cached.verified < reverifyAfter(cached.hash))
         return { hash: cached.hash, size: cached.size };
       const object = this.blob(cached.hash);
       if (
-        hashFile(file) === cached.hash &&
+        (hashOf(file) === cached.hash || (inPlace && hashFile(file) === cached.hash)) &&
         signature() === before &&
-        (!fs.existsSync(object) || hashFile(object) === cached.hash)
+        (inPlace || !fs.existsSync(object) || hashFile(object) === cached.hash)
       ) {
         record([file, before, cached.hash, cached.size, Date.now()]);
         return { hash: cached.hash, size: cached.size };
       }
+    }
+    if (inPlace) {
+      const hash = quickHashFile(file);
+      const size = fs.statSync(file).size;
+      if (before !== signature())
+        fail("File changed during scan; retrying", 409);
+      record([file, before, hash, size, Date.now()]);
+      return { hash, size };
     }
     requireSpace(this.objects, fs.statSync(file).size);
     const tmp = path.join(this.objects, `${crypto.randomUUID()}.tmp`);
@@ -885,6 +958,7 @@ export class Store {
   }
   scan(v, scopes = null, checkpoint = () => {}) {
     this.assertVolume(v);
+    const inPlace = this.streamOnly(v.id);
     const result = new Map();
     const excluded = this.ignoreRules(v);
     const names = new Map();
@@ -947,6 +1021,7 @@ export class Store {
           this.capture(
             this.filePath(v, name),
             known && !known.deleted ? known.hash : null,
+            inPlace,
           ),
         );
       } else fail(`Unsupported file: ${name}`, 409);
@@ -1126,17 +1201,18 @@ export class Store {
       if (!fs.existsSync(file)) {
         fs.renameSync(side, file);
         syncDirectory(path.dirname(file));
-      } else if (this.settle(side, known))
+      } else if (this.settle(side, known, row.volume))
         this.markDirty(row.volume, row.path + suffix);
     }
     this.db
       .prepare("UPDATE pending SET side=NULL WHERE volume=? AND path=?")
       .run(row.volume, row.path);
   }
-  settle(side, known) {
+  settle(side, known, volume = null) {
     let actual = null;
     try {
-      actual = hashFile(side);
+      actual = volume ? this.contentHash(volume, side) : hashFile(side);
+      if (volume && !known(actual) && this.streamOnly(volume)) actual = hashFile(side);
     } catch {
       actual = null;
     }
@@ -1267,6 +1343,7 @@ export class Store {
             this.displace(file, row),
             (actual) =>
               actual === previous.hash || this.knownContent(row, actual, expected),
+            row.volume,
           ),
         );
       syncDirectory(path.dirname(file));
@@ -1288,7 +1365,7 @@ export class Store {
       const known = (actual) => this.knownContent(row, actual, expected);
       if (row.deleted) {
         if (fs.existsSync(file)) {
-          const side = this.settle(this.displace(file, row), known);
+          const side = this.settle(this.displace(file, row), known, row.volume);
           if (side && !fs.existsSync(file)) {
             fs.renameSync(side, file);
             this.markDirty(row.volume, row.path);
@@ -1316,7 +1393,7 @@ export class Store {
             if (side && !fs.existsSync(file)) fs.renameSync(side, file);
             throw error;
           }
-          if (side) keep(this.settle(side, known));
+          if (side) keep(this.settle(side, known, row.volume));
         } finally {
           fs.rmSync(tmp, { force: true });
         }
@@ -1365,11 +1442,13 @@ export class Store {
       this.db
         .prepare("DELETE FROM pending WHERE volume=? AND path=?")
         .run(row.volume, row.path);
+      const quick = written && !row.deleted && !row.directory && this.streamOnly(row.volume);
       if (written)
         this.db
           .prepare("INSERT OR REPLACE INTO scan_cache VALUES(?,?,?,?,?)")
-          .run(file, written, row.hash, row.size, Date.now());
+          .run(file, written, quick ? quickHashFile(file) : row.hash, row.size, Date.now());
       this.db.exec("COMMIT");
+      if (quick) this.markDirty(row.volume, row.path);
     } catch (e) {
       this.db.exec("ROLLBACK");
       throw e;
@@ -1396,7 +1475,8 @@ export class Store {
     const object = this.blob(hash);
     if (fs.existsSync(object)) return object;
     const v = this.volume(volume);
-    if (this.config.role === "hub" || !v.selected) return null;
+    if (this.config.role === "hub" ? !this.streamOnly(volume) : !v.selected)
+      return null;
     const file = this.filePath(v, name);
     const signature = fileSignature(file);
     if (!signature) return null;

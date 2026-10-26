@@ -15,7 +15,7 @@ export class GalleryDeletions {
     try {
       await r.requireActiveReplica();
       if (!r.client.state().catalog?.galleryDeletion)
-        throw new Error("Update the hub to delete shared gallery photos.");
+        throw new Error("Update the hub to delete shared photos.");
       const folder = (await r.store.folders(r.scope)).find(
         (f) => f.id === volume && f.selected,
       );

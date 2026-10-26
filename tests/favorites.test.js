@@ -115,3 +115,32 @@ test("a replica keeps a pinned path until its folder has finished a first synchr
   store.db.prepare("UPDATE volumes SET last_sync=? WHERE id=?").run(new Date().toISOString(), docs.id);
   assert.deepEqual((await call("/v1/favorites")).favorites, [], "once the folder is in sync a missing path is gone");
 });
+
+test("a replica can pin a hub-only Movies & TV folder it streams, but not an ordinary folder it does not sync", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-favorites-replica-"));
+  init(home, { port: 0, name: "Mac", role: "replica" });
+  const d = await start(home, { timer: false });
+  t.after(async () => {
+    await d.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const call = async (route, body) => {
+    const response = await fetch(`http://127.0.0.1:${d.port}${route}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { authorization: `Bearer ${d.engine.config.adminToken}`, "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const value = await response.json();
+    if (!response.ok) throw Object.assign(new Error(value.error), { status: response.status });
+    return value;
+  };
+  d.engine.config.catalog = [
+    { id: "media", name: "media", video: true },
+    { id: "docs", name: "documents" },
+  ];
+  const saved = await call("/v1/favorites", { favorites: [{ folder: "media", kind: "folder", target: "", label: "old" }] });
+  assert.deepEqual(saved.favorites, [{ folder: "media", kind: "folder", target: "", label: "media" }]);
+  await assert.rejects(call("/v1/favorites", { favorites: [{ folder: "docs", kind: "folder", target: "", label: "documents" }] }), { status: 404 });
+  d.engine.config.catalog = [{ id: "docs", name: "documents" }];
+  assert.deepEqual((await call("/v1/favorites")).favorites, [], "a video folder gone from the hub drops its pin");
+});

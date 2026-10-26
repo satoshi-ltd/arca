@@ -10,7 +10,7 @@ import { motion } from "./design-tokens.js";
 import { SEARCH_LABELS, searchCanReveal, searchItems, searchSubtitle, searchTitle, searchVerb, searchViewAction } from "./search-local";
 
 const AnimatedKeyboardView = Animated.createAnimatedComponent(KeyboardAvoidingView);
-const LEAD = { recent: "clock", folder: "folders", song: "music", album: "album", artist: "artist", show: "podcast", episode: "podcast", playlist: "playlist", period: "gallery", more: "more", page: "more" };
+const LEAD = { recent: "clock", folder: "folders", song: "music", album: "album", artist: "artist", show: "podcast", episode: "podcast", playlist: "playlist", video: "clapperboard", period: "gallery", more: "more", page: "more" };
 
 function Lead({ item, cover }) {
   const { s, c } = useDesign();

@@ -155,7 +155,7 @@ test("the UX review's wording and tones hold across desktop, phone and site", ()
   for (const style of ["inputShell", "codeCell", "button", "input"])
     assert.match(theme, new RegExp(`\\n    ${style}: \\{[^}]*borderColor: c\\.control,`), `${style} draws the control border`);
   assert.match(mobile, /\/stop syncing\/i\.test\(shownConfirmation\.label\)\s+\? "unlink"/, "Stop syncing and delete keeps the unlink icon");
-  assert.match(site, /<title>Arca — Your files\. Your devices\.<\/title>/);
+  assert.match(site, /<title>Arca — Free self-hosted cloud for files, photos, music &amp; movies<\/title>/);
 });
 
 test("every phone tab has its own icon", () => {

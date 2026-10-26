@@ -80,14 +80,24 @@ export const iconNames = {
   "audio-lines": "AudioLines",
   podcast: "Podcast",
   "rotate-ccw": "RotateCcw",
+  "eye-off": "EyeOff",
+  captions: "Captions",
   "rotate-cw": "RotateCw",
   star: "Star",
   "star-off": "StarOff",
   "circle-minus": "CircleMinus",
   cloud: "Cloud",
   "panel-left-open": "PanelLeftOpen",
+  clapperboard: "Clapperboard",
+  smile: "Smile",
+  "arrow-down-to-line": "ArrowDownToLine",
 };
 export const icons = {
+  "arrow-down-to-line": [
+    ["path", { d: "M12 17V3" }],
+    ["path", { d: "m6 11 6 6 6-6" }],
+    ["path", { d: "M19 21H5" }],
+  ],
   "circle-arrow-up": [
     ["circle", { cx: "12", cy: "12", r: "10" }],
     ["path", { d: "m16 12-4-4-4 4" }],
@@ -1070,6 +1080,16 @@ export const icons = {
     ["circle", { cx: "12", cy: "11", r: "1" }],
     ["path", { d: "M13 17a1 1 0 1 0-2 0l.5 4.5a.5.5 0 1 0 1 0Z" }],
   ],
+  captions: [
+    ["rect", { width: "18", height: "14", x: "3", y: "5", rx: "2", ry: "2" }],
+    ["path", { d: "M7 15h4M15 15h2M7 11h2M13 11h4" }],
+  ],
+  "eye-off": [
+    ["path", { d: "M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" }],
+    ["path", { d: "M14.084 14.158a3 3 0 0 1-4.242-4.242" }],
+    ["path", { d: "M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" }],
+    ["path", { d: "m2 2 20 20" }],
+  ],
   "rotate-ccw": [
     ["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" }],
     ["path", { d: "M3 3v5h5" }],
@@ -1100,5 +1120,17 @@ export const icons = {
     ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }],
     ["path", { d: "M9 3v18" }],
     ["path", { d: "m14 9 3 3-3 3" }],
+  ],
+  clapperboard: [
+    ["path", { d: "M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z" }],
+    ["path", { d: "m6.2 5.3 3.1 3.9" }],
+    ["path", { d: "m12.4 3.4 3.1 4" }],
+    ["path", { d: "M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" }],
+  ],
+  smile: [
+    ["circle", { cx: "12", cy: "12", r: "10" }],
+    ["path", { d: "M8 14s1.5 2 4 2 4-2 4-2" }],
+    ["line", { x1: "9", x2: "9.01", y1: "9", y2: "9" }],
+    ["line", { x1: "15", x2: "15.01", y1: "9", y2: "9" }],
   ],
 };

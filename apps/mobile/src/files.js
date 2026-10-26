@@ -4,6 +4,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { toByteArray } from "base64-js";
 import { validPath, CHUNK } from "./replica";
+import { DOWNLOAD_NAME } from "./video-downloads.js";
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 function id(value) {
   if (typeof value !== "string" || !/^[a-zA-Z0-9-]+$/.test(value))
@@ -53,7 +54,20 @@ export const files = {
       throw new Error("Invalid cover");
     return new File(root, id(scope), "music-covers", `${key}-${size}.jpg`).uri;
   },
+  videoArts: (scope) => new Directory(root, id(scope), "video-art").uri,
+  videoArt(scope, key, size) {
+    if (!/^[a-f0-9]{64}$/.test(key) || !["small", "large"].includes(size))
+      throw new Error("Invalid art");
+    return new File(root, id(scope), "video-art", `${key}-${size}.jpg`).uri;
+  },
   partial: (scope, hash) => new File(root, id(scope), "partial", id(hash)).uri,
+  videoDownloads: (scope, volume) =>
+    new Directory(root, id(scope), "video-downloads", id(volume)).uri,
+  videoDownload(scope, volume, name) {
+    if (!DOWNLOAD_NAME.test(name))
+      throw new Error("Invalid download");
+    return new File(root, id(scope), "video-downloads", id(volume), name).uri;
+  },
 
   parent: (uri) => Paths.dirname(uri),
   async mkdir(uri) {

@@ -948,7 +948,11 @@ test("destroy hub deletes its files/history and returns to setup without deletin
   const covers = path.join(hub.engine.store.home, "music-covers");
   fs.mkdirSync(covers, { recursive: true });
   fs.writeFileSync(path.join(covers, `${"a".repeat(64)}-360.jpg`), "cover");
+  const downloads = path.join(hub.engine.store.home, "video-downloads");
+  fs.mkdirSync(downloads, { recursive: true });
+  fs.writeFileSync(path.join(downloads, `${"b".repeat(32)}.mkv`), "film");
   await hub.api("/v1/destroy-hub", { confirmed: true });
+  assert.equal(fs.existsSync(downloads), false, "erasing removes downloaded videos");
   assert.equal(fs.existsSync(volume.path), false);
   assert.equal(fs.existsSync(path.join(covers, `${"a".repeat(64)}-360.jpg`)), false, "erasing the hub removes music covers");
   assert.equal(

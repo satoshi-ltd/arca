@@ -14,6 +14,18 @@ import {
 } from "./gallery-media.js";
 import { Gallery, mediaKind } from "./gallery.js";
 import { Music } from "./music.js";
+import { Video } from "./video.js";
+import {
+  PLAYER_ORIGINS,
+  VIDEO_TICKET_ROUTES,
+  hlsSession,
+  loopbackAllowed,
+  serveHls,
+  serveVideoTicket,
+  videoRoute,
+} from "./video-routes.js";
+import { VideoSessions } from "./video-sessions.js";
+import { VideoDownloads } from "./video-downloads.js";
 import { conditionNotices } from "../../apps/desktop/src/notice-contract.js";
 import { inspectSetupRoot } from "./setup.js";
 import { scopedActivity, historyFolderIds } from "../core/scoped-activity.js";
@@ -44,7 +56,7 @@ import {
 } from "./maintenance.js";
 import { snapshotCapacity, snapshotPage } from "./snapshots.js";
 import { Web } from "./web.js";
-import { Engine, HUB_UNAVAILABLE } from "./engine.js";
+import { Engine, HUB_UNAVAILABLE, STREAM_ONLY, STREAM_ONLY_EDIT } from "./engine.js";
 import {
   Network,
   verifiedTailnetURL,
@@ -82,6 +94,11 @@ function equal(a, b) {
   const y = Buffer.from(b);
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
+const heldLocks = new Set();
+function releaseLock(lock) {
+  heldLocks.delete(lock);
+  fs.unlinkSync(lock);
+}
 export async function start(home, options = {}) {
   const lock = path.join(path.resolve(home), "daemon.lock");
   try {
@@ -90,14 +107,16 @@ export async function start(home, options = {}) {
     if (e.code !== "EEXIST") throw e;
     const pid = Number(fs.readFileSync(lock, "utf8"));
     try {
+      if (pid === process.pid && !heldLocks.has(lock)) throw Object.assign(new Error("stale"), { code: "ESRCH" });
       process.kill(pid, 0);
       fail("A daemon already owns this state directory", 409);
     } catch (error) {
       if (error.code !== "ESRCH") throw error;
-      fs.unlinkSync(lock);
+      releaseLock(lock);
       fs.writeFileSync(lock, String(process.pid), { flag: "wx", mode: 0o600 });
     }
   }
+  heldLocks.add(lock);
   let engine;
   try {
     engine = new Engine(home);
@@ -106,7 +125,7 @@ export async function start(home, options = {}) {
       fail("Only hub and replica daemons are supported");
     }
   } catch (e) {
-    fs.unlinkSync(lock);
+    releaseLock(lock);
     throw e;
   }
   if (options.metadataTimeoutMs)
@@ -124,6 +143,11 @@ export async function start(home, options = {}) {
   engine.gallery.resume();
   const music = () => (engine.music ||= new Music(s));
   music().resume();
+  const video = () => (engine.video ||= new Video(s, { tmdb: options.tmdb }));
+  video().resume();
+  const videoSessions = new VideoSessions(s.home, options.videoSessions);
+  engine.videoSessions = videoSessions;
+  engine.videoDownloads = new VideoDownloads(engine, options.videoDownloads);
   const images = new ImageMaintenance(engine);
   let web;
   try {
@@ -134,12 +158,13 @@ export async function start(home, options = {}) {
       );
   } catch (error) {
     engine.close();
-    fs.unlinkSync(lock);
+    releaseLock(lock);
     throw error;
   }
   const playbackTickets = new Map();
   const previewTickets = new Map();
   const musicTickets = new Map();
+  const videoTickets = new Map();
   const snapshotReads = new Map();
   const readSnapshot = (volume) => {
     const generation =
@@ -171,6 +196,8 @@ export async function start(home, options = {}) {
         s.db.prepare("SELECT * FROM gallery_folders ORDER BY volume").all(),
         s.db.prepare("SELECT * FROM music_folders ORDER BY volume").all(),
         engine.music?.indexed || 0,
+        s.db.prepare("SELECT * FROM video_folders ORDER BY volume").all(),
+        engine.video?.indexed || 0,
         ...(config.role === "replica"
           ? [engine.hubUnavailable, engine.phase, engine.error, engine.paused]
           : []),
@@ -322,6 +349,43 @@ export async function start(home, options = {}) {
         });
       // Media elements cannot send the bearer token, so a loopback ticket opens one current preview, video or track only.
       const playbackUrl = new URL(req.url, "http://localhost");
+      const playerOrigins = PLAYER_ORIGINS;
+      const loopbackSession = pathname.startsWith("/v1/video/hls/")
+        ? videoSessions.sessions.get(hlsSession(pathname))
+        : null;
+      if (loopbackAllowed(loopbackSession, req.method, remote, req.headers.origin)) {
+        if (req.headers.origin)
+          res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
+        loopbackSession.touched = Date.now();
+        return await serveHls(
+          { engine, config, req, res, sessions: videoSessions },
+          loopbackSession,
+          pathname,
+        );
+      }
+      if (
+        VIDEO_TICKET_ROUTES.includes(pathname) &&
+        playbackUrl.searchParams.has("ticket")
+      ) {
+        const ticket = videoTickets.get(playbackUrl.searchParams.get("ticket"));
+        if (
+          !["GET", "HEAD"].includes(req.method) ||
+          !["127.0.0.1", "::1"].includes(remote) ||
+          !ticket ||
+          ticket.route !== pathname ||
+          ticket.expires < Date.now() ||
+          ticket.owner !== config.adminToken ||
+          (req.headers.origin && !playerOrigins.includes(req.headers.origin))
+        )
+          fail("Playback access expired", 401);
+        if (req.headers.origin)
+          res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
+        return await serveVideoTicket(
+          { video: video(), engine, s, config, req, res },
+          pathname,
+          ticket,
+        );
+      }
       if (
         [
           "/v1/gallery/media",
@@ -348,13 +412,7 @@ export async function start(home, options = {}) {
               : "/v1/gallery/media") !== pathname ||
           ticket.expires < Date.now() ||
           ticket.owner !== config.adminToken ||
-          (req.headers.origin &&
-            ![
-              "tauri://localhost",
-              "http://tauri.localhost",
-              "https://tauri.localhost",
-              "http://127.0.0.1:1425",
-            ].includes(req.headers.origin))
+          (req.headers.origin && !playerOrigins.includes(req.headers.origin))
         )
           fail("Playback access expired", 401);
         if (ticket.preview)
@@ -835,10 +893,17 @@ export async function start(home, options = {}) {
           s.visibleRules(volume)(name, false)
         )
           fail("This file is no longer available", 404);
-        const file = config.role === "hub" ? s.blob(hash) : s.filePath(v, name);
+        const file =
+          config.role === "hub"
+            ? s.localContent(volume, name, hash) || s.blob(hash)
+            : s.filePath(v, name);
         if (!fs.existsSync(file))
           fail("Local copy missing. Sync before downloading.", 409);
-        if ((await hashFileAsync(file)) !== hash)
+        if (
+          s.streamOnly(volume) && file !== s.blob(hash)
+            ? !(await s.holds(volume, file, hash))
+            : (await hashFileAsync(file)) !== hash
+        )
           fail("File changed. Sync before downloading.", 409);
         checkCredential();
         res.writeHead(200, {
@@ -909,7 +974,7 @@ export async function start(home, options = {}) {
       }
       if (req.method === "GET" && route === "/v1/search") {
         requireAdmin();
-        return send(200, searchLocal(s, url.searchParams, music()));
+        return send(200, searchLocal(s, url.searchParams, music(), video()));
       }
       if (req.method === "GET" && route === "/v1/file-preview") {
         requireAdmin();
@@ -980,6 +1045,29 @@ export async function start(home, options = {}) {
           url: `http://127.0.0.1:${server.address().port}/v1/music/media?ticket=${ticket}`,
         });
       }
+      if (route.startsWith("/v1/video/"))
+        return await videoRoute({
+          req,
+          res,
+          url,
+          route,
+          send,
+          admin,
+          device,
+          browserSession,
+          remote,
+          engine,
+          s,
+          config,
+          video: video(),
+          tickets: videoTickets,
+          sessions: videoSessions,
+          credential,
+          port: () => server.address().port,
+          checkCredential,
+          jsonBody,
+          authorizedWork,
+        });
       if (req.method === "GET" && route === "/v1/catalog") {
         requireHub();
         const totals = await s.allVisibleTotals();
@@ -989,6 +1077,7 @@ export async function start(home, options = {}) {
           gallery: true,
           galleryDeletion: true,
           music: true,
+          video: true,
           changes: true,
           retainedRevisions: true,
           addedDates: true,
@@ -1012,6 +1101,7 @@ export async function start(home, options = {}) {
               .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
               .get(v.id),
             music: music().isMusic(v.id),
+            video: video().isVideo(v.id),
             conflicts: s.unresolvedConflicts(v.id),
             conflictRevision: s.conflictRevision(v.id),
             ...totals.get(v.id),
@@ -1035,6 +1125,7 @@ export async function start(home, options = {}) {
                       .prepare("SELECT 1 FROM gallery_folders WHERE volume=?")
                       .get(v.id),
                     music: music().isMusic(v.id),
+                    video: video().isVideo(v.id),
                     ...totals.get(v.id),
                   };
                 }),
@@ -1077,6 +1168,7 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/changes") {
         requireHub();
         const volume = s.volume(url.searchParams.get("volume")).id;
+        if (!admin && s.streamOnly(volume)) fail(STREAM_ONLY, 409);
         const committed = Number(
           s.db
             .prepare("SELECT seq FROM sqlite_sequence WHERE name='revisions'")
@@ -1111,6 +1203,7 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/snapshot") {
         requireHub();
         const volume = s.volume(url.searchParams.get("volume")).id;
+        if (!admin && s.streamOnly(volume)) fail(STREAM_ONLY, 409);
         const controller = new AbortController();
         const disconnect = () => controller.abort();
         res.once("close", disconnect);
@@ -1155,7 +1248,7 @@ export async function start(home, options = {}) {
             fail("Invalid archive cursor", 409);
           const rows = s.db
             .prepare(
-              "SELECT rev FROM revisions WHERE rev>? ORDER BY rev LIMIT ?",
+              "SELECT rev FROM revisions WHERE rev>? AND volume NOT IN (SELECT volume FROM video_folders) ORDER BY rev LIMIT ?",
             )
             .all(after, 10001);
           return send(200, {
@@ -1185,7 +1278,7 @@ export async function start(home, options = {}) {
             fail("Invalid archive cursor", 409);
           const rows = s.db
             .prepare(
-              "SELECT * FROM revisions WHERE rev>? AND rev<=? ORDER BY rev LIMIT ?",
+              "SELECT * FROM revisions WHERE rev>? AND rev<=? AND volume NOT IN (SELECT volume FROM video_folders) ORDER BY rev LIMIT ?",
             )
             .all(after, through, limit + 1);
           return send(200, {
@@ -1196,7 +1289,11 @@ export async function start(home, options = {}) {
           });
         }
         return send(200, {
-          revisions: s.db.prepare("SELECT * FROM revisions ORDER BY rev").all(),
+          revisions: s.db
+            .prepare(
+              "SELECT * FROM revisions WHERE volume NOT IN (SELECT volume FROM video_folders) ORDER BY rev",
+            )
+            .all(),
           through: s.db
             .prepare("SELECT COALESCE(MAX(rev),0) AS n FROM revisions")
             .get().n,
@@ -1586,6 +1683,11 @@ export async function start(home, options = {}) {
                 "This folder is an audio library. A folder is a gallery or an audio library, not both.",
                 409,
               );
+            if (video().isVideo(b.volume))
+              fail(
+                "This folder is a video library. A folder is a gallery, an audio library or a video library, not more than one.",
+                409,
+              );
             engine.gallery ||= new Gallery(s);
             engine.gallery.mark(b.volume);
           });
@@ -1618,6 +1720,7 @@ export async function start(home, options = {}) {
                   !Number.isFinite(Date.parse(b.captured)))
               )
                 fail("Invalid capture date");
+              if (!admin && s.streamOnly(b.volume)) fail(STREAM_ONLY, 403);
               const result = await engine.propose(b, device);
               if (b.hash && b.captured)
                 s.db
@@ -1634,12 +1737,14 @@ export async function start(home, options = {}) {
                   b.hash,
                 );
                 music().schedule(b.volume, result.conflictPath || b.path);
+                video().schedule(b.volume, result.conflictPath || b.path);
               }
               return result;
             }),
           );
         }
         if (route === "/v1/conflict-choice") {
+          if (s.streamOnly(b.volume)) fail(STREAM_ONLY_EDIT, 409);
           if (config.role !== "hub") {
             requireAdmin();
             if (!s.volume(b.volume).selected)
@@ -1699,6 +1804,7 @@ export async function start(home, options = {}) {
         }
         if (route === "/v1/rename-file") {
           requireAdmin();
+          if (s.streamOnly(b.volume)) fail(STREAM_ONLY_EDIT, 409);
           return send(
             200,
             await authorizedWork(() =>
@@ -1761,14 +1867,18 @@ export async function start(home, options = {}) {
           setImmediate(tick);
           return send(200, located);
         }
-        if (route === "/v1/move-folder")
+        if (route === "/v1/move-folder") {
+          if (s.streamOnly(b.id)) fail(STREAM_ONLY_EDIT, 409);
           return send(
             200,
             await authorizedWork(() => moveFolder(engine, b.id, b.path)),
           );
+        }
         if (route === "/v1/folder-retention") {
           requireAdmin();
           requireHub();
+          if (s.streamOnly(b.id))
+            fail("Movies & TV folders keep no older versions.", 409);
           return send(
             200,
             await authorizedWork(() => {
@@ -1966,6 +2076,7 @@ export async function start(home, options = {}) {
                 const result = s.forgetVolume(b.id);
                 engine.folderStates.delete(b.id);
                 engine.music?.sweep(true);
+                engine.video?.sweep(true);
                 return result;
               }),
             );
@@ -1975,6 +2086,11 @@ export async function start(home, options = {}) {
         }
         if (route === "/v1/unselect") {
           s.volume(b.id);
+          if (s.streamOnly(b.id))
+            fail(
+              "A Movies & TV folder lives in this hub's folder; it can't stop syncing here.",
+              409,
+            );
           if (b.deleteFiles !== undefined && typeof b.deleteFiles !== "boolean")
             fail("Choose whether to delete local files");
           if (b.deleteFiles && config.role !== "replica")
@@ -2297,6 +2413,7 @@ export async function start(home, options = {}) {
             for (const v of s.volumes().filter((v) => v.selected))
               engine.work.mark(v.id);
             s.saveConfig();
+            engine.videoDownloads?.pruneHubs();
           });
           return send(200, { connected: true, name: catalog.name });
         }
@@ -2321,7 +2438,7 @@ export async function start(home, options = {}) {
     !options.privateNetwork
   ) {
     engine.close();
-    fs.unlinkSync(lock);
+    releaseLock(lock);
     fail(
       "Non-loopback binding requires --private-network (Tailscale, TLS proxy, or explicitly enabled local network HTTP)",
     );
@@ -2333,7 +2450,7 @@ export async function start(home, options = {}) {
     });
   } catch (e) {
     engine.close();
-    fs.unlinkSync(lock);
+    releaseLock(lock);
     throw e;
   }
   network.port = server.address().port;
@@ -2626,9 +2743,11 @@ export async function start(home, options = {}) {
       await network.close();
       await new Promise((resolve) => server.close(resolve));
       await images.close();
+      await engine.videoDownloads.close();
+      videoSessions.close();
       await engine.tail;
       engine.close();
-      fs.unlinkSync(lock);
+      releaseLock(lock);
     },
   };
 }
