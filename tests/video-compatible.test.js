@@ -435,7 +435,8 @@ test("audio is copied when the client plays it, else AAC with the same channels 
 
 test("segment paths escape percent signs, and the loopback capability holds only for local GETs from the app", () => {
   const args = hlsArguments({ source: "in.mkv", start: 0, audio: 0, videoCodec: "h264", audioCodec: "ac3", directory: path.join("a%d", "b") });
-  assert.equal(args[args.indexOf("-hls_segment_filename") + 1], path.join("a%%d", "b", "seg-%d.m4s"));
+  assert.equal(args[args.indexOf("-hls_segment_filename") + 1], "a%%d/b/seg-%d.m4s");
+  assert.equal(args.at(-1), "a%d/b/index.m3u8", "FFmpeg finds the playlist's folder only by its forward slashes, so init.mp4 lands beside it on Windows too");
   const session = { loopback: true };
   assert.equal(loopbackAllowed(session, "GET", "127.0.0.1", undefined), true);
   assert.equal(loopbackAllowed(session, "GET", "::1", "tauri://localhost"), true);

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1 — 2026-10-26
+
+- On Windows the compatible stream for MKV, AC3 and DTS files now starts: FFmpeg wrote its first part beside the running app instead of in the stream's own folder, so playback never began.
+
+Needs: desktop build
+
 ## 0.8.0 — 2026-10-26
 
 - Movies & TV: mark a hub folder with Set up as library… and it becomes a lightweight Jellyfin-style library on desktop, web and phones, with posters, overviews, ratings and cast from TMDB (optional, your own key in Settings → Movies & TV), movies, shows with seasons, a Watch next row on Home that never runs dry (what you are watching, each show's next episode, then daily picks from your own library: related to what you watched, new arrivals and what has waited longest, all chosen by the hub) and a Kids tab. The three library kinds are now named Photos, Audio and Movies & TV everywhere.

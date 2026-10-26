@@ -24,6 +24,7 @@ function audioArguments(codec, channels, copy) {
   return ["-c:a", "aac", "-ac", String(count), "-b:a", `${Math.min(count * 128, 640)}k`];
 }
 
+const forward = (file) => file.split(path.sep).join("/");
 export function hlsArguments({ source, name = source, start, audio, videoCodec, audioCodec, audioChannels, copy = [], directory }) {
   return [
     "-hide_banner",
@@ -59,12 +60,12 @@ export function hlsArguments({ source, name = source, start, audio, videoCodec, 
     "-hls_fmp4_init_filename",
     "init.mp4",
     "-hls_segment_filename",
-    path.join(directory.replace(/%/g, "%%"), "seg-%d.m4s"),
+    forward(path.join(directory.replace(/%/g, "%%"), "seg-%d.m4s")),
     "-hls_flags",
     "independent_segments+temp_file",
     "-start_number",
     "0",
-    path.join(directory, "index.m3u8"),
+    forward(path.join(directory, "index.m3u8")),
   ];
 }
 
