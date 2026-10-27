@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.6 — 2026-10-27
+
+- In desktop show pages, Download season sits to the right of the season control, and the season's download progress takes that space while it runs.
+
+Needs: desktop build
+
 ## 0.8.5 — 2026-10-27
 
 - Downloading a show says what is happening: the episode being downloaded shows "Downloading N%", the ones behind it say Waiting and finished ones say Downloaded, on desktop and on the phone.

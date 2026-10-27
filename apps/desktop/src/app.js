@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.5";
+const APP_VERSION = "0.8.6";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -7226,7 +7226,8 @@ function videoShow(v, library, show) {
   const season = videoDownloadable() && chosen ? videoSeasonDownload(v, chosen) : "";
   const watched = fullyWatched(show);
   const mark = button(watched ? "Mark as unwatched" : "Mark as watched", "video-quick-watched", show.id, "secondary", watched ? "eye-off" : "check");
-  return videoBand(v, show, play + mark + videoMenu(v, show, "Show actions")) + control + season + rows;
+  const bar = control || season ? `<div class="video-season-bar">${control}${season}</div>` : "";
+  return videoBand(v, show, play + mark + videoMenu(v, show, "Show actions")) + bar + rows;
 }
 function videoTrail(v, library) {
   const item = library && videoView.title && library.items.get(videoView.title);

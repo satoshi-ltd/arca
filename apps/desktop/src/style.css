@@ -6298,6 +6298,15 @@ label.toggle {
   margin-right: var(--space-2);
   opacity: 0.7;
 }
+.video-season-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.video-season-bar > .heading-actions {
+  margin-left: auto;
+}
 .video-seasons {
   align-self: flex-start;
   flex-wrap: wrap;
@@ -6349,9 +6358,12 @@ label.toggle {
   color: var(--green);
 }
 .video-season-download {
-  align-items: center;
+  flex: 1 1 20rem;
   justify-content: flex-start;
   gap: var(--space-3);
+}
+.video-season-bar > .video-season-download {
+  margin-left: 0;
 }
 .video-season-download progress {
   flex: 1;

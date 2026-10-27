@@ -459,7 +459,7 @@ test("a show page plays the next episode, switches seasons and toggles watched e
   await ui.click(card, () => ui.text(".video-backdrop h2") === "Breaking Bad");
   assert.deepEqual(ui.texts(".video-backdrop .video-facts > span"), ["★ 8.9", "16", "2008", "2 seasons", "Crime, Drama", "HD"]);
   assert.equal(ui.$(".video-backdrop .video-languages"), null, "an episode without named audio or subtitles shows no chips");
-  assert.ok(ui.$(".video-backdrop + .segmented.video-seasons"), "the season control follows the banner");
+  assert.ok(ui.$(".video-backdrop + .video-season-bar > .segmented.video-seasons"), "the season control follows the banner, in the bar that also holds Download season");
   assert.equal(ui.text(".video-backdrop .heading-actions > button"), "Play S1 · E4");
   assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Fix match…"], "a TMDB-matched show takes Kids from TMDB and has no Delete");
   assert.deepEqual(ui.texts('.segmented[aria-label="Season"] button'), ["Season 1", "Season 2", "Specials"]);
@@ -1664,6 +1664,7 @@ test("each episode row downloads on its own and Download season queues the rest 
   await ui.click('[data-action="video-download-cancel-season"]', () => ui.$('[data-action="video-download-season"]'));
   assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download/cancel")[1].paths, ["Breaking Bad/Season 1/S01E02.mkv"]);
   assert.equal(ui.text('[data-action="video-download-season"]'), "Download season");
+  assert.ok(ui.$('.video-season-bar > .segmented + .heading-actions [data-action="video-download-season"]'), "Download season sits to the right of the season control");
   await ui.click('[data-action="video-download-season"]', () => ui.posts.some(([route]) => route === "/v1/video/download"));
   assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download")[1].paths.sort(), [
     "Breaking Bad/Season 1/S01E02.mkv",
