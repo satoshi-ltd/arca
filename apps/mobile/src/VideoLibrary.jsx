@@ -9,6 +9,7 @@ import {
   ProgressRing,
   Scaffold,
   SegmentedControl,
+  Tag,
   useDesign,
 } from "./components";
 import { ScrollPosition } from "./KeyboardPane";
@@ -41,7 +42,7 @@ import {
   videoTabs,
   watchedLine,
 } from "./video-library.js";
-import { NOT_DOWNLOADABLE, OFFLINE_DOWNLOADS, downloadFraction, downloadLabel, downloadNote, downloadTile, isDownloading } from "./video-downloads.js";
+import { NOT_DOWNLOADABLE, OFFLINE_DOWNLOADS, downloadChip, downloadFraction, downloadLabel, downloadNote, downloadTile, seasonProgress } from "./video-downloads.js";
 
 
 function Art({ uri, shape, icon }) {
@@ -120,27 +121,36 @@ function DockTile({ label, icon, ring, value, disabled, onPress, spoken }) {
   );
 }
 
-function EpisodeDownload({ row, start, cancel, allowed }) {
+function EpisodeState({ ep, row, start, allowed }) {
   const { s, c } = useDesign();
-  if (row?.state === "done")
+  const chip = downloadChip(row);
+  if (chip && row.state !== "done")
     return (
-      <View style={s.videoDownload} accessibilityLabel="Downloaded">
-        <Icon name="check-circle" color={c.accent} />
+      <View accessible accessibilityLabel={downloadLabel(row)}>
+        <Tag variant={chip.variant}>{chip.label}</Tag>
       </View>
     );
-  const active = isDownloading(row);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={active ? `${downloadLabel(row)}, cancel download` : !allowed ? NOT_DOWNLOADABLE : row ? downloadLabel(row) : "Download episode"}
-      accessibilityState={{ disabled: !active && !allowed }}
-      disabled={!active && !allowed}
-      hitSlop={4}
-      onPress={active ? cancel : start}
-      style={({ pressed }) => [s.videoDownload, pressed && s.pressedFade, !active && !allowed && s.disabled]}
-    >
-      {active ? <Ring large value={downloadFraction(row)} /> : <Icon name="download" color={row?.state === "failed" ? c.danger : c.mute} />}
-    </Pressable>
+    <View style={s.videoState}>
+      {ep.watched && <Icon name="check" size={20} color={c.accent} />}
+      {chip ? (
+        <View accessible accessibilityLabel="Downloaded">
+          <Tag variant={chip.variant}>{chip.label}</Tag>
+        </View>
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={!allowed ? NOT_DOWNLOADABLE : row ? downloadLabel(row) : "Download episode"}
+          accessibilityState={{ disabled: !allowed }}
+          disabled={!allowed}
+          hitSlop={4}
+          onPress={start}
+          style={({ pressed }) => [s.videoDownload, pressed && s.pressedFade, !allowed && s.disabled]}
+        >
+          <Icon name="download" color={row?.state === "failed" ? c.danger : c.mute} />
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -325,7 +335,7 @@ function Facts({ facts }) {
   );
 }
 
-function EpisodeRow({ ep, art, play, divider, row, start, cancel, allowed }) {
+function EpisodeRow({ ep, art, play, divider, row, start, allowed }) {
   const { s, c } = useDesign();
   const value = progress(ep);
   return (
@@ -352,8 +362,7 @@ function EpisodeRow({ ep, art, play, divider, row, start, cancel, allowed }) {
           </Text>
         )}
       </View>
-      {ep.watched && <Icon name="check" size={18} color={c.accent} />}
-      <EpisodeDownload row={row} start={start} cancel={cancel} allowed={allowed} />
+      <EpisodeState ep={ep} row={row} start={start} allowed={allowed} />
     </PressScale>
   );
 }
@@ -436,7 +445,8 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
   );
   const related = relatedShelf(library, item);
   const relatedRow = related && <Shelf shelf={related} art={art} open={open} />;
-  const missing = show ? season.episodes.filter((ep) => canDownload(ep) && (!download(ep) || ["failed", "stale"].includes(download(ep).state))) : [];
+  const running = show ? seasonProgress(season.episodes, download) : null;
+  const missing = show && !running ? season.episodes.filter((ep) => canDownload(ep) && (!download(ep) || ["failed", "stale"].includes(download(ep).state))) : [];
   const episodesPane = show && (
     <View style={s.stack}>
       <View style={s.row}>
@@ -450,6 +460,17 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
         )}
         {missing.length > 0 && <Button quiet label="Download season" icon="download" onPress={() => startDownload(missing)} />}
       </View>
+      {running && (
+        <View style={s.row}>
+          <View style={[s.flex, s.stack]} accessible accessibilityLabel={`Downloading season, ${running.finished} of ${running.total}, ${running.percent}%`}>
+            <Text style={s.caption}>{`Downloading season · ${running.finished} of ${running.total} · ${running.percent}%`}</Text>
+            <View style={s.videoSeasonBar}>
+              <View style={[s.progressFill, { width: `${running.percent}%` }]} />
+            </View>
+          </View>
+          <Button quiet label="Cancel" icon="x" onPress={() => cancelDownload(running.active)} />
+        </View>
+      )}
       <View style={s.group}>
         {season.episodes.map((ep, index) => (
           <EpisodeRow
@@ -460,7 +481,6 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
             divider={index > 0}
             row={download(ep)}
             start={() => startDownload([ep])}
-            cancel={() => cancelDownload([ep])}
             allowed={canDownload(ep)}
           />
         ))}

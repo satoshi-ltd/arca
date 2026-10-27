@@ -457,8 +457,8 @@ export function styles(
     },
     videoRing: { width: 16, height: 16 },
     videoRingLarge: { width: 20, height: 20 },
-    videoDownloading: { paddingRight: 4 },
-    videoCancel: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+    videoState: { alignItems: "flex-end", gap: 8 },
+    videoSeasonBar: { height: 6, borderRadius: 3, backgroundColor: c.line, overflow: "hidden", marginTop: 4 },
     videoDownload: {
       width: g.touchHeight,
       height: g.touchHeight,

@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.4";
+const APP_VERSION = "0.8.5";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -7174,13 +7174,28 @@ function videoDownloadButton(v, item) {
   const percent = videoDownloadPercent(row);
   return `<button type="button" class="secondary" aria-label="Downloading, ${percent}%">${icon("loader-circle")}Downloading · ${percent}%</button><button type="button" class="ghost icon-button" data-action="video-download-cancel" data-id="${escape(item.id)}" data-tooltip="Cancel download" aria-label="Cancel download">${icon("x")}</button>`;
 }
+const videoDownloadChip = (row) =>
+  row.state === "done"
+    ? '<span class="tag self">Downloaded</span>'
+    : row.state === "downloading"
+      ? `<span class="tag hub">Downloading ${videoDownloadPercent(row)}%</span>`
+      : '<span class="tag">Waiting</span>';
 function videoEpisodeDownload(v, episode) {
   const row = videoDownloadOf(v.id, episode);
   const control = (action, label, tip, symbol) =>
     `<button type="button" class="ghost icon-button" data-action="${action}" data-id="${escape(episode.id)}" data-tooltip="${tip}" aria-label="${label}">${icon(symbol)}</button>`;
-  if (row?.state === "done") return control("video-download-remove", "Downloaded", "Remove download", "circle-check");
-  if (videoDownloadActive(row)) return control("video-download-cancel", `Downloading, ${videoDownloadPercent(row)}%`, "Cancel download", "loader-circle");
+  if (row?.state === "done") return videoDownloadChip(row) + control("video-download-remove", "Remove download", "Remove download", "trash");
+  if (videoDownloadActive(row)) return videoDownloadChip(row) + control("video-download-cancel", "Cancel download", "Cancel download", "x");
   return control("video-download", "Download", "Download", "download") + (videoLeftover(v.id, episode) ? control("video-download-remove", "Remove download", "Remove download", "trash") : "");
+}
+function videoSeasonDownload(v, season) {
+  const rows = season.episodes.map((episode) => videoDownloadOf(v.id, episode)).filter(Boolean);
+  const tracked = rows.filter((row) => row.state === "done" || videoDownloadActive(row));
+  if (!rows.some(videoDownloadActive)) return season.episodes.some((episode) => videoNeedsDownload(v.id, episode)) ? `<div class="heading-actions">${button("Download season", "video-download-season", String(season.season), "secondary", "download")}</div>` : "";
+  const fraction = tracked.reduce((sum, row) => sum + (row.state === "done" ? 1 : row.size > 0 ? row.done / row.size : 0), 0) / tracked.length;
+  const percent = Math.min(99, Math.floor(fraction * 100));
+  const finished = tracked.filter((row) => row.state === "done").length;
+  return `<div class="heading-actions video-season-download"><span class="video-meta">Downloading season</span><span class="tag hub">${finished} of ${tracked.length}</span><progress max="100" value="${percent}" aria-label="Season download, ${percent}%"></progress>${button("Cancel season downloads", "video-download-cancel-season", String(season.season), "secondary", "x")}</div>`;
 }
 function videoRelated(v, library, item) {
   const related = (item.related || []).map((id) => library.items.get(id)).filter((title) => title && title.kind !== "episode");
@@ -7208,7 +7223,7 @@ function videoShow(v, library, show) {
         )
       : "";
   const rows = chosen ? `<div class="history-group video-episodes">${chosen.episodes.map((episode) => videoEpisodeRow(v, library, show, episode, episode === next)).join("")}</div>` : "";
-  const season = videoDownloadable() && chosen?.episodes.some((episode) => videoNeedsDownload(v.id, episode)) ? `<div class="heading-actions">${button("Download season", "video-download-season", String(chosen.season), "secondary", "download")}</div>` : "";
+  const season = videoDownloadable() && chosen ? videoSeasonDownload(v, chosen) : "";
   const watched = fullyWatched(show);
   const mark = button(watched ? "Mark as unwatched" : "Mark as watched", "video-quick-watched", show.id, "secondary", watched ? "eye-off" : "check");
   return videoBand(v, show, play + mark + videoMenu(v, show, "Show actions")) + control + season + rows;
@@ -8395,6 +8410,15 @@ async function handleVideo(name, id) {
   if (name === "video-download-cancel") {
     if (!item?.path || !videoDownloadable()) return;
     await loadVideoDownloads(v.id, (await api("/v1/video/download/cancel", { volume: v.id, paths: [item.path] }))?.downloads);
+    renderVideo(v, page()?.scrollTop || 0);
+    return;
+  }
+  if (name === "video-download-cancel-season") {
+    const show = library.items.get(videoView.title);
+    const episodes = show?.kind === "show" ? show.seasons.find((season) => String(season.season) === id)?.episodes || [] : [];
+    const paths = episodes.filter((episode) => videoDownloadActive(videoDownloadOf(v.id, episode))).map((episode) => episode.path);
+    if (!paths.length || !videoDownloadable()) return;
+    await loadVideoDownloads(v.id, (await api("/v1/video/download/cancel", { volume: v.id, paths }))?.downloads);
     renderVideo(v, page()?.scrollTop || 0);
     return;
   }

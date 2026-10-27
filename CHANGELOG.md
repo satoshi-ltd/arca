@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.5 — 2026-10-27
+
+- Downloading a show says what is happening: the episode being downloaded shows "Downloading N%", the ones behind it say Waiting and finished ones say Downloaded, on desktop and on the phone.
+- A season download has its own line under the season picker with its progress ("N of M" on desktop, a bar on both) and a Cancel that stops the queued and running episodes and keeps the finished ones; on the phone it is the only way to cancel an episode.
+
+Needs: native build · desktop build
+
 ## 0.8.4 — 2026-10-26
 
 - No change for people using Arca: a release no longer fails when macOS keeps the verified installer's disk image busy for a moment after checking it.

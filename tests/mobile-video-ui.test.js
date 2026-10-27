@@ -239,14 +239,18 @@ test("a movie page and every episode row offer Download, with progress, cancel a
   assert.match(library, /\{!!note && <Text style=\{s\.caption\}>\{note\}<\/Text>\}/);
   assert.match(library, /const tileAction = \{ start: \(\) => startDownload\(\[item\]\), cancel: \(\) => cancelDownload\(\[item\]\), manage: \(\) => more\(item\), none: undefined \};/);
   assert.match(library, /spoken=\{tile\.disabled \? `Download unavailable\. \$\{note\}` : tile\.action === "cancel" \? `\$\{tile\.label\}, cancel download` : tile\.label\}/);
-  const dock = library.slice(library.indexOf("function DockMain("), library.indexOf("function EpisodeDownload("));
+  const dock = library.slice(library.indexOf("function DockMain("), library.indexOf("function EpisodeState("));
   assert.match(dock, /<View style=\{s\.videoDockEdge\} pointerEvents="none">/, "Resume carries its progress on its bottom edge");
   assert.match(dock, /\{ring \? <Ring large value=\{value\} \/> : <Icon name=\{icon\} size=\{20\} color=\{c\.ink\} \/>\}/);
   assert.match(theme, /videoDockTile: \{\s+flex: 1,\s+minWidth: 0,/, "the tiles share the column equally");
-  const episode = library.slice(library.indexOf("function EpisodeDownload("), library.indexOf("function VideoCard("));
-  assert.match(episode, /<Icon name="check-circle" color=\{c\.accent\} \/>/);
-  assert.match(episode, /\{active \? <Ring large value=\{downloadFraction\(row\)\} \/> : <Icon name="download"/, "an episode shows the ring in its trailing button");
-  assert.match(library, /<EpisodeDownload row=\{row\} start=\{start\} cancel=\{cancel\} allowed=\{allowed\} \/>\s+<\/PressScale>/);
+  const episode = library.slice(library.indexOf("function EpisodeState("), library.indexOf("function VideoCard("));
+  assert.match(episode, /if \(chip && row\.state !== "done"\)\s+return \(\s+<View accessible accessibilityLabel=\{downloadLabel\(row\)\}>\s+<Tag variant=\{chip\.variant\}>\{chip\.label\}<\/Tag>/, "a running or waiting episode shows only its tag, in place of the watched check");
+  assert.match(episode, /\{ep\.watched && <Icon name="check" size=\{20\} color=\{c\.accent\} \/>\}/, "the watched check sits above the download state");
+  assert.match(episode, /<Icon name="download" color=\{row\?\.state === "failed" \? c\.danger : c\.mute\} \/>/);
+  assert.doesNotMatch(episode, /cancel|Ring/, "an episode has no cancel of its own");
+  assert.match(library, /<EpisodeState ep=\{ep\} row=\{row\} start=\{start\} allowed=\{allowed\} \/>\s+<\/PressScale>/);
+  assert.match(library, /Downloading season · \$\{running\.finished\} of \$\{running\.total\} · \$\{running\.percent\}%/);
+  assert.match(library, /<Button quiet label="Cancel" icon="x" onPress=\{\(\) => cancelDownload\(running\.active\)\} \/>/, "the season row cancels the queued and running episodes");
   assert.match(library, /\{missing\.length > 0 && <Button quiet label="Download season" icon="download" onPress=\{\(\) => startDownload\(missing\)\} \/>\}/, "the season picker carries Download season");
   assert.match(library, /"remove-download": \["Remove download", "trash"\]/);
   assert.match(library, /const actions = titleActions\(sheet\.item, !!sheet\.downloaded\);/);
@@ -287,7 +291,7 @@ test("titles this phone cannot play from a file offer Download disabled with the
   assert.match(library, /const allowed = show \? false : canDownload\(item\);/);
   assert.match(library, /season\.episodes\.filter\(\(ep\) => canDownload\(ep\) && \(!download\(ep\) \|\| \["failed", "stale"\]\.includes\(download\(ep\)\.state\)\)\)/);
   assert.match(app, /itemDownload\(videoDownloads\.get\(downloadKey\(folder\.id, item\.path\)\), item\)/, "a copy of an older version reads Download again");
-  assert.match(library, /disabled=\{!active && !allowed\}/, "an episode that cannot be downloaded has a disabled button");
+  assert.match(library, /disabled=\{!allowed\}/, "an episode that cannot be downloaded has a disabled button");
 });
 
 test("Watch next marks a next episode NEXT and a recent arrival NEW over its still", () => {

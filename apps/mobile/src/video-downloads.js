@@ -109,6 +109,21 @@ export function itemDownload(row, item) {
 
 export const isDownloading = (row) => !!row && ACTIVE.has(row.state);
 
+export function downloadChip(row) {
+  if (row?.state === "done") return { label: "Downloaded", variant: "self" };
+  if (!isDownloading(row)) return null;
+  if (row.state === "queued" && row.running) return { label: `Downloading ${Math.floor(downloadFraction(row) * 100)}%`, variant: "hub" };
+  return { label: "Waiting", variant: undefined };
+}
+
+export function seasonProgress(episodes, download) {
+  const tracked = episodes.map((episode) => ({ episode, row: download(episode) })).filter(({ row }) => row?.state === "done" || isDownloading(row));
+  const active = tracked.filter(({ row }) => isDownloading(row));
+  if (!active.length) return null;
+  const fraction = tracked.reduce((sum, { row }) => sum + downloadFraction(row), 0) / tracked.length;
+  return { active: active.map(({ episode }) => episode), finished: tracked.length - active.length, total: tracked.length, percent: Math.min(99, Math.floor(fraction * 100)), fraction };
+}
+
 export function createVideoDownloads({ replica, client, onChange = () => {}, chunk = DOWNLOAD_CHUNK, refresh = null, pause = null, retryDelay = RETRY_LATER, since = Date.now() }) {
   const store = replica.store;
   const files = replica.files;
@@ -118,7 +133,7 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
   let stopped = false;
   let loaded = null;
   let retry = null;
-  const emit = () => onChange(new Map(rows));
+  const emit = () => onChange(new Map([...rows].map(([key, row]) => [key, key === running?.key && row.state === "queued" ? { ...row, running: true } : row])));
   const uri = (row, name) => files.videoDownload(scope, row.volume, name);
   const mediaName = (row) => `${row.hash}.${row.ext}`;
   const cancelled = () => Object.assign(new Error("Download cancelled"), { code: "REQUEST_CANCELLED" });
@@ -357,18 +372,28 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
       pump();
     },
     async remove(volume, path) {
+      await this.removeMany(volume, [path]);
+    },
+    async removeMany(volume, paths) {
       await this.load();
-      const key = downloadKey(volume, path);
-      const row = rows.get(key);
-      if (!row) return;
-      rows.delete(key);
-      const active = running?.key === key ? running : null;
+      const removed = [];
+      for (const path of paths) {
+        const key = downloadKey(volume, path);
+        const row = rows.get(key);
+        if (!row) continue;
+        rows.delete(key);
+        removed.push({ key, path, row });
+      }
+      if (!removed.length) return;
+      const active = removed.some(({ key }) => running?.key === key) ? running : null;
       active?.controller.abort(cancelled());
       emit();
-      await store.forgetVideoDownload(scope, volume, path);
+      for (const { path } of removed) await store.forgetVideoDownload(scope, volume, path);
       await active?.promise;
-      await discard(row);
-      if (row.replaces) await discard({ ...row, ...row.replaces });
+      for (const { row } of removed) {
+        await discard(row);
+        if (row.replaces) await discard({ ...row, ...row.replaces });
+      }
       pump();
     },
     localSource(volume, item) {

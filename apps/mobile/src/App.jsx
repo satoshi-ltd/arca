@@ -1098,7 +1098,7 @@ export default function App() {
     if (folder) downloads.current?.add(folder.id, items).catch(() => {});
   }
   function removeDownloads(volume, items) {
-    return items.reduce((chain, item) => chain.then(() => downloads.current?.remove(volume, item.path)), Promise.resolve()).catch(() => {});
+    return Promise.resolve(downloads.current?.removeMany(volume, items.map((item) => item.path))).catch(() => {});
   }
   const shownVideo =
     videoData?.key === `${replica?.scope}:${folder?.id}` ? videoData : null;

@@ -13,6 +13,8 @@ import {
   NOT_DOWNLOADABLE,
   downloadBlock,
   downloadCaution,
+  downloadChip,
+  seasonProgress,
   downloadNote,
   downloadTile,
   HUB_AWAY,
@@ -359,6 +361,36 @@ test("cancelling a running download stops it and deletes the partial file", asyn
   downloads.stop();
 });
 
+test("cancelling several downloads at once never starts a queued one", async (t) => {
+  const { store, files } = setup(t);
+  await store.init();
+  const content = media(4 * MIB);
+  const hash = quick(content);
+  const first = movie(content, hash, { subtitles: [] });
+  const second = { ...first, path: "Movies/Second.mkv", id: "m:second" };
+  const { state, client } = hub({ content, hash, item: first });
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  const raw = client.raw;
+  client.raw = async (route, options) => {
+    if (state.ranges.length === 2) await gate;
+    return raw(route, options);
+  };
+  const startedSecond = [];
+  const downloads = createVideoDownloads({ replica: { scope: "hub-a", store, files }, client, networkType: async () => ({ type: "WIFI" }), chunk: MIB, onChange: (rows) => startedSecond.push(rows.get(`v1\n${second.path}`)?.running === true) });
+  await downloads.add("v1", [first, second]);
+  while (state.ranges.length < 2) await new Promise((resolve) => setImmediate(resolve));
+  const removing = downloads.removeMany("v1", [first.path, second.path]);
+  release();
+  await removing;
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(startedSecond.includes(true), false, "the second episode never started");
+  assert.equal(downloads.get("v1", first.path), null);
+  assert.equal(downloads.get("v1", second.path), null);
+  assert.deepEqual(await store.videoDownloads("hub-a"), []);
+  downloads.stop();
+});
+
 test("subtitle choices to download keep sidecars and readable embedded tracks", () => {
   assert.deepEqual(downloadSubtitles(movie(Buffer.alloc(1), "a")), ["Movies/Inception (2010).en.srt", "stream:2"]);
 });
@@ -684,6 +716,7 @@ test("a hub still syncing the video makes the download wait and retry, not fail"
   await downloads.add("v1", [item]);
   for (let i = 0; i < 200 && downloads.get("v1", item.path).state !== "done"; i++) await new Promise((resolve) => setTimeout(resolve, 5));
   assert.ok(seen.some((row) => row?.state === "waiting" && row.error === HUB_SYNCING));
+  assert.ok(seen.some((row) => row?.state === "queued" && row.running === true), "the row being downloaded says so");
   assert.equal(downloads.get("v1", item.path).state, "done");
   assert.ok(state.ranges.length >= 1);
   downloads.stop();
@@ -1053,3 +1086,19 @@ test("a Download that cannot be offered names its cause, the caution rides on fi
   assert.equal(downloadNote(null, false, { kind: "movie", path: "movies/x.mp4" }, "android"), NOT_DOWNLOADABLE);
 });
 
+
+test("an episode's chip says Downloaded, Downloading with its percentage for the running row, or Waiting", () => {
+  assert.deepEqual(downloadChip({ state: "done", done: 10, size: 10 }), { label: "Downloaded", variant: "self" });
+  assert.deepEqual(downloadChip({ state: "queued", running: true, done: 640, size: 1000 }), { label: "Downloading 64%", variant: "hub" });
+  assert.deepEqual(downloadChip({ state: "queued", done: 0, size: 1000 }), { label: "Waiting", variant: undefined }, "queued behind the running one");
+  assert.deepEqual(downloadChip({ state: "waiting", running: false, done: 400, size: 1000 }), { label: "Waiting", variant: undefined }, "the hub is away");
+  assert.equal(downloadChip({ state: "failed" }), null);
+  assert.equal(downloadChip(null), null);
+});
+
+test("a season's progress counts finished and active episodes and lists the ones a cancel stops", () => {
+  const episodes = ["a", "b", "c", "d"].map((id) => ({ id, path: id }));
+  const rows = { a: { state: "done", done: 10, size: 10 }, b: { state: "queued", running: true, done: 500, size: 1000 }, c: { state: "queued", done: 0, size: 1000 }, d: { state: "failed" } };
+  assert.deepEqual(seasonProgress(episodes, (episode) => rows[episode.id]), { active: [episodes[1], episodes[2]], finished: 1, total: 3, percent: 50, fraction: 0.5 });
+  assert.equal(seasonProgress(episodes, (episode) => (episode.id === "a" ? rows.a : null)), null, "nothing running leaves Download season");
+});

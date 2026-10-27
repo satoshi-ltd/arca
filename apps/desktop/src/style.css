@@ -6348,6 +6348,16 @@ label.toggle {
 .video-episode[aria-current="true"] .video-episode-main strong {
   color: var(--green);
 }
+.video-season-download {
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-3);
+}
+.video-season-download progress {
+  flex: 1;
+  min-width: 120px;
+  margin-top: 0;
+}
 .video-episode-main {
   display: flex;
   flex-direction: column;

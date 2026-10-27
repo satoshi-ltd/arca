@@ -1412,6 +1412,9 @@
   background: var(--m-line);
   overflow: hidden;
 }
+.m-progress .m-fill-32 {
+  width: 32%;
+}
 .m-progress i {
   display: block;
   width: 38%;
@@ -2616,6 +2619,27 @@
   overflow: hidden;
   border-radius: var(--m-control-radius);
 }
+.m-video-state {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.m-video-state > .m-video-dl,
+.m-video-mark {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  display: grid;
+  place-items: center;
+}
+.m-video-mark {
+  color: var(--m-accent);
+}
+.m-video-state > .m-video-dl {
+  color: var(--m-mute);
+}
 .m-video-episode > svg {
   flex: none;
   color: var(--m-accent);
@@ -2923,9 +2947,6 @@
 .m-video-ring.m-video-ring-42 {
   background: conic-gradient(var(--m-accent) 0 42%, var(--m-line) 42% 100%);
 }
-.m-video-ring.m-video-ring-64 {
-  background: conic-gradient(var(--m-accent) 0 64%, var(--m-line) 64% 100%);
-}
 .m-button.m-video-downloading {
   padding-right: 4px;
 }
@@ -2945,18 +2966,9 @@
   place-items: center;
   color: var(--m-mute);
 }
-.m-video-dl.m-video-dl-done {
-  color: var(--m-accent);
-}
 .m-video-dl > .m-video-ring {
   width: 20px;
   height: 20px;
-}
-.m-button.m-video-dl-season {
-  flex: none;
-}
-.m-title-row > .m-button.m-video-dl-season {
-  align-self: center;
 }
 
 .m-video-rating.m-video-next {

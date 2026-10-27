@@ -1645,21 +1645,36 @@ test("each episode row downloads on its own and Download season queues the rest 
   await library(ui);
   await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
   await ui.click(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Breaking Bad")), () => ui.$(".video-episode"));
-  const control = (title) => ui.$$(".video-episode").find((row) => row.textContent.includes(title)).querySelector(".row-actions > :first-child");
-  assert.equal(control("Pilot").getAttribute("aria-label"), "Downloaded");
+  const row = (title) => ui.$$(".video-episode").find((entry) => entry.textContent.includes(title));
+  const control = (title) => row(title).querySelector(".row-actions > .icon-button");
+  const chip = (title) => row(title).querySelector(".row-actions > .tag")?.textContent;
+  assert.equal(chip("Pilot"), "Downloaded");
+  assert.equal(control("Pilot").getAttribute("aria-label"), "Remove download");
   assert.equal(control("Pilot").dataset.tooltip, "Remove download");
-  assert.equal(control("Cat's in the Bag").getAttribute("aria-label"), "Downloading, 64%");
+  assert.equal(chip("Cat's in the Bag"), "Downloading 64%");
+  assert.equal(control("Cat's in the Bag").getAttribute("aria-label"), "Cancel download");
   assert.equal(control("Cat's in the Bag").dataset.action, "video-download-cancel");
+  assert.equal(chip("Gray Matter"), undefined);
   assert.equal(control("Gray Matter").getAttribute("aria-label"), "Download");
   assert.ok(ui.$$(".video-episode").every((row) => row.querySelector('.row-actions [data-action="video-watched"]')), "Mark as watched stays beside it");
+  assert.equal(ui.$('[data-action="video-download-season"]'), null, "the season line shows its progress while an episode runs");
+  assert.equal(ui.text(".video-season-download .video-meta"), "Downloading season");
+  assert.equal(ui.text(".video-season-download .tag"), "1 of 2");
+  assert.equal(ui.$(".video-season-download progress").getAttribute("aria-label"), "Season download, 82%");
+  await ui.click('[data-action="video-download-cancel-season"]', () => ui.$('[data-action="video-download-season"]'));
+  assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download/cancel")[1].paths, ["Breaking Bad/Season 1/S01E02.mkv"]);
   assert.equal(ui.text('[data-action="video-download-season"]'), "Download season");
   await ui.click('[data-action="video-download-season"]', () => ui.posts.some(([route]) => route === "/v1/video/download"));
   assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download")[1].paths.sort(), [
+    "Breaking Bad/Season 1/S01E02.mkv",
     "Breaking Bad/Season 1/S01E03.mkv",
     "Breaking Bad/Season 1/S01E04.mkv",
     "Breaking Bad/Season 1/S01E05.mkv",
   ]);
-  await until(() => !ui.$('[data-action="video-download-season"]') && ui.idle());
+  await until(() => ui.$(".video-season-download") && ui.idle());
+  assert.equal(chip("Gray Matter"), "Waiting");
+  assert.equal(ui.text(".video-season-download .tag"), "1 of 5");
+  assert.equal(chip("Pilot"), "Downloaded", "a finished episode survives the season cancel");
   await ui.click(control("Pilot"), () => ui.$("#dialog[open]"));
   await ui.click("#submit-dialog", () => control("Pilot").getAttribute("aria-label") === "Download");
 });
