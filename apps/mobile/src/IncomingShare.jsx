@@ -2,7 +2,7 @@ import { Busy } from "./components";
 import { useRetained } from "./motion";
 import { galleryConfig } from "./gallery.js";
 import { acceptsWrites } from "./video-sync.js";
-import { Section } from "./components";
+import { Eyebrow, Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useRef, useState } from "react";
 import { AppState, Linking, Platform, Text, View } from "react-native";
@@ -10,6 +10,7 @@ import * as Sharing from "expo-sharing";
 import {
   Button,
   Card,
+  EmptyState,
   Field,
   FolderRow,
   Icon,
@@ -33,7 +34,7 @@ import {
 } from "./share-destinations";
 
 // One share operation; cancellation discards the app-owned temporary copies.
-export function IncomingShare({ connection, catalog, locals, onSaved }) {
+export function IncomingShare({ connection, catalog, locals, onSaved, onChoose }) {
   const { s } = useDesign();
   const [items, setItems] = useState([]),
     [open, setOpen] = useState(false);
@@ -43,6 +44,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
   const [directories, setDirectories] = useState([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [parked, setParked] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [recent, setRecent] = useState([]);
   const receiving = useRef(false),
@@ -207,10 +209,11 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
         volume.id,
         directory,
       ).catch(() => {});
+      const saved = { count: items.length, folder: volume, directory };
       setOpen(false);
       setVolume(null);
       setDirectory("");
-      await onSaved();
+      await onSaved(saved);
       if (!r.paused) r.sync().catch((e) => setError(e.message));
     } catch (e) {
       setError(e.message);
@@ -226,6 +229,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
     attempt.current++;
     receiving.current = false;
     setPreparing(false);
+    setParked(false);
     try {
       await session.current?.cancel();
       setItems([]);
@@ -242,6 +246,12 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
     }
   }
   const destinations = locals.filter((f) => acceptsWrites(catalog, f) && !galleryConfig(f));
+  useEffect(() => {
+    if (parked && destinations.length && items.length) {
+      setParked(false);
+      setOpen(true);
+    }
+  }, [parked, destinations.length]);
   const children = directories.filter(
     (p) =>
       p.startsWith(directory ? `${directory}/` : "") &&
@@ -314,7 +324,7 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
               <>
                 {!!recent.length && (
                   <Section>
-                    <Text style={s.eyebrow}>RECENT DESTINATIONS</Text>
+                    <Eyebrow>Recent destinations</Eyebrow>
                     <View style={s.group}>
                       {recent.map((entry, index) => (
                         <FolderRow
@@ -335,12 +345,23 @@ export function IncomingShare({ connection, catalog, locals, onSaved }) {
                   </Section>
                 )}
                 <Section>
-                  <Text style={s.eyebrow}>SELECTED FOLDERS</Text>
+                  <Eyebrow>Selected folders</Eyebrow>
                   {!destinations.length && (
-                    <Text style={s.text}>
-                      Start syncing a folder in Folders, then share the files
-                      again.
-                    </Text>
+                    <EmptyState
+                      icon="folders"
+                      title="No folder to save into"
+                      text="Start syncing a folder in Folders. The shared files wait here."
+                      action={
+                        <Button
+                          label="Open Folders"
+                          onPress={() => {
+                            setParked(true);
+                            setOpen(false);
+                            onChoose?.();
+                          }}
+                        />
+                      }
+                    />
                   )}
                   <View style={s.group}>
                     {destinations.map((v, index) => (

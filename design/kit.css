@@ -218,6 +218,9 @@ body.kit {
 .kit-window .shell {
   height: 680px;
 }
+.kit-window .shell.kit-starting {
+  grid-template-columns: minmax(0, 1fr);
+}
 .kit-dialog-stage {
   position: relative;
   display: flex;

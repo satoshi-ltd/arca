@@ -22,12 +22,12 @@ test("covered and two-line music rows take the 74 row height, numbered album row
 
 test("Folders and Devices are grouped surfaces: sections for folders, one list with the hub first for devices", () => {
   const app = read("App.jsx");
-  const folders = app.slice(app.indexOf("folderSections(folderRows"), app.indexOf("ON HUB · NOT SELECTED"));
+  const folders = app.slice(app.indexOf("folderSections(folderRows"), app.indexOf("On hub · not selected"));
   assert.match(folders, /<View style=\{s\.group\}>\s+\{section\.folders\.map\(\(f, index\) =>/);
   assert.match(folders, /\{folderRowFor\(f, index\)\}/);
-  assert.match(app, /const folderRowFor = \(f, index\) => \(\s+<FolderRow\s+grouped\s+divider=\{index > 0\}/);
+  assert.match(app, /const folderRowFor = \(f, index\) => \{[\s\S]*?<FolderRow\s+grouped\s+divider=\{index > 0\}/);
   assert.match(app, /<View style=\{s\.availableGroup\}>[\s\S]*?<FolderRow\s+key=\{v\.id\}\s+grouped\s+dashedDivider=\{index > 0\}/);
-  const devices = app.slice(app.indexOf('<Text style={s.eyebrow}>DEVICES</Text>'), app.indexOf('{screen === "History" && ('));
+  const devices = app.slice(app.indexOf('<Eyebrow>Devices</Eyebrow>'), app.indexOf('{screen === "History" && ('));
   assert.ok(devices.indexOf("<HubConnection") < devices.indexOf("self"), "the hub comes first, then this device");
   assert.match(devices, /<View style=\{s\.group\}>\s+<HubConnection\s+grouped/);
   assert.equal((devices.match(/<MachineRow\s+(key=\{m\.credentialId\}\s+)?grouped\s+divider/g) || []).length, 2);

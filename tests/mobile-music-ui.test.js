@@ -49,10 +49,10 @@ test("the library opens on the Artists tab, Recent lists this phone's plays, and
   assert.doesNotMatch(library, /kind === "root"/, "there is no root list before the music");
   assert.match(library, /const tabs = musicTabs\(library\);\s+const tab = tabs\.includes\(route\[0\]\?\.kind\) \? route\[0\]\.kind : tabs\[0\];/);
   assert.match(library, /<SegmentedControl\s+options=\{tabs\.map\(\(value\) => \(\{ value, label: TAB_LABELS\[value\] \}\)\)\}\s+value=\{tab\}\s+onChange=\{select\}/, "a tab is only a tab");
-  assert.match(library, /item\.kind === "albums"\) return albums\(albumsOf\(library\.albumOrder\)\);/);
+  assert.match(library, /item\.kind === "albums"\) return albums\(albumsOf\(library\.albumOrder\), undefined, memory\);/);
   const recent = library.slice(library.indexOf('item.kind === "recent"'), library.indexOf('item.kind === "podcasts"'));
   assert.match(recent, /recentPlayed\(library, history \|\| \[\]\)/);
-  assert.ok(recent.indexOf("RECENTLY PLAYED") < recent.indexOf("RECENTLY ADDED"), "played history first, recently added only while it is empty");
+  assert.ok(recent.indexOf("Recently played") < recent.indexOf("Recently added"), "played history first, recently added only while it is empty");
   assert.match(recent, /albumRow\(entry, index, entry\.artist\)/);
   assert.match(app, /useState\(\[\{ kind: "artists" \}\]\)/, "the library opens on Artists");
   assert.match(app, /select=\{\(kind\) => setMusicRoute\(\[\{ kind \}\]\)\}/);
@@ -98,7 +98,7 @@ test("a track still downloading stays in its album, dimmed, labelled and not pla
 
 test("playlists get their tab, screen, search group and Recent rows, and every track row ends in a ⋯", () => {
   assert.match(read("src/music-library.js"), /playlists: "Playlists",/);
-  assert.match(library, /item\.kind === "playlists"\)\s+return \(\s+<PagedRows\s+items=\{library\.playlistOrder\.map\(\(id\) => library\.playlists\.get\(id\)\)\}/);
+  assert.match(library, /item\.kind === "playlists"\)\s+return \(\s+<PagedRows\s+memory=\{memory\}\s+items=\{library\.playlistOrder\.map\(\(id\) => library\.playlists\.get\(id\)\)\}/);
   assert.match(library, /library\.playlists\.has\(entry\.id\)\s+\? playlistRow\(entry, index, plural\(entry\.tracks\.length, "track", "tracks"\)\)/, "Recent lists played playlists with albums");
   const screen = library.slice(library.indexOf('const playlist = item.kind === "playlist"'), library.indexOf("const gone ="));
   assert.match(screen, /subtitle=\{playlistSummary\(playlist\)\}/);
@@ -131,8 +131,10 @@ test("playlists get their tab, screen, search group and Recent rows, and every t
   assert.match(change, /await renameMusicPlay\(r, value\.playlist\.id, playlistKey\(folder\.id, result\.path\)\)\.catch\(\(\) => \{\}\);\s+setHistoryTick\(\(tick\) => tick \+ 1\);/, "a history that cannot be renamed never strands the renamed file, and Recent reads the renamed entry");
   const remove = app.slice(app.indexOf("function deletePlaylist("), app.indexOf("useEffect(", app.indexOf("function deletePlaylist(")));
   assert.match(remove, /await engine\.current\.removeFile\(folder\.id, playlist\.path\);/, "Delete playlist… is the phone's file deletion, so history keeps it");
-  assert.match(remove, /hasUnsyncedContent\(folder\.id, playlist\.path\)[\s\S]*Its latest changes have not reached the hub, so this cannot be undone\./, "a playlist the hub never received says it cannot be undone");
-  assert.match(app, /hasUnsyncedContent\(sheet\.volume, sheet\.path\)[\s\S]*Its latest changes have not reached the hub, so this cannot be undone\./, "and so does a file");
+  const copy = fs.readFileSync(new URL("../apps/mobile/src/confirm-copy.js", import.meta.url), "utf8");
+  assert.match(remove, /hasUnsyncedContent\(folder\.id, playlist\.path\)[\s\S]*confirmCopy\.deletePlaylist\(playlist\.name, unsynced/, "a playlist the hub never received says it cannot be undone");
+  assert.match(app, /hasUnsyncedContent\(sheet\.volume, sheet\.path\)/);
+  assert.equal(copy.split("Its latest changes have not reached the hub, so this cannot be undone.").length, 3, "and so does a file");
   const changed = app.slice(app.indexOf("function musicChanged("), app.indexOf("function changePlaylist("));
   assert.match(changed, /setMusicEdits\(\(count\) => count \+ 1\);\s+publishMusic\(engine\.current\)\.catch\(\(\) => \{\}\);\s+if \(connected && !status\.paused\) startSync\(\);/, "an edit shows at once, reaches the car and syncs");
   assert.match(app, /\[musicFolder, folder\?\.id, replica, status\.last, status\.musicTick, musicEdits\]/);
@@ -206,9 +208,9 @@ test("the phone and the native tree agree on the track node id format", () => {
 
 test("Artists lists letter groups 120 artists at a time, no artist cover is round, and the car gets the letters as headings", () => {
   const index = library.slice(library.indexOf("function ArtistIndex("), library.indexOf("const resumeSeen"));
-  assert.match(index, /artistGroups\(artists\.slice\(0, shown\)\)\.map\(\(group\) => \(\s+<Section key=\{group\.letter\}>\s+<Text style=\{s\.eyebrow\}>\{group\.letter\}<\/Text>\s+<View style=\{s\.group\}>/);
-  assert.match(index, /artists\.length > shown && \(\s+<Button label="Show more" onPress=\{\(\) => setShown\(shown \+ PAGE\)\} \/>/);
-  assert.match(library, /item\.kind === "artists"\)\s+return \(\s+<ArtistIndex\s+artists=\{library\.artists\}/);
+  assert.match(index, /artistGroups\(artists\.slice\(0, shown\)\)\.map\(\(group\) => \(\s+<Section key=\{group\.letter\}>\s+<Eyebrow>\{group\.letter\}<\/Eyebrow>\s+<View style=\{s\.group\}>/);
+  assert.match(index, /artists.length > shown && \(\s+<Button label="Show more" onPress=\{showMore\} \/>/);
+  assert.match(library, /item\.kind === "artists"\)\s+return \(\s+<ArtistIndex\s+memory=\{memory\}\s+artists=\{library\.artists\}/);
   assert.doesNotMatch(library, /(?<!Math\.)\bround\b/);
   assert.doesNotMatch(read("src/theme.js"), /musicCoverRound/);
   const kotlin = read(`${native}/java/expo/modules/arcanetwork/MusicLibrary.kt`);
@@ -362,7 +364,7 @@ test("the Fold opens a show, album or playlist beside its list under one header"
   assert.match(library, /pane\.detail \? go\(\[\.\.\.route\.slice\(0, pane\.level \+ 1\), next\]\) : push\(next\)/, "choosing another item replaces the detail instead of stacking it");
   assert.match(library, /\{pane\.detail \? \(\s+<View style=\{s\.musicSplit\}>\s+<View style=\{s\.musicSplitList\}>\{main\}<\/View>\s+<View style=\{s\.musicSplitPane\}>/);
   assert.match(library, /selected && s\.musicSelected/);
-  assert.match(library, /pane\.detail \? \(\s+<PagedRows items=\{list\} render=\{\(album, index\) => albumRow\(album, index, caption\(album\)\)\} \/>/, "albums list as rows beside the open album");
+  assert.match(library, /pane\.detail \? \(\s+<PagedRows memory=\{memory\} items=\{list\} render=\{\(album, index\) => albumRow\(album, index, caption\(album\)\)\} \/>/, "albums list as rows beside the open album");
   assert.match(library, /\[album\.year, plural\(album\.tracks\.length, "track", "tracks"\)\]\.filter\(Boolean\)\.join\(" · "\)/, "an artist's albums read year and track count");
   const theme = read("src/theme.js");
   assert.match(theme, /musicSplitList: \{ width: g\.detailSideWidth, flexShrink: 0, gap: 16 \}/);
@@ -410,7 +412,7 @@ test("episode rows keep their length on the caption line so the title takes the 
 
 test("header and folder captions only wrap between their · segments", () => {
   assert.match(app, /const folderSubtitle = unbroken\(`/);
-  assert.match(app, /description=\{Number\.isFinite\(f\.files\) \? unbroken\(`\$\{fileCount\(f\.files\)\} · \$\{bytes\(f\.bytes\)\} local`\) : "Not counted yet"\}/);
+  assert.match(app, /\? unbroken\(`\$\{bytes\(remote\.bytes\)\} to download`\)\s+: Number\.isFinite\(f\.files\)\s+\? unbroken\(`\$\{fileCount\(f\.files\)\} · \$\{bytes\(f\.bytes\)\} local`\)\s+: "Not counted yet"/);
   assert.match(app, /segments=\{deviceSegments\(\{/, "device lines wrap only between segments");
   assert.match(read("src/format.js"), /\? unbroken\(`\$\{fileCount\(folder\.files\)\}/);
 });

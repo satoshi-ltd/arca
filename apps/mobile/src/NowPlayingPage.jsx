@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Modal, PanResponder, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { EmptyState, Icon, PressScale, Sheet, useDesign } from "./components";
+import { EmptyState, Eyebrow, Icon, PressScale, Sheet, useDesign } from "./components";
 import { Cover, NowGlyph, RowMeta } from "./MusicLibrary";
 import { artistFor, episodeCaption, formatDay, formatDuration, nextRepeat, parseTrackNode, upNext } from "./music-library.js";
 import { ChangeFade, useFlight, useMotion, useRetained } from "./motion";
@@ -22,9 +22,10 @@ function Row({ track, current, saved, onPress }) {
   return (
     <ChangeFade token={current ? track.id : "row"} ms={motion.fast}>
       <PressScale
-        accessibilityRole="button"
+        accessibilityRole={current ? "text" : "button"}
         accessibilityLabel={`${track.title}, ${track.artist}${current ? ", playing" : ""}`}
         accessibilityState={{ selected: current }}
+        disabled={current}
         onPress={onPress}
         style={({ pressed }) => [s.musicTrack, s.musicTrackTall, current && s.historyRowChosen, pressed && s.pressed]}
       >
@@ -100,7 +101,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   const { s, c, wide } = useDesign();
   const { width, height } = useWindowDimensions();
   const { duration: ms, easing } = useMotion();
-  const twoPane = wide && width >= 1100;
+  const twoPane = wide;
   const [state] = useMusicPlayer(visible);
   const [trackWidth, setTrackWidth] = useState(0);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -177,7 +178,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
   });
   const list = (
     <ScrollView style={s.flex} contentContainerStyle={s.searchBody}>
-      {!!track && <Row track={track} current onPress={() => {}} />}
+      {!!track && <Row track={track} current />}
       {rows}
       {!rows.length && (
         <Text style={s.caption}>{queue.shuffled ? "Shuffling: the order is chosen as you go." : "Nothing after this track."}</Text>
@@ -264,7 +265,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
       </View>
       {!twoPane && (
         <Pressable accessibilityRole="button" accessibilityLabel="Up next" accessibilityState={{ expanded: queueOpen }} onPress={() => setQueueOpen((open) => !open)} style={s.nowUpNext}>
-          <Text style={s.eyebrow}>UP NEXT</Text>
+          <Eyebrow>Up next</Eyebrow>
           <Text numberOfLines={1} style={[s.caption, s.flex]}>
             {queue.rows[0]?.track.title || (queue.shuffled ? "Shuffling" : state.repeat !== "off" ? "Repeat is on" : "Nothing after this")}
           </Text>
@@ -291,7 +292,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
               <Icon name="chevron-down" color={c.ink} />
             </Pressable>
             <View style={[s.flex, s.stack]}>
-              <Text style={s.eyebrow}>PLAYING FROM</Text>
+              <Eyebrow>Playing from</Eyebrow>
               <Text numberOfLines={1} style={s.rowTitle}>
                 {queue.name && queue.name !== "Library" ? queue.name : podcast ? "Podcast" : queue.name || "Music"}
               </Text>
@@ -309,7 +310,7 @@ export function NowPlayingPage({ visible, library, cover, command, play, openAlb
               <Pressable accessibilityRole="button" accessibilityLabel="Close queue" onPress={() => setQueueOpen(false)} style={s.nowQueueScrim} />
               <View style={s.nowQueueSheet}>
                 <View style={s.nowQueueHead}>
-                  <Text style={[s.eyebrow, s.flex]}>UP NEXT</Text>
+                  <Eyebrow style={s.flex}>Up next</Eyebrow>
                   <Pressable accessibilityRole="button" accessibilityLabel="Close queue" onPress={() => setQueueOpen(false)} style={s.viewerIconButtonDark}>
                     <Icon name="chevron-down" color={c.ink} />
                   </Pressable>

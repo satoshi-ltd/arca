@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
+  <body class="starting-mode">
     <div class="shell">
       <aside class="sidebar">
         <div class="window-drag"></div>
@@ -65,6 +65,7 @@
         <div class="sidebar-bottom">
           <div class="update-card" id="update-card" hidden>
             <strong id="update-heading">Update available</strong>
+            <p class="hint" id="update-note" hidden>Sync pauses while Arca restarts.</p>
             <button class="secondary small-button" id="update-install" data-action="install-update">
               Update and restart
             </button>
@@ -104,6 +105,7 @@
                 d="M228 380V294a28 28 0 0 1 56 0v86z"
               />
             </svg>
+            <p>Starting Arca…</p>
           </div>
         </section>
         <div id="music-player" class="music-player" role="region" aria-label="Now playing" hidden></div>

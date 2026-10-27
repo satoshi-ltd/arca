@@ -746,7 +746,7 @@ fn main() {
                 .title("Arca status").inner_size(320.0,300.0).transparent(true).decorations(false).resizable(false).visible(false).focused(false).always_on_top(true).skip_taskbar(true).build()?;
             let open = MenuItem::with_id(app, "open", "Open Arca", true, None::<&str>)?;
             let quit =
-                MenuItem::with_id(app, "quit", "Quit app (sync continues)", true, None::<&str>)?;
+                MenuItem::with_id(app, "quit", "Quit Arca (sync continues)", true, None::<&str>)?;
             let status_item =
                 MenuItem::with_id(app, "status", "Arca · connecting…", false, None::<&str>)?;
             let sync = MenuItem::with_id(app, "sync", "Sync now", true, None::<&str>)?;

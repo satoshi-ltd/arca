@@ -21,6 +21,7 @@ import {
   View,
 } from "react-native";
 import {
+  Eyebrow,
   Button,
   EmptyState,
   OfflineEmpty,
@@ -108,6 +109,7 @@ import {
   shownMonths,
 } from "./gallery-days";
 import { count } from "./format";
+import { tileLabel } from "./browse";
 
 const StickyMonth = memo(function StickyMonth({ month, top, height, start, scrollY }) {
   const { s } = useDesign();
@@ -142,6 +144,7 @@ const Tile = memo(function Tile({
   onPress,
   onLongPress,
   selected,
+  selecting,
   found,
 }) {
   const { s, c } = useDesign();
@@ -178,7 +181,7 @@ const Tile = memo(function Tile({
       accessibilityLabel={
         item.upload
           ? `${item.name || "Photo"} · ${{ failed: "Needs attention", lost: "No longer on this phone" }[item.upload] || "Uploading"}`
-          : `${item.kind === "video" ? "Video" : "Photo"} ${item.path.split("/").pop()}${item.date ? `, ${item.date.slice(0, 10)}` : ""}`
+          : tileLabel(item)
       }
       accessibilityActions={
         onLongPress
@@ -233,7 +236,11 @@ const Tile = memo(function Tile({
           <Icon name="check" size={14} color={c.onMedia} />
         </Pop>
       )}
+      {!selected && selecting && size >= 40 && (
+        <View pointerEvents="none" style={s.photoRing} />
+      )}
       {!selected &&
+        !selecting &&
         size >= 40 &&
         item.upload !== "lost" &&
         (item.kind === "video" || !!item.upload) && (
@@ -282,6 +289,7 @@ export function FolderGallery({
   columns = 4,
   focus = null,
   onFocused,
+  onSelection,
 }) {
   const { s } = useDesign();
   const { duration, easing } = useMotion();
@@ -1361,6 +1369,21 @@ export function FolderGallery({
     setViewer(null);
     action(item);
   };
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const deleteRef = useRef(null);
+  useEffect(() => {
+    onSelection?.(
+      selection.length
+        ? {
+            count: selection.length,
+            clear: () => setSelection([]),
+            remove: () => deleteRef.current(selectionRef.current),
+          }
+        : null,
+    );
+  }, [selection.length]);
+  useEffect(() => () => onSelection?.(null), []);
   async function deleteItems(item) {
     const result = await remove(item);
     if (!result) return;
@@ -1385,6 +1408,7 @@ export function FolderGallery({
         : null;
     });
   }
+  deleteRef.current = deleteItems;
   return (
     <View
       ref={rootRef}
@@ -1415,22 +1439,6 @@ export function FolderGallery({
         });
       }}
     >
-      {!!selection.length && (
-        <View>
-          <View style={s.row}>
-            <Button
-              label={`Delete ${selection.length} selected…`}
-              danger
-              disabled={!linked}
-              onPress={async () => {
-                await deleteItems(selection);
-              }}
-            />
-            <Button label="Clear selection" onPress={() => setSelection([])} />
-          </View>
-          {!linked && <Text style={s.caption}>{HUB_ONLY_REASON}</Text>}
-        </View>
-      )}
       {!!notice && <Text style={s.caption}>{notice}</Text>}
       {pillAt !== null && (
         <Animated.View
@@ -1442,7 +1450,7 @@ export function FolderGallery({
       )}
       {!!memories.length && level === "base" && !!card.height && (
         <View style={s.memories}>
-          <Text style={s.eyebrow}>ON THIS DAY</Text>
+          <Eyebrow>On this day</Eyebrow>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.memoryRow}>
             {memories.map((memory) => {
               const text = memoryText(memory, memoryDay.day, Number(memoryDay.year));
@@ -1653,6 +1661,7 @@ export function FolderGallery({
                 uri={sharp[sharpKey(item)] || thumb(item)}
                 fallback={thumb(item)}
                 selected={selection.some((photo) => photo.path === item.path)}
+                selecting={!!selection.length}
                 found={item.path === foundPath}
                 onPress={handlers.press}
                 onLongPress={

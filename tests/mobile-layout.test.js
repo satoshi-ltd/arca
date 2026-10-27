@@ -475,7 +475,7 @@ test("sheets share the desktop dialog header anatomy and menus stay compact", ()
   const components = fs.readFileSync(new URL("../apps/mobile/src/components.jsx", import.meta.url), "utf8");
   const theme = fs.readFileSync(new URL("../apps/mobile/src/theme.js", import.meta.url), "utf8");
   const sheet = components.slice(components.indexOf("export function Sheet("), components.indexOf("export function ConfirmDialog("));
-  assert.match(sheet, /\{!dialog && <View style=\{s\.sheetHandle\} \/>\}/, "every bottom sheet shows its handle");
+  assert.match(sheet, /\{!dialog && \(\s+<View \{\.\.\.grabber\.panHandlers\} style=\{s\.sheetGrabber\}>\s+<View style=\{s\.sheetHandle\} \/>/, "every bottom sheet shows its handle");
   assert.match(sheet, /<View style=\{s\.tile\}>\s*<Icon name=\{icon\}/);
   assert.match(sheet, /\{!!subtitle && \(/);
   assert.match(sheet, /\{subtitle\}[\s\S]*?<Button\s+label="Close"/, "every titled sheet, menus included, has an explicit Close like desktop dialogs");
@@ -740,15 +740,15 @@ test("phone hub-only actions say why they are unavailable offline and use the hu
   const components = read("components.jsx");
   assert.match(gallery, /deletable=\{!!remove && linked\}/);
   assert.match(gallery, /deleteReason=\{linked \? undefined : HUB_ONLY_REASON\}/);
-  assert.match(gallery, /label=\{`Delete \$\{selection\.length\} selected…`\}\s+danger\s+disabled=\{!linked\}/);
-  assert.match(gallery, /<\/View>\s+\{!linked && <Text style=\{s\.caption\}>\{HUB_ONLY_REASON\}<\/Text>\}\s+<\/View>\s+\)\}/, "the reason sits under the button row, never inside it");
+  assert.match(components, /label="Delete…" danger disabled=\{!linked\} onPress=\{onDelete\} \/>\s+<\/View>\s+\{!linked && <Text style=\{s\.caption\}>\{reason\}<\/Text>\}/, "the reason sits under the button row of the pinned selection bar, never inside it");
+  assert.match(app, /linked=\{connected && !status\.offline\}\s+reason=\{HUB_ONLY_REASON\}/);
   assert.match(components, /accessibilityHint=\{note\}/);
   assert.match(viewer, /deleteReason \|\|\s+"Available after the hub confirms the photo/);
-  assert.match(app, /note=\{!source && status\.offline \? HUB_ONLY_REASON : undefined\}/);
+  assert.match(app, /note=\{albumNote\(\{\s+source,\s+locked: actionLocked,\s+connected,\s+offline: status\.offline,/);
   assert.match(components, /note \? \(\s+<View style=\{s\.flex\}>[\s\S]*?<Text style=\{s\.caption\}>\{note\}<\/Text>/);
   for (const marker of [
     /\{ success: "Photos deleted", hubOnly: true \}/,
-    /\}, \{ hubOnly: true \}\),\s+"Restore",/,
+    /\}, \{ hubOnly: true \}\),\s+\);\s+\}\s+useEffect/,
     /retry=\{\(\) => run\(\(\) => client\.refresh\(\), \{ hubOnly: true \}\)\}/,
     /\{ hubOnly: true \},\s+\)\s+\}\s+loadMore/,
     /label: "Restoring selected version…",\s+hubOnly: true,/,
@@ -831,10 +831,10 @@ test("an open file detail refreshes only when the hub is back and its saved data
 test("offline empty states say nothing is saved, end in Retry that probes the hub, and never show a bare raw error", () => {
   const read = (file) => fs.readFileSync(new URL(`../apps/mobile/src/${file}`, import.meta.url), "utf8");
   const app = read("App.jsx");
-  const card = read("components.jsx").match(/export function OfflineEmpty\(\{ icon, title, text, retry \}\) \{[\s\S]*?\n\}\n/);
+  const card = read("components.jsx").match(/export function OfflineEmpty\(\{ icon, title, text, retry, devices \}\) \{[\s\S]*?\n\}\n/);
   assert.ok(card, "one shared card");
   assert.match(card[0], /<EmptyState\s+icon=\{icon\}\s+title=\{title\}\s+text=\{text\}/);
-  assert.match(card[0], /action=\{<Button label="Retry" icon="refresh" onPress=\{retry\} \/>\}/);
+  assert.match(card[0], /<Button label="Retry" icon="refresh" onPress=\{retry\} \/>/);
   assert.match(app, /function reconnect\(\) \{\s+if \(status\.offline\) startSync\(\);\s+\}/);
   assert.match(app.match(/<FolderGallery[\s\S]*?\n +\/>/)[0], /reconnect=\{reconnect\}/);
   assert.match(app.match(/<FolderRecent[\s\S]*?\n +\/>/)[0], /reconnect=\{reconnect\}/);
@@ -889,7 +889,7 @@ test("every empty list on the phone uses the one EmptyState: icon, heading, one 
   const app = read("App.jsx");
   assert.match(app, /<EmptyState\s+icon="arca"\s+title="No folders yet"/);
   assert.match(app, /<\/View>\s+\{!filesLoading &&\s+!visibleEntries\.length && \(\s+<EmptyState\s+icon="arca"\s+title=\{/, "Files draws its frame under the bordered breadcrumb group, never inside it");
-  assert.match(app, /<EmptyState\s+\{\.\.\.historyEmpty\(\{\s+offline: history\.offline,\s+filter: historyFilter,\s+hasFolder: !!historyVolume,/);
+  assert.match(app, /<EmptyState\s+\{\.\.\.historyEmpty\(\{\s+filter: historyFilter,\s+hasFolder: !!historyVolume,/);
   assert.match(app, /machinesLoaded && \(\s+<EmptyState/, "Machines waits for its answer before saying nothing is saved");
   assert.match(read("FolderRecent.jsx"), /\{!!page\.versions\.length && \(\s+<View style=\{s\.group\}>/, "no bordered box without rows");
   assert.match(state[0], /<Text style=\{\[s\.heading, s\.centerText\]\}>\{title\}<\/Text>/);

@@ -302,6 +302,10 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
     setControls(true);
   };
   const close = () => onClose();
+  const tryAgain = () => {
+    retried.current = false;
+    restarter.current.now({ start: model.current.position, audio: chosenAudio.current });
+  };
   const titles = playerTitles(session.library, session.item);
   const { position, duration } = model.current;
   const selectedKey = chosenKey(options, subtitleTrack, sidecar);
@@ -312,7 +316,7 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
   return (
     <View style={s.videoFrame}>
       <VideoView player={player} style={s.videoSurface} nativeControls={false} contentFit="contain" surfaceType="textureView" />
-      <Pressable accessibilityLabel={controls ? "Hide controls" : "Show controls"} style={s.videoTapArea} onPress={() => (controls ? setControls(false) : wake())} />
+      <Pressable accessibilityLabel={controls ? "Hide controls" : "Show controls"} style={s.videoTapArea} onPress={() => (panel ? (setPanel(null), wake()) : controls ? setControls(false) : wake())} />
       {(reopening || recovering || status === "loading" || status === "idle") && !failed && (
         <View pointerEvents="none" style={s.viewerVideoLoading}>
           <Busy color={c.onMedia} />
@@ -321,7 +325,10 @@ function Playback({ session, source, next, art, onClose, onNext, save, watchNetw
       {failed && (
         <View style={s.videoMessage}>
           <Text style={s.videoMessageText}>{loadError?.message || error?.message || "This video can't play on this phone."}</Text>
-          <Button label="Close" onPress={close} />
+          <View style={s.row}>
+            <Button label="Try again" icon="refresh" primary onPress={tryAgain} />
+            <Button label="Close" onPress={close} />
+          </View>
         </View>
       )}
       {(controls || failed) && (

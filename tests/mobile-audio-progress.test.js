@@ -336,19 +336,19 @@ test("the phone reads hub positions with its device credential and leaves saving
 
 test("the library draws progress, the resume card, the Podcasts tab and a track Delete…", () => {
   const library = read("MusicLibrary.jsx");
-  assert.match(library, /<Text style=\{s\.eyebrow\}>PICK UP WHERE YOU LEFT OFF<\/Text>/);
+  assert.match(library, /<Eyebrow>Pick up where you left off<\/Eyebrow>/);
   assert.match(library, /label="Continue" icon="play" onPress=\{\(\) => start\(row\.position\)\}/);
   assert.match(library, /label="Start over" icon="rotate-ccw" onPress=\{\(\) => start\(0\)\}/);
   assert.match(library, /route\.length === 1 && tab !== "podcasts"\s+\? resumeCandidate\(positions, library, folderId, playing\)/, "the podcasts root has no resume card");
   assert.doesNotMatch(library, /ContinueTile|track\.podcast\)/, "the podcasts root has no Continue tile");
-  assert.match(library, /item\.kind === "podcasts"\) \{\s+const shows = \(order \|\| library\.showOrder\)\.map[\s\S]*?<ShowGrid\s+shows=\{shows\}/, "shows render as the cover grid in order c");
+  assert.match(library, /item\.kind === "podcasts"\) \{\s+const shows = \(order \|\| library\.showOrder\)\.map[\s\S]*?<ShowGrid\s+memory=\{memory\}\s+shows=\{shows\}/, "shows render as the cover grid in order c");
   assert.match(library, /episodes\s+flat=\{flat\}\s+\/>/, "a show page plays episodes without Shuffle");
   assert.match(library, /canPlay && tracks\.length > 1 && !episodes && \(/);
   assert.match(library, /label="Delete…"\s+icon="trash"\s+danger\s+disabled=\{locked\}\s+onPress=\{\(\) => removeTrack\(sheet\.track\)\}/);
   assert.match(library, /<View style=\{s\.miniProgress\} pointerEvents="none">/, "the mini player draws progress on its bottom edge");
   assert.match(library, /<Icon name="moon" size=\{14\} color=\{c\.accent\} \/>/, "and the moon with the countdown while the timer runs");
   const app = read("App.jsx");
-  assert.match(app, /`Delete “\$\{track\.title\}”\?`,\s+"It is removed from every device\. History keeps it/);
+  assert.match(app, /confirmCopy\.deleteTrack\(track\.title, /);
   assert.match(app, /await engine\.current\.removeFile\(track\.folder, track\.path\);/, "through the phone's synchronized file delete");
 });
 
@@ -374,7 +374,7 @@ test("every show in progress carries its own play, time left and resume sheet; t
   assert.match(grid, /if \(!item\)\s+return \(\s+<Pressable\s+\{\.\.\.hold\}/, "shows without progress keep the favorite long press and no play");
   assert.match(grid, /split && s\.musicAlbumSplit/, "the Fold split keeps three per row");
   assert.match(grid, /selected && s\.musicTileSelected/);
-  assert.match(grid, /setShown\(shown \+ 60\)/);
+  assert.match(grid, /usePaged\(`\$\{memory\}:shows`, 60, 60\)/);
   assert.match(theme, /continuePlay: \{\s+position: "absolute",\s+right: 6,\s+bottom: 8,\s+width: 36,\s+height: 36,/);
   assert.match(theme, /showPlaySlot: \{ position: "absolute", top: 0, left: 0, right: 0, aspectRatio: 1 \}/, "the play sits on the square cover");
   assert.match(theme, /musicAlbum: \{ width: wide \? "18%" : "30\.5%", gap: 4 \}/, "five across the Fold root, three on the phone");

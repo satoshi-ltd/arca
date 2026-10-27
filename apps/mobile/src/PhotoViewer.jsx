@@ -16,7 +16,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Busy, Button, Icon, Scaffold, useDesign } from "./components";
+import { Busy, Button, Eyebrow, Icon, Scaffold, useDesign } from "./components";
 import { dateLabel } from "./gallery-timeline";
 import { photoInfo } from "./photo-info";
 import { localPhotoInfo } from "./local-photo-info";
@@ -401,7 +401,7 @@ function InfoPanel({ item, state, folderName, onClose, history }) {
           !!info.metrics.length ||
           !!info.location) && (
           <View style={s.section}>
-            <Text style={s.eyebrow}>CAPTURE</Text>
+            <Eyebrow>Capture</Eyebrow>
             {!!info.capture.length && (
               <View style={s.infoCard}>
                 {info.capture.map((row) => (
@@ -441,7 +441,7 @@ function InfoPanel({ item, state, folderName, onClose, history }) {
           </View>
         )}
         <View style={s.section}>
-          <Text style={s.eyebrow}>IN ARCA</Text>
+          <Eyebrow>In Arca</Eyebrow>
           <View style={s.infoCard}>
             {info.arca.map((row) => (
               <InfoRow key={row.label} {...row} />

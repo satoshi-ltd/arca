@@ -542,17 +542,37 @@
 }
 .m-confirm-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-.m-confirm-actions.m-stacked {
   flex-direction: column;
   align-items: stretch;
+  gap: 12px;
 }
 .m-selection.m-pinned {
   padding: 12px 16px;
   border-top: 1px solid var(--m-line);
   background: var(--m-surface);
+}
+.m-selection.m-with-reason {
+  flex-wrap: wrap;
+}
+.m-selection.m-with-reason > .m-reason {
+  flex: 1 0 100%;
+}
+.m-photo-ring {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  border: 2px solid var(--m-on-media);
+  border-radius: 10px;
+  background: var(--m-media-scrim);
+}
+.m-machine.m-with-field {
+  flex-wrap: wrap;
+}
+.m-machine.m-with-field > .m-section {
+  flex: 1 0 100%;
 }
 .m-month {
   font-size: var(--m-touch-row-font);
@@ -1073,7 +1093,7 @@
 }
 .m-segment {
   flex: 1;
-  min-height: 38px;
+  min-height: var(--m-touch-height);
   display: grid;
   place-items: center;
   border-radius: var(--m-segment-radius);

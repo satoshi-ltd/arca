@@ -17,6 +17,15 @@ export function folderSections(folders, kindOf) {
   })).filter((section) => section.folders.length);
 }
 
+export function folderStatus({ paused, issue, offline, connected, syncing, completed, pending, cycle }) {
+  if (paused) return "Paused";
+  if (issue) return "Needs attention";
+  if (offline) return "Offline";
+  if (!connected) return "Disconnected";
+  if (syncing) return "Syncing";
+  if (!completed) return cycle ? "Waiting" : "Not yet synced";
+  return pending ? "Incomplete" : "Up to date";
+}
 const QUIET_STATES = ["Paused", "Offline", "Disconnected"];
 export function folderState({ status, conflict }) {
   if (status === "Syncing") return { tone: null, word: null, icon: null };
@@ -36,6 +45,10 @@ export function historyTone(row) {
   if (row.path.includes(".conflict-") && !row.resolved) return "warning";
   return null;
 }
+export const historyPath = (path) => {
+  const cut = path.lastIndexOf("/");
+  return { name: path.slice(cut + 1), dir: path.slice(0, Math.max(cut, 0)) };
+};
 export const historyCaption = (row, size) =>
   row.deleted
     ? "Deleted · recoverable"

@@ -169,7 +169,8 @@ test("a show plays the episode in progress, then the one after the last watched,
   const library = normalizeLibrary(sample());
   const show = library.items.get("s:breaking bad");
   assert.equal(nextEpisode(show).id, "e:Breaking Bad/S1E3.mkv");
-  assert.equal(playLabel(library, show), "Resume S1 · E3");
+  assert.equal(playLabel(library, show), "Continue S1 · E3");
+  assert.equal(playLabel(normalizeLibrary(sample({ shows: [{ ...sample().shows[0], seasons: [{ season: 1, episodes: [episode(1, 1, { watched: true }), episode(1, 2)] }] }] })), normalizeLibrary(sample({ shows: [{ ...sample().shows[0], seasons: [{ season: 1, episodes: [episode(1, 1, { watched: true }), episode(1, 2)] }] }] })).items.get("s:breaking bad")), "Play S1 · E2", "nothing in progress reads Play");
   assert.equal(playLabel(library, library.items.get("m:coco|2017")), "Play");
   assert.equal(playLabel(library, library.items.get("m:inception|2010")), "Resume");
   const fresh = normalizeLibrary(sample({ shows: [{ ...sample().shows[0], seasons: [{ season: 1, episodes: [episode(1, 1, { watched: true }), episode(1, 2)] }] }] }));

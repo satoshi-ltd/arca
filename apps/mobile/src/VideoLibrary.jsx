@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import {
+  Eyebrow,
   ActionRow,
   Button,
   EmptyState,
@@ -202,7 +203,7 @@ function Shelf({ shelf, art, open, hold }) {
   const { s } = useDesign();
   return (
     <View style={s.videoShelfBlock}>
-      <Text style={s.eyebrow}>{shelf.title.toUpperCase()}</Text>
+      <Eyebrow>{shelf.title}</Eyebrow>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.videoShelf}>
         {shelf.cards.map((card) => (
           <VideoCard key={card.key} card={card} wide={shelf.wide} art={art} open={open} hold={hold} />
@@ -369,7 +370,7 @@ function EpisodeRow({ ep, art, play, divider, row, start, allowed }) {
 
 function Seasons({ show, season, choose }) {
   const { s } = useDesign();
-  if (show.seasons.length < 2) return <Text style={s.eyebrow}>{seasonLabel(show.seasons[0]).toUpperCase()}</Text>;
+  if (show.seasons.length < 2) return <Eyebrow>{seasonLabel(show.seasons[0])}</Eyebrow>;
   return (
     <SegmentedControl
       scroll

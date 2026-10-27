@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Button, Icon, useDesign } from "./components";
+import { Button, Eyebrow, Icon, useDesign } from "./components";
 import { FilePreview } from "./FilePreview";
+import { ErrorNotice } from "./Notice";
 import { fileIcon } from "../../desktop/src/file-icons.js";
 import { formatDay } from "./music-library";
 import { useMotion } from "./motion";
@@ -85,6 +86,9 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
   const [results, setResults] = useState(null);
   const [selected, setSelected] = useState(0);
   const [held, setHeld] = useState(null);
+  const [failure, setFailure] = useState("");
+  const [moreFailure, setMoreFailure] = useState("");
+  const [attempt, setAttempt] = useState(0);
   const { duration, easing } = useMotion();
   const fade = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = useState(visible);
@@ -104,10 +108,14 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
       setResults(null);
       setSelected(0);
       setHeld(null);
+      setFailure("");
+      setMoreFailure("");
     }
   }, [mounted]);
   useEffect(() => {
     if (!visible) return;
+    setFailure("");
+    setMoreFailure("");
     if (!query.trim()) {
       setResults(null);
       return;
@@ -120,15 +128,18 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
           setResults(found);
           setSelected(0);
         }
-      } catch {
-        if (live) setResults({ groups: [] });
+      } catch (error) {
+        if (live) {
+          setResults(null);
+          setFailure(error?.message || "Search could not finish.");
+        }
       }
     }, 120);
     return () => {
       live = false;
       clearTimeout(timer);
     };
-  }, [query, type, visible]);
+  }, [query, type, visible, attempt]);
   const items = useMemo(() => searchItems(results, type), [results, type]);
   const subtitle = (item) => searchSubtitle(item, { files: folderFiles(item.id), left: item.type === "episode" ? timeLeft(item) : null });
   const chosen = items[selected];
@@ -136,9 +147,13 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
   const more = async () => {
     const loaded = results?.groups?.[0];
     if (!loaded) return;
-    const next = await search(query, type, loaded.rows.length).catch(() => null);
-    const page = next?.groups?.[0];
-    if (page) setResults({ groups: [{ ...page, rows: [...loaded.rows, ...page.rows] }] });
+    setMoreFailure("");
+    try {
+      const page = (await search(query, type, loaded.rows.length))?.groups?.[0];
+      if (page) setResults({ groups: [{ ...page, rows: [...loaded.rows, ...page.rows] }] });
+    } catch {
+      setMoreFailure("Could not load more results.");
+    }
   };
   const open = (item, mode = "default") => {
     if (item.type === "more") {
@@ -163,7 +178,7 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
   });
   const header = (label, count) => (
     <View style={s.searchLabel}>
-      <Text style={s.eyebrow}>{label.toUpperCase()}</Text>
+      <Eyebrow>{label}</Eyebrow>
       {!!count && <Text style={s.eyebrow}>{count}</Text>}
     </View>
   );
@@ -196,7 +211,9 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
           </View>
         </>
       )}
-      {!!query.trim() && results && !items.length && !quickActions.length && (
+      {!!failure && <ErrorNotice error={failure} retry={() => setAttempt((value) => value + 1)} />}
+      {!!moreFailure && <ErrorNotice error={moreFailure} retry={more} />}
+      {!!query.trim() && results && !failure && !items.length && !quickActions.length && (
         <View style={s.searchEmpty}>
           <Icon name="search" size={24} color={c.mute} />
           <Text style={s.heading}>{`No matches for “${query.trim()}”`}</Text>

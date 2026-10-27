@@ -6,6 +6,7 @@ import { clearIncoming } from "./incoming-files";
 import { Platform, AppState, AppRegistry } from "react-native";
 import * as SQLite from "expo-sqlite";
 import * as Notifications from "expo-notifications";
+import { NOTIFICATIONS_DENIED } from "./notification-permission.js";
 import * as BackgroundTask from "expo-background-task";
 import * as TaskManager from "expo-task-manager";
 import { client } from "./persistence";
@@ -321,12 +322,21 @@ async function registerNotificationCategories() {
     ]);
 }
 registerNotificationCategories().catch(() => {});
+export async function notificationsGranted() {
+  try {
+    return !!(await Notifications.getPermissionsAsync()).granted;
+  } catch {
+    return true;
+  }
+}
 export async function setNotifications(enabled) {
   await registerNotificationCategories();
   if (enabled) {
     const permission = await Notifications.requestPermissionsAsync();
     if (!permission.granted)
-      throw new Error("Allow Arca notifications in system settings");
+      throw Object.assign(new Error("Allow Arca notifications in system settings"), {
+        code: NOTIFICATIONS_DENIED,
+      });
     if (Platform.OS === "android")
       await Notifications.setNotificationChannelAsync("default", {
         name: "Arca",

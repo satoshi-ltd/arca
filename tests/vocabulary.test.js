@@ -87,14 +87,12 @@ test("the daemon and the notices speak of devices where a person reads them", ()
   }
 });
 
-test("the phone confirmation keeps its destructive style for Erase this device", () => {
-  const app = fs.readFileSync(path.join(root, "apps/mobile/src/App.jsx"), "utf8");
-  const match = app.match(/destructive=\{(\/[^/]+\/i)\.test\(/);
-  assert.ok(match, "the destructive flag is derived from the label");
-  const destructive = new RegExp(match[1].slice(1, -2), "i");
-  for (const label of ["Erase this device", "Stop syncing", "Remove device", "Delete"])
-    assert.equal(destructive.test(label), true, label);
-  assert.equal(destructive.test("Restore"), false);
+test("the phone confirmation keeps its destructive style for Erase this device", async () => {
+  const copy = await import("../apps/mobile/src/confirm-copy.js");
+  assert.equal(copy.eraseDevice({ folders: 1, size: 1, pending: 0 }).destructive, true);
+  assert.equal(copy.stopSyncing({ name: "a", files: 1, size: 1, pending: 0 }).destructive, true);
+  assert.equal(copy.deleteFile("a", false, false).destructive, true);
+  assert.equal(copy.restoreVersion({ path: "a", rev: 1 }, "today").destructive, false);
 });
 
 test("cold dialogs and Settings use plain wording the copy review asked for", () => {
@@ -122,7 +120,7 @@ test("cold dialogs and Settings use plain wording the copy review asked for", ()
     assert.equal(app.includes(phrase), true, `app lacks ${phrase}`);
   assert.match(
     app,
-    /On the server, run <code>docker exec &lt;container&gt; node packages\/cli\/arca\.js web-code<\/code> if Arca runs in Docker, or <code>arca web-code<\/code> if it is installed directly\./,
+    /On the server, run one of these commands\. The command prints a result that includes a six-digit code\. Enter that code above\./,
   );
   assert.ok(design.includes("On the new device, open Arca and choose Pair with your hub. A computer picks Another device first"));
   assert.equal(design.includes("On the new device, open Devices"), false);
@@ -141,20 +139,21 @@ test("the UX review's wording and tones hold across desktop, phone and site", ()
   assert.match(desktop, /\["Paused", "id", "pause"\]/);
   assert.match(desktop, /\["Disconnected", "id", "unplug"\]/);
   assert.match(desktop, /pill\("Removed", "er", "unplug"\)/);
-  assert.match(mobile, /`Stop syncing “\$\{target\.name\}”\?`/, "the phone names the folder it stops syncing");
-  assert.match(mobile, /"Stop syncing and delete",\n\s+\);/, "the phone button says the copy is deleted");
+  const phoneCopy = read("apps/mobile/src/confirm-copy.js");
+  assert.match(phoneCopy, /`Stop syncing “\$\{name\}”\?`/, "the phone names the folder it stops syncing");
+  assert.match(phoneCopy, /label: "Stop syncing and delete"/, "the phone button says the copy is deleted");
   assert.doesNotMatch(mobile, /credentials, selections, index, queues and caches/);
   assert.match(mobile, /state=\{m\.revoked \? "Removed" : ""\}/);
   assert.match(components, /\["Needs attention", "Removed"\]/);
-  assert.match(gallery, /label="Clear selection"/);
+  assert.match(components, /<Button label="Clear" onPress=\{onClear\} \/>/);
   assert.match(gallery, /accessibilityActions=\{\s*onLongPress\s*\?\s*\[\{ name: "longpress", label: selected \? "Deselect" : "Select" \}\]/, "a screen reader can select a tile");
-  assert.match(gallery, /item\.kind === "video" \? "Video" : "Photo"/, "a tile announces its kind");
+  assert.match(read("apps/mobile/src/browse.js"), /item\.kind === "video" \? "Video" : "Photo"/, "a tile announces its kind");
   assert.equal(site.includes("Your machines"), false);
   assert.equal(/daemon/i.test(read("apps/desktop/src/index.html")), false, "the first paint never says daemon");
   const theme = read("apps/mobile/src/theme.js");
   for (const style of ["inputShell", "codeCell", "button", "input"])
     assert.match(theme, new RegExp(`\\n    ${style}: \\{[^}]*borderColor: c\\.control,`), `${style} draws the control border`);
-  assert.match(mobile, /\/stop syncing\/i\.test\(shownConfirmation\.label\)\s+\? "unlink"/, "Stop syncing and delete keeps the unlink icon");
+  assert.match(phoneCopy, /label: "Stop syncing and delete",\s+icon: "unlink"/, "Stop syncing and delete keeps the unlink icon");
   assert.match(site, /<title>Arca — Free self-hosted cloud for files, photos, music &amp; movies<\/title>/);
 });
 
@@ -185,12 +184,13 @@ test("History explains why it is empty, on desktop and on the phone", async () =
     vm.runInNewContext(`${code}\nhistoryEmpty()`, {
       historyFilter,
       historyVolume,
-      empty: (heading, text, control, symbol) => ({ heading, text, symbol }),
+      button: (label, action) => `${label}|${action}`,
+      empty: (heading, text, control, symbol) => ({ heading, text, symbol, control }),
     });
-  assert.deepEqual(run("conflicts", ""), { heading: "No conflicts", text: "Clear Conflicts to see every change.", symbol: "triangle-alert" });
-  assert.deepEqual(run("deleted", "docs"), { heading: "No deleted files", text: "Clear Deleted to see every change.", symbol: "trash-2" });
-  assert.deepEqual(run("revisions", "docs"), { heading: "No changes in this folder", text: "Set Shared folder to All to see every change.", symbol: "history" });
-  assert.deepEqual(run("revisions", ""), { heading: "No history yet", text: "Changes to your files appear here.", symbol: "arca" });
+  assert.deepEqual(run("conflicts", ""), { heading: "No conflicts", text: "Nothing needs your decision.", symbol: "triangle-alert", control: "Show all changes|history-show-all" });
+  assert.deepEqual(run("deleted", "docs"), { heading: "No deleted files", text: "No file has been deleted here.", symbol: "trash-2", control: "Show all changes|history-show-all" });
+  assert.deepEqual(run("revisions", "docs"), { heading: "No changes in this folder", text: "Nothing has changed here yet.", symbol: "history", control: "Show all changes|history-show-all" });
+  assert.deepEqual(run("revisions", ""), { heading: "No history yet", text: "Changes to your files appear here.", symbol: "arca", control: "" });
   const { historyEmpty } = await import("../apps/mobile/src/history-empty.js");
   const titles = [
     historyEmpty({ offline: true, filter: "revisions", hasFolder: false }),
@@ -207,7 +207,6 @@ test("History explains why it is empty, on desktop and on the phone", async () =
     const desktopState = run(filter, volume);
     const phoneState = historyEmpty({ offline: false, filter, hasFolder });
     assert.equal(phoneState.title, desktopState.heading, `${filter}/${volume} title`);
-    assert.equal(phoneState.text, desktopState.text, `${filter}/${volume} text`);
   }
   const phoneSource = (file) => fs.readFileSync(path.join(root, "apps", "mobile", "src", file), "utf8");
   assert.ok(phoneSource("FolderGallery.jsx").includes('"Photos added to this folder appear here."'));
@@ -267,7 +266,7 @@ test("History heads each day group and tells each row's clock time the same way 
   assert.match(theme, /tabularTime: \{ fontVariant: \["tabular-nums"\] \}/, "and so do narrow times");
   assert.ok(app.includes("style={s.tabularTime}"), "the narrow time carries that style");
   assert.ok(source.includes("const day = dayLabel(r.created);"), "the desktop groups by day label");
-  assert.ok(source.includes("row-time\">${compact ? relative(v.created) : clockTime(v.created)}<"), "desktop History rows show the clock, Recent keeps relative times");
+  assert.ok(source.includes("${compact ? relative(v.created) : clockTime(v.created)}</span>"), "desktop History rows show the clock, Recent keeps relative times");
 });
 
 test("a conflict is a triangle-alert on desktop and phone, never a git-branch", async () => {

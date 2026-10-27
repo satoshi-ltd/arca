@@ -21,7 +21,7 @@ test("a video folder opens on its library with the clapperboard tile, even when 
   assert.doesNotMatch(streamed, /disabled=/, "its cached list stays browsable offline");
   const home = app.slice(app.indexOf("{folderSections(folderRows"), app.indexOf("Loading shared folders"));
   assert.match(home, /\{section\.kind === "video" &&\s+streamedVolumes\.map\(\(v, index\) => streamedRow\(v, section\.folders\.length \+ index\)\)\}/, "streamed folders join the Movies & TV section");
-  assert.match(home, /<Text style=\{s\.eyebrow\}>MOVIES & TV<\/Text>\s+<View style=\{s\.group\}>\{streamedVolumes\.map\(streamedRow\)\}<\/View>/, "or form it when no selected video folder does");
+  assert.match(home, /<Eyebrow>Movies & TV<\/Eyebrow>\s+<View style=\{s\.group\}>\{streamedVolumes\.map\(streamedRow\)\}<\/View>/, "or form it when no selected video folder does");
   assert.match(home, /!locals\.some\(\(f\) => f\.id === v\.id\) && !isVideoFolder\(catalog, v\.id\)/, "and never sit under On hub · not selected");
   assert.match(read("home-data.js"), /\{ kind: "video", label: "MOVIES & TV" \}/);
   assert.match(app, /\{\(!videoStreaming \|\| !!currentFolder\?\.selected\) && \(\s+<Button\s+iconOnly\s+label="Folder actions"/, "a streamed folder offers no syncing; an old copy still has its actions so it can be removed");
@@ -170,7 +170,7 @@ test("sort and season pickers use the app's segmented control, there is no genre
   assert.match(theme, /videoToolbar: \{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between"/, "it wraps below the tabs when it does not fit");
   assert.match(library, /options=\{show\.seasons\.map\(\(entry\) => \(\{ value: entry\.season, label: seasonLabel\(entry\) \}\)\)\}/);
   const components = read("components.jsx");
-  assert.match(components, /export function SegmentedControl\(\{ options, value, onChange, scroll = false \}\)/);
+  assert.match(components, /export function SegmentedControl\(\{ options, value, onChange, scroll = false, clearable = false \}\)/);
   assert.match(components, /return scroll \? \(\s+<ScrollView horizontal showsHorizontalScrollIndicator=\{false\}>/);
   assert.match(theme, /segmentScroll: \{ flex: 0, paddingHorizontal: 12 \}/, "scrolling segments size to their labels");
   assert.match(read("video-library.js"), /other: "Others",/);

@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDesign, Icon } from "./components";
 import { native } from "./private-network";
+import { announceNotice } from "./announce.js";
 import { useLeaving, useMotion } from "./motion";
 import { motion } from "./design-tokens.js";
 import {
@@ -44,6 +45,9 @@ export function Notice({ item, onDismiss, onAction, disabled, leaving = false, o
       useNativeDriver: true,
     }).start(({ finished }) => finished && leaving && onLeft?.());
   }, [leaving]);
+  useEffect(() => {
+    if (!leaving) announceNotice(item);
+  }, [item.created, item.title, item.body]);
   const swap = useRef(new Animated.Value(1)).current;
   const shownAt = useRef(item.created);
   useEffect(() => {
@@ -101,29 +105,18 @@ export function Notice({ item, onDismiss, onAction, disabled, leaving = false, o
               {item.body}
             </Text>
           )}
-          {(item.action || !info) && (
+          {!!item.action && (
             <View style={s.noticeActions}>
-              {!!item.action && (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={disabled}
-                  onPress={() => onAction(item)}
-                  style={s.noticeLinkTarget}
-                >
-                  <Text style={[s.noticeLink, info && s.noticeInfoLink]}>
-                    {item.actionLabel}
-                  </Text>
-                </Pressable>
-              )}
-              {!info && (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={onDismiss}
-                  style={s.noticeLinkTarget}
-                >
-                  <Text style={[s.noticeLink, s.noticeMuted]}>Dismiss</Text>
-                </Pressable>
-              )}
+              <Pressable
+                accessibilityRole="button"
+                disabled={disabled}
+                onPress={() => onAction(item)}
+                style={s.noticeLinkTarget}
+              >
+                <Text style={[s.noticeLink, info && s.noticeInfoLink]}>
+                  {item.actionLabel}
+                </Text>
+              </Pressable>
             </View>
           )}
         </View>
@@ -132,7 +125,6 @@ export function Notice({ item, onDismiss, onAction, disabled, leaving = false, o
           accessibilityLabel="Dismiss notification"
           onPress={onDismiss}
           style={s.noticeClose}
-          hitSlop={14}
         >
           <Icon name="close" size={16} color={info ? c.noticeInfoFg : c.mute} />
         </Pressable>

@@ -284,7 +284,7 @@ test("cancelling while the share is still being resolved removes the staged file
 test("the share sheet offers recent destinations above the folder list and records every save", async () => {
   const screen = await fs.readFile(new URL("../apps/mobile/src/IncomingShare.jsx", import.meta.url), "utf8");
   const list = screen.slice(screen.indexOf(") : !volume ? ("), screen.indexOf('label="Shared folders"'));
-  assert.ok(list.indexOf("RECENT DESTINATIONS") > 0 && list.indexOf("RECENT DESTINATIONS") < list.indexOf("SELECTED FOLDERS"));
+  assert.ok(list.indexOf("Recent destinations") > 0 && list.indexOf("Recent destinations") < list.indexOf("Selected folders"));
   assert.match(list, /\{!!recent\.length && \(/, "no section without history");
   assert.match(list, /icon="history"\s+name=\{destinationLabel\(entry\)\}\s+description=\{destinationUsage\(entry\)\}/);
   assert.match(list, /setVolume\(entry\.folder\);\s+setDirectory\(entry\.directory\);/, "one tap lands on the destination");

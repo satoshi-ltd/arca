@@ -53,8 +53,9 @@ import { galleryConfig } from "./gallery.js";
 import { allPhotosNote, sourceAlbums } from "./validation.js";
 import { historyEmpty } from "./history-empty.js";
 import { clockTime, dayLabel } from "./history-days.js";
-import { Section } from "./components";
+import { Eyebrow, Section, SelectionBar } from "./components";
 import { ConfirmDialog } from "./components";
+import * as confirmCopy from "./confirm-copy.js";
 import { Rise, useLeaving, useListMotion, useMotion, useRetained } from "./motion";
 import { motion } from "./design-tokens.js";
 import { subscribeNotificationResponse } from "./runtime";
@@ -69,6 +70,10 @@ import {
   HUB_ONLY_REASON,
 } from "../../desktop/src/notice-contract.js";
 import { Onboarding } from "./Onboarding";
+import { defaultDeviceName } from "./device-name.js";
+import { rejectedCode } from "./pairing.js";
+import { albumNote, historyNote, uploadsNote, PAUSED_REASON } from "./folder-actions.js";
+import { notificationsOn, settingsAction } from "./notification-permission.js";
 import { PairingForm } from "./PairingForm";
 import { selectFirstFolders } from "./onboarding";
 import {
@@ -133,6 +138,7 @@ import {
   Sheet,
   ApprovalSheet,
   EmptyState,
+  OfflineEmpty,
 } from "./components";
 import { client } from "./persistence";
 import { isPickerCancelled, sourceUnavailable } from "./action-errors.js";
@@ -142,6 +148,7 @@ import {
   subscribe,
   setBackground,
   setNotifications,
+  notificationsGranted,
   destroyReplica,
 } from "./runtime";
 import config from "../app.json";
@@ -196,8 +203,8 @@ import {
 import { sidebarLayout, fileMenuPosition } from "./layout";
 import { bytes, count, fileCount, folderSize, unbroken } from "./format";
 import { deviceCells, deviceSegments, presence, rosterPresence } from "./device-line.js";
-import { FIRST_ROWS, browseEntries, revealWindow } from "./browse";
-import { deviceStatus, folderSections, historyCaption, hubChecking, pullHeld } from "./home-data";
+import { FIRST_ROWS, browseEntries, entryLabel, revealWindow } from "./browse";
+import { deviceStatus, folderSections, folderStatus, historyCaption, historyPath, hubChecking, pullHeld } from "./home-data";
 import { FavoritesDrawer, FavoritesSection } from "./Favorites";
 import {
   FAVORITE_ICONS,
@@ -303,7 +310,8 @@ export default function App() {
     [error, setError] = useState(""),
     [address, setAddress] = useState(""),
     [code, setCode] = useState(""),
-    [name, setName] = useState(Platform.OS === "ios" ? "iPhone" : "Android");
+    [name, setName] = useState(defaultDeviceName(Platform)),
+    [pairError, setPairError] = useState("");
   const [folder, setFolder] = useState(null),
     [entries, setEntries] = useState([]),
     [ignorePolicy, setIgnorePolicy] = useState({ id: null, text: "" }),
@@ -489,19 +497,18 @@ export default function App() {
   const [mediaCounts, setMediaCounts] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [shownConfirmation, releaseConfirmation] = useRetained(confirmation);
-  function ask(title, message, label = title, icon) {
-    return new Promise((resolve) =>
-      setConfirmation({ title, message, label, icon, resolve }),
-    );
+  function ask(spec) {
+    return new Promise((resolve) => setConfirmation({ ...spec, resolve }));
   }
-  function confirm(title, message, action, label = title, cancel) {
-    ask(title, message, label).then((ok) => (ok ? action() : cancel?.()));
+  function confirm(spec, action, cancel) {
+    ask(spec).then((ok) => (ok ? action() : cancel?.()));
   }
   const settle = (ok) => {
     const current = confirmation;
     setConfirmation(null);
     current?.resolve(ok);
   };
+  const [photoSelection, setPhotoSelection] = useState(null);
   const [galleryRailModel, setGalleryRailModel] = useState(null);
   const [galleryViewport, setGalleryViewport] = useState({ y: 0, height: 0 });
   const galleryScroll = useRef(null);
@@ -603,7 +610,7 @@ export default function App() {
         setName(
           await engine.current.store.get(
             "name",
-            Platform.OS === "ios" ? "iPhone" : "Android",
+            defaultDeviceName(Platform),
           ),
         );
         await update();
@@ -618,6 +625,7 @@ export default function App() {
         engine.current.discoveryMs =
           value === "active" ? FOREGROUND_DISCOVERY_MS : DISCOVERY_MS;
       if (value === "active") {
+        setFocusTick((tick) => tick + 1);
         if (leftAt !== null && Date.now() - leftAt >= INACTIVE_RESCAN_MS)
           engine.current?.lastInventory.clear();
         leftAt = null;
@@ -1301,11 +1309,7 @@ export default function App() {
   }
   function deleteTrack(track) {
     confirm(
-      `Delete “${track.title}”?`,
-      "It is removed from every device. History keeps it for the folder's retention and you can restore it from History." +
-        (!connected || status.paused
-          ? " Deletion will sync when connected and resumed."
-          : ""),
+      confirmCopy.deleteTrack(track.title, !connected || status.paused),
       () =>
         run(
           async () => {
@@ -1317,7 +1321,6 @@ export default function App() {
           },
           { success: "Track deleted" },
         ),
-      "Delete",
     );
   }
   function musicChanged() {
@@ -1371,13 +1374,7 @@ export default function App() {
       .hasUnsyncedContent(folder.id, playlist.path)
       .catch(() => true);
     confirm(
-      "Delete this playlist?",
-      (unsynced
-        ? "Its latest changes have not reached the hub, so this cannot be undone."
-        : "Deletes it from all synced copies. Retained history can be restored.") +
-        (!connected || status.paused
-          ? " Deletion will sync when connected and resumed."
-          : ""),
+      confirmCopy.deletePlaylist(playlist.name, unsynced, !connected || status.paused),
       () =>
         run(
           async () => {
@@ -1392,7 +1389,6 @@ export default function App() {
           },
           { success: "Playlist deleted" },
         ),
-      "Delete playlist",
     );
   }
   useEffect(() => {
@@ -1630,13 +1626,35 @@ export default function App() {
     (entry) => describeFavorite(entry).label,
   );
   const pinnedFolders = pinnedFolderIds(favorites.items);
-  const folderRowFor = (f, index) => (
+  const folderRowFor = (f, index) => {
+    const state = folderStatus({
+      paused: status.paused,
+      issue: f.issue || galleryConfig(f)?.issue,
+      offline: status.offline,
+      connected,
+      syncing: status.busy && status.syncingVolume === f.id,
+      completed: f.completed,
+      pending:
+        galleryConfig(f)?.enabled &&
+        (galleryConfig(f).summary?.pending ||
+          !galleryConfig(f).scannedAt ||
+          Object.keys(galleryConfig(f).cursors || {}).length),
+      cycle: status.busy,
+    });
+    const remote = catalog?.volumes?.find((v) => v.id === f.id);
+    return (
     <FolderRow
       grouped
       divider={index > 0}
       name={f.name}
       icon={favoriteFolderIcon(f)}
-      description={Number.isFinite(f.files) ? unbroken(`${fileCount(f.files)} · ${bytes(f.bytes)} local`) : "Not counted yet"}
+      description={
+        state === "Waiting" && Number.isFinite(remote?.bytes)
+          ? unbroken(`${bytes(remote.bytes)} to download`)
+          : Number.isFinite(f.files)
+            ? unbroken(`${fileCount(f.files)} · ${bytes(f.bytes)} local`)
+            : "Not counted yet"
+      }
       conflict={!!catalog?.volumes?.find((v) => v.id === f.id)?.conflicts}
       progress={
         status.busy &&
@@ -1646,31 +1664,7 @@ export default function App() {
             status.progress.bytesTotal
           : undefined
       }
-      status={
-        status.paused
-          ? "Paused"
-          : f.issue || galleryConfig(f)?.issue
-            ? "Needs attention"
-            : status.offline
-              ? "Offline"
-              : !connected
-                ? "Disconnected"
-              : status.busy &&
-                  status.syncingVolume === f.id
-                ? "Syncing"
-                : !f.completed ||
-                    (galleryConfig(f)?.enabled &&
-                      (galleryConfig(f).summary
-                        ?.pending ||
-                        !galleryConfig(f)
-                          .scannedAt ||
-                        Object.keys(
-                          galleryConfig(f)
-                            .cursors || {},
-                        ).length))
-                  ? "Incomplete"
-                  : "Up to date"
-      }
+      status={state}
       onPress={() =>
         openFolder(f).catch((e) =>
           setError(e.message),
@@ -1685,7 +1679,8 @@ export default function App() {
       favorite={isFavorite(favorites, { folder: f.id, kind: "folder", target: "" })}
       onFavorite={() => toggleFavoriteEntry({ folder: f.id, kind: "folder", target: "", label: f.name })}
     />
-  );
+    );
+  };
   const toggleFavoriteEntry = (entry) => changeFavorites((value) => toggleFavorite(value, entry)).catch((e) => setError(e.message));
   const favoriteSheet = (entry, extra = {}) => setSheet({ kind: "favorite", entry, ...extra });
   function openFavorite(entry) {
@@ -1893,10 +1888,7 @@ export default function App() {
   function deleteMedia(item) {
     return new Promise((resolve) =>
       confirm(
-        Array.isArray(item)
-          ? `Delete ${count(item.length, "photo", "photos")}?`
-          : "Delete this photo?",
-        "Deletes the selected photos and their Live Photo resources from the shared Photos library for everyone. Originals stay in Photos. Recovery depends on this folder’s version retention.",
+        confirmCopy.deletePhotos(item),
         () =>
           run(
             async () => {
@@ -1914,7 +1906,6 @@ export default function App() {
             },
             { success: "Photos deleted", hubOnly: true },
           ).then(() => resolve(false)),
-        "Delete photo",
         () => resolve(false),
       ),
     );
@@ -2047,22 +2038,60 @@ export default function App() {
         : "Uploads these albums";
     const upgrade = all && !!source;
     confirm(
-      upgrade ? "Upload every photo?" : "Enable photo uploads?",
-      `${what}. ${all ? "This uses your current network, including mobile data. " : ""}Arca keeps a complete local copy of the shared folder, including photos from other devices. Uses storage on this phone. Originals stay in Photos.`,
+      {
+        title: upgrade ? "Upload every photo?" : "Enable photo uploads?",
+        message: `${what}. ${all ? "This uses your current network, including mobile data. " : ""}Arca keeps a complete local copy of the shared folder, including photos from other devices. Uses storage on this phone. Originals stay in Photos.`,
+        label: upgrade ? "Upload everything" : "Enable uploads",
+        icon: "upload",
+        destructive: false,
+      },
       save,
-      upgrade ? "Upload everything" : "Enable uploads",
     );
   }
-  function unlink() {
+  function editCode(value) {
+    setPairError("");
+    setCode(value);
+  }
+  async function redeemCode() {
+    const r = engine.current;
+    setPairError("");
+    await r.store.set("name", name.trim());
+    try {
+      await client.pair(address, code, name.trim());
+    } catch (e) {
+      const message = rejectedCode(e);
+      if (!message) throw e;
+      setCode("");
+      setPairError(message);
+      return false;
+    }
+    setCode("");
+    r.scope = client.state().connection.hubId;
+    await r.store.set("scope", r.scope);
+    return true;
+  }
+  async function pendingFiles(ids) {
+    try {
+      const lists = await Promise.all(
+        ids.map((id) => engine.current.store.pending(engine.current.scope, id)),
+      );
+      return lists.reduce((total, list) => total + list.length, 0);
+    } catch {
+      return null;
+    }
+  }
+  async function unlink() {
     const target = folder;
-    const gallery = galleryConfig(locals.find((f) => f.id === target.id));
-    const sourceOnly = gallery?.mode === "source";
-    const message = sourceOnly
-      ? "Stops photo uploads and removes this folder’s Arca copy and album link. Originals in Photos, hub files and history are kept. Unsynced local changes will be lost; export the folder first to keep them."
-      : "Removes this folder’s Arca copy from this phone. Hub files and history are kept. Unsynced local changes will be lost; use Export folder first to keep them.";
+    const local = locals.find((f) => f.id === target.id);
+    const sourceOnly = galleryConfig(local)?.mode === "source";
     confirm(
-      `Stop syncing “${target.name}”?`,
-      message,
+      confirmCopy.stopSyncing({
+        name: target.name,
+        files: local?.files,
+        size: local?.bytes,
+        pending: await pendingFiles([target.id]),
+        sourceOnly,
+      }),
       () =>
         run(
           async () => {
@@ -2073,13 +2102,16 @@ export default function App() {
           },
           { label: "Stopping sync…" },
         ),
-      "Stop syncing and delete",
     );
   }
-  function destroy() {
+  async function destroy() {
+    const held = locals.filter((f) => f.selected);
     confirm(
-      "Erase this device?",
-      "Permanently deletes every downloaded folder, any unsynced changes and this phone’s pairing and saved settings. Arca returns to first-run setup. Hub files and history and other devices are kept. This cannot be undone. Works offline. If the hub cannot be reached, remove this device from its Devices list separately.",
+      confirmCopy.eraseDevice({
+        folders: held.length,
+        size: held.reduce((total, f) => total + (f.bytes || 0), 0),
+        pending: await pendingFiles(held.map((f) => f.id)),
+      }),
       () =>
         run(
           async () => {
@@ -2088,10 +2120,11 @@ export default function App() {
             setSheet(null);
             setAddress("");
             setCode("");
+            setPairError("");
             setEntries([]);
             setMachines(null);
             setHistory({ versions: [], next: null });
-            setName(Platform.OS === "ios" ? "iPhone" : "Android");
+            setName(defaultDeviceName(Platform));
             setDeviceName(null);
             setView("Devices");
           },
@@ -2106,8 +2139,7 @@ export default function App() {
   }
   function disconnect() {
     confirm(
-      "Disconnect from hub?",
-      "Local files are kept. A new pairing code will be required to reconnect.",
+      confirmCopy.disconnectHub(),
       () =>
         run(async () => {
           const r = engine.current;
@@ -2124,7 +2156,6 @@ export default function App() {
           setFolder(null);
           setHistory({ versions: [], next: null });
         }),
-      "Disconnect",
     );
   }
   const [directory, setDirectory] = useState(""),
@@ -2198,6 +2229,7 @@ export default function App() {
         remove={currentFolder?.selected ? deleteMedia : null}
         focus={galleryFocus}
         onFocused={() => setGalleryFocus(null)}
+        onSelection={setPhotoSelection}
       />
     ) : null;
   async function resolveConflict(entry, volume = folder?.id) {
@@ -2261,8 +2293,7 @@ export default function App() {
   }
   async function restore(row) {
     confirm(
-      "Restore this version?",
-      "The hub creates a new version. It will synchronize to every selected copy.",
+      confirmCopy.restoreVersion(row, date(row.created)),
       () =>
         run(async () => {
           const restored = await client.api("/v1/restore", {
@@ -2281,7 +2312,6 @@ export default function App() {
             volume: row.volume,
           });
         }, { hubOnly: true }),
-      "Restore",
     );
   }
   useEffect(() => {
@@ -2336,6 +2366,16 @@ export default function App() {
     setView(tab);
     setSheet(null);
   };
+  const [notificationAllowed, setNotificationAllowed] = useState(null);
+  const [focusTick, setFocusTick] = useState(0);
+  useEffect(() => {
+    if (view !== "Settings") return;
+    let live = true;
+    notificationsGranted().then((granted) => live && setNotificationAllowed(granted));
+    return () => {
+      live = false;
+    };
+  }, [view, focusTick]);
   const showError = error || status.error;
   const noticeFolder = useRef(null);
   useEffect(() => {
@@ -2352,19 +2392,45 @@ export default function App() {
     notices.reconcile(conditions);
     if (error)
       notices.push(
-        errorNotice(
-          errorCode.current.message === error ? errorCode.current : error,
-          {
-            id: "action",
-            hubName: state.catalog?.name,
-            action: retryAction.current ? "retry" : null,
-            hubOnly:
-              errorCode.current.message === error && !!errorCode.current.hubOnly,
-          },
+        settingsAction(
+          errorNotice(
+            errorCode.current.message === error ? errorCode.current : error,
+            {
+              id: "action",
+              hubName: state.catalog?.name,
+              action: retryAction.current ? "retry" : null,
+              hubOnly:
+                errorCode.current.message === error && !!errorCode.current.hubOnly,
+            },
+          ),
+          errorCode.current.message === error ? errorCode.current.code : undefined,
         ),
       );
     else notices.clear("action");
   }, [error, status.error, locals, state.catalog, notices, folder?.id]);
+  async function savedShare({ count: saved, folder: target }) {
+    await update();
+    notices.push({
+      id: "share-saved",
+      kind: "info",
+      title: `Saved ${fileCount(saved)} to ${target.name}`,
+      body:
+        engine.current?.paused || status.offline || !connected
+          ? "Waiting to upload."
+          : undefined,
+      action: "folder",
+      actionLabel: "Open",
+      volume: target.id,
+    });
+  }
+  const explainPause = () =>
+    notices.push({
+      id: "sync-paused",
+      kind: "info",
+      title: PAUSED_REASON,
+      action: "resume",
+      actionLabel: "Resume",
+    });
   const noticeAction = (item) => {
     if (item.action === "video-watch-undo") {
       notices.clear(item.id);
@@ -2386,6 +2452,15 @@ export default function App() {
     } else if (item.action === "pair") {
       setView("Settings");
       setSheet(null);
+    } else if (item.action === "resume") {
+      notices.clear(item.id);
+      run(async () => {
+        await engine.current.pause(false);
+        startSync();
+      });
+    } else if (item.action === "settings") {
+      setError("");
+      Linking.openSettings().catch(() => {});
     } else if (item.id === "action" && retryAction.current)
       retryAction.current();
     else startSync();
@@ -2456,15 +2531,13 @@ export default function App() {
   const deleteCurrentFile = sheet?.localEntry
     ? async () =>
         confirm(
-          "Delete this file?",
-          ((await engine.current
-            .hasUnsyncedContent(sheet.volume, sheet.path)
-            .catch(() => true))
-            ? "Its latest changes have not reached the hub, so this cannot be undone."
-            : "Deletes from all synced copies. Retained history can be restored.") +
-            (!connected || status.paused
-              ? " Deletion will sync when connected and resumed."
-              : ""),
+          confirmCopy.deleteFile(
+            sheet.path,
+            await engine.current
+              .hasUnsyncedContent(sheet.volume, sheet.path)
+              .catch(() => true),
+            !connected || status.paused,
+          ),
           () =>
             run(
               async () => {
@@ -2476,19 +2549,19 @@ export default function App() {
               },
               { success: "File deleted" },
             ),
-          "Delete file",
         )
     : null;
+  const historyFolderName = volumes.find((v) => v.id === historyVolume)?.name || "All";
   const historyControls = (
     <View style={wide ? s.historyTools : s.folderTools}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Shared folder"
+        accessibilityLabel={`Shared folder, ${historyFolderName}`}
         onPress={() => setSheet({ kind: "history-filter" })}
         style={[s.button, s.historyFolderFilter]}
       >
         <Text numberOfLines={1} style={[s.buttonLabel, s.flex]}>
-          {volumes.find((v) => v.id === historyVolume)?.name || "All"}
+          {historyFolderName}
         </Text>
         <Icon name="chevron-down" size={14} />
       </Pressable>
@@ -2498,6 +2571,7 @@ export default function App() {
           { label: "Deleted", value: "deleted" },
         ]}
         value={historyFilter}
+        clearable
         onChange={(value) =>
           setHistoryFilter(value === historyFilter ? "revisions" : value)
         }
@@ -2741,6 +2815,8 @@ export default function App() {
                             icon={syncDone ? "check" : "refresh"}
                             activity={!status.offline && status.busy}
                             disabled={status.paused || !engine.current}
+                            reason={status.paused ? PAUSED_REASON : undefined}
+                            onReason={explainPause}
                             onPress={() => startSync(true)}
                           />
                         )}
@@ -2755,7 +2831,8 @@ export default function App() {
                   machine={machines?.find((m) => m.isHub)}
                   catalog={catalog}
                   locals={locals}
-                  onSaved={update}
+                  onSaved={savedShare}
+                  onChoose={() => selectTab("Folders")}
                 />
                 <Animated.View
                   style={[s.flex, { transform: [{ translateX: edge }] }]}
@@ -2792,7 +2869,7 @@ export default function App() {
                         colors={[c.accent]}
                         progressBackgroundColor={c.paper}
                         onRefresh={() => {
-                          if (status.paused) return;
+                          if (status.paused) return explainPause();
                           setPulling(true);
                           startSync(true);
                         }}
@@ -2807,18 +2884,18 @@ export default function App() {
                       {[
                         [
                           "Status",
-                          status.paused
-                            ? "Paused"
-                            : status.offline
-                              ? "Offline"
-                              : currentFolder?.issue || status.error
-                                ? "Needs attention"
-                                : status.busy &&
-                                    status.syncingVolume === currentFolder?.id
-                                  ? "Syncing"
-                                  : currentFolder?.completed
-                                    ? "Up to date"
-                                    : "Not yet synced",
+                          folderStatus({
+                            paused: status.paused,
+                            issue: currentFolder?.issue || status.error,
+                            offline: status.offline,
+                            connected,
+                            syncing:
+                              status.busy &&
+                              status.syncingVolume === currentFolder?.id,
+                            completed: currentFolder?.completed,
+                            pending: false,
+                            cycle: status.busy,
+                          }),
                           currentFolder?.completed
                             ? `Completed ${relative(currentFolder.completed)}`
                             : "No completed sync yet",
@@ -3017,6 +3094,7 @@ export default function App() {
                                   updated={status.last}
                                   offline={status.offline}
                                   reconnect={reconnect}
+                                  devices={() => setView("Devices")}
                                   date={date}
                                   open={(row) =>
                                     getHistory({
@@ -3049,11 +3127,7 @@ export default function App() {
                                         <Reveal key={e.path} active={focusPath === e.path}>
                                         <Pressable
                                           accessibilityRole="button"
-                                          accessibilityLabel={
-                                            e.directory
-                                              ? `Open folder ${e.label}`
-                                              : e.label
-                                          }
+                                          accessibilityLabel={entryLabel(e)}
                                           onPress={() => {
                                             if (e.directory) {
                                               setDirectory(e.path + "/");
@@ -3148,17 +3222,17 @@ export default function App() {
                               <StickyDetailSide>
                                 {!compact && !!previewEntry && entries.some((x) => x.path === previewEntry.path) && (
                                   <Section>
-                                    <Text style={s.eyebrow}>PREVIEW</Text>
+                                    <Eyebrow>Preview</Eyebrow>
                                     <Card>
                                       <FilePreview entry={previewEntry} files={engine.current?.files} />
                                       <Text style={s.heading}>{previewEntry.path.split("/").pop()}</Text>
                                       <Text style={s.caption}>{bytes(previewEntry.size || 0)}</Text>
-                                      <Button label="Open" onPress={() => openFileDetail(previewEntry)} />
+                                      <Button label="View details" onPress={() => openFileDetail(previewEntry)} />
                                     </Card>
                                   </Section>
                                 )}
                                 <Section>
-                                  <Text style={s.eyebrow}>LOCAL COPY</Text>
+                                  <Eyebrow>Local copy</Eyebrow>
                                   <Card>
                                     <Text style={s.text}>
                                       {currentFolder?.issue
@@ -3170,7 +3244,7 @@ export default function App() {
                                   </Card>
                                 </Section>
                                 <Section>
-                                  <Text style={s.eyebrow}>COPIES</Text>
+                                  <Eyebrow>Copies</Eyebrow>
                                   <View style={s.group}>
                                     <View style={[s.settingRow, s.row]}>
                                       <Icon name="server" />
@@ -3258,7 +3332,7 @@ export default function App() {
                           />
                           {folderSections(folderRows.map((row) => row.item).filter((f) => !pinnedFolders.has(f.id)), folderKind).map((section) => (
                             <Section key={section.kind}>
-                              <Text style={s.eyebrow}>{section.label}</Text>
+                              <Eyebrow>{section.label}</Eyebrow>
                               <View style={s.group}>
                                 {section.folders.map((f, index) => (
                                   <Rise
@@ -3279,7 +3353,7 @@ export default function App() {
                           {!!streamedVolumes.length &&
                             !locals.some((f) => folderKind(f) === "video" && !pinnedFolders.has(f.id)) && (
                               <Section>
-                                <Text style={s.eyebrow}>MOVIES & TV</Text>
+                                <Eyebrow>Movies & TV</Eyebrow>
                                 <View style={s.group}>{streamedVolumes.map(streamedRow)}</View>
                               </Section>
                             )}
@@ -3287,9 +3361,9 @@ export default function App() {
                             (v) => !locals.some((f) => f.id === v.id) && !isVideoFolder(catalog, v.id),
                           ) && (
                             <Section>
-                              <Text style={s.eyebrow}>
-                                ON HUB · NOT SELECTED
-                              </Text>
+                              <Eyebrow>
+                                On hub · not selected
+                              </Eyebrow>
                               <View style={s.availableGroup}>
                                 {volumes
                                   .filter(
@@ -3390,7 +3464,11 @@ export default function App() {
                       address={address}
                       setAddress={setAddress}
                       code={code}
-                      setCode={setCode}
+                      setCode={editCode}
+                      codeError={pairError}
+                      back={() =>
+                        run(() => engine.current.store.set("onboarding", null))
+                      }
                       catalog={catalog}
                       free={status.free}
                       busy={actionLocked}
@@ -3401,13 +3479,8 @@ export default function App() {
                       }
                       pair={() =>
                         run(async () => {
-                          const r = engine.current;
-                          await r.store.set("name", name.trim());
-                          await client.pair(address, code, name.trim());
-                          setCode("");
-                          r.scope = client.state().connection.hubId;
-                          await r.store.set("scope", r.scope);
-                          await r.store.set("onboarding", "folders");
+                          if (await redeemCode())
+                            await engine.current.store.set("onboarding", "folders");
                         }, { hubOnly: true })
                       }
                       retry={() => run(() => client.refresh(), { hubOnly: true })}
@@ -3449,20 +3522,13 @@ export default function App() {
                           address={address}
                           setAddress={setAddress}
                           code={code}
-                          setCode={setCode}
+                          setCode={editCode}
+                          codeError={pairError}
                           busy={busy}
                           blocked={!engine.current}
                           pair={() =>
                               run(async () => {
-                                await engine.current.store.set(
-                                  "name",
-                                  name.trim(),
-                                );
-                                await client.pair(address, code, name.trim());
-                                setCode("");
-                                const r = engine.current;
-                                r.scope = client.state().connection.hubId;
-                                await r.store.set("scope", r.scope);
+                                if (!(await redeemCode())) return;
                                 startSync();
                                 setView("Folders");
                               }, { hubOnly: true })
@@ -3478,7 +3544,7 @@ export default function App() {
                       {connection && (
                         <>
                           <Section>
-                            <Text style={s.eyebrow}>DEVICES</Text>
+                            <Eyebrow>Devices</Eyebrow>
                             {machinesSaved && !!machines?.length && (
                               <Text style={s.caption}>
                                 Showing saved device information.
@@ -3577,7 +3643,13 @@ export default function App() {
                   {screen === "History" && (
                     <>
                       {!connected && (
-                        <Text style={s.text}>Connect to view hub history.</Text>
+                        <OfflineEmpty
+                          icon="history"
+                          title="No saved history"
+                          text="Connect to the hub to load history."
+                          retry={() => getHistory().catch((e) => setHistoryError(e.message))}
+                          devices={() => setView("Devices")}
+                        />
                       )}
                       {history.offline && (
                         <Text style={s.caption}>
@@ -3602,13 +3674,22 @@ export default function App() {
                         !historyLoading &&
                         !historyError &&
                         !history.versions.length && (
-                          <EmptyState
-                            {...historyEmpty({
-                              offline: history.offline,
-                              filter: historyFilter,
-                              hasFolder: !!historyVolume,
-                            })}
-                          />
+                          (history.offline ? (
+                            <OfflineEmpty
+                              {...historyEmpty({ offline: true })}
+                              retry={() => {
+                                reconnect();
+                                getHistory().catch((e) => setHistoryError(e.message));
+                              }}
+                            />
+                          ) : (
+                            <EmptyState
+                              {...historyEmpty({
+                                filter: historyFilter,
+                                hasFolder: !!historyVolume,
+                              })}
+                            />
+                          ))
                         )}
                       {!!history.versions.length && (
                         <View style={s.historyGroups}>
@@ -3621,7 +3702,7 @@ export default function App() {
                             }, new Map()),
                           ).map(([day, rows]) => (
                             <Section key={day}>
-                              <Text style={s.eyebrow}>{day.toUpperCase()}</Text>
+                              <Eyebrow>{day}</Eyebrow>
                               <View style={s.group}>
                                 {rows.map((row, index) => (
                                   <Pressable
@@ -3649,10 +3730,12 @@ export default function App() {
                                           !!row.deleted && s.deletedFile,
                                         ]}
                                       >
-                                        {row.path}
+                                        {historyPath(row.path).name}
                                       </Text>
                                       <Text style={s.caption}>
                                         {!wide && `${row.folder} · `}
+                                        {!!historyPath(row.path).dir &&
+                                          `${historyPath(row.path).dir} · `}
                                         {historyCaption(row, bytes(row.size))}
                                         {!wide && (
                                           <Text style={s.tabularTime}>
@@ -3706,9 +3789,8 @@ export default function App() {
                   {screen === "Settings" && (
                     <>
                       <Section>
-                        <Text style={s.eyebrow}>THIS DEVICE</Text>
-                        <DeviceRow name={name} device={device} />
-                        <Card>
+                        <Eyebrow>This device</Eyebrow>
+                        <DeviceRow name={name} device={device}>
                           <Field
                             label="Device name"
                             value={deviceName ?? name}
@@ -3744,26 +3826,10 @@ export default function App() {
                               });
                             }}
                           />
-                        </Card>
+                        </DeviceRow>
                       </Section>
-                      {connection && (
-                        <>
-                          <Section>
-                            <Text style={s.eyebrow}>HUB CONNECTION</Text>
-                            <HubConnection
-                              connection={connection}
-                              name={catalog?.name}
-                              machine={machines?.find((m) => m.isHub)}
-                              presence={devicePresence.hub}
-                              busy={actionLocked}
-                              disconnect={disconnect}
-                              retry={() => run(() => client.refresh(), { hubOnly: true })}
-                            />
-                          </Section>
-                        </>
-                      )}
                       <Section>
-                        <Text style={s.eyebrow}>LOCAL SYNCHRONIZATION</Text>
+                        <Eyebrow>Local synchronization</Eyebrow>
                         <SettingsGroup>
                           <Card>
                             <Toggle
@@ -3782,12 +3848,12 @@ export default function App() {
                         </SettingsGroup>
                       </Section>
                       <Section>
-                        <Text style={s.eyebrow}>MOBILE PREFERENCES</Text>
+                        <Eyebrow>Mobile preferences</Eyebrow>
                         <SettingsGroup>
                           <Card>
                             <Toggle
                               label="Background refresh"
-                              description="When the system allows. Open Arca to continue immediately."
+                              description="Sync runs while Arca is open. In the background it depends on this device’s permissions and system limits."
                               value={!!prefs.background}
                               disabled={busy}
                               onChange={(v) => run(() => setBackground(v))}
@@ -3815,7 +3881,7 @@ export default function App() {
                             <Toggle
                               label="System notifications"
                               description="Alerts about conflicts and synchronization errors"
-                              value={!!prefs.notifications}
+                              value={notificationsOn(prefs.notifications, notificationAllowed)}
                               disabled={busy}
                               onChange={(v) => run(() => setNotifications(v))}
                             />
@@ -3823,7 +3889,7 @@ export default function App() {
                         </SettingsGroup>
                       </Section>
                       <Section>
-                        <Text style={s.eyebrow}>STORAGE</Text>
+                        <Eyebrow>Storage</Eyebrow>
                         <Card title={`${bytes(status.free)} free`}>
                           <Text style={s.text}>
                             Selected files are stored persistently on this
@@ -3837,7 +3903,7 @@ export default function App() {
                         </Card>
                       </Section>
                       <Section>
-                        <Text style={s.eyebrow}>SERVICE</Text>
+                        <Eyebrow>Service</Eyebrow>
                         <SettingsGroup>
                           <Card
                             title={`Arca v${Application.nativeApplicationVersion || config.expo.version}`}
@@ -3882,18 +3948,10 @@ export default function App() {
                               {String(Platform.Version)}
                             </Text>
                           </Card>
-                          <Card title="Runtime">
-                            <Text style={s.text}>Mobile app</Text>
-                            <Text style={s.caption}>
-                              Sync runs while Arca is open. Background activity
-                              depends on this device’s permissions and system
-                              limits.
-                            </Text>
-                          </Card>
                         </SettingsGroup>
                       </Section>
                       <Section>
-                        <Text style={s.eyebrow}>APPEARANCE</Text>
+                        <Eyebrow>Appearance</Eyebrow>
                         <SettingsGroup>
                           <Card
                             title="Theme"
@@ -3925,6 +3983,7 @@ export default function App() {
                             actions={
                               <SegmentedControl
                                 options={textSizes}
+                                scroll
                                 value={textScale(prefs.textSize)}
                                 onChange={(value) =>
                                   engine.current.store
@@ -3943,9 +4002,7 @@ export default function App() {
                         </SettingsGroup>
                       </Section>
                       <Section>
-                        <Text style={[s.eyebrow, s.errorText]}>
-                          DANGER ZONE
-                        </Text>
+                        <Eyebrow style={s.errorText}>Danger zone</Eyebrow>
                         <Card
                           title="Erase this device"
                           danger
@@ -4001,11 +4058,21 @@ export default function App() {
                     sleep={audio.sleep}
                   />
                 )}
+                {!!photoSelection && !!folder && view === "Folders" && !sheet && (
+                  <SelectionBar
+                    count={photoSelection.count}
+                    linked={connected && !status.offline}
+                    reason={HUB_ONLY_REASON}
+                    onClear={photoSelection.clear}
+                    onDelete={photoSelection.remove}
+                  />
+                )}
                 {!onboarding && !wide && !keyboardVisible && (
                   <Navigation
                     view={view}
                     onSelect={selectTab}
                     name={name}
+                    device={device}
                   />
                 )}
               </KeyboardPane>
@@ -4040,19 +4107,8 @@ export default function App() {
               title={shownConfirmation.title}
               message={shownConfirmation.message}
               label={shownConfirmation.label}
-              icon={
-                shownConfirmation.icon ||
-                (/stop syncing/i.test(shownConfirmation.label)
-                  ? "unlink"
-                  : /delete/i.test(shownConfirmation.label)
-                    ? "trash"
-                    : /unlink|remove/i.test(shownConfirmation.label)
-                      ? "unlink"
-                      : "alert")
-              }
-              destructive={/erase|delete|stop syncing|remove/i.test(
-                shownConfirmation.label,
-              )}
+              icon={shownConfirmation.icon}
+              destructive={shownConfirmation.destructive}
               closing={!confirmation}
               onExited={releaseConfirmation}
               onConfirm={() => settle(true)}
@@ -4226,7 +4282,7 @@ export default function App() {
                 <View style={s.stack}>
                   <FilePreview entry={shownSheet.entry} files={engine.current?.files} />
                   <Button
-                    label="Open"
+                    label="View details"
                     onPress={() => {
                       const entry = shownSheet.entry;
                       setSheet(null);
@@ -4348,6 +4404,8 @@ export default function App() {
                     <FolderRow
                       key={v.id}
                       grouped
+                      selectable
+                      selected={historyVolume === v.id}
                       divider={index > 0}
                       name={v.name}
                       onPress={() => {
@@ -4433,7 +4491,14 @@ export default function App() {
                       {!musicFolder && !videoFolder && (
                       <ActionRow
                         label={source ? "Change album…" : "Link album…"}
-                        note={!source && status.offline ? HUB_ONLY_REASON : undefined}
+                        note={albumNote({
+                          source,
+                          locked: actionLocked,
+                          connected,
+                          offline: status.offline,
+                          completed: currentFolder?.completed,
+                          issue: currentFolder?.issue,
+                        })}
                         icon="gallery"
                         disabled={
                           actionLocked ||
@@ -4454,6 +4519,7 @@ export default function App() {
                               : "Enable uploads"
                           }
                           icon="upload"
+                          note={uploadsNote({ busy, mode: source.mode })}
                           disabled={busy || source.mode !== "source"}
                           onPress={() =>
                             run(() =>
@@ -4468,6 +4534,7 @@ export default function App() {
                       <ActionRow
                         label="View history"
                         icon="history"
+                        note={historyNote({ busy, connected })}
                         disabled={busy || !connected}
                         onPress={() => {
                           setHistoryVolume(folder.id);

@@ -358,7 +358,7 @@ test("the hub reading or matching shows a caption, and a folder with only home v
 test("Set up as library replaces the Enable items and asks what the folder holds", async (t) => {
   const ui = await boot(t, { status: hubStatus([{ ...base, id: "docs", name: "documents", path: "/srv/docs", files: 8, bytes: 12.4 * 1024 ** 3 }]), route: "#/folders/docs" });
   await until(() => ui.$(".folder-actions-menu") && ui.idle());
-  assert.deepEqual(ui.texts(".folder-actions-menu .menu-items button"), ["Set up as library…", "Rename", ".arcaignore…"]);
+  assert.deepEqual(ui.texts(".folder-actions-menu .menu-items button"), ["Set up as library…", "Rename…", ".arcaignore…"]);
   assert.equal(ui.$('[data-action="setup-library"] [data-icon]').dataset.icon, "library-big");
   await ui.click('[data-action="setup-library"]', () => ui.$("#dialog[open]"));
   assert.equal(ui.text("#dialog-title"), "What’s in this folder?");
@@ -1809,14 +1809,16 @@ test("a show page marks the whole show watched from its banner, beside Play, and
   await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
   await ui.click(ui.$$(".video-page .music-card").find((el) => el.querySelector("strong").textContent === "Breaking Bad"), () => ui.$(".video-episode"));
   const mark = () => ui.$('.video-backdrop [data-action="video-quick-watched"]');
-  assert.equal(mark().textContent.trim(), "Mark as watched");
-  assert.deepEqual(ui.texts(".video-backdrop .heading-actions > button"), ["Play S1 · E4", "Mark as watched"]);
-  await ui.click(mark(), () => mark()?.textContent.trim() === "Mark as unwatched");
+  assert.equal(mark().textContent.trim(), "Mark all episodes as watched");
+  assert.deepEqual(ui.texts(".video-backdrop .heading-actions > button"), ["Play S1 · E4", "Mark all episodes as watched"]);
+  await ui.click(mark(), () => mark()?.textContent.trim() === "Mark all episodes as unwatched");
+  assert.match(ui.$("#notice").textContent, /\d+ episodes? marked watched\./, "the notice names the count");
   const sent = ui.posts.filter(([route]) => route === "/v1/video/watched").map(([, body]) => body);
   assert.ok(sent.length > 1 && sent.every((body) => body.watched === true && body.path.startsWith("Breaking Bad/")));
   assert.ok(mark().querySelector('[data-icon="eye-off"]'));
   assert.ok(ui.$('.video-backdrop > .video-poster .video-watched[aria-label="Watched"]'));
-  await ui.click(mark(), () => mark()?.textContent.trim() === "Mark as watched");
+  await ui.click(mark(), () => mark()?.textContent.trim() === "Mark all episodes as watched");
+  assert.match(ui.$("#notice").textContent, /\d+ episodes? marked unwatched\./);
 });
 
 test("marking a show stops at a failed episode yet still redraws what was marked, and Next is announced", async (t) => {
@@ -1831,7 +1833,7 @@ test("marking a show stops at a failed episode yet still redraws what was marked
   const before = checks();
   await ui.click('.video-backdrop [data-action="video-quick-watched"]', () => sent >= 2 && ui.idle());
   await until(() => checks() > before);
-  assert.equal(ui.text('.video-backdrop [data-action="video-quick-watched"]'), "Mark as watched", "the show is not fully watched after the failure");
+  assert.equal(ui.text('.video-backdrop [data-action="video-quick-watched"]'), "Mark all episodes as watched", "the show is not fully watched after the failure");
 });
 
 test("on touch screens the poster check is always visible, never an invisible tap target", () => {

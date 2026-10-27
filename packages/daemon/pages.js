@@ -72,12 +72,13 @@ export function browsePage(store, volume, query) {
       after,
       limit + 1,
     );
+  const created = store.db.prepare("SELECT created FROM revisions WHERE rev=? AND volume=? AND path=?");
   return {
     entries: rows
       .slice(0, limit)
       .map(({ hash, ...row }) => ({
         ...row,
-        ...(row.directory ? {} : { hash }),
+        ...(row.directory ? {} : { hash, created: created.get(row.rev, volume, base + row.name)?.created }),
         path: base + row.name,
       })),
     next:

@@ -92,9 +92,9 @@ test("the phone pins places in Favorites and the Fold opens them from a drawer",
   const favorites = read("Favorites.jsx");
   const components = read("components.jsx");
   const library = read("MusicLibrary.jsx");
-  const root = app.slice(app.indexOf("<FavoritesSection"), app.indexOf("ON HUB · NOT SELECTED"));
+  const root = app.slice(app.indexOf("<FavoritesSection"), app.indexOf("On hub · not selected"));
   assert.match(root, /items=\{shownFavorites\}[\s\S]*\{folderSections\(folderRows\.map\(\(row\) => row\.item\)\.filter\(\(f\) => !pinnedFolders\.has\(f\.id\)\), folderKind\)/, "Favorites sits before the folder sections and holds every pinned entry");
-  assert.match(app, /const folderRowFor = \(f, index\) => \(\s+<FolderRow[\s\S]*?onLongPress=\{\(\) =>\s+favoriteSheet\(\s+\{ folder: f\.id, kind: "folder", target: "", label: f\.name \},/, "a folder row pins on long press on phone and Fold alike");
+  assert.match(app, /const folderRowFor = \(f, index\) => \{[\s\S]*?<FolderRow[\s\S]*?onLongPress=\{\(\) =>\s+favoriteSheet\(\s+\{ folder: f\.id, kind: "folder", target: "", label: f\.name \},/, "a folder row pins on long press on phone and Fold alike");
   assert.match(app, /const key = `favorites:\$\{r\.scope\}`;/, "favorites live in the app's own storage");
   assert.doesNotMatch(app, /api\([^)]*favorites/i, "favorites are never sent to the hub");
   assert.match(app, /reconcileFavorites\(value, folders\.filter\(\(f\) => f\.selected\)\)/);
@@ -259,7 +259,7 @@ test("Favorites rows reuse the Folders row's lead slot so tiles and titles share
 test("a pinned folder moves into Favorites as the Folders row and leaves its section", () => {
   const app = read("App.jsx");
   const favorites = read("Favorites.jsx");
-  const section = app.slice(app.indexOf("<FavoritesSection"), app.indexOf("ON HUB · NOT SELECTED"));
+  const section = app.slice(app.indexOf("<FavoritesSection"), app.indexOf("On hub · not selected"));
   assert.match(app, /const pinnedFolders = pinnedFolderIds\(favorites\.items\);/);
   assert.match(section, /renderFolder=\{\(entry, index\) => \{\s+const f = locals\.find\(\(item\) => item\.id === entry\.folder\);\s+return f \? folderRowFor\(f, index\) : null;/, "a pinned folder draws the Folders row with its state and actions");
   assert.match(section, /\.filter\(\(f\) => !pinnedFolders\.has\(f\.id\)\)/, "and is absent from the sections below");

@@ -441,7 +441,7 @@ export function playTarget(library, item) {
 export function playLabel(library, item) {
   const target = playTarget(library, item);
   if (!target) return "Play";
-  if (item.kind === "show") return `${target.position ? "Resume" : "Play"} ${episodeCode(target)}`;
+  if (item.kind === "show") return `${target.position ? "Continue" : "Play"} ${episodeCode(target)}`;
   return target.position ? "Resume" : "Play";
 }
 

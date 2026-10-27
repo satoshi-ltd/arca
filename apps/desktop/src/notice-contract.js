@@ -13,6 +13,7 @@ export const noticeMetrics = Object.freeze({
   duration: 180,
   distance: 8,
   infoTimeout: 4000,
+  lastingBody: 90,
   maxVisible: 3,
 });
 export const HUB_ONLY_REASON = "Needs the hub, which is unavailable.";
@@ -258,6 +259,14 @@ export function createNoticeStore({
   const emit = () => {
     for (const listener of listeners) listener();
   };
+  const lasting = (n) =>
+    Boolean(n.action) || String(n.body || "").length > noticeMetrics.lastingBody;
+  function arm(id) {
+    cancel(timers.get(id));
+    const timer = schedule(() => remove(id, false), noticeMetrics.infoTimeout);
+    timer?.unref?.();
+    timers.set(id, timer);
+  }
   function remove(id, remember = true) {
     const item = entries.find((n) => n.id === id);
     if (remember && item && item.kind !== "info")
@@ -307,16 +316,17 @@ export function createNoticeStore({
         ...entries.filter((n) => n.id !== item.id),
         { ...item, created: now() },
       ];
-      if (item.kind === "info") {
-        const timer = schedule(
-          () => remove(item.id, false),
-          noticeMetrics.infoTimeout,
-        );
-        timer?.unref?.();
-        timers.set(item.id, timer);
-      }
+      if (item.kind === "info" && !lasting(item)) arm(item.id);
       emit();
       return item.id;
+    },
+    hold(id) {
+      cancel(timers.get(id));
+      timers.delete(id);
+    },
+    release(id) {
+      const item = entries.find((n) => n.id === id);
+      if (item?.kind === "info" && !lasting(item)) arm(id);
     },
     remove,
     clear(id) {

@@ -88,7 +88,7 @@ test("a folder row's state tints its tile, leads its subtitle and drops the pill
   const projects = row("projects");
   assert.equal(projects.querySelector(".meta").textContent, "Path missing · /Volumes/Archive/projects");
   assert.ok(projects.querySelector('[data-action="locate-folder"]'));
-  assert.match(projects.getAttribute("aria-label"), /, Path missing$/);
+  assert.match(projects.querySelector(".row-main").getAttribute("aria-label"), /, Path missing$/);
   const music = row("music");
   assert.equal(music.querySelector(".tile.wa, .tile.er, .tile.id"), null, "pending keeps the normal tile");
   assert.equal(music.querySelector(".meta").textContent, "Pending · 20 files · 2.0 KB");
@@ -120,7 +120,7 @@ test("a folder names its state from folder-level errors only; isolated file issu
   );
   const row = (id) => w.document.querySelector(`.folder-card[data-id="${id}"]`);
   await until(() => row("other"));
-  const word = (id) => row(id).getAttribute("aria-label").split(", ").pop();
+  const word = (id) => (row(id).querySelector(".row-main[role=button]") || row(id)).getAttribute("aria-label").split(", ").pop();
   assert.equal(word("one"), "Could not sync 1 file");
   assert.equal(word("many"), "Could not sync 3 files");
   assert.equal(word("write"), "Could not sync 2 files");
@@ -217,7 +217,7 @@ test("a replica checking its hub after a launch says so in the sidebar, without 
   assert.equal(app.split("checking: CHECKING_HUB,").length - 1, 1, "the sidebar card owns it; Devices rows carry no sync state");
 });
 
-function stoppedBoot(t, { upAfter = Infinity } = {}) {
+function stoppedBoot(t, { upAfter = Infinity, stopped = "", startError = "", hold = false } = {}) {
   const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://tauri.localhost" });
   const w = dom.window;
   t.after(() => w.close());
@@ -226,12 +226,16 @@ function stoppedBoot(t, { upAfter = Infinity } = {}) {
   const timeout = w.setTimeout.bind(w);
   w.setTimeout = (work, ms, ...rest) => (ms === 1000 ? ticks.push(() => work(...rest)) : timeout(work, ms, ...rest));
   let probes = 0;
+  let started = false;
   const status = hub([{ ...base, id: "docs", name: "documents" }]);
   w.__TAURI__ = {
     core: {
       invoke: async (command, args) => {
-        if (command === "bootstrap") return { setup: false, stopped: true };
+        if (command === "bootstrap") return { setup: false, stopped: true, ...(stopped ? { error: stopped } : {}) };
+        if (command === "start_daemon" && startError) throw new Error(startError);
+        if (command === "start_daemon") started = true;
         if (command !== "api") return {};
+        if (args.route === "/v1/status" && hold && !started) throw "The daemon is unavailable. Use Start service.";
         if (args.route === "/v1/status" && ++probes <= upAfter) throw "The daemon is unavailable. Use Start service.";
         if (args.route === "/v1/status") return status;
         if (args.route === "/v1/favorites") return { favorites: [] };
@@ -249,30 +253,34 @@ function stoppedBoot(t, { upAfter = Infinity } = {}) {
   return { w, tick, probes: () => probes, pendingTicks: () => ticks.length };
 }
 
-test("a launch that finds the service stopped shows Service stopped with Start service at once", async (t) => {
+test("a launch with the service not yet answering shows the launch mark with Starting Arca… and no sidebar", async (t) => {
   const { w, probes } = stoppedBoot(t);
   const q = (selector) => w.document.querySelector(selector);
-  await until(() => /Service stopped/.test(q("#content").textContent));
-  assert.ok(q('#content [data-action="start"]'));
-  assert.equal(q("#content .launch-mark"), null);
+  await until(() => q("#content .launch-mark p"));
+  assert.equal(q("#content .launch-mark p").textContent, "Starting Arca…");
+  assert.ok(w.document.body.classList.contains("starting-mode"));
+  assert.doesNotMatch(q("#content").textContent, /Service stopped/);
+  assert.equal(q('#content [data-action="start"]'), null);
   assert.equal(probes(), 0);
+  assert.match(source("style.css"), /\.starting-mode \.sidebar \{\s*display: none;/);
 });
 
-test("a service that starts listening within fifteen seconds replaces Service stopped without a click", async (t) => {
+test("a service that starts listening within fifteen seconds replaces the starting state without a click", async (t) => {
   const { w, tick, probes } = stoppedBoot(t, { upAfter: 2 });
   const q = (selector) => w.document.querySelector(selector);
-  await until(() => /Service stopped/.test(q("#content").textContent));
+  await until(() => q("#content .launch-mark p"));
   for (let i = 0; i < 2; i++) {
     await tick();
-    assert.match(q("#content").textContent, /Service stopped/, `still stopped after ${i + 1} s`);
+    assert.match(q("#content .launch-mark p").textContent, /Starting Arca/, `still starting after ${i + 1} s`);
   }
   await tick();
   await until(() => q('.folder-card[data-id="docs"]'));
   assert.equal(probes(), 3);
   assert.notEqual(q("#connection").textContent, "Service stopped");
+  assert.equal(w.document.body.classList.contains("starting-mode"), false);
 });
 
-test("the quiet launch probe stops after fifteen seconds and leaves Service stopped", async (t) => {
+test("the quiet launch probe stops after fifteen seconds and then shows Service stopped", async (t) => {
   const { w, tick, probes, pendingTicks } = stoppedBoot(t);
   const q = (selector) => w.document.querySelector(selector);
   for (let i = 0; i < 15; i++) await tick();
@@ -281,4 +289,62 @@ test("the quiet launch probe stops after fifteen seconds and leaves Service stop
   assert.equal(pendingTicks(), 0);
   assert.match(q("#content").textContent, /Service stopped/);
   assert.ok(q('#content [data-action="start"]'));
+  assert.equal(w.document.body.classList.contains("starting-mode"), false);
+});
+
+test("pressing Start service shows the starting state, then the error line when the start fails", async (t) => {
+  const { w } = stoppedBoot(t, { stopped: "Could not reach the service.", startError: "Port 17831 is in use." });
+  const q = (selector) => w.document.querySelector(selector);
+  await until(() => q('#content [data-action="start"]'));
+  q('#content [data-action="start"]').click();
+  await until(() => /Port 17831 is in use\./.test(q("#content").textContent));
+  assert.match(q("#content").textContent, /Service stopped/);
+  assert.ok(q('#content [data-action="start"]'));
+});
+
+test("pressing Start service shows Starting Arca… until the probe succeeds", async (t) => {
+  const { w, tick } = stoppedBoot(t, { stopped: "Stopped.", upAfter: 0, hold: true });
+  const q = (selector) => w.document.querySelector(selector);
+  await until(() => q('#content [data-action="start"]'));
+  q('#content [data-action="start"]').click();
+  await until(() => q("#content .launch-mark p"));
+  await tick();
+  await until(() => q('.folder-card[data-id="docs"]'));
+});
+
+test("a folder card with an inline action is a plain article that opens from its name and tile; others stay one button", async (t) => {
+  const w = await boot(
+    t,
+    hub([
+      { ...base, id: "docs", name: "documents", conflicts: 2 },
+      { ...base, id: "lost", name: "lost", path: "/data/lost", sync: { state: "error", error: "ENOENT: no such file or directory, scandir '/data/lost'" } },
+      { ...base, id: "plain", name: "plain" },
+    ]),
+  );
+  const row = (id) => w.document.querySelector(`.folder-card[data-id="${id}"]`);
+  await until(() => row("plain"));
+  for (const id of ["docs", "lost"]) {
+    const card = row(id);
+    assert.equal(card.getAttribute("role"), null);
+    assert.equal(card.getAttribute("tabindex"), null);
+    assert.equal(card.dataset.action, undefined);
+    assert.equal(card.querySelector(".row-main").getAttribute("role"), "button");
+    assert.equal(card.querySelector(".row-main").dataset.action, "folder-detail");
+    assert.equal(card.querySelector(".home-lead").dataset.action, "folder-detail");
+    assert.equal(card.querySelector(".secondary.small-button").closest("[role=button]"), null, "the inner button is its own control");
+  }
+  const plain = row("plain");
+  assert.equal(plain.getAttribute("role"), "button");
+  assert.equal(plain.dataset.action, "folder-detail");
+  assert.equal(plain.querySelector(".row-main").getAttribute("role"), null);
+});
+
+test("the folder status line carries its full text as a tooltip and puts the byte figure before the path", async (t) => {
+  const progress = { volume: "docs", stage: "upload", direction: "upload", path: "a/very/long/path/to/a/file.bin", filesDone: 1, filesTotal: 4, sizeDone: 1024, sizeTotal: 4096, bytesDone: 512, bytesTotal: 2048 };
+  const w = await boot(t, hub([{ ...base, id: "docs", name: "documents" }], { progress, phase: "syncing" }));
+  const card = () => w.document.querySelector('.folder-card[data-id="docs"]');
+  await until(() => card());
+  const meta = card().querySelector(".meta");
+  assert.equal(meta.dataset.tooltip, meta.textContent);
+  assert.ok(meta.textContent.indexOf("512 B / 2.0 KB") < meta.textContent.indexOf("a/very/long/path"));
 });

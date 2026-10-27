@@ -8,6 +8,8 @@ test("browse groups directories, ignores a search parameter and paginates withou
     db.exec(
       "CREATE TABLE files(volume TEXT, path TEXT, size INTEGER, rev INTEGER, deleted INTEGER, directory INTEGER DEFAULT 0, hash TEXT)",
     );
+    db.exec("CREATE TABLE revisions(rev INTEGER PRIMARY KEY, volume TEXT, path TEXT, created TEXT)");
+    db.exec("INSERT INTO revisions VALUES(1,'v','root.txt','2026-03-04T10:00:00.000Z')");
     const put = db.prepare(
       "INSERT INTO files(volume,path,size,rev,deleted) VALUES(?,?,?,?,?)",
     );
@@ -33,6 +35,9 @@ test("browse groups directories, ignores a search parameter and paginates withou
     assert.equal(first.entries[0].size, 30);
     assert.ok(first.next);
     assert.equal(first.entries[0].hash, undefined);
+    assert.equal(first.entries[0].created, undefined, "a folder row carries no time");
+    assert.equal(browse().entries.find((r) => r.name === "root.txt").created, "2026-03-04T10:00:00.000Z");
+    assert.equal(browse({ prefix: "notes" }).entries.find((r) => r.name === "a.md").created, undefined, "a revision of another file never lends its time");
     assert.equal(browse().entries.find((r) => r.name === "root.txt").hash, "content-hash");
     assert.equal(
       browse({ limit: "1", after: first.next }).entries[0].name,

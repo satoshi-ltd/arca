@@ -189,7 +189,6 @@ test("phone placeholders, covers without art and content empty states draw the a
   assert.match(arch, /<Svg width=\{size\} height=\{size\} viewBox=\{brandGlyphBox\} style=\{style\}>\s+<Path d=\{glyph\.arch\} fill=\{band\} \/>\s+<Path d=\{glyph\.door\} fill=\{door \|\| band\} \/>/);
   assert.match(read("apps/mobile/src/history-empty.js"), /icon: "arca",\s+title: "No history yet",/);
   assert.match(read("apps/mobile/src/MusicLibrary.jsx"), /icon="arca"\s+title="No music on this phone yet"/);
-  assert.match(read("apps/mobile/src/MusicLibrary.jsx"), /icon="arca"\s+title="Loading the library"/);
 });
 
 test("the phone holds the splash mark in place, and iOS draws the arch with the pull", () => {

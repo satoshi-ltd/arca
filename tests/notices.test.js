@@ -346,3 +346,28 @@ test("a bare native rejection is not repeated in the details", async () => {
   assert.equal(notice.body, raw);
   assert.equal(notice.details, "");
 });
+
+test("an info notice with an action or a long body waits for the reader, and a held one keeps its timer off", () => {
+  const timers = new Map();
+  let key = 0;
+  const store = createNoticeStore({
+    schedule: (fn) => (timers.set(++key, fn), key),
+    cancel: (id) => timers.delete(id),
+  });
+  store.push({ id: "plain", kind: "info", title: "Saved" });
+  assert.equal(timers.size, 1);
+  store.push({ id: "action", kind: "info", title: "Saved 3 files", action: "open", actionLabel: "Open" });
+  store.push({ id: "long", kind: "info", title: "Saved", body: "x".repeat(noticeMetrics.lastingBody + 1) });
+  assert.equal(timers.size, 1, "neither the action nor the long notice arms a timer");
+  store.hold("plain");
+  assert.equal(timers.size, 0, "hover or focus pauses the timer");
+  store.release("plain");
+  assert.equal(timers.size, 1);
+  store.release("action");
+  assert.equal(timers.size, 1, "a lasting notice never starts a timer on release");
+  const app = fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8");
+  assert.match(app, /\["mouseover", "hold"\]/);
+  assert.match(app, /\["focusout", "release"\]/);
+  const phone = fs.readFileSync(new URL("../apps/mobile/src/Notice.jsx", import.meta.url), "utf8");
+  assert.match(phone, /createNoticeStore|noticeStore|noticeMetrics/, "the phone renders the shared contract");
+});

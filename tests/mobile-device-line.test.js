@@ -57,7 +57,7 @@ test("phone and Fold device rows end in their role chip after the row's action a
   assert.match(theme, /roleTagJoined: \{ borderTopRightRadius: 0, borderBottomRightRadius: 0 \}/);
   assert.match(theme, /backupTag: \{ borderLeftWidth: 0, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 \}/);
   const app = read("App.jsx");
-  const devices = app.slice(app.indexOf("<Text style={s.eyebrow}>DEVICES</Text>"), app.indexOf('{screen === "History" && ('));
+  const devices = app.slice(app.indexOf("<Eyebrow>Devices</Eyebrow>"), app.indexOf('{screen === "History" && ('));
   assert.doesNotMatch(devices, /"Linked"|"Up to date"|"Syncing"|totals=|lastAddress/);
   assert.match(devices, /hubVersion: machines\?\.find\(\(m\) => m\.isHub\)\?\.version/);
   assert.match(devices, /state=\{m\.revoked \? "Removed" : ""\}/);
@@ -163,7 +163,7 @@ test("phone rows carry presence as a tile badge and the Fold lays the row out in
   assert.match(hub, /presence=\{presence\}/);
   const app = read("App.jsx");
   assert.match(app, /const devicePresence = rosterPresence\(machines, \{\s+offline: machinesSaved \|\| status\.offline,\s+connectionId: connection\?\.id,\s+\}\);/);
-  assert.equal((app.match(/presence=\{devicePresence\.hub\}/g) || []).length, 2, "Devices and Settings both show the hub's presence");
+  assert.equal((app.match(/presence=\{devicePresence\.hub\}/g) || []).length, 1, "the hub row appears once, in Devices");
   assert.match(app, /presence=\{presence\(\{ self: true \}\)\}/);
   assert.match(app, /presence=\{devicePresence\.of\(m\)\}/);
   assert.match(app, /revoked: m\.revoked,\s+player: m\.role === "player",\s+\}\)\}\s+cells=\{deviceCells\(\{/);

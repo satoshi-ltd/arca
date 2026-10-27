@@ -1,3 +1,5 @@
+import { bytes, fileCount } from "./format.js";
+import { formatDay } from "./music-library.js";
 export function browseEntries(entries, directory) {
   const result = new Map();
   for (const entry of entries) {
@@ -42,3 +44,13 @@ export function revealWindow(entries, path, shown, page = 100, cap = REVEAL_ROWS
   const start = Math.floor(index / page) * page;
   return { start, end: start + page };
 }
+
+export const entryLabel = (entry) =>
+  entry.directory
+    ? `${entry.label}, folder, ${fileCount(entry.count)}, ${bytes(entry.size)}`
+    : `${entry.label}, ${bytes(entry.size)}`;
+export const tileLabel = (item) => {
+  const kind = item.kind === "video" ? "Video" : "Photo";
+  const day = formatDay((item.date || "").slice(0, 10));
+  return day ? `${kind}, ${day}` : `${kind} ${item.path.split("/").pop()}`;
+};

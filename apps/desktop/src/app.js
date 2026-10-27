@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.6";
+const APP_VERSION = "0.8.7";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -209,10 +209,15 @@ const bytes = (n = 0) =>
       ? `${(n / 1024).toFixed(1)} KB`
       : n < 1024 ** 3
         ? `${(n / 1024 ** 2).toFixed(1)} MB`
-        : `${(n / 1024 ** 3).toFixed(1)} GB`;
+        : n < 1024 ** 4
+          ? `${(n / 1024 ** 3).toFixed(1)} GB`
+          : `${(n / 1024 ** 4).toFixed(1)} TB`;
 const date = (value) =>
   value
     ? new Date(value).toLocaleString("en", {
+        ...(new Date(value).getFullYear() === new Date().getFullYear()
+          ? {}
+          : { year: "numeric" }),
         month: "short",
         day: "numeric",
         hour: "2-digit",
@@ -220,6 +225,14 @@ const date = (value) =>
         hourCycle: "h23",
       })
     : "Not yet";
+const relativeAttrs = (value, prefix = "") =>
+  value ? ` data-relative="${escape(value)}"${prefix ? ` data-prefix="${escape(prefix)}"` : ""}` : "";
+function refreshRelative() {
+  for (const el of document.querySelectorAll("[data-relative]")) {
+    const text = (el.dataset.prefix || "") + relative(el.dataset.relative);
+    if (el.textContent !== text) el.textContent = text;
+  }
+}
 const relative = (value) => {
   if (!value) return "Not yet";
   const n = Math.max(0, (Date.now() - Date.parse(value)) / 1000);
@@ -262,8 +275,8 @@ const brandArchFor = (size) =>
 const EMPTY_ARCH = 40;
 const brandDraw = (tile) =>
   `<svg viewBox="${tile ? "0 0 512 512" : "116 100 280 296"}" aria-hidden="true">${tile ? '<rect x="8" y="8" width="496" height="496" rx="128" fill="var(--mark-tile)"/>' : ""}<path class="brand-draw-band" pathLength="100" d="M170 380V233A86 86 0 0 1 256 147h2"/><path class="brand-draw-band" pathLength="100" d="M342 380V233A86 86 0 0 0 256 147h-2"/><path class="brand-draw-door" d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg>`;
-const launchMark = () =>
-  `<div class="launch-mark" role="status" aria-label="Starting Arca">${brandDraw(false)}</div>`;
+const launchMark = (line = "") =>
+  `<div class="launch-mark" role="status" aria-label="Starting Arca">${brandDraw(false)}${line ? `<p>${line}</p>` : ""}</div>`;
 const busyIcon = () =>
   '<span class="busy-grid" aria-hidden="true">' +
   "<i></i>".repeat(9) +
@@ -497,11 +510,26 @@ const paletteFoot = (counted = null) =>
   `<span class="pal-hint"><span class="tag">${paletteKey.startsWith("⌘") ? "⌘" : "Ctrl"}</span><span class="tag">↵</span>Show in folder</span>` +
   (counted === null ? `<span class="pal-hint"><span class="tag">esc</span>Close</span>` : "") +
   `<span class="pal-end">${counted ?? `This device · ${countLabel(status.volumes.filter((v) => status.role === "hub" || v.selected).length, "folder")}`}</span>`;
+function setPalettePending(on) {
+  if (!palette) return;
+  palette.pending = on;
+  const body = document.querySelector("#palette .pal-body");
+  if (on) body?.setAttribute("aria-busy", "true");
+  else body?.removeAttribute("aria-busy");
+  const field = document.querySelector("#palette .pal-field");
+  field?.classList.toggle("pal-pending", on);
+  field?.querySelector(".busy-grid")?.remove();
+  if (on) field?.insertAdjacentHTML("beforeend", busyIcon());
+}
 async function runPalette(more = false) {
   if (!palette) return;
   const query = palette.query.trim();
   const serial = ++palette.serial;
-  if (!query) return paintPalette(null);
+  if (!query) {
+    setPalettePending(false);
+    return paintPalette(null);
+  }
+  setPalettePending(true);
   const loaded = more ? palette.data?.groups?.[0]?.rows || [] : [];
   let data = null;
   try {
@@ -513,6 +541,7 @@ async function runPalette(more = false) {
   }
   if (!palette || palette.serial !== serial) return;
   if (more && data.groups[0]) data.groups[0].rows = [...loaded, ...data.groups[0].rows];
+  setPalettePending(false);
   paintPalette(data);
 }
 function setPaletteType(type) {
@@ -661,6 +690,7 @@ document.addEventListener("input", (event) => {
   if (!palette || !event.target.matches?.("#palette .pal-input")) return;
   palette.query = event.target.value;
   palette.active = 0;
+  setPalettePending(Boolean(event.target.value.trim()));
   clearTimeout(palette.timer);
   palette.timer = setTimeout(runPalette, event.target.value.trim() ? 120 : 0);
 });
@@ -692,6 +722,7 @@ document.addEventListener("keydown", (event) => {
     document.querySelector("#palette .pal-input")?.setAttribute("aria-activedescendant", `pal-${palette.active}`);
   } else if (event.key === "Enter") {
     event.preventDefault();
+    if (palette.pending) return;
     void activatePalette(palette.active, event.metaKey || event.ctrlKey);
   } else if (event.key === "Backspace" && palette.type && event.target.matches?.("#palette .pal-input") && !event.target.value) {
     event.preventDefault();
@@ -724,11 +755,13 @@ async function loadPreview(volume, path, hash, large = true) {
   }
   return { kind };
 }
-function previewBody(preview, name) {
+const PREVIEW_NONE = "No preview for this file type.";
+const PREVIEW_FAILED = "Preview unavailable.";
+function previewBody(preview, name, note = "") {
   if (preview.data) return `<img alt="${escape(name)}" src="${escape(preview.data)}">`;
   if (preview.lines)
     return `<pre class="ql-text">${escape(preview.lines.join("\n"))}${preview.truncated ? "\n…" : ""}</pre>`;
-  return `<span class="ql-icon">${icon(fileIcon(name))}</span>`;
+  return `<span class="ql-icon">${icon(fileIcon(name))}</span>${note ? `<p class="ql-note" role="status">${note}</p>` : ""}`;
 }
 let quick = null;
 function quickDialog() {
@@ -760,7 +793,7 @@ async function showQuick(index) {
   const kind = previewKind(name);
   const serial = (quick.serial = (quick.serial || 0) + 1);
   const meta = [bytes(row.size || 0), (name.split(".").pop() || "").toUpperCase()].filter(Boolean).map((x) => `<span>${escape(x)}</span>`).join("");
-  dialog.innerHTML = `<div class="ql-bar"><div class="tile">${icon(fileIcon(name))}</div><div class="ql-title"><strong>${escape(name)}</strong><p>${index + 1} of ${quick.rows.length} in this folder</p></div><button type="button" class="ghost icon-button" data-ql="prev" aria-label="Previous file"${index === 0 ? " disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="ghost icon-button" data-ql="next" aria-label="Next file"${index === quick.rows.length - 1 ? " disabled" : ""}>${icon("chevron-right")}</button><button type="button" class="secondary small-button" data-ql="open">Open</button><button type="button" class="ghost icon-button" data-ql="close" aria-label="Close">${icon("x")}</button></div><div class="ql-stage" aria-busy="${kind !== "audio" && kind !== "none"}"><span class="ql-icon">${icon(fileIcon(name))}</span></div><div class="ql-meta">${meta}</div><div class="ql-foot"><span class="ql-hint"><span class="tag">←</span><span class="tag">→</span>Previous and next</span><span class="ql-hint"><span class="tag">Space</span>Close</span><span class="ql-hint"><span class="tag">↵</span>Open file</span></div>`;
+  dialog.innerHTML = `<div class="ql-bar"><div class="tile">${icon(fileIcon(name))}</div><div class="ql-title"><strong>${escape(name)}</strong><p>${index + 1} of ${quick.rows.length} in this folder</p></div><button type="button" class="ghost icon-button" data-ql="prev" aria-label="Previous file"${index === 0 ? " disabled" : ""}>${icon("chevron-left")}</button><button type="button" class="ghost icon-button" data-ql="next" aria-label="Next file"${index === quick.rows.length - 1 ? " disabled" : ""}>${icon("chevron-right")}</button><button type="button" class="secondary small-button" data-ql="open">Details</button><button type="button" class="ghost icon-button" data-ql="close" aria-label="Close">${icon("x")}</button></div><div class="ql-stage" aria-busy="${kind !== "audio" && kind !== "none"}"><span class="ql-icon">${icon(fileIcon(name))}</span></div><div class="ql-meta">${meta}</div><div class="ql-foot"><span class="ql-hint"><span class="tag">←</span><span class="tag">→</span>Previous and next</span><span class="ql-hint"><span class="tag">Space</span>Close</span><span class="ql-hint"><span class="tag">↵</span>Details</span></div>`;
   dialog.setAttribute("aria-label", `Quick Look ${name}`);
   if (!dialog.open) {
     dialog.showModal();
@@ -769,18 +802,25 @@ async function showQuick(index) {
   }
   icons();
   if (kind === "none" || kind === "audio" || !row.hash) {
-    dialog.querySelector(".ql-stage").setAttribute("aria-busy", "false");
+    const stage = dialog.querySelector(".ql-stage");
+    stage.innerHTML = previewBody({}, name, kind === "none" || kind === "audio" ? PREVIEW_NONE : PREVIEW_FAILED);
+    stage.setAttribute("aria-busy", "false");
+    icons();
     return;
   }
   try {
     const preview = await loadPreview(id.volume, id.path, row.hash);
     if (!quick || quick.serial !== serial) return;
     const stage = dialog.querySelector(".ql-stage");
-    stage.innerHTML = previewBody(preview, name);
+    stage.innerHTML = previewBody(preview, name, PREVIEW_FAILED);
     stage.setAttribute("aria-busy", "false");
     icons();
   } catch {
-    if (quick?.serial === serial) dialog.querySelector(".ql-stage")?.setAttribute("aria-busy", "false");
+    if (quick?.serial !== serial) return;
+    const stage = dialog.querySelector(".ql-stage");
+    stage.innerHTML = previewBody({}, name, PREVIEW_FAILED);
+    stage.setAttribute("aria-busy", "false");
+    icons();
   }
 }
 function openQuickLook(row) {
@@ -947,6 +987,11 @@ function icons() {
     }
   });
 }
+function syncStatePill() {
+  if (status.role !== "hub" && !status.hub) return pill("Disconnected", "id", "wifi-off");
+  if (status.phase === "paused") return pill("Paused", "id", "pause");
+  return pill("Enabled", "ok", "check");
+}
 function pill(label, state = "id", symbol = "circle-dashed") {
   return `<span class="pill ${state}${symbol === "busy" ? " busy-status" : ""}">${symbol === "busy" ? busyIcon() : icon(symbol)}${escape(label)}</span>`;
 }
@@ -1027,13 +1072,22 @@ function title(heading, description = "", actions = "") {
   return `<div class="heading"><div><h1>${heading}</h1>${description ? `<p>${description}</p>` : ""}</div><div class="heading-actions">${actions}</div></div>`;
 }
 function historyEmpty() {
+  const all = button("Show all changes", "history-show-all", "", "secondary", "history");
   if (historyFilter === "conflicts")
-    return empty("No conflicts", "Clear Conflicts to see every change.", "", "triangle-alert");
+    return empty("No conflicts", "Nothing needs your decision.", all, "triangle-alert");
   if (historyFilter === "deleted")
-    return empty("No deleted files", "Clear Deleted to see every change.", "", "trash-2");
+    return empty("No deleted files", "No file has been deleted here.", all, "trash-2");
   if (historyVolume)
-    return empty("No changes in this folder", "Set Shared folder to All to see every change.", "", "history");
+    return empty("No changes in this folder", "Nothing has changed here yet.", all, "history");
   return empty("No history yet", "Changes to your files appear here.", "", "arca");
+}
+function mediaFailure(action, detail, symbol) {
+  return empty(
+    "Library unavailable",
+    "Arca could not read this library. Try again.",
+    button("Retry", action, "", "secondary", "refresh-cw") + (detail ? `<p class="hint">${escape(detail)}</p>` : ""),
+    symbol,
+  );
 }
 function empty(heading, text, control = "", symbol = "folder-open") {
   return `<div class="empty">${symbol === "arca" ? brandArchFor(EMPTY_ARCH) : icon(symbol)}<h2>${heading}</h2>${text ? `<p>${text}</p>` : ""}${control}</div>`;
@@ -1418,12 +1472,17 @@ if (native) {
   });
 }
 
+const WEB_CODE_DOCKER = "docker exec <container> node packages/cli/arca.js web-code";
+const WEB_CODE_DIRECT = "arca web-code";
+const commandRow = (name, command) =>
+  setting(name, `<span class="mono">${escape(command)}</span>`, button("Copy", "copy", command, "secondary small-button", "copy"));
+const SESSION_ENDED = "Your session has ended. Enter a new web access code.";
 const noticeStore = createNoticeStore();
 function noticeMarkup(item) {
   const action =
     item.action &&
     `<button class="notice-link" data-action="${escape(item.action)}" data-id="${escape(item.volume || "")}">${escape(item.actionLabel || "Review")}</button>`;
-  return `<article class="notice-card notice-${item.kind}" data-notice-id="${escape(item.id)}" role="${item.kind === "info" ? "status" : "alert"}"><div class="notice-main">${icon(item.icon || (item.kind === "info" ? "circle-check" : "circle-alert"))}<div class="notice-content"><strong>${escape(item.title)}</strong>${item.body ? `<p>${escape(item.body)}</p>` : ""}${action || item.kind !== "info" ? `<div class="notice-actions">${action || ""}${item.kind !== "info" ? `<button class="notice-link notice-muted" data-action="dismiss">Dismiss</button>` : ""}</div>` : ""}</div><button class="notice-close" data-action="dismiss" aria-label="Dismiss notification">${icon("x")}</button></div>${item.details ? `<details class="notice-details"><summary>${icon("chevron-right")}<span>Details</span><button class="notice-copy notice-link" data-action="copy-notice">Copy</button></summary><pre>${escape(safeDetails(item.details))}</pre></details>` : ""}</article>`;
+  return `<article class="notice-card notice-${item.kind}" data-notice-id="${escape(item.id)}" role="${item.kind === "info" ? "status" : "alert"}"><div class="notice-main">${icon(item.icon || (item.kind === "info" ? "circle-check" : "circle-alert"))}<div class="notice-content"><strong>${escape(item.title)}</strong>${item.body ? `<p>${escape(item.body)}</p>` : ""}${action ? `<div class="notice-actions">${action}</div>` : ""}</div><button class="notice-close" data-action="dismiss" aria-label="Dismiss notification">${icon("x")}</button></div>${item.details ? `<details class="notice-details"><summary>${icon("chevron-right")}<span>Details</span><button class="notice-copy notice-link" data-action="copy-notice">Copy</button></summary><pre>${escape(safeDetails(item.details))}</pre></details>` : ""}</article>`;
 }
 function renderNotices() {
   const box = $("#notice"),
@@ -1458,6 +1517,23 @@ function renderNotices() {
   icons();
 }
 noticeStore.subscribe(renderNotices);
+{
+  const box = $("#notice");
+  const owner = (event) => event.target.closest?.("[data-notice-id]")?.dataset.noticeId;
+  for (const [type, call] of [
+    ["mouseover", "hold"],
+    ["focusin", "hold"],
+    ["mouseout", "release"],
+    ["focusout", "release"],
+  ])
+    box.addEventListener(type, (event) => {
+      const id = owner(event);
+      if (!id) return;
+      const card = event.target.closest("[data-notice-id]");
+      if (call === "release" && (card.matches(":hover") || card.contains(document.activeElement))) return;
+      noticeStore[call](id);
+    });
+}
 function notice(message, error = false, { hubOnly = false, ...options } = {}) {
   const item = error
     ? errorNotice(message, { hubName: status?.hubName || "your hub", hubOnly })
@@ -1545,7 +1621,7 @@ async function performAction(work, exclusive, track = true) {
     await work();
   } catch (e) {
     if (!native && e.status === 401) {
-      await showLogin("Your session has ended. Enter a new web access code.");
+      await showLogin(SESSION_ENDED);
       return;
     }
     const message = e?.message || String(e);
@@ -1576,6 +1652,17 @@ async function performAction(work, exclusive, track = true) {
     updateBrandActivity();
     icons();
   }
+}
+function working(button, label) {
+  const html = button.innerHTML;
+  button.setAttribute("aria-busy", "true");
+  button.disabled = true;
+  button.innerHTML = busyIcon() + escape(label);
+  return () => {
+    button.removeAttribute("aria-busy");
+    button.disabled = false;
+    button.innerHTML = html;
+  };
 }
 function folderProblem(error) {
   const files = /^Could not (?:sync|write) (\d+) files?\b/.exec(error);
@@ -1813,7 +1900,7 @@ function contextFavorite(el) {
   if (artist) return pinned("artist", artist.dataset.id, artist.querySelector("strong").textContent, artist);
   const card = el.closest('.music-card[data-action="music-album"], .music-card[data-action="music-playlist"], .music-card[data-action="music-show"]');
   if (card) return pinned(card.dataset.action.slice(6), card.dataset.id, card.querySelector("strong").textContent, card);
-  const folder = el.closest('.folder-card[data-action="folder-detail"]');
+  const folder = el.closest(".folder-card[data-id]");
   const v = folder && status.volumes.find((item) => item.id === folder.dataset.id);
   if (v?.selected) return { item: { folder: v.id, kind: "folder", target: "", label: v.name }, open: folder };
   return null;
@@ -1966,7 +2053,16 @@ function updateShell() {
       : status.lastSync
         ? `Last sync ${relative(status.lastSync)}`
         : "Not synced yet";
-  $("#last-sync").hidden = label === "Up to date";
+  const lastSync = $("#last-sync");
+  if (status.role === "hub" || status.hub) {
+    lastSync.dataset.prefix = "Last sync ";
+    if (status.lastSync) lastSync.dataset.relative = status.lastSync;
+    else delete lastSync.dataset.relative;
+  } else {
+    delete lastSync.dataset.relative;
+    delete lastSync.dataset.prefix;
+  }
+  lastSync.hidden = label === "Up to date";
   const backup = $("#backup-summary");
   const hubBackups = (status.devices || []).filter(
     (device) => !device.revoked && device.backup_enabled,
@@ -2012,6 +2108,7 @@ function updateShell() {
   markNav();
   $(".sign-out").hidden = native;
   updateSyncControls();
+  refreshRelative();
   icons();
 }
 function synchronizationError() {
@@ -2099,7 +2196,9 @@ async function refresh(renderView = true) {
         status.progress?.path
           ? status.progress
           : null;
-      row.querySelector(".meta").innerHTML = folderMeta(volume, stateFor(volume), p);
+      const meta = row.querySelector(".meta");
+      meta.innerHTML = folderMeta(volume, stateFor(volume), p);
+      meta.dataset.tooltip = folderMetaText(volume, stateFor(volume), p);
       const lead = row.querySelector(".home-lead");
       if (!lead) continue;
       let ring = lead.querySelector(".home-ring");
@@ -2135,6 +2234,13 @@ async function refresh(renderView = true) {
       completed.textContent = volume.sync?.lastCompleted
         ? `Completed ${relative(volume.sync.lastCompleted)}`
         : "No completed sync yet";
+    if (completed && volume?.sync?.lastCompleted) {
+      completed.dataset.relative = volume.sync.lastCompleted;
+      completed.dataset.prefix = "Completed ";
+    } else if (completed) {
+      delete completed.dataset.relative;
+      delete completed.dataset.prefix;
+    }
   }
   const syncError = synchronizationError();
   const conditions = conditionNotices({ ...status, error: syncError });
@@ -2182,7 +2288,7 @@ const folderRetentionChoices = [
   },
 ];
 function hubCopyPanel(v) {
-  return `<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>`;
+  return `<div class="panel"><h3>${status.role === "hub" ? "Hub working copy" : `Stop syncing on ${machineLabel()}`}</h3><p>${status.role === "hub" ? "Controls this hub’s folder on disk. Stopping it keeps the shared folder and history available to other devices; files remain on disk." : "Stops syncing this folder here. The hub keeps the shared folder, its files and history. You choose whether this device's copy is kept or deleted."}</p>${button(v.selected ? (status.role === "hub" ? "Stop syncing here…" : "Stop syncing…") : "Start syncing", v.selected ? "unselect" : "add", v.id, v.selected ? "secondary danger" : "secondary", v.selected ? "unlink" : "refresh-cw")}</div>`;
 }
 function folderRetentionMode(volume) {
   return (
@@ -2269,7 +2375,7 @@ function updateSyncControls() {
   root.innerHTML = !linked
     ? ""
     : iconAction(pauseLabel, "pause", paused ? "play" : "pause") +
-      (syncing ? "" : iconAction("Sync now", "sync", "refresh-cw", paused));
+      iconAction("Sync now", "sync", "refresh-cw", paused, syncing);
 }
 function progressLabel(p) {
   const sending = p.stage === "upload" || p.direction === "upload";
@@ -2283,7 +2389,7 @@ function progressLabel(p) {
     !size && p.bytesTotal > 0
       ? ` · ${bytes(p.bytesDone)} / ${bytes(p.bytesTotal)}`
       : "";
-  return `${count}${size} · ${p.path || (sending ? "Preparing upload" : "Checking hub files")}${transfer}`;
+  return `${count}${size}${transfer} · ${p.path || (sending ? "Preparing upload" : "Checking hub files")}`;
 }
 const ringLabel = (p) =>
   `${p.stage === "upload" || p.direction === "upload" ? "Files sent" : "Files checked"}: ${(p.filesDone || 0).toLocaleString("en")} of ${p.filesTotal.toLocaleString("en")}`;
@@ -2294,16 +2400,26 @@ function stateWord(v, state) {
   if (state[0] === "Conflict") return countLabel(v.conflicts, "conflict");
   return ["Up to date", "Syncing", "Scanning", "Catalog only"].includes(state[0]) ? "" : state[0];
 }
-function folderMeta(v, state, p) {
-  if (p) return escape(progressLabel(p));
+function folderMetaParts(v, state, p) {
+  if (p) return { rest: progressLabel(p) };
   const error = v.sync?.error || v.policyError;
   const word = stateWord(v, state);
   const rest =
     state[0] === "Path missing" && v.path
       ? v.path
-      : error || `${countLabel(v.files || 0, "file")} · ${bytes(v.bytes)}`;
+      : error ||
+        (Number.isFinite(v.files)
+          ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}`
+          : "Not counted yet");
+  return { word, rest, tone: stateTone(state) };
+}
+function folderMetaText(v, state, p) {
+  const { word, rest } = folderMetaParts(v, state, p);
+  return word ? `${word} · ${rest}` : rest;
+}
+function folderMeta(v, state, p) {
+  const { word, rest, tone } = folderMetaParts(v, state, p);
   if (!word) return escape(rest);
-  const tone = stateTone(state);
   return `<span class="state-word${tone === "wa" || tone === "er" ? ` state-${tone}` : ""}">${escape(word)}</span> · ${escape(rest)}`;
 }
 function homeLead(v, state, p) {
@@ -2362,7 +2478,17 @@ function folderRow(v, available = false) {
   const lead = available
     ? `<div class="tile large"${state[2] === "busy" ? ` role="status" aria-label="${state[0]}"` : ""}>${state[2] === "busy" ? busyIcon() : icon(folderSymbol(v))}</div>`
     : homeLead(v, state, p);
-  return `<article class="folder-card ${available && available !== "streamed" ? "unselected" : ""}" ${available && !videoAvailable(v) ? "" : `data-action="folder-detail" data-id="${escape(v.id)}" tabindex="0" role="button" aria-label="Open ${escape(v.name)} details${word ? `, ${escape(word)}` : ""}"`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta">${meta}</p></div>${available ? (v.video ? icon("chevron-right") : selectFolderButton(v.id)) : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${icon("chevron-right")}`}</article>`;
+  const open = `data-action="folder-detail" data-id="${escape(v.id)}"`;
+  const label = `aria-label="Open ${escape(v.name)} details${word ? `, ${escape(word)}` : ""}"`;
+  const inline = !available && Boolean(problemAction || v.conflicts);
+  const trailing = available
+    ? v.video
+      ? icon("chevron-right")
+      : selectFolderButton(v.id)
+    : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${icon("chevron-right")}`;
+  if (inline)
+    return `<article class="folder-card" data-id="${escape(v.id)}">${lead.replace('class="home-lead"', `class="home-lead" ${open}`)}<div class="row-main" ${open} tabindex="0" role="button" ${label}><strong>${escape(v.name)}</strong><p class="meta" data-tooltip="${escape(folderMetaText(v, state, p))}">${meta}</p></div>${trailing}</article>`;
+  return `<article class="folder-card ${available && available !== "streamed" ? "unselected" : ""}" ${available && !videoAvailable(v) ? "" : `${open} tabindex="0" role="button" ${label}`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta"${available ? "" : ` data-tooltip="${escape(folderMetaText(v, state, p))}"`}>${meta}</p></div>${trailing}</article>`;
 }
 async function loadCatalog() {
   if (status.role !== "hub" && !status.hub) {
@@ -2802,6 +2928,14 @@ if (typeof MutationObserver === "function" && document.querySelector("#content")
     document.querySelector("#content"),
     { childList: true, subtree: true },
   );
+function announceView() {
+  const heading = $("#content h1");
+  if (!heading) return;
+  document.title = `${heading.textContent.trim()} · Arca`;
+  if (document.querySelector("dialog[open], .details-menu[open]")) return;
+  heading.tabIndex = -1;
+  heading.focus({ preventScroll: true });
+}
 async function render({ refreshStatus = false } = {}) {
   if (daemonStopped) return renderDaemonStopped();
   placeMusic();
@@ -2872,6 +3006,7 @@ async function render({ refreshStatus = false } = {}) {
       staggerRows();
       cascadeFirst = document.querySelector(CASCADE_SELECTOR);
     }
+    if (cascade && serial === renderSerial && ready) announceView();
     const failed = results.find((result) => result.status === "rejected");
     // The view just painted is current; the next poll repaints only if status really changes.
     if (!failed && serial === renderSerial && status === painted)
@@ -3067,7 +3202,7 @@ function revisionRow(v, compact = false) {
       status.volumes.find((x) => x.id === v.volume)?.selected)
       ? "review-conflict"
       : "activity-file";
-  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" data-tooltip="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "triangle-alert" : "git-commit-horizontal", true, deleted ? "id" : conflict && !v.resolved ? "wa" : "")}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time">${compact ? relative(v.created) : clockTime(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
+  return `<div data-action="${action}" data-id="${escape(target)}" tabindex="0" role="button"${action === "review-conflict" && hubOffline() ? ` aria-disabled="true" data-tooltip="${HUB_ONLY_REASON}"` : ""} aria-label="${escape(`${action === "review-conflict" ? "Review conflict for" : "View history for"} ${v.path}`)}" class="history-row ${compact ? "compact" : ""} ${deleted ? "deleted" : ""}">${rowPreview(v, deleted ? "trash-2" : conflict ? "triangle-alert" : "git-commit-horizontal", true, deleted ? "id" : conflict && !v.resolved ? "wa" : "")}<div><strong>${escape(v.path)}</strong><p>${deleted ? "Deleted · recoverable" : conflict ? (v.resolved ? "Conflict resolved · copy kept" : "Conflict copy retained") : `${bytes(v.size)}`}</p></div>${compact ? "" : `<span class="history-folder">${escape(v.folder || status.volumes.find((x) => x.id === v.volume)?.name || "")}</span>`}<span class="mono revision">rev ${v.rev}</span><span class="row-time"${compact ? relativeAttrs(v.created) : ""}>${compact ? relative(v.created) : clockTime(v.created)}</span><div class="row-actions">${icon("chevron-right")}</div></div>`;
 }
 function fileHistoryHeader() {
   const volume = status.volumes.find((v) => v.id === historyVolume);
@@ -3439,8 +3574,9 @@ function mountGallery(volume) {
     let data;
     try {
       data = await api(`/v1/gallery/periods?${new URLSearchParams({ volume, level: level === "years" ? "year" : "month" })}`);
-    } catch {
-      if (current() && galleryZoom === level) box.textContent = "Could not load this view.";
+    } catch (error) {
+      if (current() && galleryZoom === level) box.innerHTML = mediaFailure("refresh", error?.message, "images");
+      icons();
       return;
     }
     if (!current() || galleryZoom !== level || state.seek !== seek) return;
@@ -3980,7 +4116,7 @@ function mountGallery(volume) {
       tile.dataset.photo = index;
       tile.dataset.tooltip = `${galleryPhotoDate(item)}${!dayKey ? "" : item.dateSource === "date added" ? " · Date added to Arca" : item.dateSource === "file date" ? " · File date" : ""}`;
       const filename = escape(item.path.split("/").pop());
-      tile.innerHTML = `<button type="button" class="photo-open" aria-label="Open ${filename}">${item.kind === "video" ? icon("play") : brandArch()}</button>${item.kind === "video" ? `<span class="photo-video-badge" aria-label="Video">${icon("video")}</span>` : ""}<button type="button" class="photo-select" aria-label="Select ${filename}" aria-pressed="${state.selection.has(item.path)}">${icon("check")}</button>`;
+      tile.innerHTML = `<button type="button" class="photo-open" aria-label="Open ${filename}">${item.kind === "video" ? icon("play") : brandArch()}</button>${item.kind === "video" ? `<span class="photo-video-badge" role="img" aria-label="Video">${icon("video")}</span>` : ""}<button type="button" class="photo-select" aria-label="Select ${filename}" aria-pressed="${state.selection.has(item.path)}">${icon("check")}</button>`;
       if (item.kind === "video") {
         tile.onpointerenter = (event) => previewVideo(tile, item, event);
         tile.onpointerleave = stopHover;
@@ -4237,6 +4373,7 @@ function mountGallery(volume) {
         clearWall();
         root.querySelector(".photo-timeline").replaceChildren();
       }
+      state.failures = 0;
       updateTimeline(data);
       addItems(data.items);
       if (state.anchorMonth) {
@@ -4267,9 +4404,14 @@ function mountGallery(volume) {
           "",
           "arca",
         );
-    } catch {
+    } catch (error) {
       failed = true;
-      if (live()) {
+      state.failures = (state.failures || 0) + 1;
+      if (live() && !state.items.length && state.failures > 1) {
+        root.querySelector(".photo-days").innerHTML = mediaFailure("refresh", error?.message, "images");
+        more.replaceChildren();
+        icons();
+      } else if (live()) {
         more.textContent = "Could not load photos. Retrying…";
         more.removeAttribute("aria-label");
         setTimeout(() => live() && state.load(), 5000);
@@ -5047,7 +5189,7 @@ async function openGalleryPhoto(index) {
       target.innerHTML = `<div>${icon(item.kind === "video" ? "play" : "image-off")}<p>${item.kind === "video" ? "Open the file to play this video." : "Preview unavailable. The original file is preserved."}</p></div>`;
   } catch {
     if (target.isConnected && !target.querySelector("img"))
-      target.textContent = "Preview unavailable. Try opening the file.";
+      target.innerHTML = `<div>${icon("image-off")}<p>Preview unavailable. Try opening the file.</p></div>`;
   }
   icons();
 }
@@ -5066,6 +5208,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    if (event.target.closest?.("[data-video], video, input[type=range]")) return;
     event.preventDefault();
     $(event.key === "ArrowLeft" ? ".photo-previous" : ".photo-next")?.click();
   }
@@ -5085,7 +5228,7 @@ function folderActionsMenu(volume) {
     (ordinary
       ? button("Set up as library…", "setup-library", volume.id, "secondary", "library-big")
       : "") +
-    button("Rename", "rename-share", volume.id, "secondary", "pencil") +
+    button("Rename…", "rename-share", volume.id, "secondary", "pencil") +
     button(".arcaignore…", "edit-ignore", volume.id, "secondary", "file-pen-line");
   return `<details class="details-menu folder-actions-menu"><summary class="icon-button" aria-label="Folder actions">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
 }
@@ -5167,9 +5310,10 @@ async function folderBrowser(v, recent, pending = false) {
       tools +
       `<div class="history-group folder-explorer" data-listing="${escape(`files:${folderPrefix}`)}">${trail}` +
       (data.entries.length
-        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}"${row.directory ? "" : ` data-hash="${escape(row.hash || "")}" data-size="${Number(row.size) || 0}" data-name="${escape(row.name)}"`}${folderFocus === row.path ? ' aria-current="true"' : ""} aria-label="${escape(`Open ${row.name}`)}">${rowPreview({ ...row, volume: v.id }, fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}</p></div>${icon("chevron-right")}</div>`).join("")}`
+        ? `${data.entries.map((row) => `<div class="browser-file-row" role="button" tabindex="0" data-action="${row.directory ? "browse-directory" : "activity-file"}" data-id="${escape(row.directory ? row.path : JSON.stringify({ volume: v.id, path: row.path, rev: row.rev }))}"${row.directory ? "" : ` data-hash="${escape(row.hash || "")}" data-size="${Number(row.size) || 0}" data-name="${escape(row.name)}"`}${folderFocus === row.path ? ' aria-current="true"' : ""} aria-label="${escape(`Open ${row.name}`)}">${rowPreview({ ...row, volume: v.id }, fileIcon(row.path, row.directory))}<div><strong>${escape(row.name)}</strong><p${row.directory ? "" : relativeAttrs(row.created, `${bytes(row.size)} · `)}>${row.directory ? `${row.files} ${row.files === 1 ? "file" : "files"} · ` : ""}${bytes(row.size)}${!row.directory && row.created ? ` · ${relative(row.created)}` : ""}</p></div>${icon("chevron-right")}</div>`).join("")}`
         : empty("This folder is empty", "", "", "arca")) +
       "</div>" +
+      (data.entries.some((row) => !row.directory) ? '<p class="hint">Space to preview</p>' : "") +
       (data.next
         ? capped
           ? `<p class="hint">Showing the first ${(MAX_FOLDER_PAGES * 100).toLocaleString("en")} files. Search Arca to find the rest.</p>`
@@ -5421,9 +5565,10 @@ const musicMenu = (items, label = "Track actions") =>
   `<details class="details-menu file-actions-menu music-track-menu"><summary class="ghost icon-button" aria-label="${label}">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
 const musicHeadRow = (album = false, who = "Artist", numbered = true) =>
   `<div class="music-track music-track-head" aria-hidden="true"><div class="music-track-play"><span>${numbered ? "#" : ""}</span><span>Title</span><span>${who}</span>${album ? "<span>Album</span>" : ""}${icon("clock")}</div><span></span></div>`;
+const moreLabel = (left) => `Show more · ${left.toLocaleString("en")} left`;
 function musicGrid(cards, size = Infinity) {
   const shown = cards.slice(0, size);
-  return `<div class="music-grid">${shown.join("")}</div>${cards.length > shown.length ? `<div class="pagination">${button("Show more", "music-more", "", "secondary")}</div>` : ""}`;
+  return `<div class="music-grid">${shown.join("")}</div>${cards.length > shown.length ? `<div class="pagination">${button(moreLabel(cards.length - shown.length), "music-more", "", "secondary")}</div>` : ""}`;
 }
 const musicShuffleAll = () =>
   musicView.album || musicView.playlist || musicView.artist || musicView.show || musicView.tab === "podcasts"
@@ -5487,7 +5632,9 @@ function musicRows(v, rows, action, { head = "", playlist = "", album = false, e
       const resume = saved && saved.hash === row.track.hash ? saved : null;
       const length = resume
         ? `<span class="mono music-left">${timeLeft(resume.duration - resume.position)}</span>`
-        : row.track.podcast
+        : row.track.podcast && audioFinished.get(positionKey(v.id, row.track.path))?.hash === row.track.hash
+          ? `<span class="music-length music-played" role="img" aria-label="Played" data-tooltip="Played">${icon("check")}</span>`
+          : row.track.podcast
           ? `<span class="music-length">${hoursLength(row.track.duration)}</span>`
           : `<span class="mono">${formatDuration(row.track.duration)}</span>`;
       const progress = resume
@@ -5517,7 +5664,7 @@ function musicArtists(v, library) {
           .join("")}</div>`,
       ),
     )
-    .join("")}${library.artists.length > shown.length ? `<div class="pagination">${button("Show more", "music-more", "", "secondary")}</div>` : ""}`;
+    .join("")}${library.artists.length > shown.length ? `<div class="pagination">${button(moreLabel(library.artists.length - shown.length), "music-more", "", "secondary")}</div>` : ""}`;
 }
 function musicArtist(v, artist) {
   const tracks = artist.albums.reduce((total, album) => total + album.tracks.length, 0);
@@ -5539,7 +5686,7 @@ function musicTracks(v, album) {
     shown.map((track, index) => ({ track, id: index, subtitle: track.artist })),
     "music-track",
     { head: musicHeadRow() },
-  )}${album.tracks.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
+  )}${album.tracks.length > shown.length ? `<div class="pagination">${button(moreLabel(album.tracks.length - shown.length), "music-more", "", "secondary")}</div>` : ""}`;
 }
 function musicPlaylist(v, list) {
   const pending = status.role !== "hub" && v.sync?.state !== "synced";
@@ -5563,7 +5710,7 @@ function musicPlaylist(v, list) {
           remove: editable,
         },
   );
-  return `<div class="music-head">${musicCover(v.id, list.cover, "list-music", " large")}<div class="music-head-info"><div><h2>${escape(list.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${list.tracks.length ? musicHeadPlay(v, list) + button("Shuffle", "music-shuffle", "", "secondary", "shuffle") : ""}${menu}</div></div></div></div>${musicRows(v, rows, "music-track", { head: musicHeadRow(true), playlist: list.id, album: true })}${list.entries.length > shown.length ? `<div class="pagination">${button("Show more tracks", "music-more", "", "secondary")}</div>` : ""}`;
+  return `<div class="music-head">${musicCover(v.id, list.cover, "list-music", " large")}<div class="music-head-info"><div><h2>${escape(list.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${list.tracks.length ? musicHeadPlay(v, list) + button("Shuffle", "music-shuffle", "", "secondary", "shuffle") : ""}${menu}</div></div></div></div>${musicRows(v, rows, "music-track", { head: musicHeadRow(true), playlist: list.id, album: true })}${list.entries.length > shown.length ? `<div class="pagination">${button(moreLabel(list.entries.length - shown.length), "music-more", "", "secondary")}</div>` : ""}`;
 }
 function musicRecent(v, library) {
   const played = playedItems(library, musicHistory(v.id));
@@ -5730,7 +5877,7 @@ function musicShow(v, show) {
     shown.map((track, index) => ({ track, id: index, subtitle: episodeDay(track.date) })),
     "music-track",
     { head: musicHeadRow(false, "Published", false), episodes: true },
-  )}${show.tracks.length > shown.length ? `<div class="pagination">${button("Show more episodes", "music-more", "", "secondary")}</div>` : ""}`;
+  )}${show.tracks.length > shown.length ? `<div class="pagination">${button(moreLabel(show.tracks.length - shown.length), "music-more", "", "secondary")}</div>` : ""}`;
 }
 function musicContent(v, library) {
   const show = musicView.show && library.shows.find((item) => item.id === musicView.show);
@@ -5788,7 +5935,7 @@ function renderMusic(v, scroll = null) {
   const body = entry
     ? musicBody(v, entry)
     : failure
-      ? empty("Library unavailable", "Arca could not read this Audio library. Try again.", button("Retry", "music-retry", "", "secondary"), "music")
+      ? mediaFailure("music-retry", failure, "music")
       : scaffoldRow("card");
   const moved = !!page && musicShown.place !== place();
   const head = heading();
@@ -6222,8 +6369,19 @@ function sleepNow() {
   }, 200);
   paintSleep();
 }
+const MUSIC_FAILED = "Can't play this track";
+function paintMusicFailure() {
+  const failed = Boolean(musicPlayer?.failed);
+  for (const host of document.querySelectorAll("#music-player .music-player-track > div, #music-mini .music-mini-text")) {
+    host.classList.toggle("music-failed", failed);
+    const line = host.querySelector(".music-failed-line");
+    if (failed && !line) host.insertAdjacentHTML("beforeend", `<small class="music-failed-line" role="status">${MUSIC_FAILED}</small>`);
+    else if (!failed) line?.remove();
+  }
+}
 function musicControls() {
   if (!musicPlayer) return;
+  paintMusicFailure();
   patchPlayerButtons(musicControlButtons());
   markMusicPlaying();
   musicBroadcast();
@@ -6303,6 +6461,7 @@ function renderMini(track) {
   open.dataset.tooltip = `Open ${track.album}`;
   open.querySelector("strong").textContent = track.title;
   open.querySelector(".music-mini-text > span").textContent = track.podcast ? track.album : track.artist;
+  paintMusicFailure();
   paintSleep();
 }
 const musicInLibrary = () =>
@@ -6455,6 +6614,7 @@ function renderPlayer() {
   if (fresh) icons();
   mountMusicCovers();
   musicProgress();
+  paintMusicFailure();
   if (fresh) musicLevel();
 }
 function markMusicPlaying() {
@@ -7225,7 +7385,7 @@ function videoShow(v, library, show) {
   const rows = chosen ? `<div class="history-group video-episodes">${chosen.episodes.map((episode) => videoEpisodeRow(v, library, show, episode, episode === next)).join("")}</div>` : "";
   const season = videoDownloadable() && chosen ? videoSeasonDownload(v, chosen) : "";
   const watched = fullyWatched(show);
-  const mark = button(watched ? "Mark as unwatched" : "Mark as watched", "video-quick-watched", show.id, "secondary", watched ? "eye-off" : "check");
+  const mark = button(watched ? "Mark all episodes as unwatched" : "Mark all episodes as watched", "video-quick-watched", show.id, "secondary", watched ? "eye-off" : "check");
   const bar = control || season ? `<div class="video-season-bar">${control}${season}</div>` : "";
   return videoBand(v, show, play + mark + videoMenu(v, show, "Show actions")) + bar + rows;
 }
@@ -7302,7 +7462,7 @@ function renderVideo(v, scroll = null) {
   const body = entry
     ? videoBody(v, entry)
     : failure
-      ? empty("Library unavailable", escape(failure), button("Retry", "video-retry", "", "secondary"), "clapperboard")
+      ? mediaFailure("video-retry", failure, "clapperboard")
       : scaffoldRow("card");
   const head = heading();
   content.innerHTML = `<div class="detail-head">${head}</div><div class="page music-page video-page">${body}</div>`;
@@ -7406,8 +7566,8 @@ function videoPlayerRoot() {
   return root;
 }
 const videoElement = () => $("#video-player video");
-const videoButton = (name, label, symbol, extra = "") =>
-  `<button type="button" class="icon-button" data-video="${name}" aria-label="${label}" data-tooltip="${label}"${extra}>${icon(symbol)}</button>`;
+const videoButton = (name, label, symbol, extra = "", text = "") =>
+  `<button type="button" class="icon-button${text ? " video-skip" : ""}" data-video="${name}" aria-label="${label}" data-tooltip="${label}"${extra}>${icon(symbol)}${text ? `<span class="video-skip-count" aria-hidden="true">${text}</span>` : ""}</button>`;
 function videoSubtitleMenu(state) {
   if (!state.subtitles.length) return "";
   const option = (id, label, checked, symbol) =>
@@ -7587,11 +7747,16 @@ function videoWake() {
     root.classList.add("video-idle");
   }, 3000);
 }
+function videoBusy(on) {
+  const mark = $("#video-player .video-loading");
+  if (mark) mark.hidden = !on;
+}
 function videoStopped(markup) {
   const state = videoPlayer;
   const root = $("#video-player");
   if (!state || !root) return;
   state.failed = true;
+  videoBusy(false);
   const video = videoElement();
   if (video) {
     video.pause?.();
@@ -7800,7 +7965,7 @@ async function videoPlay(v, item, at = 0) {
   const line = item.kind === "episode" ? [episodeCode(item), item.title].filter(Boolean).join(" · ") : videoTechLine(item);
   root.setAttribute("aria-label", title);
   root.className = "video-player video-paused";
-  root.innerHTML = `<video class="video-element" playsinline preload="metadata"></video><div class="video-top">${videoButton("back", "Back", "arrow-left")}<div><strong>${escape(title)}</strong>${line ? `<p>${escape(line)}</p>` : ""}</div></div><div class="video-message" role="alert" hidden></div><div class="video-upnext" role="status" hidden></div><div class="video-controls"><div class="music-seek"><span class="mono" data-video-time="elapsed">${videoClock(at)}</span><input type="range" class="music-range" data-video="seek" aria-label="Seek" min="0" max="${Math.max(1, Math.round(itemDuration(item)))}" step="1" value="${Math.round(at)}"><span class="mono" data-video-time="total">${videoClock(itemDuration(item))}</span></div><div class="video-buttons">${videoButton("toggle", "Play", "play")}${videoButton("back10", "Back 10 seconds", "rotate-ccw")}${videoButton("forward30", "Forward 30 seconds", "rotate-cw")}${videoButton("mute", "Mute", "volume-2")}<input type="range" class="music-range video-volume" data-video="volume" aria-label="Volume" min="0" max="1" step="0.01" value="1"><span class="video-spacer"></span><details class="details-menu video-subtitles" hidden></details>${document.pictureInPictureEnabled ? videoButton("pip", "Picture in picture", "picture-in-picture-2") : ""}${document.fullscreenEnabled ? videoButton("fullscreen", "Fullscreen", "maximize") : ""}</div></div>`;
+  root.innerHTML = `<video class="video-element" playsinline preload="metadata"></video><div class="video-top">${videoButton("back", "Back", "arrow-left")}<div><strong>${escape(title)}</strong>${line ? `<p>${escape(line)}</p>` : ""}</div></div><div class="video-loading" role="status" aria-label="Loading video">${busyIcon()}</div><div class="video-message" role="alert" hidden></div><div class="video-upnext" role="status" hidden></div><div class="video-controls"><div class="music-seek"><span class="mono" data-video-time="elapsed">${videoClock(at)}</span><input type="range" class="music-range" data-video="seek" aria-label="Seek" min="0" max="${Math.max(1, Math.round(itemDuration(item)))}" step="1" value="${Math.round(at)}"><span class="mono" data-video-time="total">${videoClock(itemDuration(item))}</span></div><div class="video-buttons">${videoButton("toggle", "Play", "play")}${videoButton("back10", "Back 10 seconds", "rotate-ccw", "", "10")}${videoButton("forward30", "Forward 30 seconds", "rotate-cw", "", "30")}${videoButton("mute", "Mute", "volume-2")}<input type="range" class="music-range video-volume" data-video="volume" aria-label="Volume" min="0" max="1" step="0.01" value="1"><span class="video-spacer"></span><details class="details-menu video-subtitles" hidden></details>${document.pictureInPictureEnabled ? videoButton("pip", "Picture in picture", "picture-in-picture-2") : ""}${document.fullscreenEnabled ? videoButton("fullscreen", "Fullscreen", "maximize") : ""}</div></div>`;
   root.hidden = false;
   document.body.classList.add("video-open");
   for (const node of videoInertTargets(root))
@@ -7882,8 +8047,12 @@ async function videoPlay(v, item, at = 0) {
   video.addEventListener("play", videoControls);
   video.addEventListener("pause", () => {
     saveVideoPosition();
+    videoBusy(false);
     videoControls();
   });
+  video.addEventListener("playing", () => videoBusy(false));
+  video.addEventListener("waiting", () => videoBusy(true));
+  video.addEventListener("stalled", () => videoBusy(true));
   video.addEventListener("volumechange", videoControls);
   video.addEventListener("ended", videoEnded);
   video.addEventListener("error", videoFailed);
@@ -7907,7 +8076,10 @@ async function videoPlay(v, item, at = 0) {
     return videoRestart(at, state.audio);
   }
   video.src = source.url;
-  video.play?.()?.catch?.(() => videoControls());
+  video.play?.()?.catch?.(() => {
+    videoBusy(false);
+    videoControls();
+  });
 }
 function closeVideoPlayer(repaint = true) {
   const state = videoPlayer;
@@ -8095,6 +8267,25 @@ function videoChooseSubtitle(id) {
   videoApplySubtitles();
   paintVideoSubtitles();
 }
+function videoMuteToggle() {
+  const video = videoElement();
+  video.muted = !video.muted && video.volume > 0;
+  if (!video.muted && !video.volume) video.volume = 1;
+  videoControls();
+}
+function videoFullscreenToggle() {
+  if (document.fullscreenElement) return void document.exitFullscreen?.()?.catch?.(() => {});
+  void $("#video-player").requestFullscreen?.()?.catch?.(() => {});
+}
+function videoVolumeBy(delta) {
+  const video = videoElement();
+  video.volume = Math.min(1, Math.max(0, Math.round((video.volume + delta) * 100) / 100));
+  video.muted = false;
+  try {
+    localStorage.setItem("arca-video-volume", String(video.volume));
+  } catch {}
+  videoControls();
+}
 document.addEventListener("click", (event) => {
   const control = event.target.closest?.("#video-player [data-video]");
   if (!control || !videoPlayer) return;
@@ -8105,11 +8296,7 @@ document.addEventListener("click", (event) => {
   if (name === "toggle") return videoToggle();
   if (name === "back10") return videoSeek(-10);
   if (name === "forward30") return videoSeek(30);
-  if (name === "mute") {
-    video.muted = !video.muted && video.volume > 0;
-    if (!video.muted && !video.volume) video.volume = 1;
-    return videoControls();
-  }
+  if (name === "mute") return videoMuteToggle();
   if (name === "subtitle") {
     closeMenu(control.closest("details"));
     return videoChooseSubtitle(control.dataset.id);
@@ -8122,10 +8309,7 @@ document.addEventListener("click", (event) => {
     if (document.pictureInPictureElement) return void document.exitPictureInPicture?.()?.catch?.(() => {});
     return void video.requestPictureInPicture?.()?.catch?.(() => {});
   }
-  if (name === "fullscreen") {
-    if (document.fullscreenElement) return void document.exitFullscreen?.()?.catch?.(() => {});
-    return void $("#video-player").requestFullscreen?.()?.catch?.(() => {});
-  }
+  if (name === "fullscreen") return videoFullscreenToggle();
   if (name === "upnext-play") return void videoPlayNext();
   if (name === "upnext-cancel") return videoCancelUpNext();
   if (name === "open") {
@@ -8169,6 +8353,15 @@ document.addEventListener("keydown", (event) => {
   } else if (event.key === "ArrowRight") {
     event.preventDefault();
     videoSeek(30);
+  } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    event.preventDefault();
+    videoVolumeBy(event.key === "ArrowUp" ? 0.1 : -0.1);
+  } else if (event.key.toLowerCase() === "m") {
+    event.preventDefault();
+    videoMuteToggle();
+  } else if (event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    videoFullscreenToggle();
   }
 });
 document.addEventListener("keydown", (event) => {
@@ -8457,6 +8650,8 @@ async function handleVideo(name, id) {
         target.watched = watched;
         if (watched) target.position = null;
       }
+      if (item.kind === "show")
+        notice(`${countLabel(targets.length, "episode")} marked ${watched ? "watched" : "unwatched"}.`);
     } finally {
       videoTouched(v.id);
       renderVideo(v, page()?.scrollTop || 0);
@@ -8600,7 +8795,7 @@ async function renderDetail(pending = false) {
         : saved
           ? "<strong>No saved versions</strong><p>Connect to the hub for the newest</p>"
           : "<strong>No changes yet</strong><p>Accepted by the hub</p>";
-    return `<strong>${relative(row.created)}</strong><p>${escape(row.path.split("/").pop())} · ${escape(authorName(row.author))}${saved ? " · last known" : ""}</p>`;
+    return `<strong${relativeAttrs(row.created)}>${relative(row.created)}</strong><p>${escape(row.path.split("/").pop())} · ${escape(authorName(row.author))}${saved ? " · last known" : ""}</p>`;
   };
   const browser = await folderBrowser(v, known, pending);
   if (!current()) return;
@@ -8609,7 +8804,7 @@ async function renderDetail(pending = false) {
     !Number.isFinite(v.files) ||
     (v.sync?.state === "error" && !v.sync.lastCompleted);
   $("#content").innerHTML =
-    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${videoModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" && !v.video ? section("Version history", folderRetentionPanel(v)) : ""}${status.role === "hub" && v.video ? "" : hubCopyPanel(v)}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
+    `<div class="detail-head">${button("Folders", "back-folders", "", "back", "chevron-left")}<div class="heading"><div class="detail-title"><div class="tile large">${icon(folderSymbol(v))}</div><div><h1>${escape(v.name)}</h1><p>${unscanned ? "Not counted yet" : `${(v.files || 0).toLocaleString("en")} files · ${bytes(v.bytes || 0)} ${v.path ? "local" : "on hub"}`}</p></div></div><div class="heading-actions">${favoriteStar()}${native && v.path && folderTab !== "gallery" ? button(status.platform === "darwin" ? "Open in Finder" : "Open folder", "open", v.id, "secondary", "external-link") : ""}${galleryModeButton(v)}${musicModeButton(v)}${videoModeButton(v)}${folderActionsMenu(v)}</div></div></div><div class="page detail-page ${folderTab === "gallery" ? "gallery-page" : ""}"><div class="stats folder-stats"><div class="stat"><span>Status</span><strong class="stat-status ${state[1]}">${state[2] === "busy" ? busyIcon() : icon(state[2])}${escape(state[0])}</strong><p${relativeAttrs(v.sync?.lastCompleted, "Completed ")}>${v.sync?.lastCompleted ? `Completed ${relative(v.sync.lastCompleted)}` : "No completed sync yet"}</p></div><div class="stat stat-last-change"><span>Last change</span>${lastChangeCell(known)}</div>${folderRetentionSummary(v)}</div><div class="detail-grid"><div class="detail-revisions">${browser}</div><div class="detail-side">${section(status.role === "hub" ? `Path on ${escape(status.name)}` : "Local destination", `<div class="panel"><p class="path">${escape(v.path || "Not on this device")}</p>${native && status.role !== "hub" && v.path ? button("Change location…", "move-folder", v.id, "secondary small-button", "folder-input") : ""}</div>`)}${section("Copies", '<div class="copies-card" id="folder-copies"></div>')}${status.role === "hub" && !v.video ? section("Version history", folderRetentionPanel(v)) : ""}${status.role === "hub" && v.video ? "" : hubCopyPanel(v)}${status.role === "hub" ? `<div class="panel"><h3>Delete shared folder</h3><p>Stops sharing on all devices and deletes this shared folder’s history from the hub. Physical files and existing backups are kept.</p>${button("Delete shared folder…", "delete-share", v.id, "secondary danger", "trash-2")}</div>` : ""}</div></div></div>`;
   $("#content").dataset.detail = v.id;
   refreshCopies();
   if (!pending && folderTab === "gallery") mountGallery(v.id);
@@ -8703,10 +8898,13 @@ async function renderHistory(
       (data.offline
         ? `<p class="hint">${data.truncated ? "Showing saved history · recent entries only. Connect to the hub for updated retention and older versions." : "Showing saved history. Connect to the hub for updated retention."}</p>`
         : "") +
+      (historyVersions[0]?.deleted && historyVersions.length > 1 && !folderVolume(historyVolume)?.video
+        ? '<p class="hint">This file is deleted. Restore an older version below.</p>'
+        : "") +
       section(
         "File versions",
         historyVersions.length
-          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? pill("Current", "id", "check") : v.deleted || folderVolume(historyVolume)?.video ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
+          ? `<div class="history-group">${historyVersions.map((v, index) => `<div class="history-row file-version-row">${rowPreview({ ...v, volume: historyVolume, path: historyPath }, v.deleted ? "trash-2" : "git-commit-horizontal", true)}<div><strong>${date(v.created)}</strong><p>${v.deleted ? "Deleted file" : bytes(v.size)} · ${escape(authorName(v.author))}</p></div><span class="mono revision">rev ${v.rev}</span><div class="row-actions">${index === 0 ? (v.deleted ? pill("Deleted", "id", "trash-2") : pill("Current", "id", "check")) : v.deleted || folderVolume(historyVolume)?.video ? "" : button("Restore", "restore", String(v.rev), "text-button", "undo-2")}</div></div>`).join("")}</div>`
           : data.offline
             ? empty(
                 "No saved versions for this file",
@@ -8797,7 +8995,7 @@ function deviceCells({ version, hubVersion, folders, size, revoked = false, seen
   const versionCell = !version
     ? ""
     : older
-      ? `<span class="device-older" data-tooltip="Older than the hub’s v${escape(hubVersion)}" aria-label="${escape(`v${version}, older than the hub’s v${hubVersion}`)}">${icon("circle-arrow-up")}v${escape(core)}</span>`
+      ? `<span class="device-older" tabindex="0" data-tooltip="Older than the hub’s v${escape(hubVersion)}">${icon("circle-arrow-up")}v${escape(core)}<span class="sr-only">, older than the hub’s v${escape(hubVersion)}</span></span>`
       : core === version
         ? `<span>v${escape(version)}</span>`
         : `<span data-tooltip="v${escape(version)}" aria-label="v${escape(version)}">v${escape(core)}</span>`;
@@ -8857,7 +9055,7 @@ function watchDevices() {
       pointerPressed ||
       $("#dialog").open ||
       document.querySelector('.details-menu[open], .dropdown [aria-expanded="true"]') ||
-      $("#content").contains(document.activeElement)
+      ($("#content").contains(document.activeElement) && !document.activeElement.matches("h1"))
     )
       return;
     await renderMachines(serial, false);
@@ -8866,6 +9064,7 @@ function watchDevices() {
 const rosterHub = () => roster?.machines?.find((m) => m.isHub);
 async function renderMachines(serial = renderSerial, fetchData = true) {
   let issue = "";
+  const missing = [];
   if (fetchData) {
     const [discoveryResult, rosterResult] = await Promise.allSettled([
       viewRead("/v1/discovery"),
@@ -8874,9 +9073,15 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
     if (view !== "devices" || serial !== renderSerial) return;
     if (discoveryResult.status === "fulfilled")
       discovered = discoveryResult.value;
-    else issue = discoveryResult.reason.message;
+    else {
+      issue = discoveryResult.reason.message;
+      missing.push("Discovery");
+    }
     if (rosterResult.status === "fulfilled") rosterRead(rosterResult.value);
-    else issue ||= rosterResult.reason.message;
+    else {
+      issue ||= rosterResult.reason.message;
+      missing.push("Device list");
+    }
     if (issue)
       notice(issue, true, {
         id: "view:devices",
@@ -9013,7 +9218,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
         }),
         end: d.revoked
           ? pill("Removed", "er", "unplug")
-          : `${d.last_seen ? "" : pill("Invitation only", "wa", "clock")}<details class="details-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${d.role === "player" ? "" : button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Remove device", "revoke", d.id, "secondary danger", "unplug")}</div></details>`,
+          : `${d.last_seen ? "" : pill("Invitation only", "wa", "clock")}<details class="details-menu file-actions-menu"><summary class="icon-button" aria-label="Actions for ${escape(d.name)}">${icon("ellipsis")}</summary><div class="menu-items">${d.role === "player" ? "" : button(status.webApprovers?.includes(d.id) ? "Disable web approval" : "Allow web approval…", "web-approver", d.id, "secondary", "shield-check")}${button("Remove device…", "revoke", d.id, "secondary danger menu-item-separated", "unplug")}</div></details>`,
       });
     }
     machineRows += records;
@@ -9115,8 +9320,8 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
   if (found.length)
     html +=
       '<p class="hint">Detection does not connect devices. A pairing code is required.</p>';
-  if (issue)
-    html += `<p class="hint">Discovery unavailable: ${escape(issue)}</p>`;
+  if (missing.length)
+    html += `<p class="hint">${missing.join(" and ")} unavailable.</p>`;
   if (status.role === "hub" || status.hub)
     html += section("Hub backup", backupSummary());
   $("#content").innerHTML =
@@ -9255,11 +9460,11 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   if (status.role !== "hub") html += hubConnectionSection();
   html += section(
     "This device",
-    `<div class="settings-card">${setting("Device name", "Shown to other devices and in history.", `<input id="machine-name" aria-label="Device name" maxlength="100" value="${escape(status.name)}">`)}${setting("Default folder location", `<span class="path">${escape(status.root)}</span>`, button("Copy path", "copy", status.root, "secondary small-button", "copy"))}</div>`,
+    `<div class="settings-card">${setting("Device name", 'Shown to other devices and in history.<span class="field-error" id="machine-name-error" role="alert" hidden></span>', `<input id="machine-name" aria-label="Device name" aria-describedby="machine-name-error" maxlength="100" value="${escape(status.name)}">`)}${setting("Default folder location", `<span class="path">${escape(status.root)}</span>`, button("Copy path", "copy", status.root, "secondary small-button", "copy"))}</div>`,
   );
   html += section(
     status.role === "hub" ? "Hub synchronization" : "Local synchronization",
-    `<div class="settings-card">${setting(status.role !== "hub" && !status.hub ? "Disconnected" : status.phase === "paused" ? "Paused" : "Enabled", status.role === "hub" ? "Synchronizes this hub’s working folders with connected devices." : "Synchronizes the folders selected on this device.", "")}</div>`,
+    `<div class="settings-card">${setting("Synchronization", status.role === "hub" ? "Synchronizes this hub’s working folders with connected devices." : "Synchronizes the folders selected on this device.", syncStatePill())}</div>`,
   );
   if (status.role === "hub")
     html += section(
@@ -9318,7 +9523,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
             m === "tailscale" && network?.tailscale.state !== "connected",
         })),
       ),
-    )}${setting("Tailscale addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No Tailscale address")} · port ${status.port || 17831}</span>`, pill(network?.publishing ? "Discoverable" : "Not advertised", "id", "wifi"))}</div>`,
+    )}${setting("Tailscale addresses", `<span class="path">${escape(network?.tailscale?.self?.addresses?.join(" · ") || "No Tailscale address")}${status.port ? ` · port ${status.port}` : ""}</span>`, pill(network?.publishing ? "Discoverable" : "Not advertised", "id", "wifi"))}</div>`,
   );
   if (status.role === "hub")
     html += section(
@@ -9331,7 +9536,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   html += section(
     "Service",
-    `<div class="settings-card">${setting(`Arca v${APP_VERSION}`, `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || 17831} · Node ${escape(status.nodeVersion || "24")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
+    `<div class="settings-card">${setting(`Arca v${APP_VERSION}`, `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || "Not reported"} · Node ${escape(status.nodeVersion || "Not reported")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
   );
   if (status.role === "replica" && status.hub)
     html += section(
@@ -9363,8 +9568,20 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
     action(async () => {
-      await api("/v1/settings", { name: $("#machine-name").value });
+      const field = $("#machine-name");
+      const rejected = $("#machine-name-error");
+      rejected.hidden = true;
+      field.removeAttribute("aria-invalid");
+      try {
+        await api("/v1/settings", { name: field.value });
+      } catch (error) {
+        rejected.textContent = error.message;
+        rejected.hidden = false;
+        field.setAttribute("aria-invalid", "true");
+        return;
+      }
       await refresh(false);
+      notice("Device name saved.");
     });
   if (native) {
     invoke("desktop_preferences")
@@ -9516,15 +9733,16 @@ function dialogOpener() {
   const active = document.activeElement;
   const menu = active?.closest?.(".details-menu, .context-menu");
   if (menu?.matches(".details-menu")) return menu.querySelector("summary");
-  if ((!active || active === document.body || menu) && menuReturn?.isConnected) return menuReturn;
-  return active && active !== document.body ? active : null;
+  const resting = !active || active === document.body || active.matches("h1");
+  if ((resting || menu) && menuReturn?.isConnected) return menuReturn;
+  return resting ? null : active;
 }
 function returnFocus(dialog) {
   const opener = dialogOpeners.get(dialog);
   if (!opener) return;
   dialogOpeners.delete(dialog);
   const active = document.activeElement;
-  if (active && active !== document.body && active.isConnected && !dialog.contains(active)) return;
+  if (active && active !== document.body && !active.matches("h1") && active.isConnected && !dialog.contains(active)) return;
   const target = opener.isConnected
     ? opener
     : dialog.classList.contains("photo-viewer")
@@ -9820,7 +10038,7 @@ document.addEventListener("keydown", (e) => {
     }
   }
   if (
-    el.matches('.folder-card[role="button"], .history-row[role="button"]') &&
+    el.matches('.folder-card[role="button"], .folder-card > .row-main[role="button"], .history-row[role="button"]') &&
     ["Enter", " "].includes(e.key)
   ) {
     e.preventDefault();
@@ -10115,14 +10333,11 @@ async function handle(name, id, control) {
   if (name.startsWith("video-")) return handleVideo(name, id);
   if (name.startsWith("favorite") || name === "context-open") return handleFavorite(name, id, control);
   if (name === "install-update") {
-    const button = $("#update-install");
-    button.disabled = true;
-    button.textContent = "Installing…";
+    setUpdating(true);
     try {
       await invoke("install_update");
     } catch (error) {
-      button.disabled = false;
-      button.textContent = "Update and restart";
+      setUpdating(false);
       throw error;
     }
     return;
@@ -10151,7 +10366,7 @@ async function handle(name, id, control) {
     const v = status.volumes.find((v) => v.id === id);
     modal(
       modalHeader(
-        "Rename",
+        "Rename shared folder",
         "Updates the name on every device. Folder locations stay the same.",
         "pencil",
       ) + textField("Name", "name", v.name),
@@ -10414,6 +10629,13 @@ async function handle(name, id, control) {
       );
     return;
   }
+  if (name === "history-show-all") {
+    historyFilter = "revisions";
+    historyVolume = "";
+    historyPath = null;
+    await render();
+    return;
+  }
   if (name === "history-page") {
     await renderHistory(id, true);
     return;
@@ -10458,7 +10680,7 @@ async function handle(name, id, control) {
     };
     modal(
       modalHeader(
-        "Delete this file?",
+        `Delete “${escape(historyPath.split("/").pop())}”?`,
         folderVolume(historyVolume)?.video
           ? "Deletes it from the hub’s disk. Movies &amp; TV keep no older versions, so it can’t be restored."
           : "Deletes from all synced copies. Retained history can be restored.",
@@ -10743,8 +10965,12 @@ async function handle(name, id, control) {
     return;
   }
   if (name === "start") {
-    await invoke("start_daemon");
-    setTimeout(() => action(boot), 1000);
+    awaitDaemon();
+    try {
+      await invoke("start_daemon");
+    } catch (error) {
+      showDaemonStopped(error?.message || String(error));
+    }
     return;
   }
   if (name === "revoke") {
@@ -11229,6 +11455,8 @@ const navigationActions = new Set([
 ]);
 function dispatchControl(control) {
   const { action: name, id } = control.dataset;
+  if (name === "sync" && control.getAttribute("aria-disabled") === "true")
+    return Promise.resolve();
   if (hubOnlyActions.has(name) && hubOffline())
     return Promise.resolve(hubOnlyBlocked());
   const work = () => handle(name, id, control);
@@ -11274,7 +11502,7 @@ document.addEventListener("click", (e) => {
     void render({ refreshStatus: true }).catch((error) => {
       if (!window.document || loading !== viewLoadSerial) return;
       if (!native && error.status === 401)
-        void showLogin("Your session has ended. Enter a new web access code.");
+        void showLogin(SESSION_ENDED);
       else if (daemonUnavailable(error)) showDaemonStopped();
       else
         notice(error.message, true, {
@@ -11312,6 +11540,22 @@ document.addEventListener("change", (e) => {
     )
   )
     return;
+  if (control.id === "allow-lan-http" && enabled) {
+    control.checked = false;
+    modal(
+      modalHeader(
+        "Allow HTTP connections?",
+        "Anyone on your local network could read your files and sign-in details. Use it only on a network you trust.",
+        "triangle-alert",
+      ),
+      async () => {
+        network = await api("/v1/network/lan", { enabled: true });
+      },
+      "Allow HTTP",
+    );
+    $("#submit-dialog").classList.add("danger");
+    return;
+  }
   action(async () => {
     try {
       if (control.id === "allow-lan-http")
@@ -11481,7 +11725,7 @@ async function showLogin(message = "") {
       ],
       "access-tabs",
     )}</div>
-    <div id="access-code"><form id="web-login"><label>Web access code</label>${codeFields("web")}<p class="hint">${icon("clock")} Single use · valid ten minutes from generation</p><p id="login-error" role="alert">${escape(message)}</p><button class="primary" type="submit">${icon("log-in")}Open Arca</button></form><div class="access-help"><h3>Get a code</h3><p>On the server, run <code>docker exec &lt;container&gt; node packages/cli/arca.js web-code</code> if Arca runs in Docker, or <code>arca web-code</code> if it is installed directly.</p><p>The command prints a result that includes a six-digit code. Enter that code above.</p></div></div>
+    <div id="access-code"><form id="web-login"><label>Web access code</label>${codeFields("web")}<p class="hint">${icon("clock")} Single use · valid ten minutes from generation</p>${message === SESSION_ENDED ? `<p class="hint" id="login-notice">${escape(message)}</p>` : ""}<p id="login-error" role="alert">${message === SESSION_ENDED ? "" : escape(message)}</p><button class="primary" type="submit">${icon("log-in")}Open Arca</button></form><div class="access-help"><h3>Get a code</h3><p>On the server, run one of these commands. The command prints a result that includes a six-digit code. Enter that code above.</p><div class="settings-card">${commandRow("In Docker", WEB_CODE_DOCKER)}${commandRow("Installed directly", WEB_CODE_DIRECT)}</div></div></div>
     <div id="access-approval" hidden><div id="web-approval-wait"></div><button type="button" id="request-web-approval" class="secondary">Try again</button></div>
     <p class="session-note">Signed in for up to 24 hours, until sign-out or a server restart.<br>No username or password.</p></div></div>`;
   icons();
@@ -11560,15 +11804,13 @@ async function showLogin(message = "") {
           return;
         }
         if (result.state !== "pending") {
-          wait.textContent =
-            result.state === "denied"
-              ? "Access denied."
-              : "Request expired. Try again.";
+          wait.innerHTML = `<p class="dialog-error" role="alert">${result.state === "denied" ? "Access denied." : "Request expired. Try again."}</p>`;
           return;
         }
       }
     } catch (error) {
-      if (!cancelled && wait.isConnected) wait.textContent = error.message;
+      if (!cancelled && wait.isConnected)
+        wait.innerHTML = `<p class="dialog-error" role="alert">${escape(error.message)}</p>`;
     } finally {
       clearInterval(timer);
       if (request)
@@ -11589,7 +11831,8 @@ async function showLogin(message = "") {
       return;
     }
     const submit = e.target.querySelector('button[type="submit"]');
-    submit.disabled = true;
+    $("#login-notice")?.remove();
+    const restore = working(submit, "Signing in…");
     try {
       await browserRequest("/auth/login", { code });
       // A successful one-time login must not be submitted again if loading fails.
@@ -11601,10 +11844,14 @@ async function showLogin(message = "") {
         loginError.textContent =
           error.message || "Server unavailable. Try again.";
       else notice(error.message || "Server unavailable. Try again.", true);
+      const cells = [...document.querySelectorAll('[data-code="web"]')];
+      cells.forEach((cell) => (cell.value = ""));
+      cells[0]?.focus();
     } finally {
-      submit.disabled = false;
+      restore();
     }
   };
+  $('[data-code="web"]')?.focus();
 }
 function renderOnboarding() {
   ready = false;
@@ -11615,8 +11862,6 @@ function renderOnboarding() {
   const activeStep = { 0: 0, access: 0, 2: 1, 3: 2 }[o.step] ?? o.step;
   const steps = ["This device", "Connect", "Folders"];
   const connectSkipped = o.role === "hub" && o.step !== 0 && o.step !== -1;
-  const webCodeCommand =
-    "docker exec <container> node packages/cli/arca.js web-code";
   let body = "";
   if (o.step === -1)
     body = `<p>Your personal drive, on your own devices.</p><h1>Many devices.<br><em class="accent-text">One space.</em></h1><p>Arca keeps the folders you choose in sync across your laptop, tablet and phone, with complete local copies and a hub you run yourself.</p>${[
@@ -11642,7 +11887,7 @@ function renderOnboarding() {
       )
       .join("")}`;
   if (o.step === 0)
-    body = `<h1>Set up this device</h1><p>Shown to other devices and in history.</p>${textField("Device name", "name", o.name, "monitor")}${o.platform ? `<p class="hint">${escape(platformLabel(o.platform))}${o.arch ? ` · ${escape(o.arch)}` : ""}</p>` : ""}${[
+    body = `<h1>Set up this device</h1><p>Shown to other devices and in history.</p>${textField("Device name", "name", o.name, "monitor")}${o.platform ? `<p class="hint">${escape(platformLabel(o.platform))}${o.arch ? ` · ${escape(o.arch)}` : ""}</p>` : ""}<div role="radiogroup" aria-label="Role">${[
       [
         "hub",
         "server",
@@ -11660,9 +11905,9 @@ function renderOnboarding() {
         ([value, symbol, name, desc]) =>
           `<label class="role-card"><input name="role" type="radio" value="${value}" ${o.role === value ? "checked" : ""}>${icon(symbol)}<div><strong>${name}</strong><p>${desc}</p></div></label>`,
       )
-      .join("")}`;
+      .join("")}</div>`;
   if (o.step === "access")
-    body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p>${o.setupCodePath ? '<p><a href="/umbrel" target="_blank" rel="noopener">Get a code from Umbrel</a>, then return here.</p>' : `<p>On the server, run:</p><div class="settings-card">${setting("Command", `<span class="mono">${escape(webCodeCommand)}</span>`, button("Copy", "copy", webCodeCommand, "secondary small-button", "copy"))}</div><p class="hint">The command prints a result that includes a six-digit code. Enter that code below.</p>`}<label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
+    body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p>${o.setupCodePath ? '<p><a href="/umbrel" target="_blank" rel="noopener">Get a code from Umbrel</a>, then return here.</p>' : `<p>On the server, run:</p><div class="settings-card">${setting("Command", `<span class="mono">${escape(WEB_CODE_DOCKER)}</span>`, button("Copy", "copy", WEB_CODE_DOCKER, "secondary small-button", "copy"))}</div><p class="hint">The command prints a result that includes a six-digit code. Enter that code below.</p>`}<label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
   if (o.step === 2 && !o.paired)
     body = `<h1>Pair with your hub</h1><p>Connect with a single-use code from your hub.</p>${textField("Hub address", "url", o.url, "server", true, "https://arca.your-network")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">${icon("clock")}Single use · valid ten minutes.</p>`;
   if (o.step === 2 && o.paired)
@@ -11680,19 +11925,31 @@ function renderOnboarding() {
           : o.step - 1;
     renderOnboarding();
   };
+  const clearError = () => {
+    const box = $("#setup-error");
+    if (!box) return;
+    box.hidden = true;
+    box.innerHTML = "";
+  };
   const showError = (error) => {
     if (onboarding !== o || !$("#setup-error")) return;
+    $("#setup-error").innerHTML = noticeMarkup({
+      ...errorNotice(error.message, { hubName: o.hubName || "your hub" }),
+      id: "setup-error",
+      action: null,
+    });
     $("#setup-error").hidden = false;
-    $("#setup-error").textContent = error.message;
   };
   const inspectRoot = async () => {
+    clearError();
+    if ($("#setup-space")) $("#setup-space").innerHTML = "";
     const root = $("[name=root]")?.value || o.root;
     const result = await (native
       ? invoke("setup_info", { root })
       : api(`/v1/setup-info?root=${encodeURIComponent(root)}`));
     if (onboarding === o && o.step === 3 && $("[name=root]")?.value === root)
       $("#setup-space").innerHTML =
-        `<div class="stats"><div class="stat"><span>Available space</span><strong>${bytes(result.freeBytes)}</strong></div>${o.totalBytes !== undefined ? `<div class="stat"><span>On hub ${escape(o.hubName || "")}</span><strong>${bytes(o.totalBytes)}</strong><p>${o.folderCount} folders</p></div>` : ""}</div>`;
+        `<div class="stats"><div class="stat"><span>Available space</span><strong>${bytes(result.freeBytes)}</strong></div>${o.totalBytes !== undefined ? `<div class="stat"><span>On the hub</span><strong>${bytes(o.totalBytes)}</strong><p>${countLabel(o.folderCount, "folder")}</p></div>` : ""}</div>`;
     return result;
   };
   if (o.step === 3) {
@@ -11701,6 +11958,14 @@ function renderOnboarding() {
   }
   $("#setup-form").onsubmit = (event) => {
     event.preventDefault();
+    clearError();
+    const slow = ["access", 2, 3].includes(o.step);
+    const restore = slow
+      ? working(
+          event.target.querySelector('button[type="submit"]'),
+          o.step === 2 && !o.paired ? "Pairing…" : o.step === 3 ? "Finishing…" : "Checking…",
+        )
+      : () => {};
     action(async () => {
       try {
         const f = new FormData(event.target);
@@ -11791,10 +12056,18 @@ function renderOnboarding() {
         await refresh();
       } catch (error) {
         showError(error);
+      } finally {
+        restore();
       }
     });
   };
   icons();
+  const first = $("#setup-form input:checked, #setup-form input:not([type=radio]):not([type=hidden])") || $("#setup-form h1");
+  if (first) {
+    if (!first.matches("input")) first.tabIndex = -1;
+    first.focus({ preventScroll: true });
+  }
+  document.title = `${$("#setup-form h1")?.textContent || "Set up"} · Arca`;
 }
 async function boot() {
   let erasePending = false;
@@ -11832,13 +12105,20 @@ async function boot() {
 }
 const DAEMON_GRACE_MS = 15000;
 function awaitDaemon() {
-  showDaemonStopped();
+  stopDevicesWatch();
+  ready = false;
+  daemonStopped = { error: "", starting: true };
+  document.body.classList.add("starting-mode");
+  updateBrandActivity();
+  $("#content").innerHTML = launchMark("Starting Arca…");
   let waited = 0;
   const probe = async () => {
     waited += 1000;
-    if (!daemonStopped) return;
+    if (!daemonStopped?.starting) return;
     await refresh().catch(() => {});
-    if (daemonStopped && waited < DAEMON_GRACE_MS) setTimeout(probe, 1000);
+    if (!daemonStopped?.starting) return;
+    if (waited < DAEMON_GRACE_MS) setTimeout(probe, 1000);
+    else showDaemonStopped("");
   };
   setTimeout(probe, 1000);
 }
@@ -11850,6 +12130,8 @@ function daemonUnavailable(error) {
   );
 }
 function showDaemonStopped(error) {
+  if (error === undefined && daemonStopped?.starting) return;
+  document.body.classList.remove("starting-mode");
   stopDevicesWatch();
   ready = false;
   daemonStopped = { error: error ?? daemonStopped?.error ?? "" };
@@ -11873,12 +12155,14 @@ function renderDaemonStopped() {
 }
 function daemonRecovered() {
   daemonStopped = false;
+  document.body.classList.remove("starting-mode");
   clearInterval(daemonProbe);
   daemonProbe = null;
   noticeStore.clear("action");
   noticeStore.reconcile([], "view:");
 }
 await action(boot);
+if (!daemonStopped?.starting) document.body.classList.remove("starting-mode");
 let pointerPressed = false;
 window.addEventListener("pointerdown", () => {
   pointerPressed = true;
@@ -12007,6 +12291,7 @@ async function pollStatus(force = false) {
   }
 }
 setInterval(pollStatus, 5000);
+setInterval(refreshRelative, 60000);
 const UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
 async function checkForUpdate() {
   if (!native || navigator.onLine === false) return null;
@@ -12019,12 +12304,30 @@ async function checkForUpdate() {
     return null;
   }
 }
-function showUpdate(update) {
+let updateVersion = "";
+let updating = false;
+function renderUpdateCard() {
   const card = $("#update-card");
   if (!card) return;
-  card.hidden = !update?.available;
-  if (!update?.available) return;
-  $("#update-heading").textContent = `Arca ${update.version} is available`;
+  card.hidden = !updateVersion;
+  card.setAttribute("aria-busy", String(updating));
+  $("#update-heading").innerHTML = updating
+    ? busyIcon() + escape(`Updating to Arca ${updateVersion}`)
+    : escape(`Arca ${updateVersion} is available`);
+  $("#update-note").hidden = !updating;
+  $("#update-install").hidden = updating;
+}
+function setUpdating(next) {
+  updating = next;
+  renderUpdateCard();
+  window.__TAURI__.event
+    ?.emit("update-state", { updating: next, version: updateVersion })
+    ?.catch?.(() => {});
+}
+function showUpdate(update) {
+  if (!$("#update-card")) return;
+  updateVersion = update?.available ? update.version : "";
+  renderUpdateCard();
 }
 if (native) {
   void checkForUpdate();
@@ -12254,7 +12557,7 @@ document.addEventListener("keydown", (event) => {
     if (!open.length) return;
     event.preventDefault();
     const active = document.activeElement;
-    for (const menu of open) closeMenu(menu, !active || active === document.body || menu.contains(active));
+    for (const menu of open) closeMenu(menu, !active || active === document.body || active.matches("h1") || menu.contains(active));
     return;
   }
   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -12284,8 +12587,8 @@ document.addEventListener("focusin", (event) => {
 });
 
 // Shared icon action: its tooltip is also its accessible name.
-function iconAction(label, action, symbol, disabled = false) {
-  return `<button type="button" class="ghost icon-button" data-action="${escape(action)}" data-tooltip="${escape(label)}" aria-label="${escape(label)}" ${disabled ? "disabled" : ""}>${icon(symbol)}</button>`;
+function iconAction(label, action, symbol, disabled = false, busy = false) {
+  return `<button type="button" class="ghost icon-button" data-action="${escape(action)}" data-tooltip="${busy ? "Syncing…" : escape(label)}" aria-label="${escape(label)}" ${disabled ? "disabled" : ""}${busy ? ' aria-disabled="true"' : ""}>${icon(symbol)}</button>`;
 }
 function installTooltips() {
   let timer, trigger, tip, lastShown = 0;

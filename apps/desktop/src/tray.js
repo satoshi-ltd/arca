@@ -67,7 +67,10 @@ const clock = (value) =>
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
 const ROWS_SHOWN = 4;
 let more = false,
-  update = null;
+  update = null,
+  updating = false;
+const apple = /Mac/i.test(navigator.platform || navigator.userAgent || "");
+const shortcut = (key) => `<kbd>${apple ? "⌘" : "Ctrl+"}${key}</kbd>`;
 function untilTomorrow(now = new Date()) {
   const next = new Date(now);
   next.setHours(8, 0, 0, 0);
@@ -159,13 +162,20 @@ async function refresh() {
   } catch {
     state = null;
     document.querySelector("#tray-content").innerHTML =
-      `<div class="tray-heading"><strong>Daemon unavailable</strong></div><div class="tray-menu"><button data-action="start">${icon("power")}Start service</button><button data-action="open">${icon("app-window-mac")}Open Arca<kbd>⌘O</kbd></button><button data-action="quit">${icon("power")}Quit Arca<kbd>⌘Q</kbd></button></div><p id="tray-error" role="alert"></p>`;
+      `<div class="tray-heading"><strong>Service stopped</strong></div><div class="tray-menu"><button data-action="start">${icon("power")}Start service</button><button data-action="open">${icon("app-window-mac")}Open Arca${shortcut("O")}</button><button data-action="quit">${icon("power")}Quit Arca${shortcut("Q")}</button></div><p id="tray-error" role="alert"></p>`;
     window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
   }
 }
 function folderRow(row) {
   const target = row.folder ? `data-folder="${escape(row.folder)}"` : `data-action="${row.action}"`;
   return `<button${row.tone ? ` class="tray-tone-${row.tone}"` : ""} ${target}>${row.busy ? busy() : icon(row.glyph)}<span class="tray-folder-name">${escape(row.name)}</span><small>${escape(row.label)}</small></button>`;
+}
+function updateRow() {
+  if (updating)
+    return `<div class="tray-update" aria-busy="true">${busy()}<span class="tray-update-text"><strong>${escape(`Updating to Arca ${update}`)}</strong><small>Sync pauses while Arca restarts.</small></span><button class="secondary small-button" data-action="update">Open Arca</button></div>`;
+  return update
+    ? `<div class="tray-update">${icon("download")}<span class="tray-update-text">${escape(`Arca ${update} is ready`)}</span><button class="secondary small-button" data-action="update">Open Arca</button></div>`
+    : "";
 }
 function draw() {
   if (!state) return;
@@ -180,10 +190,10 @@ function draw() {
     head.progress === undefined ? "" : `<progress class="tray-progress" value="${head.progress}" max="1" aria-label="Sync progress"></progress>`;
   const paused = state.phase === "paused";
   const menu = more
-    ? `<div class="tray-menu tray-more-menu">${paused ? `<button data-action="resume">${icon("play")}Resume sync</button>` : `<button data-action="pause">${icon("pause")}Pause for 1 hour</button><button data-action="pause-tomorrow">${icon("moon")}Pause until tomorrow</button>`}<hr><button data-action="quit">${icon("power")}Quit Arca<kbd>⌘Q</kbd></button></div>`
+    ? `<div class="tray-menu tray-more-menu">${paused ? `<button data-action="resume">${icon("play")}Resume sync</button>` : `<button data-action="pause">${icon("pause")}Pause for 1 hour</button><button data-action="pause-tomorrow">${icon("moon")}Pause until tomorrow</button>`}<hr><button data-action="quit">${icon("power")}Quit Arca (sync continues)${shortcut("Q")}</button></div>`
     : "";
   document.querySelector("#tray-content").innerHTML =
-    `<div class="tray-heading${head.ink ? ` tray-${head.ink}` : ""}"><img class="tray-brand-icon" src="assets/arca-icon-small.svg" width="28" height="28" alt="Arca"><div class="tray-title"><strong>${escape(head.title)}</strong><p>${escape(head.line)}</p>${progress}</div>${head.resume ? `<button class="primary small-button" data-action="resume">Resume</button>` : ""}${state.role === "hub" ? '<span class="tray-role">Hub</span>' : ""}</div>${update ? `<div class="tray-update">${icon("download")}<span class="tray-update-text">${escape(`Arca ${update} is ready`)}</span><button class="secondary small-button" data-action="update">Install…</button></div>` : ""}${folders}${musicBox()}<div class="tray-menu tray-foot"><button data-action="sync">${icon("refresh-cw")}Sync now</button><button data-action="open">${icon("app-window-mac")}Open Arca</button><button class="ghost icon-button tray-more" data-action="more" aria-label="More" aria-expanded="${more}">${icon("ellipsis")}</button></div>${menu}<p id="tray-error" role="alert"></p>`;
+    `<div class="tray-heading${head.ink ? ` tray-${head.ink}` : ""}"><img class="tray-brand-icon" src="assets/arca-icon-small.svg" width="28" height="28" alt="Arca"><div class="tray-title"><strong>${escape(head.title)}</strong><p>${escape(head.line)}</p>${progress}</div>${head.resume ? `<button class="primary small-button" data-action="resume">Resume</button>` : ""}${state.role === "hub" ? '<span class="tray-role">Hub</span>' : ""}</div>${updateRow()}${folders}${musicBox()}<div class="tray-menu tray-foot"><button data-action="sync">${icon("refresh-cw")}Sync now${shortcut("R")}</button><button data-action="open">${icon("app-window-mac")}Open Arca</button><button class="ghost icon-button tray-more" data-action="more" aria-label="More" aria-expanded="${more}">${icon("ellipsis")}</button></div>${menu}<p id="tray-error" role="alert"></p>`;
   window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
 }
 const motionToken = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -279,6 +289,11 @@ events?.listen("music-state", (event) => {
   music = event.payload || null;
   if (shown && music) patchMusic();
   else draw();
+});
+events?.listen("update-state", (event) => {
+  updating = Boolean(event.payload?.updating);
+  if (updating && event.payload.version) update = event.payload.version;
+  draw();
 });
 events?.emit("music-command", { command: "state" });
 await refresh();

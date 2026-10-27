@@ -12,6 +12,7 @@ import {
 } from "./components";
 import { PairingForm } from "./PairingForm";
 import { bytes, count, folderSize } from "./format";
+import { downloadLabel, onlyVideoFolders } from "./onboarding";
 export function Onboarding({
   step,
   name,
@@ -20,6 +21,8 @@ export function Onboarding({
   setAddress,
   code,
   setCode,
+  codeError,
+  back,
   catalog,
   free,
   busy,
@@ -88,7 +91,9 @@ export function Onboarding({
           setAddress={setAddress}
           code={code}
           setCode={setCode}
+          codeError={codeError}
           busy={busy}
+          back={back}
           pair={pair}
         />
         <StepIndicator step={1} />
@@ -96,6 +101,7 @@ export function Onboarding({
     );
   const folders = (catalog?.volumes || []).filter((v) => !v.video);
   const chosen = folders.filter((folder) => selected.includes(folder.id));
+  const streamOnly = onlyVideoFolders(catalog);
   const size = chosen.reduce((total, folder) => total + (folder.bytes || 0), 0);
   return (
     <>
@@ -118,8 +124,9 @@ export function Onboarding({
       ) : !folders.length ? (
         <Card>
           <Text style={s.text}>
-            Your hub has no shared folders yet. Add one on the hub, then choose
-            it here.
+            {streamOnly
+              ? "Your hub shares only Movies & TV folders. They stream from the hub and are not kept on this phone."
+              : "Your hub has no shared folders yet. Add one on the hub, then choose it here."}
           </Text>
         </Card>
       ) : null}
@@ -152,15 +159,23 @@ export function Onboarding({
           : "Checking available space"}
       </Text>
       <View style={s.flex} />
+      {!streamOnly && (
+        <Button
+          label={downloadLabel(chosen.length)}
+          icon="download"
+          primary
+          disabled={!chosen.length}
+          busy={busy}
+          onPress={() => download(chosen.map((folder) => folder.id))}
+        />
+      )}
       <Button
-        label={`Download ${count(chosen.length, "folder", "folders")}`}
-        icon="download"
-        primary
-        disabled={!chosen.length}
+        label="Skip for now"
+        primary={streamOnly}
+        quiet={!streamOnly}
         busy={busy}
-        onPress={() => download(chosen.map((folder) => folder.id))}
+        onPress={skip}
       />
-      <Button label="Skip for now" quiet busy={busy} onPress={skip} />
       <StepIndicator step={2} />
     </>
   );

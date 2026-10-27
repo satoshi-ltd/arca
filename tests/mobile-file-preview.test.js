@@ -40,7 +40,7 @@ test("the phone Files list shows thumbnails, a long-press peek sheet, File detai
   assert.match(app, /onLongPress=\{\(\) => \{\s*if \(!e\.directory\) setSheet\(\{ kind: "peek", entry: e \}\)/);
   assert.match(app, /shownSheet\.kind === "peek"/);
   assert.match(app, /wide && !compact\) setPreviewEntry\(e\)/);
-  assert.match(app, /PREVIEW/);
+  assert.match(app, /<Eyebrow>Preview<\/Eyebrow>/);
   assert.match(app, /enabled=\{index < 30\}/, "only the first thirty rows decode thumbnails");
   assert.match(app, /setPreviewEntry\(null\);\s*\}, \[folder\?\.id, directory, screen\]\)/, "the Fold card never outlives its folder");
   assert.match(app, /: \[\{ name: "preview", label: "Preview" \}\]/, "TalkBack reaches the peek");

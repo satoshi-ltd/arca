@@ -1,5 +1,5 @@
-import React from "react";
-import { Platform, Text, View } from "react-native";
+import React, { useState } from "react";
+import { Platform, Pressable, Text, View } from "react-native";
 import { useDesign, Field, CodeInput, Button, Icon } from "./components";
 
 export function PairingForm({
@@ -9,14 +9,20 @@ export function PairingForm({
   setAddress,
   code,
   setCode,
+  codeError = "",
   busy,
   blocked = false,
+  back,
   pair,
 }) {
   const { s } = useDesign();
+  const [details, setDetails] = useState(false);
   const device = Platform.OS === "ios" ? "iPhone" : "phone";
   return (
     <>
+      {!!back && (
+        <Button label="Back" icon="back" quiet disabled={busy} onPress={back} />
+      )}
       <Text accessibilityRole="header" style={s.title}>
         Pair with your hub
       </Text>
@@ -33,11 +39,21 @@ export function PairingForm({
         keyboardType="url"
         editable={!busy}
       />
-      <Text style={s.caption}>
-        Use HTTPS or Tailscale. For local Wi-Fi, enable HTTP in the hub’s
-        Settings and enter its private IPv4 address. Local HTTP traffic is not
-        encrypted.
-      </Text>
+      <Text style={s.caption}>Use HTTPS or Tailscale.</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Using local Wi-Fi?"
+        accessibilityState={{ expanded: details }}
+        onPress={() => setDetails((value) => !value)}
+      >
+        <Text style={[s.caption, s.active]}>Using local Wi-Fi?</Text>
+      </Pressable>
+      {details && (
+        <Text style={s.caption}>
+          For local Wi-Fi, enable HTTP in the hub’s Settings and enter its
+          private IPv4 address. Local HTTP traffic is not encrypted.
+        </Text>
+      )}
       <View style={s.section}>
         <CodeInput
           label="Pairing code"
@@ -45,10 +61,20 @@ export function PairingForm({
           onChangeText={setCode}
           editable={!busy}
         />
-        <View style={s.centeredRow}>
-          <Icon name="clock" size={16} />
-          <Text style={s.caption}>Single use · valid ten minutes</Text>
-        </View>
+        {codeError ? (
+          <Text
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            style={[s.caption, s.errorText]}
+          >
+            {codeError}
+          </Text>
+        ) : (
+          <View style={s.centeredRow}>
+            <Icon name="clock" size={16} />
+            <Text style={s.caption}>Single use · valid ten minutes</Text>
+          </View>
+        )}
       </View>
       <Field
         label={`Name this ${device}`}

@@ -559,6 +559,10 @@ main {
 .folder-card:hover {
   background: var(--hover);
 }
+.folder-card > .row-main[data-action],
+.folder-card > .home-lead[data-action] {
+  cursor: pointer;
+}
 .folder-card.unselected {
   border: 1px dashed var(--line);
   background: transparent;
@@ -1436,6 +1440,11 @@ dialog:has(:where(#submit-dialog.danger)) .modal-title .tile {
   padding: 10px 12px;
   margin-top: 14px;
 }
+.field-error {
+  display: block;
+  color: var(--erFg);
+  font-size: var(--text-caption);
+}
 .dialog-error:empty,
 #login-error:empty {
   display: none;
@@ -1556,6 +1565,9 @@ dialog:has(:where(#submit-dialog.danger)) .modal-title .tile {
   overflow-wrap: anywhere;
   font-size: var(--text-caption);
 }
+h1:focus {
+  outline: none;
+}
 .access-help p {
   font-size: var(--text-body);
 }
@@ -1563,6 +1575,12 @@ dialog:has(:where(#submit-dialog.danger)) .modal-title .tile {
   display: block;
 }
 .onboarding-mode .sidebar {
+  display: none;
+}
+.starting-mode .shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+.starting-mode .sidebar {
   display: none;
 }
 .onboarding {
@@ -1631,6 +1649,11 @@ dialog:has(:where(#submit-dialog.danger)) .modal-title .tile {
   min-width: 0;
   width: 100%;
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.onboarding-body > [role="radiogroup"] {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -2269,6 +2292,17 @@ html:has(.tray-body) {
   flex: 1;
   min-width: 0;
 }
+.tray-update-text > strong,
+.tray-update-text > small {
+  display: block;
+}
+.tray-update-text > small {
+  color: var(--soft);
+  font-size: var(--text-caption);
+}
+.update-card > .hint {
+  margin: 0;
+}
 .tray-menu.tray-foot {
   flex-direction: row;
   align-items: center;
@@ -2807,7 +2841,13 @@ label {
   flex: 1;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: var(--space-4);
   min-height: 0;
+}
+.launch-mark > p {
+  color: var(--soft);
+  font-size: var(--text-body);
 }
 .launch-mark > svg {
   width: var(--launch-mark);
@@ -3485,8 +3525,9 @@ section:has(> .replica-danger) > .section-label {
 }
 .notice-close {
   flex: none;
-  width: 16px;
-  height: 20px;
+  width: var(--notice-close);
+  height: var(--notice-close);
+  margin: calc((var(--notice-line) - var(--notice-close)) / 2) calc(var(--space-2) * -1) 0 0;
   display: grid;
   place-items: center;
 }
@@ -5523,6 +5564,11 @@ dialog.quicklook:not([open]) {
   max-height: 60vh;
   object-fit: contain;
 }
+.ql-note {
+  color: var(--soft);
+  font-size: var(--text-body);
+  margin-top: var(--space-2);
+}
 .ql-icon {
   color: var(--line);
 }
@@ -6083,11 +6129,8 @@ label.toggle {
     display: none;
   }
   .music-player {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto;
     gap: var(--space-3);
-  }
-  .music-player-volume {
-    display: none;
   }
   .music-page {
     --music-tile: calc(var(--detail-tile) * 3);
@@ -6108,8 +6151,11 @@ label.toggle {
 }
 @media (max-width: 480px) {
   .music-player {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--space-1);
+  }
+  .music-player > .music-player-track {
+    grid-column: 1 / -1;
   }
   .music-head {
     flex-direction: column;
@@ -6539,6 +6585,37 @@ label.toggle {
   gap: var(--space-3);
   padding: var(--space-6);
   text-align: center;
+}
+.music-failed-line {
+  display: block;
+  color: var(--waFg);
+  font-size: var(--text-caption);
+}
+.music-played {
+  color: var(--mute);
+}
+.video-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: var(--onMedia);
+}
+.video-loading[hidden] {
+  display: none;
+}
+.video-skip {
+  position: relative;
+}
+.video-skip-count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  pointer-events: none;
 }
 .video-message > svg {
   width: var(--space-6);

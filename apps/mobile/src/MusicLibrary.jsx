@@ -1,7 +1,10 @@
-import React, { useRef, useState } from "react";
+import React, { useContext, useLayoutEffect, useRef, useState } from "react";
+import { entryKey, keepPage, keepScroll, pageSize, scrollOffset } from "./list-memory.js";
+import { ScrollPosition } from "./KeyboardPane";
 import { putFlight } from "./flight.js";
 import { Animated, Image, Pressable, Text, View } from "react-native";
 import {
+  Eyebrow,
   ActionRow,
   BrandArch,
   Button,
@@ -272,9 +275,25 @@ function ShowTile({ show, tile, cover, open, selected, split, hold, favorite, ca
   );
 }
 
-function ShowGrid({ shows, library, positions, cover, open, chosen, split, hold, favorite, canPlay, resume, toggle, more, forget }) {
+function usePaged(memory, initial, step) {
+  const [shown, setShown] = useState(() => pageSize(memory, initial));
+  const current = useRef(memory);
+  if (current.current !== memory) {
+    current.current = memory;
+    setShown(pageSize(memory, initial));
+  }
+  return [
+    shown,
+    () => {
+      keepPage(memory, shown + step);
+      setShown(shown + step);
+    },
+  ];
+}
+
+function ShowGrid({ shows, library, positions, cover, open, chosen, split, hold, favorite, canPlay, resume, toggle, more, forget, memory }) {
   const { s } = useDesign();
-  const [shown, setShown] = useState(60);
+  const [shown, showMore] = usePaged(`${memory}:shows`, 60, 60);
   return (
     <>
       <View style={s.musicGrid}>
@@ -301,15 +320,15 @@ function ShowGrid({ shows, library, positions, cover, open, chosen, split, hold,
         })}
       </View>
       {shows.length > shown && (
-        <Button label="Show more" onPress={() => setShown(shown + 60)} />
+        <Button label="Show more" onPress={showMore} />
       )}
     </>
   );
 }
 
-function AlbumGrid({ albums, cover, open, hold }) {
+function AlbumGrid({ albums, cover, open, hold, memory }) {
   const { s } = useDesign();
-  const [shown, setShown] = useState(60);
+  const [shown, showMore] = usePaged(`${memory}:albums`, 60, 60);
   return (
     <>
       <View style={s.musicGrid}>
@@ -318,7 +337,7 @@ function AlbumGrid({ albums, cover, open, hold }) {
         ))}
       </View>
       {albums.length > shown && (
-        <Button label="Show more albums" onPress={() => setShown(shown + 60)} />
+        <Button label="Show more albums" onPress={showMore} />
       )}
     </>
   );
@@ -403,7 +422,7 @@ function TrackList({
   flat = false,
 }) {
   const { s, c } = useDesign();
-  const [shown, setShown] = useState(PAGE);
+  const [shown, showMore] = usePaged(`${context}:tracks`, PAGE, PAGE);
   const NOTES = notes(offline);
   return (
     <>
@@ -521,7 +540,7 @@ function TrackList({
       {rows.length > shown && (
         <Button
           label="Show more tracks"
-          onPress={() => setShown(shown + PAGE)}
+          onPress={showMore}
         />
       )}
     </>
@@ -626,36 +645,36 @@ function Collection({
   );
 }
 
-function PagedRows({ items, render }) {
+function PagedRows({ items, render, memory }) {
   const { s } = useDesign();
-  const [shown, setShown] = useState(PAGE);
+  const [shown, showMore] = usePaged(`${memory}:rows`, PAGE, PAGE);
   return (
     <>
       <View style={s.group}>
         {items.slice(0, shown).map((item, index) => render(item, index))}
       </View>
       {items.length > shown && (
-        <Button label="Show more" onPress={() => setShown(shown + PAGE)} />
+        <Button label="Show more" onPress={showMore} />
       )}
     </>
   );
 }
 
-function ArtistIndex({ artists, render }) {
+function ArtistIndex({ artists, render, memory }) {
   const { s } = useDesign();
-  const [shown, setShown] = useState(PAGE);
+  const [shown, showMore] = usePaged(`${memory}:artists`, PAGE, PAGE);
   return (
     <>
       {artistGroups(artists.slice(0, shown)).map((group) => (
         <Section key={group.letter}>
-          <Text style={s.eyebrow}>{group.letter}</Text>
+          <Eyebrow>{group.letter}</Eyebrow>
           <View style={s.group}>
             {group.artists.map((artist, index) => render(artist, index))}
           </View>
         </Section>
       ))}
       {artists.length > shown && (
-        <Button label="Show more" onPress={() => setShown(shown + PAGE)} />
+        <Button label="Show more" onPress={showMore} />
       )}
     </>
   );
@@ -701,7 +720,7 @@ function ResumeCard({ item, cover, canPlay, start, more, deviceId, relative }) {
       <View style={[s.group, s.resumeCard]} accessibilityRole="summary">
         <Cover uri={cover(track.cover, "small")} size={40} icon={track.podcast ? "podcast" : "album"} />
         <View style={[s.flex, s.stack]}>
-          <Text style={s.eyebrow}>PICK UP WHERE YOU LEFT OFF</Text>
+          <Eyebrow>Pick up where you left off</Eyebrow>
           <Text numberOfLines={1} style={s.rowTitle}>
             {track.title}
           </Text>
@@ -762,6 +781,18 @@ export function MusicLibrary({
   const node = parseTrackNode(playingId);
   const playing = node?.track || null;
   const order = useShowOrder(library, positions, loaded, showsOpen(library, route, wide));
+  const place = useContext(ScrollPosition);
+  const scrollKey = entryKey(folderId, route.slice(0, musicPane(route, wide).level + 1));
+  const leftKey = useRef(scrollKey);
+  useLayoutEffect(() => {
+    if (leftKey.current !== scrollKey) {
+      keepScroll(leftKey.current, place?.offset() ?? 0);
+      leftKey.current = scrollKey;
+    }
+    const y = scrollOffset(scrollKey);
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => place?.scrollTo(y)));
+    return () => cancelAnimationFrame(frame);
+  }, [scrollKey]);
   if (!library) return <Scaffold label="Loading music" />;
   if (!saved)
     return offline ? (
@@ -772,12 +803,13 @@ export function MusicLibrary({
         retry={reconnect}
       />
     ) : (
-      <EmptyState
-        icon="arca"
-        title="Loading the library"
-        text="The hub lists this folder's artists and albums after the next sync."
-        action={<Button label="Sync now" icon="refresh" onPress={sync} />}
-      />
+      <>
+        <Scaffold label="Loading the library" />
+        <Text style={s.caption}>
+          The hub lists this folder's artists and albums after the next sync.
+        </Text>
+        <Button label="Sync now" icon="refresh" quiet onPress={sync} />
+      </>
     );
   if (!library.tracks.size)
     return (
@@ -906,16 +938,18 @@ export function MusicLibrary({
   const playingRow = (row) => row.track?.id === playing;
   const albumsOf = (ids) =>
     ids.map((id) => library.albums.get(id)).filter(Boolean);
-  const albums = (list, caption = (album) => album.artist) =>
+  const albums = (list, caption = (album) => album.artist, memory) =>
     pane.detail ? (
-      <PagedRows items={list} render={(album, index) => albumRow(album, index, caption(album))} />
+      <PagedRows memory={memory} items={list} render={(album, index) => albumRow(album, index, caption(album))} />
     ) : (
-      <AlbumGrid albums={list} cover={cover} open={openAlbum} hold={holdAlbum} />
+      <AlbumGrid memory={memory} albums={list} cover={cover} open={openAlbum} hold={holdAlbum} />
     );
   const page = (item, flat = false) => {
+    const memory = entryKey(folderId, [item]);
     if (item.kind === "artists")
       return (
         <ArtistIndex
+          memory={memory}
           artists={library.artists}
           render={(artist, index) => (
             <MusicRow
@@ -958,16 +992,19 @@ export function MusicLibrary({
               />
             </View>
           )}
-          {albums(albumsOf(artist.albums), (album) =>
-            [album.year, plural(album.tracks.length, "track", "tracks")].filter(Boolean).join(" · "),
+          {albums(
+            albumsOf(artist.albums),
+            (album) => [album.year, plural(album.tracks.length, "track", "tracks")].filter(Boolean).join(" · "),
+            memory,
           )}
         </Section>
       ) : null;
     }
-    if (item.kind === "albums") return albums(albumsOf(library.albumOrder));
+    if (item.kind === "albums") return albums(albumsOf(library.albumOrder), undefined, memory);
     if (item.kind === "playlists")
       return (
         <PagedRows
+          memory={memory}
           items={library.playlistOrder.map((id) => library.playlists.get(id))}
           render={(playlist, index) => playlistRow(playlist, index)}
         />
@@ -976,7 +1013,7 @@ export function MusicLibrary({
       const played = recentPlayed(library, history || []);
       return played.length ? (
         <Section>
-          <Text style={s.eyebrow}>RECENTLY PLAYED</Text>
+          <Eyebrow>Recently played</Eyebrow>
           <View style={s.group}>
             {played.map((entry, index) =>
               library.playlists.has(entry.id)
@@ -987,12 +1024,12 @@ export function MusicLibrary({
         </Section>
       ) : (
         <Section>
-          <Text style={s.eyebrow}>RECENTLY ADDED</Text>
+          <Eyebrow>Recently added</Eyebrow>
           <Text style={s.caption}>
             Nothing from this folder has played on this phone yet. These albums
             were added most recently.
           </Text>
-          {albums(albumsOf(library.recent))}
+          {albums(albumsOf(library.recent), undefined, memory)}
         </Section>
       );
     }
@@ -1008,6 +1045,7 @@ export function MusicLibrary({
           : resumeFrom(entry)(at);
       return (
         <ShowGrid
+          memory={memory}
           shows={shows}
           library={library}
           positions={positions}

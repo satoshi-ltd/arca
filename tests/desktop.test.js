@@ -388,17 +388,26 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
     );
     lanToggle.checked = true;
     lanToggle.dispatchEvent(new w.Event("change", { bubbles: true }));
+    assert.equal(lanToggle.checked, false, "the switch waits for the confirmation");
+    assert.equal(daemon.engine.config.network?.allowLanHttp === true, false);
+    await until(() => w.document.querySelector("#dialog[open] #dialog-content h2")?.textContent === "Allow HTTP connections?");
+    assert.match(w.document.querySelector("#dialog-content").textContent, /Anyone on your local network could read your files and sign-in details/);
+    assert.equal(w.document.querySelector("#submit-dialog").textContent.trim(), "Allow HTTP");
+    assert.ok(w.document.querySelector("#submit-dialog").classList.contains("danger"));
+    w.document.querySelector("#submit-dialog").click();
     await until(
       () =>
         daemon.engine.config.network?.allowLanHttp === true &&
-        !lanToggle.disabled,
+        w.document.querySelector("#allow-lan-http")?.checked === true,
     );
-    lanToggle.checked = false;
-    lanToggle.dispatchEvent(new w.Event("change", { bubbles: true }));
+    const enabled = w.document.querySelector("#allow-lan-http");
+    enabled.checked = false;
+    enabled.dispatchEvent(new w.Event("change", { bubbles: true }));
+    assert.equal(w.document.querySelector("#dialog").open, false, "turning it off stays immediate");
     await until(
       () =>
         daemon.engine.config.network?.allowLanHttp === false &&
-        !lanToggle.disabled,
+        !enabled.disabled,
     );
     const themeGroup = w.document.querySelector(
       '[role="group"][aria-label="Theme"]',
@@ -768,11 +777,14 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
   assert.equal((await pending.json()).requests.length, 0);
 
   const help = w.document.querySelector(".access-help");
-  assert.equal(
-    help.querySelector("code").textContent,
-    "docker exec <container> node packages/cli/arca.js web-code",
+  assert.deepEqual(
+    [...help.querySelectorAll(".setting-row .mono")].map((el) => el.textContent),
+    ["docker exec <container> node packages/cli/arca.js web-code", "arca web-code"],
   );
-  assert.match(help.textContent, /if it is installed directly/);
+  assert.deepEqual(
+    [...help.querySelectorAll('[data-action="copy"]')].map((el) => el.dataset.id),
+    ["docker exec <container> node packages/cli/arca.js web-code", "arca web-code"],
+  );
   assert.match(help.textContent, /six-digit code\. Enter that code above\./);
   const submit = () =>
     w.document
@@ -802,6 +814,14 @@ test("web design preserves leading zeroes, validates before sending, pastes grou
       .textContent.includes("result is unknown"),
   );
   assert.equal(attempts, 1, "A mutation is never replayed automatically");
+  assert.equal(
+    [...w.document.querySelectorAll('[data-code="web"]')].map((i) => i.value).join(""),
+    "",
+    "a rejected code clears the cells",
+  );
+  assert.equal(w.document.activeElement, w.document.querySelector('[data-digit="0"]'), "and focuses the first");
+  assert.equal(w.document.querySelector('#web-login button[type="submit"]').disabled, false);
+  w.document.querySelector('[data-digit="0"]').dispatchEvent(paste);
   failedReads = 2;
   submit();
   await until(() =>
@@ -1955,7 +1975,7 @@ test("Folders has no Just arrived row, keeps type icons and shows no path or las
   assert.ok(cards[2].querySelector('.home-lead .tile.wa [data-icon="triangle-alert"], .home-lead .tile.wa svg'), "a conflict tints the tile and shows the warning glyph");
   assert.equal(cards[2].querySelector(".meta .state-word.state-wa").textContent, "1 conflict");
   assert.equal(cards[2].querySelector(".pill"), null, "the folder row carries no state pill");
-  assert.match(cards[2].getAttribute("aria-label"), /, 1 conflict$/);
+  assert.match(cards[2].querySelector(".row-main").getAttribute("aria-label"), /, 1 conflict$/);
   assert.equal(w.document.querySelector(".home-latest"), null, "a card does not name the last file touched");
   for (const card of cards) assert.doesNotMatch(card.textContent, /\/Users\/javi/, "the path lives in the folder detail");
   assert.equal(routes.some((route) => route.startsWith("/v1/folder-previews")), false);
@@ -2200,11 +2220,12 @@ test("a replica's device rows read the OS under the name, then version, folders 
   assert.ok(named("umbrel").querySelector('.tag.full-backup [data-icon="shield-check"], .tag.full-backup svg'));
   const yuri = named("Yuri");
   assert.deepEqual(segments(yuri), ["Android"]);
-  assert.deepEqual(cells(yuri), ["v0.7.35", ["2 folders", "3.0 GB"], seenAt(at(121))]);
+  assert.deepEqual(cells(yuri), ["v0.7.35, older than the hub’s v0.7.38", ["2 folders", "3.0 GB"], seenAt(at(121))]);
   assert.equal(yuri.querySelector(".device-seen .status-dot").className, "status-dot id", "not connected reads the grey dot");
   const version = yuri.querySelector(".device-version .device-older");
   assert.equal(version.dataset.tooltip, "Older than the hub’s v0.7.38");
-  assert.equal(version.getAttribute("aria-label"), "v0.7.35, older than the hub’s v0.7.38");
+  assert.equal(version.getAttribute("tabindex"), "0", "the marker takes keyboard focus, where the tooltip shows");
+  assert.equal(version.querySelector(".sr-only").textContent, ", older than the hub’s v0.7.38", "the explanation is text, not hover");
   assert.ok(version.querySelector('[data-icon="circle-arrow-up"], svg'), "an older version carries the up-arrow");
   assert.deepEqual(segments(named("Fresh")), ["iOS"]);
   assert.deepEqual(cells(named("Fresh")), ["", "", ""], "an unreported device leaves its cells empty, never 0");
@@ -2539,13 +2560,13 @@ test("the hub's own Devices page draws its row like the others, keeps ⋯ before
   assert.equal(hub.querySelector(".role-set").innerHTML, '<span class="tag hub">Hub</span>');
   const mac = named("macbook-pro");
   assert.deepEqual(segments(mac), ["macOS"]);
-  assert.deepEqual(cells(mac), ["v0.7.36", ["9 folders", "36.0 GB"], "Connected"]);
+  assert.deepEqual(cells(mac), ["v0.7.36, older than the hub’s v0.7.38", ["9 folders", "36.0 GB"], "Connected"]);
   assert.ok(mac.querySelector(".device-version .device-older"));
   assert.deepEqual(cells(named("umbrel")), ["v0.7.38", ["9 folders", "401.0 GB"], seenAt(at(600))]);
   assert.deepEqual(cells(named("Tablet")), ["", "", seenAt(at(7200))], "a removed device keeps when it was last seen");
   assert.deepEqual(cells(named("new-laptop")), ["", "", ""], "an invitation never seen leaves its cells empty");
-  assert.deepEqual([...named("new-laptop").querySelector(".row-end").children].map((el) => el.className), ["pill wa", "details-menu", "role-set"]);
-  assert.deepEqual([...mac.querySelector(".row-end").children].map((el) => el.className), ["details-menu", "role-set"], "⋯ sits just before the chip");
+  assert.deepEqual([...named("new-laptop").querySelector(".row-end").children].map((el) => el.className), ["pill wa", "details-menu file-actions-menu", "role-set"]);
+  assert.deepEqual([...mac.querySelector(".row-end").children].map((el) => el.className), ["details-menu file-actions-menu", "role-set"], "⋯ sits just before the chip");
   assert.equal(mac.querySelector(".pill"), null, "a peer Tailscale reports down shows no Offline pill");
   assert.equal(named("umbrel").querySelector(".role-set").textContent, "ReplicaFull backup");
   assert.deepEqual([...named("Tablet").querySelector(".row-end").children].map((el) => el.className), ["pill er", "role-set"]);
@@ -2576,7 +2597,7 @@ test("a player draws its TV glyph, app, own version, the folders it streams and 
   assert.deepEqual(cells(tv), ["v1.0.0", ["2 folders", "Streaming"], "Connected"]);
   assert.equal(tv.querySelector(".device-older"), null, "a player's version is never compared with the hub's");
   assert.equal(tv.querySelector(".role-set").textContent, "Player");
-  assert.deepEqual([...tv.querySelectorAll(".menu-items button")].map((b) => b.textContent.trim()), ["Remove device"]);
+  assert.deepEqual([...tv.querySelectorAll(".menu-items button")].map((b) => b.textContent.trim()), ["Remove device…"]);
 });
 
 test("a LAN hub's own web page shows the address it is reached at, in host form", async (t) => {
@@ -3329,7 +3350,7 @@ test("folder progress shows files and bytes for the current phase", async (t) =>
   progress = { volume: volume.id, stage: "receive", direction: "download", path: "IMG_0100.jpg", filesDone: 3, filesTotal: null, sizeDone: 0, sizeTotal: 0, bytesDone: 1024, bytesTotal: 2048 };
   await poll();
   await until(() => /checked/.test(q(".folder-card .meta").textContent));
-  assert.equal(q(".folder-card .meta").textContent, "3 files checked · IMG_0100.jpg · 1.0 KB / 2.0 KB");
+  assert.equal(q(".folder-card .meta").textContent, "3 files checked · 1.0 KB / 2.0 KB · IMG_0100.jpg");
   assert.equal(q(".folder-card .home-ring"), null, "an indeterminate cycle draws no ring");
   assert.equal(q(".folder-card progress"), null);
 });
@@ -6508,18 +6529,23 @@ test("the sidebar offers a signed update only when one exists and installs it on
     );
     installError = new Error("Update signature check failed");
     button.click();
-    await until(() => installs.length === 1 && !button.disabled);
+    await until(() => installs.length === 1 && !button.hidden);
     assert.match(
       button.textContent,
       /Update and restart/,
       "a failed install stays retryable",
     );
+    assert.equal(w.document.querySelector("#update-note").hidden, true);
     installError = null;
     button.click();
     await until(() => installs.length === 2);
     assert.deepEqual(installs, ["9.9.9", "9.9.9"]);
-    assert.equal(button.disabled, true);
-    assert.match(button.textContent, /Installing/);
+    assert.equal(button.hidden, true);
+    assert.equal(card.getAttribute("aria-busy"), "true");
+    assert.ok(w.document.querySelector("#update-heading .busy-grid"));
+    assert.equal(w.document.querySelector("#update-heading").textContent, "Updating to Arca 9.9.9");
+    assert.equal(w.document.querySelector("#update-note").hidden, false);
+    assert.equal(w.document.querySelector("#update-note").textContent, "Sync pauses while Arca restarts.");
   } finally {
     await drainRequests(requests);
     w.close();
@@ -8936,7 +8962,7 @@ test("the Files list appends pages under one Show more files button, has no sear
     await until(() => rows() === rowsAfter && w.document.body.getAttribute("aria-busy") === "false");
   }
   assert.equal(more(), null, "the list stops growing at 500 rows");
-  assert.match(w.document.querySelector(".hint").textContent, /Showing the first 500 files\. Search Arca to find the rest\./);
+  assert.match([...w.document.querySelectorAll("#content .hint")].at(-1).textContent, /Showing the first 500 files\. Search Arca to find the rest\./);
   assert.ok(browsed.every((request) => request.search === null), "the folder browser never filters by itself");
   assert.equal(w.document.querySelector('[data-action="folder-search-toggle"], #folder-search-input'), null, "the one search is the palette");
 });

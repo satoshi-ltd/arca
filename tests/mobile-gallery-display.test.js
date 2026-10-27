@@ -190,5 +190,5 @@ test("Photo uploads lets the user tick any number of albums and summarizes the c
   assert.match(setup, /onPress=\{\(\) => enable\(\{ albums, videos \}, \{ count: libraryCount, limited \}\)\}/);
   assert.doesNotMatch(setup, /albumId: album\?\.id/, "the single-album save is gone");
   assert.match(setup, /description="Unavailable"[\s\S]{0,120}onPress=\{\(\) => toggle\(held\)\}/, "a selected album that is gone can be unticked");
-  assert.match(read("App.jsx"), /Object\.keys\(\s+galleryConfig\(f\)\s+\.cursors \|\| \{\},\s+\)\.length/, "the folder status reads the per-album cursors");
+  assert.match(read("App.jsx"), /Object\.keys\(galleryConfig\(f\)\.cursors \|\| \{\}\)\.length/, "the folder status reads the per-album cursors");
 });

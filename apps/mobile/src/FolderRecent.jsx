@@ -18,6 +18,7 @@ export function FolderRecent({
   reconnect,
   date,
   open,
+  devices,
   onLoading,
 }) {
   const { s, c, wide } = useDesign();
@@ -52,9 +53,16 @@ export function FolderRecent({
   }, [key, connected, updated, offline, attempt, onLoading]);
   if (!connected && !page)
     return (
-      <Text style={s.text}>
-        Connect to view recent versions. Local files remain in Files.
-      </Text>
+      <OfflineEmpty
+        icon="history"
+        title="No saved versions"
+        text="Connect to view recent versions. Local files remain in Files."
+        retry={() => {
+          reconnect?.();
+          retry((n) => n + 1);
+        }}
+        devices={devices}
+      />
     );
   if (error && !page)
     return <ErrorNotice error={error} retry={() => retry((n) => n + 1)} />;

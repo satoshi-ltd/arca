@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BrandActivity, DeviceStatus, Icon, Section, useDesign } from "./components";
+import { BrandActivity, DeviceStatus, Eyebrow, Icon, Section, useDesign } from "./components";
 import { Cover } from "./MusicLibrary";
 import { Rise, useLeaving, useMotion } from "./motion";
 import { motion } from "./design-tokens.js";
@@ -60,7 +60,7 @@ function SectionHead({ label, editing, setEditing, editable }) {
   const { s } = useDesign();
   return (
     <View style={s.favoritesHead}>
-      <Text style={s.eyebrow}>{label}</Text>
+      <Eyebrow>{label}</Eyebrow>
       {editable && (
         <Pressable
           accessibilityRole="button"
@@ -89,7 +89,7 @@ export function FavoritesSection({ items, describe, open, remove, renderFolder }
   const shown = editing || all ? rows : rows.filter((row) => row.leaving || capped.has(row));
   return (
     <Section>
-      <SectionHead label="FAVORITES" editing={editing} setEditing={setEditing} editable />
+      <SectionHead label="Favorites" editing={editing} setEditing={setEditing} editable />
       <View style={s.group}>
         {shown.map(({ item: entry, key, leaving }, index) => {
           const { label, caption, cover, icon } = describe(entry);
@@ -242,7 +242,7 @@ export function FavoritesDrawer({
             ))}
             {rows.length > 0 && (
               <ScrollView style={s.flex} contentContainerStyle={s.drawerList}>
-                <SectionHead label="FAVORITES" editing={editing} setEditing={setEditing} editable />
+                <SectionHead label="Favorites" editing={editing} setEditing={setEditing} editable />
                 {rows.map(({ item: entry, key, leaving }) => {
                   const { label, icon, state } = describe(entry);
                   return (

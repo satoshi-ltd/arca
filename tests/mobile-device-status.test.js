@@ -22,9 +22,9 @@ test("the phone names its own state with the desktop card's words", async () => 
 test("Settings opens with This device and Local synchronization no longer lists the last sync", () => {
   const app = source("App.jsx");
   const settings = app.slice(app.indexOf('{screen === "Settings" && ('));
-  const order = ["THIS DEVICE", "<DeviceRow name={name} device={device} />", 'label="Device name"', "HUB CONNECTION", "LOCAL SYNCHRONIZATION", "MOBILE PREFERENCES"].map((needle) => settings.indexOf(needle));
+  const order = ["<Eyebrow>This device</Eyebrow>", "<DeviceRow name={name} device={device}>", 'label="Device name"', "<Eyebrow>Local synchronization</Eyebrow>", "<Eyebrow>Mobile preferences</Eyebrow>"].map((needle) => settings.indexOf(needle));
   assert.ok(order.every((at) => at >= 0), String(order));
-  assert.deepEqual([...order].sort((a, b) => a - b), order, "This device leads Settings, its row above the Device name field");
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "This device leads Settings, its row holding the Device name field");
   assert.doesNotMatch(app, /Last completed sync/);
   const components = source("components.jsx");
   const row = components.slice(components.indexOf("export function DeviceRow("), components.indexOf("export function MachineRow("));
@@ -50,7 +50,7 @@ test("the Fold navigation ends with the device status block and its rail with th
   assert.match(theme, /deviceStatus: \{\s*marginTop: "auto",/);
   const app = source("App.jsx");
   assert.match(app, /const device = deviceStatus\(\{ \.\.\.status, connected \}, relative\);/);
-  assert.equal(app.match(/device=\{device\}/g).length, 3, "wide navigation, Favorites drawer and Settings share one status");
+  assert.equal(app.match(/device=\{device\}/g).length, 4, "wide navigation, the phone tab bar, Favorites drawer and Settings share one status");
 });
 
 test("the device row and the Fold block read the last sync to screen readers", async () => {
@@ -61,7 +61,7 @@ test("the device row and the Fold block read the last sync to screen readers", a
   assert.match(components, /import \{ deviceLabel, folderState, historyTone, machineTone \} from "\.\/home-data\.js";/);
   for (const name of ["export function DeviceStatus(", "export function DeviceRow("]) {
     const block = components.slice(components.indexOf(name));
-    assert.match(block.slice(0, 200), /accessibilityLabel=\{deviceLabel\(name, device\)\}/, name);
+    assert.match(block.slice(0, 320), /accessibilityLabel=\{deviceLabel\(name, device\)\}/, name);
   }
 });
 
@@ -69,7 +69,7 @@ test("the phone shows the launch check apart from syncing and restarts its event
   const app = source("App.jsx");
   assert.match(app, /busy: r\.activity,\s*checking: hubChecking\(r\),/);
   assert.match(app, /if \(!pulling \|\| pullHeld\(status\)\) return;/);
-  assert.match(app, /import \{ deviceStatus, folderSections, historyCaption, hubChecking, pullHeld \} from "\.\/home-data";/);
+  assert.match(app, /import \{ deviceStatus, folderSections, folderStatus, historyCaption, historyPath, hubChecking, pullHeld \} from "\.\/home-data";/);
   assert.doesNotMatch(app, /checking: r\.checking/);
   assert.match(app, /\}, \[connected, connection\?\.hubId, catalog\?\.changeEvents, status\.offline\]\);/);
 });

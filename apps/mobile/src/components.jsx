@@ -25,6 +25,7 @@ import {
   Animated,
   AccessibilityInfo,
   Image,
+  PanResponder,
   StyleSheet,
   View,
   Text,
@@ -34,6 +35,7 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { draggedDown } from "./sheet-dismiss.js";
 import Svg, {
   Path,
   Rect,
@@ -325,6 +327,14 @@ export function LaunchHold({ leaving = false, onLeft }) {
     </Animated.View>
   );
 }
+export function Eyebrow({ children, style }) {
+  const { s } = useDesign();
+  return (
+    <Text accessibilityRole="header" style={[s.eyebrow, style]}>
+      {children}
+    </Text>
+  );
+}
 export function Section({ children }) {
   const { s } = useDesign();
   return <View style={s.section}>{children}</View>;
@@ -406,20 +416,24 @@ export function Button({
   activity = false,
   swap = false,
   ghost = false,
+  reason,
+  onReason,
 }) {
   const { s, c } = useDesign();
+  const explained = disabled && !!reason;
   const ink = primary ? c.onAccent : danger ? c.danger : ghost ? c.mute : c.ink;
   return (
     <PressScale
       scale={!disabled && !busy && !ghost}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityHint={explained ? reason : undefined}
       accessibilityState={{
         disabled: disabled || busy,
         busy: busy || activity,
       }}
-      disabled={disabled || busy}
-      onPress={onPress}
+      disabled={(disabled && !explained) || busy}
+      onPress={explained ? () => onReason?.(reason) : onPress}
       hitSlop={size !== "normal" ? 6 : undefined}
       style={({ pressed }) => [
         s.button,
@@ -655,13 +669,18 @@ export function EmptyState({ icon, title, text, action }) {
     </View>
   );
 }
-export function OfflineEmpty({ icon, title, text, retry }) {
+export function OfflineEmpty({ icon, title, text, retry, devices }) {
   return (
     <EmptyState
       icon={icon}
       title={title}
       text={text}
-      action={<Button label="Retry" icon="refresh" onPress={retry} />}
+      action={
+        <>
+          <Button label="Retry" icon="refresh" onPress={retry} />
+          {!!devices && <Button label="Open Devices" onPress={devices} />}
+        </>
+      }
     />
   );
 }
@@ -891,6 +910,16 @@ export function Sheet({
     if (busy || leaving.current) return;
     onClose?.();
   };
+  const dismissRef = useRef(dismiss);
+  dismissRef.current = dismiss;
+  const grabber = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderRelease: (_, gesture) => {
+        if (draggedDown(gesture)) dismissRef.current();
+      },
+    }),
+  ).current;
   const panel = dialog
     ? {
         opacity: progress,
@@ -930,13 +959,23 @@ export function Sheet({
         <KeyboardPane
           style={[s.modalOverlay, centered && s.modalOverlayCentered]}
         >
+          <Pressable
+            accessible={false}
+            importantForAccessibility="no"
+            onPress={dismiss}
+            style={s.modalScrim}
+          />
           <AnimatedSafeArea
             style={[s.modalPanel, centered && s.confirmPanel, panel]}
             onLayout={(event) =>
               setHeight((known) => known ?? event.nativeEvent.layout.height)
             }
           >
-            {!dialog && <View style={s.sheetHandle} />}
+            {!dialog && (
+              <View {...grabber.panHandlers} style={s.sheetGrabber}>
+                <View style={s.sheetHandle} />
+              </View>
+            )}
             {!!title && (
               <View style={[s.sheetHeader, dialog && s.sheetHeaderDialog]}>
                 {!!icon && (
@@ -1015,15 +1054,31 @@ export function ConfirmDialog({
         </View>
       </View>
       <View style={s.confirmActions}>
-        <Button label="Cancel" onPress={onCancel} />
         <Button
           label={label}
           primary
           danger={destructive}
           onPress={onConfirm}
         />
+        <Button label="Cancel" onPress={onCancel} />
       </View>
     </Sheet>
+  );
+}
+
+export function SelectionBar({ count, linked, reason, onClear, onDelete }) {
+  const { s } = useDesign();
+  return (
+    <View style={s.selectionBar}>
+      <View style={s.row}>
+        <Text accessibilityLiveRegion="polite" style={[s.caption, s.flex]}>
+          {`${count} selected`}
+        </Text>
+        <Button label="Clear" onPress={onClear} />
+        <Button label="Delete…" danger disabled={!linked} onPress={onDelete} />
+      </View>
+      {!linked && <Text style={s.caption}>{reason}</Text>}
+    </View>
   );
 }
 
@@ -1290,6 +1345,8 @@ export function FolderRow({
   );
 }
 const TABS = ["Folders", "Devices", "History", "Settings"];
+const tabLabel = (tab, wide, device) =>
+  !wide && tab === "Settings" && device?.tone ? `${tab}, ${device.word}` : tab;
 export function Navigation({ wide, compact, view, onSelect, name, device, onFavorites }) {
   const { s, c } = useDesign();
   const { duration, easing } = useMotion();
@@ -1335,7 +1392,9 @@ export function Navigation({ wide, compact, view, onSelect, name, device, onFavo
               style={({ pressed }) => [s.navItem, compact && s.compactNav, pressed && s.pressed]}
             >
               <Icon name="panel-left-open" color={c.mute} />
-              {!compact && <Text style={s.navLabel}>Favorites</Text>}
+              <Text numberOfLines={1} style={compact ? s.compactNavLabel : s.navLabel}>
+                Favorites
+              </Text>
             </Pressable>
           )}
         </>
@@ -1370,7 +1429,7 @@ export function Navigation({ wide, compact, view, onSelect, name, device, onFavo
             })
           }
           accessibilityRole="tab"
-          accessibilityLabel={tab}
+          accessibilityLabel={tabLabel(tab, wide, device)}
           accessibilityState={{ selected: view === tab }}
           onPress={() => onSelect(tab)}
           style={({ pressed }) =>
@@ -1388,16 +1447,21 @@ export function Navigation({ wide, compact, view, onSelect, name, device, onFavo
             name={tab.toLowerCase()}
             color={view === tab ? c.accent : c.mute}
           />
-          {!compact && (
-            <Text
-              style={[
-                wide ? s.navLabel : s.caption,
-                view === tab && s.active,
-                !wide && view === tab && s.tabSelectedLabel,
-              ]}
-            >
-              {tab}
-            </Text>
+          <Text
+            numberOfLines={1}
+            style={[
+              wide ? (compact ? s.compactNavLabel : s.navLabel) : s.caption,
+              view === tab && s.active,
+              !wide && view === tab && s.tabSelectedLabel,
+            ]}
+          >
+            {tab}
+          </Text>
+          {!wide && tab === "Settings" && !!device?.tone && (
+            <View
+              pointerEvents="none"
+              style={[s.tabDot, device.tone === "danger" && s.tabDotDanger]}
+            />
           )}
         </Pressable>
       ))}
@@ -1454,11 +1518,11 @@ function DeviceGlyph({ name, device }) {
   );
 }
 
-export function DeviceRow({ name, device }) {
+export function DeviceRow({ name, device, children }) {
   const { s } = useDesign();
   return (
-    <View accessible accessibilityLabel={deviceLabel(name, device)} style={[s.card, s.machineRow]}>
-      <View style={s.row}>
+    <View style={[s.card, s.machineRow]}>
+      <View accessible accessibilityLabel={deviceLabel(name, device)} style={s.row}>
         <View style={[s.tile, s.machineTile]}>
           <Icon name="phone" />
         </View>
@@ -1475,6 +1539,7 @@ export function DeviceRow({ name, device }) {
           </Text>
         </View>
       </View>
+      {children}
     </View>
   );
 }
@@ -1656,7 +1721,7 @@ export function SettingsGroup({ children }) {
   );
 }
 
-export function SegmentedControl({ options, value, onChange, scroll = false }) {
+export function SegmentedControl({ options, value, onChange, scroll = false, clearable = false }) {
   const { s } = useDesign();
   const { duration, easing } = useMotion();
   const [boxes, setBoxes] = useState({});
@@ -1695,6 +1760,7 @@ export function SegmentedControl({ options, value, onChange, scroll = false }) {
           key={option.value}
           accessibilityRole="button"
           accessibilityState={{ selected: value === option.value }}
+          accessibilityHint={clearable && value === option.value ? "Tap again to clear" : undefined}
           onPress={() => onChange(option.value)}
           onLayout={({ nativeEvent: { layout } }) =>
             setBoxes((boxes) => {
@@ -1710,6 +1776,7 @@ export function SegmentedControl({ options, value, onChange, scroll = false }) {
           style={[s.segment, scroll && s.segmentScroll, value === option.value && !box && s.segmentSelected]}
         >
           <Text
+            numberOfLines={1}
             style={[
               s.buttonLabel,
               s.segmentText,
@@ -1768,9 +1835,9 @@ export function ApprovalSheet({
         right now.
       </Text>
       <View style={s.requestReference}>
-        <Text style={[s.eyebrow, s.centerText]}>
-          REQUEST · must match the browser
-        </Text>
+        <Eyebrow style={s.centerText}>
+          Request · must match the browser
+        </Eyebrow>
         <Text accessibilityLabel={reference} style={s.requestNumber}>
           {reference.slice(0, 3)}
           <Text style={s.requestSeparator}> – </Text>

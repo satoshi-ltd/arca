@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.7 — 2026-10-27
+
+- Desktop: Sync now stays in place while it runs and Settings shows synchronization as a status pill; launch says "Starting Arca…"; updates say what they will do and the tray uses the app's words; notices close with one ×, and info notices with an action wait for you; Files rows show when each file changed, History offers Show all changes when empty, and deleting names the file.
+- Desktop and web accessibility and feedback: page titles and focus follow navigation, folder cards with Review or Locate… are separate buttons, the wizard and web sign-in show busy and error states, Allow HTTP asks first, the video player shows loading and answers M, F and the arrow keys, and failed tracks, searches and libraries say so.
+- Phone: photo selection has a bar above the tab bar with Clear and Delete…, confirmations stack the action over Cancel and name what they delete, pairing shows a rejected code under the field and prefills the model name, History rows lead with the file name, and Settings shows a dot when the device is not up to date.
+- Phone: tapping outside a sheet closes it, notices announce themselves and close with one ×, a denied notification permission offers Open settings, going back keeps an album or show where you were, a show's Play continues the episode you were in, and Now playing is two panes on the Fold.
+- The daemon reports when each file last changed on `/v1/browse`; older clients ignore it.
+
+Needs: native build · desktop build · Casa redeploy
+
 ## 0.8.6 — 2026-10-27
 
 - In desktop show pages, Download season sits to the right of the season control, and the season's download progress takes that space while it runs.

@@ -151,6 +151,7 @@ export function KeyboardScrollView({
         setGestureActive(active);
       },
       scrollTo: (y) => scroll.current?.scrollTo({ y, animated: false }),
+      offset: () => offset.current,
       viewport,
       contentSize,
       measure: (node, callback) => {

@@ -1,6 +1,6 @@
 import { StickyDetailSide } from "./StickyDetailSide";
 import { Scaffold } from "./components";
-import { Section } from "./components";
+import { Eyebrow, Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React from "react";
 import { Text, View } from "react-native";
@@ -108,7 +108,7 @@ export function FileHistory({
       <View style={s.detailGrid}>
         <View style={s.detailMain}>
           <Section>
-            <Text style={s.eyebrow}>FILE VERSIONS</Text>
+            <Eyebrow>File versions</Eyebrow>
             {!!history.versions.length && (
               <View style={s.group}>
                 {history.versions.map((row, index) => (
@@ -185,7 +185,7 @@ export function FileHistory({
         </View>
         <StickyDetailSide>
           <Section>
-            <Text style={s.eyebrow}>FILE LOCATION</Text>
+            <Eyebrow>File location</Eyebrow>
             <Card title={volume?.name || "Shared folder"}>
               <Text selectable style={s.mono}>
                 {target.path}
