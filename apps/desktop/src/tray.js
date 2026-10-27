@@ -172,9 +172,9 @@ function folderRow(row) {
 }
 function updateRow() {
   if (updating)
-    return `<div class="tray-update" aria-busy="true">${busy()}<span class="tray-update-text"><strong>${escape(`Updating to Arca ${update}`)}</strong><small>Sync pauses while Arca restarts.</small></span><button class="secondary small-button" data-action="update">Open Arca</button></div>`;
+    return `<div class="tray-update" aria-busy="true">${busy()}<span class="tray-update-text"><strong>${escape(`Updating to Arca ${update}`)}</strong><small>Sync pauses while Arca restarts.</small></span></div>`;
   return update
-    ? `<div class="tray-update">${icon("download")}<span class="tray-update-text">${escape(`Arca ${update} is ready`)}</span><button class="secondary small-button" data-action="update">Open Arca</button></div>`
+    ? `<div class="tray-update">${icon("download")}<span class="tray-update-text">${escape(`Arca ${update} is ready`)}</span><button class="secondary small-button" data-action="update">Install</button></div>`
     : "";
 }
 function draw() {
@@ -218,7 +218,8 @@ function setMore(next) {
 }
 async function run(action) {
   if (action === "more") return setMore(!more);
-  if (action === "open" || action === "update") await invoke("show_main", { folder: null });
+  if (action === "open") await invoke("show_main", { folder: null });
+  if (action === "update") await events?.emit("install-update");
   if (action === "backup") {
     await events?.emit("notice-action", { action: "backup" });
     await invoke("show_main", { folder: null });

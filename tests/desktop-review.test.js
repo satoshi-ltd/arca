@@ -400,3 +400,9 @@ test("notices have one dismiss control at 32 px and no Dismiss link", () => {
   assert.match(source("tokens.css"), /--notice-close: 32px;/);
   assert.match(source("style.css"), /\.notice-close \{\s*flex: none;\s*width: var\(--notice-close\);\s*height: var\(--notice-close\);/);
 });
+
+test("the main window installs an update when the tray asks", () => {
+  const app = fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8");
+  assert.match(app, /listen\("install-update", \(\) =>\s+action\(async \(\) => \{\s+try \{\s+await handle\("install-update"\);\s+\} catch \(error\) \{\s+await invoke\("show_main", \{ folder: null \}\);\s+throw error;/);
+  assert.match(app, /name === "install-update"\) \{\s+if \(updating\) return;/);
+});

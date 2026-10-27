@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.8 — 2026-10-27
+
+- The update row in the tray now installs: Install starts the update without opening the window, and while it runs the row reads "Updating to Arca X" with no button. Before, it only brought the window forward and nothing was installed.
+
+Needs: desktop build
+
 ## 0.8.7 — 2026-10-27
 
 - Desktop: Sync now stays in place while it runs and Settings shows synchronization as a status pill; launch says "Starting Arca…"; updates say what they will do and the tray uses the app's words; notices close with one ×, and info notices with an action wait for you; Files rows show when each file changed, History offers Show all changes when empty, and deleting names the file.

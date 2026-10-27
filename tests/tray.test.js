@@ -203,13 +203,13 @@ test("Command-Q and Command-O work while ⋯ is closed", async (t) => {
   assert.ok(ui.commands().includes("quit_app"));
 });
 
-test("an available update shows one row that opens the main window", async (t) => {
+test("an available update shows one row whose Install asks the main window to install", async (t) => {
   const ui = await tray(t, { role: "hub", phase: "idle", volumes: [] }, { update: { available: true, version: "0.7.37" } });
   assert.equal(ui.$(".tray-update-text").textContent, "Arca 0.7.37 is ready");
   ui.$('.tray-update [data-action="update"]').click();
   await settle();
-  assert.ok(ui.calls.some(({ command, args }) => command === "show_main" && args.folder === null));
-  assert.equal(ui.$('.tray-update [data-action="update"]').textContent, "Open Arca");
+  assert.ok(ui.emitted.some(([name]) => name === "install-update"));
+  assert.equal(ui.$('.tray-update [data-action="update"]').textContent, "Install");
   const none = await tray(t, { role: "hub", phase: "idle", volumes: [] });
   assert.equal(none.$(".tray-update"), null);
 });
@@ -221,7 +221,7 @@ test("an installing update reads Updating to Arca X with the sync-pause line, li
   assert.ok(ui.$(".tray-update .busy-grid"));
   assert.equal(ui.$(".tray-update-text strong").textContent, "Updating to Arca 0.8.7");
   assert.equal(ui.$(".tray-update-text small").textContent, "Sync pauses while Arca restarts.");
-  assert.equal(ui.$('.tray-update [data-action="update"]').textContent, "Open Arca");
+  assert.equal(ui.$('.tray-update [data-action="update"]'), null);
 });
 
 test("tray shortcut hints follow the platform and Sync now shows its own", async (t) => {

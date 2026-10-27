@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.7";
+const APP_VERSION = "0.8.8";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -10333,6 +10333,7 @@ async function handle(name, id, control) {
   if (name.startsWith("video-")) return handleVideo(name, id);
   if (name.startsWith("favorite") || name === "context-open") return handleFavorite(name, id, control);
   if (name === "install-update") {
+    if (updating) return;
     setUpdating(true);
     try {
       await invoke("install_update");
@@ -12406,6 +12407,16 @@ if (native && window.__TAURI__.event) {
     if (command === "show") void navigate(musicShowAlbum);
   });
   musicBroadcast(true);
+  window.__TAURI__.event.listen("install-update", () =>
+    action(async () => {
+      try {
+        await handle("install-update");
+      } catch (error) {
+        await invoke("show_main", { folder: null });
+        throw error;
+      }
+    }),
+  );
   window.__TAURI__.event.listen("open-folder-detail", (event) =>
     action(async () => {
       view = "folders";
