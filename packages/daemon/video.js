@@ -676,7 +676,7 @@ export class Video {
     const now = Date.now();
     const rows = this.s.db
       .prepare(
-        `SELECT f.path,f.hash,f.size,i.checked,i.retry,i.duration,i.width,i.height,i.video_codec,i.audio_codec,i.audio_tracks,i.subtitle_streams,
+        `SELECT f.path,f.hash,f.rev,f.size,i.checked,i.retry,i.duration,i.width,i.height,i.video_codec,i.audio_codec,i.audio_tracks,i.subtitle_streams,
         (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.hash=f.hash) AS added
         FROM ${this.s.fileSource()} f LEFT JOIN video_items i ON i.hash=f.hash
         WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND f.hash IS NOT NULL
@@ -822,6 +822,7 @@ export class Video {
       return {
         path: row.path,
         hash: row.hash,
+        rev: row.rev,
         size: row.size,
         duration: row.duration ?? null,
         width: row.width ?? null,

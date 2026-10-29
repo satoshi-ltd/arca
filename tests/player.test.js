@@ -77,7 +77,9 @@ test("a player streams and reports, and every other route answers 403", async (t
     ["/v1/pairing", "POST", { name: "other" }],
     ["/v1/conflict", "POST", { volume: volume.id, path: "a.conflict-x.txt", choice: "original" }],
     ["/v1/gallery/register", "POST", { volume: volume.id }],
-    ["/v1/gallery/delete", "POST", { volume: volume.id }],
+    ["/v1/rename-file", "POST", { volume: volume.id, path: "a.jpg", name: "b.jpg", rev: 1 }],
+    ["/v1/restore", "POST", { volume: volume.id, path: "a.jpg", rev: 1 }],
+    ["/v1/delete-share", "POST", { id: volume.id, confirmedName: "Photos" }],
     ["/v1/audio-position", "POST", {}],
     ["/v1/backup-ack", "POST", { enabled: false }],
     ["/v1/machines", "GET"],
@@ -178,12 +180,72 @@ test("a player leaves the hub with its own credential and its row is gone", asyn
   assert.equal((await call("/v1/catalog", { method: "GET", token: leaving.token })).status, 401, "the credential no longer works");
 });
 
-test("the player allow-list holds only reads, its own report and leaving", () => {
+test("a player deletes a file on the hub and the deletion is a revision every copy follows", async (t) => {
+  const { d, call, pair } = await hub(t);
+  const volume = await (await call("/v1/volumes", { body: { name: "Movies" } })).json();
+  const folder = d.engine.store.volume(volume.id).path;
+  fs.writeFileSync(path.join(folder, "Heat.mp4"), "film");
+  fs.writeFileSync(path.join(folder, "Up.mp4"), "film two");
+  await d.engine.cycle();
+  const { token } = await (await pair({ kind: "player", name: "salon-tv" })).json();
+  const as = (body) => call("/v1/delete-file", { body, token });
+  const heat = d.engine.store.current(volume.id, "Heat.mp4");
+  assert.equal((await as({ volume: volume.id, path: "Heat.mp4", rev: heat.rev + 1 })).status, 409, "a stale view deletes nothing");
+  assert.equal(fs.existsSync(path.join(folder, "Heat.mp4")), true);
+  assert.equal((await as({ volume: volume.id, path: "Heat.mp4", rev: heat.rev })).status, 200);
+  assert.equal(fs.existsSync(path.join(folder, "Heat.mp4")), false);
+  assert.equal(d.engine.store.current(volume.id, "Heat.mp4").deleted, 1);
+  assert.equal(fs.existsSync(path.join(folder, "Up.mp4")), true, "only the chosen file goes");
+  assert.equal((await as({ volume: volume.id, path: "../Up.mp4", rev: 1 })).status, 400);
+  fs.writeFileSync(path.join(folder, ".arcaignore"), "secret/\n");
+  await d.engine.cycle();
+  const rules = d.engine.store.current(volume.id, ".arcaignore");
+  assert.equal((await as({ volume: volume.id, path: ".arcaignore", rev: rules.rev })).status, 403, "a TV never changes what the folder shares");
+  assert.equal((await as({ volume: volume.id, path: ".ArcaIgnore", rev: rules.rev })).status, 403, "nor through another casing on a case-insensitive disk");
+  assert.equal(fs.existsSync(path.join(folder, ".arcaignore")), true);
+});
+
+test("a player's music library carries the rev a deletion needs", async (t) => {
+  const { d, call, pair } = await hub(t);
+  const volume = await (await call("/v1/volumes", { body: { name: "Music" } })).json();
+  assert.equal((await call("/v1/music/mark", { body: { volume: volume.id } })).status, 200);
+  fs.writeFileSync(path.join(d.engine.store.volume(volume.id).path, "song.mp3"), "not really audio");
+  await d.engine.cycle();
+  const { token } = await (await pair({ kind: "player", name: "salon-tv" })).json();
+  const library = await (await call(`/v1/music/library?volume=${volume.id}`, { method: "GET", token })).json();
+  const track = library.tracks.find((row) => row.path === "song.mp3");
+  assert.equal(track.rev, d.engine.store.current(volume.id, "song.mp3").rev);
+  assert.equal((await call("/v1/delete-file", { body: { volume: volume.id, path: track.path, rev: track.rev }, token })).status, 200);
+});
+
+test("a player deletes a gallery photo through the shared gallery deletion", async (t) => {
+  const { d, call, pair } = await hub(t);
+  const volume = await (await call("/v1/volumes", { body: { name: "Photos" } })).json();
+  assert.equal((await call("/v1/gallery/link", { body: { volume: volume.id } })).status, 200);
+  const folder = d.engine.store.volume(volume.id).path;
+  fs.writeFileSync(path.join(folder, "beach.jpg"), "photo");
+  await d.engine.cycle();
+  const { token } = await (await pair({ kind: "player", name: "salon-tv" })).json();
+  const body = { id: "tv-delete-0000000001", volume: volume.id, path: "beach.jpg", rev: d.engine.store.current(volume.id, "beach.jpg").rev };
+  const remove = () => call("/v1/gallery/delete", { body, token });
+  const rev = body.rev;
+  assert.equal((await call("/v1/delete-file", { body: { volume: volume.id, path: "beach.jpg", rev }, token })).status, 409, "a gallery photo goes through the gallery deletion, so phones stop uploading it");
+  assert.equal((await remove()).status, 200);
+  assert.equal(fs.existsSync(path.join(folder, "beach.jpg")), false);
+  const deletions = () => d.engine.store.db.prepare("SELECT COUNT(*) AS n FROM revisions WHERE volume=? AND path=? AND deleted=1").get(volume.id, "beach.jpg").n;
+  assert.equal(deletions(), 1);
+  assert.equal((await remove()).status, 200, "a retried request is the same deletion");
+  assert.equal(deletions(), 1);
+});
+
+test("the player allow-list holds reads, its own report, leaving and the hub's two deletions", () => {
   for (const route of ["/v1/catalog", "/v1/gallery", "/v1/gallery/preview", "/v1/music/library", "/v1/music/cover", "/v1/blobs/abc"])
     assert.equal(playerRoute("GET", route), true, route);
   assert.equal(playerRoute("POST", "/v1/machine-report"), true);
   assert.equal(playerRoute("POST", "/v1/leave"), true);
   assert.equal(playerRoute("GET", "/v1/leave"), false);
-  for (const [method, route] of [["GET", "/v1/search"], ["GET", "/v1/gallery/info"], ["POST", "/v1/catalog"], ["PUT", "/v1/blobs/abc"], ["GET", "/v1/machines"], ["GET", "/v1/history"], ["DELETE", "/v1/blobs/abc"], ["GET", "/v1/machine-report"]])
+  assert.equal(playerRoute("POST", "/v1/delete-file"), true);
+  assert.equal(playerRoute("POST", "/v1/gallery/delete"), true);
+  for (const [method, route] of [["GET", "/v1/search"], ["GET", "/v1/gallery/info"], ["POST", "/v1/catalog"], ["PUT", "/v1/blobs/abc"], ["GET", "/v1/machines"], ["GET", "/v1/history"], ["DELETE", "/v1/blobs/abc"], ["GET", "/v1/machine-report"], ["POST", "/v1/rename-file"], ["POST", "/v1/restore"], ["POST", "/v1/delete-share"], ["POST", "/v1/gallery/removals"]])
     assert.equal(playerRoute(method, route), false, `${method} ${route}`);
 });

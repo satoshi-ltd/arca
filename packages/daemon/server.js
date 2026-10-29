@@ -13,6 +13,7 @@ import {
   streamGalleryMedia,
 } from "./gallery-media.js";
 import { Gallery, mediaKind } from "./gallery.js";
+import { IGNORE_FILE } from "./exclusions.js";
 import { Music } from "./music.js";
 import { Video } from "./video.js";
 import {
@@ -1090,7 +1091,7 @@ export async function start(home, options = {}) {
           name: config.name,
           device: device.id,
           devices: s.db
-            .prepare("SELECT id,name FROM devices WHERE role='replica'")
+            .prepare("SELECT id,name FROM devices WHERE role IN ('replica','player')")
             .all(),
           ready: s.volumes().length > 0,
           volumes: s.volumes().map((v) => ({
@@ -1813,11 +1814,18 @@ export async function start(home, options = {}) {
           );
         }
         if (route === "/v1/delete-file") {
-          requireAdmin();
+          const player = device.role === "player";
+          if (player) {
+            requireHub();
+            if (b.path.toLowerCase() === IGNORE_FILE)
+              fail("A player cannot change the folder's ignore rules", 403);
+            if (s.db.prepare("SELECT 1 FROM gallery_folders WHERE volume=?").get(b.volume))
+              fail("Delete gallery photos with /v1/gallery/delete", 409);
+          } else requireAdmin();
           return send(
             200,
             await authorizedWork(() =>
-              engine.deleteFile(b.volume, b.path, b.rev),
+              engine.deleteFile(b.volume, b.path, b.rev, player ? device.id : undefined),
             ),
           );
         }

@@ -526,7 +526,7 @@ export class Music {
     const now = Date.now();
     const rows = this.s.db
       .prepare(
-        `SELECT f.path,f.hash,f.size,t.checked,t.retry,t.title,t.artist,t.album_artist,t.album,t.track,t.disc,t.year,t.genre,t.duration,t.codec,t.cover,t.release,
+        `SELECT f.path,f.hash,f.rev,f.size,t.checked,t.retry,t.title,t.artist,t.album_artist,t.album,t.track,t.disc,t.year,t.genre,t.duration,t.codec,t.cover,t.release,
         (SELECT min(r.created) FROM revisions r WHERE r.volume=f.volume AND r.hash=f.hash) AS added
         FROM ${this.s.fileSource()} f LEFT JOIN music_tracks t ON t.hash=f.hash
         WHERE f.volume=? AND f.deleted=0 AND f.directory=0 AND f.hash IS NOT NULL
@@ -565,6 +565,7 @@ export class Music {
       tracks.push({
         path: row.path,
         hash: row.hash,
+        rev: row.rev,
         size: row.size,
         title: row.title,
         artist: row.artist || (PODCAST.test(row.genre || "") ? row.album : null),

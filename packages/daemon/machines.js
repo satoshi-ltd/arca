@@ -17,6 +17,8 @@ const PLAYER_READS = new Set([
 const PLAYER_WRITES = new Set([
   "/v1/machine-report",
   "/v1/leave",
+  "/v1/delete-file",
+  "/v1/gallery/delete",
   "/v1/video/position",
   "/v1/video/watched",
   "/v1/video/watch-next/remove",

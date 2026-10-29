@@ -2741,7 +2741,7 @@ export class Engine {
     if (next === null) fail("This playlist changed. Try again.", 409);
     return this.writePlaylist(volume, target, file, next);
   }
-  async deleteFile(volume, name, rev) {
+  async deleteFile(volume, name, rev, author = this.config.id) {
     validPath(name);
     const v = this.store.volume(volume);
     if (this.config.role !== "hub" && !v.selected)
@@ -2761,7 +2761,7 @@ export class Engine {
         volume,
         name,
         null,
-        this.config.id,
+        author,
         true,
         current.hash,
       );

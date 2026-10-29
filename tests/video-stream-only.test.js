@@ -177,3 +177,19 @@ test("devices cannot sync a video folder's changes or snapshot, and it never mov
     await assert.rejects(f.call(route, undefined, phone.token), { status: 409 }, route);
   await assert.rejects(f.call("/v1/move-folder", { id: f.v.id, path: path.join(f.home, "elsewhere") }), { status: 409 });
 });
+
+test("a player deletes a film with the rev its library gave it, and the deletion is its own", async (t) => {
+  const f = await hub(t);
+  await f.call("/v1/video/mark", { volume: f.v.id });
+  fs.writeFileSync(path.join(f.v.path, "Heat.mp4"), clip({ seconds: 1, tone: 940 }));
+  await f.daemon.engine.cycle();
+  const { code } = await f.call("/v1/pairing", { name: "TV" });
+  const tv = await f.call("/pair", { code, kind: "player", name: "salon-tv" });
+  const movie = (await f.settled(tv.token)).other.concat((await f.settled(tv.token)).movies)[0];
+  assert.equal(movie.rev, f.s.current(f.v.id, "Heat.mp4").rev, "the library carries the rev a deletion needs");
+  await f.call("/v1/delete-file", { volume: f.v.id, path: movie.path, rev: movie.rev }, tv.token);
+  assert.equal(fs.existsSync(path.join(f.v.path, "Heat.mp4")), false);
+  const head = f.s.db.prepare("SELECT author FROM revisions WHERE volume=? AND path=? ORDER BY rev DESC LIMIT 1").get(f.v.id, "Heat.mp4");
+  assert.equal(head.author, tv.id, "History names the TV, not the hub");
+  assert.ok((await f.call("/v1/catalog", undefined, tv.token)).devices.some((d) => d.id === tv.id && d.name === "salon-tv"));
+});
