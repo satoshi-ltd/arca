@@ -1,6 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
+import { validateIgnore } from "../../../packages/core/ignore-limits.js";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import { realDate } from "../../../packages/core/gallery-date.js";
 import {
@@ -377,7 +378,9 @@ export class Gallery {
     const data = new Uint8Array(await response.arrayBuffer());
     if (data.length !== row.size || bytesToHex(sha256(data)) !== row.hash)
       throw new Error("Gallery exclusion policy failed verification");
-    return ignore().add(new TextDecoder().decode(data));
+    const text = new TextDecoder().decode(data);
+    validateIgnore(text);
+    return ignore().add(text);
   }
   async acknowledged(volume, resource, recoverConflict = true) {
     const r = this.r;

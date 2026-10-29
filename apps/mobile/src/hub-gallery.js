@@ -2,9 +2,15 @@ import { mergeTimeline, mediaDate } from "./gallery-timeline.js";
 import { mediaKind } from "../../../packages/core/gallery-date.js";
 import { builtinExcluded } from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
+import { validateIgnore } from "../../../packages/core/ignore-limits.js";
 
 export function folderIgnored(text) {
   if (!text || !text.trim()) return null;
+  try {
+    validateIgnore(text);
+  } catch {
+    return null;
+  }
   const policy = ignore({ ignorecase: true }).add(text);
   return (path) => policy.ignores(path);
 }

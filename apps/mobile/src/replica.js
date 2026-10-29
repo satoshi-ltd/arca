@@ -29,6 +29,7 @@ import {
   FIXED_POLICY,
 } from "../../../packages/core/builtin-exclusions.js";
 import ignore from "../../../packages/vendor/ignore/index.cjs";
+import { validateIgnore } from "../../../packages/core/ignore-limits.js";
 import { REPORTABLE_VERSION } from "./device-line.js";
 export const CHUNK = 1024 * 1024;
 export const HEADROOM = 256 * 1024 * 1024;
@@ -520,6 +521,7 @@ export class Replica {
     }
     const exists = await this.files.exists(file);
     const text = exists ? await this.files.text(file) : "";
+    validateIgnore(text);
     this.policy = ignore({ ignorecase: true }).add(text);
     const policy = `${FIXED_POLICY}\n${exists ? await this.files.hash(file) : ""}`;
     const key = `policy:${this.scope}:${folder.id}`;

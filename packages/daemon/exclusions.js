@@ -3,6 +3,7 @@ import path from "node:path";
 import ignore from "../vendor/ignore/index.cjs";
 
 import { builtinExcluded } from "../core/builtin-exclusions.js";
+import { validateIgnore } from "../core/ignore-limits.js";
 
 export const IGNORE_FILE = ".arcaignore";
 export const MAX_IGNORE_BYTES = 64 * 1024;
@@ -45,6 +46,7 @@ export function readIgnore(root) {
 export function compileIgnore(text) {
   if (Buffer.byteLength(text) > MAX_IGNORE_BYTES)
     throw new Error(".arcaignore exceeds 64 KiB");
+  validateIgnore(text);
   const rules = ignore({ ignorecase: true }).add(text);
   const hasRules = text.trim().length > 0;
   return (name, directory = false) => {

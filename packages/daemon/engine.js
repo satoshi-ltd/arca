@@ -9,6 +9,7 @@ import {
 } from "./installation-reset.js";
 import { entryKey, directoryItem } from "../core/entries.js";
 import { FIXED_POLICY } from "../core/builtin-exclusions.js";
+import { validateIgnore } from "../core/ignore-limits.js";
 import { mediaKind } from "../core/gallery-date.js";
 import {
   PLAYLIST_BYTES,
@@ -573,7 +574,8 @@ export class Engine {
     const name = validPath(requestedPath);
     if (hash)
       assertGalleryUpload(s, volume, name, device?.id || this.config.id);
-    if (name === IGNORE_FILE && size > MAX_IGNORE_BYTES)
+    const policyFile = name.toLowerCase() === IGNORE_FILE;
+    if (policyFile && size > MAX_IGNORE_BYTES)
       fail(".arcaignore exceeds 64 KiB", 409);
     if (
       s.excluded(volume, name, directory || s.current(volume, name)?.directory)
@@ -585,6 +587,12 @@ export class Engine {
       (!fs.existsSync(s.blob(hash)) || fs.statSync(s.blob(hash)).size !== size)
     )
       fail("Upload content before proposing", 409);
+    if (policyFile && hash)
+      try {
+        validateIgnore(fs.readFileSync(s.blob(hash), "utf8"));
+      } catch (error) {
+        fail(error.message, 409);
+      }
     await this.scanHub(volume, {
       paths: s.caseAlias(volume, name) ? null : [name, IGNORE_FILE],
     });
@@ -2244,6 +2252,11 @@ export class Engine {
   saveIgnorePolicy(id, text, version) {
     if (typeof text !== "string" || Buffer.byteLength(text) > MAX_IGNORE_BYTES)
       fail(".arcaignore must be text of at most 64 KiB");
+    try {
+      validateIgnore(text);
+    } catch (error) {
+      fail(error.message);
+    }
     const current = this.ignorePolicy(id);
     if (version !== current.version)
       fail(

@@ -3563,3 +3563,29 @@ test("Stop syncing cleanup never follows a planned directory or an ancestor repl
   assert.equal(fs.existsSync(path.join(outside, "child", ".DS_Store")), true, "so does a directory reached through a linked ancestor");
   assert.equal(fs.existsSync(path.join(root, "plain")), false, "a verified directory holding only disposable metadata is still removed");
 });
+
+test("a hostile .arcaignore never reaches the hub, and one already on its disk stops the folder fast", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("replica");
+  const hostile = "**/".repeat(12) + "zzz\n";
+  const hash = digest(hostile);
+  fs.writeFileSync(hub.engine.store.blob(hash), hostile);
+  await assert.rejects(
+    hub.api("/v1/propose", { volume: volume.id, path: ".arcaignore", base: hub.engine.store.current(volume.id, ".arcaignore")?.rev || 0, hash, size: Buffer.byteLength(hostile) }, replica.invite.token),
+    { status: 409, message: /too many wildcards/ },
+  );
+  await assert.rejects(
+    hub.api("/v1/propose", { volume: volume.id, path: ".ARCAIGNORE", base: 0, hash, size: Buffer.byteLength(hostile) }, replica.invite.token),
+    { status: 409, message: /too many wildcards/ },
+    "a case alias is the same policy on a case-insensitive hub",
+  );
+  const { version } = await hub.api(`/v1/ignore-policy?id=${volume.id}`);
+  await assert.rejects(hub.api("/v1/ignore-policy", { id: volume.id, text: hostile, version }), { status: 400, message: /too many wildcards/ });
+  write(hub, volume, Array(32).fill("a").join("/") + "/file.txt", "deep");
+  write(hub, volume, ".arcaignore", hostile);
+  const started = performance.now();
+  await assert.rejects(hub.sync(), /too many wildcards/);
+  assert.ok(performance.now() - started < 5000, "the cycle stops before evaluating the rule");
+  const folder = (await hub.api("/v1/status")).volumes.find((v) => v.id === volume.id);
+  assert.match(folder.policyError || folder.sync?.error || "", /too many wildcards/);
+});

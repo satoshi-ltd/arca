@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SEC-IGNORE-RULES** — A hostile `.arcaignore` cannot freeze the hub
-  `bug · agent · high`
-  accept: `compileIgnore` refuses a rule longer than 256 characters, with more than three `**` or eight `*`, and a file with more than 1,000 lines, reporting `policyError` instead of compiling; `/v1/propose` of `.arcaignore` and `/v1/ignore-policy` validate the text the same way before committing; a test proves `**/`×12 against a depth-32 path answers within 100 ms.
 - **SEC-REGEX-BOUNDS** — Subtitle and `.nfo` parsing stay linear
   `bug · agent · high`
   accept: `subtitleText` strips `{\…}` and `<font…>` with bounded quantifiers or one manual pass, `detectLanguage` reads at most 64 KiB, and `parseNfo` bounds tag bodies or bails after 50 `<title` occurrences; tests time a 2 MiB `.srt` of `{\` and a 256 KiB `.nfo` of unclosed tags under 200 ms each.

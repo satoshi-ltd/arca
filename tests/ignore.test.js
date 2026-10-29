@@ -238,3 +238,41 @@ test("only OS metadata is disposable, never temporaries, caches or Git data", ()
   ])
     assert.equal(disposableMetadata(name), false, name);
 });
+
+test("rule complexity is bounded so matching stays fast, and common gitignore rules still compile", () => {
+  for (const text of ["**/node_modules/**\n", "**/logs/\n", "*.tmp\n!keep.tmp\n", "*.sqlite-*\n*.bak*\n**/schedule/runs.json\n", "\\*\\*\\*\\*literal\n", "# " + "*".repeat(300) + "\n", "a/**/b/**\n", "\uFEFF*.tmp\n", "logs/**   \n", "a\\*b\\*c*\n"])
+    assert.doesNotThrow(() => compileIgnore(text), text);
+  for (const [text, message] of [
+    ["**/".repeat(12) + "zzz\n", /line 1 has too many wildcards/],
+    ["**/build/**/*.js\n", /too many wildcards/],
+    ["*a*a*b\n", /too many wildcards/],
+    ["*\\ *\\ *\\ *zz\n", /too many wildcards/],
+    ["*\\#*\\a*zz\n", /too many wildcards/],
+    ["a/**/b/**\\ \n**/a*/**\\ \n", /line 1 has too many wildcards/],
+    [" #" + "/**".repeat(12) + "/zzz\n", /line 1 has too many wildcards/],
+    ["\t#" + "/**".repeat(12) + "/zzz\n", /too many wildcards/],
+    ["\uFEFF#" + "/**".repeat(12) + "/zzz\n", /too many wildcards/],
+    ["ok\n" + "x".repeat(257) + "\n", /line 2 is longer than 256/],
+    [Array.from({ length: 201 }, (_, i) => `r${i}`).join("\n"), /more than 200 rules/],
+    [Array.from({ length: 33 }, (_, i) => `*a*${i}`).join("\n"), /more than 64 wildcards/],
+  ])
+    assert.throws(() => compileIgnore(text), message, JSON.stringify(text.slice(0, 40)));
+  const worst = [
+    Array.from({ length: 32 }, (_, i) => `*a*a${i}`).join("\n"),
+    Array.from({ length: 64 }, (_, i) => `**/a${i}/**`).join("\n"),
+    Array.from({ length: 64 }, (_, i) => `a/**/a${i}`).join("\n") + "\n" + Array.from({ length: 136 }, (_, i) => `a${i}`).join("\n"),
+  ];
+  for (const text of worst) {
+    for (const name of [Array(510).fill("a").join("/") + "/f.txt", Array(4).fill("a".repeat(255)).join("/")]) {
+      const started = performance.now();
+      compileIgnore(text)(name);
+      assert.ok(performance.now() - started < 2000, `${text.slice(0, 12)} on ${name.length} characters`);
+    }
+  }
+});
+
+test("the phone refuses the same rules before compiling them", async () => {
+  const { folderIgnored } = await import("../apps/mobile/src/hub-gallery.js");
+  assert.equal(folderIgnored("**/".repeat(12) + "zzz\n"), null, "an unsafe policy is never evaluated and hides nothing it could later forget");
+  assert.equal(folderIgnored("*.tmp\n")("a.txt"), false);
+});

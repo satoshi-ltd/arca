@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.13 — 2026-10-29
+
+- `.arcaignore` is limited to 200 rules and 64 wildcards, each rule at most 256 characters with at most two wildcards and one `**` before the end. A crafted rule could make the hub and every phone spend minutes matching one path; now the hub refuses it when a device proposes or saves it, and a folder that already has one stops with an error naming the line.
+
+Needs: Casa redeploy · native build
+
 ## 0.8.12 — 2026-10-29
 
 - The hub web now only answers browsers that reach it by an IP address, a single-label or `.local` name, its Tailscale name or a name you list in `network.webHosts` or `ARCA_WEB_HOSTS`. A page on another domain that points its DNS at the hub can no longer request web approval, try sign-in codes or use a session. The Umbrel code page applies the same rule, but the Umbrel package still runs hub 0.4.1 until it is updated.

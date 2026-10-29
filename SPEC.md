@@ -1,6 +1,6 @@
 # Arca — specification
 
-**v0.8.12 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
+**v0.8.13 · Phase 1: functional, stabilization in progress. Not a qualified public release.**
 
 This document owns how Arca works today: the product decisions, protocol and data contracts, operations and the shared design system that code must keep. [README.md](README.md) introduces Arca, [AGENTS.md](AGENTS.md) holds contributor rules, [ROADMAP.md](ROADMAP.md) owns remaining work and [CHANGELOG.md](CHANGELOG.md) records what each version shipped. Original visual references are not competing specifications.
 
@@ -321,7 +321,7 @@ cache/*
 !cache/keep.json
 ```
 
-- The root `.arcaignore` synchronizes and is versioned even if a broad pattern would match it. It must be a regular file of at most 64 KiB; unreadable, oversized or symlinked rule files stop the affected operation instead of treating the share as unrestricted.
+- The root `.arcaignore` synchronizes and is versioned even if a broad pattern would match it. It must be a regular file of at most 64 KiB with at most 200 rules and 64 wildcards in total, each rule at most 256 characters with at most two wildcards of which at most one is a `**` before the end (a trailing `/**` does not count), because matching cost multiplies wildcards, rules and path depth. Comment, blank and BOM handling follows node-ignore exactly, so a rule cannot hide as a comment. Unreadable, oversized, symlinked or too-complex rule files stop the affected operation instead of treating the share as unrestricted; the hub refuses such a policy, under any spelling case, when it is proposed or saved (409 and 400), and a phone given one stops syncing the folder and applies no gallery or music filtering instead of evaluating it.
 - The hub's policy is edited through `GET /v1/ignore-policy?id=ID` and `POST /v1/ignore-policy {id,text,version}` on an active hub working copy: at most 64 KiB, saved as a normal revision, stale editor versions rejected, absent files created only on save, empty text meaning no user exclusions. These endpoints never give linked credentials hub administration.
 - A replica fetches accepted hub rules before scanning. Different custom rules on first link, or concurrent edits, stop ordinary transfers until both sides agree; stale policy proposals are rejected without a conflict copy. Local rule edits are proposed before ordinary files. Rules are checked on scanning, proposals, incoming materialization and missing-file deletion checks, and changes need no restart.
 - Ignoring a file never deletes it on disk and never proposes a tombstone; a newly included file joins two-way sync on the next cycle, and editing rules never overwrites existing contents.
