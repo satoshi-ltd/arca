@@ -74,6 +74,7 @@ import {
   requireSpace,
   deleteSyncedCopy,
   syncDirectory,
+  validPath,
 } from "./storage.js";
 
 async function body(req, limit = 1024 * 1024) {
@@ -1817,6 +1818,7 @@ export async function start(home, options = {}) {
           const player = device.role === "player";
           if (player) {
             requireHub();
+            validPath(b.path);
             if (b.path.toLowerCase() === IGNORE_FILE)
               fail("A player cannot change the folder's ignore rules", 403);
             if (s.db.prepare("SELECT 1 FROM gallery_folders WHERE volume=?").get(b.volume))

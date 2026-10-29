@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.11 — 2026-10-29
+
+- A TV deletion with a missing or malformed path answers 400 instead of a 500 that echoed the exception.
+- The Windows test run also waits for the video indexer before deleting a film it may still be probing.
+
 ## 0.8.10 — 2026-10-29
 
 - The Windows test run no longer fails when a film is deleted right after being downloaded: the test now reads the whole download first, as a player would, instead of deleting a file the hub still has open.

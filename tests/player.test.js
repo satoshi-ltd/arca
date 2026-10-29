@@ -197,6 +197,8 @@ test("a player deletes a file on the hub and the deletion is a revision every co
   assert.equal(d.engine.store.current(volume.id, "Heat.mp4").deleted, 1);
   assert.equal(fs.existsSync(path.join(folder, "Up.mp4")), true, "only the chosen file goes");
   assert.equal((await as({ volume: volume.id, path: "../Up.mp4", rev: 1 })).status, 400);
+  assert.equal((await as({ volume: volume.id })).status, 400, "a missing path is a bad request, never a stack trace");
+  assert.equal((await as({ volume: volume.id, path: 5, rev: 1 })).status, 400);
   fs.writeFileSync(path.join(folder, ".arcaignore"), "secret/\n");
   await d.engine.cycle();
   const rules = d.engine.store.current(volume.id, ".arcaignore");
