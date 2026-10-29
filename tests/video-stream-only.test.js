@@ -150,6 +150,7 @@ test("a folder that already held films before it became a library deletes and do
     headers: { Authorization: `Bearer ${f.daemon.engine.config.adminToken}` },
   });
   assert.equal(download.status, 200, "an uploaded film downloads after its object is gone");
+  await download.arrayBuffer();
   await f.call("/v1/delete-file", { volume: f.v.id, path: "Heat.mp4", rev: marked.rev });
   await f.call("/v1/delete-file", { volume: f.v.id, path: "Up.mp4", rev: f.s.current(f.v.id, "Up.mp4").rev });
   assert.deepEqual(fs.readdirSync(f.v.path).filter((name) => name.endsWith(".mp4") || name.includes("conflict")), [], "both are really gone");

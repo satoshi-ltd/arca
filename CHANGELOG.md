@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.10 — 2026-10-29
+
+- The Windows test run no longer fails when a film is deleted right after being downloaded: the test now reads the whole download first, as a player would, instead of deleting a file the hub still has open.
+
 ## 0.8.9 — 2026-10-29
 
 - A paired TV (Player) can delete videos, photos and music: it sends the deletion to the hub, which removes the file and records it under the TV's name, so every copy follows. Photos and music keep their history; a Movies & TV deletion cannot be undone. The TV still cannot rename, restore, upload or change `.arcaignore`.
