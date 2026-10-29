@@ -56,6 +56,7 @@ import {
   requireSpace,
   requirePersistentBackup,
   syncDirectory,
+  overlapPath,
 } from "./storage.js";
 
 const CHUNK = 1024 * 1024;
@@ -1996,11 +1997,7 @@ export class Engine {
       this.config.root,
       ...this.store.volumes().map((v) => v.path),
     ].filter(Boolean))
-      if (
-        destination === forbidden ||
-        destination.startsWith(forbidden + path.sep) ||
-        forbidden.startsWith(destination + path.sep)
-      )
+      if (overlapPath(destination, forbidden))
         fail(
           "Backup location must be outside synchronized folders and daemon state",
           409,

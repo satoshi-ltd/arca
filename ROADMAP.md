@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SEC-ERASE-CASE** — Erase never reaches an ancestor spelled in another case
-  `bug · agent · high`
-  accept: `resolveLocation`, `addVolume`, `assertVolume` and both reset checks canonicalise with `fs.realpathSync.native` and compare ancestry case-insensitively on macOS and Windows (or by `dev/ino` of the state directory's ancestors); registering `/USERS/<name>` or `c:\Users\<name>` as a folder answers 409 and `resetTargets` refuses it; tests cover both spellings.
 - **SEC-ERASE-MARKER** — Erase deletes only directories that are still Arca's
   `bug · agent · high`
   accept: `resetTargets` skips a volume whose directory lacks a `.arca-volume` marker with this volume's id and a backup path without `state/config.json` of role `backup`, keeping the dev/ino journal check; a folder stopped with "Stop syncing here", removed by hand and recreated with other content survives Erase, proven by a test. DEC-ERASE-SCOPE may widen this.

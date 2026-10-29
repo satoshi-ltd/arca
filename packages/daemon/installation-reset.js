@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { atomic, fail, token } from "./storage.js";
+import { atomic, fail, token, withinPath } from "./storage.js";
 
 // A durable journal keeps interrupted deletion retryable without re-pairing.
 export function resetTargets(store) {
@@ -13,8 +13,7 @@ export function resetTargets(store) {
     const target = path.resolve(location);
     if (
       target === path.parse(target).root ||
-      target === store.home ||
-      store.home.startsWith(target + path.sep)
+      withinPath(store.home, target)
     )
       fail(
         "Arca data overlaps the state directory; resolve its location before erasing",
@@ -39,6 +38,7 @@ export function finishInstallationReset(store) {
     const stat = fs.lstatSync(target.path);
     if (
       target.missing ||
+      withinPath(store.home, target.path) ||
       stat.isSymbolicLink() ||
       !stat.isDirectory() ||
       fs.realpathSync(target.path) !== target.path ||

@@ -5,8 +5,9 @@ import os from "node:os";
 import net from "node:net";
 import http from "node:http";
 import path from "node:path";
-import { init, digest, Store } from "../packages/daemon/storage.js";
+import { init, digest, Store, withinPath, insidePath } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
+import { finishInstallationReset } from "../packages/daemon/installation-reset.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-test-"));
@@ -1304,3 +1305,40 @@ for (const head of ["deleted", "another-device"])
       assert.ok(conflicts(hub, volume).length > 0);
     }
   });
+
+test("Erase and folder placement never reach the state directory, inside it or above it, in any spelling", async (t) => {
+  const f = await setup(t);
+  const r = await f.connect("case-erase");
+  const home = r.engine.store.home;
+  const ancestor = path.dirname(home);
+  assert.equal(withinPath(home, home), true);
+  assert.equal(withinPath(home, ancestor), true);
+  assert.equal(withinPath(path.join(home, "objects", "missing"), home), true, "a missing tail is judged by its existing ancestors");
+  assert.equal(withinPath(home, f.root + "-missing"), false);
+  assert.equal(insidePath(path.join(home, "x"), home, true), true);
+  assert.equal(insidePath(home, home, true), false);
+  const stat = fs.statSync;
+  fs.statSync = (location, options) => Object.assign(stat(location, options), { ino: options?.bigint ? 0n : 0 });
+  try {
+    assert.equal(withinPath(path.join(f.root, "a"), path.join(f.root, "b")), false, "a filesystem without inode numbers falls back to paths");
+  } finally {
+    fs.statSync = stat;
+  }
+  const other = await f.hub.api("/v1/volumes", { name: "Other" });
+  await r.engine.cycle().catch(() => {});
+  await assert.rejects(r.api("/v1/select", { id: other.id, path: path.join(home, "objects") }), { status: 409, message: /State and volume paths overlap/ });
+  await assert.rejects(r.api("/v1/path-check", { id: other.id, path: path.join(home, "objects") }), { status: 409, message: /State and volume paths overlap/ });
+  r.engine.store.db.prepare("UPDATE volumes SET path=? WHERE id=?").run(ancestor, f.volume.id);
+  await assert.rejects(r.api("/v1/destroy-replica", { confirmed: true }), /overlaps the state directory/);
+  r.engine.config.destroyPending = { targets: [{ path: ancestor, dev: fs.statSync(ancestor).dev, ino: fs.statSync(ancestor).ino }] };
+  assert.throws(() => finishInstallationReset(r.engine.store), /changed during destruction/, "a journal naming an ancestor is refused when it runs");
+  delete r.engine.config.destroyPending;
+  assert.ok(fs.existsSync(home), "the state directory survives");
+  const swapped = ancestor.replace(/[a-z]/gi, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+  if (!fs.existsSync(swapped)) return;
+  assert.equal(withinPath(home, swapped), true, "a case-insensitive disk compares without case");
+  await assert.rejects(r.api("/v1/select", { id: other.id, path: swapped }), { status: 409, message: /State and volume paths overlap/ });
+  r.engine.store.db.prepare("UPDATE volumes SET path=? WHERE id=?").run(swapped, f.volume.id);
+  await assert.rejects(r.api("/v1/destroy-replica", { confirmed: true }), /overlaps the state directory/);
+  assert.ok(fs.existsSync(path.join(ancestor, "hub")), "nothing beside the state directory is touched");
+});

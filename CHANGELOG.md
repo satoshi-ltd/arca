@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.15 — 2026-10-29
+
+- Erase never deletes the folder that holds Arca's state, or any folder above it, even when a shared folder was registered with different capitals or a short name (`/USERS/name`, `c:\Users\name`, `RUNNER~1`) on macOS or Windows. Choosing a folder, a move or backup destination, or the setup root applies the same check.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.8.14 — 2026-10-29
 
 - Subtitles and Kodi `.nfo` files are parsed in time proportional to their size. A crafted `.srt` or `.nfo` synced into a Movies & TV folder could keep the hub busy for minutes on every library build or subtitle request, and the phone's player for longer.

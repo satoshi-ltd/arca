@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fail, fileSignature } from "./storage.js";
+import { fail, fileSignature, overlapPath } from "./storage.js";
 
 export function moveFolder(engine, id, location) {
   const s = engine.store,
@@ -9,10 +9,7 @@ export function moveFolder(engine, id, location) {
   if (!v.path) fail("Folder has no local copy", 409);
   s.assertVolume(v);
   if (destination === v.path) return v;
-  if (
-    destination.startsWith(v.path + path.sep) ||
-    v.path.startsWith(destination + path.sep)
-  )
+  if (overlapPath(destination, v.path))
     fail("Original and destination folders cannot overlap", 409);
   if (fs.existsSync(destination))
     fail("Destination must be a new directory", 409);

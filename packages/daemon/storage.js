@@ -26,6 +26,37 @@ export const token = () => crypto.randomBytes(32).toString("hex");
 export function fail(message, status = 400, code) {
   throw Object.assign(new Error(message), { status, ...(code && { code }) });
 }
+const foldCase = (location) =>
+  process.platform === "darwin" || process.platform === "win32"
+    ? location.toLowerCase()
+    : location;
+export function insidePath(child, parent, strict = false) {
+  const a = foldCase(path.resolve(child)),
+    b = foldCase(path.resolve(parent));
+  return (!strict && a === b) || a.startsWith(b.endsWith(path.sep) ? b : b + path.sep);
+}
+export function withinPath(child, parent) {
+  if (insidePath(child, parent)) return true;
+  let target;
+  try {
+    target = fs.statSync(parent, { bigint: true });
+  } catch {
+    return false;
+  }
+  if (!target.ino) return false;
+  for (let current = path.resolve(child); ; current = path.dirname(current)) {
+    try {
+      const stat = fs.statSync(current, { bigint: true });
+      if (stat.dev === target.dev && stat.ino === target.ino) return true;
+    } catch {}
+    if (path.dirname(current) === current) return false;
+  }
+}
+export const overlapPath = (a, b) => withinPath(a, b) || withinPath(b, a);
+export const stateOverlap = (home, root, location) =>
+  withinPath(home, location) ||
+  (withinPath(location, home) &&
+    !(withinPath(location, root) && !withinPath(root, location)));
 export function validPath(value) {
   if (typeof value !== "string" || !value || value.length > 1024)
     fail(`Invalid file path: ${JSON.stringify(value)}`);
@@ -269,7 +300,7 @@ export function init(home, options = {}) {
   };
   fs.mkdirSync(config.root, { recursive: true });
   config.root = fs.realpathSync(config.root);
-  if (config.root === home || home.startsWith(config.root + path.sep))
+  if (withinPath(home, config.root))
     fail("State must be outside synchronized folders");
   atomic(path.join(home, "config.json"), JSON.stringify(config, null, 2));
   return config;
@@ -596,28 +627,13 @@ export class Store {
     location = this.resolveLocation(
       location || path.join(this.config.root, name),
     );
-    if (
-      this.home === location ||
-      this.home.startsWith(location + path.sep) ||
-      (location.startsWith(this.home + path.sep) &&
-        !location.startsWith(this.config.root + path.sep))
-    )
-      fail("State and volume paths overlap");
+    if (stateOverlap(this.home, this.config.root, location))
+      fail("State and volume paths overlap", 409);
     const backupPath = this.config.backup?.path;
-    if (
-      backupPath &&
-      (location === backupPath ||
-        location.startsWith(backupPath + path.sep) ||
-        backupPath.startsWith(location + path.sep))
-    )
+    if (backupPath && overlapPath(location, backupPath))
       fail("Synchronized folders cannot overlap the backup location", 409);
     for (const v of this.volumes())
-      if (
-        v.id !== id &&
-        (v.path === location ||
-          v.path.startsWith(location + path.sep) ||
-          location.startsWith(v.path + path.sep))
-      )
+      if (v.id !== id && (insidePath(v.path, location) || insidePath(location, v.path)))
         fail(
           `This path overlaps shared folder "${v.name}" (${v.path}). Choose another location.`,
           409,

@@ -75,6 +75,9 @@ import {
   deleteSyncedCopy,
   syncDirectory,
   validPath,
+  withinPath,
+  insidePath,
+  stateOverlap,
 } from "./storage.js";
 
 async function body(req, limit = 1024 * 1024) {
@@ -2004,22 +2007,12 @@ export async function start(home, options = {}) {
         }
         if (route === "/v1/path-check") {
           const location = s.resolveLocation(b.path);
-          if (
-            location === s.home ||
-            s.home.startsWith(location + path.sep) ||
-            (location.startsWith(s.home + path.sep) &&
-              !location.startsWith(config.root + path.sep))
-          )
-            fail("State and volume paths overlap");
+          if (stateOverlap(s.home, config.root, location))
+            fail("State and volume paths overlap", 409);
           for (const v of s.volumes()) {
-            if (
-              v.id !== b.id &&
-              (v.path === location ||
-                v.path.startsWith(location + path.sep) ||
-                location.startsWith(v.path + path.sep))
-            )
+            if (v.id !== b.id && (insidePath(v.path, location) || insidePath(location, v.path)))
               fail(
-                v.path === location
+                insidePath(v.path, location) && insidePath(location, v.path)
                   ? fs.existsSync(location)
                     ? `Already linked to "${v.name}". Choose another folder.`
                     : `The directory is missing, but "${v.name}" is still registered in Arca. Its catalog and history were retained. Deleting the directory does not remove the share.`
@@ -2252,7 +2245,7 @@ export async function start(home, options = {}) {
             needsSetup: false,
             onboarding: b.onboarding === true,
           };
-          if (next.root === s.home || s.home.startsWith(next.root + path.sep))
+          if (withinPath(s.home, next.root))
             fail("State must be outside synchronized folders");
           atomic(s.configPath, JSON.stringify(next, null, 2));
           Object.assign(config, next);
