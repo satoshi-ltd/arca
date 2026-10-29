@@ -26,9 +26,6 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SEC-REGEX-BOUNDS** — Subtitle and `.nfo` parsing stay linear
-  `bug · agent · high`
-  accept: `subtitleText` strips `{\…}` and `<font…>` with bounded quantifiers or one manual pass, `detectLanguage` reads at most 64 KiB, and `parseNfo` bounds tag bodies or bails after 50 `<title` occurrences; tests time a 2 MiB `.srt` of `{\` and a 256 KiB `.nfo` of unclosed tags under 200 ms each.
 - **SEC-ERASE-CASE** — Erase never reaches an ancestor spelled in another case
   `bug · agent · high`
   accept: `resolveLocation`, `addVolume`, `assertVolume` and both reset checks canonicalise with `fs.realpathSync.native` and compare ancestry case-insensitively on macOS and Windows (or by `dev/ino` of the state directory's ancestors); registering `/USERS/<name>` or `c:\Users\<name>` as a folder answers 409 and `resetTargets` refuses it; tests cover both spellings.

@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { Store, init } from "../packages/daemon/storage.js";
-import { parseProbe, parseNfo, subtitleFor, subtitleText } from "../packages/daemon/video.js";
+import { parseProbe, parseNfo, subtitleFor, subtitleText, subtitleLanguage } from "../packages/daemon/video.js";
 import { playerRoute } from "../packages/daemon/machines.js";
 import { execFileSync } from "node:child_process";
 import ffmpeg from "ffmpeg-static";
@@ -1001,4 +1001,37 @@ test("continuity: a movie started on the TV resumes from the same point on every
   }
   await f.call("/v1/video/position", { volume: f.v.id, path: movie.path, hash, position: 2400, duration: 6000 }, phone.token);
   assert.equal((await f.library("", tv.token)).movies[0].position.position, 2400, "and the TV picks up where the phone left it");
+});
+
+test("subtitle and .nfo parsing stays linear on hostile files", () => {
+  const time = (work) => {
+    const started = performance.now();
+    work();
+    return performance.now() - started;
+  };
+  assert.ok(time(() => subtitleText(Buffer.from("{\\".repeat(1024 * 1024)), "srt")) < 200, "2 MiB of unclosed {\\ tags");
+  assert.ok(time(() => subtitleText(Buffer.from("<font ".repeat(349525)), "srt")) < 200, "2 MiB of unclosed <font tags");
+  assert.ok(time(() => subtitleText(Buffer.from("1:1:1,1" + " ".repeat(2 * 1024 * 1024)), "srt")) < 200, "a timestamp followed by 2 MiB of spaces");
+  for (const tag of ["<title>", "<title ", "<uniqueid type=\"tmdb\">", "<set>", "<![CDATA["])
+    assert.ok(time(() => parseNfo(tag.repeat(Math.floor((256 * 1024) / tag.length)))) < 200, `256 KiB of unclosed ${tag}`);
+  assert.ok(time(() => parseNfo(`<set>${"<name>".repeat(40000)}</set>`)) < 200, "unclosed names inside a set");
+  assert.equal(parseNfo("<movie><title><![CDATA[Heat]]></title><set><name>Heat Collection</name></set><uniqueid type=\"tmdb\"> 949 </uniqueid></movie>").tmdb, 949);
+  assert.equal(parseNfo("<movie><TITLE>Heat</TITLE><title>Ignored</title></movie>").title, "Heat", "tags match in any case, first wins");
+  assert.ok(time(() => parseNfo("<title ".repeat(37449))) < 200);
+});
+
+test(".nfo tags keep their positions around characters whose lower case is longer, and the first numeric TMDB id wins", () => {
+  const nfo = parseNfo(`<movie><plot>İİİ İzmir</plot><title>İstanbul Hatırası</title><year>2010</year><uniqueid type="tmdb">abc</uniqueid><uniqueid type="tmdb">12</uniqueid></movie>`);
+  assert.equal(nfo.title, "İstanbul Hatırası");
+  assert.equal(nfo.plot, "İİİ İzmir");
+  assert.equal(nfo.year, 2010);
+  assert.equal(nfo.tmdb, 12);
+});
+
+test("a subtitle's language comes from its first 64 KiB of text, decoded whole first", () => {
+  const english = "1\n00:00:01,000 --> 00:00:02,000\n" + "the and you that was for are with his they this have from not but what\n".repeat(40);
+  const spanish = "1\n00:00:01,000 --> 00:00:02,000\n" + "qué está más aquí también cuando todo esto bien pero eso nada\n".repeat(40);
+  assert.equal(subtitleLanguage(Buffer.from(english), "srt"), "en");
+  assert.equal(subtitleLanguage(Buffer.from("é".repeat(70000) + "\n\n" + english), "srt"), null, "text past 64 KiB is never read");
+  assert.equal(subtitleLanguage(Buffer.from(spanish + "\n\n" + "é".repeat(40000)), "srt"), "es", "a cut never garbles accented words before it");
 });

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.14 — 2026-10-29
+
+- Subtitles and Kodi `.nfo` files are parsed in time proportional to their size. A crafted `.srt` or `.nfo` synced into a Movies & TV folder could keep the hub busy for minutes on every library build or subtitle request, and the phone's player for longer.
+
+Needs: Casa redeploy · native build
+
 ## 0.8.13 — 2026-10-29
 
 - `.arcaignore` is limited to 200 rules and 64 wildcards, each rule at most 256 characters with at most two wildcards and one `**` before the end. A crafted rule could make the hub and every phone spend minutes matching one path; now the hub refuses it when a device proposes or saves it, and a folder that already has one stops with an error naming the line.

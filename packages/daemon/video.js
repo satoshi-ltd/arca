@@ -26,7 +26,7 @@ import {
   trackTitle,
   videoType,
 } from "../core/video-names.js";
-import { detectLanguage } from "../core/subtitle-language.js";
+import { detectLanguage, stripSpans } from "../core/subtitle-language.js";
 import { CONTENT_KEY, Tmdb, closestContent, imagePath, kidsCertification, videoSettings } from "./tmdb.js";
 
 const execute = promisify(execFile);
@@ -225,11 +225,9 @@ export function subtitleText(buffer, type) {
     }
   value = value.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
   if (type === "vtt") return /^WEBVTT/.test(value) ? value : `WEBVTT\n\n${value}`;
-  const body = value
-    .replace(/\{\\[^}]*\}/g, "")
-    .replace(/<\/?font[^>]*>/gi, "")
+  const body = stripSpans(stripSpans(value, /\{\\/, "}"), /<\/?font/i, ">")
     .replace(
-      /(\d{1,3}):(\d{1,2}):(\d{1,2})[,.](\d{1,3})\s*-->\s*(\d{1,3}):(\d{1,2}):(\d{1,2})[,.](\d{1,3})/g,
+      /(\d{1,3}):(\d{1,2}):(\d{1,2})[,.](\d{1,3})\s{0,32}-->\s{0,32}(\d{1,3}):(\d{1,2}):(\d{1,2})[,.](\d{1,3})/g,
       (_, h1, m1, s1, f1, h2, m2, s2, f2) =>
         `${h1.padStart(2, "0")}:${m1.padStart(2, "0")}:${s1.padStart(2, "0")}.${f1.padEnd(3, "0")} --> ${h2.padStart(2, "0")}:${m2.padStart(2, "0")}:${s2.padStart(2, "0")}.${f2.padEnd(3, "0")}`,
     )
@@ -237,9 +235,11 @@ export function subtitleText(buffer, type) {
   return `WEBVTT\n\n${body}\n`;
 }
 
+export const subtitleLanguage = (buffer, type) => detectLanguage(subtitleText(buffer, type).slice(0, 65536));
+
 function entities(value) {
   return value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/<!\[CDATA\[|\]\]>/g, "")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
@@ -250,14 +250,30 @@ function entities(value) {
 }
 export function parseNfo(source) {
   const xml = String(source || "");
+  const bodies = (name, text = xml) => {
+    const open = new RegExp(`<${name}(\\s[^<>]{0,256})?>`, "gi");
+    const close = new RegExp(`</${name}>`, "gi");
+    const found = [];
+    for (let match; (match = open.exec(text)); ) {
+      close.lastIndex = open.lastIndex;
+      const end = close.exec(text);
+      if (!end) break;
+      found.push({ attributes: match[1] || "", body: text.slice(open.lastIndex, end.index) });
+      open.lastIndex = close.lastIndex;
+    }
+    return found;
+  };
   const all = (name) =>
-    [...xml.matchAll(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, "gi"))]
-      .map((match) => entities(match[1]))
+    bodies(name)
+      .map(({ body }) => entities(body.slice(0, 8000)))
       .filter((value) => value && !value.includes("<"));
   const one = (name) => all(name)[0] || null;
-  const unique = /<uniqueid[^>]*type=["']tmdb["'][^>]*>\s*(\d{1,10})\s*<\/uniqueid>/i.exec(xml)?.[1];
-  const set = /<set(?:\s[^>]*)?>([\s\S]*?)<\/set>/i.exec(xml)?.[1];
-  const setName = set ? (/<name>([\s\S]*?)<\/name>/i.exec(set)?.[1] ?? set) : null;
+  const unique = bodies("uniqueid")
+    .filter(({ attributes }) => /\btype=["']tmdb["']/i.test(attributes))
+    .map(({ body }) => body.match(/^\s{0,32}(\d{1,10})\s{0,32}$/)?.[1])
+    .find(Boolean);
+  const set = bodies("set")[0]?.body;
+  const setName = set ? (bodies("name", set)[0]?.body ?? set) : null;
   const year = Number(one("year"));
   const rating = Number(one("rating"));
   const tmdb = Number(unique || one("tmdbid"));
@@ -646,7 +662,7 @@ export class Video {
       try {
         const file = this.s.localContent(volume, row.path, row.hash);
         if (!file) return null;
-        language = detectLanguage(subtitleText(fs.readFileSync(file), subtitleType(row.path)));
+        language = subtitleLanguage(fs.readFileSync(file), subtitleType(row.path));
       } catch {
         return null;
       }

@@ -1,3 +1,5 @@
+import { stripSpans } from "../../../packages/core/subtitle-language.js";
+
 const TIME = /^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})$/;
 const ARROW = /^\s*(\S+)\s+-->\s+(\S+)/;
 const ENTITIES = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&nbsp;": " ", "&quot;": '"', "&#39;": "'", "&lrm;": "", "&rlm;": "" };
@@ -10,9 +12,7 @@ export function parseTime(value) {
 }
 
 function clean(line) {
-  return line
-    .replace(/<[^>]*>/g, "")
-    .replace(/\{\\[^}]*\}/g, "")
+  return stripSpans(stripSpans(line, /</, ">"), /\{\\/, "}")
     .replace(/&[a-z#0-9]+;/gi, (entity) => ENTITIES[entity.toLowerCase()] ?? entity)
     .trim();
 }

@@ -11,6 +11,19 @@ const LISTS = Object.fromEntries(Object.entries(STOPWORDS).map(([code, words]) =
 const CUES = 200;
 const MINIMUM = 12;
 
+export function stripSpans(text, start, close, replacement = "") {
+  const opening = new RegExp(start.source, start.flags.includes("g") ? start.flags : start.flags + "g");
+  let out = "",
+    from = 0;
+  for (let match; (match = opening.exec(text)); ) {
+    const end = text.indexOf(close, opening.lastIndex);
+    if (end < 0) break;
+    out += text.slice(from, match.index) + replacement;
+    from = opening.lastIndex = end + close.length;
+  }
+  return out + text.slice(from);
+}
+
 export function subtitleLines(text) {
   const lines = [];
   let cues = 0;
@@ -21,7 +34,7 @@ export function subtitleLines(text) {
       if (++cues > CUES) break;
       continue;
     }
-    lines.push(line.replace(/<[^>]*>|\{[^}]*\}/g, " "));
+    lines.push(stripSpans(stripSpans(line, /</, ">", " "), /\{/, "}", " "));
   }
   return lines;
 }

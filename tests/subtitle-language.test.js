@@ -29,3 +29,10 @@ test("timing lines, cue numbers and tags never count, and only the first 200 cue
   const long = srt([...Array(200).fill("Okay."), ...SAMPLES.en, ...SAMPLES.en]);
   assert.equal(detectLanguage(long), null);
 });
+
+test("language detection stays linear on a hostile line", () => {
+  const started = performance.now();
+  assert.equal(detectLanguage("<".repeat(2 * 1024 * 1024)), null);
+  assert.equal(detectLanguage("{".repeat(2 * 1024 * 1024)), null);
+  assert.ok(performance.now() - started < 400);
+});

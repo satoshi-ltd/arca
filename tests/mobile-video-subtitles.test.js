@@ -155,3 +155,11 @@ test("a remembered embedded track follows its name to the next episode, whose st
   assert.equal(restoreChoice(ep2, { key: chosen.key, kind: chosen.kind, label: chosen.label }).label, "English");
   assert.equal(restoreChoice(subtitleOptions({}, [{ embedded: true, stream: 1, label: "German" }]), { key: "stream:1", kind: "stream", label: "English" }), null, "no English there: subtitles stay off");
 });
+
+test("cue markup is stripped in one pass, so unclosed tags from a hostile file cost linear time", () => {
+  const started = performance.now();
+  for (const line of ["{\\".repeat(64 * 1024), "<".repeat(128 * 1024), "<font ".repeat(20000)])
+    assert.equal(parseCues(`1\n00:00:01,000 --> 00:00:02,000\n${line}\n`).length, 1);
+  assert.ok(performance.now() - started < 400);
+  assert.equal(parseCues("1\n00:00:01,000 --> 00:00:02,000\n{\\an8}<i>Hola</i> &amp; adiós\n")[0].text, "Hola & adiós");
+});
