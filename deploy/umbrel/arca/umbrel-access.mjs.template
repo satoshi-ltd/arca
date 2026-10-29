@@ -1,10 +1,36 @@
 import http from "node:http";
 import fs from "node:fs";
+import { isIP } from "node:net";
 import path from "node:path";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const hash = (value) => createHash("sha256").update(value).digest();
+function hostName(header) {
+  if (typeof header !== "string" || /[@/\\?#\s]/.test(header)) return "";
+  try {
+    return new URL("http://" + header).hostname
+      .replace(/^\[|\]$/g, "")
+      .replace(/\.$/, "")
+      .toLowerCase();
+  } catch {
+    return "";
+  }
+}
+const listedHosts = String(process.env.ARCA_WEB_HOSTS || "")
+  .split(",")
+  .map((name) => hostName(name.trim()))
+  .filter(Boolean);
+function trustedHost(header) {
+  const name = hostName(header);
+  return Boolean(
+    name &&
+      (isIP(name) ||
+        !name.includes(".") ||
+        name.endsWith(".local") ||
+        listedHosts.includes(name)),
+  );
+}
 const hopHeaders = [
   "connection",
   "keep-alive",
@@ -78,7 +104,10 @@ export function createAccess({ password, home, upstream, assets, issueCode }) {
       if (url.pathname === "/umbrel/code" && req.method === "POST") {
         // No password cookie or automatic login: the long app password only
         // authorizes issuing Arca's existing single-use, ten-minute web code.
-        if (req.headers.origin !== "http://" + req.headers.host)
+        if (
+          !trustedHost(req.headers.host) ||
+          req.headers.origin !== "http://" + req.headers.host
+        )
           return reply(403, { error: "Invalid browser origin." });
         if (
           !String(req.headers["content-type"] || "").startsWith(

@@ -1848,6 +1848,7 @@ export function ApprovalSheet({
         {[
           ["globe", "Browser", request.browser || "Browser"],
           ["shield", "From", request.ip],
+          ["link", "Address", request.host || ""],
           ["clock", "Requested", `${requested} · expires in ${remaining}`],
         ].map(([icon, label, value], index) => (
           <View

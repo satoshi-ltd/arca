@@ -541,6 +541,7 @@ test("sheets close only through their parent and never become invisible touch tr
   const approval = components.slice(components.indexOf("export function ApprovalSheet("));
   assert.match(approval, /closing=\{closing\}\s+onExited=\{onExited\}/);
   assert.match(approval, /String\(request\.reference \|\| ""\)/);
+  assert.match(approval, /\["link", "Address", request\.host \|\| ""\]/, "the sheet shows the address the browser used");
   const app = fs.readFileSync(new URL("../apps/mobile/src/App.jsx", import.meta.url), "utf8");
   assert.match(app, /useRetained\(approvalRequest\)/);
   assert.match(app, /closing=\{!approvalRequest\}\s+onExited=\{releaseApproval\}/);

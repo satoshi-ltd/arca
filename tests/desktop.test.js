@@ -5275,6 +5275,7 @@ test("web approval uses the shared confirmation and closes after another machine
     expires: Date.now() + 600000,
     agent: "Safari <script>",
     ip: "100.1.2.3",
+    host: "casa<b>:17831",
   };
   const expired = {
     ...current,
@@ -5327,6 +5328,12 @@ test("web approval uses the shared confirmation and closes after another machine
     /042–123/,
   );
   assert.equal(w.document.querySelector("#dialog-content script"), null);
+  assert.match(
+    w.document.querySelector("#dialog-content").textContent,
+    /Addresscasa<b>:17831/,
+    "the prompt shows the address the browser used, escaped",
+  );
+  assert.equal(w.document.querySelector("#dialog-content b"), null);
   assert.equal(w.document.querySelector("#submit-dialog").textContent, "Allow");
   assert.equal(w.document.querySelector("#cancel-dialog").textContent, "Deny");
   requests = [];

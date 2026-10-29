@@ -2,6 +2,7 @@ import { shortCode, normalizeCode, Attempts } from "./codes.js";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
+import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import { token, digest, atomic, fail, runtimeInstallation } from "./storage.js";
 
@@ -27,6 +28,28 @@ export function browserLabel(agent) {
             ? "Linux"
             : "";
   return os ? `${browser} on ${os}` : browser;
+}
+
+export function hostName(header) {
+  if (typeof header !== "string" || /[@/\\?#\s]/.test(header)) return "";
+  try {
+    return new URL(`http://${header}`).hostname
+      .replace(/^\[|\]$/g, "")
+      .replace(/\.$/, "")
+      .toLowerCase();
+  } catch {
+    return "";
+  }
+}
+export function trustedHost(header, extra = []) {
+  const name = hostName(header);
+  return Boolean(
+    name &&
+      (isIP(name) ||
+        !name.includes(".") ||
+        name.endsWith(".local") ||
+        extra.includes(name)),
+  );
 }
 
 export function issueWebCode(home) {
@@ -91,6 +114,7 @@ export class Web {
       this.publicOrigin = url.origin;
       this.publicHost = url.host;
     }
+    this.trustedHosts = () => [];
     this.sessions = new Map();
     this.requests = new Map();
     this.requestAttempts = new Attempts();
@@ -124,6 +148,10 @@ export class Web {
     });
     res.end('{"ok":true,"state":"approved"}');
   }
+  hostAllowed(req) {
+    if (this.publicOrigin) return req.headers.host === this.publicHost;
+    return trustedHost(req.headers.host, this.trustedHosts());
+  }
   sameOrigin(req) {
     if (this.publicOrigin)
       return (
@@ -131,11 +159,13 @@ export class Web {
         req.headers.host === this.publicHost
       );
     return (
+      this.hostAllowed(req) &&
       req.headers.origin ===
-      `${req.socket.encrypted ? "https" : "http"}://${req.headers.host}`
+        `${req.socket.encrypted ? "https" : "http"}://${req.headers.host}`
     );
   }
   session(req) {
+    if (!this.hostAllowed(req)) return false;
     const cookie = /(?:^|;\s*)arca_session=([a-f0-9]{64})(?:;|$)/.exec(
       req.headers.cookie || "",
     )?.[1];
@@ -178,6 +208,7 @@ export class Web {
           created,
           expires: created + 600000,
           ip: req.socket.remoteAddress?.replace(/^::ffff:/, "") || "",
+          host: String(req.headers.host).slice(0, 255),
           agent: String(req.headers["user-agent"] || "Unknown browser").slice(
             0,
             256,

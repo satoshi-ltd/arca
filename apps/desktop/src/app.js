@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.11";
+const APP_VERSION = "0.8.12";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -11610,6 +11610,7 @@ async function checkWebApprovals() {
         `<div class="approval-details">${[
           ["globe", "Browser", escape(r.browser || "Browser")],
           ["shield-check", "From", `<span class="mono">${escape(r.ip)}</span>`],
+          ["link", "Address", `<span class="mono">${escape(r.host || "")}</span>`],
           ["clock", "Requested", `<span id="approval-time"></span>`],
         ]
           .map(

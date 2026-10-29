@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.12 — 2026-10-29
+
+- The hub web now only answers browsers that reach it by an IP address, a single-label or `.local` name, its Tailscale name or a name you list in `network.webHosts` or `ARCA_WEB_HOSTS`. A page on another domain that points its DNS at the hub can no longer request web approval, try sign-in codes or use a session. The Umbrel code page applies the same rule, but the Umbrel package still runs hub 0.4.1 until it is updated.
+- Web approval prompts show the address the browser used, next to its IP.
+
+Needs: Casa redeploy · desktop build · native build
+
 ## 0.8.11 — 2026-10-29
 
 - A TV deletion with a missing or malformed path answers 400 instead of a 500 that echoed the exception.

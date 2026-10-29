@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { init, token, digest } from "../packages/daemon/storage.js";
@@ -172,4 +173,118 @@ test("approval browser descriptions distinguish browsers and never infer a netwo
     "Chrome on Android",
   );
   assert.equal(browserLabel("<script>"), "Browser");
+});
+
+test("a page on a rebound hostname gets no approval, no cookie and burns no sign-in attempt", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-rebind-"));
+  init(home, { port: 0 });
+  const d = await start(home, { timer: false });
+  t.after(async () => {
+    await d.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  d.engine.config.webApprovers = [d.engine.config.id];
+  const { issueWebCode } = await import("../packages/daemon/web.js");
+  const { code } = issueWebCode(home);
+  const post = (route, body, host) =>
+    new Promise((resolve, reject) => {
+      const data = JSON.stringify(body);
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port: d.port,
+          path: route,
+          method: "POST",
+          headers: {
+            Host: host,
+            Origin: `http://${host}`,
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(data),
+          },
+        },
+        (res) => {
+          let text = "";
+          res.on("data", (chunk) => (text += chunk));
+          res.on("end", () => resolve({ status: res.statusCode, cookie: res.headers["set-cookie"], body: text }));
+        },
+      );
+      req.on("error", reject);
+      req.end(data);
+    });
+  const rebound = `evil.test:${d.port}`;
+  const created = await post("/auth/approval", { action: "create" }, rebound);
+  assert.equal(created.status, 403);
+  assert.equal(created.cookie, undefined);
+  assert.equal((await post("/auth/login", { code: "000000" }, rebound)).status, 403);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home, "web-code.json"), "utf8")).failures, 0, "a refused host spends nothing");
+  assert.equal((await post("/auth/login", { code }, `attacker.example.com.:${d.port}`)).status, 403);
+  for (const host of [`127.0.0.1:${d.port}`, `casa:${d.port}`, `casa.local:${d.port}`, `[::1]:${d.port}`]) {
+    const allowed = await post("/auth/approval", { action: "create" }, host);
+    assert.equal(allowed.status, 200, host);
+    assert.match(JSON.parse(allowed.body).reference, /^\d{6}$/);
+  }
+  const pending = await (await fetch(`http://127.0.0.1:${d.port}/v1/web-approvals`, { headers: { Authorization: `Bearer ${d.engine.config.adminToken}` } })).json();
+  assert.ok(pending.requests.some((r) => r.host === `casa.local:${d.port}`), "the request records the address the browser used");
+  d.engine.config.network = { ...d.engine.config.network, webHosts: ["nas.home.arpa"] };
+  assert.equal((await post("/auth/approval", { action: "create" }, `nas.home.arpa:${d.port}`)).status, 200, "a configured name is trusted");
+});
+
+test("the hub's Tailscale name and ARCA_WEB_HOSTS are trusted, and a session cookie is ignored under any other host", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-hosts-"));
+  init(home, { port: 0 });
+  const previous = process.env.ARCA_WEB_HOSTS;
+  process.env.ARCA_WEB_HOSTS = "a.lan, b.lan";
+  const d = await start(home, { timer: false });
+  t.after(async () => {
+    if (previous === undefined) delete process.env.ARCA_WEB_HOSTS;
+    else process.env.ARCA_WEB_HOSTS = previous;
+    await d.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  d.network.detector.cached = { time: Date.now(), value: { self: { dnsName: "casa.tail1234.ts.net." } } };
+  d.engine.config.network = { ...d.engine.config.network, webHosts: "nas.lan" };
+  const { issueWebCode } = await import("../packages/daemon/web.js");
+  const request = (route, { method = "POST", host, body, cookie } = {}) =>
+    new Promise((resolve, reject) => {
+      const data = body === undefined ? "" : JSON.stringify(body);
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port: d.port,
+          path: route,
+          method,
+          headers: {
+            Host: host,
+            ...(method === "POST" ? { Origin: `http://${host}`, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) } : {}),
+            ...(cookie ? { Cookie: cookie } : {}),
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve({ status: res.statusCode, cookie: res.headers["set-cookie"]?.[0] }));
+        },
+      );
+      req.on("error", reject);
+      req.end(data);
+    });
+  for (const host of ["casa.tail1234.ts.net", "a.lan", "b.lan"]) {
+    const { code } = issueWebCode(home);
+    const signed = await request("/auth/login", { host: `${host}:${d.port}`, body: { code } });
+    assert.equal(signed.status, 200, host);
+  }
+  assert.equal((await request("/auth/login", { host: `nas.lan:${d.port}`, body: { code: "000000" } })).status, 403, "a malformed webHosts value trusts nothing and breaks nothing");
+  const { code } = issueWebCode(home);
+  const { cookie } = await request("/auth/login", { host: `a.lan:${d.port}`, body: { code } });
+  const session = cookie.split(";")[0];
+  assert.equal((await request("/v1/status", { method: "GET", host: `a.lan:${d.port}`, cookie: session })).status, 200);
+  assert.equal((await request("/v1/status", { method: "GET", host: `evil.test:${d.port}`, cookie: session })).status, 401, "a cookie replayed under another host is not a session");
+});
+
+test("trusted hosts are IP literals, single labels, .local names and the configured list", async () => {
+  const { trustedHost } = await import("../packages/daemon/web.js");
+  for (const host of ["127.0.0.1:17831", "[fe80::1]:17831", "100.64.0.9", "localhost:17831", "casa", "umbrel.local", "Casa.Local.", "2130706433"])
+    assert.equal(trustedHost(host), true, host);
+  for (const host of ["evil.test", "evil.test:17831", "casa.tail1234.ts.net", "", "a b", "127.0.0.1.nip.io", undefined, "evil.test:80@127.0.0.1", "127.0.0.1/x"])
+    assert.equal(trustedHost(host), false, host);
+  assert.equal(trustedHost("casa.tail1234.ts.net:17831", ["casa.tail1234.ts.net"]), true);
 });

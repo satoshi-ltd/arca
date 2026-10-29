@@ -56,7 +56,7 @@ import {
   releaseReplicaObjects,
 } from "./maintenance.js";
 import { snapshotCapacity, snapshotPage } from "./snapshots.js";
-import { Web } from "./web.js";
+import { Web, hostName } from "./web.js";
 import { Engine, HUB_UNAVAILABLE, STREAM_ONLY, STREAM_ONLY_EDIT } from "./engine.js";
 import {
   Network,
@@ -163,6 +163,15 @@ export async function start(home, options = {}) {
     releaseLock(lock);
     throw error;
   }
+  if (web)
+    web.trustedHosts = () =>
+      [
+        network.detector.cached?.value?.self?.dnsName,
+        ...(Array.isArray(config.network?.webHosts) ? config.network.webHosts : []),
+        ...String(process.env.ARCA_WEB_HOSTS || "").split(","),
+      ]
+        .filter((name) => typeof name === "string" && name.trim())
+        .map((name) => hostName(name.trim()));
   const playbackTickets = new Map();
   const previewTickets = new Map();
   const musicTickets = new Map();

@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-27 · Phase 1 functional, not release-qualified.
+Updated 2026-10-29 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -26,7 +26,18 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-_None._
+- **SEC-IGNORE-RULES** — A hostile `.arcaignore` cannot freeze the hub
+  `bug · agent · high`
+  accept: `compileIgnore` refuses a rule longer than 256 characters, with more than three `**` or eight `*`, and a file with more than 1,000 lines, reporting `policyError` instead of compiling; `/v1/propose` of `.arcaignore` and `/v1/ignore-policy` validate the text the same way before committing; a test proves `**/`×12 against a depth-32 path answers within 100 ms.
+- **SEC-REGEX-BOUNDS** — Subtitle and `.nfo` parsing stay linear
+  `bug · agent · high`
+  accept: `subtitleText` strips `{\…}` and `<font…>` with bounded quantifiers or one manual pass, `detectLanguage` reads at most 64 KiB, and `parseNfo` bounds tag bodies or bails after 50 `<title` occurrences; tests time a 2 MiB `.srt` of `{\` and a 256 KiB `.nfo` of unclosed tags under 200 ms each.
+- **SEC-ERASE-CASE** — Erase never reaches an ancestor spelled in another case
+  `bug · agent · high`
+  accept: `resolveLocation`, `addVolume`, `assertVolume` and both reset checks canonicalise with `fs.realpathSync.native` and compare ancestry case-insensitively on macOS and Windows (or by `dev/ino` of the state directory's ancestors); registering `/USERS/<name>` or `c:\Users\<name>` as a folder answers 409 and `resetTargets` refuses it; tests cover both spellings.
+- **SEC-ERASE-MARKER** — Erase deletes only directories that are still Arca's
+  `bug · agent · high`
+  accept: `resetTargets` skips a volume whose directory lacks a `.arca-volume` marker with this volume's id and a backup path without `state/config.json` of role `backup`, keeping the dev/ino journal check; a folder stopped with "Stop syncing here", removed by hand and recreated with other content survives Erase, proven by a test. DEC-ERASE-SCOPE may widen this.
 
 ## In progress
 
@@ -208,6 +219,96 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 ## Proposed
 
 Suggested order for approval: preservation of user files, synchronization recovery, release reliability, then usability and cleanup. No task in this lane is approved for implementation.
+
+### Security and data safety (audit of 2026-10-29)
+
+Findings of the read-only audit of v0.8.9, ordered by severity. Each task is one commit; the decisions come first because some tasks depend on them.
+
+- **DEC-PLAINTEXT-POLICY** — Which plaintext peers need the LAN HTTP opt-in?
+  `decision · maintainer · high`
+  Today `allowLanHttp` guards only private IPv4 peers (10/8, 172.16/12, 192.168/16): IPv6, link-local, CGNAT outside Tailscale mode and public addresses pass device authentication with the opt-in off, browser sign-in and sessions ignore it entirely, and the Docker image always binds `0.0.0.0 --private-network`. Proposal: every plaintext peer except loopback and verified tailnet peers needs the opt-in, browsers included. Behind the Umbrel access proxy every client shares the proxy's address, so the opt-in would become mandatory for Umbrel web access and per-address limits collapse into one bucket; decide whether a trusted-proxy setting (accept a peer header only when the socket peer is the configured proxy) is wanted or whether SPEC documents the limitation.
+- **DEC-VIDEO-DELETE-TRASH** — A Movies & TV deletion keeps a copy somewhere
+  `decision · maintainer · high`
+  Stream-only folders keep no object and no history, so a deletion, now also from a TV remote, destroys the only copy. Options: move the file to the hub's per-volume trash (`settle` with `moveToTrash` when `streamOnly`) or require the administrator for stream-only deletions.
+- **DEC-ERASE-SCOPE** — What may Erase delete outside the state directory?
+  `decision · maintainer · normal`
+  `addVolume` accepts any existing non-empty directory (a mount point such as `/Volumes/Disk` or `~/Documents`), and Erase later removes it wholesale. Decide between refusing a non-empty directory without this volume's marker at registration, restricting Erase to files Arca knows (as `deleteSyncedCopy` does), or keeping today's contract with a mount-point refusal (`stat.dev` differs from the parent's).
+- **DEC-UMBREL-VERSION** — The Umbrel package pins hub image 0.4.1
+  `decision · maintainer · normal`
+  `deploy/umbrel/arca/docker-compose.yml` and `umbrel-app.yml` ship 0.4.1 while clients target 0.8.x headers; say whether the submission is intentionally frozen or bump the digest with each release.
+- **DEC-IOS-FILE-SHARING** — iOS exposes the whole Documents tree to Files and Finder
+  `decision · maintainer · low`
+  `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` let any edit made in Files enter sync like a user edit and show app-owned state JSON; keep and document, or disable.
+
+- **SEC-PLAYER-SCOPE** — A TV deletes only inside video and music folders
+  `bug · agent · high`
+  accept: `/v1/delete-file` from a player answers 403 unless the folder is a video or audio library; a test shows a player cannot tombstone a file in a plain folder it reads through `/v1/catalog`.
+- **SEC-LAN-POLICY** — The plaintext opt-in covers every untrusted peer
+  `bug · agent · high · depends: DEC-PLAINTEXT-POLICY`
+  accept: as decided; at minimum `requireLanAccess` applies to every non-loopback, non-verified-tailnet plaintext peer (IPv6 included), to `/auth/*` and to browser-session requests, turning the opt-in off ends browser sessions, and the Docker image documents or drops the implicit `--private-network`; tests cover an IPv6 peer, a 100.64/10 peer in standalone mode and a browser sign-in with the opt-in off.
+- **SEC-FOLDER-SCOPE** — Linked devices act only in folders they report
+  `bug · agent · normal`
+  accept: on the hub `/v1/restore`, `/v1/gallery/delete`, `/v1/gallery/link` and `/v1/video/watch-next/remove|restore` from a replica require the folder in the device's latest `machine_reports.folderIds`, as `/v1/conflict-choice` and gallery uploads already do; the administrator keeps every folder; tests cover one refused call per route and SPEC's API table says "linked, reported folder" on those rows.
+- **SEC-OPEN-LAUNCHERS** — Open never launches a synced executable
+  `bug · agent · normal`
+  accept: the desktop `open_file` command refuses launcher and executable extensions (`app, command, tool, terminal, workflow, pkg, dmg, exe, lnk, scr, bat, cmd, ps1, hta, js, vbs, msi, desktop, sh, run, AppImage`) when not revealing and reveals the file instead, and the web UI mirrors the rule; a Rust test covers the list. Follow-up `verify` on macOS and Windows after a desktop build.
+- **SEC-COOKIE-HOST** — The browser session cookie is bound to Arca's origin
+  `chore · agent · normal`
+  accept: under `ARCA_WEB_ORIGIN` the cookie is `__Host-arca_session` (Secure, Path=/, no Domain); over plain HTTP SPEC states that Arca needs a hostname of its own because another service on the same host and another port receives the cookie; a test checks the cookie name and attributes in both modes.
+- **SEC-SIGNING-STEP** — The updater key never enters the build graph
+  `chore · agent · normal`
+  accept: `publish.yml` builds with `createUpdaterArtifacts` and no signing key, then signs each artifact in a separate step that only runs `tauri signer sign` with the key, so no npm or crates.io build script can read it; the manifest step verifies the signatures. Follow-up `verify` on the next real release.
+- **SEC-ACTIONS-PIN** — Release workflows run only pinned code
+  `chore · agent · normal`
+  accept: every `uses:` in `.github/workflows` is pinned to a commit SHA with the version in a comment, `wrangler` is installed at an exact version, `CLOUDFLARE_*` variables are scoped to the deploy step, `.github/dependabot.yml` covers `github-actions`, npm and cargo, and the release note no longer says "No automatic updates".
+- **SEC-STATE-MODE** — The state directory is private even when it already exists
+  `bug · agent · normal`
+  accept: `init`, `initializeServer` and `Store` chmod the home to 0700 and the daemon sets `umask 077` before creating `index.sqlite`, `objects/`, `uploads/`, `previews/` and `files/`; the Dockerfile creates `/data/state` as 700; a test starts in a 755 home and checks the modes.
+- **SEC-ERROR-BODY** — Unexpected errors never echo internals
+  `bug · agent · normal`
+  accept: a response without a status answers 500 with "Internal error" and logs the exception on the hub, so replicas and players never read absolute paths or stack text; tests force an ENOENT and a TypeError and check both bodies.
+- **SEC-INPUT-STRICT** — Every stored string is validated
+  `chore · agent · normal`
+  accept: `/pair` names refuse control characters like `/v1/settings` does, `/v1/connect` checks `catalog.id`, names and `historyRetention` types and lengths and a missing `volumes` array, and `validPath` refuses a component over 255 bytes; one test per rule.
+- **SEC-HEIC-MEMORY** — Four HEIC previews cannot exhaust memory
+  `bug · agent · normal`
+  accept: the HEIC worker caps images at 50 megapixels, hands `pixels.buffer` to sharp without a copy, runs with `resourceLimits`, and HEIC renders are limited to two at a time; a test renders a maximal image under the limit and refuses one above it.
+- **SEC-BACKUP-SCRUB** — A damaged object never stalls the backup or the hub's history
+  `bug · agent · normal`
+  accept: the backup loop records a row whose object fails verification as missing, names the hash in `backupError` and continues, so `backup-ack` advances and hub retention is not frozen; hourly maintenance verifies a bounded batch of stored objects against their names and counts corrupt ones in status; tests corrupt one object and check both.
+- **SEC-WINDOWS-BUSY** — An open file never breaks a cycle or a deletion on Windows
+  `bug · agent · normal`
+  accept: `collectUnusedObjects` catches per object so an EBUSY on a served blob skips that object and the cycle completes; deleting a file the hub is streaming or probing answers 409 "File in use" instead of 500; the Windows trash batches paths by byte length under the 32 KiB environment limit; `update-watch.js` removes its directory with `fs.rmSync` retries instead of `cmd.exe`; tests simulate the open handle.
+- **SEC-MOBILE-MANIFEST** — The Android manifest ships only what the app needs
+  `chore · agent · normal`
+  accept: `allowBackup` is off (or `databases/` and `files/arca` are excluded from cloud backup), `SYSTEM_ALERT_WINDOW` is removed like `CAMERA`, and `CoverProvider` is not exported or requires a permission; config-plugin tests cover the manifest. Needs a native build, so the device evidence is a follow-up `verify`.
+- **SEC-SESSION-APPROVER** — Revoking an approver ends the sessions it granted
+  `chore · agent · low`
+  accept: a browser session stores the device that approved it and `forgetDevice` and disabling an approver drop those sessions; a test approves, revokes and sees 401.
+- **SEC-RATE-CAPS** — One client cannot exhaust shared capacity
+  `chore · agent · low`
+  accept: `/v1/events` allows at most four waiters per credential before 503 and web-approval requests at most three pending per address; tests fill both.
+- **SEC-DELETE-RACE** — A replica deletion re-checks the file before unlinking
+  `bug · agent · low`
+  accept: replica `deleteFile` captures the file signature before hashing and answers 409 "Local file changed" when it differs right before the unlink or trash, as `deleteSyncedCopy` does; a test writes during the hash.
+- **SEC-RENAME-FALLBACK** — Rename works on volumes without hard links
+  `bug · agent · low`
+  accept: a replica rename that gets `EPERM`, `ENOTSUP` or `EXDEV` from `linkSync` falls back to `renameSync` when the destination does not exist; a test stubs the error.
+- **SEC-SCHEMA-INSERTS** — An older daemon fails safely on a newer index
+  `chore · agent · low`
+  accept: every `INSERT … VALUES` names its columns and the schema carries `PRAGMA user_version`, bumped with each migration; opening a newer schema refuses with a clear message instead of failing on the first insert; a test opens a database with an extra column.
+- **SEC-UPLOAD-REHASH** — Upload status never re-hashes a complete object
+  `chore · agent · low`
+  accept: `GET /v1/uploads/<hash>` and a chunk against an existing object answer from the verified object store (or a signature cache) without hashing the whole blob; a test counts hash calls.
+- **SEC-DOCKER-HYGIENE** — The image is reproducible and attested
+  `chore · agent · low`
+  accept: the Dockerfile pins the base image by digest and ffmpeg by version, adds a `HEALTHCHECK` on `arca.js status`, and `publish-docker.yml` publishes provenance and an SBOM; `SHA256SUMS` in `publish.yml` is signed. Needs a Casa redeploy to verify.
+- **SEC-DEPS** — Dependency advisories are checked in CI
+  `chore · agent · low`
+  accept: `npm audit fix` (non-major) in `apps/mobile`, `cargo audit --locked` in the `rust-tests` job, and `npm audit --omit=dev` at the root in `publish.yml`, all green or with each exception named.
+- **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
+  `feature · agent · low`
+  accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index (keeping one), so a corrupt index without a backup replica is recoverable; the CLI documents how to restore it.
 
 ### File preservation and synchronization
 

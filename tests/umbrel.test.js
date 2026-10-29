@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -280,6 +281,23 @@ test("Umbrel code issuer fails closed without the per-install secret and limits 
     await remove(root);
   });
   const url = "http://127.0.0.1:" + access.address().port;
+  const rebound = "evil.test:" + access.address().port;
+  const refused = await new Promise((resolve, reject) => {
+    const body = JSON.stringify({ password });
+    const req = http.request(
+      {
+        host: "127.0.0.1",
+        port: access.address().port,
+        path: "/umbrel/code",
+        method: "POST",
+        headers: { Host: rebound, Origin: "http://" + rebound, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+      },
+      (res) => (res.resume(), resolve(res.statusCode)),
+    );
+    req.on("error", reject);
+    req.end(body);
+  });
+  assert.equal(refused, 403, "a rebound hostname never reaches the password check");
   for (let n = 0; n < 6; n++) {
     const r = await fetch(url + "/umbrel/code", {
       method: "POST",
@@ -289,4 +307,38 @@ test("Umbrel code issuer fails closed without the per-install secret and limits 
     assert.equal(r.status, n < 5 ? 401 : 429);
   }
   assert.equal((await fetch(url + "/")).status, 502);
+});
+
+test("the Umbrel code page trusts names listed in ARCA_WEB_HOSTS, written with or without a port", async (t) => {
+  const root = render(t);
+  const previous = process.env.ARCA_WEB_HOSTS;
+  process.env.ARCA_WEB_HOSTS = "nas.lan:17831, Umbrel.Tail1.ts.net.";
+  let createAccess;
+  try {
+    ({ createAccess } = await import(pathToFileURL(path.join(root, "umbrel-access.mjs"))));
+  } finally {
+    if (previous === undefined) delete process.env.ARCA_WEB_HOSTS;
+    else process.env.ARCA_WEB_HOSTS = previous;
+  }
+  const access = createAccess({ password, home: root, upstream: "http://127.0.0.1:1", assets: root, issueCode: () => ({ code: "123456" }) });
+  await new Promise((r) => access.listen(0, "127.0.0.1", r));
+  t.after(async () => {
+    access.closeAllConnections();
+    await new Promise((r) => access.close(r));
+    await remove(root);
+  });
+  const port = access.address().port;
+  const ask = (host) =>
+    new Promise((resolve, reject) => {
+      const body = JSON.stringify({ password });
+      const req = http.request(
+        { host: "127.0.0.1", port, path: "/umbrel/code", method: "POST", headers: { Host: host, Origin: "http://" + host, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } },
+        (res) => (res.resume(), resolve(res.statusCode)),
+      );
+      req.on("error", reject);
+      req.end(body);
+    });
+  assert.equal(await ask("nas.lan:" + port), 200);
+  assert.equal(await ask("umbrel.tail1.ts.net:" + port), 200);
+  assert.equal(await ask("other.lan:" + port), 403);
 });
