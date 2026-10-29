@@ -3,14 +3,24 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { atomic, fail, token, withinPath } from "./storage.js";
 
-// A durable journal keeps interrupted deletion retryable without re-pairing.
+const readSmall = (file) => {
+  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+  return stat?.isFile() && stat.size <= 64 * 1024 ? fs.readFileSync(file, "utf8") : null;
+};
+const owned = (target, owner) => {
+  try {
+    if (owner.volume) return readSmall(path.join(target, ".arca-volume")) === owner.volume;
+    return JSON.parse(readSmall(path.join(target, "state", "config.json"))).role === "backup";
+  } catch {
+    return false;
+  }
+};
 export function resetTargets(store) {
-  const paths = [
-    ...store.volumes().map((v) => v.path),
-    store.config.backup?.path,
-  ].filter(Boolean);
-  return [...new Set(paths)].map((location) => {
-    const target = path.resolve(location);
+  const owners = new Map();
+  for (const v of store.volumes())
+    if (v.path) owners.set(path.resolve(v.path), { volume: v.id });
+  if (store.config.backup?.path) owners.set(path.resolve(store.config.backup.path), { backup: true });
+  return [...owners].map(([target, owner]) => {
     if (
       target === path.parse(target).root ||
       withinPath(store.home, target)
@@ -27,14 +37,15 @@ export function resetTargets(store) {
       fs.realpathSync(target) !== target
     )
       fail(`Arca folder location changed: ${target}`, 409);
-    return { path: target, dev: stat.dev, ino: stat.ino };
+    if (!owned(target, owner)) return { path: target, skipped: true };
+    return { path: target, dev: stat.dev, ino: stat.ino, born: stat.birthtimeMs };
   });
 }
 export function finishInstallationReset(store) {
   const journal = store.config.destroyPending;
   if (!journal) return;
   for (const target of journal.targets) {
-    if (!fs.existsSync(target.path)) continue;
+    if (target.skipped || !fs.existsSync(target.path)) continue;
     const stat = fs.lstatSync(target.path);
     if (
       target.missing ||
@@ -43,7 +54,8 @@ export function finishInstallationReset(store) {
       !stat.isDirectory() ||
       fs.realpathSync(target.path) !== target.path ||
       stat.dev !== target.dev ||
-      stat.ino !== target.ino
+      stat.ino !== target.ino ||
+      (target.born && stat.birthtimeMs && stat.birthtimeMs !== target.born)
     )
       fail(
         `Arca folder changed during destruction: ${target.path}. Restore its original location and retry.`,
@@ -138,6 +150,7 @@ export function finishInstallationReset(store) {
   for (const key of Object.keys(old)) delete old[key];
   Object.assign(old, next);
 }
+// A durable journal keeps interrupted deletion retryable without re-pairing.
 export function beginInstallationReset(store, targets) {
   store.config.destroyPending = {
     targets,

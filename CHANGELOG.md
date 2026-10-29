@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.16 — 2026-10-29
+
+- Erase only deletes folders that are still Arca's: a shared folder must still hold its `.arca-volume` marker, and the backup location its backup state. A folder you recreated by hand at the same place after Stop syncing here, or a reused backup path, now survives Erase.
+
+Needs: desktop build · Casa redeploy
+
 ## 0.8.15 — 2026-10-29
 
 - Erase never deletes the folder that holds Arca's state, or any folder above it, even when a shared folder was registered with different capitals or a short name (`/USERS/name`, `c:\Users\name`, `RUNNER~1`) on macOS or Windows. Choosing a folder, a move or backup destination, or the setup root applies the same check.

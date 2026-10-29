@@ -7,7 +7,7 @@ import http from "node:http";
 import path from "node:path";
 import { init, digest, Store, withinPath, insidePath } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
-import { finishInstallationReset } from "../packages/daemon/installation-reset.js";
+import { beginInstallationReset, finishInstallationReset, resetTargets } from "../packages/daemon/installation-reset.js";
 
 async function setup(t, options = { timer: false }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-test-"));
@@ -787,6 +787,8 @@ test("destroy after disconnect deletes replica folders and configured backup but
   const backup = path.join(r.engine.store.home, "backup-copy");
   fs.mkdirSync(backup);
   fs.writeFileSync(path.join(backup, "archive"), "copy");
+  fs.mkdirSync(path.join(backup, "state"));
+  fs.writeFileSync(path.join(backup, "state", "config.json"), JSON.stringify({ role: "backup" }));
   r.engine.config.backup = { path: backup, enabled: false };
   r.engine.store.saveConfig();
   await r.api("/v1/disconnect", { confirmed: true });
@@ -1341,4 +1343,53 @@ test("Erase and folder placement never reach the state directory, inside it or a
   r.engine.store.db.prepare("UPDATE volumes SET path=? WHERE id=?").run(swapped, f.volume.id);
   await assert.rejects(r.api("/v1/destroy-replica", { confirmed: true }), /overlaps the state directory/);
   assert.ok(fs.existsSync(path.join(ancestor, "hub")), "nothing beside the state directory is touched");
+});
+
+test("Erase deletes only directories that still carry Arca's marker or backup state", async (t) => {
+  const f = await setup(t);
+  const hub = f.hub;
+  const folder = hub.engine.store.volume(f.volume.id).path;
+  fs.writeFileSync(path.join(folder, "shared.txt"), "synced");
+  await hub.sync();
+  await hub.api("/v1/unselect", { id: f.volume.id });
+  fs.rmSync(folder, { recursive: true });
+  fs.mkdirSync(folder);
+  fs.writeFileSync(path.join(folder, "unrelated.txt"), "someone else's");
+  const root = fs.realpathSync(f.root);
+  const kept = path.join(root, "Kept");
+  const second = await hub.api("/v1/volumes", { name: "Kept", path: kept });
+  fs.writeFileSync(path.join(kept, ".arca-volume"), "another-volume-id");
+  const backup = path.join(root, "not-a-backup");
+  fs.mkdirSync(backup);
+  fs.writeFileSync(path.join(backup, "photo.jpg"), "mine");
+  hub.engine.config.backup = { path: backup, enabled: false };
+  hub.engine.store.saveConfig();
+  const marked = await hub.api("/v1/volumes", { name: "Marked" });
+  await hub.api("/v1/destroy-hub", { confirmed: true });
+  assert.equal(fs.readFileSync(path.join(folder, "unrelated.txt"), "utf8"), "someone else's", "a folder recreated without the marker survives");
+  assert.ok(fs.existsSync(kept), "a folder whose marker names another volume survives");
+  assert.equal(fs.readFileSync(path.join(backup, "photo.jpg"), "utf8"), "mine", "a backup path without backup state survives");
+  assert.equal(fs.existsSync(marked.path), false, "a folder that is still Arca's is erased");
+  assert.equal(fs.readFileSync(path.join(kept, ".arca-volume"), "utf8"), "another-volume-id");
+  assert.ok(second.id);
+});
+
+test("an interrupted erase that already removed a folder's marker still finishes that folder, and a replacement is refused", async (t) => {
+  const f = await setup(t);
+  const store = f.hub.engine.store;
+  const folder = store.volume(f.volume.id).path;
+  fs.writeFileSync(path.join(folder, "half.txt"), "left behind");
+  beginInstallationReset(store, resetTargets(store));
+  fs.rmSync(path.join(folder, ".arca-volume"));
+  finishInstallationReset(store);
+  assert.equal(fs.existsSync(folder), false, "the retry trusts the journal, not the marker it may have deleted");
+  const replaced = await setup(t);
+  const other = replaced.hub.engine.store;
+  const target = other.volume(replaced.volume.id).path;
+  beginInstallationReset(other, resetTargets(other));
+  fs.renameSync(target, target + "-moved");
+  fs.mkdirSync(target);
+  fs.writeFileSync(path.join(target, "new.txt"), "keep");
+  assert.throws(() => finishInstallationReset(other), /changed during destruction/);
+  assert.equal(fs.readFileSync(path.join(target, "new.txt"), "utf8"), "keep");
 });

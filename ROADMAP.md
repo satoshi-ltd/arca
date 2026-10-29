@@ -26,9 +26,7 @@ A purely visual idea is not filed here as Proposed: its board in `design/proposa
 
 ## Queue
 
-- **SEC-ERASE-MARKER** — Erase deletes only directories that are still Arca's
-  `bug · agent · high`
-  accept: `resetTargets` skips a volume whose directory lacks a `.arca-volume` marker with this volume's id and a backup path without `state/config.json` of role `backup`, keeping the dev/ino journal check; a folder stopped with "Stop syncing here", removed by hand and recreated with other content survives Erase, proven by a test. DEC-ERASE-SCOPE may widen this.
+_None._
 
 ## In progress
 
@@ -230,6 +228,10 @@ Findings of the read-only audit of v0.8.9, ordered by severity. Each task is one
 - **DEC-IOS-FILE-SHARING** — iOS exposes the whole Documents tree to Files and Finder
   `decision · maintainer · low`
   `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` let any edit made in Files enter sync like a user edit and show app-owned state JSON; keep and document, or disable.
+
+- **SEC-ERASE-KEPT** — Erase says which folders it left in place
+  `feature · maintainer · low`
+  accept: decision: `/v1/destroy-*` returns the registered paths it skipped because they no longer carried Arca's marker or backup state, and the Erase result names them, so a device wiped to give away does not keep a folder silently; today they are left untouched and unreported.
 
 - **SEC-PLAYER-SCOPE** — A TV deletes only inside video and music folders
   `bug · agent · high`
