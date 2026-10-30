@@ -5,7 +5,8 @@ import { acceptsWrites } from "./video-sync.js";
 import { Eyebrow, Section } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useRef, useState } from "react";
-import { AppState, Linking, Platform, Text, View } from "react-native";
+import { AppState, Linking, Platform, View } from "react-native";
+import { Text } from "./Text";
 import * as Sharing from "expo-sharing";
 import {
   Button,

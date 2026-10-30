@@ -3,7 +3,9 @@ import { requireOptionalNativeModule } from "expo";
 import { VideoLibrary, VideoSheet } from "./VideoLibrary";
 import { VideoPlayer } from "./VideoPlayer";
 import {
+  deleteChoices,
   downloadTargets,
+  routeAfterDeletion,
   followingEpisode,
   librarySummary as videoSummary,
   searchVideos,
@@ -16,6 +18,8 @@ import {
   acceptsWrites,
   cachedVideoLibrary,
   createArtLoader,
+  deleteNotice,
+  deleteVideos,
   flushPositions,
   isVideoFolder,
   loadSubtitles,
@@ -40,7 +44,7 @@ import { thumbnailFiles } from "./gallery-thumbnails";
 import { canonicalFileUri, searchIo, searchPreview, searchThumbnail } from "./search-thumbnail";
 import { StickyDetailSide } from "./StickyDetailSide";
 import * as Application from "expo-application";
-import { textSizes, textScale } from "./text-size.js";
+import { textSizes, textScale, fontCap } from "./text-size.js";
 import { coalescedRefresh, retainSnapshot } from "./ui-refresh.js";
 import { fileIcon } from "../../desktop/src/file-icons.js";
 import { mediaSummary } from "./gallery-days";
@@ -90,7 +94,6 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   AccessibilityInfo,
   View,
-  Text,
   ScrollView,
   Animated,
   PanResponder,
@@ -107,6 +110,7 @@ import {
   Linking,
   findNodeHandle,
 } from "react-native";
+import { Text, FontCap } from "./Text";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
@@ -515,6 +519,7 @@ export default function App() {
   const galleryScrollY = useRef(0);
   const galleryRail = useRef(null);
   const [noticeItems, setNoticeItems] = useState([]);
+  const [bottomBars, setBottomBars] = useState(0);
   useEffect(() => {
     const off = notices.subscribe(() => setNoticeItems(notices.snapshot()));
     return () => {
@@ -1141,6 +1146,19 @@ export default function App() {
     setVideoSession(null);
     setVideoEdits((count) => count + 1);
   }
+  function deleteVideoTitles(volume, choice) {
+    confirm(confirmCopy.deleteVideo(choice), () =>
+      run(
+        async () => {
+          const result = await deleteVideos({ client, volume, items: choice.items, removeDownloads: (rows) => removeDownloads(volume, rows) });
+          setVideoEdits((count) => count + 1);
+          notices.push({ kind: "info", title: deleteNotice(result, choice.unit) });
+          setVideoRoute((route) => routeAfterDeletion(route, shownVideo?.library, result.deleted));
+        },
+        { hubOnly: true },
+      ),
+    );
+  }
   function videoAction(name, sheetValue) {
     const volume = sheetValue.volume;
     if (sheetValue.kind === "video-watch") {
@@ -1164,7 +1182,16 @@ export default function App() {
     }
     const item = sheetValue.item;
     setSheet(null);
-    if (name === "remove-download") {
+    const removal = deleteChoices(item, sheetValue.season).find((choice) => choice.name === name);
+    if (removal) {
+      deleteVideoTitles(volume, removal);
+      return;
+    }
+    if (name === "download") {
+      startDownload([item]);
+      return;
+    }
+    if (name === "remove-download" || name === "cancel-download") {
       removeDownloads(volume, downloadTargets(item));
       return;
     }
@@ -2502,6 +2529,7 @@ export default function App() {
             s,
             c,
             wide,
+            compact,
             active:
               busy ||
               (status.busy && !status.offline) ||
@@ -2578,6 +2606,112 @@ export default function App() {
       />
     </View>
   );
+  const stackedHeader =
+    !wide &&
+    !onboarding &&
+    (detail || !(musicDeep && !musicArtist)) &&
+    (detail || (!!folder && screen === "Folders"));
+  const headerLead = (
+    <>
+      {historyDetail && (
+        <View style={s.rowAction}>
+          <Button
+            label="Open"
+            icon="external"
+            iconOnly={!wide}
+            disabled={!engine.current || !sheet.localEntry}
+            onPress={() => runLocal(openCurrentFile)}
+          />
+          <View>
+            <Pressable
+              ref={fileMenuTrigger}
+              accessibilityRole="button"
+              accessibilityLabel="File actions"
+              accessibilityState={{
+                expanded: fileActionsOpen,
+                disabled: actionLocked,
+              }}
+              disabled={actionLocked}
+              style={[
+                s.button,
+                s.iconButton,
+                actionLocked && s.disabled,
+              ]}
+              onPress={() => {
+                if (fileActionsOpen) {
+                  setFileActionsOpen(false);
+                  return;
+                }
+                fileMenuTrigger.current?.measureInWindow(
+                  (x, y, width, height) => {
+                    pageRoot.current?.measureInWindow(
+                      (rootX, rootY, rootWidth) => {
+                        setFileMenuStyle(
+                          fileMenuPosition(
+                            x - rootX,
+                            y - rootY,
+                            width,
+                            height,
+                            rootWidth,
+                          ),
+                        );
+                        setFileActionsOpen(true);
+                      },
+                    );
+                  },
+                );
+              }}
+            >
+              <Icon name="more" />
+            </Pressable>
+          </View>
+        </View>
+      )}
+      {folder && screen === "Folders" && (
+        <View style={s.rowAction}>
+          {searchable && (
+            <Button
+              iconOnly
+              ghost
+              label="Search Arca"
+              icon="search"
+              onPress={() => setGlobalSearch(true)}
+            />
+          )}
+          {(!videoStreaming || !!currentFolder?.selected) && (
+            <Button
+              iconOnly
+              label="Folder actions"
+              icon="more"
+              onPress={() =>
+                setSheet({
+                  kind: "folder-actions",
+                  volume: folder,
+                })
+              }
+            />
+          )}
+        </View>
+      )}
+    </>
+  );
+  const headerSync = (
+    <>
+      {connected && screen === "Folders" && folder && (
+        <Button
+          iconOnly
+          label="Sync now"
+          swap
+          icon={syncDone ? "check" : "refresh"}
+          activity={!status.offline && status.busy}
+          disabled={status.paused || !engine.current}
+          reason={status.paused ? PAUSED_REASON : undefined}
+          onReason={explainPause}
+          onPress={() => startSync(true)}
+        />
+      )}
+    </>
+  );
   return (
     <SafeAreaProvider>
       <StatusBar
@@ -2590,6 +2724,7 @@ export default function App() {
           s,
           c,
           wide,
+          compact,
           fontScale: fontScale * textScale(prefs.textSize),
           active:
             busy ||
@@ -2599,6 +2734,7 @@ export default function App() {
             !!(folder && (filesLoading || recentLoading)),
         }}
       >
+        <FontCap.Provider value={fontCap(prefs.textSize)}>
         <View ref={pageRoot} style={s.root} collapsable={false}>
           <View style={[s.root, wide && !onboarding && s.shell]}>
             {wide && !onboarding && (
@@ -2630,6 +2766,7 @@ export default function App() {
                     ]}
                   >
                     {detail && (
+                      <View style={s.headerBack}>
                       <Button
                         quiet
                         label={
@@ -2645,9 +2782,16 @@ export default function App() {
                           setSheet(null);
                         }}
                       />
+                      {stackedHeader && (
+                        <View style={s.rowAction}>
+                          {headerLead}
+                          {headerSync}
+                        </View>
+                      )}
+                      </View>
                     )}
                     {folder && screen === "Folders" && (
-                      <View style={s.compactActions}>
+                      <View style={s.headerBack}>
                         <Button
                           quiet
                           label={
@@ -2667,6 +2811,12 @@ export default function App() {
                               : setFolder(null)
                           }
                         />
+                        {stackedHeader && (
+                          <View style={s.rowAction}>
+                            {headerLead}
+                            {headerSync}
+                          </View>
+                        )}
                       </View>
                     )}
                     {!onboarding && (detail || !(musicDeep && !musicArtist)) && (
@@ -2684,12 +2834,13 @@ export default function App() {
                               {!wide && <BrandActivity />}
                               {!compactAndroid && (
                                 <View style={[s.tile, wide && s.detailTile]}>
-                                  <Icon name={fileIcon(sheet.path)} />
+                                  <Icon name={fileIcon(sheet.path)} size={wide ? 20 : 16} />
                                 </View>
                               )}
                               <View style={[s.flex, s.stack]}>
                                 <Text
                                   accessibilityRole="header"
+                                  numberOfLines={wide ? undefined : 2}
                                   style={
                                     compactAndroid ? s.detailTitle : s.title
                                   }
@@ -2701,7 +2852,7 @@ export default function App() {
                           ) : musicArtist ? (
                             <ScreenTitle
                               contentIcon="artist"
-                              subtitle={`${plural(musicArtist.albums.length, "album", "albums")} · ${plural(musicArtist.tracks, "track", "tracks")}`}
+                              subtitle={unbroken(`${plural(musicArtist.albums.length, "album", "albums")} · ${plural(musicArtist.tracks, "track", "tracks")}`)}
                             >
                               {musicArtist.name}
                             </ScreenTitle>
@@ -2709,7 +2860,7 @@ export default function App() {
                             <ScreenTitle
                               detail={compactAndroid}
                               contentIcon={folderIcon}
-                              subtitle={videoView ? videoSubtitle : folderSubtitle}
+                              subtitle={videoView ? unbroken(videoSubtitle) : folderSubtitle}
                             >
                               {folder.name}
                             </ScreenTitle>
@@ -2717,86 +2868,7 @@ export default function App() {
                             <ScreenTitle>{view}</ScreenTitle>
                           )}
                         </View>
-                        {historyDetail && (
-                          <View style={s.rowAction}>
-                            <Button
-                              label="Open"
-                              icon="external"
-                              iconOnly={!wide}
-                              disabled={!engine.current || !sheet.localEntry}
-                              onPress={() => runLocal(openCurrentFile)}
-                            />
-                            <View>
-                              <Pressable
-                                ref={fileMenuTrigger}
-                                accessibilityRole="button"
-                                accessibilityLabel="File actions"
-                                accessibilityState={{
-                                  expanded: fileActionsOpen,
-                                  disabled: actionLocked,
-                                }}
-                                disabled={actionLocked}
-                                style={[
-                                  s.button,
-                                  s.iconButton,
-                                  actionLocked && s.disabled,
-                                ]}
-                                onPress={() => {
-                                  if (fileActionsOpen) {
-                                    setFileActionsOpen(false);
-                                    return;
-                                  }
-                                  fileMenuTrigger.current?.measureInWindow(
-                                    (x, y, width, height) => {
-                                      pageRoot.current?.measureInWindow(
-                                        (rootX, rootY, rootWidth) => {
-                                          setFileMenuStyle(
-                                            fileMenuPosition(
-                                              x - rootX,
-                                              y - rootY,
-                                              width,
-                                              height,
-                                              rootWidth,
-                                            ),
-                                          );
-                                          setFileActionsOpen(true);
-                                        },
-                                      );
-                                    },
-                                  );
-                                }}
-                              >
-                                <Icon name="more" />
-                              </Pressable>
-                            </View>
-                          </View>
-                        )}
-                        {folder && screen === "Folders" && (
-                          <View style={s.rowAction}>
-                            {searchable && (
-                              <Button
-                                iconOnly
-                                ghost
-                                label="Search Arca"
-                                icon="search"
-                                onPress={() => setGlobalSearch(true)}
-                              />
-                            )}
-                            {(!videoStreaming || !!currentFolder?.selected) && (
-                              <Button
-                                iconOnly
-                                label="Folder actions"
-                                icon="more"
-                                onPress={() =>
-                                  setSheet({
-                                    kind: "folder-actions",
-                                    volume: folder,
-                                  })
-                                }
-                              />
-                            )}
-                          </View>
-                        )}
+                        {!stackedHeader && headerLead}
                         {screen === "History" && wide && historyControls}
                         {searchable && !folder && !detail && (
                           <Button
@@ -2807,19 +2879,7 @@ export default function App() {
                             onPress={() => setGlobalSearch(true)}
                           />
                         )}
-                        {connected && screen === "Folders" && folder && (
-                          <Button
-                            iconOnly
-                            label="Sync now"
-                            swap
-                            icon={syncDone ? "check" : "refresh"}
-                            activity={!status.offline && status.busy}
-                            disabled={status.paused || !engine.current}
-                            reason={status.paused ? PAUSED_REASON : undefined}
-                            onReason={explainPause}
-                            onPress={() => startSync(true)}
-                          />
-                        )}
+                        {!stackedHeader && headerSync}
                       </View>
                     )}
                     {screen === "History" && !wide && historyControls}
@@ -2993,13 +3053,14 @@ export default function App() {
                             setRoute={setVideoRoute}
                             art={videoArt}
                             play={playVideo}
-                            more={(item) =>
+                            more={(item, season, showTitle) =>
                               setSheet({
                                 kind: "video-actions",
                                 item,
+                                season,
+                                showTitle,
                                 volume: folder.id,
                                 folder: folder.name,
-                                downloaded: downloadTargets(item).some((target) => !!videoDownload(target)),
                               })
                             }
                             mark={(item, watched) => videoAction(watched ? "watched" : "unwatched", { item, volume: folder.id })}
@@ -3163,6 +3224,7 @@ export default function App() {
                                           }}
                                           style={[
                                             s.settingRow,
+                                            s.settingRowTall,
                                             s.separator,
                                             ((previewEntry?.path === e.path && wide && !compact) || focusPath === e.path) && s.historyRowChosen,
                                           ]}
@@ -3188,7 +3250,7 @@ export default function App() {
                                         </Reveal>
                                       ))}
                                     {filesLoading && !entries.length && (
-                                      <Scaffold label="Loading files" />
+                                      <Scaffold grouped label="Loading files" />
                                     )}
                                   </View>
                                   {!filesLoading &&
@@ -3247,7 +3309,9 @@ export default function App() {
                                   <Eyebrow>Copies</Eyebrow>
                                   <View style={s.group}>
                                     <View style={[s.settingRow, s.row]}>
-                                      <Icon name="server" />
+                                      <View style={s.leadSlot}>
+                                        <Icon name="server" />
+                                      </View>
                                       <Text style={[s.heading, s.flex]}>
                                         {catalog?.name || "Hub"}
                                       </Text>
@@ -3256,7 +3320,9 @@ export default function App() {
                                     <View
                                       style={[s.settingRow, s.row, s.separator]}
                                     >
-                                      <Icon name="phone" />
+                                      <View style={s.leadSlot}>
+                                        <Icon name="phone" />
+                                      </View>
                                       <Text style={[s.heading, s.flex]}>
                                         {name}
                                       </Text>
@@ -3282,13 +3348,15 @@ export default function App() {
                                             s.separator,
                                           ]}
                                         >
-                                          <Icon
-                                            name={
-                                              /android|ios/.test(m.platform)
-                                                ? "phone"
-                                                : "monitor"
-                                            }
-                                          />
+                                          <View style={s.leadSlot}>
+                                            <Icon
+                                              name={
+                                                /android|ios/.test(m.platform)
+                                                  ? "phone"
+                                                  : "monitor"
+                                              }
+                                            />
+                                          </View>
                                           <Text style={[s.heading, s.flex]}>
                                             {m.name}
                                           </Text>
@@ -3717,6 +3785,7 @@ export default function App() {
                                     }
                                     style={[
                                       s.settingRow,
+                                      s.settingRowTall,
                                       index > 0 && s.separator,
                                       s.row,
                                     ]}
@@ -4049,6 +4118,7 @@ export default function App() {
                     controller={galleryRail}
                   />
                 )}
+                <View onLayout={({ nativeEvent: { layout } }) => setBottomBars(layout.height)}>
                 {folder && screen === "Folders" && musicFolder && !sheet && (
                   <MiniPlayer
                     library={playingLibrary}
@@ -4075,6 +4145,7 @@ export default function App() {
                     device={device}
                   />
                 )}
+                </View>
               </KeyboardPane>
             </SafeAreaView>
           </View>
@@ -4097,6 +4168,7 @@ export default function App() {
           {(!sheet || detail) && (
             <NoticeStack
               items={noticeItems}
+              lift={bottomBars}
               onDismiss={(id) => notices.remove(id)}
               onAction={noticeAction}
               disabled={actionLocked}
@@ -4556,7 +4628,13 @@ export default function App() {
                   </>
                 )}
               {!!videoSheet(shownSheet) && (
-                <VideoSheet sheet={shownSheet} locked={actionLocked} act={(name) => videoAction(name, shownSheet)} />
+                <VideoSheet
+                  sheet={shownSheet}
+                  locked={actionLocked}
+                  act={(name) => videoAction(name, shownSheet)}
+                  download={videoDownload}
+                  canDownload={(item) => downloadable(item, Platform.OS)}
+                />
               )}
               {shownSheet.kind === "select" && (
                 <>
@@ -4716,6 +4794,7 @@ export default function App() {
           )}
         </View>
         {launchShown && <LaunchHold leaving onLeft={() => setLaunchShown(false)} />}
+        </FontCap.Provider>
       </Design.Provider>
     </SafeAreaProvider>
   );

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Animated, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Eyebrow, Icon, useDesign } from "./components";
 import { FilePreview } from "./FilePreview";

@@ -11,10 +11,10 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
 } from "react-native";
+import { Text } from "./Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Busy, Button, Eyebrow, Icon, Scaffold, useDesign } from "./components";
 import { dateLabel } from "./gallery-timeline";

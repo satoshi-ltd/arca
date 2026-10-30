@@ -1,6 +1,7 @@
 import { brandMark, palettes } from "./palette.js";
 import { KeyboardPane, KeyboardScrollView, FieldFocus } from "./KeyboardPane";
 import { geometry as g, motion } from "./design-tokens.js";
+import { railLabelFontCap } from "./text-size.js";
 import { ChangeFade, Pop, RollText, useBreathe, useFlight, useMotion } from "./motion";
 import {
   brandDraw,
@@ -28,12 +29,12 @@ import {
   PanResponder,
   StyleSheet,
   View,
-  Text,
   Pressable,
   TextInput,
   Modal,
   ScrollView,
 } from "react-native";
+import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { draggedDown } from "./sheet-dismiss.js";
 import Svg, {
@@ -52,6 +53,7 @@ export const useDesign = () => useContext(Design);
 export function Scaffold({
   kind = "card",
   dashed = false,
+  grouped = false,
   label = "Loading content",
 }) {
   const { s } = useDesign();
@@ -60,7 +62,7 @@ export function Scaffold({
       accessible
       accessibilityLabel={label}
       accessibilityRole="progressbar"
-      style={[s.scaffoldRow, dashed && s.scaffoldDashed]}
+      style={[s.scaffoldRow, dashed && s.scaffoldDashed, grouped && s.scaffoldGrouped]}
     >
       <View style={[s.scaffoldMark, kind === "history" && s.scaffoldDot]} />
       <View style={s.scaffoldCopy}>
@@ -351,7 +353,7 @@ export function ScreenTitle({
     <View style={s.screenTitle}>
       {contentIcon ? (
         <Animated.View ref={flight.frame} style={[s.tile, wide && s.detailTile, flight.style]}>
-          <Icon name={contentIcon} />
+          <Icon name={contentIcon} size={wide ? 20 : 16} />
         </Animated.View>
       ) : (
         !wide && <BrandActivity />
@@ -360,6 +362,7 @@ export function ScreenTitle({
         <View style={[s.flex, s.stack]}>
           <Text
             accessibilityRole="header"
+            numberOfLines={wide ? undefined : 1}
             style={detail ? s.detailTitle : s.title}
           >
             {children}
@@ -711,11 +714,14 @@ export function HistoryGlyph({ row }) {
   const { s, c } = useDesign();
   const tone = historyTone(row);
   return (
-    <View style={[s.historyGlyph, tone === "warning" && s.tileWarning, tone === "neutral" && s.tileNeutral]}>
-      <Icon
-        name={row.deleted ? "trash" : row.path.includes(".conflict-") ? "conflict" : "revision"}
-        color={row.deleted ? c.soft : tone === "warning" ? c.warning : c.accent}
-      />
+    <View style={s.leadSlot}>
+      <View style={[s.historyGlyph, tone === "warning" && s.tileWarning, tone === "neutral" && s.tileNeutral]}>
+        <Icon
+          name={row.deleted ? "trash" : row.path.includes(".conflict-") ? "conflict" : "revision"}
+          size={16}
+          color={row.deleted ? c.soft : tone === "warning" ? c.warning : c.accent}
+        />
+      </View>
     </View>
   );
 }
@@ -980,7 +986,7 @@ export function Sheet({
               <View style={[s.sheetHeader, dialog && s.sheetHeaderDialog]}>
                 {!!icon && (
                   <View style={s.tile}>
-                    <Icon name={icon} color={c.accent} />
+                    <Icon name={icon} size={16} color={c.accent} />
                   </View>
                 )}
                 <View style={s.flex}>
@@ -1044,7 +1050,7 @@ export function ConfirmDialog({
     <Sheet centered onClose={onCancel} closing={closing} onExited={onExited}>
       <View style={s.confirmHeader}>
         <View style={s.tile}>
-          <Icon name={icon} />
+          <Icon name={icon} size={16} />
         </View>
         <View style={[s.flex, s.stack]}>
           <Text accessibilityRole="header" style={s.heading}>
@@ -1255,7 +1261,7 @@ export function FolderRow({
   const contents = (
     <>
       <View ref={lead} style={s.homeLead}>
-        {syncing && progress > 0 && <ProgressRing fraction={Math.min(1, progress)} />}
+        {syncing && progress > 0 && <ProgressRing size={g.touchHeight} fraction={Math.min(1, progress)} />}
         {tile}
       </View>
       <View style={[s.flex, s.stack]}>
@@ -1392,7 +1398,11 @@ export function Navigation({ wide, compact, view, onSelect, name, device, onFavo
               style={({ pressed }) => [s.navItem, compact && s.compactNav, pressed && s.pressed]}
             >
               <Icon name="panel-left-open" color={c.mute} />
-              <Text numberOfLines={1} style={compact ? s.compactNavLabel : s.navLabel}>
+              <Text
+                numberOfLines={1}
+                maxFontSizeMultiplier={compact ? railLabelFontCap : undefined}
+                style={compact ? s.compactNavLabel : s.navLabel}
+              >
                 Favorites
               </Text>
             </Pressable>
@@ -1449,6 +1459,7 @@ export function Navigation({ wide, compact, view, onSelect, name, device, onFavo
           />
           <Text
             numberOfLines={1}
+            maxFontSizeMultiplier={wide && compact ? railLabelFontCap : undefined}
             style={[
               wide ? (compact ? s.compactNavLabel : s.navLabel) : s.caption,
               view === tab && s.active,
@@ -1519,12 +1530,14 @@ function DeviceGlyph({ name, device }) {
 }
 
 export function DeviceRow({ name, device, children }) {
-  const { s } = useDesign();
+  const { s, wide } = useDesign();
   return (
     <View style={[s.card, s.machineRow]}>
       <View accessible accessibilityLabel={deviceLabel(name, device)} style={s.row}>
-        <View style={[s.tile, s.machineTile]}>
-          <Icon name="phone" />
+        <View style={s.leadSlot}>
+          <View style={[s.tile, s.machineTile]}>
+            <Icon name="phone" size={wide ? 20 : 16} />
+          </View>
         </View>
         <View style={[s.flex, s.stack]}>
           <View style={s.machineIdentity}>
@@ -1629,6 +1642,7 @@ export function MachineRow({
       ]}
     >
       <Icon
+        size={wide ? 20 : 16}
         color={tone === "danger" ? c.danger : tone === "neutral" ? c.soft : hub ? c.onAccent : undefined}
         name={hub ? "server" : player ? "tv" : /android|ios/i.test(platform) ? "phone" : "monitor"}
       />
@@ -1692,7 +1706,7 @@ export function MachineRow({
         </View>
       ) : (
         <View style={[s.row, s.machinePhoneRow]}>
-          {tile}
+          <View style={s.leadSlot}>{tile}</View>
           <View style={[s.flex, s.stack]}>
             <View style={s.machineHead}>
               {identity}
@@ -1721,7 +1735,7 @@ export function SettingsGroup({ children }) {
   );
 }
 
-export function SegmentedControl({ options, value, onChange, scroll = false, clearable = false }) {
+export function SegmentedControl({ options, value, onChange, scroll = false, fit = false, clearable = false }) {
   const { s } = useDesign();
   const { duration, easing } = useMotion();
   const [boxes, setBoxes] = useState({});
@@ -1744,7 +1758,7 @@ export function SegmentedControl({ options, value, onChange, scroll = false, cle
       }).start();
   }, [box?.x]);
   const control = (
-    <View style={[s.segments, scroll && s.segmentsScroll]}>
+    <View style={[s.segments, scroll && s.segmentsScroll, fit && s.segmentsFit]}>
       {!!box && (
         <Animated.View
           pointerEvents="none"
@@ -1773,7 +1787,7 @@ export function SegmentedControl({ options, value, onChange, scroll = false, cle
                 : { ...boxes, [option.value]: layout };
             })
           }
-          style={[s.segment, scroll && s.segmentScroll, value === option.value && !box && s.segmentSelected]}
+          style={[s.segment, scroll && s.segmentScroll, fit && s.segmentFit, value === option.value && !box && s.segmentSelected]}
         >
           <Text
             numberOfLines={1}
@@ -1789,8 +1803,12 @@ export function SegmentedControl({ options, value, onChange, scroll = false, cle
       ))}
     </View>
   );
-  return scroll ? (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+  return scroll || fit ? (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={fit ? s.segmentsFitContent : undefined}
+    >
       {control}
     </ScrollView>
   ) : (

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Modal, PanResponder, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Modal, PanResponder, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { EmptyState, Eyebrow, Icon, PressScale, Sheet, useDesign } from "./components";
 import { Cover, NowGlyph, RowMeta } from "./MusicLibrary";

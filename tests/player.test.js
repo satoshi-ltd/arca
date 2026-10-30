@@ -227,6 +227,30 @@ test("a player's music library carries the rev a deletion needs", async (t) => {
   assert.equal((await call("/v1/delete-file", { body: { volume: volume.id, path: track.path, rev: track.rev }, token })).status, 200);
 });
 
+test("a linked phone or desktop replica deletes through the hub only in a video library", async (t) => {
+  const { d, call, pair } = await hub(t);
+  const movies = await (await call("/v1/volumes", { body: { name: "Movies" } })).json();
+  const songs = await (await call("/v1/volumes", { body: { name: "Songs" } })).json();
+  const docs = await (await call("/v1/volumes", { body: { name: "Docs" } })).json();
+  assert.equal((await call("/v1/video/mark", { body: { volume: movies.id } })).status, 200);
+  assert.equal((await call("/v1/music/mark", { body: { volume: songs.id } })).status, 200);
+  for (const [volume, name] of [[movies, "Heat.mp4"], [songs, "song.mp3"], [docs, "note.txt"]])
+    fs.writeFileSync(path.join(d.engine.store.volume(volume.id).path, name), `content of ${name}`);
+  await d.engine.cycle();
+  const { id, token } = await (await pair({ name: "phone" })).json();
+  const as = (volume, file, extra = {}) =>
+    call("/v1/delete-file", { body: { volume: volume.id, path: file, rev: d.engine.store.current(volume.id, file)?.rev, ...extra }, token });
+  assert.equal((await as(songs, "song.mp3")).status, 403, "audio libraries stay with the administrator and TVs");
+  assert.equal((await as(docs, "note.txt")).status, 403, "a synced folder deletes through sync");
+  assert.equal((await as(movies, ".arcaignore")).status, 403);
+  assert.equal((await as(movies, "Heat.mp4", { rev: 999 })).status, 409, "a stale rev deletes nothing");
+  assert.equal(fs.existsSync(path.join(d.engine.store.volume(movies.id).path, "Heat.mp4")), true);
+  assert.equal((await as(movies, "Heat.mp4")).status, 200);
+  assert.equal(fs.existsSync(path.join(d.engine.store.volume(movies.id).path, "Heat.mp4")), false);
+  const head = d.engine.store.db.prepare("SELECT author FROM revisions WHERE volume=? AND path=? ORDER BY rev DESC LIMIT 1").get(movies.id, "Heat.mp4");
+  assert.equal(head.author, id, "History names the phone");
+});
+
 test("a player deletes a gallery photo through the shared gallery deletion", async (t) => {
   const { d, call, pair } = await hub(t);
   const volume = await (await call("/v1/volumes", { body: { name: "Photos" } })).json();

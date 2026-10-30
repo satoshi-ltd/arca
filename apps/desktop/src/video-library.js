@@ -211,7 +211,7 @@ export function nextEpisode(show) {
   const episodes = orderedEpisodes(show || { episodes: [] });
   if (!episodes.length) return null;
   const started = episodes
-    .filter(inProgress)
+    .filter((episode) => inProgress(episode) && !episode.watched)
     .sort((a, b) => (Number(b.position.updated) || 0) - (Number(a.position.updated) || 0))[0];
   if (started) return started;
   let last = -1;

@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AppState, Image, Modal, Pressable, StatusBar, Text, View, useWindowDimensions } from "react-native";
+import { AppState, Image, Modal, Pressable, StatusBar, View, useWindowDimensions } from "react-native";
+import { Text } from "./Text";
 import { requireOptionalNativeModule, useEvent } from "expo";
 import { Busy, Button, Icon, useDesign } from "./components";
 import { episodeCode, playerTitles } from "./video-library.js";

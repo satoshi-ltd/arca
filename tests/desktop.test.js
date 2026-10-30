@@ -1041,7 +1041,7 @@ test("retention choices share one row in equal segments with whole labels, and t
   assert.equal(choice.whiteSpace, "nowrap", "a label never breaks");
   assert.equal(choice.justifyContent, "center");
   assert.equal(choice.paddingInline, "var(--space-1)");
-  assert.equal(choice.fontSize, "var(--text-body)");
+  assert.equal(choice.fontSize, "var(--text-control)");
   assert.equal(style(filters).flexWrap, "wrap", "the history filters still wrap");
   assert.equal(style(filters.firstChild).flexGrow, "0");
   dom.window.close();
@@ -6446,6 +6446,9 @@ test("the status card shows the last sync only when the machine is not up to dat
   assert.equal(paused.state, "Paused");
   assert.equal(paused.hidden, false);
   assert.match(paused.text, /^Last sync /);
+  const syncing = await card("syncing");
+  assert.equal(syncing.state, "Syncing");
+  assert.equal(syncing.hidden, true, "a sync in progress needs no last-sync line");
 });
 test("a daemon that failed to restart after an update explains why on the stopped page", async () => {
   const dom = new JSDOM(html, {

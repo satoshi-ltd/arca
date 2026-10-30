@@ -1,6 +1,7 @@
 import { Scaffold } from "./components";
 import React, { useEffect, useState } from "react";
-import { Image, Linking, Pressable, Text, View } from "react-native";
+import { Image, Linking, Pressable, View } from "react-native";
+import { Text } from "./Text";
 import {
   Button,
   Card,

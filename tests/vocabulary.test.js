@@ -262,7 +262,7 @@ test("History heads each day group and tells each row's clock time the same way 
   assert.ok(app.includes("{clockTime(row.created)}"), "its wide rows show the clock time");
   assert.ok(app.includes("{` · ${clockTime(row.created)}`}"), "and its narrow rows too");
   const theme = fs.readFileSync(path.join(root, "apps", "mobile", "src", "theme.js"), "utf8");
-  assert.match(theme, /historyDate: \{ width: 90, fontVariant: \["tabular-nums"\] \}/, "wide times use tabular figures");
+  assert.match(theme, /historyDate: \{ width: Math\.ceil\(90 \* fontScale \* textScale\), flexShrink: 0, fontVariant: \["tabular-nums"\] \}/, "wide times use tabular figures");
   assert.match(theme, /tabularTime: \{ fontVariant: \["tabular-nums"\] \}/, "and so do narrow times");
   assert.ok(app.includes("style={s.tabularTime}"), "the narrow time carries that style");
   assert.ok(source.includes("const day = dayLabel(r.created);"), "the desktop groups by day label");

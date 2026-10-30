@@ -116,12 +116,10 @@ export function downloadChip(row) {
   return { label: "Waiting", variant: undefined };
 }
 
-export function seasonProgress(episodes, download) {
-  const tracked = episodes.map((episode) => ({ episode, row: download(episode) })).filter(({ row }) => row?.state === "done" || isDownloading(row));
-  const active = tracked.filter(({ row }) => isDownloading(row));
-  if (!active.length) return null;
-  const fraction = tracked.reduce((sum, { row }) => sum + downloadFraction(row), 0) / tracked.length;
-  return { active: active.map(({ episode }) => episode), finished: tracked.length - active.length, total: tracked.length, percent: Math.min(99, Math.floor(fraction * 100)), fraction };
+export function downloadAction(row) {
+  if (isDownloading(row)) return ["cancel-download"];
+  if (row?.state === "done") return ["remove-download"];
+  return row ? ["download", "remove-download"] : ["download"];
 }
 
 export function createVideoDownloads({ replica, client, onChange = () => {}, chunk = DOWNLOAD_CHUNK, refresh = null, pause = null, retryDelay = RETRY_LATER, since = Date.now() }) {

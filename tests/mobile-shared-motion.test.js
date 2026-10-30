@@ -58,7 +58,7 @@ test("the shared moments are wired into the screens", () => {
   assert.match(components, /putFlight\("folder"/);
   assert.match(components, /useFlight\(detail && wide && contentIcon \? "folder" : null\)/);
   assert.match(components, /<Animated\.View\s+pointerEvents="none"\s+style=\{\[\s+s\.navIndicator/);
-  assert.match(components, /<ProgressRing fraction=\{Math\.min\(1, progress\)\} \/>/);
+  assert.match(components, /<ProgressRing size=\{g\.touchHeight\} fraction=\{Math\.min\(1, progress\)\} \/>/);
   assert.match(components, /<PressScale\s+scale=\{!disabled && !busy && !ghost\}/);
   assert.match(components, /s\.segmentSelected,\s+s\.segmentThumb/);
   const app = read("../apps/mobile/src/App.jsx");

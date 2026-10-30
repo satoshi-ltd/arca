@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AppState, Image, Pressable, Text, View } from "react-native";
+import { AppState, Image, Pressable, View } from "react-native";
+import { Text } from "./Text";
 import { requireOptionalNativeModule, useEvent } from "expo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Busy, Icon, useDesign } from "./components";

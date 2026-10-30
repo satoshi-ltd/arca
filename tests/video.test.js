@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { Store, init } from "../packages/daemon/storage.js";
-import { parseProbe, parseNfo, subtitleFor, subtitleText, subtitleLanguage } from "../packages/daemon/video.js";
+import { Video, parseProbe, parseNfo, subtitleFor, subtitleText, subtitleLanguage } from "../packages/daemon/video.js";
 import { playerRoute } from "../packages/daemon/machines.js";
 import { execFileSync } from "node:child_process";
 import ffmpeg from "ffmpeg-static";
@@ -1034,4 +1034,12 @@ test("a subtitle's language comes from its first 64 KiB of text, decoded whole f
   assert.equal(subtitleLanguage(Buffer.from(english), "srt"), "en");
   assert.equal(subtitleLanguage(Buffer.from("é".repeat(70000) + "\n\n" + english), "srt"), null, "text past 64 KiB is never read");
   assert.equal(subtitleLanguage(Buffer.from(spanish + "\n\n" + "é".repeat(40000)), "srt"), "es", "a cut never garbles accented words before it");
+});
+
+test("progress ignores a watched episode's leftover position when picking what to resume or play next", () => {
+  const ep = (n, extra = {}) => ({ id: `e${n}`, path: `S1E${n}.mkv`, season: 1, episode: n, watched: false, position: null, ...extra });
+  const show = { seasons: [{ season: 1, episodes: [ep(1, { watched: true }), ep(2, { watched: true, position: { position: 2800, duration: 2880, updated: 500 } }), ep(3)] }] };
+  const result = Video.prototype.progress.call({}, [], [show], [], new Map([["S1E2.mkv", 400]]));
+  assert.deepEqual(result.nextUp, ["e3"]);
+  assert.deepEqual(result.continueIds, []);
 });

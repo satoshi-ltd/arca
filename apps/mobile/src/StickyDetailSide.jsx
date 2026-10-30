@@ -5,7 +5,7 @@ import { useDesign } from "./components";
 
 // Keep the original column in layout; move only its contents on the native driver.
 export function StickyDetailSide({ children }) {
-  const { s, wide } = useDesign();
+  const { s, wide, compact } = useDesign();
   const position = useContext(ScrollPosition);
   const column = useRef(null);
   const [bounds, setBounds] = useState({ top: 0, height: 0 });
@@ -40,7 +40,7 @@ export function StickyDetailSide({ children }) {
     () => ({ maxHeight: position?.viewport.height || undefined }),
     [position?.viewport.height],
   );
-  if (!wide || !position) return <View style={s.detailSide}>{children}</View>;
+  if (!wide || compact || !position) return <View style={s.detailSide}>{children}</View>;
   return (
     <View
       ref={column}

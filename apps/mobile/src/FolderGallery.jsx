@@ -17,9 +17,9 @@ import {
   Pressable,
   PanResponder,
   ScrollView,
-  Text,
   View,
 } from "react-native";
+import { Text } from "./Text";
 import {
   Eyebrow,
   Button,

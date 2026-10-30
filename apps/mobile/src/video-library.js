@@ -47,6 +47,7 @@ function file(raw) {
   return {
     path: raw.path,
     hash: text(raw.hash),
+    rev: number(raw.rev),
     size: number(raw.size),
     duration: number(raw.duration),
     width: number(raw.width),
@@ -209,7 +210,7 @@ const byUpdated = (a, b) => (b.position?.updated || 0) - (a.position?.updated ||
 export function nextEpisode(show) {
   const list = episodes(show).filter((ep) => ep.season !== 0);
   const all = list.length ? list : episodes(show);
-  const started = all.filter((ep) => ep.position).sort(byUpdated)[0];
+  const started = all.filter((ep) => ep.position && !ep.watched).sort(byUpdated)[0];
   if (started) return started;
   let last = -1;
   all.forEach((ep, index) => {
@@ -452,10 +453,33 @@ export function playerTitles(library, item) {
     : { title: item.title, subtitle: item.year ? String(item.year) : "" };
 }
 
-export function titleActions(item, downloaded = false) {
+export function titleActions(item, saved = null) {
   if (!item) return [];
   const watched = item.kind === "show" ? watchedCount(item).watched === watchedCount(item).total : item.watched;
-  return [watched ? "unwatched" : "watched", ...(downloaded ? ["remove-download"] : [])];
+  return [watched ? "unwatched" : "watched", ...[saved || []].flat()];
+}
+
+export function deleteChoices(item, season = null) {
+  if (!item) return [];
+  if (item.kind === "movie") return [{ name: "delete-movie", label: "Delete movie…", title: item.title, items: [item], unit: "movie" }];
+  if (item.kind === "episode") return [{ name: "delete-episode", label: "Delete episode…", title: episodeTitle(item), items: [item], unit: "episode" }];
+  if (item.kind !== "show") return [];
+  const chosen = item.seasons.find((entry) => entry.season === season);
+  return [
+    ...(chosen ? [{ name: "delete-season", label: `Delete season ${chosen.season}…`, title: item.title, season: chosen.season, items: chosen.episodes, unit: "episode" }] : []),
+    { name: "delete-show", label: "Delete show…", title: item.title, items: episodes(item), unit: "episode" },
+  ];
+}
+
+export function survivesDeletion(item, deleted) {
+  const gone = new Set(deleted.map((entry) => entry.id));
+  if (item.kind === "show") return item.seasons.some((entry) => entry.episodes.some((ep) => !gone.has(ep.id)));
+  return !gone.has(item.id);
+}
+
+export function routeAfterDeletion(route, library, deleted) {
+  const open = library?.items.get(route[1]?.id);
+  return open && !survivesDeletion(open, deleted) ? route.slice(0, 1) : route;
 }
 
 export function downloadTargets(item) {
@@ -486,6 +510,8 @@ export function videoSheet(sheet) {
     return { title: sheet.card.title, icon: sheet.card.icon, subtitle: ["Watch next", sheet.card.caption].filter(Boolean).join(" · "), menu: true };
   if (sheet?.kind !== "video-actions") return null;
   const item = sheet.item;
+  if (item.kind === "episode")
+    return { title: episodeTitle(item), icon: "tv", subtitle: [sheet.showTitle, episodeCode(item)].filter(Boolean).join(" · "), menu: true };
   return {
     title: item.title,
     icon: item.kind === "show" ? "tv" : "clapperboard",

@@ -1518,69 +1518,6 @@ body.kit {
   height: var(--space-4);
 }
 
-.kit-width-960 {
-  max-width: calc(960px - var(--sidebar-width) - 2 * var(--space-6));
-}
-.kit-counter-row {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-6);
-  margin-top: var(--space-4);
-}
-.kit-nav-strip {
-  width: var(--sidebar-width);
-}
-.kit-fix-status .sync-status-heading {
-  grid-column: 1 / -1;
-  grid-row: 2;
-}
-.kit-fix-status #last-sync {
-  grid-column: 1;
-  grid-row: 3;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  white-space: nowrap;
-}
-.kit-fix-status #last-sync svg {
-  width: var(--pill-icon);
-  height: var(--pill-icon);
-}
-.kit-fix-status #sync-controls {
-  grid-column: 2;
-  grid-row: 3;
-}
-.kit-fix-status #sync-controls .ghost.icon-button {
-  width: var(--button-small-height);
-  height: var(--button-small-height);
-  min-height: var(--button-small-height);
-}
-.kit-fix-status .status-card svg,
-.kit-fix-status .status-card strong svg,
-.kit-fix-status .backup-link svg {
-  width: var(--button-small-icon);
-  height: var(--button-small-icon);
-}
-.kit-fix-mini .music-mini-track > .music-cover {
-  width: var(--control-height);
-}
-.kit-fix-mini .music-mini-play {
-  width: var(--button-small-height);
-  height: var(--button-small-height);
-}
-.kit-fix-mini .music-mini .ghost.icon-button {
-  display: none;
-}
-.kit-fix-mini.kit-hover .music-mini .ghost.icon-button {
-  display: inline-flex;
-  width: var(--button-small-height);
-  height: var(--button-small-height);
-  min-height: var(--button-small-height);
-  order: -1;
-}
-.kit-fix-mini.kit-hover .music-mini-track {
-  order: -2;
-}
 .kit-fix-forms input,
 .kit-fix-forms select,
 .kit-fix-forms .dialog-actions > button {
@@ -1608,43 +1545,6 @@ body.kit {
 .kit-fix-devices .device-cell.device-seen {
   width: auto;
 }
-.kit-fix-meta .folder-card .meta {
-  display: block;
-}
-.kit-fix-surfaces .settings-card {
-  border-radius: var(--r-card);
-}
-.kit-fix-surfaces .count,
-.kit-fix-surfaces .filter-count,
-.kit-fix-surfaces .tray-role {
-  display: inline-grid;
-  place-items: center;
-  height: var(--tag-height);
-  padding: var(--tag-y) var(--tag-x);
-  border: 1px solid transparent;
-  border-radius: var(--r-tag);
-  font-family: var(--font-mono);
-  font-size: var(--tag-font);
-  font-weight: 400;
-  line-height: var(--tag-line);
-  text-transform: uppercase;
-  background: var(--tint);
-  color: var(--deep);
-}
-.kit-fix-surfaces .tray-role {
-  background: var(--green);
-  border-color: var(--green);
-  color: var(--onGreen);
-}
-.kit-fix-type .folder-explorer > .empty h2 {
-  font-size: var(--text-row);
-  font-weight: 600;
-  color: var(--ink);
-}
-.kit-fix-type .segmented button {
-  font-size: var(--text-control);
-}
-.kit-fix-type .segmented button svg {
-  width: var(--button-small-icon);
-  height: var(--button-small-icon);
+.kit-width-960 {
+  max-width: calc(960px - var(--sidebar-width) - 2 * var(--space-6));
 }

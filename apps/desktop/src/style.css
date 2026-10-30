@@ -64,7 +64,7 @@ h1 {
   letter-spacing: -0.025em;
 }
 h2 {
-  font-size: 15px;
+  font-size: var(--text-row);
   font-weight: 600;
 }
 h3 {
@@ -314,11 +314,22 @@ svg.lucide {
 }
 .count {
   margin-left: auto;
-  background: var(--waBg);
-  color: var(--waFg);
-  font: 11px var(--font-mono);
-  padding: 1px 6px;
-  border-radius: 5px;
+}
+.count,
+.history-filters .filter-count,
+.tray-role {
+  display: inline-grid;
+  place-items: center;
+  height: var(--tag-height);
+  padding: var(--tag-y) var(--tag-x);
+  border: 1px solid transparent;
+  border-radius: var(--r-tag);
+  background: var(--tint);
+  color: var(--deep);
+  font-family: var(--font-mono);
+  font-size: var(--tag-font);
+  line-height: var(--tag-line);
+  text-transform: uppercase;
 }
 .sidebar-bottom {
   margin-top: auto;
@@ -793,7 +804,7 @@ main {
   margin-bottom: 4px;
 }
 .stat > strong {
-  font-size: 18px;
+  font-size: var(--dialog-title);
   font-weight: 600;
 }
 .stat > p {
@@ -1046,7 +1057,7 @@ main {
   border-radius: var(--r-tag);
   padding: 4px 10px;
   color: var(--soft);
-  font-size: var(--text-body);
+  font-size: var(--text-control);
   font-weight: 600;
   display: flex;
   gap: 6px;
@@ -1077,8 +1088,8 @@ main {
   box-shadow: none;
 }
 .segmented svg {
-  width: 13px;
-  height: 13px;
+  width: var(--button-small-icon);
+  height: var(--button-small-icon);
 }
 .segmented button:hover {
   color: var(--ink);
@@ -1221,7 +1232,7 @@ main {
 }
 .settings-card {
   border: 1px solid var(--div);
-  border-radius: var(--r-control);
+  border-radius: var(--r-card);
   background: var(--surface);
   overflow: hidden;
 }
@@ -1913,7 +1924,7 @@ progress::-moz-progress-bar {
 }
 .retention-stats .panel strong {
   display: block;
-  font-size: 22px;
+  font-size: var(--text-title);
 }
 .sr-only {
   position: absolute;
@@ -2090,12 +2101,9 @@ html:has(.tray-body) {
   margin: 1px 0 0;
 }
 .tray-role {
-  font: 10px var(--font-mono);
-  padding: 2px 6px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: var(--soft);
-  text-transform: uppercase;
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--onGreen);
 }
 .tray-folders {
   border: 1px solid var(--div);
@@ -2394,13 +2402,6 @@ html:has(.tray-body) {
   display: grid;
   gap: var(--row-gap);
 }
-.history-filters .filter-count {
-  padding: 0 5px;
-  border-radius: 4px;
-  background: var(--waBg);
-  color: var(--waFg);
-  font: 10px var(--font-mono);
-}
 
 /* Handoff field composition, shared by desktop and web forms. */
 .field-with-icon {
@@ -2462,6 +2463,7 @@ html:has(.tray-body) {
   color: var(--id);
 }
 .folder-card .meta {
+  display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3401,9 +3403,9 @@ summary {
   gap: var(--space-2);
 }
 .folder-explorer > .empty h2 {
-  font-size: var(--text-body);
-  font-weight: 400;
-  color: var(--soft);
+  font-size: var(--text-row);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .file-actions-menu,
@@ -3417,6 +3419,10 @@ summary {
 .file-actions-menu .menu-item-separated {
   border-top: 1px solid var(--div);
   border-radius: 0;
+}
+.file-actions-menu .menu-item-separated:first-child {
+  border-top: 0;
+  border-radius: inherit;
 }
 
 .settings-card.replica-danger {
@@ -3650,7 +3656,7 @@ section:has(> .replica-danger) > .section-label {
   margin: 0;
   padding: var(--space-2) 0 var(--space-3);
   background: var(--paper);
-  font-size: 16px;
+  font-size: var(--dialog-title);
 }
 .photo-day h2::after {
   content: "";
@@ -4619,7 +4625,7 @@ dialog.photo-viewer {
   min-height: 0;
   text-align: left;
   color: var(--soft);
-  font-size: var(--text-caption);
+  font-size: var(--text-body);
   font-weight: 400;
 }
 .status-card .backup-link[hidden] { display: none; }
@@ -4632,7 +4638,7 @@ dialog.photo-viewer {
   min-width: 0;
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--div);
-  font-size: var(--text-caption);
+  font-size: var(--text-body);
   color: var(--mute);
 }
 .status-device[hidden] { display: none; }
@@ -5319,7 +5325,7 @@ body:has(#music-player:not([hidden]):not(.music-elsewhere)) #notice {
   grid-auto-columns: auto;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-1) var(--space-2) var(--space-2);
+  padding: var(--space-2);
   overflow: hidden;
   border: 1px solid var(--div);
   border-radius: var(--r-card);
@@ -5337,7 +5343,7 @@ body:has(#music-player:not([hidden]):not(.music-elsewhere)) #notice {
   text-align: left;
 }
 .music-mini-track > .music-cover {
-  width: var(--detail-tile);
+  width: var(--control-height);
   flex: none;
 }
 .music-mini-track > .music-cover > svg {
@@ -5362,15 +5368,9 @@ body:has(#music-player:not([hidden]):not(.music-elsewhere)) #notice {
   font-size: var(--text-caption);
   color: var(--soft);
 }
-.music-mini .ghost.icon-button {
-  width: var(--space-6);
-  height: var(--space-6);
-  min-height: var(--space-6);
-  padding: var(--space-1);
-}
 .music-mini-play {
-  width: calc(var(--space-6) + var(--space-1));
-  height: calc(var(--space-6) + var(--space-1));
+  width: var(--button-small-height);
+  height: var(--button-small-height);
   min-height: 0;
   border-radius: var(--r-pill);
 }
@@ -6350,9 +6350,6 @@ label.toggle {
   align-items: center;
   gap: var(--space-3);
 }
-.video-season-bar > .heading-actions {
-  margin-left: auto;
-}
 .video-seasons {
   align-self: flex-start;
   flex-wrap: wrap;
@@ -6402,19 +6399,6 @@ label.toggle {
 }
 .video-episode[aria-current="true"] .video-episode-main strong {
   color: var(--green);
-}
-.video-season-download {
-  flex: 1 1 20rem;
-  justify-content: flex-start;
-  gap: var(--space-3);
-}
-.video-season-bar > .video-season-download {
-  margin-left: 0;
-}
-.video-season-download progress {
-  flex: 1;
-  min-width: 120px;
-  margin-top: 0;
 }
 .video-episode-main {
   display: flex;

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, Text, View } from "react-native";
+import { Animated, View } from "react-native";
+import { Text } from "./Text";
 import { Icon, useDesign } from "./components";
 import { SCRUB_THUMB as THUMB, scrubYears } from "./gallery-layout";
 

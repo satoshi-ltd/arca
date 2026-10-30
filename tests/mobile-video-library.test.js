@@ -370,3 +370,13 @@ test("the grid mounts only the rows near the viewport, and every card stays in s
   assert.deepEqual(gridWindow({ scroll: 0, top: 100, viewport: 800, pitch: 200, rows: 0 }), { first: 0, last: -1 });
 });
 
+
+test("a watched episode with a leftover position never wins Play: the next unwatched episode does, and a started later episode still outranks it", () => {
+  const build = (episodes) => {
+    const library = normalizeLibrary(sample({ shows: [{ ...sample().shows[0], seasons: [{ season: 1, episodes }] }] }));
+    return library.items.get("s:breaking bad");
+  };
+  const left = (updated) => ({ position: 2800, duration: 2880, updated, device: "other" });
+  assert.equal(nextEpisode(build([episode(1, 1, { watched: true }), episode(1, 2, { watched: true, position: left(90) }), episode(1, 3)])).id, "e:Breaking Bad/S1E3.mkv");
+  assert.equal(nextEpisode(build([episode(1, 1, { watched: true }), episode(1, 2, { watched: true, position: left(90) }), episode(1, 3, { position: { position: 600, duration: 2880, updated: 10, device: "other" } })])).id, "e:Breaking Bad/S1E3.mkv", "an unwatched episode in progress beats a newer leftover on a watched one");
+});

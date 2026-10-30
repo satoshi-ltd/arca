@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.18 — 2026-10-30
+
+- Movies & TV titles can be deleted from desktop and phone, as the TV already could: Delete movie…, episode… or show… (and Delete season N… on the phone) always confirm and remove the file from the hub for every device, including from a desktop or phone that only streams the folder; the download on that device goes with it.
+- Every movie and episode keeps all its actions in one ⋯ (Download, Cancel download or Remove from this device, then Delete), and the row shows only its state; the season bar no longer carries season-wide download controls. "Remove download" now reads "Remove from this device".
+- Play and Continue skip an episode already watched that kept a saved position, so a show resumes on the next unwatched episode.
+- Sizing and type pass on desktop and phone: one type scale and tag style for counters, a cleaner mini player without Next and a one-line status card, notices that sit above the tab bar, rail labels and rows that keep their size with large text, and Fold title pages in one column.
+
+Needs: Casa redeploy · desktop build · native build
+
 ## 0.8.17 — 2026-10-30
 
 - A TV deletes only in video and audio libraries, unexpected errors answer `Internal error` instead of the exception text, pairing names refuse control characters, a hub catalog with unusable fields is refused when connecting, and no name may exceed 255 bytes.

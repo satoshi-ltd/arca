@@ -4,10 +4,10 @@ import {
   PanResponder,
   Pressable,
   ScrollView,
-  Text,
   View,
   useWindowDimensions,
 } from "react-native";
+import { Text } from "./Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDesign, Icon } from "./components";
 import { native } from "./private-network";
@@ -170,7 +170,7 @@ export function Notice({ item, onDismiss, onAction, disabled, leaving = false, o
   );
 }
 const noticeKey = (item) => item.id;
-export function NoticeStack({ items, onDismiss, onAction, disabled }) {
+export function NoticeStack({ items, onDismiss, onAction, disabled, lift = 0 }) {
   const { s } = useDesign(),
     insets = useSafeAreaInsets(),
     { height } = useWindowDimensions();
@@ -182,9 +182,9 @@ export function NoticeStack({ items, onDismiss, onAction, disabled }) {
       style={[
         s.noticeDock,
         {
-          bottom: insets.bottom + noticeMetrics.inset,
+          bottom: insets.bottom + lift + noticeMetrics.inset,
           maxHeight:
-            height - insets.top - insets.bottom - 2 * noticeMetrics.inset,
+            height - insets.top - insets.bottom - lift - 2 * noticeMetrics.inset,
         },
       ]}
     >

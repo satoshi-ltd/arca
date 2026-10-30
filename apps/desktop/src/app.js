@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.17";
+const APP_VERSION = "0.8.18";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1002,7 +1002,6 @@ const hubOnlyActions = new Set([
   "review-conflict",
   "disconnect-hub",
   "video-download",
-  "video-download-season",
 ]);
 function hubOffline() {
   return status?.role === "replica" && !!status.hubUnavailable;
@@ -2062,7 +2061,7 @@ function updateShell() {
     delete lastSync.dataset.relative;
     delete lastSync.dataset.prefix;
   }
-  lastSync.hidden = label === "Up to date";
+  lastSync.hidden = label === "Up to date" || color === "sy";
   const backup = $("#backup-summary");
   const hubBackups = (status.devices || []).filter(
     (device) => !device.revoked && device.backup_enabled,
@@ -6455,7 +6454,7 @@ function renderMini(track) {
     card.querySelector(".music-mini-track > .music-cover").outerHTML = cover;
     patchPlayerButtons(musicToggleButton() + musicNextButton());
   } else
-    card.innerHTML = `<button type="button" class="music-mini-track" data-player="show">${cover}<span class="music-mini-text"><strong></strong><span></span></span></button>${musicToggleButton("primary music-mini-play")}${musicNextButton()}<progress class="music-mini-progress" max="1000" value="0" aria-hidden="true"></progress>`;
+    card.innerHTML = `<button type="button" class="music-mini-track" data-player="show">${cover}<span class="music-mini-text"><strong></strong><span></span></span></button>${musicToggleButton("primary music-mini-play")}<progress class="music-mini-progress" max="1000" value="0" aria-hidden="true"></progress>`;
   const open = card.querySelector(".music-mini-track");
   open.setAttribute("aria-label", `${track.title} by ${track.artist}, open ${track.album}`);
   open.dataset.tooltip = `Open ${track.album}`;
@@ -7019,7 +7018,12 @@ function videoAvailable(volume) {
   return !!volume?.video && !volume.gallery && !volume.music && (status.role === "hub" || !!status.hub);
 }
 const videoBrowsable = (volume) => status.role === "hub" || !!volume?.selected;
-const videoEditable = (volume) => status.role === "hub" || !!volume?.selected;
+const videoEditable = (volume) => status.role === "hub" || !!volume?.selected || !!volume?.video;
+async function deleteVideoFile(v, file) {
+  const rev =
+    file.rev ?? (status.role === "hub" || v.selected ? (await api(`/v1/history?${new URLSearchParams({ volume: v.id, path: file.path, limit: "1" })}`)).versions[0]?.rev : undefined);
+  await api("/v1/video/delete", { volume: v.id, path: file.path, rev });
+}
 function videoModeButton(volume) {
   if (!videoAvailable(volume) || !videoBrowsable(volume)) return "";
   return button(
@@ -7294,17 +7298,29 @@ function videoTabsMarkup(tabs) {
     : "";
   return `<div class="folder-browser-tools video-tools"><div class="music-tools">${tabRow}</div>${sort}</div>`;
 }
+const VIDEO_DELETE_NOTE = "Removes the file from the hub for every device and cannot be undone: Movies &amp; TV keeps no copies or history. The download on this device goes with it.";
+const videoNoun = (item) => (item.kind === "movie" || item.kind === "episode" ? item.kind : "video");
+const videoFiles = (episodes) => (episodes || []).filter((episode) => episode.path);
+function videoDownloadItem(v, item) {
+  if (!videoDownloadable() || !item?.path) return "";
+  const row = videoDownloadOf(v.id, item);
+  const remove = button("Remove from this device", "video-download-remove", item.id, "secondary", "monitor");
+  if (row?.state === "done") return remove;
+  if (videoDownloadActive(row)) return button("Cancel download", "video-download-cancel", item.id, "secondary", "x");
+  return button("Download", "video-download", item.id, "secondary", "download") + (videoLeftover(v.id, item) ? remove : "");
+}
 function videoMenu(v, item, label) {
   const editable = videoEditable(v);
-  const curating = status.role === "hub";
+  const curating = status.role === "hub" && item.kind !== "episode";
   const items =
+    (item.kind !== "show" ? videoDownloadItem(v, item) : "") +
     (curating && videoTmdbWorks() ? button("Fix match…", "video-match", item.id, "secondary", "search") : "") +
     (curating && item.kind === "movie" && (item.matched === false || item.kidsOverride != null) ? button(item.kids ? "Not for kids" : "Mark as kids", "video-kids", item.id, "secondary", "smile") : "") +
     (curating && item.kidsOverride != null ? button("Use automatic Kids", "video-kids-auto", item.id, "secondary", "rotate-ccw") : "") +
-    (videoDownloadOf(v.id, item)?.state === "done" || videoLeftover(v.id, item) ? button("Remove download", "video-download-remove", item.id, "secondary", "trash") : "") +
-    (editable && item.kind !== "show" ? button("Delete…", "video-delete", item.id, "secondary danger menu-item-separated", "trash-2") : "");
+    (editable && item.kind !== "show" && item.path ? button(`Delete ${videoNoun(item)}…`, "video-delete", item.id, "secondary danger menu-item-separated", "trash-2") : "") +
+    (editable && item.kind === "show" && videoFiles(item.episodes).length ? button("Delete show…", "video-delete-show", item.id, "secondary danger menu-item-separated", "trash-2") : "");
   return items
-    ? `<details class="details-menu file-actions-menu video-menu"><summary class="icon-button" aria-label="${label}">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`
+    ? `<details class="details-menu file-actions-menu video-menu"><summary class="ghost icon-button" aria-label="${label}">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`
     : "";
 }
 function videoBand(v, item, actions) {
@@ -7324,39 +7340,16 @@ function videoMovie(v, item) {
       button("Start over", "video-start", item.id, "secondary", "rotate-ccw")
     : button("Play", "video-start", item.id, "primary", "play");
   const watched = button(item.watched ? "Mark as unwatched" : "Mark as watched", "video-watched", item.id, "secondary", item.watched ? "eye-off" : "check");
-  return videoBand(v, item, play + watched + videoDownloadButton(v, item) + videoMenu(v, item, "Movie actions"));
-}
-function videoDownloadButton(v, item) {
-  if (!videoDownloadable()) return "";
-  const row = videoDownloadOf(v.id, item);
-  if (row?.state === "done") return `<button type="button" class="secondary">${icon("circle-check")}Downloaded</button>`;
-  if (!videoDownloadActive(row)) return button("Download", "video-download", item.id, "secondary", "download");
-  const percent = videoDownloadPercent(row);
-  return `<button type="button" class="secondary" aria-label="Downloading, ${percent}%">${icon("loader-circle")}Downloading · ${percent}%</button><button type="button" class="ghost icon-button" data-action="video-download-cancel" data-id="${escape(item.id)}" data-tooltip="Cancel download" aria-label="Cancel download">${icon("x")}</button>`;
+  return videoBand(v, item, play + watched + videoDownloadChip(videoDownloadOf(v.id, item)) + videoMenu(v, item, "Movie actions"));
 }
 const videoDownloadChip = (row) =>
-  row.state === "done"
+  row?.state === "done"
     ? '<span class="tag self">Downloaded</span>'
-    : row.state === "downloading"
-      ? `<span class="tag hub">Downloading ${videoDownloadPercent(row)}%</span>`
-      : '<span class="tag">Waiting</span>';
-function videoEpisodeDownload(v, episode) {
-  const row = videoDownloadOf(v.id, episode);
-  const control = (action, label, tip, symbol) =>
-    `<button type="button" class="ghost icon-button" data-action="${action}" data-id="${escape(episode.id)}" data-tooltip="${tip}" aria-label="${label}">${icon(symbol)}</button>`;
-  if (row?.state === "done") return videoDownloadChip(row) + control("video-download-remove", "Remove download", "Remove download", "trash");
-  if (videoDownloadActive(row)) return videoDownloadChip(row) + control("video-download-cancel", "Cancel download", "Cancel download", "x");
-  return control("video-download", "Download", "Download", "download") + (videoLeftover(v.id, episode) ? control("video-download-remove", "Remove download", "Remove download", "trash") : "");
-}
-function videoSeasonDownload(v, season) {
-  const rows = season.episodes.map((episode) => videoDownloadOf(v.id, episode)).filter(Boolean);
-  const tracked = rows.filter((row) => row.state === "done" || videoDownloadActive(row));
-  if (!rows.some(videoDownloadActive)) return season.episodes.some((episode) => videoNeedsDownload(v.id, episode)) ? `<div class="heading-actions">${button("Download season", "video-download-season", String(season.season), "secondary", "download")}</div>` : "";
-  const fraction = tracked.reduce((sum, row) => sum + (row.state === "done" ? 1 : row.size > 0 ? row.done / row.size : 0), 0) / tracked.length;
-  const percent = Math.min(99, Math.floor(fraction * 100));
-  const finished = tracked.filter((row) => row.state === "done").length;
-  return `<div class="heading-actions video-season-download"><span class="video-meta">Downloading season</span><span class="tag hub">${finished} of ${tracked.length}</span><progress max="100" value="${percent}" aria-label="Season download, ${percent}%"></progress>${button("Cancel season downloads", "video-download-cancel-season", String(season.season), "secondary", "x")}</div>`;
-}
+    : row?.state === "downloading"
+      ? `<span class="tag hub" role="status">Downloading ${videoDownloadPercent(row)}%</span>`
+      : row?.state === "queued"
+        ? '<span class="tag">Waiting</span>'
+        : "";
 function videoRelated(v, library, item) {
   const related = (item.related || []).map((id) => library.items.get(id)).filter((title) => title && title.kind !== "episode");
   if (!related.length) return "";
@@ -7366,7 +7359,7 @@ function videoEpisodeRow(v, library, show, episode, current) {
   const toggle = episode.watched
     ? `<button type="button" class="ghost icon-button video-check" data-action="video-watched" data-id="${escape(episode.id)}" aria-pressed="true" aria-label="Mark as unwatched">${icon("circle-check")}</button>`
     : `<button type="button" class="ghost icon-button" data-action="video-watched" data-id="${escape(episode.id)}" aria-pressed="false" aria-label="Mark as watched">${icon("circle")}</button>`;
-  const actions = videoDownloadable() ? `<span class="row-actions">${videoEpisodeDownload(v, episode)}${toggle}</span>` : toggle;
+  const actions = `<span class="row-actions">${videoDownloadChip(videoDownloadOf(v.id, episode))}${toggle}${videoMenu(v, episode, "Episode actions")}</span>`;
   return `<div class="video-episode"${current ? ' aria-current="true"' : ""}><button type="button" class="video-episode-play" data-action="video-play" data-id="${escape(episode.id)}" aria-label="${escape(`Play ${episodeName(episode)}, ${episodeMeta(episode)}`)}">${videoArt(v.id, episode.still || show.backdrop, "tv", " video-still", "small", videoBar(episode))}<span class="video-episode-main"><strong>${escape(episodeName(episode))}</strong><span class="video-meta">${escape(episodeMeta(episode))}</span>${episode.overview ? `<span class="video-overview">${escape(episode.overview)}</span>` : ""}</span></button>${actions}</div>`;
 }
 function videoShow(v, library, show) {
@@ -7383,10 +7376,9 @@ function videoShow(v, library, show) {
         )
       : "";
   const rows = chosen ? `<div class="history-group video-episodes">${chosen.episodes.map((episode) => videoEpisodeRow(v, library, show, episode, episode === next)).join("")}</div>` : "";
-  const season = videoDownloadable() && chosen ? videoSeasonDownload(v, chosen) : "";
   const watched = fullyWatched(show);
   const mark = button(watched ? "Mark all episodes as unwatched" : "Mark all episodes as watched", "video-quick-watched", show.id, "secondary", watched ? "eye-off" : "check");
-  const bar = control || season ? `<div class="video-season-bar">${control}${season}</div>` : "";
+  const bar = control ? `<div class="video-season-bar">${control}</div>` : "";
   return videoBand(v, show, play + mark + videoMenu(v, show, "Show actions")) + bar + rows;
 }
 function videoTrail(v, library) {
@@ -8592,10 +8584,8 @@ async function handleVideo(name, id) {
     if (!item) return;
     return videoPlay(v, item, name === "video-start" || !inProgress(item) ? 0 : item.position.position);
   }
-  if (name === "video-download" || name === "video-download-season") {
-    const show = name === "video-download-season" ? library.items.get(videoView.title) : null;
-    const episodes = show?.kind === "show" ? show.seasons.find((season) => String(season.season) === id)?.episodes || [] : item ? [item] : [];
-    const paths = episodes.filter((entry) => videoNeedsDownload(v.id, entry)).map((entry) => entry.path);
+  if (name === "video-download") {
+    const paths = item && videoNeedsDownload(v.id, item) ? [item.path] : [];
     if (!videoDownloadable() || !paths.length) return;
     await loadVideoDownloads(v.id, (await api("/v1/video/download", { volume: v.id, paths }))?.downloads);
     renderVideo(v, page()?.scrollTop || 0);
@@ -8607,19 +8597,10 @@ async function handleVideo(name, id) {
     renderVideo(v, page()?.scrollTop || 0);
     return;
   }
-  if (name === "video-download-cancel-season") {
-    const show = library.items.get(videoView.title);
-    const episodes = show?.kind === "show" ? show.seasons.find((season) => String(season.season) === id)?.episodes || [] : [];
-    const paths = episodes.filter((episode) => videoDownloadActive(videoDownloadOf(v.id, episode))).map((episode) => episode.path);
-    if (!paths.length || !videoDownloadable()) return;
-    await loadVideoDownloads(v.id, (await api("/v1/video/download/cancel", { volume: v.id, paths }))?.downloads);
-    renderVideo(v, page()?.scrollTop || 0);
-    return;
-  }
   if (name === "video-download-remove") {
     if (!item?.path || !videoDownloadable()) return;
     modal(
-      modalHeader(`Remove the download of ${escape(item.kind === "episode" ? episodeName(item) : item.title)}?`, "The copy on this computer is deleted to free its space. The video stays on the hub.", "trash"),
+      modalHeader("Remove from this device?", "Deletes only the copy on this device to free its space. The video stays on the hub and you can download it again.", "monitor"),
       async () => {
         await loadVideoDownloads(v.id, (await api("/v1/video/download/remove", { volume: v.id, paths: [item.path] }))?.downloads);
         notice("Download removed.");
@@ -8680,15 +8661,50 @@ async function handleVideo(name, id) {
   if (name === "video-delete") {
     if (!item?.path || !videoEditable(v)) return;
     modal(
-      modalHeader(`Delete ${escape(item.kind === "episode" ? episodeName(item) : item.title)}?`, "The file is deleted from the hub’s disk. Movies &amp; TV keep no older versions, so it can’t be restored.", "trash-2"),
+      modalHeader(`Delete “${escape(item.kind === "episode" ? episodeName(item) : item.title)}”?`, VIDEO_DELETE_NOTE, "trash-2"),
       async () => {
-        const history = await api(`/v1/history?${new URLSearchParams({ volume: v.id, path: item.path, limit: "1" })}`);
-        await api("/v1/delete-file", { volume: v.id, path: item.path, rev: history.versions[0]?.rev });
+        await deleteVideoFile(v, item);
         if (videoView.title === item.id) videoView = { ...videoView, title: null };
         notice("Video deleted.");
         await refreshVideo(v.id, true);
       },
-      "Delete",
+      `Delete ${videoNoun(item)}`,
+    );
+    $("#submit-dialog").classList.add("danger");
+    return;
+  }
+  if (name === "video-delete-show") {
+    const show = item;
+    if (show?.kind !== "show" || !videoEditable(v)) return;
+    const files = videoFiles(show.episodes);
+    if (!files.length) return;
+    const total = countLabel(files.length, "episode");
+    modal(
+      modalHeader(
+        `Delete “${escape(show.title)}”?`,
+        VIDEO_DELETE_NOTE,
+        "trash-2",
+      ),
+      async () => {
+        let removed = 0;
+        for (const episode of files) {
+          try {
+            await deleteVideoFile(v, episode);
+            removed++;
+          } catch {}
+        }
+        const leave = () => {
+          if (videoView.title === show.id) videoView = { ...videoView, title: null, season: null };
+        };
+        if (removed === files.length) leave();
+        notice(removed === files.length ? `${total} deleted.` : `Deleted ${removed} of ${files.length} episodes. ${files.length - removed} could not be removed.`);
+        await refreshVideo(v.id, true);
+        if (removed < files.length && videoView.title === show.id && !videoLibraries.get(videoKey(v.id))?.library.items.has(show.id)) {
+          leave();
+          renderVideo(v, 0);
+        }
+      },
+      `Delete ${total}`,
     );
     $("#submit-dialog").classList.add("danger");
     return;
@@ -11392,6 +11408,7 @@ const navigationActions = new Set([
   "video-start",
   "video-match",
   "video-delete",
+  "video-delete-show",
   "delete-share",
   "rename-share",
   "rename-file",

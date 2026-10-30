@@ -1,21 +1,27 @@
 import React, { useEffect, useState } from "react";
-import { Image, Text, View } from "react-native";
+import { Image, View } from "react-native";
+import { Text } from "./Text";
 import { Icon, useDesign } from "./components";
 import { fileIcon } from "../../desktop/src/file-icons.js";
 import { HEAD_BYTES, canRenderImage, headPreview, previewKind } from "./file-preview.js";
 
 export function RowThumb({ entry, enabled = true }) {
   const { s } = useDesign();
-  if (!enabled || entry.directory || !entry.uri || !canRenderImage(entry.path))
-    return <Icon name={fileIcon(entry.path, entry.directory)} />;
+  const thumbnail = enabled && !entry.directory && !!entry.uri && canRenderImage(entry.path);
   return (
-    <View style={s.rowThumb}>
-      <Image
-        source={{ uri: entry.uri }}
-        resizeMethod="resize"
-        style={s.rowThumbImage}
-        accessibilityIgnoresInvertColors
-      />
+    <View style={s.leadSlot}>
+      {thumbnail ? (
+        <View style={s.rowThumb}>
+          <Image
+            source={{ uri: entry.uri }}
+            resizeMethod="resize"
+            style={s.rowThumbImage}
+            accessibilityIgnoresInvertColors
+          />
+        </View>
+      ) : (
+        <Icon name={fileIcon(entry.path, entry.directory)} />
+      )}
     </View>
   );
 }

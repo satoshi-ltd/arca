@@ -209,6 +209,18 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 Suggested order for approval: preservation of user files, synchronization recovery, release reliability, then usability and cleanup. No task in this lane is approved for implementation.
 
+### Video delete follow-ups (review of 2026-10-30)
+
+- **VIDEO-DELETE-REPLICA-ERROR** — A replica deleting in a folder that is no longer a video library gets the hub's video-library message
+  `bug · agent · low`
+  The hub's `/v1/delete-file` answers a linked replica outside a video library with "Local administrator credential required" instead of "This folder is not a video library", which a stale replica catalog can surface. Accept: the hub's linked branch fails with the video-library message (404), with a test through a replica's `/v1/video/delete`.
+- **VIDEO-DELETE-SELECTED-REPLICA** — A replica that selected a video folder keeps its local delete checks
+  `bug · agent · low`
+  `/v1/video/delete` on a replica always forwards to the hub, so a selected copy skips the local rescan, signature check, Trash for unsynced content and Windows "in use", and the local file goes on the next cycle. Accept: either the selected path keeps `engine.deleteFile` locally (then forgets the download) or SPEC states the trade-off; a selected-replica test proves a local unsynced edit is preserved. Drop the desktop `/v1/history` rev fallback, which sends a local rev to the hub.
+- **VIDEO-DELETE-TESTS** — Error paths of a replica's video delete
+  `chore · agent · low`
+  Accept: tests for a stale rev from a replica (409 "File changed. Reload before deleting." through `hubError`), the hub away (503), and a player or browser session against a replica's `/v1/video/delete`.
+
 ### Security and data safety (audit of 2026-10-29)
 
 Findings of the read-only audit of v0.8.9, ordered by severity. Each task is one commit; the decisions come first because some tasks depend on them.

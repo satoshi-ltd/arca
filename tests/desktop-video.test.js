@@ -58,7 +58,7 @@ const SETTINGS = {
   libraries: [{ volume: "vid", name: "video", movies: 5, shows: 3, unrecognised: 1 }],
 };
 
-async function boot(t, { status = hubStatus(), route = "#/folders/vid", web = false, canPlay = "maybe", library = sampleLibrary, remote = null, search = null, playback = null, settings = () => SETTINGS, audioTracks = false, compatible = null, subtitles = null, downloads = null, watched = null } = {}) {
+async function boot(t, { status = hubStatus(), route = "#/folders/vid", web = false, canPlay = "maybe", library = sampleLibrary, remote = null, search = null, playback = null, settings = () => SETTINGS, audioTracks = false, compatible = null, subtitles = null, downloads = null, watched = null, removal = null } = {}) {
   const dom = new JSDOM(html, { runScripts: "outside-only", url: `http://tauri.localhost/${route}` });
   const w = dom.window;
   const pending = new Set();
@@ -167,6 +167,15 @@ async function boot(t, { status = hubStatus(), route = "#/folders/vid", web = fa
     ui.routes.push(route);
     if (method === "POST") ui.posts.push([route, JSON.parse(JSON.stringify(body))]);
     if (downloads && route.startsWith("/v1/video/download")) return downloads(route, method, body);
+    if (removal && route === "/v1/video/delete") return removal(body);
+    if (route === "/v1/video/delete") {
+      data ||= library();
+      version++;
+      for (const show of data.shows) for (const season of show.seasons) season.episodes = season.episodes.filter((row) => row.path !== body.path);
+      data.shows = data.shows.filter((show) => show.seasons.some((season) => season.episodes.length));
+      data.movies = data.movies.filter((row) => row.path !== body.path);
+      return { ok: true };
+    }
     if (watched && route === "/v1/video/watched" && watched(body)) return Promise.reject(Object.assign(new Error("The hub is busy"), { status: 500 }));
     if (route === "/v1/video/watched" || route === "/v1/video/position" || route === "/v1/video/kids") {
       data ||= library();
@@ -431,7 +440,7 @@ test("a movie banner holds title, facts with badges, languages, overview, cast, 
   assert.equal(ui.$(".video-about"), null);
   assert.ok(ui.$('.video-backdrop .video-backdrop-art[data-video-art*="size=large"]'));
   assert.deepEqual(ui.texts(".video-backdrop .heading-actions > button"), ["Resume from 1:02:10", "Start over", "Mark as watched"]);
-  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Fix match…", "Mark as kids", "Delete…"]);
+  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Fix match…", "Mark as kids", "Delete movie…"]);
   assert.ok(ui.$('.video-menu [data-action="video-delete"]').classList.contains("menu-item-separated"));
   assert.deepEqual(ui.texts("#content .music-trail :is(button, [aria-current])"), ["Folders", "video", "Movies", "Inception"]);
   assert.equal(ui.$(".video-backdrop > .video-poster .video-watched"), null);
@@ -459,9 +468,9 @@ test("a show page plays the next episode, switches seasons and toggles watched e
   await ui.click(card, () => ui.text(".video-backdrop h2") === "Breaking Bad");
   assert.deepEqual(ui.texts(".video-backdrop .video-facts > span"), ["★ 8.9", "16", "2008", "2 seasons", "Crime, Drama", "HD"]);
   assert.equal(ui.$(".video-backdrop .video-languages"), null, "an episode without named audio or subtitles shows no chips");
-  assert.ok(ui.$(".video-backdrop + .video-season-bar > .segmented.video-seasons"), "the season control follows the banner, in the bar that also holds Download season");
+  assert.ok(ui.$(".video-backdrop + .video-season-bar > .segmented.video-seasons"), "the season control follows the banner, in the bar that holds only the season menu");
   assert.equal(ui.text(".video-backdrop .heading-actions > button"), "Play S1 · E4");
-  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Fix match…"], "a TMDB-matched show takes Kids from TMDB and has no Delete");
+  assert.deepEqual(ui.texts(".video-backdrop .video-menu .menu-items button"), ["Fix match…", "Delete show…"], "a TMDB-matched show takes Kids from TMDB");
   assert.deepEqual(ui.texts('.segmented[aria-label="Season"] button'), ["Season 1", "Season 2", "Specials"]);
   assert.deepEqual(ui.texts(".video-episode .video-episode-main strong"), ["1. Pilot", "2. Cat's in the Bag...", "3. ...And the Bag's in the River", "4. Cancer Man", "5. Gray Matter"]);
   assert.equal(ui.text('.video-episode[aria-current="true"] .video-meta'), "S1 · E4 · 23 min left");
@@ -732,7 +741,8 @@ test("a desktop replica opens an unselected video folder on its library through 
   assert.ok(ui.$('.video-page ~ * .favorite-star, #content .favorite-star'), "the streamed folder can still be a favorite");
   await ui.click('[data-action="video-tab"][data-id="movies"]', () => cardTitles(ui).includes("Inception"));
   await ui.click(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Inception")), () => ui.$(".video-backdrop"));
-  assert.equal(ui.$(".video-menu"), null, "Fix match and kids overrides belong to the hub admin, and an unselected copy cannot reveal or delete");
+  const menu = ui.$$(".video-backdrop .video-menu .menu-items button").map((el) => el.textContent.trim());
+  assert.deepEqual(menu, ["Download", "Delete movie…"], "Fix match and kids overrides belong to the hub admin; a streaming replica downloads and deletes through the hub");
 });
 
 test("Search Arca lists Videos and opens a title page", async (t) => {
@@ -769,12 +779,12 @@ test("Search Arca lists Videos and opens a title page", async (t) => {
 test("a selected replica shows the item menu without hub-only actions", async (t) => {
   const ui = await boot(t, { status: { ...hubStatus(), id: "mac", name: "Mac", role: "replica", hub: "http://casa", hubId: "hub" } });
   await openMovie(ui);
-  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Delete…"]);
+  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Download", "Delete movie…"]);
   const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "Movies");
   await ui.click(crumb, () => ui.$(".video-tools .video-sort"));
   await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
   await ui.click(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Breaking Bad")), () => ui.$(".video-episode"));
-  assert.equal(ui.$(".video-menu"), null, "with nothing to offer there is no ⋯ at all");
+  assert.deepEqual(ui.texts(".video-backdrop .video-menu .menu-items button"), ["Delete show…"], "a selected replica's show only offers Delete");
 });
 
 test("an offline replica says to connect to the hub instead of blaming the format", async (t) => {
@@ -861,16 +871,16 @@ test("the ⋯ offers Fix match only with a working TMDB key and Mark as kids onl
   };
   const withKey = await boot(t, { library: matched });
   await openMovie(withKey);
-  assert.deepEqual(withKey.texts(".video-menu .menu-items button"), ["Fix match…", "Delete…"]);
+  assert.deepEqual(withKey.texts(".video-menu .menu-items button"), ["Fix match…", "Delete movie…"]);
   const unmatched = await boot(t, { settings: () => ({ ...SETTINGS, state: "matching" }) });
   await openMovie(unmatched);
-  assert.deepEqual(unmatched.texts(".video-menu .menu-items button"), ["Fix match…", "Mark as kids", "Delete…"]);
+  assert.deepEqual(unmatched.texts(".video-menu .menu-items button"), ["Fix match…", "Mark as kids", "Delete movie…"]);
   const noKey = await boot(t, { settings: () => ({ ...SETTINGS, tokenSet: false, state: "none" }) });
   await openMovie(noKey);
-  assert.deepEqual(noKey.texts(".video-menu .menu-items button"), ["Mark as kids", "Delete…"]);
+  assert.deepEqual(noKey.texts(".video-menu .menu-items button"), ["Mark as kids", "Delete movie…"]);
   const refused = await boot(t, { library: matched, settings: () => ({ ...SETTINGS, state: "refused" }) });
   await openMovie(refused);
-  assert.deepEqual(refused.texts(".video-menu .menu-items button"), ["Delete…"], "Delete alone keeps the ⋯");
+  assert.deepEqual(refused.texts(".video-menu .menu-items button"), ["Delete movie…"], "Delete alone keeps the ⋯");
 });
 
 test("a file with several audio tracks gets an Audio menu that switches tracks and is remembered per show", async (t) => {
@@ -953,7 +963,7 @@ test("Mark as kids stays on a matched title that carries a kids override, so it 
     },
   });
   await openMovie(ui, "Inception", "kids");
-  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Fix match…", "Not for kids", "Use automatic Kids", "Delete…"]);
+  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Fix match…", "Not for kids", "Use automatic Kids", "Delete movie…"]);
   await ui.click('.video-menu [data-action="video-kids-auto"]', () => ui.posts.some(([route]) => route === "/v1/video/kids"));
   assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/kids")[1], { volume: "vid", id: "m:inception", kids: null });
 });
@@ -961,7 +971,7 @@ test("Mark as kids stays on a matched title that carries a kids override, so it 
 test("the library answer's tmdb state drives Fix match without reading Settings", async (t) => {
   const ui = await boot(t, { library: () => ({ ...sampleLibrary(), tmdb: "connected" }), settings: () => ({ ...SETTINGS, state: "none" }) });
   await openMovie(ui);
-  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Fix match…", "Mark as kids", "Delete…"]);
+  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Fix match…", "Mark as kids", "Delete movie…"]);
   assert.equal(ui.routes.some((route) => route.startsWith("/v1/video/settings")), false);
 });
 
@@ -1294,7 +1304,7 @@ test("embedded MKV subtitles are listed and extracted from the hub only when cho
   assert.equal(ui.video().querySelectorAll("track")[0].getAttribute("src"), null);
 });
 
-test("a Movies & TV folder shows no version history to keep and its Delete… says it can't be restored", async (t) => {
+test("a Movies & TV folder shows no version history to keep and its Delete movie… says it cannot be undone", async (t) => {
   const ui = await boot(t);
   await library(ui);
   await ui.click('[data-action="video-mode"]', () => ui.$(".folder-history-status"));
@@ -1305,7 +1315,134 @@ test("a Movies & TV folder shows no version history to keep and its Delete… sa
   await ui.click('[data-action="video-mode"]', () => ui.$(".video-tools"));
   await openMovie(ui);
   await ui.click('.video-menu [data-action="video-delete"]', () => ui.$("#dialog[open]"));
-  assert.match(ui.text("#dialog"), /can’t be restored/);
+  assert.match(ui.text("#dialog"), /cannot be undone/);
+  assert.equal(ui.text("#dialog-title"), "Delete “Inception”?");
+  assert.equal(ui.text("#submit-dialog"), "Delete movie");
+  assert.ok(ui.$("#submit-dialog").classList.contains("danger"));
+});
+
+const openShow = async (ui) => {
+  await library(ui);
+  await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
+  const card = ui.$$(".video-page .music-card").find((el) => el.querySelector("strong").textContent === "Breaking Bad");
+  await ui.click(card, () => ui.$(".video-episode"));
+};
+const deletions = (ui) => ui.posts.filter(([route]) => route === "/v1/video/delete").map(([, body]) => body.path);
+
+test("a show page has one ⋯ in the banner and a season bar that holds only the season control", async (t) => {
+  const ui = await boot(t);
+  await openShow(ui);
+  assert.equal(ui.$$("#content .video-menu").length, 1 + ui.$$(".video-episode").length, "one ⋯ for the show and one per episode");
+  assert.equal(ui.$$(".video-backdrop .video-menu").length, 1);
+  assert.deepEqual([...ui.$(".video-season-bar").children].map((el) => el.getAttribute("aria-label")), ["Season"]);
+  assert.equal(ui.$$(".video-season-bar :is(details, progress, .tag)").length, 0);
+  assert.doesNotMatch(ui.text("#content"), /Delete season|Cancel season downloads|Download season|Downloading season/);
+  assert.equal(ui.$('[data-action="video-delete-season"]'), null);
+  assert.equal(ui.$('[data-action="video-download-cancel-season"]'), null);
+  assert.ok(ui.$$("#content .video-menu > summary").every((el) => el.classList.contains("ghost") && el.classList.contains("icon-button")));
+});
+
+test("on the hub an episode row holds the watched toggle and one ⋯ whose Delete episode… deletes only that episode", async (t) => {
+  const ui = await boot(t);
+  await openShow(ui);
+  for (const row of ui.$$(".video-episode")) {
+    const controls = [...row.querySelector(".row-actions").children];
+    assert.deepEqual(controls.map((el) => el.dataset.action || el.querySelector("summary")?.getAttribute("aria-label")), ["video-watched", "Episode actions"]);
+  }
+  assert.deepEqual(ui.texts(".video-episode:first-child .video-menu .menu-items button"), ["Delete episode…"]);
+  const remove = ui.$('.video-episode:first-child .video-menu [data-action="video-delete"]');
+  assert.ok(remove.classList.contains("danger") && remove.classList.contains("menu-item-separated"));
+  assert.equal(remove.querySelector("[data-icon]").dataset.icon, "trash-2");
+  await ui.click(remove, () => ui.$("#dialog[open]"));
+  assert.match(ui.text("#dialog"), /cannot be undone/);
+  assert.equal(ui.text("#submit-dialog"), "Delete episode");
+  assert.ok(ui.$("#submit-dialog").classList.contains("danger"));
+  await ui.click("#submit-dialog", () => deletions(ui).length === 1);
+  const body = ui.posts.find(([route]) => route === "/v1/video/delete")[1];
+  assert.ok(body.volume === "vid" && body.rev === 7 && /^Breaking Bad\/Season \d\/S\d\dE\d\d\.mkv$/.test(body.path));
+});
+
+test("deleting a show keeps going past a failure and reports how many were removed", async (t) => {
+  const ui = await boot(t, { removal: (body) => (/S01E03/.test(body.path) ? Promise.reject(new Error("busy")) : { ok: true }) });
+  await openShow(ui);
+  await ui.click('[data-action="video-delete-show"]', () => ui.$("#dialog[open]"));
+  await ui.click("#submit-dialog", () => deletions(ui).length === 7 && /Deleted/.test(ui.text("#notice") || ""));
+  assert.match(ui.text("#notice"), /Deleted 6 of 7 episodes\. 1 could not be removed\./);
+  await until(() => ui.idle());
+  assert.equal(ui.text(".video-backdrop h2"), "Breaking Bad", "the show stays open while one of its episodes is left");
+});
+
+test("a show whose deletes all fail stays open", async (t) => {
+  const ui = await boot(t, { removal: () => Promise.reject(new Error("busy")) });
+  await openShow(ui);
+  await ui.click('[data-action="video-delete-show"]', () => ui.$("#dialog[open]"));
+  await ui.click("#submit-dialog", () => deletions(ui).length === 7 && /Deleted 0 of 7/.test(ui.text("#notice") || ""));
+  await until(() => ui.idle());
+  assert.equal(ui.text(".video-backdrop h2"), "Breaking Bad");
+  assert.equal(ui.$$(".video-episode").length > 0, true);
+});
+
+test("a show's ⋯ ends with Delete show…, naming the show and counting every episode", async (t) => {
+  const ui = await boot(t);
+  await openShow(ui);
+  assert.deepEqual(ui.texts(".video-backdrop .video-menu .menu-items button"), ["Fix match…", "Delete show…"]);
+  assert.ok(ui.$('[data-action="video-delete-show"]').classList.contains("menu-item-separated"));
+  await ui.click('[data-action="video-delete-show"]', () => ui.$("#dialog[open]"));
+  assert.equal(ui.text("#dialog-title"), "Delete “Breaking Bad”?");
+  assert.match(ui.text("#dialog"), /Removes the file from the hub for every device and cannot be undone: Movies & TV keeps no copies or history\. The download on this device goes with it\./);
+  assert.equal(ui.text("#submit-dialog"), "Delete 7 episodes");
+  assert.ok(ui.$("#submit-dialog").classList.contains("danger"));
+  await ui.click("#submit-dialog", () => deletions(ui).length === 7 && /7 episodes deleted\./.test(ui.text("#notice") || ""));
+  const bodies = ui.posts.filter(([route]) => route === "/v1/video/delete").map(([, body]) => body);
+  assert.ok(bodies.every((body) => body.volume === "vid" && body.rev === 7 && /^Breaking Bad\//.test(body.path)));
+  await until(() => !ui.$(".video-episode") && ui.idle());
+  assert.deepEqual(ui.texts("#content .music-trail :is(button, [aria-current])").slice(-1)[0], "video");
+});
+
+test("a show with a single episode is counted in the singular", async (t) => {
+  const ui = await boot(t, {
+    library: () => {
+      const data = sampleLibrary();
+      const bluey = data.shows.find((show) => show.title === "Bluey");
+      bluey.seasons[0].episodes = bluey.seasons[0].episodes.slice(0, 1);
+      return data;
+    },
+  });
+  await library(ui);
+  await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Bluey"));
+  await ui.click(ui.$$(".video-page .music-card").find((el) => el.querySelector("strong").textContent === "Bluey"), () => ui.$(".video-episode"));
+  await ui.click('[data-action="video-delete-show"]', () => ui.$("#dialog[open]"));
+  assert.equal(ui.text("#submit-dialog"), "Delete 1 episode");
+});
+
+const streamingReplica = { ...hubStatus([{ ...base, id: "vid", name: "video", video: true, selected: 0, path: "/srv/video" }]), id: "mac", name: "Mac", role: "replica", hub: "http://casa", hubId: "hub" };
+const revised = () => {
+  const data = sampleLibrary();
+  let rev = 100;
+  for (const row of [...data.movies, ...data.other, ...data.shows.flatMap((show) => show.seasons.flatMap((season) => season.episodes))]) row.rev = ++rev;
+  return data;
+};
+
+test("a replica streaming a folder it did not select still deletes shows and episodes on the hub", async (t) => {
+  const ui = await boot(t, { status: streamingReplica, library: revised });
+  await openShow(ui);
+  assert.deepEqual(ui.texts(".video-backdrop .video-menu .menu-items button"), ["Delete show…"]);
+  assert.ok(ui.$$(".video-episode").every((row) => row.querySelector('.video-menu [data-action="video-delete"]')));
+  assert.equal(ui.$('[data-action="video-delete-season"]'), null);
+  await ui.click('[data-action="video-delete-show"]', () => ui.$("#dialog[open]"));
+  await ui.click("#submit-dialog", () => deletions(ui).length === 7 && /7 episodes deleted\./.test(ui.text("#notice") || ""));
+  const bodies = ui.posts.filter(([route]) => route === "/v1/video/delete").map(([, body]) => body);
+  assert.ok(bodies.every((body) => body.volume === "vid" && body.rev > 100 && /^Breaking Bad\//.test(body.path)), "each delete carries the library row's rev");
+  await until(() => !ui.$(".video-episode") && ui.idle());
+
+  await ui.click('[data-action="video-tab"][data-id="movies"]', () => cardTitles(ui).includes("Inception"));
+  const card = ui.$$(".video-page .music-card").find((el) => el.querySelector("strong").textContent === "Inception");
+  await ui.click(card, () => ui.text(".video-backdrop h2") === "Inception");
+  const inception = revised().movies.find((row) => row.title === "Inception");
+  await ui.click('.video-menu [data-action="video-delete"]', () => ui.$("#dialog[open]"));
+  await ui.click("#submit-dialog", () => deletions(ui).includes(inception.path) && /Video deleted/.test(ui.text("#notice") || ""));
+  assert.deepEqual(ui.posts.find(([route, body]) => route === "/v1/video/delete" && body.path === inception.path)[1], { volume: "vid", path: inception.path, rev: inception.rev });
+  assert.equal(ui.routes.some((route) => route.startsWith("/v1/history") || route === "/v1/delete-file"), false, "nothing asks the local copy, which this replica does not have");
 });
 
 test("every menu and dropdown has a maximum height and scrolls, so 26 subtitle tracks never run off the window", () => {
@@ -1584,28 +1721,46 @@ function fakeDownloads(rows = []) {
   return Object.assign(answer, { state });
 }
 
-test("a desktop replica downloads a movie beside Mark as watched, shows its progress with a cancel, then Downloaded with Remove download", async (t) => {
+const bannerButtons = (ui) => ui.texts(".video-backdrop .heading-actions > button");
+const bannerTag = (ui) => ui.$(".video-backdrop .heading-actions > .tag")?.textContent;
+const menuItems = (scope) => [...scope.querySelectorAll(".video-menu .menu-items button")].map((el) => el.textContent.trim());
+
+test("a desktop replica downloads a movie from its ⋯, shows the state as a tag, then removes the copy from the same ⋯", async (t) => {
   const downloads = fakeDownloads();
   const ui = await boot(t, { status: replicaStatus(), downloads });
   await openMovie(ui);
-  const actions = () => ui.texts(".video-backdrop .heading-actions > button");
-  assert.deepEqual(actions(), ["Resume from 1:02:10", "Start over", "Mark as watched", "Download"]);
-  assert.equal(ui.$('.video-backdrop [data-action="video-download"] [data-icon="download"]') !== null, true);
-  await ui.click('.video-backdrop [data-action="video-download"]', () => ui.$('[data-action="video-download-cancel"]'));
+  const banner = () => ui.$(".video-backdrop");
+  assert.deepEqual(bannerButtons(ui), ["Resume from 1:02:10", "Start over", "Mark as watched"]);
+  assert.equal(bannerTag(ui), undefined);
+  assert.equal(ui.$$(".video-backdrop .video-menu").length, 1);
+  assert.deepEqual(menuItems(banner()), ["Download", "Delete movie…"]);
+  assert.equal(ui.$('.video-menu [data-action="video-download"] [data-icon]').dataset.icon, "download");
+  await ui.click('.video-menu [data-action="video-download"]', () => ui.$('.video-menu [data-action="video-download-cancel"]'));
   assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download")[1], { volume: "vid", paths: ["Inception.mp4"] });
-  assert.deepEqual(actions(), ["Resume from 1:02:10", "Start over", "Mark as watched", "Downloading · 0%", ""]);
+  assert.equal(bannerTag(ui), "Waiting");
+  assert.deepEqual(menuItems(banner()), ["Cancel download", "Delete movie…"]);
   downloads.state.rows[0] = { ...downloads.state.rows[0], state: "downloading", done: 420 };
   ui.fire(2000);
-  await until(() => ui.text('.video-backdrop [aria-label="Downloading, 42%"]') === "Downloading · 42%" && ui.idle());
-  assert.equal(ui.$('.video-backdrop [data-action="video-download-cancel"]').getAttribute("aria-label"), "Cancel download");
-  assert.equal(ui.$$(".video-menu .menu-items button").some((el) => el.textContent.includes("Remove download")), false);
+  await until(() => bannerTag(ui) === "Downloading 42%" && ui.idle());
+  assert.equal(ui.$(".video-backdrop .heading-actions > .tag").getAttribute("role"), "status");
+  assert.deepEqual(menuItems(banner()), ["Cancel download", "Delete movie…"]);
+  assert.deepEqual(bannerButtons(ui), ["Resume from 1:02:10", "Start over", "Mark as watched"]);
   downloads.state.rows[0] = { ...downloads.state.rows[0], state: "done", done: 1000 };
   ui.fire(2000);
-  await until(() => actions().includes("Downloaded") && ui.idle());
-  assert.equal(ui.$('[data-action="video-download-cancel"]'), null);
-  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Remove download", "Delete…"]);
-  await ui.click('.video-menu [data-action="video-download-remove"]', () => ui.$("#dialog[open]"));
-  await ui.click("#submit-dialog", () => actions().includes("Download"));
+  await until(() => bannerTag(ui) === "Downloaded" && ui.idle());
+  assert.deepEqual(menuItems(banner()), ["Remove from this device", "Delete movie…"]);
+  const removal = ui.$('.video-menu [data-action="video-download-remove"]');
+  assert.equal(removal.querySelector("[data-icon]").dataset.icon, "monitor");
+  assert.equal(removal.classList.contains("danger"), false);
+  assert.deepEqual([...ui.$$(".video-menu .menu-items [data-icon=trash-2]")].map((el) => el.closest("button").dataset.action), ["video-delete"]);
+  assert.ok(ui.$('.video-menu [data-action="video-delete"]').classList.contains("menu-item-separated"));
+  await ui.click(removal, () => ui.$("#dialog[open]"));
+  assert.equal(ui.text("#dialog-title"), "Remove from this device?");
+  assert.equal(ui.$("#dialog .tile [data-icon]").dataset.icon, "monitor");
+  assert.match(ui.text("#dialog"), /Deletes only the copy on this device to free its space\. The video stays on the hub and you can download it again\./);
+  assert.equal(ui.text("#submit-dialog"), "Remove");
+  assert.equal(ui.$("#submit-dialog").classList.contains("danger"), false);
+  await ui.click("#submit-dialog", () => menuItems(banner())[0] === "Download");
   assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download/remove")[1], { volume: "vid", paths: ["Inception.mp4"] });
 });
 
@@ -1620,64 +1775,68 @@ test("a download's progress waits while the ⋯ menu is open, so the menu does n
   await until(() => ui.timers[2000].length && ui.idle());
   assert.equal(ui.$(".video-menu"), menu);
   assert.equal(menu.open, true);
-  assert.equal(ui.text('.video-backdrop [aria-label="Downloading, 10%"]'), "Downloading · 10%");
+  assert.equal(bannerTag(ui), "Downloading 10%");
   menu.open = false;
   ui.fire(2000);
-  await until(() => ui.texts(".video-backdrop .heading-actions > button").includes("Downloaded") && ui.idle());
+  await until(() => bannerTag(ui) === "Downloaded" && ui.idle());
 });
 
-test("cancel stops a movie download", async (t) => {
+test("Cancel download in the ⋯ stops a movie download", async (t) => {
   const downloads = fakeDownloads([{ id: "m:inception", path: "Inception.mp4", hash: "h-Inception.mp4", size: 1000, done: 640, state: "downloading" }]);
   const ui = await boot(t, { status: replicaStatus(), downloads });
   await openMovie(ui);
-  assert.equal(ui.text('.video-backdrop [aria-label="Downloading, 64%"]'), "Downloading · 64%");
-  await ui.click('.video-backdrop [data-action="video-download-cancel"]', () => ui.$('.video-backdrop [data-action="video-download"]'));
+  assert.equal(bannerTag(ui), "Downloading 64%");
+  await ui.click('.video-menu [data-action="video-download-cancel"]', () => ui.$('.video-menu [data-action="video-download"]'));
   assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download/cancel")[1], { volume: "vid", paths: ["Inception.mp4"] });
+  assert.equal(bannerTag(ui), undefined);
 });
 
-test("each episode row downloads on its own and Download season queues the rest of the season", async (t) => {
-  const pilot = "Breaking Bad/Season 1/S01E01.mkv";
+test("an episode row shows only its state tag, the watched toggle and one ⋯ holding the download action for its state", async (t) => {
+  const path = (n) => `Breaking Bad/Season 1/S01E0${n}.mkv`;
   const downloads = fakeDownloads([
-    { id: "e:Breaking Bad/S1E1", path: pilot, hash: `h-${pilot}`, size: 1000, done: 1000, state: "done" },
-    { id: "e:Breaking Bad/S1E2", path: "Breaking Bad/Season 1/S01E02.mkv", hash: "h-Breaking Bad/Season 1/S01E02.mkv", size: 1000, done: 640, state: "downloading" },
+    { id: "e:Breaking Bad/S1E1", path: path(1), hash: `h-${path(1)}`, size: 1000, done: 1000, state: "done" },
+    { id: "e:Breaking Bad/S1E2", path: path(2), hash: `h-${path(2)}`, size: 1000, done: 640, state: "downloading" },
+    { id: "e:Breaking Bad/S1E3", path: path(3), hash: `h-${path(3)}`, size: 1000, done: 0, state: "queued" },
   ]);
   const ui = await boot(t, { status: replicaStatus(), downloads });
-  await library(ui);
-  await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
-  await ui.click(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Breaking Bad")), () => ui.$(".video-episode"));
+  await openShow(ui);
   const row = (title) => ui.$$(".video-episode").find((entry) => entry.textContent.includes(title));
-  const control = (title) => row(title).querySelector(".row-actions > .icon-button");
-  const chip = (title) => row(title).querySelector(".row-actions > .tag")?.textContent;
-  assert.equal(chip("Pilot"), "Downloaded");
-  assert.equal(control("Pilot").getAttribute("aria-label"), "Remove download");
-  assert.equal(control("Pilot").dataset.tooltip, "Remove download");
-  assert.equal(chip("Cat's in the Bag"), "Downloading 64%");
-  assert.equal(control("Cat's in the Bag").getAttribute("aria-label"), "Cancel download");
-  assert.equal(control("Cat's in the Bag").dataset.action, "video-download-cancel");
-  assert.equal(chip("Gray Matter"), undefined);
-  assert.equal(control("Gray Matter").getAttribute("aria-label"), "Download");
-  assert.ok(ui.$$(".video-episode").every((row) => row.querySelector('.row-actions [data-action="video-watched"]')), "Mark as watched stays beside it");
-  assert.equal(ui.$('[data-action="video-download-season"]'), null, "the season line shows its progress while an episode runs");
-  assert.equal(ui.text(".video-season-download .video-meta"), "Downloading season");
-  assert.equal(ui.text(".video-season-download .tag"), "1 of 2");
-  assert.equal(ui.$(".video-season-download progress").getAttribute("aria-label"), "Season download, 82%");
-  await ui.click('[data-action="video-download-cancel-season"]', () => ui.$('[data-action="video-download-season"]'));
-  assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download/cancel")[1].paths, ["Breaking Bad/Season 1/S01E02.mkv"]);
-  assert.equal(ui.text('[data-action="video-download-season"]'), "Download season");
-  assert.ok(ui.$('.video-season-bar > .segmented + .heading-actions [data-action="video-download-season"]'), "Download season sits to the right of the season control");
-  await ui.click('[data-action="video-download-season"]', () => ui.posts.some(([route]) => route === "/v1/video/download"));
-  assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download")[1].paths.sort(), [
-    "Breaking Bad/Season 1/S01E02.mkv",
-    "Breaking Bad/Season 1/S01E03.mkv",
-    "Breaking Bad/Season 1/S01E04.mkv",
-    "Breaking Bad/Season 1/S01E05.mkv",
-  ]);
-  await until(() => ui.$(".video-season-download") && ui.idle());
-  assert.equal(chip("Gray Matter"), "Waiting");
-  assert.equal(ui.text(".video-season-download .tag"), "1 of 5");
-  assert.equal(chip("Pilot"), "Downloaded", "a finished episode survives the season cancel");
-  await ui.click(control("Pilot"), () => ui.$("#dialog[open]"));
-  await ui.click("#submit-dialog", () => control("Pilot").getAttribute("aria-label") === "Download");
+  const controls = (title) =>
+    [...row(title).querySelector(".row-actions").children].map((el) =>
+      el.classList.contains("tag") ? `tag:${el.textContent}` : el.matches("details") ? `menu:${el.querySelector("summary").getAttribute("aria-label")}` : el.dataset.action,
+    );
+  assert.deepEqual(controls("Pilot"), ["tag:Downloaded", "video-watched", "menu:Episode actions"]);
+  assert.deepEqual(controls("Cat's in the Bag"), ["tag:Downloading 64%", "video-watched", "menu:Episode actions"]);
+  assert.deepEqual(controls("And the Bag's in the River"), ["tag:Waiting", "video-watched", "menu:Episode actions"]);
+  assert.deepEqual(controls("Gray Matter"), ["video-watched", "menu:Episode actions"]);
+  assert.equal(row("Cat's in the Bag").querySelector(".tag").getAttribute("role"), "status");
+  assert.deepEqual(menuItems(row("Pilot")), ["Remove from this device", "Delete episode…"]);
+  assert.deepEqual(menuItems(row("Cat's in the Bag")), ["Cancel download", "Delete episode…"]);
+  assert.deepEqual(menuItems(row("And the Bag's in the River")), ["Cancel download", "Delete episode…"]);
+  assert.deepEqual(menuItems(row("Gray Matter")), ["Download", "Delete episode…"]);
+  assert.ok(ui.$$(".video-episode .video-menu .menu-items button:last-child").every((el) => el.dataset.action === "video-delete" && el.classList.contains("danger") && el.classList.contains("menu-item-separated")));
+  assert.equal(ui.$$(".video-episode .row-actions > .icon-button:not([data-action=video-watched])").length, 0, "no loose download, cancel or remove button");
+  assert.equal(ui.$$(".video-season-bar :is(progress, details, .tag, button:not(.video-seasons button))").length, 0);
+  await ui.click(row("Cat's in the Bag").querySelector('[data-action="video-download-cancel"]'), () => ui.posts.some(([route]) => route === "/v1/video/download/cancel"));
+  assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download/cancel")[1].paths, [path(2)]);
+  await until(() => controls("Cat's in the Bag").length === 2 && ui.idle());
+  await ui.click(row("Gray Matter").querySelector('[data-action="video-download"]'), () => ui.posts.some(([route]) => route === "/v1/video/download"));
+  assert.deepEqual(ui.posts.find(([route]) => route === "/v1/video/download")[1].paths, ["Breaking Bad/Season 1/S01E05.mkv"]);
+  await until(() => controls("Gray Matter")[0] === "tag:Waiting" && ui.idle());
+  await ui.click(row("Pilot").querySelector('[data-action="video-download-remove"]'), () => ui.$("#dialog[open]"));
+  await ui.click("#submit-dialog", () => menuItems(row("Pilot"))[0] === "Download");
+  await ui.click(row("Pilot").querySelector('[data-action="video-delete"]'), () => ui.$("#dialog[open]"));
+  assert.equal(ui.text("#submit-dialog"), "Delete episode");
+});
+
+test("while the hub is away, Download in an episode's ⋯ waits for it and Cancel download stays available", async (t) => {
+  const path = "Breaking Bad/Season 1/S01E02.mkv";
+  const downloads = fakeDownloads([{ id: "e:Breaking Bad/S1E2", path, hash: `h-${path}`, size: 1000, done: 640, state: "downloading" }]);
+  const ui = await boot(t, { status: { ...replicaStatus(), hubUnavailable: true }, downloads });
+  await openShow(ui);
+  const row = (title) => ui.$$(".video-episode").find((entry) => entry.textContent.includes(title));
+  assert.equal(row("Gray Matter").querySelector('.video-menu [data-action="video-download"]').getAttribute("aria-disabled"), "true");
+  assert.equal(row("Cat's in the Bag").querySelector('.video-menu [data-action="video-download-cancel"]').hasAttribute("aria-disabled"), false);
 });
 
 test("Home starts with a Downloads shelf whose posters carry a download badge", async (t) => {
@@ -1710,12 +1869,12 @@ test("offline, a downloaded movie still plays and Download waits for the hub", a
   const downloads = fakeDownloads([{ id: "m:inception", path: "Inception.mp4", hash: "h-Inception.mp4", size: 1000, done: 1000, state: "done" }]);
   const ui = await boot(t, { status: { ...replicaStatus(), hubUnavailable: true }, downloads });
   await openMovie(ui, "Arrival");
-  assert.equal(ui.$('.video-backdrop [data-action="video-download"]').getAttribute("aria-disabled"), "true");
+  assert.equal(ui.$('.video-backdrop .video-menu [data-action="video-download"]').getAttribute("aria-disabled"), "true");
   const crumb = ui.$$("#content .music-trail button").find((el) => el.textContent.trim() === "Movies");
   await ui.click(crumb, () => ui.$(".video-tools .video-sort"));
   const card = ui.$$(".video-page .music-card").find((el) => el.querySelector("strong").textContent === "Inception");
   await ui.click(card, () => ui.text(".video-backdrop h2") === "Inception");
-  assert.ok(ui.texts(".video-backdrop .heading-actions > button").includes("Downloaded"));
+  assert.equal(bannerTag(ui), "Downloaded");
   await ui.click('.video-backdrop [data-action="video-resume"]', () => ui.video()?.getAttribute("src"));
   assert.match(ui.video().getAttribute("src"), /ticket=Inception\.mp4/);
 });
@@ -1733,15 +1892,13 @@ test("a copy of an older file stays removable and a row the hub no longer lists 
   assert.equal(ui.$('[data-action="video-download-forget"]'), null);
 
   await openMovie(ui);
-  assert.ok(ui.texts(".video-backdrop .heading-actions > button").includes("Download"), "the newer file can be downloaded");
-  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Remove download", "Delete…"], "and the older copy removed");
+  assert.deepEqual(ui.texts(".video-menu .menu-items button"), ["Download", "Remove from this device", "Delete movie…"], "the newer file can be downloaded and the older copy removed");
 
   await ui.click('[data-action="video-crumb"][data-id="root"]', () => ui.$(".video-shelves"));
   await ui.click('[data-action="video-tab"][data-id="shows"]', () => cardTitles(ui).includes("Breaking Bad"));
   await ui.click(ui.$$(".video-page .music-card").find((el) => el.textContent.includes("Breaking Bad")), () => ui.$(".video-episode"));
   const gray = ui.$$(".video-episode").find((row) => row.textContent.includes("Gray Matter"));
-  assert.ok(gray.querySelector('[data-action="video-download"]'));
-  assert.equal(gray.querySelector('[data-action="video-download-remove"]').getAttribute("aria-label"), "Remove download");
+  assert.deepEqual(menuItems(gray), ["Download", "Remove from this device", "Delete episode…"]);
 });
 
 test("downloaded home videos join the Downloads shelf, and a failed progress check keeps polling", async (t) => {
@@ -1893,4 +2050,9 @@ test("badges keep their label centred: a fixed tag height and the label in its o
   const badges = [...ui.$$(".video-backdrop .video-badge"), ...ui.$$(".video-rating")];
   assert.ok(badges.length);
   for (const badge of badges) assert.equal(badge.children[0]?.tagName, "SPAN", badge.outerHTML);
+});
+
+test("a danger item alone in a ⋯ menu draws no divider above it", () => {
+  const css = fs.readFileSync(new URL("../apps/desktop/src/style.css", import.meta.url), "utf8");
+  assert.match(css, /\.file-actions-menu \.menu-item-separated:first-child \{[^}]*border-top: 0;/);
 });

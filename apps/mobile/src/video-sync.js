@@ -211,6 +211,33 @@ export function markWatched(client, volume, items, watched) {
   );
 }
 
+export async function deleteVideos({ client, volume, items, removeDownloads = async () => {} }) {
+  const deleted = [];
+  const failed = [];
+  for (const [index, item] of items.entries()) {
+    try {
+      await client.api("/v1/delete-file", { volume, path: item.path, rev: item.rev });
+      deleted.push(item);
+    } catch (error) {
+      if (isHubUnreachable(error)) {
+        if (!deleted.length) throw error;
+        failed.push(...items.slice(index));
+        break;
+      }
+      failed.push(item);
+    }
+  }
+  if (deleted.length) await removeDownloads(deleted);
+  return { deleted, failed };
+}
+
+export function deleteNotice({ deleted, failed }, unit) {
+  const noun = (n) => (unit === "movie" ? (n === 1 ? "movie" : "movies") : n === 1 ? "episode" : "episodes");
+  const total = deleted.length + failed.length;
+  if (!failed.length) return unit === "movie" ? "Movie deleted." : `${deleted.length} ${noun(deleted.length)} deleted.`;
+  return `Deleted ${deleted.length} of ${total} ${noun(total)}. ${failed.length} could not be removed.`;
+}
+
 export const NETWORK_LEFT = "Playback stopped: this phone left the hub’s Wi-Fi. A local hub is never reached over mobile data.";
 
 export function watchPrivateNetwork(source, subscribe, onLeft) {

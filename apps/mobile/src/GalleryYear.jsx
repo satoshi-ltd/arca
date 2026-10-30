@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { Image, Pressable, View } from "react-native";
+import { Text } from "./Text";
 import { MediaPlaceholder, useDesign } from "./components";
 import { mergeTimeline } from "./gallery-timeline";
 import { count } from "./format";

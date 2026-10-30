@@ -8,3 +8,6 @@ export function textScale(value) {
   const scale = Number(value);
   return textSizes.some((option) => option.value === scale) ? scale : 1;
 }
+export const maxTextScale = 2;
+export const fontCap = (scale) => Math.max(1, maxTextScale / textScale(scale));
+export const railLabelFontCap = 1.1;

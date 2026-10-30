@@ -2,7 +2,8 @@ import React, { useContext, useLayoutEffect, useRef, useState } from "react";
 import { entryKey, keepPage, keepScroll, pageSize, scrollOffset } from "./list-memory.js";
 import { ScrollPosition } from "./KeyboardPane";
 import { putFlight } from "./flight.js";
-import { Animated, Image, Pressable, Text, View } from "react-native";
+import { Animated, Image, Pressable, View } from "react-native";
+import { Text } from "./Text";
 import {
   Eyebrow,
   ActionRow,
@@ -870,6 +871,7 @@ export function MusicLibrary({
               <SegmentedControl
                 options={tabs.map((value) => ({ value, label: TAB_LABELS[value] }))}
                 value={tab}
+                fit
                 onChange={select}
               />
             </View>

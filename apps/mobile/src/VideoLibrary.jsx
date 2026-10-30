@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Platform, Pressable, ScrollView, View } from "react-native";
+import { Text } from "./Text";
 import {
   Eyebrow,
   ActionRow,
@@ -37,13 +38,15 @@ import {
   seasonLabel,
   titleFacts,
   titleFile,
+  deleteChoices,
+  downloadTargets,
   titleActions,
   videoBackLabel,
   videoShelves,
   videoTabs,
   watchedLine,
 } from "./video-library.js";
-import { NOT_DOWNLOADABLE, OFFLINE_DOWNLOADS, downloadChip, downloadFraction, downloadLabel, downloadNote, downloadTile, seasonProgress } from "./video-downloads.js";
+import { OFFLINE_DOWNLOADS, downloadAction, downloadChip, downloadFraction, downloadLabel, downloadNote, downloadTile } from "./video-downloads.js";
 
 
 function Art({ uri, shape, icon }) {
@@ -122,34 +125,17 @@ function DockTile({ label, icon, ring, value, disabled, onPress, spoken }) {
   );
 }
 
-function EpisodeState({ ep, row, start, allowed }) {
+function EpisodeState({ ep, row }) {
   const { s, c } = useDesign();
   const chip = downloadChip(row);
-  if (chip && row.state !== "done")
-    return (
-      <View accessible accessibilityLabel={downloadLabel(row)}>
-        <Tag variant={chip.variant}>{chip.label}</Tag>
-      </View>
-    );
+  if (!ep.watched && !chip) return null;
   return (
     <View style={s.videoState}>
       {ep.watched && <Icon name="check" size={20} color={c.accent} />}
-      {chip ? (
-        <View accessible accessibilityLabel="Downloaded">
+      {chip && (
+        <View accessible accessibilityLabel={downloadLabel(row)}>
           <Tag variant={chip.variant}>{chip.label}</Tag>
         </View>
-      ) : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={!allowed ? NOT_DOWNLOADABLE : row ? downloadLabel(row) : "Download episode"}
-          accessibilityState={{ disabled: !allowed }}
-          disabled={!allowed}
-          hitSlop={4}
-          onPress={start}
-          style={({ pressed }) => [s.videoDownload, pressed && s.pressedFade, !allowed && s.disabled]}
-        >
-          <Icon name="download" color={row?.state === "failed" ? c.danger : c.mute} />
-        </Pressable>
       )}
     </View>
   );
@@ -269,11 +255,11 @@ function Grid({ cards, art, open, scrollRef, scrollY }) {
   );
 }
 
-function Band({ item, art, back, backLabel, more }) {
+function Band({ item, art, back, backLabel, more, children }) {
   const { s, c } = useDesign();
   const uri = art(item.backdrop, "large");
   return (
-    <View style={s.videoBand}>
+    <View style={[s.videoBand, !!children && s.videoBandHero]}>
       {!!uri && <Image source={{ uri }} style={s.videoBandImage} accessibilityIgnoresInvertColors />}
       <View style={s.videoBandScrim} pointerEvents="none" />
       <View style={s.videoBandBar}>
@@ -287,47 +273,48 @@ function Band({ item, art, back, backLabel, more }) {
           </Pressable>
         )}
       </View>
+      {children}
     </View>
   );
 }
 
-function LanguageGroup({ icon, label, codes }) {
+function LanguageGroup({ icon, label, codes, media }) {
   const { s, c } = useDesign();
   if (!codes.length) return null;
   return (
     <View style={s.videoLanguageGroup} accessible accessibilityLabel={label}>
-      <Icon name={icon} size={14} color={c.soft} />
+      <Icon name={icon} size={14} color={media ? c.onMedia : c.soft} />
       {codes.map((code) => (
-        <View key={code} style={s.videoBadge}>
-          <Text style={s.videoBadgeText}>{code}</Text>
+        <View key={code} style={[s.videoBadge, media && s.videoBadgeMedia]}>
+          <Text style={[s.videoBadgeText, media && s.videoOnMedia]}>{code}</Text>
         </View>
       ))}
     </View>
   );
 }
 
-function Languages({ languages }) {
+function Languages({ languages, media }) {
   const { s } = useDesign();
   if (!languages.audio.length && !languages.subtitles.length) return null;
   return (
     <View style={s.videoLanguages}>
-      <LanguageGroup icon="audio-lines" label={languages.audioLabel} codes={languages.audio} />
-      <LanguageGroup icon="captions" label={languages.subtitleLabel} codes={languages.subtitles} />
+      <LanguageGroup icon="audio-lines" label={languages.audioLabel} codes={languages.audio} media={media} />
+      <LanguageGroup icon="captions" label={languages.subtitleLabel} codes={languages.subtitles} media={media} />
     </View>
   );
 }
 
-function Facts({ facts }) {
+function Facts({ facts, media }) {
   const { s } = useDesign();
   return (
     <View style={s.videoFacts}>
       {facts.map((fact, index) =>
         fact.kind === "badge" ? (
-          <View key={index} style={s.videoBadge}>
-            <Text style={s.videoBadgeText}>{fact.text}</Text>
+          <View key={index} style={[s.videoBadge, media && s.videoBadgeMedia]}>
+            <Text style={[s.videoBadgeText, media && s.videoOnMedia]}>{fact.text}</Text>
           </View>
         ) : (
-          <Text key={index} style={fact.kind === "rating" ? s.videoFactRating : s.caption}>
+          <Text key={index} style={[fact.kind === "rating" ? s.videoFactRating : s.caption, media && s.videoOnMedia]}>
             {fact.text}
           </Text>
         ),
@@ -336,34 +323,42 @@ function Facts({ facts }) {
   );
 }
 
-function EpisodeRow({ ep, art, play, divider, row, start, allowed }) {
-  const { s, c } = useDesign();
+function EpisodeRow({ ep, art, play, divider, row, upNext, more }) {
+  const { s, c, compact } = useDesign();
   const value = progress(ep);
   return (
     <PressScale
       accessibilityRole="button"
       accessibilityLabel={`${episodeTitle(ep)}, ${episodeCaption(ep)}${ep.watched ? ", watched" : ""}`}
+      accessibilityActions={more ? [{ name: "more", label: "Episode actions" }] : undefined}
+      onAccessibilityAction={more ? () => more(ep) : undefined}
+      onLongPress={more ? () => more(ep) : undefined}
       onPress={() => play(ep, ep.position?.position || 0)}
-      style={({ pressed }) => [s.videoEpisode, divider && s.separator, pressed && s.pressed]}
+      style={({ pressed }) => [s.videoEpisode, compact && s.videoEpisodeFold, divider && s.separator, pressed && s.pressed]}
     >
       <View style={s.videoEpisodeStill}>
         <Art uri={art(ep.still, "small")} shape="still" icon="tv" />
         {value != null && <ProgressLine value={value} edge />}
       </View>
       <View style={[s.flex, s.stack]}>
-        <Text numberOfLines={1} style={[s.rowTitle, ep.position && s.videoNow]}>
+        <Text numberOfLines={1} style={[s.rowTitle, (compact ? upNext : ep.position) && s.videoNow]}>
           {episodeTitle(ep)}
         </Text>
         <Text numberOfLines={1} style={s.caption}>
           {episodeCaption(ep)}
         </Text>
         {!!ep.overview && (
-          <Text numberOfLines={2} style={s.caption}>
+          <Text numberOfLines={compact ? 1 : 2} style={s.caption}>
             {ep.overview}
           </Text>
         )}
       </View>
-      <EpisodeState ep={ep} row={row} start={start} allowed={allowed} />
+      <EpisodeState ep={ep} row={row} />
+      {!!more && (
+        <Pressable accessibilityRole="button" accessibilityLabel="Episode actions" hitSlop={4} onPress={() => more(ep)} style={({ pressed }) => [s.musicRowAction, pressed && s.musicPressed]}>
+          <Icon name="more" size={20} color={c.mute} />
+        </Pressable>
+      )}
     </PressScale>
   );
 }
@@ -382,7 +377,7 @@ function Seasons({ show, season, choose }) {
 }
 
 function TitlePage({ library, item, route, setRoute, art, play, more, mark, open, download, startDownload, cancelDownload, canDownload }) {
-  const { s, wide } = useDesign();
+  const { s, wide, compact } = useDesign();
   const back = () => setRoute(route.slice(0, 1));
   const actions = titleActions(item);
   const watched = actions[0] === "unwatched";
@@ -446,8 +441,6 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
   );
   const related = relatedShelf(library, item);
   const relatedRow = related && <Shelf shelf={related} art={art} open={open} />;
-  const running = show ? seasonProgress(season.episodes, download) : null;
-  const missing = show && !running ? season.episodes.filter((ep) => canDownload(ep) && (!download(ep) || ["failed", "stale"].includes(download(ep).state))) : [];
   const episodesPane = show && (
     <View style={s.stack}>
       <View style={s.row}>
@@ -459,19 +452,7 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
             {`${season.episodes.filter((ep) => ep.watched).length} of ${season.episodes.length} watched`}
           </Text>
         )}
-        {missing.length > 0 && <Button quiet label="Download season" icon="download" onPress={() => startDownload(missing)} />}
       </View>
-      {running && (
-        <View style={s.row}>
-          <View style={[s.flex, s.stack]} accessible accessibilityLabel={`Downloading season, ${running.finished} of ${running.total}, ${running.percent}%`}>
-            <Text style={s.caption}>{`Downloading season · ${running.finished} of ${running.total} · ${running.percent}%`}</Text>
-            <View style={s.videoSeasonBar}>
-              <View style={[s.progressFill, { width: `${running.percent}%` }]} />
-            </View>
-          </View>
-          <Button quiet label="Cancel" icon="x" onPress={() => cancelDownload(running.active)} />
-        </View>
-      )}
       <View style={s.group}>
         {season.episodes.map((ep, index) => (
           <EpisodeRow
@@ -480,17 +461,60 @@ function TitlePage({ library, item, route, setRoute, art, play, more, mark, open
             art={art}
             play={play}
             divider={index > 0}
+            upNext={ep.id === target?.id}
             row={download(ep)}
-            start={() => startDownload([ep])}
-            allowed={canDownload(ep)}
+            more={(entry) => more(entry, season.season, item.title)}
           />
         ))}
       </View>
     </View>
   );
+  const heroActions = show ? (
+    <Button label={watched ? "Mark all episodes as unwatched" : "Mark all episodes as watched"} icon={watched ? "eye-off" : "check"} onPress={() => mark(item, !watched)} />
+  ) : (
+    <>
+      {!!target && <Button primary label={playLabel(library, item)} icon="play" onPress={() => play(target, target.position?.position || 0)} />}
+      {tile && <Button label={tile.label} icon={tile.icon} disabled={tile.disabled} onPress={tileAction[tile.action]} />}
+      <Button label={watched ? "Mark as unwatched" : "Mark as watched"} icon={watched ? "eye-off" : "check"} onPress={() => mark(item, !watched)} />
+    </>
+  );
+  const hero = (
+    <View style={s.videoHero}>
+      <View style={s.videoHeroPoster}>
+        <Art uri={art(item.poster, "small")} shape="poster" icon={show ? "tv" : "clapperboard"} />
+        {watched && <Watched />}
+      </View>
+      <View style={s.videoHeroInfo}>
+        <Text accessibilityRole="header" style={[s.title, s.videoOnMedia]}>
+          {item.title}
+        </Text>
+        <Facts media facts={titleFacts(item, library)} />
+        {!!languages && <Languages media languages={languages} />}
+        {!!item.overview && (
+          <Text numberOfLines={3} style={[s.text, s.videoOnMedia]}>
+            {item.overview}
+          </Text>
+        )}
+        {!!item.cast.length && <Text style={[s.caption, s.videoOnMedia]}>{item.cast.join(", ")}</Text>}
+        {!show && !!target?.position && <Text style={[s.caption, s.videoOnMedia]}>{resumeLine(target)}</Text>}
+        <View style={s.videoHeroActions}>{heroActions}</View>
+        {!show && !!note && <Text style={[s.caption, s.videoOnMedia]}>{note}</Text>}
+      </View>
+    </View>
+  );
+  if (compact)
+    return (
+      <View style={s.musicPage}>
+        <Band item={item} art={art} back={back} backLabel={videoBackLabel(route)} more={() => more(item, season?.season)}>
+          {hero}
+        </Band>
+        {episodesPane}
+        {relatedRow}
+      </View>
+    );
   return (
     <View style={s.musicPage}>
-      <Band item={item} art={art} back={back} backLabel={videoBackLabel(route)} more={() => more(item)} />
+      <Band item={item} art={art} back={back} backLabel={videoBackLabel(route)} more={() => more(item, season?.season)} />
       {wide ? (
         <View style={s.videoSplit}>
           <View style={s.videoSplitSide}>
@@ -652,7 +676,7 @@ export function VideoLibrary({
   );
 }
 
-export function VideoSheet({ sheet, locked, act }) {
+export function VideoSheet({ sheet, locked, act, download, canDownload }) {
   const { s } = useDesign();
   if (sheet.kind === "video-watch")
     return (
@@ -661,19 +685,41 @@ export function VideoSheet({ sheet, locked, act }) {
         <ActionRow label="Remove from Watch next" icon="circle-minus" divider disabled={locked} onPress={() => act("remove")} />
       </View>
     );
-  const actions = titleActions(sheet.item, !!sheet.downloaded);
+  const show = sheet.item.kind === "show";
+  const row = show ? null : download(sheet.item);
+  const saved = show ? downloadTargets(sheet.item).some((target) => !!download(target)) && "remove-download" : downloadAction(row);
+  const blocked = !show && !canDownload(sheet.item);
+  const actions = titleActions(sheet.item, saved);
+  const removals = deleteChoices(sheet.item, sheet.season);
   const labels = {
     watched: ["Mark as watched", "check"],
     unwatched: ["Mark as unwatched", "eye-off"],
-    "remove-download": ["Remove download", "trash"],
+    download: [downloadTile(row, true).label, "download"],
+    "cancel-download": ["Cancel download", "x"],
+    "remove-download": ["Remove from this device", "phone"],
   };
   return (
     <>
       <View style={s.actionGroup}>
         {actions.map((name, index) => (
-          <ActionRow key={name} label={labels[name][0]} icon={labels[name][1]} divider={index > 0} disabled={locked} onPress={() => act(name)} />
+          <ActionRow
+            key={name}
+            label={labels[name][0]}
+            icon={labels[name][1]}
+            divider={index > 0}
+            disabled={locked || (name === "download" && blocked)}
+            note={name === "download" && blocked ? downloadNote(row, false, sheet.item, Platform.OS) : undefined}
+            onPress={() => act(name)}
+          />
         ))}
       </View>
+      {!!removals.length && (
+        <View style={s.destructiveActionGroup}>
+          {removals.map((choice, index) => (
+            <ActionRow key={choice.name} label={choice.label} icon="trash" danger divider={index > 0} disabled={locked} onPress={() => act(choice.name)} />
+          ))}
+        </View>
+      )}
     </>
   );
 }

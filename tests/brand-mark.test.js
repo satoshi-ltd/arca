@@ -196,7 +196,7 @@ test("the phone holds the splash mark in place, and iOS draws the arch with the 
   const components = read("apps/mobile/src/components.jsx");
   assert.match(app, /if \(opening\)\s+return \([\s\S]{0,600}<LaunchHold \/>/);
   assert.doesNotMatch(app, /<Scaffold label="Opening Arca" \/>/);
-  assert.match(app, /\{launchShown && <LaunchHold leaving onLeft=\{\(\) => setLaunchShown\(false\)\} \/>\}\s+<\/Design\.Provider>/);
+  assert.match(app, /\{launchShown && <LaunchHold leaving onLeft=\{\(\) => setLaunchShown\(false\)\} \/>\}\s+<\/FontCap\.Provider>\s+<\/Design\.Provider>/);
   const hold = components.slice(components.indexOf("export function LaunchHold("), components.indexOf("export function Section("));
   assert.match(hold, /<View style=\{\{ width: 160, height: 160 \}\}>/, "the splash's 160 dp canvas");
   assert.match(hold, /viewBox=\{brandSplashBox\}/);

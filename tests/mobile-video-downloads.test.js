@@ -14,7 +14,7 @@ import {
   downloadBlock,
   downloadCaution,
   downloadChip,
-  seasonProgress,
+  downloadAction,
   downloadNote,
   downloadTile,
   HUB_AWAY,
@@ -470,7 +470,10 @@ test("Home leads with a Downloads shelf of badged posters whenever anything is d
   assert.equal(first.title, "Downloads");
   assert.deepEqual(first.cards.map((card) => [card.title, card.caption, card.saved]), [["Andor", "2 episodes", true], ["Stuart Little", "1999", true]]);
   assert.deepEqual(downloadedTitles(library, saved).map((card) => card.item.id), ["s:1", "m:1"], "offline shows the same downloads");
-  assert.deepEqual(titleActions(library.items.get("m:1"), true), ["watched", "remove-download"]);
+  assert.deepEqual(titleActions(library.items.get("m:1"), "remove-download"), ["watched", "remove-download"]);
+  assert.deepEqual(titleActions(library.items.get("e:1"), downloadAction(saved(library.items.get("e:1")))), ["watched", "remove-download"]);
+  assert.deepEqual(titleActions(library.items.get("m:2"), downloadAction(saved(library.items.get("m:2")))), ["watched", "cancel-download"]);
+  assert.deepEqual(titleActions(library.items.get("e:3"), downloadAction(saved(library.items.get("e:3")))), ["watched", "download"]);
   assert.deepEqual(titleActions(library.items.get("m:2")), ["watched"]);
   assert.deepEqual(downloadTargets(library.items.get("s:1")).map((ep) => ep.id), ["e:1", "e:2", "e:3"]);
 });
@@ -1096,9 +1099,21 @@ test("an episode's chip says Downloaded, Downloading with its percentage for the
   assert.equal(downloadChip(null), null);
 });
 
-test("a season's progress counts finished and active episodes and lists the ones a cancel stops", () => {
-  const episodes = ["a", "b", "c", "d"].map((id) => ({ id, path: id }));
-  const rows = { a: { state: "done", done: 10, size: 10 }, b: { state: "queued", running: true, done: 500, size: 1000 }, c: { state: "queued", done: 0, size: 1000 }, d: { state: "failed" } };
-  assert.deepEqual(seasonProgress(episodes, (episode) => rows[episode.id]), { active: [episodes[1], episodes[2]], finished: 1, total: 3, percent: 50, fraction: 0.5 });
-  assert.equal(seasonProgress(episodes, (episode) => (episode.id === "a" ? rows.a : null)), null, "nothing running leaves Download season");
+test("an episode's or movie's sheet offers Download, Cancel download or Remove from this device by its download state", () => {
+  assert.deepEqual(downloadAction(null), ["download"]);
+  assert.deepEqual(downloadAction({ state: "failed" }), ["download", "remove-download"], "a failed partial retries or leaves the phone");
+  assert.deepEqual(downloadAction({ state: "stale" }), ["download", "remove-download"], "a copy of an older version downloads again or leaves the phone");
+  assert.deepEqual(downloadAction({ state: "queued", running: true, done: 500, size: 1000 }), ["cancel-download"]);
+  assert.deepEqual(downloadAction({ state: "queued", done: 0, size: 1000 }), ["cancel-download"]);
+  assert.deepEqual(downloadAction({ state: "waiting", done: 400, size: 1000 }), ["cancel-download"]);
+  assert.deepEqual(downloadAction({ state: "done", done: 10, size: 10 }), ["remove-download"]);
+});
+
+test("a movie's sheet with an outdated or failed copy lists Download again or Try again, then Remove from this device, before Delete movie…", () => {
+  const heat = { id: "m:1", kind: "movie", path: "movies/Heat.mp4", title: "Heat", watched: false };
+  for (const [state, label] of [["stale", "Download again"], ["failed", "Try again"]]) {
+    const row = { state, done: 1, size: 2 };
+    assert.deepEqual(titleActions(heat, downloadAction(row)), ["watched", "download", "remove-download"], state);
+    assert.equal(downloadTile(row, true).label, label);
+  }
 });

@@ -668,3 +668,38 @@ test("a hub whose video disk is missing keeps every download through a fresh lib
   assert.deepEqual([empty.movies, empty.offline], [[], undefined]);
   assert.equal((await rows(r, f)).length, 1);
 });
+
+test("a replica that only streams a library deletes a title through the hub and drops its own download", async (t) => {
+  const f = await hub(t);
+  const { movie, name } = await movieLibrary(f);
+  const r = await replicaOf(t, f);
+  await r.call("/v1/video/download", { volume: f.v.id, paths: [name] });
+  await idle(r);
+  assert.ok(stored(r).length, "the title was downloaded here");
+  assert.equal(r.replica.engine.store.volumes().some((v) => v.id === f.v.id && v.selected), false);
+  await assert.rejects(r.call("/v1/delete-file", { volume: f.v.id, path: name, rev: movie.rev }), "the local copy route cannot delete an unselected folder");
+  const deleted = await r.call("/v1/video/delete", { volume: f.v.id, path: name, rev: movie.rev });
+  assert.ok(deleted);
+  const current = f.s.current(f.v.id, name);
+  assert.equal(current.deleted, 1, "the hub deleted the file");
+  const last = f.s.db.prepare("SELECT author FROM revisions WHERE volume=? AND path=? ORDER BY rev DESC LIMIT 1").get(f.v.id, name);
+  assert.equal(last.author, f.s.db.prepare("SELECT id FROM devices WHERE name=?").get("Desk").id, "history names the replica");
+  assert.deepEqual(await rows(r, f), [], "this device forgets the download");
+  assert.deepEqual(stored(r), [], "and frees its file");
+  await assert.rejects(r.call("/v1/video/delete", { volume: f.v.id, path: name, rev: movie.rev }), { status: 404 });
+});
+
+test("the hub deletes a video through the same route, only in video libraries", async (t) => {
+  const f = await hub(t);
+  const { movie, name } = await movieLibrary(f);
+  const other = f.s.addVolume("Notes");
+  fs.writeFileSync(path.join(other.path, "a.txt"), "a");
+  await f.daemon.engine.cycle();
+  await assert.rejects(f.call("/v1/video/delete", { volume: other.id, path: "a.txt", rev: f.s.current(other.id, "a.txt").rev }), { status: 404 });
+  const interrupt = f.daemon.engine.interruptCycle.bind(f.daemon.engine);
+  let interrupted = 0;
+  f.daemon.engine.interruptCycle = () => (interrupted++, interrupt());
+  await f.call("/v1/video/delete", { volume: f.v.id, path: name, rev: movie.rev });
+  assert.equal(f.s.current(f.v.id, name).deleted, 1);
+  assert.ok(interrupted > 0, "an explicit delete does not wait behind a background cycle");
+});

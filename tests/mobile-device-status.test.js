@@ -28,7 +28,7 @@ test("Settings opens with This device and Local synchronization no longer lists 
   assert.doesNotMatch(app, /Last completed sync/);
   const components = source("components.jsx");
   const row = components.slice(components.indexOf("export function DeviceRow("), components.indexOf("export function MachineRow("));
-  assert.match(row, /<Icon name="phone" \/>/);
+  assert.match(row, /<Icon name="phone" size=\{wide \? 20 : 16\} \/>/);
   assert.match(row, /style=\{\[s\.caption, s\.roleWord\]\}>Replica</);
   assert.match(row, /<StateWord device=\{device\} \/>\s*\{device\.last \? ` · \$\{device\.last\}` : ""\}/);
 });

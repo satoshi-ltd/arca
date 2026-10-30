@@ -51,7 +51,7 @@ test("title pages own their header: the backdrop band carries back and the menu,
   assert.match(app, /\{!onboarding && !videoTitleOpen && \(\s+<View\s+style=\{\[\s+s\.viewHeader,/);
   const back = app.slice(app.indexOf("const handler = () => {"), app.indexOf("const selectTab"));
   assert.ok(back.indexOf("videoBack.current()") < back.lastIndexOf("setFolder(null)"));
-  assert.match(library, /<Band item=\{item\} art=\{art\} back=\{back\} backLabel=\{videoBackLabel\(route\)\} more=\{\(\) => more\(item\)\} \/>/);
+  assert.match(library, /<Band item=\{item\} art=\{art\} back=\{back\} backLabel=\{videoBackLabel\(route\)\} more=\{\(\) => more\(item, season\?\.season\)\} \/>/);
   assert.match(library, /Resume|playLabel\(library, item\)/);
   assert.match(library, /<DockTile label="Start over" icon="rotate-ccw" onPress=\{\(\) => play\(target, 0\)\} \/>/);
   assert.match(library, /spoken=\{watched \? "Mark as unwatched" : "Mark as watched"\}/);
@@ -70,13 +70,11 @@ test("tabs show only with two or more, the Kids tab stays, and the caption says 
   assert.doesNotMatch(library, /label="Retry"/);
 });
 
-test("the ⋯ sheet holds watched marks and Remove download only: a streamed title is never deleted from the hub", () => {
+test("the ⋯ sheet holds watched marks, Remove from this device and the destructive group; deletion goes through the confirm dialog, never the offline queue", () => {
   assert.match(app, /: musicSheet\(shownSheet\) \|\| videoSheet\(shownSheet\)\)\}/);
-  assert.match(app, /<VideoSheet sheet=\{shownSheet\} locked=\{actionLocked\} act=\{\(name\) => videoAction\(name, shownSheet\)\} \/>/);
-  const start = app.indexOf("function videoAction(");
-  const action = app.slice(start, app.indexOf("\n  }\n", start));
-  assert.doesNotMatch(action, /Delete|removeFile/);
-  assert.doesNotMatch(library, /Delete…|destructiveActionGroup/);
+  assert.match(app, /<VideoSheet\s+sheet=\{shownSheet\}\s+locked=\{actionLocked\}\s+act=\{\(name\) => videoAction\(name, shownSheet\)\}/);
+  assert.match(library, /<View style=\{s\.destructiveActionGroup\}>/);
+  assert.doesNotMatch(app.slice(app.indexOf("function deleteVideoTitles("), app.indexOf("function videoAction(")), /queue|withQueuedPositions/i);
   assert.doesNotMatch(library + app, /Mark as kids|Not for kids|\/v1\/video\/kids/, "kids overrides are hub admin only");
 });
 
@@ -132,8 +130,8 @@ test("posters carry a rating badge, title pages show facts and languages instead
   assert.match(library, /<Facts facts=\{titleFacts\(item, library\)\} \/>/);
   assert.match(library, /const languages = titleFile\(library, item\) \? languageChips\(titleFile\(library, item\)\) : null;/);
   assert.match(library, /<Facts facts=\{titleFacts\(item, library\)\} \/>\s+\{!!languages && <Languages languages=\{languages\} \/>\}/, "the language chips sit under the facts row");
-  assert.match(library, /<LanguageGroup icon="audio-lines" label=\{languages\.audioLabel\} codes=\{languages\.audio\} \/>\s+<LanguageGroup icon="captions" label=\{languages\.subtitleLabel\} codes=\{languages\.subtitles\} \/>/);
-  assert.match(library, /<View style=\{s\.videoLanguageGroup\} accessible accessibilityLabel=\{label\}>\s+<Icon name=\{icon\} size=\{14\} color=\{c\.soft\} \/>/, "the icon sits outside the chips, in the secondary colour");
+  assert.match(library, /<LanguageGroup icon="audio-lines" label=\{languages\.audioLabel\} codes=\{languages\.audio\} media=\{media\} \/>\s+<LanguageGroup icon="captions" label=\{languages\.subtitleLabel\} codes=\{languages\.subtitles\} media=\{media\} \/>/);
+  assert.match(library, /<View style=\{s\.videoLanguageGroup\} accessible accessibilityLabel=\{label\}>\s+<Icon name=\{icon\} size=\{14\} color=\{media \? c\.onMedia : c\.soft\} \/>/, "the icon sits outside the chips, in the secondary colour");
   assert.doesNotMatch(library, /fileLine|subtitleLine/);
   assert.match(theme, /videoBadge: \{[^}]*borderWidth: 1,\s+borderColor: c\.line,/);
   assert.match(app, /\{!connected && !videoView && \(\s+<Card/, "the library's own empty state is the only offline message");
@@ -170,8 +168,8 @@ test("sort and season pickers use the app's segmented control, there is no genre
   assert.match(theme, /videoToolbar: \{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between"/, "it wraps below the tabs when it does not fit");
   assert.match(library, /options=\{show\.seasons\.map\(\(entry\) => \(\{ value: entry\.season, label: seasonLabel\(entry\) \}\)\)\}/);
   const components = read("components.jsx");
-  assert.match(components, /export function SegmentedControl\(\{ options, value, onChange, scroll = false, clearable = false \}\)/);
-  assert.match(components, /return scroll \? \(\s+<ScrollView horizontal showsHorizontalScrollIndicator=\{false\}>/);
+  assert.match(components, /export function SegmentedControl\(\{ options, value, onChange, scroll = false, fit = false, clearable = false \}\)/);
+  assert.match(components, /return scroll \|\| fit \? \(\s+<ScrollView\s+horizontal\s+showsHorizontalScrollIndicator=\{false\}/);
   assert.match(theme, /segmentScroll: \{ flex: 0, paddingHorizontal: 12 \}/, "scrolling segments size to their labels");
   assert.match(read("video-library.js"), /other: "Others",/);
 });
@@ -233,7 +231,7 @@ test("Mark as unwatched uses the eye-off icon on the page and in the sheet, like
   assert.match(library, /unwatched: \["Mark as unwatched", "eye-off"\]/);
 });
 
-test("a movie page and every episode row offer Download, with progress, cancel and a Downloaded check", () => {
+test("a movie page offers Download in its dock and every episode row shows only its download state", () => {
   assert.match(library, /const tile = show \? null : downloadTile\(row, allowed\);/, "the movie action is a tile in the dock beside Start over and Watched");
   assert.match(library, /const note = show \? "" : downloadNote\(row, allowed, item, Platform\.OS\);/, "one line below the tiles says why Download is off, or that a download runs");
   assert.match(library, /\{!!note && <Text style=\{s\.caption\}>\{note\}<\/Text>\}/);
@@ -244,16 +242,15 @@ test("a movie page and every episode row offer Download, with progress, cancel a
   assert.match(dock, /\{ring \? <Ring large value=\{value\} \/> : <Icon name=\{icon\} size=\{20\} color=\{c\.ink\} \/>\}/);
   assert.match(theme, /videoDockTile: \{\s+flex: 1,\s+minWidth: 0,/, "the tiles share the column equally");
   const episode = library.slice(library.indexOf("function EpisodeState("), library.indexOf("function VideoCard("));
-  assert.match(episode, /if \(chip && row\.state !== "done"\)\s+return \(\s+<View accessible accessibilityLabel=\{downloadLabel\(row\)\}>\s+<Tag variant=\{chip\.variant\}>\{chip\.label\}<\/Tag>/, "a running or waiting episode shows only its tag, in place of the watched check");
-  assert.match(episode, /\{ep\.watched && <Icon name="check" size=\{20\} color=\{c\.accent\} \/>\}/, "the watched check sits above the download state");
-  assert.match(episode, /<Icon name="download" color=\{row\?\.state === "failed" \? c\.danger : c\.mute\} \/>/);
-  assert.doesNotMatch(episode, /cancel|Ring/, "an episode has no cancel of its own");
-  assert.match(library, /<EpisodeState ep=\{ep\} row=\{row\} start=\{start\} allowed=\{allowed\} \/>\s+<\/PressScale>/);
-  assert.match(library, /Downloading season · \$\{running\.finished\} of \$\{running\.total\} · \$\{running\.percent\}%/);
-  assert.match(library, /<Button quiet label="Cancel" icon="x" onPress=\{\(\) => cancelDownload\(running\.active\)\} \/>/, "the season row cancels the queued and running episodes");
-  assert.match(library, /\{missing\.length > 0 && <Button quiet label="Download season" icon="download" onPress=\{\(\) => startDownload\(missing\)\} \/>\}/, "the season picker carries Download season");
-  assert.match(library, /"remove-download": \["Remove download", "trash"\]/);
-  assert.match(library, /const actions = titleActions\(sheet\.item, !!sheet\.downloaded\);/);
+  assert.match(episode, /\{ep\.watched && <Icon name="check" size=\{20\} color=\{c\.accent\} \/>\}\s+\{chip && \(\s+<View accessible accessibilityLabel=\{downloadLabel\(row\)\}>\s+<Tag variant=\{chip\.variant\}>\{chip\.label\}<\/Tag>/, "the watched check stays beside the state tag in every state");
+  assert.doesNotMatch(episode, /Pressable|onPress|cancel|Ring|"download"/, "an episode row holds no download or cancel button");
+  assert.match(library, /<EpisodeState ep=\{ep\} row=\{row\} \/>\s+\{!!more && \([\s\S]*?\)\}\s+<\/PressScale>/);
+  assert.doesNotMatch(library, /Downloading season|seasonProgress|running\.active/, "the season has no progress line and no Cancel");
+  assert.doesNotMatch(library, /Download season|missing\.length/, "the season picker has no general download; each episode downloads on its own");
+  assert.match(library, /"remove-download": \["Remove from this device", "phone"\]/);
+  assert.match(library, /"cancel-download": \["Cancel download", "x"\]/);
+  assert.match(library, /download: \[downloadTile\(row, true\)\.label, "download"\]/, "the sheet says Download, Download again or Try again like the tile");
+  assert.match(library, /const actions = titleActions\(sheet\.item, saved\);/);
   assert.match(library, /\{card\.saved && <Saved \/>\}/);
   assert.match(library, /<Icon name="arrow-down-to-line" size=\{14\} color=\{c\.onMedia\} \/>/, "posters carry a small download badge");
   assert.match(theme, /videoSaved: \{\s+position: "absolute",\s+top: 6,\s+left: 6,/);
@@ -281,17 +278,18 @@ test("the app plays downloads without the hub, queues positions and resumes down
   assert.match(load, /await withQueuedPositions\(replica, folder\.id, cached\);/, "offline, the list resumes from positions still queued");
   assert.ok(load.indexOf("flushPositions") < load.indexOf("refreshVideoLibrary"), "queued positions reach the hub before the list is read again");
   const action = app.slice(app.indexOf("function videoAction("), app.indexOf("\n  }\n", app.indexOf("function videoAction(")));
-  assert.match(action, /if \(name === "remove-download"\) \{\s+removeDownloads\(volume, downloadTargets\(item\)\);/);
-  assert.match(app, /downloaded: downloadTargets\(item\)\.some\(\(target\) => !!videoDownload\(target\)\),/);
+  assert.match(action, /if \(name === "download"\) \{\s+startDownload\(\[item\]\);\s+return;\s+\}/);
+  assert.match(action, /if \(name === "remove-download" \|\| name === "cancel-download"\) \{\s+removeDownloads\(volume, downloadTargets\(item\)\);/);
+  assert.match(app, /<VideoSheet\s+sheet=\{shownSheet\}\s+locked=\{actionLocked\}\s+act=\{\(name\) => videoAction\(name, shownSheet\)\}\s+download=\{videoDownload\}\s+canDownload=\{\(item\) => downloadable\(item, Platform\.OS\)\}/, "the sheet reads the live download state");
+  assert.doesNotMatch(app, /downloaded: downloadTargets/);
 });
 
-test("titles this phone cannot play from a file offer Download disabled with the reason, and seasons skip them", () => {
+test("titles this phone cannot play from a file offer Download disabled with the reason on its own row", () => {
   assert.match(app, /canDownload=\{\(item\) => downloadable\(item, Platform\.OS\)\}/);
   assert.match(app, /mode: session\.mode \|\| "auto",\s+audio: session\.audio \?\? null,\s+stream: \(\) =>/, "the chosen audio decides whether the file can play alone");
   assert.match(library, /const allowed = show \? false : canDownload\(item\);/);
-  assert.match(library, /season\.episodes\.filter\(\(ep\) => canDownload\(ep\) && \(!download\(ep\) \|\| \["failed", "stale"\]\.includes\(download\(ep\)\.state\)\)\)/);
   assert.match(app, /itemDownload\(videoDownloads\.get\(downloadKey\(folder\.id, item\.path\)\), item\)/, "a copy of an older version reads Download again");
-  assert.match(library, /disabled=\{!allowed\}/, "an episode that cannot be downloaded has a disabled button");
+  assert.match(library, /disabled=\{locked \|\| \(name === "download" && blocked\)\}\s+note=\{name === "download" && blocked \? downloadNote\(row, false, sheet\.item, Platform\.OS\) : undefined\}/, "an episode that cannot be downloaded shows Download disabled with the reason in its sheet");
 });
 
 test("Watch next marks a next episode NEXT and a recent arrival NEW over its still", () => {
@@ -310,7 +308,7 @@ test("a Watch next card opens a sheet on long press with Details and Remove, and
 });
 
 test("phone badges centre their label: fixed tag height and no font padding", () => {
-  assert.match(theme, /videoBadge: \{\s+height: g\.tagHeight,\s+justifyContent: "center",\s+alignItems: "center",/);
+  assert.match(theme, /videoBadge: \{\s+minHeight: g\.tagHeight,\s+justifyContent: "center",\s+alignItems: "center",/);
   for (const name of ["videoBadgeText", "videoRatingText"]) assert.match(theme, new RegExp(`${name}: \\{[^}]*includeFontPadding: false, textAlignVertical: "center" \\}`), name);
 });
 
@@ -336,3 +334,31 @@ test("an open video library refreshes by itself every minute and when the app re
   assert.match(read("sync-cadence.js"), /export const VIDEO_REFRESH_MS = 60000;/);
 });
 
+
+test("the sheet separates Remove from this device (neutral smartphone) from the danger group that owns the only trash icon", () => {
+  const sheet = library.slice(library.indexOf("export function VideoSheet("));
+  assert.doesNotMatch(library, /Remove download/);
+  assert.match(sheet, /<ActionRow\s+key=\{name\}\s+label=\{labels\[name\]\[0\]\}\s+icon=\{labels\[name\]\[1\]\}\s+divider=\{index > 0\}/);
+  assert.doesNotMatch(sheet.slice(0, sheet.indexOf("destructiveActionGroup")), /"trash"|danger/);
+  assert.match(sheet.slice(sheet.indexOf("destructiveActionGroup")), /icon="trash" danger/);
+  assert.equal((sheet.match(/"trash"/g) || []).length, 1);
+});
+
+test("every episode row on the phone and the Fold ends with one ⋯ that opens the same sheet as the long press", () => {
+  const row = library.slice(library.indexOf("function EpisodeRow("), library.indexOf("function Seasons("));
+  assert.doesNotMatch(row, /compact && !!more/, "the ⋯ is not limited to the Fold");
+  assert.equal((row.match(/accessibilityLabel="Episode actions"/g) || []).length, 1);
+  assert.equal((row.match(/<Pressable/g) || []).length, 1, "the ⋯ is the row's only button");
+  assert.match(row, /onLongPress=\{more \? \(\) => more\(ep\) : undefined\}/);
+  assert.match(row, /accessibilityLabel="Episode actions" hitSlop=\{4\} onPress=\{\(\) => more\(ep\)\}/);
+  assert.ok(row.indexOf("<EpisodeState") < row.indexOf('accessibilityLabel="Episode actions"'), "the state comes before the ⋯");
+  assert.doesNotMatch(theme, /videoEpisodeMore|videoDownload:|videoSeasonBar/);
+});
+
+test("the episode sheet lists Mark as watched, the download action for its state, then Delete episode… in the destructive group", () => {
+  const sheet = library.slice(library.indexOf("export function VideoSheet("));
+  assert.match(sheet, /const saved = show \? downloadTargets\(sheet\.item\)\.some\(\(target\) => !!download\(target\)\) && "remove-download" : downloadAction\(row\);/);
+  assert.ok(sheet.indexOf("actions.map") < sheet.indexOf("destructiveActionGroup"), "the destructive group comes last");
+  const pane = library.slice(library.indexOf("const episodesPane"), library.indexOf("const heroActions"));
+  assert.doesNotMatch(pane, /Button|cancelDownload|startDownload/, "the season holds no progress line, no Cancel and no Download season");
+});

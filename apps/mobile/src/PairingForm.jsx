@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
+import { Text } from "./Text";
 import { useDesign, Field, CodeInput, Button, Icon } from "./components";
 
 export function PairingForm({

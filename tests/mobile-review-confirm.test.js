@@ -108,7 +108,7 @@ test("the phone tab bar flags Settings when the device needs attention and the F
   const theme = read("theme.js");
   assert.match(theme, /width: compact \? 72 : 200/);
   assert.match(theme, /compactNavLabel: \{/);
-  assert.match(read("App.jsx"), /name=\{name\}\s+device=\{device\}\s+\/>\s*\)\}\s*<\/KeyboardPane>/);
+  assert.match(read("App.jsx"), /name=\{name\}\s+device=\{device\}\s+\/>\s*\)\}\s*<\/View>\s*<\/KeyboardPane>/);
 });
 
 test("a failed phone search shows the shared error notice with Retry, not No matches", () => {
@@ -213,7 +213,7 @@ test("a mounted notice is announced with its title and body", async () => {
 test("segmented controls meet the touch height, the Text size control scrolls and labels stay on one line", () => {
   assert.match(read("theme.js"), /segment: \{\s+flex: wide \? 0 : 1,\s+paddingHorizontal: wide \? 12 : 0,\s+minHeight: g\.touchHeight,/);
   assert.match(read("components.jsx"), /<Text\s+numberOfLines=\{1\}\s+style=\{\[\s+s\.buttonLabel,\s+s\.segmentText,/);
-  assert.match(read("components.jsx"), /<Text\s+numberOfLines=\{1\}\s+style=\{\[\s+wide \? \(compact \? s\.compactNavLabel : s\.navLabel\) : s\.caption,/);
+  assert.match(read("components.jsx"), /<Text\s+numberOfLines=\{1\}\s+maxFontSizeMultiplier=\{wide && compact \? railLabelFontCap : undefined\}\s+style=\{\[\s+wide \? \(compact \? s\.compactNavLabel : s\.navLabel\) : s\.caption,/);
   assert.match(read("App.jsx"), /options=\{textSizes\}\s+scroll\s+value=\{textScale\(prefs\.textSize\)\}/);
 });
 

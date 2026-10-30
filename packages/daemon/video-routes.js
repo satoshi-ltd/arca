@@ -411,6 +411,18 @@ export async function videoRoute(context) {
   if (req.method !== "POST") fail("Method not allowed", 405);
   const body = await context.jsonBody();
   context.checkCredential();
+  if (route === "/v1/video/delete") {
+    requireAdmin();
+    if (typeof body.volume !== "string" || typeof body.path !== "string") fail("Invalid video");
+    let deleted;
+    if (hub) {
+      if (!video.isVideo(body.volume)) fail("This folder is not a video library", 404);
+      deleted = await context.authorizedWork(() => engine.deleteFile(body.volume, body.path, body.rev));
+    } else deleted = await forward(engine, "/v1/delete-file", { volume: body.volume, path: body.path, rev: body.rev });
+    const downloads = engine.videoDownloads;
+    if (downloads) downloads.forget(downloads.rows(body.volume).filter((row) => row.path === body.path));
+    return send(200, deleted);
+  }
   if (route === "/v1/video/mark") {
     requireAdmin();
     if (!hub) fail("This device is not the hub", 409);

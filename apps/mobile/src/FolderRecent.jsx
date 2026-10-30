@@ -1,7 +1,8 @@
 import { Scaffold } from "./components";
 import { ErrorNotice } from "./Notice";
 import React, { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text } from "./Text";
 import { EmptyState, HistoryGlyph, Icon, OfflineEmpty, useDesign } from "./components";
 import { historyCaption } from "./home-data";
 import { bytes } from "./format";
@@ -94,7 +95,7 @@ export function FolderRecent({
               accessibilityRole="button"
               accessibilityLabel={`View history for ${row.path}`}
               onPress={() => open(row)}
-              style={[s.settingRow, s.row, index > 0 && s.separator]}
+              style={[s.settingRow, s.settingRowTall, s.row, index > 0 && s.separator]}
             >
               <HistoryGlyph row={row} />
               <View style={[s.flex, s.stack]}>

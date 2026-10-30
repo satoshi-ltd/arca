@@ -1281,13 +1281,10 @@ test("off an audio library the sidebar card replaces the bar while a track is lo
   assert.equal($("audio").paused, true);
   assert.equal(toggle.getAttribute("aria-label"), "Play");
   assert.ok(card(), "a paused track keeps the card");
-  const next = $('#music-mini [data-player="next"]');
-  next.focus();
-  next.click();
+  assert.equal($('#music-mini [data-player="next"]'), null, "the card keeps one control: Play/Pause");
+  $("audio").dispatchEvent(new w.Event("ended"));
   await until(() => ui.played.length === 2 && ui.idle());
   assert.equal(ui.text("#music-mini .music-mini-text strong"), "Freddie Freeloader");
-  assert.equal(w.document.activeElement, next, "focus stays across track changes");
-  assert.equal(next.disabled, true, "the last track has no Next without repeat");
   assert.ok($("#music-mini progress.music-mini-progress"), "the card carries a 2 px progress edge");
   opener.focus();
   opener.click();
@@ -1361,7 +1358,7 @@ test("under 761px the sidebar card hides and the bar shows everywhere; notices r
   assert.match(narrow, /^@media \(max-width: 760px\) \{\n  #music-mini \{\n    display: none;\n  \}\n  \.music-player\.music-elsewhere \{\n    display: grid;\n  \}/);
   assert.doesNotMatch(css, /min-width: 761px/, "one query decides both, so fractional widths never show both");
   assert.match(css, /body:has\(#music-player:not\(\[hidden\]\):not\(\.music-elsewhere\)\) #notice \{/);
-  assert.match(css, /\.music-mini-play \{\n  width: calc\(var\(--space-6\) \+ var\(--space-1\)\);/);
+  assert.match(css, /\.music-mini-play \{\n  width: var\(--button-small-height\);/);
   assert.match(css, /\.music-mini-progress \{\s*position: absolute;/);
 });
 

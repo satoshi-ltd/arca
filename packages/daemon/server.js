@@ -641,6 +641,7 @@ export async function start(home, options = {}) {
           req.method === "POST" &&
           [
             "/v1/delete-file",
+            "/v1/video/delete",
             "/v1/gallery/delete",
             "/v1/rename-file",
             "/v1/restore",
@@ -1848,12 +1849,13 @@ export async function start(home, options = {}) {
           );
         }
         if (route === "/v1/delete-file") {
-          const player = device.role === "player";
-          if (player) {
+          const linked =
+            device.role === "player" || (device.role === "replica" && video().isVideo(b.volume));
+          if (linked) {
             requireHub();
             validPath(b.path);
             if (b.path.toLowerCase() === IGNORE_FILE)
-              fail("A player cannot change the folder's ignore rules", 403);
+              fail("A linked device cannot change the folder's ignore rules", 403);
             if (s.db.prepare("SELECT 1 FROM gallery_folders WHERE volume=?").get(b.volume))
               fail("Delete gallery photos with /v1/gallery/delete", 409);
             s.volume(b.volume);
@@ -1863,7 +1865,7 @@ export async function start(home, options = {}) {
           return send(
             200,
             await authorizedWork(() =>
-              engine.deleteFile(b.volume, b.path, b.rev, player ? device.id : undefined),
+              engine.deleteFile(b.volume, b.path, b.rev, linked ? device.id : undefined),
             ),
           );
         }

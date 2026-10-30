@@ -48,7 +48,7 @@ test("playing publishes the car library first on Android and opens the file on i
 test("the library opens on the Artists tab, Recent lists this phone's plays, and playback hides where it cannot play", () => {
   assert.doesNotMatch(library, /kind === "root"/, "there is no root list before the music");
   assert.match(library, /const tabs = musicTabs\(library\);\s+const tab = tabs\.includes\(route\[0\]\?\.kind\) \? route\[0\]\.kind : tabs\[0\];/);
-  assert.match(library, /<SegmentedControl\s+options=\{tabs\.map\(\(value\) => \(\{ value, label: TAB_LABELS\[value\] \}\)\)\}\s+value=\{tab\}\s+onChange=\{select\}/, "a tab is only a tab");
+  assert.match(library, /<SegmentedControl\s+options=\{tabs\.map\(\(value\) => \(\{ value, label: TAB_LABELS\[value\] \}\)\)\}\s+value=\{tab\}\s+fit\s+onChange=\{select\}/, "a tab is only a tab");
   assert.match(library, /item\.kind === "albums"\) return albums\(albumsOf\(library\.albumOrder\), undefined, memory\);/);
   const recent = library.slice(library.indexOf('item.kind === "recent"'), library.indexOf('item.kind === "podcasts"'));
   assert.match(recent, /recentPlayed\(library, history \|\| \[\]\)/);
@@ -346,7 +346,7 @@ test("the library has one back, the header's, and draws tabs only when there are
   assert.doesNotMatch(library, /icon="back"/, "the body never adds a back row");
   assert.match(library, /\{tabs\.length > 1 && \(\s+<View style=\{s\.folderToolbar\}>\s+<View style=\{s\.flex\}>\s+<SegmentedControl/, "a podcasts-only folder has no one-segment control");
   assert.match(library, /\{!wide && \(\s+<View style=\{s\.musicHeader\}>\s+<Cover uri=\{cover\(artist\.cover, "small"\)\} size=\{72\} icon="artist" \/>/, "on the Fold the artist heads the screen instead");
-  const header = app.slice(app.indexOf('{folder && screen === "Folders" && (\n                      <View style={s.compactActions}>'), app.indexOf("{historyDetail && ("));
+  const header = app.slice(app.indexOf('{folder && screen === "Folders" && (\n                      <View style={s.headerBack}>'), app.indexOf('{screen === "History" && wide && historyControls}'));
   assert.match(header, /label=\{\s+musicDeep\s+\? musicBackLabel\(\s+musicRoute,\s+musicAt\.level,\s+musicShown,\s+folder\.name,\s+\)\s+: "Folders"\s+\}/);
   assert.match(header, /musicDeep\s+\? setMusicRoute\(musicRoute\.slice\(0, musicAt\.level\)\)\s+: setFolder\(null\)/, "the header back leaves the level");
   assert.match(header, /\{!onboarding && \(detail \|\| !\(musicDeep && !musicArtist\)\) && \(/, "a show, album or playlist page keeps only the back arrow");
@@ -367,7 +367,7 @@ test("the Fold opens a show, album or playlist beside its list under one header"
   assert.match(library, /pane\.detail \? \(\s+<PagedRows memory=\{memory\} items=\{list\} render=\{\(album, index\) => albumRow\(album, index, caption\(album\)\)\} \/>/, "albums list as rows beside the open album");
   assert.match(library, /\[album\.year, plural\(album\.tracks\.length, "track", "tracks"\)\]\.filter\(Boolean\)\.join\(" · "\)/, "an artist's albums read year and track count");
   const theme = read("src/theme.js");
-  assert.match(theme, /musicSplitList: \{ width: g\.detailSideWidth, flexShrink: 0, gap: 16 \}/);
+  assert.match(theme, /musicSplitList: \{ width: compact \? undefined : g\.detailSideWidth, flexShrink: 0, gap: 16 \}/);
   assert.match(theme, /musicSelected: \{ backgroundColor: c\.tint \}/);
 });
 

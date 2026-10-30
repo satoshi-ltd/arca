@@ -163,6 +163,8 @@ test("upload verification yields to HTTP reads while preserving content verifica
   assert.equal((await pending).complete, true);
   // A matching filename is insufficient: corrupted stored bytes still fail verification.
   fs.writeFileSync(blob, Buffer.alloc(data.length, 43));
+  const later = new Date(Date.now() + 5000);
+  fs.utimesSync(blob, later, later);
   assert.equal((await hub.api(`/v1/uploads/${hash}`)).complete, false);
 });
 

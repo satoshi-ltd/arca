@@ -1061,7 +1061,7 @@ export class Video {
       let last = null;
       let lastAt = -1;
       for (const episode of [...regular, ...specials]) {
-        if (episode.position && (!resume || episode.position.updated > resume.position.updated)) resume = episode;
+        if (episode.position && !episode.watched && (!resume || episode.position.updated > resume.position.updated)) resume = episode;
         const at = watched.get(episode.path);
         if (at !== undefined && at > lastAt) [last, lastAt] = [episode, at];
       }

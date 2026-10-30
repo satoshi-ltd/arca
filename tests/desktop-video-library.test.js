@@ -136,3 +136,11 @@ test("a show counts as watched once every episode is, like a watched movie", () 
   assert.equal(fullyWatched(library.items.get("m:arrival")), true);
   assert.equal(fullyWatched(library.items.get("m:inception")), false);
 });
+
+test("a watched episode with a leftover position never wins Play: the next unwatched episode does, and a started later episode still outranks it", () => {
+  const ep = (number, extra = {}) => ({ id: `e${number}`, season: 1, episode: number, ...extra });
+  const left = (updated) => ({ position: 2800, duration: 2880, updated });
+  const show = (episodes) => ({ episodes });
+  assert.equal(nextEpisode(show([ep(1, { watched: true }), ep(2, { watched: true, position: left(90) }), ep(3)])).id, "e3");
+  assert.equal(nextEpisode(show([ep(1, { watched: true }), ep(2, { watched: true, position: left(90) }), ep(3, { position: { position: 600, duration: 2880, updated: 10 } })])).id, "e3");
+});

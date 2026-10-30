@@ -243,6 +243,8 @@ test("an object is hashed once per signature, so status polls never re-read it",
   assert.equal(await status(), true);
   assert.equal(reads, 1, "three polls read the object once");
   fs.writeFileSync(file, Buffer.from("damaged".repeat(1000)).subarray(0, content.length));
+  const later = new Date(Date.now() + 5000);
+  fs.utimesSync(file, later, later);
   assert.equal(await status(), false, "a changed object is verified again and found damaged");
   assert.equal(reads, 2);
 });

@@ -26,6 +26,7 @@ export function styles(
       borderRadius: g.cardRadius,
       backgroundColor: c.surface,
     },
+    scaffoldGrouped: { borderWidth: 0, borderRadius: 0 },
     scaffoldDashed: { borderStyle: "dashed", backgroundColor: c.paper },
     scaffoldMark: {
       width: 40,
@@ -394,10 +395,11 @@ export function styles(
     videoLanguageGroup: { flexDirection: "row", alignItems: "center", gap: 4 },
     videoFactRating: { color: c.ink, fontFamily: "InstrumentSans_600SemiBold", fontSize: g.touchCaptionFont, lineHeight: g.touchCaptionLine },
     videoBadge: {
-      height: g.tagHeight,
+      minHeight: g.tagHeight,
       justifyContent: "center",
       alignItems: "center",
       paddingHorizontal: g.tagX,
+      paddingVertical: g.tagY,
       borderRadius: g.tagRadius,
       borderWidth: 1,
       borderColor: c.line,
@@ -451,6 +453,13 @@ export function styles(
       color: c.ink,
       textAlign: "center",
     },
+    videoBandHero: { height: undefined, marginHorizontal: 0, borderRadius: g.cardRadius },
+    videoHero: { flexDirection: "row", alignItems: "flex-start", gap: 24, padding: 24 },
+    videoHeroPoster: { width: 132, borderRadius: g.controlRadius, overflow: "hidden" },
+    videoHeroInfo: { flex: 1, minWidth: 0, gap: 8, alignItems: "flex-start" },
+    videoHeroActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+    videoOnMedia: { color: c.onMedia },
+    videoBadgeMedia: { borderColor: c.onMedia },
     videoSplit: { flexDirection: "row", alignItems: "flex-start", gap: 24 },
     videoSplitSide: { width: g.detailSideWidth + 40, flexShrink: 0, gap: 16 },
     videoSplitMain: { flex: 1, minWidth: 0, gap: 16 },
@@ -461,7 +470,8 @@ export function styles(
       paddingVertical: g.rowPaddingY,
       paddingHorizontal: g.rowPaddingX,
     },
-    videoEpisodeStill: { width: 120, borderRadius: g.controlRadius, overflow: "hidden" },
+    videoEpisodeFold: { alignItems: "center", gap: 16 },
+    videoEpisodeStill: { width: compact ? 160 : 120, borderRadius: g.controlRadius, overflow: "hidden" },
     videoNow: { color: c.accent },
     videoSaved: {
       position: "absolute",
@@ -476,16 +486,7 @@ export function styles(
     },
     videoRing: { width: 16, height: 16 },
     videoRingLarge: { width: 20, height: 20 },
-    videoState: { alignItems: "flex-end", gap: 8 },
-    videoSeasonBar: { height: 6, borderRadius: 3, backgroundColor: c.line, overflow: "hidden", marginTop: 4 },
-    videoDownload: {
-      width: g.touchHeight,
-      height: g.touchHeight,
-      marginTop: -10,
-      marginRight: -8,
-      alignItems: "center",
-      justifyContent: "center",
-    },
+    videoState: { flexDirection: compact ? "row" : "column", alignItems: compact ? "center" : "flex-end", gap: compact ? 16 : 8 },
     videoRoot: { flex: 1, backgroundColor: c.media, alignItems: "center", justifyContent: "center" },
     videoRotated: { backgroundColor: c.media },
     videoLandscape: { flex: 1, width: "100%", backgroundColor: c.media },
@@ -588,8 +589,8 @@ export function styles(
       justifyContent: "center",
     },
     musicPage: { gap: 16 },
-    musicSplit: { flexDirection: "row", alignItems: "flex-start", gap: 16 },
-    musicSplitList: { width: g.detailSideWidth, flexShrink: 0, gap: 16 },
+    musicSplit: { flexDirection: compact ? "column" : "row", alignItems: compact ? "stretch" : "flex-start", gap: 16 },
+    musicSplitList: { width: compact ? undefined : g.detailSideWidth, flexShrink: 0, gap: 16 },
     musicSplitPane: {
       flex: 1,
       minWidth: 0,
@@ -890,6 +891,7 @@ export function styles(
     roleWord: { marginLeft: "auto", color: c.mute },
     tileAvailable: { backgroundColor: c.hover },
     tileRound: { borderRadius: 16 },
+    leadSlot: { width: g.touchHeight, alignItems: "center", flexShrink: 0 },
     historyGlyph: { width: 32, height: 32, borderRadius: g.controlRadius, alignItems: "center", justifyContent: "center" },
     tileWarning: { backgroundColor: c.warningBg },
     tileDanger: { backgroundColor: c.dangerBg },
@@ -915,6 +917,9 @@ export function styles(
     },
     segmentsScroll: { alignSelf: "flex-start" },
     segmentScroll: { flex: 0, paddingHorizontal: 12 },
+    segmentsFit: { flexGrow: 1 },
+    segmentsFitContent: { flexGrow: 1 },
+    segmentFit: { flex: 0, flexGrow: 1, flexShrink: 0, paddingHorizontal: 12 },
     segmentThumb: { position: "absolute", top: 3, left: 0, borderRadius: g.segmentRadius },
     levelPill: {
       position: "absolute",
@@ -1003,8 +1008,8 @@ export function styles(
     },
     compactNavLabel: {
       fontFamily: "InstrumentSans_600SemiBold",
-      fontSize: g.touchCaptionFont,
-      lineHeight: g.touchControlLine,
+      fontSize: g.pillFont,
+      lineHeight: g.pillLine,
       color: c.mute,
     },
     tabDot: {
@@ -1429,8 +1434,8 @@ export function styles(
       color: c.ink,
     },
     homeLead: {
-      width: g.touchControlHeight,
-      height: g.touchControlHeight,
+      width: g.touchHeight,
+      height: g.touchHeight,
       alignItems: "center",
       justifyContent: "center",
       borderRadius: g.cardRadius,
@@ -1471,12 +1476,12 @@ export function styles(
     statCell: { width: wide ? "25%" : "50%", padding: 12, gap: 6 },
     statCellThird: { width: wide ? "33.333%" : "50%", padding: 12, gap: 6 },
     statCellWide: { width: "100%" },
-    detailGrid: { flexDirection: wide ? "row" : "column", gap: 16 },
-    detailMain: { flex: wide ? 1 : undefined, minWidth: 0, gap: 12 },
+    detailGrid: { flexDirection: wide && !compact ? "row" : "column", gap: 16 },
+    detailMain: { flex: wide && !compact ? 1 : undefined, minWidth: 0, gap: 12 },
     stickySideScroll: { flexGrow: 0 },
     stickySideContent: { gap: 12 },
     detailSide: {
-      width: wide ? g.detailSideWidth : undefined,
+      width: wide && !compact ? g.detailSideWidth : undefined,
       flexShrink: 0,
       minWidth: 0,
       gap: 12,
@@ -1493,7 +1498,7 @@ export function styles(
     historyGroups: { gap: 24 },
     historyFolder: { width: 110 },
     historyRevision: { width: Math.ceil(88 * fontScale * textScale), flexShrink: 0 },
-    historyDate: { width: 90, fontVariant: ["tabular-nums"] },
+    historyDate: { width: Math.ceil(90 * fontScale * textScale), flexShrink: 0, fontVariant: ["tabular-nums"] },
     tabularTime: { fontVariant: ["tabular-nums"] },
     fileMenuOverlay: {
       ...StyleSheet.absoluteFill,
@@ -1514,7 +1519,7 @@ export function styles(
       elevation: 8,
     },
     rowAction: { flexDirection: "row", alignItems: "center", gap: 12 },
-    compactActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    headerBack: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
     rowTitle: {
       fontFamily: "InstrumentSans_600SemiBold",
       fontSize: g.touchRowFont,
@@ -1827,8 +1832,8 @@ export function styles(
       includeFontPadding: false,
     },
   };
-  for (const rule of Object.values(rules)) {
-    if (!rule || typeof rule !== "object") continue;
+  for (const [name, rule] of Object.entries(rules)) {
+    if (!rule || typeof rule !== "object" || name === "compactNavLabel") continue;
     if (typeof rule.fontSize === "number") rule.fontSize *= textScale;
     if (typeof rule.lineHeight === "number") rule.lineHeight *= textScale;
   }

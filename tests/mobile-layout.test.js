@@ -1046,7 +1046,7 @@ test("folder headers show the folder's kind glyph on phone and Fold; only tab sc
   assert.match(app, /\) : folder && view === "Folders" \? \(\s+<ScreenTitle\s+detail=\{compactAndroid\}\s+contentIcon=\{folderIcon\}/);
   assert.match(app, /kind === "folder-actions"\s+\? \{\s+title: shownSheet\.volume\.name,\s+icon: folderIcon,/);
   const title = components.slice(components.indexOf("export function ScreenTitle("), components.indexOf("const AnimatedPressable"));
-  assert.match(title, /\{contentIcon \? \(\s+<Animated\.View ref=\{flight\.frame\} style=\{\[s\.tile, wide && s\.detailTile, flight\.style\]\}>\s+<Icon name=\{contentIcon\} \/>\s+<\/Animated\.View>\s+\) : \(\s+!wide && <BrandActivity \/>\s+\)\}/);
+  assert.match(title, /\{contentIcon \? \(\s+<Animated\.View ref=\{flight\.frame\} style=\{\[s\.tile, wide && s\.detailTile, flight\.style\]\}>\s+<Icon name=\{contentIcon\} size=\{wide \? 20 : 16\} \/>\s+<\/Animated\.View>\s+\) : \(\s+!wide && <BrandActivity \/>\s+\)\}/);
   assert.match(app, /<ScreenTitle>\{view\}<\/ScreenTitle>/, "tab screens keep the logo");
 });
 
