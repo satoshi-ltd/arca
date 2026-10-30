@@ -6,7 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY packages ./packages
 COPY apps/desktop/src ./apps/desktop/src
-RUN mkdir -p /data/state /data/files && chown -R node:node /data
+RUN mkdir -p /data/state /data/files && chown -R node:node /data && chmod 700 /data/state
 USER node
 ENV ARCA_HOME=/data/state ARCA_FILES=/data/files XDG_DATA_HOME=/data/state
 EXPOSE 17831

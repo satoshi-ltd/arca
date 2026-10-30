@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.17 — 2026-10-30
+
+- A TV deletes only in video and audio libraries, unexpected errors answer `Internal error` instead of the exception text, pairing names refuse control characters, a hub catalog with unusable fields is refused when connecting, and no name may exceed 255 bytes.
+- The state directory is made private (`0700`) every time Arca starts, one device holds at most four waiting `/v1/events` requests, a web sign-in request is capped at three pending per address, and a browser session ends when the device that approved it is revoked or loses web approval.
+- Deleting a file on a replica checks it again after verifying it, so an edit made meanwhile is never deleted, and a file another program holds answers "in use" instead of failing; renaming works on disks without hard links; a busy object no longer stops the hourly cleanup and the Windows Recycle Bin gets paths in batches that fit.
+- The index records a schema version, so an older daemon refuses a newer index instead of failing on its first write, and a status poll hashes each stored object once instead of on every request.
+
+Needs: Casa redeploy · desktop build
+
 ## 0.8.16 — 2026-10-29
 
 - Erase only deletes folders that are still Arca's: a shared folder must still hold its `.arca-volume` marker, and the backup location its backup state. A folder you recreated by hand at the same place after Stop syncing here, or a reused backup path, now survives Erase.

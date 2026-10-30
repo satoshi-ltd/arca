@@ -221,7 +221,9 @@ test("a page on a rebound hostname gets no approval, no cookie and burns no sign
   for (const host of [`127.0.0.1:${d.port}`, `casa:${d.port}`, `casa.local:${d.port}`, `[::1]:${d.port}`]) {
     const allowed = await post("/auth/approval", { action: "create" }, host);
     assert.equal(allowed.status, 200, host);
-    assert.match(JSON.parse(allowed.body).reference, /^\d{6}$/);
+    const made = JSON.parse(allowed.body);
+    assert.match(made.reference, /^\d{6}$/);
+    if (!host.startsWith("casa.local")) await post("/auth/approval", { action: "cancel", id: made.id, secret: made.secret }, host);
   }
   const pending = await (await fetch(`http://127.0.0.1:${d.port}/v1/web-approvals`, { headers: { Authorization: `Bearer ${d.engine.config.adminToken}` } })).json();
   assert.ok(pending.requests.some((r) => r.host === `casa.local:${d.port}`), "the request records the address the browser used");

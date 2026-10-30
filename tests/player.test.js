@@ -183,12 +183,19 @@ test("a player leaves the hub with its own credential and its row is gone", asyn
 test("a player deletes a file on the hub and the deletion is a revision every copy follows", async (t) => {
   const { d, call, pair } = await hub(t);
   const volume = await (await call("/v1/volumes", { body: { name: "Movies" } })).json();
+  const plain = await (await call("/v1/volumes", { body: { name: "Documents" } })).json();
+  fs.writeFileSync(path.join(d.engine.store.volume(plain.id).path, "taxes.pdf"), "secret");
+  await d.engine.cycle();
+  const taxes = d.engine.store.current(plain.id, "taxes.pdf");
+  assert.equal((await call("/v1/video/mark", { body: { volume: volume.id } })).status, 200);
   const folder = d.engine.store.volume(volume.id).path;
   fs.writeFileSync(path.join(folder, "Heat.mp4"), "film");
   fs.writeFileSync(path.join(folder, "Up.mp4"), "film two");
   await d.engine.cycle();
   const { token } = await (await pair({ kind: "player", name: "salon-tv" })).json();
   const as = (body) => call("/v1/delete-file", { body, token });
+  assert.equal((await as({ volume: plain.id, path: "taxes.pdf", rev: taxes.rev })).status, 403, "a TV deletes only in video and audio libraries");
+  assert.equal(fs.existsSync(path.join(d.engine.store.volume(plain.id).path, "taxes.pdf")), true);
   const heat = d.engine.store.current(volume.id, "Heat.mp4");
   assert.equal((await as({ volume: volume.id, path: "Heat.mp4", rev: heat.rev + 1 })).status, 409, "a stale view deletes nothing");
   assert.equal(fs.existsSync(path.join(folder, "Heat.mp4")), true);

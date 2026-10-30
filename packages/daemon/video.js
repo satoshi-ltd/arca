@@ -339,7 +339,7 @@ export class Video {
       fail("This folder is a gallery. A folder is a gallery, an audio library or a video library, not more than one.", 409);
     if (this.s.db.prepare("SELECT 1 FROM music_folders WHERE volume=?").get(volume))
       fail("This folder is an audio library. A folder is a gallery, an audio library or a video library, not more than one.", 409);
-    this.s.db.prepare("INSERT OR IGNORE INTO video_folders VALUES(?)").run(volume);
+    this.s.db.prepare("INSERT OR IGNORE INTO video_folders(volume) VALUES(?)").run(volume);
     this.quickIdentity(volume);
     this.generation++;
     this.prepare(volume);
@@ -1314,7 +1314,7 @@ export class Video {
       return { kept: false, finished: true };
     }
     this.s.db
-      .prepare("INSERT OR REPLACE INTO video_positions VALUES(?,?,?,?,?,?,?,?)")
+      .prepare("INSERT OR REPLACE INTO video_positions(volume,path,hash,position,duration,device,name,updated) VALUES(?,?,?,?,?,?,?,?)")
       .run(volume, name, hash, Math.min(position, duration), duration, owner.id, owner.name, at);
     this.progressGeneration++;
     return { kept: true };
@@ -1323,9 +1323,9 @@ export class Video {
     this.s.db.exec("BEGIN IMMEDIATE");
     try {
       this.s.db
-        .prepare("INSERT OR REPLACE INTO video_positions VALUES(?,?,?,0,?,?,?,?)")
+        .prepare("INSERT OR REPLACE INTO video_positions(volume,path,hash,position,duration,device,name,updated) VALUES(?,?,?,0,?,?,?,?)")
         .run(volume, name, hash, duration, owner.id, owner.name, at);
-      this.s.db.prepare("INSERT OR REPLACE INTO video_watched VALUES(?,?,?)").run(volume, name, at);
+      this.s.db.prepare("INSERT OR REPLACE INTO video_watched(volume,path,updated) VALUES(?,?,?)").run(volume, name, at);
       this.s.db.exec("COMMIT");
     } catch (error) {
       this.s.db.exec("ROLLBACK");
@@ -1361,7 +1361,7 @@ export class Video {
     if (typeof id !== "string" || !/^[mes]:./.test(id) || id.length > 1100) fail("Invalid video");
     const view = this.overlay(volume, this.current(volume));
     if (!view.watchNext.some((card) => card.id === id)) return { version: view.version };
-    this.s.db.prepare("INSERT OR REPLACE INTO video_hidden VALUES(?,?,?)").run(volume, this.titleOf(view, id), Date.now());
+    this.s.db.prepare("INSERT OR REPLACE INTO video_hidden(volume,id,since) VALUES(?,?,?)").run(volume, this.titleOf(view, id), Date.now());
     return this.watchNextAnswer(volume);
   }
   restoreWatchNext(volume, id) {

@@ -57,6 +57,7 @@ import {
   requirePersistentBackup,
   syncDirectory,
   overlapPath,
+  fileSignature,
 } from "./storage.js";
 
 const CHUNK = 1024 * 1024;
@@ -756,7 +757,7 @@ export class Engine {
           .prepare("UPDATE accepted_proposals SET revision=? WHERE id=?")
           .run(result.row.rev, op);
     }
-    s.db.prepare("INSERT OR REPLACE INTO proposals VALUES(?,?)").run(
+    s.db.prepare("INSERT OR REPLACE INTO proposals(id,response) VALUES(?,?)").run(
       op,
       JSON.stringify({
         volume,
@@ -1559,7 +1560,7 @@ export class Engine {
               };
               if (row.hash) await this.download(row.hash, row.size);
               s.db
-                .prepare("INSERT OR REPLACE INTO backup_history VALUES(?,?)")
+                .prepare("INSERT OR REPLACE INTO backup_history(rev,row) VALUES(?,?)")
                 .run(row.rev, JSON.stringify(row));
             }
             after = page.next;
@@ -1779,7 +1780,7 @@ export class Engine {
     };
     if (!(row.duration >= RESUME_MIN_SECONDS)) return { kept: false };
     this.store.db
-      .prepare("INSERT OR REPLACE INTO audio_outbox VALUES(?,?,?)")
+      .prepare("INSERT OR REPLACE INTO audio_outbox(volume,path,body) VALUES(?,?,?)")
       .run(row.volume, row.path, JSON.stringify(row));
     await this.flushPositions();
     return { kept: true };
@@ -1789,7 +1790,7 @@ export class Engine {
       fail("Invalid audio position");
     const row = { clear: true, volume: body.volume, path: body.path, hash: body.hash, at: Date.now() };
     this.store.db
-      .prepare("INSERT OR REPLACE INTO audio_outbox VALUES(?,?,?)")
+      .prepare("INSERT OR REPLACE INTO audio_outbox(volume,path,body) VALUES(?,?,?)")
       .run(row.volume, row.path, JSON.stringify(row));
     await this.flushPositions();
     return { cleared: true };
@@ -1948,7 +1949,7 @@ export class Engine {
             rev: Number(result.lastInsertRowid),
           });
         }
-      db.prepare("INSERT INTO transitions VALUES(?)").run(id);
+      db.prepare("INSERT INTO transitions(id) VALUES(?)").run(id);
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");
@@ -2598,8 +2599,20 @@ export class Engine {
           fs.renameSync(file, target);
         else {
           // Creating a hard link fails if another file appears at the destination.
-          fs.linkSync(file, target);
-          fs.unlinkSync(file);
+          let linked = false;
+          try {
+            fs.linkSync(file, target);
+            linked = true;
+            fs.unlinkSync(file);
+          } catch (error) {
+            if (linked) {
+              fs.rmSync(target, { force: true });
+              throw error;
+            }
+            if (!["EPERM", "ENOTSUP", "EXDEV", "EOPNOTSUPP"].includes(error.code) || fs.lstatSync(target, { throwIfNoEntry: false }))
+              throw error;
+            fs.renameSync(file, target);
+          }
         }
         syncDirectory(path.dirname(file));
         this.work.mark(volume, name);
@@ -2778,7 +2791,10 @@ export class Engine {
     const file = this.store.filePath(v, name);
     const local = fs.lstatSync(file, { throwIfNoEntry: false });
     if (!local) fail(MISSING_LOCAL, 409);
+    const before = fileSignature(file);
     if (!local.isFile() || !(await this.store.holds(volume, file, current.hash)))
+      fail("Local file changed. Sync before deleting.", 409);
+    if (fileSignature(file) !== before)
       fail("Local file changed. Sync before deleting.", 409);
     const held = this.store.db
       .prepare("SELECT 1 FROM files WHERE volume=? AND hash=? AND deleted=0 LIMIT 1")
@@ -2792,7 +2808,14 @@ export class Engine {
           409,
         );
       }
-    } else fs.unlinkSync(file);
+    } else
+      try {
+        fs.unlinkSync(file);
+      } catch (error) {
+        if (["EBUSY", "EPERM", "EACCES"].includes(error.code))
+          fail("This file is in use. Close it and try again.", 409);
+        throw error;
+      }
     this.work.mark(volume, name);
     await this.reconcileLocal(volume, [name]);
     return { deleted: true };

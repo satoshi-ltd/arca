@@ -233,9 +233,6 @@ Findings of the read-only audit of v0.8.9, ordered by severity. Each task is one
   `feature · maintainer · low`
   accept: decision: `/v1/destroy-*` returns the registered paths it skipped because they no longer carried Arca's marker or backup state, and the Erase result names them, so a device wiped to give away does not keep a folder silently; today they are left untouched and unreported.
 
-- **SEC-PLAYER-SCOPE** — A TV deletes only inside video and music folders
-  `bug · agent · high`
-  accept: `/v1/delete-file` from a player answers 403 unless the folder is a video or audio library; a test shows a player cannot tombstone a file in a plain folder it reads through `/v1/catalog`.
 - **SEC-LAN-POLICY** — The plaintext opt-in covers every untrusted peer
   `bug · agent · high · depends: DEC-PLAINTEXT-POLICY`
   accept: as decided; at minimum `requireLanAccess` applies to every non-loopback, non-verified-tailnet plaintext peer (IPv6 included), to `/auth/*` and to browser-session requests, turning the opt-in off ends browser sessions, and the Docker image documents or drops the implicit `--private-network`; tests cover an IPv6 peer, a 100.64/10 peer in standalone mode and a browser sign-in with the opt-in off.
@@ -254,45 +251,19 @@ Findings of the read-only audit of v0.8.9, ordered by severity. Each task is one
 - **SEC-ACTIONS-PIN** — Release workflows run only pinned code
   `chore · agent · normal`
   accept: every `uses:` in `.github/workflows` is pinned to a commit SHA with the version in a comment, `wrangler` is installed at an exact version, `CLOUDFLARE_*` variables are scoped to the deploy step, `.github/dependabot.yml` covers `github-actions`, npm and cargo, and the release note no longer says "No automatic updates".
-- **SEC-STATE-MODE** — The state directory is private even when it already exists
-  `bug · agent · normal`
-  accept: `init`, `initializeServer` and `Store` chmod the home to 0700 and the daemon sets `umask 077` before creating `index.sqlite`, `objects/`, `uploads/`, `previews/` and `files/`; the Dockerfile creates `/data/state` as 700; a test starts in a 755 home and checks the modes.
-- **SEC-ERROR-BODY** — Unexpected errors never echo internals
-  `bug · agent · normal`
-  accept: a response without a status answers 500 with "Internal error" and logs the exception on the hub, so replicas and players never read absolute paths or stack text; tests force an ENOENT and a TypeError and check both bodies.
-- **SEC-INPUT-STRICT** — Every stored string is validated
-  `chore · agent · normal`
-  accept: `/pair` names refuse control characters like `/v1/settings` does, `/v1/connect` checks `catalog.id`, names and `historyRetention` types and lengths and a missing `volumes` array, and `validPath` refuses a component over 255 bytes; one test per rule.
+- **SEC-HUB-FILE-IN-USE** — Deleting a file the hub is serving answers 409
+  `bug · agent · low`
+  accept: on the hub, deleting a file that a stream, HLS session or probe holds open answers 409 "This file is in use" without recording a tombstone the cycle then fails to apply, proven by a Windows-shaped test that holds the file open; the daemon's `umask` stays as it is (a tight umask would also restrict files written into shared folders).
+
 - **SEC-HEIC-MEMORY** — Four HEIC previews cannot exhaust memory
   `bug · agent · normal`
   accept: the HEIC worker caps images at 50 megapixels, hands `pixels.buffer` to sharp without a copy, runs with `resourceLimits`, and HEIC renders are limited to two at a time; a test renders a maximal image under the limit and refuses one above it.
 - **SEC-BACKUP-SCRUB** — A damaged object never stalls the backup or the hub's history
   `bug · agent · normal`
   accept: the backup loop records a row whose object fails verification as missing, names the hash in `backupError` and continues, so `backup-ack` advances and hub retention is not frozen; hourly maintenance verifies a bounded batch of stored objects against their names and counts corrupt ones in status; tests corrupt one object and check both.
-- **SEC-WINDOWS-BUSY** — An open file never breaks a cycle or a deletion on Windows
-  `bug · agent · normal`
-  accept: `collectUnusedObjects` catches per object so an EBUSY on a served blob skips that object and the cycle completes; deleting a file the hub is streaming or probing answers 409 "File in use" instead of 500; the Windows trash batches paths by byte length under the 32 KiB environment limit; `update-watch.js` removes its directory with `fs.rmSync` retries instead of `cmd.exe`; tests simulate the open handle.
 - **SEC-MOBILE-MANIFEST** — The Android manifest ships only what the app needs
   `chore · agent · normal`
   accept: `allowBackup` is off (or `databases/` and `files/arca` are excluded from cloud backup), `SYSTEM_ALERT_WINDOW` is removed like `CAMERA`, and `CoverProvider` is not exported or requires a permission; config-plugin tests cover the manifest. Needs a native build, so the device evidence is a follow-up `verify`.
-- **SEC-SESSION-APPROVER** — Revoking an approver ends the sessions it granted
-  `chore · agent · low`
-  accept: a browser session stores the device that approved it and `forgetDevice` and disabling an approver drop those sessions; a test approves, revokes and sees 401.
-- **SEC-RATE-CAPS** — One client cannot exhaust shared capacity
-  `chore · agent · low`
-  accept: `/v1/events` allows at most four waiters per credential before 503 and web-approval requests at most three pending per address; tests fill both.
-- **SEC-DELETE-RACE** — A replica deletion re-checks the file before unlinking
-  `bug · agent · low`
-  accept: replica `deleteFile` captures the file signature before hashing and answers 409 "Local file changed" when it differs right before the unlink or trash, as `deleteSyncedCopy` does; a test writes during the hash.
-- **SEC-RENAME-FALLBACK** — Rename works on volumes without hard links
-  `bug · agent · low`
-  accept: a replica rename that gets `EPERM`, `ENOTSUP` or `EXDEV` from `linkSync` falls back to `renameSync` when the destination does not exist; a test stubs the error.
-- **SEC-SCHEMA-INSERTS** — An older daemon fails safely on a newer index
-  `chore · agent · low`
-  accept: every `INSERT … VALUES` names its columns and the schema carries `PRAGMA user_version`, bumped with each migration; opening a newer schema refuses with a clear message instead of failing on the first insert; a test opens a database with an extra column.
-- **SEC-UPLOAD-REHASH** — Upload status never re-hashes a complete object
-  `chore · agent · low`
-  accept: `GET /v1/uploads/<hash>` and a chunk against an existing object answer from the verified object store (or a signature cache) without hashing the whole blob; a test counts hash calls.
 - **SEC-DOCKER-HYGIENE** — The image is reproducible and attested
   `chore · agent · low`
   accept: the Dockerfile pins the base image by digest and ffmpeg by version, adds a `HEALTHCHECK` on `arca.js status`, and `publish-docker.yml` publishes provenance and an SBOM; `SHA256SUMS` in `publish.yml` is signed. Needs a Casa redeploy to verify.
@@ -316,6 +287,29 @@ Findings of the read-only audit of v0.8.9, ordered by severity. Each task is one
 - **PHOTO-PLACES** — Search Arca finds photos by place ("hua hin", "thailand", "tailandia")
   `feature · agent · normal · depends: DEC-PHOTO-PLACES`
   accept: the hub reads GPS during gallery indexing and stores only a place label and a folded search text (city, district, province, country), never coordinates; names come from a bundled offline GeoNames extract (CC BY, attributed; no cloud geocoding, no new npm dependency), including Spanish and English alternate names for countries and first-level regions so "thailand" and "tailandia" both match; existing photos re-index once; Search Arca gains a Places group (one row per place with its count, opening the gallery filtered to it) on desktop, web and phone, offline on the phone from the synchronized labels; photos without GPS are explained in the empty result; tests cover lookup (Hua Hin, open sea, antimeridian, invalid coordinates), indexing with and without GPS, and the "hua hin"/"thailand"/"tailandia" queries on hub and phone. Feasibility study: GPS read 0.17 ms per photo, compact dataset about 2.5 MB plus alternate names, grid lookup about 13 µs.
+
+### Sizing review (2026-10-29)
+
+The visual findings of the desktop and mobile sizing audit are boards on `design/proposals.html` (`UI-DESK-*`, `UI-MOB-*`); these are the parts that are not purely visual.
+
+- **DESK-ZOOM-CHROME** — Window-control offsets follow the zoom level
+  `bug · agent · normal`
+  accept: `installDesktopZoom` publishes the zoom as a CSS custom property and the window-controls inset, the controls drop and `.window-drag` divide by it, so at 70% the photo viewer's Back button and the sidebar lockup clear the native traffic lights and at 150% they do not drift away; the 760 px breakpoint is evaluated in unzoomed window pixels so a normal window at 130–150% keeps the full sidebar. Tests cover the property and the computed offsets; a follow-up `verify` checks a macOS desktop build at 70%, 100% and 150%.
+- **DESK-DIALOG-SCROLL** — Long dialogs keep their actions in view
+  `bug · agent · low`
+  accept: dialogs whose content outgrows the window (Choose folders, Restore versions with many rows) scroll their body while the title and the action row stay visible at the 620 px minimum height, as form dialogs already do; a DOM test fills a dialog past the window height.
+- **DEC-MOB-FOLD-WIDE** — Does the unfolded Fold get the wide search and file preview?
+  `decision · maintainer · normal`
+  The kit draws the Fold with the centred search dialog and preview panes and a Files Preview column, but the app shows them only from 1100 dp, so the Fold gets the phone search (rows 8 dp from the edge, four photo cells of 150–190 dp) and no preview. Either let the Fold use them or redraw the kit to show what ships.
+- **MOB-MEDIA-TARGETS** — Players are easy to scrub and tap
+  `feature · agent · normal`
+  accept: the video scrubber and the Now Playing track get a visible thumb, drag seeking and a hit area of at least the touch height; the sleep chip and the 44 dp ghost, segment, switch, breadcrumb and row-action targets get hit slop to 48 dp on Android; component tests check the hit areas. Device feel is a follow-up `verify`.
+- **VERIFY-MOB-VIDEO-INSETS** — The video player clears the cutout and the gesture bar
+  `verify · maintainer · normal`
+  accept: on an edge-to-edge Android phone and the Fold, Close, the title and both ends of the scrubber sit outside the camera cutout and the gesture bar in portrait and landscape; `VideoPlayer.jsx` places its top and bottom chrome at 0 with no safe-area insets, so fix it as an agent task if they overlap.
+- **KIT-HYGIENE** — The kit keeps no duplicate or dead rules
+  `chore · agent · low`
+  accept: `.kit-tray` stops re-declaring `#tray-content` and reuses the production rule, and the `.kit-video-*` rules no page uses are deleted; `npm run design -- --check` and the design tests pass.
 
 ### UI and accessibility review
 

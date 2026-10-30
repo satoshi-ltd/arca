@@ -114,9 +114,25 @@ const RECYCLE = [
   "}",
 ].join("\n");
 
+const ENV_LIMIT = 30000;
+
 async function recycle(files, env, execute) {
-  for (let start = 0; start < files.length; start += 40) {
-    const batch = files.slice(start, start + 40);
+  const batches = [];
+  let batch = [],
+    size = 2;
+  for (const file of files) {
+    const entry = JSON.stringify(file).length + 1;
+    if (entry > ENV_LIMIT) throw new Error(`${file} is too long to move to the Recycle Bin`);
+    if (batch.length >= 40 || size + entry > ENV_LIMIT) {
+      batches.push(batch);
+      batch = [];
+      size = 2;
+    }
+    batch.push(file);
+    size += entry;
+  }
+  if (batch.length) batches.push(batch);
+  for (const batch of batches) {
     await execute(
       "powershell.exe",
       ["-NoProfile", "-NonInteractive", "-Command", RECYCLE],

@@ -7,6 +7,11 @@ import { fail, init, atomic } from "./storage.js";
 // Existing configurations (including interrupted onboarding) are never rewritten.
 export function initializeServer(home, options = {}) {
   fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+  if (process.platform !== "win32") {
+    try {
+      fs.chmodSync(home, 0o700);
+    } catch {}
+  }
   const file = path.join(home, "config.json");
   if (fs.existsSync(file)) {
     const config = JSON.parse(fs.readFileSync(file, "utf8"));

@@ -108,7 +108,7 @@ export function acceptReport(store, device, body) {
   clean.lastSync = body.lastSync;
   clean.reportedAt = new Date().toISOString();
   store.db
-    .prepare("INSERT OR REPLACE INTO machine_reports VALUES(?,?)")
+    .prepare("INSERT OR REPLACE INTO machine_reports(device,report) VALUES(?,?)")
     .run(device.id, JSON.stringify(clean));
   store.db
     .prepare("UPDATE devices SET name=? WHERE id=?")

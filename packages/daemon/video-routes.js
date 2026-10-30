@@ -182,7 +182,7 @@ export async function replicaLibrary(context, volume, known, stop = null) {
     else value = answer;
     engine.videoDownloads?.pruneLibrary(volume, value);
     if (!value.unchanged) {
-      s.db.prepare("INSERT OR REPLACE INTO remote_views VALUES(?,?,?)").run(key, JSON.stringify(value), Date.now());
+      s.db.prepare("INSERT OR REPLACE INTO remote_views(key,value,used) VALUES(?,?,?)").run(key, JSON.stringify(value), Date.now());
       s.db.exec("DELETE FROM remote_views WHERE key NOT IN (SELECT key FROM remote_views ORDER BY used DESC LIMIT 64)");
     }
   } catch (error) {

@@ -166,7 +166,7 @@ export class Music {
         409,
       );
     this.s.db
-      .prepare("INSERT OR IGNORE INTO music_folders VALUES(?)")
+      .prepare("INSERT OR IGNORE INTO music_folders(volume) VALUES(?)")
       .run(volume);
     this.prepare(volume);
   }

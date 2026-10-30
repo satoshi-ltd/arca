@@ -528,7 +528,7 @@ export class VideoDownloads {
   }
   defer(route, body) {
     if (typeof body?.volume !== "string" || typeof body?.path !== "string" || !this.hub) fail("Invalid video");
-    this.s.db.prepare("INSERT OR REPLACE INTO video_outbox VALUES(?,?,?,?,?,?)").run(this.hub, body.volume, body.path, route, JSON.stringify(body), Date.now());
+    this.s.db.prepare("INSERT OR REPLACE INTO video_outbox(hub,volume,path,route,body,at) VALUES(?,?,?,?,?,?)").run(this.hub, body.volume, body.path, route, JSON.stringify(body), Date.now());
     return route === "/v1/video/position" ? { kept: true, queued: true } : { watched: body.watched === true, queued: true };
   }
   async send(route, body) {

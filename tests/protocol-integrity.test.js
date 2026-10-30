@@ -751,7 +751,7 @@ test("desktop destruction can resume after filesystem failure and rejects swappe
   try {
     await assert.rejects(
       r.api("/v1/destroy-replica", { confirmed: true }),
-      /disk busy/,
+      /Internal error/,
     );
   } finally {
     fs.rmSync = original;
@@ -839,7 +839,7 @@ test("failed destruction journal write preserves files and permits a durable ret
   };
   await assert.rejects(
     r.api("/v1/destroy-replica", { confirmed: true }),
-    /configuration disk full/,
+    /Internal error/,
   );
   assert.equal(r.engine.config.destroyPending, undefined);
   assert.ok(fs.existsSync(folder));
@@ -995,7 +995,7 @@ test("interrupted hub destruction blocks catalog reads until a safe retry", asyn
   try {
     await assert.rejects(
       hub.api("/v1/destroy-hub", { confirmed: true }),
-      /disk unavailable/,
+      /Internal error/,
     );
     assert.ok(hub.engine.config.destroyPending);
     await assert.rejects(hub.api("/v1/catalog"), { status: 409 });

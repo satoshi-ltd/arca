@@ -61,6 +61,8 @@ export function validPath(value) {
   if (typeof value !== "string" || !value || value.length > 1024)
     fail(`Invalid file path: ${JSON.stringify(value)}`);
   for (const part of value.split("/")) {
+    if (Buffer.byteLength(part.normalize("NFC")) > 255)
+      fail(`Unsupported file path: ${JSON.stringify(value)}. A name can hold at most 255 bytes.`);
     if (
       !part ||
       part === "." ||
@@ -271,9 +273,18 @@ export const runtimeInstallation =
     fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
   ).arcaInstallation || "server";
 
+export const SCHEMA_VERSION = 1;
+export function privateDirectory(directory) {
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  if (process.platform !== "win32") {
+    try {
+      fs.chmodSync(directory, 0o700);
+    } catch {}
+  }
+}
 export function init(home, options = {}) {
   home = path.resolve(home);
-  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+  privateDirectory(home);
   home = fs.realpathSync(home);
   if (fs.existsSync(path.join(home, "config.json")))
     fail("Node already initialized");
@@ -308,6 +319,7 @@ export function init(home, options = {}) {
 export class Store {
   constructor(home) {
     this.home = fs.realpathSync(path.resolve(home));
+    privateDirectory(this.home);
     this.configPath = path.join(this.home, "config.json");
     this.config = JSON.parse(fs.readFileSync(this.configPath));
     this.objects = path.join(this.home, "objects");
@@ -315,6 +327,13 @@ export class Store {
     fs.mkdirSync(this.objects, { recursive: true });
     fs.mkdirSync(this.uploads, { recursive: true });
     this.db = new DatabaseSync(path.join(this.home, "index.sqlite"));
+    this.db.exec("PRAGMA busy_timeout=5000");
+    const schema = this.db.prepare("PRAGMA user_version").get().user_version;
+    if (schema > SCHEMA_VERSION) {
+      this.db.close();
+      fail("This index was written by a newer Arca. Update Arca before opening it.", 409);
+    }
+    if (schema < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
     this.db
       .exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS gallery_derivatives(key TEXT PRIMARY KEY,size INTEGER NOT NULL,used INTEGER NOT NULL);
@@ -345,14 +364,14 @@ export class Store {
       CREATE TABLE IF NOT EXISTS history_views(hub TEXT,volume TEXT,filter TEXT,version TEXT,updated INTEGER,value TEXT,PRIMARY KEY(hub,volume,filter));
       CREATE TABLE IF NOT EXISTS file_generations(volume TEXT PRIMARY KEY,generation INTEGER NOT NULL);
       CREATE TRIGGER IF NOT EXISTS files_generation_insert AFTER INSERT ON files BEGIN
-        INSERT INTO file_generations VALUES(NEW.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+        INSERT INTO file_generations(volume,generation) VALUES(NEW.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
       END;
       CREATE TRIGGER IF NOT EXISTS files_generation_update AFTER UPDATE ON files BEGIN
-        INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
-        INSERT INTO file_generations SELECT NEW.volume,1 WHERE NEW.volume<>OLD.volume ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+        INSERT INTO file_generations(volume,generation) VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+        INSERT INTO file_generations(volume,generation) SELECT NEW.volume,1 WHERE NEW.volume<>OLD.volume ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
       END;
       CREATE TRIGGER IF NOT EXISTS files_generation_delete AFTER DELETE ON files BEGIN
-        INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+        INSERT INTO file_generations(volume,generation) VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
       END;
       CREATE TABLE IF NOT EXISTS local_files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,directory INTEGER NOT NULL DEFAULT 0,path_key TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE VIEW IF NOT EXISTS files_view AS
@@ -360,13 +379,13 @@ export class Store {
           WHERE NOT EXISTS (SELECT 1 FROM local_files l WHERE l.volume=f.volume AND l.path=f.path)
         UNION ALL SELECT volume,path,hash,size,deleted,rev,directory,path_key FROM local_files;
       CREATE TRIGGER IF NOT EXISTS local_generation_insert AFTER INSERT ON local_files BEGIN
-        INSERT INTO file_generations VALUES(NEW.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+        INSERT INTO file_generations(volume,generation) VALUES(NEW.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
       END;
       CREATE TRIGGER IF NOT EXISTS local_generation_update AFTER UPDATE ON local_files BEGIN
-        INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+        INSERT INTO file_generations(volume,generation) VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
       END;
       CREATE TRIGGER IF NOT EXISTS local_generation_delete AFTER DELETE ON local_files BEGIN
-        INSERT INTO file_generations VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
+        INSERT INTO file_generations(volume,generation) VALUES(OLD.volume,1) ON CONFLICT(volume) DO UPDATE SET generation=generation+1;
       END;
       CREATE TABLE IF NOT EXISTS pending(volume TEXT NOT NULL,path TEXT NOT NULL,row TEXT NOT NULL,expected TEXT,failures INTEGER NOT NULL DEFAULT 0,side TEXT,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL,role TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,last_seen TEXT,last_address TEXT);
@@ -833,7 +852,7 @@ export class Store {
       if (this.scanCacheWrites) this.scanCacheWrites.push(entry);
       else
         this.db
-          .prepare("INSERT OR REPLACE INTO scan_cache VALUES(?,?,?,?,?)")
+          .prepare("INSERT OR REPLACE INTO scan_cache(path,signature,hash,size,verified) VALUES(?,?,?,?,?)")
           .run(...entry);
     };
     if (
@@ -953,7 +972,7 @@ export class Store {
       "DELETE FROM files WHERE volume=? AND path=?",
     );
     const remember = this.db.prepare(
-      "INSERT INTO forgotten SELECT volume,path,? FROM revisions WHERE volume=? AND path=? LIMIT 1 ON CONFLICT(volume,path) DO UPDATE SET at=excluded.at",
+      "INSERT INTO forgotten(volume,path,at) SELECT volume,path,? FROM revisions WHERE volume=? AND path=? LIMIT 1 ON CONFLICT(volume,path) DO UPDATE SET at=excluded.at",
     );
     const at = Date.now();
     this.db.exec("BEGIN IMMEDIATE");
@@ -1461,7 +1480,7 @@ export class Store {
       const quick = written && !row.deleted && !row.directory && this.streamOnly(row.volume);
       if (written)
         this.db
-          .prepare("INSERT OR REPLACE INTO scan_cache VALUES(?,?,?,?,?)")
+          .prepare("INSERT OR REPLACE INTO scan_cache(path,signature,hash,size,verified) VALUES(?,?,?,?,?)")
           .run(file, written, quick ? quickHashFile(file) : row.hash, row.size, Date.now());
       this.db.exec("COMMIT");
       if (quick) this.markDirty(row.volume, row.path);

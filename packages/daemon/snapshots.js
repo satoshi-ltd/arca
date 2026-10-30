@@ -64,7 +64,7 @@ export async function snapshotPage(
       const batchSize = 2000;
       const insertBatch = (count) =>
         db.prepare(
-          `INSERT INTO snapshot_files VALUES ${Array(count).fill("(?,?,?,?)").join(",")}`,
+          `INSERT INTO snapshot_files(session,path,hash,row) VALUES ${Array(count).fill("(?,?,?,?)").join(",")}`,
         );
       const insert = insertBatch(batchSize);
       for (let offset = 0; offset < rows.length; offset += batchSize) {

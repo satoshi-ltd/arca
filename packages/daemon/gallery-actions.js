@@ -79,12 +79,12 @@ export function registerGalleryAsset(store, body, source) {
   try {
     store.db
       .prepare(
-        "INSERT INTO gallery_assets VALUES(?,?,?,?,0) ON CONFLICT(volume,source,asset) DO UPDATE SET resources=excluded.resources",
+        "INSERT INTO gallery_assets(volume,source,asset,resources,deleted) VALUES(?,?,?,?,0) ON CONFLICT(volume,source,asset) DO UPDATE SET resources=excluded.resources",
       )
       .run(body.volume, source, body.asset, JSON.stringify(resources));
     for (const r of resources)
       store.db
-        .prepare("INSERT OR REPLACE INTO gallery_members VALUES(?,?,?,?)")
+        .prepare("INSERT OR REPLACE INTO gallery_members(volume,path,source,asset) VALUES(?,?,?,?)")
         .run(body.volume, r.path, source, body.asset);
     store.db.exec("COMMIT");
   } catch (e) {

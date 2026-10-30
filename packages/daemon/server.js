@@ -73,6 +73,7 @@ import {
   atomic,
   requireSpace,
   deleteSyncedCopy,
+  fileSignature,
   syncDirectory,
   validPath,
   withinPath,
@@ -175,6 +176,18 @@ export async function start(home, options = {}) {
       ]
         .filter((name) => typeof name === "string" && name.trim())
         .map((name) => hostName(name.trim()));
+  const eventWaiters = new Map();
+  const verifiedObjects = new Map();
+  const verifiedObject = async (file, hash) => {
+    const signature = fileSignature(file);
+    if (signature && verifiedObjects.get(hash) === signature) return true;
+    const ok = (await hashFileAsync(file)) === hash;
+    if (ok && signature && fileSignature(file) === signature) {
+      if (verifiedObjects.size >= 4096) verifiedObjects.delete(verifiedObjects.keys().next().value);
+      verifiedObjects.set(hash, signature);
+    }
+    return ok;
+  };
   const playbackTickets = new Map();
   const previewTickets = new Map();
   const musicTickets = new Map();
@@ -245,7 +258,7 @@ export async function start(home, options = {}) {
         throw engine.connectionLost(error);
       });
       s.db
-        .prepare("INSERT OR REPLACE INTO remote_views VALUES(?,?,?)")
+        .prepare("INSERT OR REPLACE INTO remote_views(key,value,used) VALUES(?,?,?)")
         .run(key, JSON.stringify(value), Date.now());
       s.db.exec(
         "DELETE FROM remote_views WHERE key NOT IN (SELECT key FROM remote_views ORDER BY used DESC LIMIT 64)",
@@ -265,9 +278,7 @@ export async function start(home, options = {}) {
       if (cached && (!prepared?.savedAt || cached.used > prepared.savedAt))
         return { ...JSON.parse(cached.value), offline: true, savedAt: cached.used };
       if (prepared) return { ...prepared, offline: true };
-      throw new Error(
-        "Hub unavailable. This information is not saved on this device.",
-      );
+      fail("Hub unavailable. This information is not saved on this device.", 503);
     }
   }
   // Optional hub previews never decide connectivity and never wait on the 60 s transfer deadline.
@@ -462,7 +473,8 @@ export async function start(home, options = {}) {
           b.name !== undefined &&
           (typeof b.name !== "string" ||
             !b.name.trim() ||
-            b.name.trim().length > 100)
+            b.name.trim().length > 100 ||
+            /[\x00-\x1f]/.test(b.name))
         )
           fail("Choose a device name of up to 100 characters");
         if (b.kind !== undefined && !["replica", "player"].includes(b.kind))
@@ -479,7 +491,7 @@ export async function start(home, options = {}) {
             if (!invitation) {
               s.db
                 .prepare(
-                  "INSERT INTO auth_failures VALUES('pair',1) ON CONFLICT(purpose) DO UPDATE SET failures=failures+1",
+                  "INSERT INTO auth_failures(purpose,failures) VALUES('pair',1) ON CONFLICT(purpose) DO UPDATE SET failures=failures+1",
                 )
                 .run();
               if (
@@ -1153,6 +1165,10 @@ export async function start(home, options = {}) {
       if (req.method === "GET" && route === "/v1/events") {
         if (!admin) requireHub();
         if (feed.waiters.size >= 256) fail("Too many waiting clients", 503);
+        const waiting = eventWaiters.get(device.id) || 0;
+        if (waiting >= (admin ? 16 : 4))
+          fail("Too many waiting requests from this device", 429);
+        eventWaiters.set(device.id, waiting + 1);
         const controller = new AbortController();
         const disconnect = () => controller.abort();
         res.once("close", disconnect);
@@ -1177,6 +1193,9 @@ export async function start(home, options = {}) {
           return send(200, { cursor });
         } finally {
           res.off("close", disconnect);
+          const left = (eventWaiters.get(device.id) || 1) - 1;
+          if (left > 0) eventWaiters.set(device.id, left);
+          else eventWaiters.delete(device.id);
         }
       }
       if (req.method === "GET" && route === "/v1/changes") {
@@ -1472,7 +1491,7 @@ export async function start(home, options = {}) {
         const tmp = path.join(s.uploads, `${device.id}-${hash}.part`);
         if (req.method === "GET") {
           const complete =
-            fs.existsSync(file) && (await hashFileAsync(file)) === hash;
+            fs.existsSync(file) && (await verifiedObject(file, hash));
           checkCredential();
           return send(200, {
             complete,
@@ -1499,7 +1518,7 @@ export async function start(home, options = {}) {
               if (
                 fs.existsSync(file) &&
                 fs.statSync(file).size === size &&
-                (await hashFileAsync(file)) === hash
+                (await verifiedObject(file, hash))
               )
                 return { complete: true, offset: size };
               const actual = fs.existsSync(tmp) ? fs.statSync(tmp).size : 0;
@@ -1558,6 +1577,7 @@ export async function start(home, options = {}) {
             ]),
           ];
           s.saveConfig();
+          if (!b.enabled) web?.endApprover(b.id);
           return send(200, { enabled: b.enabled });
         }
         if (route === "/v1/web-approvals") {
@@ -1593,6 +1613,7 @@ export async function start(home, options = {}) {
           requireHub();
           if (admin) fail("Use a linked device credential to disconnect", 403);
           await authorizedWork(() => s.forgetDevice(device.id));
+          web?.endApprover(device.id);
           return send(200, { disconnected: true });
         }
         if (route === "/v1/favorites") {
@@ -1653,7 +1674,7 @@ export async function start(home, options = {}) {
             fail("Invalid backup acknowledgement");
           s.db
             .prepare(
-              "INSERT INTO backup_ack VALUES(?,?,?,?) ON CONFLICT(device) DO UPDATE SET revision=MAX(revision,excluded.revision),enabled=excluded.enabled,updated=excluded.updated",
+              "INSERT INTO backup_ack(device,revision,enabled,updated) VALUES(?,?,?,?) ON CONFLICT(device) DO UPDATE SET revision=MAX(revision,excluded.revision),enabled=excluded.enabled,updated=excluded.updated",
             )
             .run(
               device.id,
@@ -1835,6 +1856,9 @@ export async function start(home, options = {}) {
               fail("A player cannot change the folder's ignore rules", 403);
             if (s.db.prepare("SELECT 1 FROM gallery_folders WHERE volume=?").get(b.volume))
               fail("Delete gallery photos with /v1/gallery/delete", 409);
+            s.volume(b.volume);
+            if (!video().isVideo(b.volume) && !music().isMusic(b.volume))
+              fail("A player can only delete in video and audio libraries", 403);
           } else requireAdmin();
           return send(
             200,
@@ -2163,7 +2187,7 @@ export async function start(home, options = {}) {
               .prepare("DELETE FROM auth_failures WHERE purpose='pair'")
               .run();
             s.db
-              .prepare("INSERT INTO pairing VALUES(?,?,?)")
+              .prepare("INSERT INTO pairing(code_hash,name,expires) VALUES(?,?,?)")
               .run(
                 digest(normalizeCode(code, "P")),
                 b.name.trim().slice(0, 100),
@@ -2200,6 +2224,7 @@ export async function start(home, options = {}) {
           if (typeof b.id !== "string" || !b.id)
             fail("Machine ID required", 400);
           await authorizedWork(() => s.forgetDevice(b.id));
+          web?.endApprover(b.id);
           return send(200, { revoked: true, removed: true });
         }
         if (route === "/v1/destroy-replica" || route === "/v1/destroy-hub") {
@@ -2333,8 +2358,35 @@ export async function start(home, options = {}) {
             signal: AbortSignal.timeout(10000),
           });
           if (!response.ok) fail("Hub refused credential", 401);
-          const catalog = await response.json();
-          if (catalog.protocol !== 1) fail("Unsupported hub protocol");
+          const chunks = [];
+          let received = 0;
+          for await (const chunk of response.body) {
+            received += chunk.length;
+            if (received > 16 * 1024 * 1024) fail("The hub's catalog is too large", 502);
+            chunks.push(chunk);
+          }
+          let catalog;
+          try {
+            catalog = JSON.parse(Buffer.concat(chunks).toString());
+          } catch {
+            fail("Invalid hub catalog", 502);
+          }
+          if (catalog?.protocol !== 1) fail("Unsupported hub protocol");
+          const text = (value, limit) =>
+            typeof value === "string" && value.length <= limit && !/[\x00-\x1f]/.test(value);
+          if (
+            !/^[\w-]{1,64}$/.test(catalog.id ?? "") ||
+            !text(catalog.name, 100) ||
+            !Array.isArray(catalog.volumes) ||
+            catalog.volumes.length > 1000 ||
+            catalog.volumes.some(
+              (v) =>
+                !/^[\w-]{1,64}$/.test(v?.id ?? "") ||
+                !text(v.name, 255) ||
+                (v.historyRetention !== undefined && !text(v.historyRetention, 16)),
+            )
+          )
+            fail("Invalid hub catalog", 502);
           await authorizedWork(() => {
             const prior = config.hub || config.disconnectedHub;
             if (
@@ -2397,7 +2449,7 @@ export async function start(home, options = {}) {
                 s.db.exec(
                   "DELETE FROM files; DELETE FROM local_files; DELETE FROM forgotten; DELETE FROM pending; DELETE FROM proposals; DELETE FROM accepted_proposals; DELETE FROM gallery_assets; DELETE FROM gallery_members; DELETE FROM gallery_deletions; DELETE FROM sync_state; DELETE FROM sync_dirty;",
                 );
-                s.db.prepare("INSERT INTO transitions VALUES(?)").run(id);
+                s.db.prepare("INSERT INTO transitions(id) VALUES(?)").run(id);
                 s.db.exec("COMMIT");
               } catch (e) {
                 s.db.exec("ROLLBACK");
@@ -2432,9 +2484,11 @@ export async function start(home, options = {}) {
       }
       fail("Endpoint not found", 404);
     } catch (e) {
+      if (!e.status && !e.syncInterrupted && e.name !== "AbortError" && !/cancelled$/.test(e.message))
+        console.error(`${req.method} ${req.url?.split("?")[0]}: ${e.stack || e}`);
       if (!res.headersSent)
         send(e.status || 500, {
-          error: e.message,
+          error: e.status ? e.message : "Internal error",
           ...(e.status && typeof e.code === "string" ? { code: e.code } : {}),
         });
       else res.destroy();

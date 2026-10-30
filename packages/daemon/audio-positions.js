@@ -22,12 +22,12 @@ export function savePosition(store, owner, body) {
   if (position < RESUME_HEAD_SECONDS) return { kept: false };
   if (position >= duration - RESUME_TAIL_SECONDS) {
     store.db
-      .prepare("INSERT OR REPLACE INTO audio_positions VALUES(?,?,?,0,?,?,?,?)")
+      .prepare("INSERT OR REPLACE INTO audio_positions(volume,path,hash,position,duration,device,name,updated) VALUES(?,?,?,0,?,?,?,?)")
       .run(volume, path, hash, duration, owner.id, owner.name, at);
     return { kept: false, cleared: true };
   }
   store.db
-    .prepare("INSERT OR REPLACE INTO audio_positions VALUES(?,?,?,?,?,?,?,?)")
+    .prepare("INSERT OR REPLACE INTO audio_positions(volume,path,hash,position,duration,device,name,updated) VALUES(?,?,?,?,?,?,?,?)")
     .run(volume, path, hash, position, duration, owner.id, owner.name, at);
   return { kept: true };
 }
@@ -43,7 +43,7 @@ export function clearPosition(store, owner, body) {
     .get(volume, path);
   if (known && known.updated >= at) return { cleared: false };
   store.db
-    .prepare("INSERT OR REPLACE INTO audio_positions VALUES(?,?,?,0,?,?,?,?)")
+    .prepare("INSERT OR REPLACE INTO audio_positions(volume,path,hash,position,duration,device,name,updated) VALUES(?,?,?,0,?,?,?,?)")
     .run(volume, path, hash, known?.duration || 0, owner.id, owner.name, at);
   return { cleared: true };
 }

@@ -38,7 +38,7 @@ parentPort.on("message", ({ id, operation, volume, paths, cancellation }) => {
     store.db.exec("BEGIN IMMEDIATE");
     try {
       const insert = store.db.prepare(
-        "INSERT OR REPLACE INTO scan_cache VALUES(?,?,?,?,?)",
+        "INSERT OR REPLACE INTO scan_cache(path,signature,hash,size,verified) VALUES(?,?,?,?,?)",
       );
       for (const entry of store.scanCacheWrites) insert.run(...entry);
       store.db.exec("COMMIT");

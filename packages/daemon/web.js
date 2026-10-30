@@ -136,11 +136,17 @@ export class Web {
     r.approver = approver;
     return { state: r.state };
   }
-  grant(req, res) {
+  endApprover(id) {
+    for (const [key, entry] of this.sessions)
+      if (entry.approver === id) this.sessions.delete(key);
+    for (const [key, request] of this.requests)
+      if (request.approver === id) this.requests.delete(key);
+  }
+  grant(req, res, approver) {
     const session = token();
     if (this.sessions.size >= 100)
       this.sessions.delete(this.sessions.keys().next().value);
-    this.sessions.set(digest(session), Date.now() + 86400000);
+    this.sessions.set(digest(session), { expiry: Date.now() + 86400000, approver });
     res.writeHead(200, {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
@@ -169,8 +175,8 @@ export class Web {
     const cookie = /(?:^|;\s*)arca_session=([a-f0-9]{64})(?:;|$)/.exec(
       req.headers.cookie || "",
     )?.[1];
-    for (const [key, expiry] of this.sessions)
-      if (expiry < Date.now()) this.sessions.delete(key);
+    for (const [key, entry] of this.sessions)
+      if (entry.expiry < Date.now()) this.sessions.delete(key);
     return cookie && this.sessions.has(digest(cookie));
   }
   async handle(req, res, readBody) {
@@ -197,6 +203,11 @@ export class Web {
         if (!this.hasApprovers?.())
           fail("No devices can approve access. Use a sign-in code.", 409);
         if (this.requests.size >= 50) fail("Too many pending requests", 429);
+        const address = req.socket.remoteAddress?.replace(/^::ffff:/, "") || "";
+        let mine = 0;
+        for (const pending of this.requests.values())
+          if (pending.ip === address) mine++;
+        if (mine >= 3) fail("Too many pending requests from this address", 429);
         const secret = token(),
           id = token(),
           created = Date.now();
@@ -237,7 +248,7 @@ export class Web {
         this.requests.delete(r.id);
         if (!this.canRedeem?.(r.approver))
           return (reply({ state: "ended" }), true);
-        this.grant(req, res);
+        this.grant(req, res, r.approver);
         return true;
       }
       return (reply({ state: r.state }), true);

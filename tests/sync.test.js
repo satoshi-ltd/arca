@@ -3265,7 +3265,7 @@ test("hub rename journals both paths and recovers after interrupted materializat
       rev: original.rev,
       name: "destination.txt",
     }),
-    /disk unavailable/,
+    /Internal error/,
   );
   assert.equal(
     s.db
@@ -3588,4 +3588,75 @@ test("a hostile .arcaignore never reaches the hub, and one already on its disk s
   assert.ok(performance.now() - started < 5000, "the cycle stops before evaluating the rule");
   const folder = (await hub.api("/v1/status")).volumes.find((v) => v.id === volume.id);
   assert.match(folder.policyError || folder.sync?.error || "", /too many wildcards/);
+});
+
+test("a replica deletion re-checks the file after hashing and never deletes an edit that landed meanwhile", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("replica");
+  write(hub, volume, "doc.txt", "synced");
+  await hub.sync();
+  await replica.sync();
+  const row = replica.engine.store.current(volume.id, "doc.txt");
+  const file = path.join(replica.engine.store.volume(volume.id).path, "doc.txt");
+  const holds = replica.engine.store.holds.bind(replica.engine.store);
+  replica.engine.store.holds = async (...args) => {
+    const held = await holds(...args);
+    fs.appendFileSync(file, " and an edit made while it was hashed");
+    return held;
+  };
+  await assert.rejects(replica.api("/v1/delete-file", { volume: volume.id, path: "doc.txt", rev: row.rev }), { status: 409, message: /Local file changed/ });
+  assert.equal(fs.readFileSync(file, "utf8"), "synced and an edit made while it was hashed");
+  replica.engine.store.holds = holds;
+  replica.engine.moveToTrash = async (files) => files.forEach((target) => fs.unlinkSync(target));
+  await replica.api("/v1/delete-file", { volume: volume.id, path: "doc.txt", rev: row.rev });
+  assert.equal(fs.existsSync(file), false);
+});
+
+test("a replica deletion of a file another process holds answers 409 and keeps the file", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("replica");
+  write(hub, volume, "open.txt", "held");
+  await hub.sync();
+  await replica.sync();
+  const row = replica.engine.store.current(volume.id, "open.txt");
+  const file = path.join(replica.engine.store.volume(volume.id).path, "open.txt");
+  const unlink = fs.unlinkSync;
+  fs.unlinkSync = (target, ...rest) => {
+    if (target === file) throw Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" });
+    return unlink(target, ...rest);
+  };
+  try {
+    await assert.rejects(replica.api("/v1/delete-file", { volume: volume.id, path: "open.txt", rev: row.rev }), { status: 409, message: /in use/ });
+  } finally {
+    fs.unlinkSync = unlink;
+  }
+  assert.equal(fs.readFileSync(file, "utf8"), "held");
+});
+
+test("renaming on a replica works where the disk has no hard links", async (t) => {
+  const { hub, volume, connect } = await setup(t);
+  const replica = await connect("replica");
+  write(hub, volume, "plain.txt", "content");
+  await hub.sync();
+  await replica.sync();
+  const row = replica.engine.store.current(volume.id, "plain.txt");
+  const link = fs.linkSync;
+  fs.linkSync = () => {
+    throw Object.assign(new Error("EPERM: operation not permitted, link"), { code: "EPERM" });
+  };
+  try {
+    await replica.api("/v1/rename-file", { volume: volume.id, path: "plain.txt", name: "renamed.txt", rev: row.rev });
+  } finally {
+    fs.linkSync = link;
+  }
+  assert.equal(read(replica, volume, "renamed.txt"), "content");
+  assert.equal(fs.existsSync(path.join(replica.engine.store.volume(volume.id).path, "plain.txt")), false);
+});
+
+test("a hub scan keeps working when a later version adds columns to its tables", async (t) => {
+  const { hub, volume } = await setup(t);
+  hub.engine.store.db.exec("ALTER TABLE scan_cache ADD COLUMN later TEXT");
+  write(hub, volume, "after-upgrade.txt", "still scanned");
+  await hub.sync();
+  assert.equal(hub.engine.store.current(volume.id, "after-upgrade.txt").deleted, 0);
 });

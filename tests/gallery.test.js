@@ -1635,7 +1635,7 @@ test("gallery deletion journal recovers interrupted materialization and respects
     path: "pair.jpg",
     rev: resources[0].rev,
   };
-  await assert.rejects(api("/v1/gallery/delete", body), /power loss/);
+  await assert.rejects(api("/v1/gallery/delete", body), /Internal error/);
   s.materialize = materialize;
   const result = await api("/v1/gallery/delete", body);
   assert.equal(result.rows.length, 2);

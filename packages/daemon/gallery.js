@@ -169,7 +169,7 @@ export class Gallery {
   mark(volume) {
     this.s.volume(volume);
     this.s.db
-      .prepare("INSERT OR IGNORE INTO gallery_folders VALUES(?)")
+      .prepare("INSERT OR IGNORE INTO gallery_folders(volume) VALUES(?)")
       .run(volume);
     this.prepare(volume);
   }
@@ -638,7 +638,7 @@ export class Gallery {
         if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
       }
       s.db
-        .prepare("INSERT OR REPLACE INTO gallery_derivatives VALUES(?,?,?)")
+        .prepare("INSERT OR REPLACE INTO gallery_derivatives(key,size,used) VALUES(?,?,?)")
         .run(diskKey, data.length, Date.now());
       const kind = `%-${size}.jpg`;
       let total = s.db

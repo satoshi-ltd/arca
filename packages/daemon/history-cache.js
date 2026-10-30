@@ -113,7 +113,7 @@ export async function warmHistory(engine) {
     if (signal.aborted || config.hub?.id !== hub) return;
     if (!pages.length) continue;
     const write = store.db.prepare(
-      "INSERT OR REPLACE INTO history_views VALUES(?,?,?,?,?,?)",
+      "INSERT OR REPLACE INTO history_views(hub,volume,filter,version,updated,value) VALUES(?,?,?,?,?,?)",
     );
     try {
       store.db.exec("BEGIN IMMEDIATE");

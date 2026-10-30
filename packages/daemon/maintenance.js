@@ -215,7 +215,12 @@ function collectUnusedObjects(store) {
       !hashes.has(name) &&
       fs.statSync(path.join(store.objects, name)).mtimeMs < cutoff
     ) {
-      fs.unlinkSync(path.join(store.objects, name));
+      try {
+        fs.unlinkSync(path.join(store.objects, name));
+      } catch (error) {
+        if (["EBUSY", "EPERM", "EACCES"].includes(error.code)) continue;
+        throw error;
+      }
       if (!inPlace.has(name))
         store.db.prepare("DELETE FROM scan_cache WHERE hash=?").run(name);
       objectsRemoved++;
@@ -266,8 +271,12 @@ export function cleanupTransfers(store, now = Date.now()) {
       continue;
     const file = path.join(store.uploads, entry.name);
     if (fs.statSync(file).mtimeMs < now - 7 * 86400000) {
-      fs.unlinkSync(file);
-      removed++;
+      try {
+        fs.unlinkSync(file);
+        removed++;
+      } catch (error) {
+        if (!["EBUSY", "EPERM", "EACCES"].includes(error.code)) throw error;
+      }
     }
   }
   return removed;
