@@ -464,7 +464,7 @@ export function VideoPlayer({ session, resolve, save, nextOf, art, onClose, onNe
     setFailure("");
     if (!session) return undefined;
     if (!video) {
-      setFailure("Install the updated Arca mobile build to play videos.");
+      setFailure("Install the updated app to play videos.");
       return undefined;
     }
     resolve(opening(session))

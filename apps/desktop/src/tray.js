@@ -172,9 +172,9 @@ function folderRow(row) {
 }
 function updateRow() {
   if (updating)
-    return `<div class="tray-update" aria-busy="true">${busy()}<span class="tray-update-text"><strong>${escape(`Updating to Arca ${update}`)}</strong><small>Sync pauses while Arca restarts.</small></span></div>`;
+    return `<div class="tray-update" aria-busy="true">${busy()}<span class="tray-update-text"><strong>${escape(`Updating to v${update}`)}</strong></span></div>`;
   return update
-    ? `<div class="tray-update">${icon("download")}<span class="tray-update-text">${escape(`Arca ${update} is ready`)}</span><button class="secondary small-button" data-action="update">Install</button></div>`
+    ? `<div class="tray-update">${icon("download")}<span class="tray-update-text">${escape(`v${update} is ready`)}</span><button class="secondary small-button" data-action="update">Install</button></div>`
     : "";
 }
 function draw() {

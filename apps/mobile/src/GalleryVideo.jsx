@@ -110,7 +110,7 @@ export function GalleryVideo({ item, active, held, resolveVideo, frame }) {
                 onPress={() => {
                   if (!video) {
                     setError(
-                      "Install the updated Arca mobile build to play videos.",
+                      "Install the updated app to play videos.",
                     );
                     return;
                   }

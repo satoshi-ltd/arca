@@ -1955,7 +1955,7 @@ export default function App() {
   async function openCurrentFile() {
     if (typeof native.openFile !== "function")
       throw new Error(
-        "Install the updated Arca app to open files. You can still use Share from the file menu.",
+        "Install the updated app to open files. You can still use Share from the file menu.",
       );
     const result = await native.openFile(await currentFileURI());
     if (result === "install-permission")
@@ -2067,7 +2067,7 @@ export default function App() {
     confirm(
       {
         title: upgrade ? "Upload every photo?" : "Enable photo uploads?",
-        message: `${what}. ${all ? "This uses your current network, including mobile data. " : ""}Arca keeps a complete local copy of the shared folder, including photos from other devices. Uses storage on this phone. Originals stay in Photos.`,
+        message: `${what}. ${all ? "This uses your current network, including mobile data. " : ""}This phone keeps a complete local copy of the shared folder, including photos from other devices. Uses storage on this phone. Originals stay in Photos.`,
         label: upgrade ? "Upload everything" : "Enable uploads",
         icon: "upload",
         destructive: false,
@@ -3301,7 +3301,7 @@ export default function App() {
                                         ? "Sync needs attention."
                                         : currentFolder?.completed
                                           ? "Available offline."
-                                          : "Keep Arca open to finish syncing."}
+                                          : "Keep the app open to finish syncing."}
                                     </Text>
                                   </Card>
                                 </Section>
@@ -3922,7 +3922,7 @@ export default function App() {
                           <Card>
                             <Toggle
                               label="Background refresh"
-                              description="Sync runs while Arca is open. In the background it depends on this device’s permissions and system limits."
+                              description="Sync runs while the app is open. In the background it depends on this device’s permissions and system limits."
                               value={!!prefs.background}
                               disabled={busy}
                               onChange={(v) => run(() => setBackground(v))}

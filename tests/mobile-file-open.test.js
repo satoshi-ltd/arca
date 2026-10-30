@@ -70,7 +70,7 @@ test("older installed clients explain that Open requires an app update", async (
   delete context.native.openFile;
   await assert.rejects(
     context.openCurrentFile(),
-    /Install the updated Arca app/,
+    /Install the updated app/,
   );
   await context.shareCurrentFile();
   assert.deepEqual(calls, [["share", uri]]);

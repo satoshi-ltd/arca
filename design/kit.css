@@ -925,6 +925,9 @@ body.kit {
 .panel.kit-shadow-dialog {
   box-shadow: var(--shadow-dialog);
 }
+.kit-width-960 {
+  max-width: calc(960px - var(--sidebar-width) - 2 * var(--space-6));
+}
 .kit-device-end-162 {
   --device-end: 162px;
 }
@@ -1518,33 +1521,3 @@ body.kit {
   height: var(--space-4);
 }
 
-.kit-fix-forms input,
-.kit-fix-forms select,
-.kit-fix-forms .dialog-actions > button {
-  min-height: var(--control-height);
-  padding-top: 0;
-  padding-bottom: 0;
-}
-.kit-fix-forms .field-with-icon {
-  min-height: var(--control-height);
-}
-.kit-fix-forms .field-with-icon input {
-  min-height: 0;
-}
-.kit-fix-devices .device-row.device-entry > .row-main {
-  flex-basis: calc(100% - var(--detail-tile) - var(--space-3));
-  max-width: none;
-}
-.kit-fix-devices .device-cells {
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-  row-gap: var(--space-1);
-  min-width: 0;
-  margin-left: calc(var(--detail-tile) + var(--space-3));
-}
-.kit-fix-devices .device-cell.device-seen {
-  width: auto;
-}
-.kit-width-960 {
-  max-width: calc(960px - var(--sidebar-width) - 2 * var(--space-6));
-}

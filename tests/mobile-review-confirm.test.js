@@ -354,7 +354,7 @@ test("Settings does not repeat itself: the name joins the This device row, the h
   const settings = app.slice(app.indexOf('{screen === "Settings" && ('));
   assert.match(settings, /<DeviceRow name=\{name\} device=\{device\}>\s+<Field\s+label="Device name"/);
   assert.doesNotMatch(settings, /<HubConnection|Hub connection|title="Runtime"|Mobile app/);
-  assert.match(settings, /label="Background refresh"\s+description="Sync runs while Arca is open\. In the background it depends on this device’s permissions and system limits\."/);
+  assert.match(settings, /label="Background refresh"\s+description="Sync runs while the app is open\. In the background it depends on this device’s permissions and system limits\."/);
   const order = ["This device", "Local synchronization", "Mobile preferences", "Storage", "Service", "Appearance"].map((name) => settings.indexOf(`<Eyebrow>${name}</Eyebrow>`));
   assert.deepEqual([...order].sort((a, b) => a - b), order);
   assert.ok(order.every((at) => at >= 0));

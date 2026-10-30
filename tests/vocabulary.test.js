@@ -113,7 +113,7 @@ test("cold dialogs and Settings use plain wording the copy review asked for", ()
   for (const phrase of [
     "Erase this hub and all its folders?",
     "The command prints a result that includes a six-digit code. Enter that code below.",
-    "Arca could not list this folder’s files.",
+    "Could not list this folder’s files.",
     "Anyone on that network could read your files and sign-in details",
     "On the new device, open Arca and choose Pair with your hub. A computer picks Another device first; one already set up uses Connect to hub.",
   ])

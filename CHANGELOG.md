@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.19 — 2026-10-30
+
+- The sidebar update card puts its mark beside the text, as the tray does: the download icon beside "v0.8.19 is available", the busy dots beside "Updating to v0.8.19", with no second line in the card or the tray.
+- App text stops naming the app it is shown in: versions read "v0.8.19", and messages such as "Could not read this library", "Keep the app open to finish syncing" or "Files are copied and verified before switching" drop "Arca"; the name stays in menus, notifications and system settings, and where it names another device.
+- Text fields, fields with an icon and dialog buttons share the 32 px height of every other control, set once in the base components instead of per dialog or settings row.
+- Device rows give long names the free space and fit the longest last-seen date; in narrower windows, the default size included, each row stays one two-line row, with version, folders, size and last seen continuing the device line, instead of leaving the role and ⋯ on a line of their own.
+
+Needs: Casa redeploy · desktop build · native build
+
 ## 0.8.18 — 2026-10-30
 
 - Movies & TV titles can be deleted from desktop and phone, as the TV already could: Delete movie…, episode… or show… (and Delete season N… on the phone) always confirm and remove the file from the hub for every device, including from a desktop or phone that only streams the folder; the download on that device goes with it.

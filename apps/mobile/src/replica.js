@@ -1662,7 +1662,7 @@ export class Replica {
     await this.requireActiveReplica();
     validPath(name);
     if (builtinExcluded(name))
-      throw new Error("Arca always excludes this kind of file from sync.");
+      throw new Error("This kind of file is always excluded from sync.");
     // Callers hold picking/importing, so no cycle restarts before the copy lands.
     if (this.active) {
       this.stop();

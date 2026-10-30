@@ -302,7 +302,7 @@ Findings of the read-only audit of v0.8.9, ordered by severity. Each task is one
 
 ### Sizing review (2026-10-29)
 
-The visual findings of the desktop and mobile sizing audit are boards on `design/proposals.html` (`UI-DESK-*`, `UI-MOB-*`); these are the parts that are not purely visual.
+These are the parts of the desktop and mobile sizing audit that are not purely visual; its visual findings have shipped.
 
 - **DESK-ZOOM-CHROME** — Window-control offsets follow the zoom level
   `bug · agent · normal`

@@ -348,3 +348,52 @@ test("the folder status line carries its full text as a tooltip and puts the byt
   assert.equal(meta.dataset.tooltip, meta.textContent);
   assert.ok(meta.textContent.indexOf("512 B / 2.0 KB") < meta.textContent.indexOf("a/very/long/path"));
 });
+
+test("the update card sets its mark beside the heading: the download icon while available, the busy mark while installing", () => {
+  const card = new JSDOM(html).window.document.querySelector("#update-card");
+  assert.equal(card.firstElementChild.className, "update-mark");
+  assert.ok(card.querySelector(".update-mark .busy-grid") && card.querySelector('.update-mark [data-icon="download"]'));
+  assert.equal(card.querySelector(".hint"), null);
+  const css = source("style.css");
+  assert.match(css, /\.update-card \{[^}]*grid-template-columns: auto 1fr;/);
+  assert.match(css, /\.update-card\[aria-busy="true"\] \.update-mark > svg,\n\.update-card:not\(\[aria-busy="true"\]\) \.update-mark > \.busy-grid \{\n  display: none;/);
+  assert.match(css, /\.update-card button \{\n  grid-column: 1 \/ -1;/);
+});
+
+test("fields and dialog buttons take --control-height from the base rules, with no per-context vertical padding", () => {
+  const css = source("style.css");
+  const rule = (selector) =>
+    [...css.matchAll(new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`, "g"))].map((m) => m[1]).join("\n");
+  assert.match(rule(':where(input:not([type="checkbox"], [type="radio"], [type="range"]), select)'), /min-height: var\(--control-height\);/);
+  assert.match(rule("input,\nselect,\ntextarea"), /padding: 0 11px;/);
+  assert.match(rule("textarea"), /padding: 9px 11px;/);
+  assert.match(rule(".field-with-icon"), /min-height: var\(--control-height\);/);
+  assert.match(rule(".field-with-icon input"), /min-height: 0;\n  padding: 0;/);
+  assert.match(rule(".field-with-icon > .field-picker"), /min-height: 0;/);
+  assert.match(rule(".dialog-actions > button"), /padding: 0 14px;/);
+  assert.doesNotMatch(rule(".dialog-actions > button"), /padding: [1-9]/);
+  assert.match(rule(".setting-row input"), /padding: 0 10px;/);
+});
+
+test("device rows let the name take the free space and fold their cells into the device line in a 581 to 840 px list", () => {
+  const css = source("style.css");
+  assert.match(css, /\.device-row\.device-entry > \.row-main \{\n  flex: 1 1 160px;\n  min-width: 160px;\n  max-width: none;/);
+  assert.match(css, /\.device-cell\.device-seen \{\n  width: 160px;/);
+  const tier = css.slice(css.indexOf("@container (min-width: 581px) and (max-width: 840px) {"), css.indexOf("@container (max-width: 580px) {"));
+  assert.ok(tier.length > 100, "the middle tier exists before the compact one");
+  assert.match(tier, /\.device-row\.device-entry \{\n    display: grid;/);
+  assert.match(tier, /\.device-row\.device-entry > \.tile,\n  \.device-row\.device-entry > \.device-end \{\n    grid-row: 1 \/ span 2;/);
+  assert.match(tier, /\.device-row\.device-entry > \.row-main \{\n    display: contents;/);
+  assert.match(tier, /\.device-row\.device-entry > \.device-cells \{[^}]*overflow: hidden;\n    text-overflow: ellipsis;\n    white-space: nowrap;/);
+  assert.match(tier, /\.device-cells \.device-version:not\(:empty\)::before,[^{]*\.device-cells \.device-seen:not\(:empty\)::before \{\n    content: "·";/);
+});
+
+test("folded device lines drop the leading dot without segments, path pickers fit the field, and detected devices show v only for a real version", () => {
+  const css = source("style.css");
+  assert.match(css, /\.device-row\.device-entry:has\(\.device-segs:empty\) \.device-cells \.device-version::before \{\n    content: none;/);
+  assert.match(css, /\.field-with-icon > \.field-picker \{\n  align-self: stretch;\n  height: auto;\n  min-height: 0;/);
+  const app = source("app.js");
+  assert.match(app, /\/\^\\d\/\.test\(p\.arca\.version \|\| ""\) \? ` · v\$\{escape\(p\.arca\.version\)\}` : ""/);
+  const tray = source("tray.js");
+  assert.doesNotMatch(tray.slice(tray.indexOf("function updateRow()"), tray.indexOf("function draw()")), /<small>/);
+});

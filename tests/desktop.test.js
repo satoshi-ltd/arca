@@ -461,7 +461,7 @@ test("desktop DOM uses real API: folders, history, restore and pause", async (t)
     assert.ok(
       w.document
         .querySelector("#devices-list")
-        .textContent.includes("Arca 0.1.0"),
+        .textContent.includes("· v0.1.0"),
     );
     assert.equal(
       w.document.querySelector("#devices-list").textContent.includes("Offline"),
@@ -2645,14 +2645,14 @@ test("device cells are fixed-width caption columns after a fixed name block, so 
     assert.ok(at >= 0, selector);
     return style.slice(at, style.indexOf("}", at));
   };
-  assert.match(rule(".device-row.device-entry > .row-main"), /flex: 1 1 160px;\s+min-width: 160px;\s+max-width: 240px;/);
+  assert.match(rule(".device-row.device-entry > .row-main"), /flex: 1 1 160px;\s+min-width: 160px;\s+max-width: none;/);
   assert.match(style, /\n\.device-list \{\n  container-type: inline-size;\n\}/, "rows query their list's width");
   assert.match(rule(".device-list .device-row .row-end.device-end"), /width: var\(--device-end, auto\);/, "every row's end takes the widest end of the page, so the columns align");
   assert.match(rule(".device-cells"), /flex: none;/);
   assert.match(rule(".device-cell"), /font-size: var\(--text-caption\);[\s\S]*color: var\(--soft\);[\s\S]*white-space: nowrap;/);
   assert.match(rule(".device-cell.device-version"), /width: 72px;/);
   assert.match(rule(".device-cell.device-folders"), /width: 80px;/);
-  assert.match(rule(".device-cell.device-seen"), /width: 136px;/);
+  assert.match(rule(".device-cell.device-seen"), /width: 160px;/);
   assert.match(rule(".device-folders > .device-size"), /color: var\(--mute\);/);
   assert.match(rule(".device-older"), /color: var\(--waFg\);/);
   assert.match(rule(".device-older svg"), /width: var\(--pill-icon\);/);
@@ -6532,10 +6532,10 @@ test("the sidebar offers a signed update only when one exists and installs it on
     update = { available: true, version: "9.9.9", notes: null };
     w.dispatchEvent(new w.Event("online"));
     await until(() => !card.hidden);
-    assert.match(card.textContent, /Arca 9\.9\.9 is available/);
+    assert.match(card.textContent, /v9\.9\.9 is available/);
     assert.match(
       w.document.querySelector("#update-heading").textContent,
-      /Arca 9\.9\.9 is available/,
+      /v9\.9\.9 is available/,
     );
     installError = new Error("Update signature check failed");
     button.click();
@@ -6545,17 +6545,16 @@ test("the sidebar offers a signed update only when one exists and installs it on
       /Update and restart/,
       "a failed install stays retryable",
     );
-    assert.equal(w.document.querySelector("#update-note").hidden, true);
     installError = null;
     button.click();
     await until(() => installs.length === 2);
     assert.deepEqual(installs, ["9.9.9", "9.9.9"]);
     assert.equal(button.hidden, true);
     assert.equal(card.getAttribute("aria-busy"), "true");
-    assert.ok(w.document.querySelector("#update-heading .busy-grid"));
-    assert.equal(w.document.querySelector("#update-heading").textContent, "Updating to Arca 9.9.9");
-    assert.equal(w.document.querySelector("#update-note").hidden, false);
-    assert.equal(w.document.querySelector("#update-note").textContent, "Sync pauses while Arca restarts.");
+    assert.equal(w.document.querySelector("#update-heading .busy-grid"), null);
+    assert.equal(w.document.querySelector("#update-heading").textContent, "Updating to v9.9.9");
+    assert.equal(card.querySelector(".update-mark .busy-grid").parentElement, card.firstElementChild);
+    assert.equal(card.querySelector(".hint"), null);
   } finally {
     await drainRequests(requests);
     w.close();

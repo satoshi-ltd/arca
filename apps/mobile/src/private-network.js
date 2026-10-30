@@ -25,7 +25,7 @@ export async function nativeFetch(url, options = {}) {
     async (...args) => {
       if (options.signal?.aborted) throw cancellationReason(options.signal);
       if (typeof native.beginRequest !== "function")
-        throw new Error("Update Arca to use the new synchronization engine.");
+        throw new Error("Update the app to use the new synchronization engine.");
       const id = `${Date.now()}-${++requestSerial}`;
       native.beginRequest(
         id,

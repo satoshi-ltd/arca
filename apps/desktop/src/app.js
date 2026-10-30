@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.18";
+const APP_VERSION = "0.8.19";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -1083,7 +1083,7 @@ function historyEmpty() {
 function mediaFailure(action, detail, symbol) {
   return empty(
     "Library unavailable",
-    "Arca could not read this library. Try again.",
+    "Could not read this library. Try again.",
     button("Retry", action, "", "secondary", "refresh-cw") + (detail ? `<p class="hint">${escape(detail)}</p>` : ""),
     symbol,
   );
@@ -5325,7 +5325,7 @@ async function folderBrowser(v, recent, pending = false) {
       `<div class="history-group folder-explorer" data-listing="${escape(`files:${folderPrefix}`)}">${trail}` +
       empty(
         "Files unavailable",
-        "Arca could not list this folder’s files. If it keeps happening, update Arca, then try again.",
+        "Could not list this folder’s files. If it keeps happening, update the app, then try again.",
         button("Retry", "browse-retry", "", "secondary"),
       ) +
       "</div>"
@@ -5734,7 +5734,7 @@ function musicBody(v, entry) {
   const library = entry.library;
   if (!library.tracks.size)
     return entry.indexing
-      ? empty("Reading this library", "Albums appear as Arca reads the tags.", "", "arca")
+      ? empty("Reading this library", "Albums appear as their tags are read.", "", "arca")
       : empty("No music yet", "Audio files added to this folder appear here.", "", "arca");
   if (musicView.tab === "playlists" && !library.playlists.length)
     musicView = { tab: "artists", artist: null, album: null, playlist: null, pages: 1, trail: [] };
@@ -7254,7 +7254,7 @@ function videoDownloadCard(v, item) {
 }
 function videoHome(v, library) {
   const shelves = videoShelves(library, RECENT_VIDEOS, videoDownloadable() ? downloadedTitles(library, videoDownloadList(v.id)) : []);
-  if (!shelves.length) return empty("Nothing to watch yet", "Movies and shows appear here as Arca reads them.", "", "clapperboard");
+  if (!shelves.length) return empty("Nothing to watch yet", "Movies and shows appear here as their files are read.", "", "clapperboard");
   return `<div class="video-shelves">${shelves
     .map((shelf) => {
       const posters = shelf.id !== "watch-next";
@@ -7421,7 +7421,7 @@ function videoBody(v, entry) {
     return (
       videoCaption(entry) +
       (videoWorking(entry)
-        ? empty("Reading this library", "Movies and shows appear as Arca reads the files.", "", "arca")
+        ? empty("Reading this library", "Movies and shows appear as their files are read.", "", "arca")
         : empty("No videos yet", "Video files added to this folder appear here.", "", "clapperboard"))
     );
   if (!tabs.includes(videoView.tab)) videoView = { ...videoView, tab: tabs[0] };
@@ -7763,7 +7763,7 @@ function videoStopped(markup) {
 }
 const videoOfflineError = (error) => error?.status === 503 || hubOffline() || /connect to your hub/i.test(error?.message || "");
 function videoOffline() {
-  videoStopped(`${icon("wifi-off")}<strong>Connect to your hub to watch</strong><p>This video streams from your hub. Arca will play it once the hub is reachable.</p>`);
+  videoStopped(`${icon("wifi-off")}<strong>Connect to your hub to watch</strong><p>This video streams from your hub and plays once the hub is reachable.</p>`);
 }
 function videoCannotPlay() {
   const state = videoPlayer;
@@ -8510,7 +8510,7 @@ function videoKeyDialog() {
       const token = String(form.get("tmdbToken") || "").trim();
       if (!token) throw new Error("Paste a TMDB API key or Read Access Token.");
       await api("/v1/video/settings", { tmdbToken: token });
-      notice("TMDB key saved. Arca matches your videos in the background.");
+      notice("TMDB key saved. Videos are matched in the background.");
       await videoSettings();
     },
     "Save",
@@ -8526,7 +8526,7 @@ async function handleVideo(name, id) {
   if (name === "video-key-remove") {
     void closeDialog();
     await api("/v1/video/settings", { tmdbToken: "" });
-    notice("TMDB key removed. Arca names movies and shows from their files.");
+    notice("TMDB key removed. Movies and shows are named from their files.");
     return videoSettings();
   }
   if (name === "video-content") {
@@ -9328,7 +9328,7 @@ async function renderMachines(serial = renderSerial, fetchData = true) {
                     )
                   : ""
               : "",
-            `${platform(p)} · Arca ${escape(p.arca.version || "")}`,
+            `${platform(p)}${/^\d/.test(p.arca.version || "") ? ` · v${escape(p.arca.version)}` : ""}`,
           ),
         )
         .join(""),
@@ -10882,7 +10882,7 @@ async function handle(name, id, control) {
       modalHeader(
         destroyingHub ? "Erase this hub and all its folders?" : "Erase this device?",
         destroyingHub
-          ? "Permanently deletes this hub’s shared folders, files, version history and configuration. Other devices keep their local files and lose access to this hub. Arca returns to setup, where you can set up a hub or connect to one."
+          ? "Permanently deletes this hub’s shared folders, files, version history and configuration. Other devices keep their local files and lose access to this hub. The hub returns to setup, where you can set up a hub or connect to one."
           : "Permanently deletes local folders, including unsynced changes, and resets Arca on this device. Hub files, hub history and other devices are kept.",
         "trash-2",
       ) +
@@ -11105,7 +11105,7 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         "Change folder location",
-        "Arca copies and verifies the files before switching. The original is retained. Stop external writers during relocation.",
+        "Files are copied and verified before switching. The original is retained. Stop external writers during relocation.",
         "folder-input",
       ) +
         `<div class="share-summary"><strong>${escape(v.name)}</strong><p class="path">${escape(v.path)}</p></div>` +
@@ -12044,7 +12044,7 @@ function renderOnboarding() {
             await new Promise((r) => setTimeout(r, 200));
           }
         }
-        if (!current) throw new Error("Arca is still starting. Try again.");
+        if (!current) throw new Error("The service is still starting. Try again.");
         if (o.step === 2) {
           o.url = String(f.get("url") || o.url).trim();
           const code = readCode("onboarding");
@@ -12169,7 +12169,7 @@ function showDaemonStopped(error) {
 function renderDaemonStopped() {
   $("#content").innerHTML =
     title("Service stopped") +
-    `<div class="page">${empty("Your files remain on disk", daemonStopped.error ? escape(daemonStopped.error) : "Start the Arca service to check your folders.", button("Start service", "start", "", "primary", "power"))}</div>`;
+    `<div class="page">${empty("Your files remain on disk", daemonStopped.error ? escape(daemonStopped.error) : "Start the service to check your folders.", button("Start service", "start", "", "primary", "power"))}</div>`;
   icons();
 }
 function daemonRecovered() {
@@ -12330,10 +12330,7 @@ function renderUpdateCard() {
   if (!card) return;
   card.hidden = !updateVersion;
   card.setAttribute("aria-busy", String(updating));
-  $("#update-heading").innerHTML = updating
-    ? busyIcon() + escape(`Updating to Arca ${updateVersion}`)
-    : escape(`Arca ${updateVersion} is available`);
-  $("#update-note").hidden = !updating;
+  $("#update-heading").textContent = updating ? `Updating to v${updateVersion}` : `v${updateVersion} is available`;
   $("#update-install").hidden = updating;
 }
 function setUpdating(next) {

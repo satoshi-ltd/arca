@@ -242,7 +242,7 @@ async fn resume_daemon(app: &tauri::AppHandle) -> Result<(), String> {
             spawn_daemon(app)?;
         }
         if !daemon_answers().await {
-            return Err("The local daemon did not start after the update. Arca retries on its next launch.".into());
+            return Err("The local daemon did not start after the update. The app retries on the next launch.".into());
         }
     }
     let _ = fs::remove_file(&marker);
