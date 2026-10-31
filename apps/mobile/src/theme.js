@@ -485,6 +485,7 @@ export function styles(
       justifyContent: "center",
     },
     videoRing: { width: 16, height: 16 },
+    videoGlyph: { width: 24, height: 24, alignItems: "center", justifyContent: "center" },
     videoRingLarge: { width: 20, height: 20 },
     videoState: { flexDirection: compact ? "row" : "column", alignItems: compact ? "center" : "flex-end", gap: compact ? 16 : 8 },
     videoRoot: { flex: 1, backgroundColor: c.media, alignItems: "center", justifyContent: "center" },

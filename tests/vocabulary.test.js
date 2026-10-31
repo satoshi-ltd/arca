@@ -134,8 +134,9 @@ test("the UX review's wording and tones hold across desktop, phone and site", ()
   const components = read("apps/mobile/src/components.jsx");
   const gallery = read("apps/mobile/src/FolderGallery.jsx");
   const site = read("site/index.html");
-  for (const phrase of ["Daemon stopped", "Start the local daemon", "managing this daemon", "Daemon is still starting", "No visible copy selected", "in catalog`", 'pill("Revoked"', '"unlink")', "Cancel selection"])
+  for (const phrase of ["Daemon stopped", "Start the local daemon", "managing this daemon", "Daemon is still starting", "No visible copy selected", "in catalog`", 'pill("Revoked"', "Cancel selection"])
     assert.equal(desktop.includes(phrase) || mobile.includes(phrase) || gallery.includes(phrase), false, `still says ${phrase}`);
+  assert.doesNotMatch(desktop, /pill\([^)]*"unlink"\)/, "states use unplug, not unlink");
   assert.match(desktop, /\["Paused", "id", "pause"\]/);
   assert.match(desktop, /\["Disconnected", "id", "unplug"\]/);
   assert.match(desktop, /pill\("Removed", "er", "unplug"\)/);

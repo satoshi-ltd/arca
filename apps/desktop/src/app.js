@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.19";
+const APP_VERSION = "0.8.20";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -276,7 +276,7 @@ const EMPTY_ARCH = 40;
 const brandDraw = (tile) =>
   `<svg viewBox="${tile ? "0 0 512 512" : "116 100 280 296"}" aria-hidden="true">${tile ? '<rect x="8" y="8" width="496" height="496" rx="128" fill="var(--mark-tile)"/>' : ""}<path class="brand-draw-band" pathLength="100" d="M170 380V233A86 86 0 0 1 256 147h2"/><path class="brand-draw-band" pathLength="100" d="M342 380V233A86 86 0 0 0 256 147h-2"/><path class="brand-draw-door" d="M228 380V294a28 28 0 0 1 56 0v86z"/></svg>`;
 const launchMark = (line = "") =>
-  `<div class="launch-mark" role="status" aria-label="Starting Arca">${brandDraw(false)}${line ? `<p>${line}</p>` : ""}</div>`;
+  `<div class="launch-mark" role="status" aria-label="Starting">${brandDraw(false)}${line ? `<p>${line}</p>` : ""}</div>`;
 const busyIcon = () =>
   '<span class="busy-grid" aria-hidden="true">' +
   "<i></i>".repeat(9) +
@@ -320,7 +320,7 @@ function paletteDialog() {
     dialog = document.createElement("dialog");
     dialog.id = "palette";
     dialog.className = "palette";
-    dialog.setAttribute("aria-label", "Search Arca");
+    dialog.setAttribute("aria-label", "Search");
     dialog.addEventListener("close", () => {
       const back = palette?.opener;
       clearTimeout(palette?.timer);
@@ -562,7 +562,7 @@ function openPalette() {
   const dialog = paletteDialog();
   if (isLeaving(dialog)) settleLeave(dialog);
   palette = { query: "", type: "", data: null, rows: [], active: 0, serial: 0, opener: document.activeElement };
-  dialog.innerHTML = `<div class="pal-field">${icon("search")}<input class="pal-input" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-label="Search Arca" placeholder="Search Arca" autocomplete="off" spellcheck="false"><span class="tag">esc</span></div><div class="pal-body" id="pal-list" role="listbox"></div><div class="pal-foot">${paletteFoot()}</div>`;
+  dialog.innerHTML = `<div class="pal-field">${icon("search")}<input class="pal-input" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-label="Search" placeholder="Search" autocomplete="off" spellcheck="false"><span class="tag">esc</span></div><div class="pal-body" id="pal-list" role="listbox"></div><div class="pal-foot">${paletteFoot()}</div>`;
   dialog.showModal();
   icons();
   dialog.querySelector(".pal-input").focus();
@@ -1002,6 +1002,8 @@ const hubOnlyActions = new Set([
   "review-conflict",
   "disconnect-hub",
   "video-download",
+  "music-download",
+  "music-download-all",
 ]);
 function hubOffline() {
   return status?.role === "replica" && !!status.hubUnavailable;
@@ -1190,7 +1192,7 @@ function updateBrandActivity() {
   const paint = (visible) => {
     if (!mark.isConnected) return;
     mark.classList.toggle("is-busy", visible);
-    mark.setAttribute("aria-label", visible ? "Arca: updating" : "Arca");
+    mark.setAttribute("aria-label", visible ? "Updating" : "Arca");
     mark.setAttribute("aria-busy", String(visible));
   };
   if (active) {
@@ -1723,7 +1725,7 @@ async function loadFavorites() {
   renderFavorites();
   updateFavoriteStars();
   for (const folder of new Set(favorites.filter((item) => FAVORITE_GLYPHS[item.kind]).map((item) => item.folder)))
-    if (musicAvailable(status.volumes.find((v) => v.id === folder))) void refreshMusic(folder);
+    if (musicAvailable(folderVolume(folder))) void refreshMusic(folder);
 }
 async function saveFavorites(list) {
   const previous = favorites;
@@ -2471,7 +2473,7 @@ function folderRow(v, available = false) {
             )
           : "";
   const meta = available
-    ? `${Number.isFinite(v.files) ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}` : "Not counted yet"}${available === "streamed" ? " · Streams from hub" : ""}`
+    ? `${Number.isFinite(v.files) ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}` : "Not counted yet"}${available === "streamed" ? (v.mode === "keep" ? " · Kept on this device" : " · Streams from hub") : ""}`
     : folderMeta(v, state, p);
   const word = available || p ? "" : stateWord(v, state);
   const lead = available
@@ -2479,15 +2481,16 @@ function folderRow(v, available = false) {
     : homeLead(v, state, p);
   const open = `data-action="folder-detail" data-id="${escape(v.id)}"`;
   const label = `aria-label="Open ${escape(v.name)} details${word ? `, ${escape(word)}` : ""}"`;
-  const inline = !available && Boolean(problemAction || v.conflicts);
+  const offered = available === "streamed" && !v.mode;
+  const inline = (!available && Boolean(problemAction || v.conflicts)) || offered;
   const trailing = available
-    ? v.video
+    ? available === "streamed" && v.mode
       ? icon("chevron-right")
       : selectFolderButton(v.id)
     : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${icon("chevron-right")}`;
   if (inline)
     return `<article class="folder-card" data-id="${escape(v.id)}">${lead.replace('class="home-lead"', `class="home-lead" ${open}`)}<div class="row-main" ${open} tabindex="0" role="button" ${label}><strong>${escape(v.name)}</strong><p class="meta" data-tooltip="${escape(folderMetaText(v, state, p))}">${meta}</p></div>${trailing}</article>`;
-  return `<article class="folder-card ${available && available !== "streamed" ? "unselected" : ""}" ${available && !videoAvailable(v) ? "" : `${open} tabindex="0" role="button" ${label}`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta"${available ? "" : ` data-tooltip="${escape(folderMetaText(v, state, p))}"`}>${meta}</p></div>${trailing}</article>`;
+  return `<article class="folder-card ${available && available !== "streamed" ? "unselected" : ""}" ${available === true || (available && !videoAvailable(v) && !musicAvailable(v)) ? "" : `${open} tabindex="0" role="button" ${label}`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta"${available ? "" : ` data-tooltip="${escape(folderMetaText(v, state, p))}"`}>${meta}</p></div>${trailing}</article>`;
 }
 async function loadCatalog() {
   if (status.role !== "hub" && !status.hub) {
@@ -3063,8 +3066,8 @@ async function renderView(
     html += '<div class="page">';
     if (status.role !== "hub" && !status.hub)
       html += hubConnectionSection();
-    const streamed = status.role === "hub" ? [] : available.filter((v) => v.video);
-    const syncable = available.filter((v) => !streamed.includes(v));
+    const streamed = status.role === "hub" ? [] : available.filter((v) => v.video || status.media?.[v.id]).map((v) => ({ ...v, mode: status.media?.[v.id] || null }));
+    const syncable = available.filter((v) => !streamed.some((x) => x.id === v.id));
     const shown = [...(status.role === "hub" ? status.volumes : [...selected, ...streamed])].sort((a, b) => nameOrder(a.name, b.name));
     const kinds = [
       ["Folders", shown.filter((v) => !v.gallery && !v.music && !v.video)],
@@ -3074,7 +3077,7 @@ async function renderView(
     ].filter(([, list]) => list.length);
     if (shown.length)
       for (const [label, list] of kinds)
-        html += section(label, `<div class="folder-list">${list.map((v) => folderRow(v, streamed.includes(v) ? "streamed" : false)).join("")}</div>`);
+        html += section(label, `<div class="folder-list">${list.map((v) => folderRow(v, v.selected ? false : "streamed")).join("")}</div>`);
     else html += section(
       status.role === "hub"
         ? "Shared folders"
@@ -3357,7 +3360,7 @@ async function clearStoredGallery(required = false) {
     if (!db) {
       if (required && globalThis.indexedDB)
         throw new Error(
-          "Could not clear Arca's photo cache. Retry Erase this device.",
+          "Could not clear the photo cache. Retry Erase this device.",
         );
       return;
     }
@@ -4113,7 +4116,7 @@ function mountGallery(volume) {
       tile.className = "photo-thumb";
       tile.photoRatio = galleryRatios.get(item.hash);
       tile.dataset.photo = index;
-      tile.dataset.tooltip = `${galleryPhotoDate(item)}${!dayKey ? "" : item.dateSource === "date added" ? " · Date added to Arca" : item.dateSource === "file date" ? " · File date" : ""}`;
+      tile.dataset.tooltip = `${galleryPhotoDate(item)}${!dayKey ? "" : item.dateSource === "date added" ? " · Date added" : item.dateSource === "file date" ? " · File date" : ""}`;
       const filename = escape(item.path.split("/").pop());
       tile.innerHTML = `<button type="button" class="photo-open" aria-label="Open ${filename}">${item.kind === "video" ? icon("play") : brandArch()}</button>${item.kind === "video" ? `<span class="photo-video-badge" role="img" aria-label="Video">${icon("video")}</span>` : ""}<button type="button" class="photo-select" aria-label="Select ${filename}" aria-pressed="${state.selection.has(item.path)}">${icon("check")}</button>`;
       if (item.kind === "video") {
@@ -5221,7 +5224,10 @@ function folderSymbol(volume) {
   return library && library.shows.length && !library.albumList.length ? "podcast" : "music";
 }
 function folderActionsMenu(volume) {
-  if (status.role !== "hub") return "";
+  if (status.role !== "hub")
+    return volume.mode
+      ? `<details class="details-menu folder-actions-menu"><summary class="icon-button" aria-label="Folder actions">${icon("ellipsis")}</summary><div class="menu-items">${button("Stop syncing…", "unselect", volume.id, "secondary danger", "unlink")}</div></details>`
+      : "";
   const ordinary = !volume.gallery && !volume.music && !volume.video;
   const items =
     (ordinary
@@ -5315,7 +5321,7 @@ async function folderBrowser(v, recent, pending = false) {
       (data.entries.some((row) => !row.directory) ? '<p class="hint">Space to preview</p>' : "") +
       (data.next
         ? capped
-          ? `<p class="hint">Showing the first ${(MAX_FOLDER_PAGES * 100).toLocaleString("en")} files. Search Arca to find the rest.</p>`
+          ? `<p class="hint">Showing the first ${(MAX_FOLDER_PAGES * 100).toLocaleString("en")} files. Search to find the rest.</p>`
           : `<div class="pagination">${button("Show more files", "browse-more", String(pages.length), "secondary")}</div>`
         : "")
     );
@@ -5380,7 +5386,7 @@ function loadAudioPositions(volume) {
       for (const [target, before] of audioPositionViews) {
         if (before === audioSignature(target)) continue;
         if (showOrder?.volume === target) showOrder = null;
-        if (musicShowing(target)) renderMusic(status.volumes.find((v) => v.id === target));
+        if (musicShowing(target)) renderMusic(folderVolume(target));
       }
     } catch {
     } finally {
@@ -5415,10 +5421,10 @@ function saveAudioPosition(force = false) {
 const musicCount = (n, word) => `${n.toLocaleString("en")} ${word}${n === 1 ? "" : "s"}`;
 const musicClock = (seconds) => formatDuration(Math.floor(seconds || 0)) || "0:00";
 function musicAvailable(volume) {
-  return !!volume?.music && !volume.gallery && (status.role === "hub" || !!volume.selected);
+  return !!volume?.music && !volume.gallery && (status.role === "hub" || !!volume.selected || volume.mode === "stream");
 }
 function musicModeButton(volume) {
-  if (!musicAvailable(volume)) return "";
+  if (!musicAvailable(volume) || volume.mode === "stream") return "";
   return button(
     folderTab === "library" ? "View folder" : "Library",
     "music-mode",
@@ -5538,12 +5544,14 @@ async function readMusic(volume, key, known) {
     if (!entry.indexing) pruneFavorites(volume, entry.library);
     musicFailures.delete(key);
     if (entry.indexing) armMusicIndex(volume);
-    if ((entry !== known || entry.indexing !== indexing) && musicShowing(volume))
-      renderMusic(status.volumes.find((v) => v.id === volume));
+    const downloads = musicDownloadable(folderVolume(volume)) && (await loadMusicDownloads(volume));
+    if (!musicShowing(volume)) return;
+    if (entry !== known || entry.indexing !== indexing) renderMusic(folderVolume(volume));
+    else if (downloads) redrawMusicDownloads(volume);
   } catch (error) {
     if (known) return void (known.indexing && armMusicIndex(volume));
     musicFailures.set(key, error.message);
-    if (musicShowing(volume)) renderMusic(status.volumes.find((v) => v.id === volume));
+    if (musicShowing(volume)) renderMusic(folderVolume(volume));
   } finally {
     musicLoading.delete(key);
   }
@@ -5560,6 +5568,78 @@ const albumCard = (volume, album, subtitle = album.artist) =>
 const playlistCard = (volume, list) =>
   musicCard(volume, "music-playlist", list.id, list.cover, list.name, musicCount(list.entries.length, "track"), "list-music");
 const musicEditable = (v) => !!v.selected;
+const musicDownloadRows = new Map();
+const musicDownloadTimers = new Map();
+const musicDownloadPending = new Set();
+const MUSIC_DOWNLOAD_BATCH = 1000;
+const musicDownloadable = (v) => videoDownloadable() && v?.mode === "stream";
+const musicDownloadList = (volume) => [...(musicDownloadRows.get(musicKey(volume))?.values() || [])];
+const musicDownloadStamp = (volume) =>
+  JSON.stringify(musicDownloadList(volume).map((row) => [row.path, row.hash, row.state, videoDownloadActive(row) ? videoDownloadPercent(row) : 0]));
+function musicDownloadOf(volume, track) {
+  const row = track?.path ? musicDownloadRows.get(musicKey(volume))?.get(track.path) : null;
+  if (!row || (row.state === "done" && row.hash !== track.hash)) return null;
+  return row;
+}
+const musicNeedsDownload = (volume, track) => {
+  const row = musicDownloadOf(volume, track);
+  return !videoDownloadActive(row) && row?.state !== "done";
+};
+async function loadMusicDownloads(volume, given = null) {
+  let rows = given;
+  if (!rows)
+    try {
+      rows = (await api(`/v1/music/downloads?${new URLSearchParams({ volume })}`))?.downloads;
+    } catch {
+      if (musicDownloadList(volume).some(videoDownloadActive)) armMusicDownloads(volume);
+      return false;
+    }
+  if (!Array.isArray(rows)) return false;
+  const key = musicKey(volume);
+  const before = musicDownloadRows.has(key) ? musicDownloadStamp(volume) : null;
+  const previous = musicDownloadRows.get(key);
+  musicDownloadRows.set(key, new Map(rows.map((row) => [row.path, row])));
+  for (const row of rows)
+    if (row.state === "failed" && videoDownloadActive(previous?.get(row.path))) notice(row.error || "This track could not be downloaded", true, { id: "music-download" });
+  if (rows.some(videoDownloadActive)) armMusicDownloads(volume);
+  return musicDownloadStamp(volume) !== before;
+}
+function armMusicDownloads(volume) {
+  if (musicDownloadTimers.has(volume)) return;
+  musicDownloadTimers.set(
+    volume,
+    setTimeout(async () => {
+      musicDownloadTimers.delete(volume);
+      const changed = await loadMusicDownloads(volume);
+      if (!musicShowing(volume) || !(changed || musicDownloadPending.has(volume))) return;
+      redrawMusicDownloads(volume);
+    }, VIDEO_DOWNLOAD_POLL),
+  );
+}
+function redrawMusicDownloads(volume) {
+  if (videoMenuOpen()) {
+    musicDownloadPending.add(volume);
+    return armMusicDownloads(volume);
+  }
+  musicDownloadPending.delete(volume);
+  renderMusic(folderVolume(volume));
+}
+function musicDownloadItem(v, track) {
+  if (!musicDownloadable(v)) return "";
+  const row = musicDownloadOf(v.id, track);
+  if (row?.state === "done") return button("Remove from this device", "music-download-remove", track.path, "secondary", "monitor");
+  if (videoDownloadActive(row)) return button("Cancel download", "music-download-cancel", track.path, "secondary", "x");
+  return button("Download", "music-download", track.path, "secondary", "download");
+}
+function musicGroupMenu(v, tracks, label) {
+  if (!musicDownloadable(v) || !tracks.length) return "";
+  const rows = tracks.map((track) => musicDownloadOf(v.id, track));
+  const items =
+    (tracks.some((track) => musicNeedsDownload(v.id, track)) ? button("Download", "music-download-all", "", "secondary", "download") : "") +
+    (rows.some(videoDownloadActive) ? button("Cancel download", "music-download-cancel-all", "", "secondary", "x") : "") +
+    (rows.some((row) => row?.state === "done") ? button("Remove from this device", "music-download-remove-all", "", "secondary", "monitor") : "");
+  return musicMenu(items, label);
+}
 const musicMenu = (items, label = "Track actions") =>
   `<details class="details-menu file-actions-menu music-track-menu"><summary class="ghost icon-button" aria-label="${label}">${icon("ellipsis")}</summary><div class="menu-items">${items}</div></details>`;
 const musicHeadRow = (album = false, who = "Artist", numbered = true) =>
@@ -5616,17 +5696,20 @@ function musicTrail(v, library) {
 }
 function musicRows(v, rows, action, { head = "", playlist = "", album = false, episodes = false } = {}) {
   const editable = musicEditable(v);
-  return `<div class="history-group music-tracks${album ? " music-with-album" : ""}${episodes ? " music-episodes" : ""}" data-volume="${escape(v.id)}"${playlist ? ` data-playlist="${escape(playlist)}"` : ""}>${head}${rows
+  const slot = musicDownloadable(v);
+  if (slot) head = head.replace(/<span><\/span><\/div>$/, "<span></span><span></span></div>");
+  return `<div class="history-group music-tracks${album ? " music-with-album" : ""}${episodes ? " music-episodes" : ""}${slot ? " music-downloadable" : ""}" data-volume="${escape(v.id)}"${playlist ? ` data-playlist="${escape(playlist)}"` : ""}>${head}${rows
     .map((row, index) => {
       const number = `<span class="music-track-number mono">${episodes ? icon("play") : index + 1}</span><span class="music-track-playing"><span class="music-bars" aria-hidden="true"><i></i><i></i><i></i></span></span>`;
       const position = row.position === undefined ? "" : ` data-position="${row.position}"`;
       const remove = row.remove ? button("Remove from playlist", "music-remove", String(row.position), "secondary", "list-minus") : "";
       if (!row.track)
-        return `<div class="music-track music-track-missing"${position}><div class="music-track-play">${number}<strong>${escape(row.title)}</strong><span>${escape(row.note)}</span>${album ? "<span></span>" : ""}<span class="mono"></span></div>${remove ? musicMenu(remove) : "<span></span>"}</div>`;
+        return `<div class="music-track music-track-missing"${position}><div class="music-track-play">${number}<strong>${escape(row.title)}</strong><span>${escape(row.note)}</span>${album ? "<span></span>" : ""}<span class="mono"></span></div>${slot ? "<span></span>" : ""}${remove ? musicMenu(remove) : "<span></span>"}</div>`;
       const items =
         (editable ? button("Add to playlist…", "music-add", row.track.path, "secondary", "list-plus") : "") +
         remove +
-        (editable ? button("Delete…", "music-delete", row.track.path, "secondary danger menu-item-separated", "trash-2") : "");
+        musicDownloadItem(v, row.track) +
+        (editable || v.mode === "stream" ? button("Delete…", "music-delete", row.track.path, "secondary danger menu-item-separated", "trash-2") : "");
       const saved = audioPositions.get(positionKey(v.id, row.track.path));
       const resume = saved && saved.hash === row.track.hash ? saved : null;
       const length = resume
@@ -5639,7 +5722,7 @@ function musicRows(v, rows, action, { head = "", playlist = "", album = false, e
       const progress = resume
         ? `<progress class="music-progress" max="100" value="${Math.round((resume.position / resume.duration) * 100)}" aria-label="Played"></progress>`
         : "";
-      return `<div class="music-track" data-path="${escape(row.track.path)}"${position}><button type="button" class="music-track-play" data-action="${action}" data-id="${escape(row.id)}" aria-label="${escape(`Play ${row.track.title}`)}">${number}<strong>${escape(row.track.title)}</strong><span class="music-sub"><span class="music-sub-text">${escape(row.subtitle)}</span>${progress}</span>${album ? `<span>${escape(row.track.album)}</span>` : ""}${length}</button>${items ? musicMenu(items) : "<span></span>"}</div>`;
+      return `<div class="music-track" data-path="${escape(row.track.path)}"${position}><button type="button" class="music-track-play" data-action="${action}" data-id="${escape(row.id)}" aria-label="${escape(`Play ${row.track.title}`)}">${number}<strong>${escape(row.track.title)}</strong><span class="music-sub"><span class="music-sub-text">${escape(row.subtitle)}</span>${progress}</span>${album ? `<span>${escape(row.track.album)}</span>` : ""}${length}</button>${slot ? downloadState(musicDownloadOf(v.id, row.track)) || "<span></span>" : ""}${items ? musicMenu(items) : "<span></span>"}</div>`;
     })
     .join("")}</div>`;
 }
@@ -5667,7 +5750,7 @@ function musicArtists(v, library) {
 }
 function musicArtist(v, artist) {
   const tracks = artist.albums.reduce((total, album) => total + album.tracks.length, 0);
-  return `<div class="music-head">${musicCover(v.id, artist.cover, "mic-vocal", " large")}<div class="music-head-info"><div><h2>${escape(artist.name)}</h2><p>${musicCount(artist.albums.length, "album")} · ${musicCount(tracks, "track")}</p><div class="heading-actions">${favoriteStar()}${button("Shuffle", "music-shuffle-artist", "", "secondary", "shuffle")}</div></div></div></div>${musicGrid(
+  return `<div class="music-head">${musicCover(v.id, artist.cover, "mic-vocal", " large")}<div class="music-head-info"><div><h2>${escape(artist.name)}</h2><p>${musicCount(artist.albums.length, "album")} · ${musicCount(tracks, "track")}</p><div class="heading-actions">${favoriteStar()}${button("Shuffle", "music-shuffle-artist", "", "secondary", "shuffle")}${musicGroupMenu(v, artist.albums.flatMap((album) => album.tracks), "Artist actions")}</div></div></div></div>${musicGrid(
     artist.albums.map((item) => albumCard(v.id, item, item.year ? String(item.year) : musicCount(item.tracks.length, "track"))),
     musicView.pages * MUSIC_GRID_PAGE,
   )}`;
@@ -5680,7 +5763,7 @@ function musicTracks(v, album) {
     formatDuration(album.duration),
   ].filter(Boolean);
   const shown = album.tracks.slice(0, musicView.pages * MUSIC_LIST_PAGE);
-  return `<div class="music-head">${musicCover(v.id, album.cover, "arca", " large")}<div class="music-head-info"><div><h2>${escape(album.title)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${musicHeadPlay(v, album)}${button("Shuffle", "music-shuffle", "", "secondary", "shuffle")}</div></div></div></div>${musicRows(
+  return `<div class="music-head">${musicCover(v.id, album.cover, "arca", " large")}<div class="music-head-info"><div><h2>${escape(album.title)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${musicHeadPlay(v, album)}${button("Shuffle", "music-shuffle", "", "secondary", "shuffle")}${musicGroupMenu(v, album.tracks, "Album actions")}</div></div></div></div>${musicRows(
     v,
     shown.map((track, index) => ({ track, id: index, subtitle: track.artist })),
     "music-track",
@@ -5688,7 +5771,7 @@ function musicTracks(v, album) {
   )}${album.tracks.length > shown.length ? `<div class="pagination">${button(moreLabel(album.tracks.length - shown.length), "music-more", "", "secondary")}</div>` : ""}`;
 }
 function musicPlaylist(v, list) {
-  const pending = status.role !== "hub" && v.sync?.state !== "synced";
+  const pending = status.role !== "hub" && v.mode !== "stream" && v.sync?.state !== "synced";
   const editable = list.editable && musicEditable(v);
   const menu = editable
     ? musicMenu(
@@ -5871,7 +5954,7 @@ function musicShow(v, show) {
   const summary = [musicCount(show.tracks.length, "episode"), hoursLength(show.duration)].filter(Boolean);
   const play = musicShowPlay(v, show);
   const shown = show.tracks.slice(0, musicView.pages * MUSIC_LIST_PAGE);
-  return `<div class="music-head">${musicCover(v.id, show.cover, "arca", " large")}<div class="music-head-info"><div><h2>${escape(show.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${play}</div></div></div></div>${musicRows(
+  return `<div class="music-head">${musicCover(v.id, show.cover, "arca", " large")}<div class="music-head-info"><div><h2>${escape(show.name)}</h2><p>${escape(summary.join(" · "))}</p><div class="heading-actions">${favoriteStar()}${play}${musicGroupMenu(v, show.tracks, "Show actions")}</div></div></div></div>${musicRows(
     v,
     shown.map((track, index) => ({ track, id: index, subtitle: episodeDay(track.date) })),
     "music-track",
@@ -5899,7 +5982,7 @@ function musicContent(v, library) {
 }
 const musicPlace = (v) => JSON.stringify([v.id, musicView.tab, musicView.artist, musicView.album, musicView.playlist, musicView.show]);
 const musicState = (v, entry, failure) =>
-  JSON.stringify([musicPlace(v), musicView.pages, entry?.version, entry?.indexing, failure, audioSignature(v.id)]);
+  JSON.stringify([musicPlace(v), musicView.pages, entry?.version, entry?.indexing, failure, audioSignature(v.id), musicDownloadable(v) ? musicDownloadStamp(v.id) : ""]);
 function musicHeading(v, entry) {
   const library = entry?.library;
   const summary = library
@@ -5951,6 +6034,10 @@ function renderMusic(v, scroll = null) {
   markMusicPlaying();
   markNav();
   if (keep) $("#content .music-page").scrollTop = keep;
+  if (!musicDownloadable(v)) return;
+  if (!musicDownloadRows.has(musicKey(v.id)) && !musicLoading.has(musicKey(v.id)))
+    void loadMusicDownloads(v.id).then((changed) => changed && musicShowing(v.id) && redrawMusicDownloads(v.id));
+  else if (musicDownloadList(v.id).some(videoDownloadActive)) armMusicDownloads(v.id);
 }
 function paintMusicCover(el, data) {
   if (!data || !el.isConnected || el.querySelector("img")) return;
@@ -6167,7 +6254,7 @@ const musicScope = () => `${status?.id}:${status?.hubId || ""}`;
 function musicPlayable() {
   return (
     musicPlayer.scope === musicScope() &&
-    musicAvailable(status?.volumes?.find((item) => item.id === musicPlayer.volume))
+    musicAvailable(status && folderVolume(musicPlayer.volume))
   );
 }
 function stopMusic() {
@@ -6464,7 +6551,7 @@ function renderMini(track) {
   paintSleep();
 }
 const musicInLibrary = () =>
-  view === "folders" && folderTab === "library" && musicAvailable(status?.volumes?.find((item) => item.id === detailId));
+  view === "folders" && folderTab === "library" && musicAvailable(status && folderVolume(detailId));
 function placeMusic() {
   const loaded = !!musicCurrent();
   const library = loaded && musicInLibrary();
@@ -6736,10 +6823,10 @@ window.addEventListener("popstate", (event) => {
   if (saved) musicView = saved.view;
   if (location.hash !== routeURL() || !musicShowing(detailId)) return;
   if (!saved) musicView = { ...musicView, artist: null, album: null, playlist: null, show: null, pages: 1, trail: [] };
-  renderMusic(status.volumes.find((item) => item.id === detailId), saved?.scroll || 0);
+  renderMusic(folderVolume(detailId), saved?.scroll || 0);
 });
 async function handleMusic(name, id) {
-  const v = status.volumes.find((item) => item.id === detailId);
+  const v = folderVolume(detailId);
   if (!musicAvailable(v)) return;
   const page = () => $("#content .music-page");
   if (name === "music-mode") {
@@ -6856,14 +6943,55 @@ async function handleMusic(name, id) {
     renderMusic(v);
     return;
   }
+  if (name.startsWith("music-download")) {
+    if (!musicDownloadable(v)) return;
+    const pageTracks = () => {
+      const album = musicView.album && library.albums.get(musicView.album);
+      const show = musicView.show && library.shows.find((item) => item.id === musicView.show);
+      const artist = musicView.artist && library.artists.find((item) => item.id === musicView.artist);
+      return album?.tracks || show?.tracks || artist?.albums.flatMap((item) => item.tracks) || [];
+    };
+    const group = name.endsWith("-all");
+    const tracks = group ? pageTracks() : [library.tracks.get(id)].filter(Boolean);
+    const send = async (route, paths) => {
+      if (!paths.length) return;
+      let answer = null;
+      try {
+        for (let at = 0; at < paths.length; at += MUSIC_DOWNLOAD_BATCH) answer = await api(route, { volume: v.id, paths: paths.slice(at, at + MUSIC_DOWNLOAD_BATCH) });
+      } finally {
+        await loadMusicDownloads(v.id, answer && paths.length <= MUSIC_DOWNLOAD_BATCH ? answer.downloads : null);
+        renderMusic(v, page()?.scrollTop || 0);
+      }
+    };
+    if (name === "music-download" || name === "music-download-all")
+      return send("/v1/music/download", tracks.filter((track) => musicNeedsDownload(v.id, track)).map((track) => track.path));
+    if (name === "music-download-cancel" || name === "music-download-cancel-all")
+      return send("/v1/music/download/cancel", tracks.filter((track) => videoDownloadActive(musicDownloadOf(v.id, track))).map((track) => track.path));
+    const paths = tracks.filter((track) => musicDownloadOf(v.id, track)?.state === "done").map((track) => track.path);
+    if (!paths.length) return;
+    const one = paths.length === 1;
+    modal(
+      modalHeader(
+        "Remove from this device?",
+        `Deletes only the ${one ? "copy" : "copies"} on this device to free its space. ${one ? "The track stays" : "The tracks stay"} on the hub and you can download ${one ? "it" : "them"} again.`,
+        "monitor",
+      ),
+      async () => {
+        await send("/v1/music/download/remove", paths);
+        notice(one ? "Download removed." : "Downloads removed.");
+      },
+      "Remove",
+    );
+    return;
+  }
   if (name === "music-delete") {
     const track = library.tracks.get(id);
     if (!track) return;
     modal(
       modalHeader(`Delete ${escape(track.title)}?`, "It is removed from every device. History keeps it for the folder's retention and you can restore it from History.", "trash-2"),
       async () => {
-        const history = await api(`/v1/history?${new URLSearchParams({ volume: v.id, path: id, limit: "1" })}`);
-        await api("/v1/delete-file", { volume: v.id, path: id, rev: history.versions[0]?.rev });
+        const rev = v.mode === "stream" ? undefined : (await api(`/v1/history?${new URLSearchParams({ volume: v.id, path: id, limit: "1" })}`)).versions[0]?.rev;
+        await api("/v1/delete-file", { volume: v.id, path: id, rev });
         if (musicPlayer?.loadedTrack?.path === id && musicPlayer.volume === v.id) stopMusic();
         audioPositions.delete(positionKey(v.id, id));
         audioFinished.delete(positionKey(v.id, id));
@@ -7012,7 +7140,10 @@ let videoArtObserver,
   videoMatching = null,
   videoTmdb = { key: "", state: "" };
 function folderVolume(id) {
-  return status.volumes.find((v) => v.id === id) || (status.role !== "hub" ? catalog.find((v) => v.id === id && v.video) : null) || null;
+  const local = status.volumes.find((v) => v.id === id);
+  if (local || status.role === "hub") return local || null;
+  const remote = catalog.find((v) => v.id === id && (v.video || status.media?.[id]));
+  return remote ? { ...remote, mode: status.media?.[id] || null } : null;
 }
 function videoAvailable(volume) {
   return !!volume?.video && !volume.gallery && !volume.music && (status.role === "hub" || !!status.hub);
@@ -7207,7 +7338,7 @@ function videoPosterCard(v, item, downloaded = false) {
   const subtitle = posterSubtitle(item) || (item.kind === "show" ? showSubtitle(item) : videoLength(itemDuration(item)));
   const rating = ratingLabel(item.rating);
   const badge = downloaded
-    ? `<span class="video-watched" role="img" aria-label="Downloaded">${icon("download")}</span>`
+    ? `<span class="video-watched" role="img" aria-label="Downloaded">${icon("circle-arrow-down")}</span>`
     : videoWatchedMark(item) + (rating ? `<span class="video-rating" aria-label="Rated ${escape(rating.slice(2))}"><span>${escape(rating)}</span></span>` : "") + videoBar(item);
   const card = videoCard(v, "video-title", item.id, videoArt(v.id, item.poster, videoSymbol(item), " video-poster", "small", badge), item.title, subtitle);
   if (downloaded || (item.kind !== "movie" && item.kind !== "show")) return card;
@@ -7249,7 +7380,7 @@ function videoCaption(entry) {
   return text ? `<p class="music-caption" role="status">${escape(text)}</p>` : "";
 }
 function videoDownloadCard(v, item) {
-  const badge = `<span class="video-watched" role="img" aria-label="Downloaded">${icon("download")}</span>`;
+  const badge = `<span class="video-watched" role="img" aria-label="Downloaded">${icon("circle-arrow-down")}</span>`;
   return videoCard(v, "video-play", item.id, videoArt(v.id, item.still || null, "video", " video-poster", "small", badge), item.title, videoLength(itemDuration(item)));
 }
 function videoHome(v, library) {
@@ -7304,9 +7435,9 @@ const videoFiles = (episodes) => (episodes || []).filter((episode) => episode.pa
 function videoDownloadItem(v, item) {
   if (!videoDownloadable() || !item?.path) return "";
   const row = videoDownloadOf(v.id, item);
-  const remove = button("Remove from this device", "video-download-remove", item.id, "secondary", "monitor");
+  const remove = v.mode === "keep" ? "" : button("Remove from this device", "video-download-remove", item.id, "secondary", "monitor");
   if (row?.state === "done") return remove;
-  if (videoDownloadActive(row)) return button("Cancel download", "video-download-cancel", item.id, "secondary", "x");
+  if (videoDownloadActive(row)) return v.mode === "keep" ? "" : button("Cancel download", "video-download-cancel", item.id, "secondary", "x");
   return button("Download", "video-download", item.id, "secondary", "download") + (videoLeftover(v.id, item) ? remove : "");
 }
 function videoMenu(v, item, label) {
@@ -7340,16 +7471,19 @@ function videoMovie(v, item) {
       button("Start over", "video-start", item.id, "secondary", "rotate-ccw")
     : button("Play", "video-start", item.id, "primary", "play");
   const watched = button(item.watched ? "Mark as unwatched" : "Mark as watched", "video-watched", item.id, "secondary", item.watched ? "eye-off" : "check");
-  return videoBand(v, item, play + watched + videoDownloadChip(videoDownloadOf(v.id, item)) + videoMenu(v, item, "Movie actions"));
+  return videoBand(v, item, play + watched + downloadState(videoDownloadOf(v.id, item)) + videoMenu(v, item, "Movie actions"));
 }
-const videoDownloadChip = (row) =>
-  row?.state === "done"
-    ? '<span class="tag self">Downloaded</span>'
-    : row?.state === "downloading"
-      ? `<span class="tag hub" role="status">Downloading ${videoDownloadPercent(row)}%</span>`
-      : row?.state === "queued"
-        ? '<span class="tag">Waiting</span>'
-        : "";
+const downloadStateLabel = (row) =>
+  row?.state === "done" ? "Downloaded" : row?.state === "downloading" ? `Downloading ${videoDownloadPercent(row)}%` : row?.state === "queued" ? "Waiting" : "";
+function downloadState(row) {
+  const label = downloadStateLabel(row);
+  if (!label) return "";
+  const glyph =
+    row.state === "downloading"
+      ? `<svg class="download-ring" viewBox="0 0 16 16" aria-hidden="true"><circle class="download-ring-track" cx="8" cy="8" r="6.5" /><circle class="download-ring-fill" cx="8" cy="8" r="6.5" pathLength="100" stroke-dasharray="${videoDownloadPercent(row)} 100" /></svg>`
+      : icon(row.state === "done" ? "circle-arrow-down" : "circle-dashed");
+  return `<span class="download-state" role="${row.state === "downloading" ? "status" : "img"}" aria-label="${label}" data-tooltip="${label}">${glyph}</span>`;
+}
 function videoRelated(v, library, item) {
   const related = (item.related || []).map((id) => library.items.get(id)).filter((title) => title && title.kind !== "episode");
   if (!related.length) return "";
@@ -7359,7 +7493,7 @@ function videoEpisodeRow(v, library, show, episode, current) {
   const toggle = episode.watched
     ? `<button type="button" class="ghost icon-button video-check" data-action="video-watched" data-id="${escape(episode.id)}" aria-pressed="true" aria-label="Mark as unwatched">${icon("circle-check")}</button>`
     : `<button type="button" class="ghost icon-button" data-action="video-watched" data-id="${escape(episode.id)}" aria-pressed="false" aria-label="Mark as watched">${icon("circle")}</button>`;
-  const actions = `<span class="row-actions">${videoDownloadChip(videoDownloadOf(v.id, episode))}${toggle}${videoMenu(v, episode, "Episode actions")}</span>`;
+  const actions = `<span class="row-actions">${downloadState(videoDownloadOf(v.id, episode))}${toggle}${videoMenu(v, episode, "Episode actions")}</span>`;
   return `<div class="video-episode"${current ? ' aria-current="true"' : ""}><button type="button" class="video-episode-play" data-action="video-play" data-id="${escape(episode.id)}" aria-label="${escape(`Play ${episodeName(episode)}, ${episodeMeta(episode)}`)}">${videoArt(v.id, episode.still || show.backdrop, "tv", " video-still", "small", videoBar(episode))}<span class="video-episode-main"><strong>${escape(episodeName(episode))}</strong><span class="video-meta">${escape(episodeMeta(episode))}</span>${episode.overview ? `<span class="video-overview">${escape(episode.overview)}</span>` : ""}</span></button>${actions}</div>`;
 }
 function videoShow(v, library, show) {
@@ -8752,6 +8886,7 @@ async function renderDetail(pending = false) {
   if (folderTab === "library" && !musicAvailable(v)) folderTab = "files";
   if (folderTab === "video" && !videoAvailable(v)) folderTab = "files";
   if (videoAvailable(v) && !videoBrowsable(v)) folderTab = "video";
+  if (musicAvailable(v) && v.mode === "stream") folderTab = "library";
   placeMusic();
   if (folderTab === "video") {
     renderVideo(v);
@@ -9552,7 +9687,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   );
   html += section(
     "Service",
-    `<div class="settings-card">${setting(`Arca v${APP_VERSION}`, `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || "Not reported"} · Node ${escape(status.nodeVersion || "Not reported")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
+    `<div class="settings-card">${setting(`v${APP_VERSION}`, `<span class="mono">node ${escape(status.id)} · protocol v${status.protocol} · ${escape(platformLabel(status.platform))}</span>`, button("Copy diagnostics", "diagnostics", "", "secondary small-button", "copy"))}${setting("Runtime", `<span class="mono">Port ${status.port || "Not reported"} · Node ${escape(status.nodeVersion || "Not reported")}</span>`, "")}${setting("State and index", `<span class="path">${escape(status.statePath || "Not reported")}</span>`, status.statePath ? button("Copy path", "copy", status.statePath, "secondary small-button", "copy") : "")}</div>`,
   );
   if (status.role === "replica" && status.hub)
     html += section(
@@ -9579,7 +9714,7 @@ async function renderSettings(fetchData = true, serial = renderSerial) {
   const destroyRole = status.role === "hub" ? "hub" : "replica";
   html += section(
     "Danger zone",
-    `<div class="settings-card replica-danger">${setting(destroyRole === "hub" ? "Erase this hub" : "Erase this device", destroyRole === "hub" ? "Deletes this hub’s shared folders, files, version history and configuration, then returns to setup. Other devices keep their own copies." : "Deletes all local folders and resets Arca on this device. Hub files and other devices are kept.", button(destroyRole === "hub" ? "Erase this hub…" : "Erase this device…", `destroy-${destroyRole}`, "", "primary danger", "trash-2"))}</div>`,
+    `<div class="settings-card replica-danger">${setting(destroyRole === "hub" ? "Erase this hub" : "Erase this device", destroyRole === "hub" ? "Deletes this hub’s shared folders, files, version history and configuration, then returns to setup. Other devices keep their own copies." : "Deletes all local folders and resets this device. Hub files and other devices are kept.", button(destroyRole === "hub" ? "Erase this hub…" : "Erase this device…", `destroy-${destroyRole}`, "", "primary danger", "trash-2"))}</div>`,
   );
   $("#content").innerHTML = html + "</div>";
   $("#machine-name").onchange = () =>
@@ -9989,7 +10124,7 @@ function checkFolderPath(name, id = "") {
       input.setAttribute("aria-invalid", "true");
       const message =
         error.message === "State and volume paths overlap"
-          ? "Choose a folder outside Arca’s application data."
+          ? "Choose a folder outside the application data."
           : error.message;
       row.innerHTML = icon("circle-alert") + `<span>${escape(message)}</span>`;
       icons();
@@ -10402,7 +10537,7 @@ async function handle(name, id, control) {
         "Rules sync to every copy. Excluded files stay on disk; newly included files join bidirectional sync.",
         "file-pen-line",
       ) +
-        '<label for="ignore-rules">Exclusion rules</label><textarea id="ignore-rules" class="ignore-editor mono" name="text" spellcheck="false" aria-describedby="ignore-hint"></textarea><p id="ignore-hint" class="hint">One gitignore pattern per line, added to the exclusions Arca always applies. Saving creates the file if it is missing.</p>',
+        '<label for="ignore-rules">Exclusion rules</label><textarea id="ignore-rules" class="ignore-editor mono" name="text" spellcheck="false" aria-describedby="ignore-hint"></textarea><p id="ignore-hint" class="hint">One gitignore pattern per line, added to the exclusions that always apply. Saving creates the file if it is missing.</p>',
       async (f) => {
         await api("/v1/ignore-policy", {
           id,
@@ -10834,7 +10969,7 @@ async function handle(name, id, control) {
     modal(
       modalHeader(
         "Sign out all web sessions?",
-        "Every browser managing this Arca service will need a new access code. Device synchronization credentials stay linked.",
+        "Every browser managing this service will need a new access code. Device synchronization credentials stay linked.",
         "log-out",
       ),
       async () => {
@@ -10883,7 +11018,7 @@ async function handle(name, id, control) {
         destroyingHub ? "Erase this hub and all its folders?" : "Erase this device?",
         destroyingHub
           ? "Permanently deletes this hub’s shared folders, files, version history and configuration. Other devices keep their local files and lose access to this hub. The hub returns to setup, where you can set up a hub or connect to one."
-          : "Permanently deletes local folders, including unsynced changes, and resets Arca on this device. Hub files, hub history and other devices are kept.",
+          : "Permanently deletes local folders, including unsynced changes, and resets this device. Hub files, hub history and other devices are kept.",
         "trash-2",
       ) +
         `<ul>${paths.map((p) => `<li class="path">${escape(p)}</li>`).join("")}</ul><p class="hint">This cannot be undone. ${destroyingHub ? "No deletions are sent to other devices." : "Works offline. If the hub cannot be reached, remove this device from its Devices list separately."} An interrupted cleanup can be retried.</p>`,
@@ -11036,7 +11171,7 @@ async function handle(name, id, control) {
     return;
   }
   if (name === "unselect") {
-    const folder = status.volumes.find((v) => v.id === id);
+    const folder = status.volumes.find((v) => v.id === id) || (status.media?.[id] ? folderVolume(id) : null);
     if (!folder)
       throw new Error(
         "This folder is no longer linked. Refresh the folder list.",
@@ -11061,6 +11196,7 @@ async function handle(name, id, control) {
           "/v1/unselect",
           deleteFiles ? { id, deleteFiles } : { id },
         );
+        musicDownloadRows.delete(musicKey(id));
         detailId = null;
         notice(
           status.role === "hub"
@@ -11138,7 +11274,7 @@ async function handle(name, id, control) {
           status.root.replace(/\/$/, "") + "/",
           "server",
         ) +
-        '<p class="hint">Use an existing folder or create a new one. It must be accessible to Arca and outside other shared folders and the state directory.</p>',
+        '<p class="hint">Use an existing folder or create a new one. It must be accessible to the hub and outside other shared folders and the state directory.</p>',
       async (f) => {
         await api("/v1/volumes", {
           name: f.get("name"),
@@ -11169,7 +11305,7 @@ async function handle(name, id, control) {
     }
     await loadCatalog();
     const available = catalog.filter(
-      (v) => !v.video && !status.volumes.find((x) => x.id === v.id)?.selected,
+      (v) => !status.volumes.find((x) => x.id === v.id)?.selected && !status.media?.[v.id] && (status.role !== "hub" || !v.video),
     );
     if (!available.length) {
       modal(
@@ -11221,29 +11357,82 @@ async function handle(name, id, control) {
     ]
       .filter(Boolean)
       .join(" · ");
+    const media = status.role !== "hub" && !remote.gallery && (remote.music || remote.video);
+    const choices = media && (remote.music || native);
+    const modeCard = (value, name, text, checked) =>
+      `<label class="role-card"><input name="mode" type="radio" value="${value}"${checked ? " checked" : ""}><div><strong>${name}</strong><p>${text}</p></div></label>`;
     modal(
       '<div class="folder-selection">' +
         modalHeader(
           `Sync “${escape(remote.name)}” on ${escape(status.name)}`,
-          "Files sync both ways between this folder and the hub. Existing local files are uploaded too.",
+          media
+            ? "Choose how this device plays this library."
+            : "Files sync both ways between this folder and the hub. Existing local files are uploaded too.",
           "refresh-cw",
         ) +
-        `<div class="selection-summary"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>${escape(remote.name)}</strong><p>${summary}</p></div><span class="mono">id ${escape(remote.id.slice(0, 4))}</span></div>` +
-        '<label for="selection-path">Local destination</label>' +
-        `<div class="field-with-icon selection-path">${native && !local?.path ? pathPicker("path", "local destination") : icon("folder")}<input id="selection-path" class="mono" name="path" value="${escape(destination)}" ${local?.path ? "readonly" : ""} required></div>` +
-        (local?.path
-          ? '<p class="selection-hint">Change this location from folder details.</p>'
+        `<div class="selection-summary"><div class="tile large">${icon(folderSymbol(remote))}</div><div class="row-main"><strong>${escape(remote.name)}</strong><p>${summary}</p></div><span class="mono">id ${escape(remote.id.slice(0, 4))}</span></div>` +
+        (choices
+          ? modeCard("stream", "Stream from the hub", remote.music ? "Download tracks or albums to listen offline." : "Download titles to watch offline.", !!remote.video) +
+            modeCard("keep", "Keep on this device", remote.music ? "A full copy that syncs both ways." : "Every movie and episode, new ones too.", !!remote.music)
           : "") +
-        `<div class="callout">${icon("info")}<p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</p></div></div>`,
+        (!media || remote.music
+          ? '<div id="selection-copy"><label for="selection-path">Local destination</label>' +
+            `<div class="field-with-icon selection-path">${native && !local?.path ? pathPicker("path", "local destination") : icon("folder")}<input id="selection-path" class="mono" name="path" value="${escape(destination)}" ${local?.path ? "readonly" : ""} required></div>` +
+            (local?.path
+              ? '<p class="selection-hint">Change this location from folder details.</p>'
+              : "") +
+            `<div class="callout">${icon("info")}<p>Files excluded by .arcaignore stay local. Other changes, including deletions, sync between devices.</p></div></div>`
+          : "") +
+        (remote.video && choices
+          ? '<div id="selection-space" class="path-check selection-check" role="status" hidden>Checking free space…</div>'
+          : "") +
+        "</div>",
       async (f) => {
-        await api("/v1/select", { id: remote.id, path: f.get("path") });
-        await api("/v1/sync", { background: true });
+        const mode = media ? f.get("mode") || "stream" : undefined;
+        await api(
+          "/v1/select",
+          media
+            ? mode === "keep" && remote.music
+              ? { id: remote.id, mode, path: f.get("path") }
+              : { id: remote.id, mode }
+            : { id: remote.id, path: f.get("path") },
+        );
+        if (!media || (remote.music && mode === "keep")) await api("/v1/sync", { background: true });
       },
       "Start syncing",
     );
-    $("#submit-dialog").innerHTML = icon("refresh-cw") + "Start syncing";
     icons();
-    checkFolderPath("path", remote.id);
+    if (!media || remote.music) checkFolderPath("path", remote.id);
+    const copy = $("#selection-copy");
+    const space = $("#selection-space");
+    const applyMode = () => {
+      const mode = $('#dialog [name="mode"]:checked')?.value || (media ? "stream" : "keep");
+      const streaming = mode === "stream";
+      if (copy) {
+        copy.hidden = streaming;
+        $('#dialog [name="path"]').disabled = streaming;
+      }
+      if (space) space.hidden = streaming;
+      const submit = $("#submit-dialog");
+      const check = $("#folder-path-status");
+      submit.disabled =
+        !streaming &&
+        !!copy &&
+        (!check || check.classList.contains("path-check-error") || !/ free/.test(check.textContent));
+      submit.innerHTML = streaming ? icon("play") + "Start streaming" : icon("refresh-cw") + "Start syncing";
+      icons();
+    };
+    for (const input of document.querySelectorAll('#dialog [name="mode"]')) input.addEventListener("change", applyMode);
+    applyMode();
+    if (space)
+      void api(`/v1/video/downloads?${new URLSearchParams({ volume: remote.id })}`)
+        .catch(() => null)
+        .then((answer) => {
+          if (!space.isConnected) return;
+          const parts = [Number.isFinite(remote.bytes) ? `Needs ${bytes(remote.bytes)}` : null, Number.isFinite(answer?.freeBytes) ? `${bytes(answer.freeBytes)} free` : null].filter(Boolean);
+          if (parts.length) space.textContent = parts.join(" · ");
+          else space.remove();
+        });
     return;
   }
   if (name === "enable-backup") {
@@ -11254,7 +11443,7 @@ async function handle(name, id, control) {
         "shield-check",
       ) +
         pathInput("Backup location", "path", status.backup?.path || "") +
-        '<p class="hint">Use an empty dedicated folder outside synchronized folders and Arca’s state; in Docker, a mounted folder. Disabling backup keeps its data.</p>',
+        '<p class="hint">Use an empty dedicated folder outside synchronized folders and the state directory; in Docker, a mounted folder. Disabling backup keeps its data.</p>',
       async (f) => {
         await api("/v1/backup", { enabled: true, path: f.get("path") });
       },
@@ -12129,7 +12318,7 @@ function awaitDaemon() {
   daemonStopped = { error: "", starting: true };
   document.body.classList.add("starting-mode");
   updateBrandActivity();
-  $("#content").innerHTML = launchMark("Starting Arca…");
+  $("#content").innerHTML = launchMark("Starting…");
   let waited = 0;
   const probe = async () => {
     waited += 1000;

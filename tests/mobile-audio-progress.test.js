@@ -344,7 +344,7 @@ test("the library draws progress, the resume card, the Podcasts tab and a track 
   assert.match(library, /item\.kind === "podcasts"\) \{\s+const shows = \(order \|\| library\.showOrder\)\.map[\s\S]*?<ShowGrid\s+memory=\{memory\}\s+shows=\{shows\}/, "shows render as the cover grid in order c");
   assert.match(library, /episodes\s+flat=\{flat\}\s+\/>/, "a show page plays episodes without Shuffle");
   assert.match(library, /canPlay && tracks\.length > 1 && !episodes && \(/);
-  assert.match(library, /label="Delete…"\s+icon="trash"\s+danger\s+disabled=\{locked\}\s+onPress=\{\(\) => removeTrack\(sheet\.track\)\}/);
+  assert.match(library, /label="Delete…"\s+icon="trash"\s+danger\s+disabled=\{locked\}\s+onPress=\{\(\) => removeTrack\(sheet\.track, sheet\.streamed\)\}/);
   assert.match(library, /<View style=\{s\.miniProgress\} pointerEvents="none">/, "the mini player draws progress on its bottom edge");
   assert.match(library, /<Icon name="moon" size=\{14\} color=\{c\.accent\} \/>/, "and the moon with the countdown while the timer runs");
   const app = read("App.jsx");

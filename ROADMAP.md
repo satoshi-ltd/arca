@@ -1,6 +1,6 @@
 # Arca roadmap
 
-Updated 2026-10-29 · Phase 1 functional, not release-qualified.
+Updated 2026-10-31 · Phase 1 functional, not release-qualified.
 
 This is the task pool. [SPEC.md](SPEC.md) owns current state, contracts, operations and the design system; [CHANGELOG.md](CHANGELOG.md) records what each version shipped; [AGENTS.md](AGENTS.md) defines the autonomous workflow that consumes this file.
 
@@ -207,7 +207,7 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 
 ## Proposed
 
-Suggested order for approval: preservation of user files, synchronization recovery, release reliability, then usability and cleanup. No task in this lane is approved for implementation.
+Suggested order for approval: exposed security boundaries and preservation of user files, synchronization recovery, release reliability, then usability and cleanup. No task in this lane is approved for implementation.
 
 ### Video delete follow-ups (review of 2026-10-30)
 
@@ -221,72 +221,84 @@ Suggested order for approval: preservation of user files, synchronization recove
   `chore · agent · low`
   Accept: tests for a stale rev from a replica (409 "File changed. Reload before deleting." through `hubError`), the hub away (503), and a player or browser session against a replica's `/v1/video/delete`.
 
-### Security and data safety (audit of 2026-10-29)
+### Security and data safety
 
-Findings of the read-only audit of v0.8.9, ordered by severity. Each task is one commit; the decisions come first because some tasks depend on them.
+Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects exposure and impact, not proof of exploitation. Decisions precede dependent work; security, data preservation and defense-in-depth are distinguished below.
+
+- **SEC-TOPOLOGY-DOCS** — Reconcile the pilot network and role documentation
+  `chore · agent · normal`
+  accept: using read-only observations, identify the current hub and Casa roles, their published bind addresses, the TV's actual route and the candidate versions; correct SPEC's operational description without recording credentials. Distinguish what was observed from assumptions, and never restart or reconfigure a running service.
 
 - **DEC-PLAINTEXT-POLICY** — Which plaintext peers need the LAN HTTP opt-in?
   `decision · maintainer · high`
   Today `allowLanHttp` guards only private IPv4 peers (10/8, 172.16/12, 192.168/16): IPv6, link-local, CGNAT outside Tailscale mode and public addresses pass device authentication with the opt-in off, browser sign-in and sessions ignore it entirely, and the Docker image always binds `0.0.0.0 --private-network`. Proposal: every plaintext peer except loopback and verified tailnet peers needs the opt-in, browsers included. Behind the Umbrel access proxy every client shares the proxy's address, so the opt-in would become mandatory for Umbrel web access and per-address limits collapse into one bucket; decide whether a trusted-proxy setting (accept a peer header only when the socket peer is the configured proxy) is wanted or whether SPEC documents the limitation.
-- **DEC-VIDEO-DELETE-TRASH** — A Movies & TV deletion keeps a copy somewhere
-  `decision · maintainer · high`
-  Stream-only folders keep no object and no history, so a deletion, now also from a TV remote, destroys the only copy. Options: move the file to the hub's per-volume trash (`settle` with `moveToTrash` when `streamOnly`) or require the administrator for stream-only deletions.
 - **DEC-ERASE-SCOPE** — What may Erase delete outside the state directory?
   `decision · maintainer · normal`
   `addVolume` accepts any existing non-empty directory (a mount point such as `/Volumes/Disk` or `~/Documents`), and Erase later removes it wholesale. Decide between refusing a non-empty directory without this volume's marker at registration, restricting Erase to files Arca knows (as `deleteSyncedCopy` does), or keeping today's contract with a mount-point refusal (`stat.dev` differs from the parent's).
-- **DEC-UMBREL-VERSION** — The Umbrel package pins hub image 0.4.1
-  `decision · maintainer · normal`
-  `deploy/umbrel/arca/docker-compose.yml` and `umbrel-app.yml` ship 0.4.1 while clients target 0.8.x headers; say whether the submission is intentionally frozen or bump the digest with each release.
 - **DEC-IOS-FILE-SHARING** — iOS exposes the whole Documents tree to Files and Finder
   `decision · maintainer · low`
   `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` let any edit made in Files enter sync like a user edit and show app-owned state JSON; keep and document, or disable.
+
+- **SEC-LAN-POLICY** — The plaintext opt-in covers every untrusted peer
+  `bug · agent · high · depends: DEC-PLAINTEXT-POLICY`
+  accept: as decided, with tests for IPv6, a 100.64/10 peer in standalone mode, browser sign-in, and the selected proxy configuration; preserve intentional LAN access for the TV and verified Tailscale access. Document the Docker binding and the distinction between the listener flag and the LAN opt-in. The decision must address TLS termination at a proxy before requiring plaintext checks on its backend connection.
+- **SEC-RELEASE-PENTEST** — Exercise the security boundaries before distribution
+  `verify · maintainer · high`
+  accept: record the exact release candidate and isolated test environment; exercise unauthenticated, browser, replica and player access, code exhaustion and concurrent redemption, revocation during transfers, browser origin and host checks, LAN/IPv6/Tailscale and proxy paths, malicious paths and media, and resource limits. Test installed desktop and phone builds as well as the hub. Record evidence, impact and remediation for findings, retest fixes, and separate untested scenarios from passing results; never use real data or the live pilot for destructive tests.
+- **SEC-PLAYER-BLOBS** — Limit a player's object reads to playable content
+  `chore · agent · normal`
+  A player can currently read any stored object if it knows its SHA-256, including an unreferenced upload or a retained non-media revision; the existing range test demonstrates an unreferenced upload. Hashes are not authorization, though guessing an unknown high-entropy hash is impractical. Accept: player object reads require a current visible gallery or audio item that the player can play; replicas retain their existing sync and history access. Tests refuse an unreferenced object and a retained non-media revision, and cover current photo and audio playback, shared hashes and byte ranges. Check arca TV compatibility before changing the endpoint and update SPEC's player contract.
+
+- **SEC-FOLDER-SCOPE** — Guard replica actions against an unintended folder
+  `chore · agent · normal`
+  accept: on the hub `/v1/restore`, `/v1/gallery/delete`, `/v1/gallery/link` and `/v1/video/watch-next/remove|restore` from a replica require the folder in the device's latest `machine_reports.folderIds`, as `/v1/conflict-choice` and gallery uploads already do; the administrator keeps every folder and player operations remain available. Tests cover one refused replica call per route and the player paths; SPEC's API table says "linked replica, reported folder" on those rows.
+  This is a guard against unintended actions, not a security boundary: the replica supplies its own report, and the single-owner model grants a linked credential access across folders. A compromised device can report another folder; per-device folder ACLs are outside the current product contract.
+- **SEC-OPEN-LAUNCHERS** — Open never launches a synced executable
+  `bug · agent · normal`
+  accept: the desktop `open_file` command refuses launcher and executable extensions (`app, command, tool, terminal, workflow, pkg, dmg, exe, lnk, scr, bat, cmd, ps1, hta, js, vbs, msi, desktop, sh, run, AppImage`) when not revealing and reveals the file instead, and the web UI mirrors the rule; a Rust test covers the list. Follow-up `verify` on macOS and Windows after a desktop build.
+- **SEC-COOKIE-HOST** — Harden the browser session cookie's host scope
+  `chore · agent · normal`
+  accept: under `ARCA_WEB_ORIGIN` the cookie is `__Host-arca_session` (Secure, Path=/, no Domain); over plain HTTP SPEC states that Arca needs a hostname of its own because another service on the same host and another port receives the cookie; a test checks the cookie name and attributes in both modes.
+- **SEC-SIGNING-STEP** — The updater key never enters the build graph
+  `chore · agent · normal`
+  accept: establish a supported Tauri build and separate signing sequence, then build without the updater key and sign the final artifacts in a separate step that only runs the signer with the key; the manifest step verifies the signatures. Tests or a local release-tooling check cover artifact names and signatures. Follow-up `verify` on the next real release; do not assume `createUpdaterArtifacts` succeeds without a key.
+- **SEC-ACTIONS-PIN** — Release workflows run only pinned code
+  `chore · agent · normal`
+  accept: every `uses:` in `.github/workflows` is pinned to a commit SHA with the version in a comment, `wrangler` is installed at an exact version, `CLOUDFLARE_*` variables are scoped to the deploy step, `.github/dependabot.yml` covers `github-actions`, npm and cargo, and the release note no longer says "No automatic updates".
+- **SEC-HEIC-MEMORY** — Four HEIC previews cannot exhaust memory
+  `bug · agent · normal`
+  accept: the HEIC worker caps images at 50 megapixels, hands `pixels.buffer` to sharp without a copy, runs with `resourceLimits`, and HEIC renders are limited to two at a time; a test renders a maximal image under the limit and refuses one above it.
+- **SEC-BACKUP-SCRUB** — Detect damaged objects without falsely acknowledging backup
+  `bug · agent · normal`
+  accept: detect and report corrupt objects by hash without logging contents, continue checking unrelated objects, and allow retry or repair. Never acknowledge a revision as backed up without its verified content, or release its retention hold; tests corrupt an object and verify both the error and the acknowledgement boundary. Hourly maintenance checks a bounded batch of stored objects and reports corruption.
+- **SEC-MOBILE-MANIFEST** — The Android manifest ships only what the app needs
+  `chore · agent · normal`
+  accept: `allowBackup` is off (or `databases/` and `files/arca` are excluded from cloud backup), `SYSTEM_ALERT_WINDOW` is removed like `CAMERA`, and `CoverProvider` is not exported or requires a permission; config-plugin tests cover the manifest. Needs a native build, so the device evidence is a follow-up `verify`.
+- **SEC-DEPS** — Dependency advisories are checked in CI
+  `chore · agent · normal`
+  accept: audit the locked root, mobile and Rust dependency graphs in CI; fix compatible advisories or document each remaining advisory's affected component, reachability, owner and review date. Verify changes against Expo compatibility and the mobile build-tooling tests; do not blindly apply `npm audit fix` or accept an automatic major downgrade. Distinguish build tooling from installed runtime and reconcile the lockfile with installed dependencies.
+- **SEC-HUB-FILE-IN-USE** — Deleting a file the hub is serving answers 409
+  `bug · agent · low`
+  accept: on the hub, deleting a file that a stream, HLS session or probe holds open answers 409 "This file is in use" without recording a tombstone the cycle then fails to apply, proven by a Windows-shaped test that holds the file open; the daemon's `umask` stays as it is (a tight umask would also restrict files written into shared folders).
+- **SEC-DOCKER-HYGIENE** — The image is reproducible and attested
+  `chore · agent · low`
+  accept: the Dockerfile pins the base image by digest and ffmpeg by version, adds a `HEALTHCHECK` on `arca.js status`, and `publish-docker.yml` publishes provenance and an SBOM; `SHA256SUMS` in `publish.yml` is signed. Needs a Casa redeploy to verify.
+- **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
+  `feature · agent · low`
+  accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index (keeping one), so a corrupt index without a backup replica is recoverable; the CLI documents how to restore it.
 
 - **SEC-ERASE-KEPT** — Erase says which folders it left in place
   `feature · maintainer · low`
   accept: decision: `/v1/destroy-*` returns the registered paths it skipped because they no longer carried Arca's marker or backup state, and the Erase result names them, so a device wiped to give away does not keep a folder silently; today they are left untouched and unreported.
 
-- **SEC-LAN-POLICY** — The plaintext opt-in covers every untrusted peer
-  `bug · agent · high · depends: DEC-PLAINTEXT-POLICY`
-  accept: as decided; at minimum `requireLanAccess` applies to every non-loopback, non-verified-tailnet plaintext peer (IPv6 included), to `/auth/*` and to browser-session requests, turning the opt-in off ends browser sessions, and the Docker image documents or drops the implicit `--private-network`; tests cover an IPv6 peer, a 100.64/10 peer in standalone mode and a browser sign-in with the opt-in off.
-- **SEC-FOLDER-SCOPE** — Linked devices act only in folders they report
-  `bug · agent · normal`
-  accept: on the hub `/v1/restore`, `/v1/gallery/delete`, `/v1/gallery/link` and `/v1/video/watch-next/remove|restore` from a replica require the folder in the device's latest `machine_reports.folderIds`, as `/v1/conflict-choice` and gallery uploads already do; the administrator keeps every folder; tests cover one refused call per route and SPEC's API table says "linked, reported folder" on those rows.
-- **SEC-OPEN-LAUNCHERS** — Open never launches a synced executable
-  `bug · agent · normal`
-  accept: the desktop `open_file` command refuses launcher and executable extensions (`app, command, tool, terminal, workflow, pkg, dmg, exe, lnk, scr, bat, cmd, ps1, hta, js, vbs, msi, desktop, sh, run, AppImage`) when not revealing and reveals the file instead, and the web UI mirrors the rule; a Rust test covers the list. Follow-up `verify` on macOS and Windows after a desktop build.
-- **SEC-COOKIE-HOST** — The browser session cookie is bound to Arca's origin
-  `chore · agent · normal`
-  accept: under `ARCA_WEB_ORIGIN` the cookie is `__Host-arca_session` (Secure, Path=/, no Domain); over plain HTTP SPEC states that Arca needs a hostname of its own because another service on the same host and another port receives the cookie; a test checks the cookie name and attributes in both modes.
-- **SEC-SIGNING-STEP** — The updater key never enters the build graph
-  `chore · agent · normal`
-  accept: `publish.yml` builds with `createUpdaterArtifacts` and no signing key, then signs each artifact in a separate step that only runs `tauri signer sign` with the key, so no npm or crates.io build script can read it; the manifest step verifies the signatures. Follow-up `verify` on the next real release.
-- **SEC-ACTIONS-PIN** — Release workflows run only pinned code
-  `chore · agent · normal`
-  accept: every `uses:` in `.github/workflows` is pinned to a commit SHA with the version in a comment, `wrangler` is installed at an exact version, `CLOUDFLARE_*` variables are scoped to the deploy step, `.github/dependabot.yml` covers `github-actions`, npm and cargo, and the release note no longer says "No automatic updates".
-- **SEC-HUB-FILE-IN-USE** — Deleting a file the hub is serving answers 409
-  `bug · agent · low`
-  accept: on the hub, deleting a file that a stream, HLS session or probe holds open answers 409 "This file is in use" without recording a tombstone the cycle then fails to apply, proven by a Windows-shaped test that holds the file open; the daemon's `umask` stays as it is (a tight umask would also restrict files written into shared folders).
-
-- **SEC-HEIC-MEMORY** — Four HEIC previews cannot exhaust memory
-  `bug · agent · normal`
-  accept: the HEIC worker caps images at 50 megapixels, hands `pixels.buffer` to sharp without a copy, runs with `resourceLimits`, and HEIC renders are limited to two at a time; a test renders a maximal image under the limit and refuses one above it.
-- **SEC-BACKUP-SCRUB** — A damaged object never stalls the backup or the hub's history
-  `bug · agent · normal`
-  accept: the backup loop records a row whose object fails verification as missing, names the hash in `backupError` and continues, so `backup-ack` advances and hub retention is not frozen; hourly maintenance verifies a bounded batch of stored objects against their names and counts corrupt ones in status; tests corrupt one object and check both.
-- **SEC-MOBILE-MANIFEST** — The Android manifest ships only what the app needs
-  `chore · agent · normal`
-  accept: `allowBackup` is off (or `databases/` and `files/arca` are excluded from cloud backup), `SYSTEM_ALERT_WINDOW` is removed like `CAMERA`, and `CoverProvider` is not exported or requires a permission; config-plugin tests cover the manifest. Needs a native build, so the device evidence is a follow-up `verify`.
-- **SEC-DOCKER-HYGIENE** — The image is reproducible and attested
-  `chore · agent · low`
-  accept: the Dockerfile pins the base image by digest and ffmpeg by version, adds a `HEALTHCHECK` on `arca.js status`, and `publish-docker.yml` publishes provenance and an SBOM; `SHA256SUMS` in `publish.yml` is signed. Needs a Casa redeploy to verify.
-- **SEC-DEPS** — Dependency advisories are checked in CI
-  `chore · agent · low`
-  accept: `npm audit fix` (non-major) in `apps/mobile`, `cargo audit --locked` in the `rust-tests` job, and `npm audit --omit=dev` at the root in `publish.yml`, all green or with each exception named.
-- **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
-  `feature · agent · low`
-  accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index (keeping one), so a corrupt index without a backup replica is recoverable; the CLI documents how to restore it.
-
 ### File preservation and synchronization
+
+- **DEC-HISTORY-DEFAULT** — Should new folders default to Off for all folders or only galleries?
+  `decision · maintainer · normal`
+  Today folders without a stored choice default to 30 days, including galleries; Movies & TV has no history. The maintainer wants a zero-history default; decide its scope and how to preserve existing folders that rely on the implicit default.
+- **HISTORY-DEFAULT-OFF** — Default new folders to no version history
+  `feature · agent · normal · depends: DEC-HISTORY-DEFAULT`
+  accept: apply the decided default consistently to newly created folders, the catalog and settings while preserving the effective retention of existing folders, including those with no stored choice; tests cover both existing implicit and explicit policies and new folders. Update SPEC.
 
 ### Release and native reliability
 
@@ -354,6 +366,14 @@ These are the parts of the desktop and mobile sizing audit that are not purely v
 - **MUSIC-CAR-SEARCH** — Search and voice requests in the car
   `feature · agent · low`
   accept: `MusicService` answers library search and "play … on Arca" voice requests by title, artist and album over the published library, and plays the best match; JVM tests cover the matching. Today search commands are not offered.
+
+### Media libraries: Stream or Download per device (proposal 2026-10-30)
+
+Desktop and server replicas choose **Stream from the hub** or **Keep on this device** at Start syncing, and Android phones and the Fold stream the Audio libraries they start and download per artist, album, show or track, while a library they kept before stays a complete copy (SPEC Audio libraries, Music on the phone). The hub always holds everything and never asks; players (arca TV) and the hub's web admin are unchanged. What remains is the device evidence.
+
+- **VERIFY-MEDIA-MODE** — Stream and Keep on real devices
+  `verify · maintainer · normal`
+  accept: after a Casa redeploy, a desktop build and an Android build: a desktop replica starts an Audio library as Stream, downloads an album and plays it with the hub away, then Stop syncing and again as Keep; the Fold streams an Audio library with the screen off, over Bluetooth and in Android Auto, downloads an album, an artist and a show and plays them in airplane mode, and a library it kept before stays untouched; desktop Keep on a Movies & TV library fills, survives a restart, stops at the space floor and follows a title added and one deleted on the hub.
 
 ## Later phases
 

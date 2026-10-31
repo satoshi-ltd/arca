@@ -5,7 +5,7 @@ export const onlyVideoFolders = (catalog) => {
   const volumes = catalog?.volumes || [];
   return !!volumes.length && volumes.every((v) => v.video);
 };
-export async function selectFirstFolders(replica, catalog, ids) {
+export async function selectFirstFolders(replica, catalog, ids, streams = () => false) {
   const selected = [...new Set(ids)].map((id) =>
     catalog.volumes.find((v) => v.id === id),
   );
@@ -17,7 +17,8 @@ export async function selectFirstFolders(replica, catalog, ids) {
     )
   )
     throw new Error("Refresh the hub folders and choose available folders.");
-  await replica.space(selected.reduce((sum, v) => sum + v.bytes, 0));
-  for (const volume of selected) await replica.select(volume);
+  const kept = selected.filter((v) => !streams(v));
+  await replica.space(kept.reduce((sum, v) => sum + v.bytes, 0));
+  for (const volume of selected) await (streams(volume) ? replica.streamMusic(volume) : replica.select(volume));
   await replica.store.set("onboarding", null);
 }

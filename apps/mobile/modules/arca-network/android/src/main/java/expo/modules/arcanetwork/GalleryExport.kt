@@ -36,7 +36,7 @@ internal fun exportGalleryAsset(context: Context, id: String, destination: Strin
         var total = 0L
         val deadline = System.nanoTime() + 90_000_000_000L
         while (true) {
-          check(System.nanoTime() < deadline) { "Photo export timed out. Keep Arca open and retry." }
+          check(System.nanoTime() < deadline) { "Photo export timed out. Keep the app open and retry." }
           val count = input.read(buffer)
           if (count < 0) break
           check(root.usableSpace > 256L * 1024 * 1024 + count) { "Not enough storage for temporary photo transfer" }

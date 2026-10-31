@@ -83,6 +83,10 @@ class ArcaNetworkModule : Module() {
       applied.await()
       true
     }
+    AsyncFunction("musicHub") { url: String, authorization: String ->
+      if (MusicHub.set(url.ifEmpty { null }, authorization.ifEmpty { null })) MusicService.instance?.hubChanged()
+      true
+    }
     AsyncFunction("musicRenameHistory") Coroutine { from: String, to: String ->
       val applied = CompletableDeferred<Unit>()
       MusicService.renameHistory(appContext.reactContext ?: error("App is unavailable"), from, to) { applied.complete(Unit) }
@@ -132,7 +136,7 @@ class ArcaNetworkModule : Module() {
       withContext(Dispatchers.IO) {
       val context = appContext.reactContext ?: error("App is unavailable")
       val file = File(java.net.URI(uri))
-      check(file.canonicalPath.startsWith(context.filesDir.canonicalPath + "/") || file.canonicalPath.startsWith(context.cacheDir.canonicalPath + "/")) { "File is outside Arca storage" }
+      check(file.canonicalPath.startsWith(context.filesDir.canonicalPath + "/") || file.canonicalPath.startsWith(context.cacheDir.canonicalPath + "/")) { "File is outside app storage" }
       val digest = java.security.MessageDigest.getInstance("SHA-256")
       file.inputStream().buffered().use { input ->
         val buffer = ByteArray(1024 * 1024)
@@ -276,7 +280,7 @@ class ArcaNetworkModule : Module() {
     check(parsed.scheme == "file")
     val file = File(parsed).canonicalFile
     val context = appContext.reactContext ?: error("App unavailable")
-    check(listOf(context.filesDir, context.cacheDir).any { file.path.startsWith(it.canonicalPath + "/") }) { "File is outside Arca storage" }
+    check(listOf(context.filesDir, context.cacheDir).any { file.path.startsWith(it.canonicalPath + "/") }) { "File is outside app storage" }
     return file
   }
   private fun isLanAddress(address: String): Boolean {

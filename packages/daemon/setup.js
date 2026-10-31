@@ -23,7 +23,7 @@ export function initializeServer(home, options = {}) {
   }
   if (fs.readdirSync(home).some((name) => name !== ".gitkeep"))
     fail(
-      "State exists without its configuration. Restore it before starting Arca.",
+      "State exists without its configuration. Restore it before starting.",
     );
   const config = init(home, {
     ...options,
@@ -56,7 +56,7 @@ export function inspectSetupRoot(value, home) {
     ? fs.realpathSync(home)
     : path.resolve(home);
   if (resolved === state || state.startsWith(resolved + path.sep))
-    fail("Choose a folder outside Arca's state directory");
+    fail("Choose a folder outside the state directory");
   if (process.env.ARCA_FILES) {
     const persistent = fs.realpathSync(process.env.ARCA_FILES);
     if (resolved !== persistent && !resolved.startsWith(persistent + path.sep))

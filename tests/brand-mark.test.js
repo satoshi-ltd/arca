@@ -112,7 +112,7 @@ test("one motion: draw-in, then the door breathes; reduced motion holds the fina
   assert.match(style, /\.access-logo \.brand-draw-door \{\s+animation: brand-door-in [^;]+both;\s+\}/, "the sign-in tile draws once and never breathes");
   assert.match(style, /@media \(prefers-reduced-motion: reduce\) \{\s+\.brand-mark\.is-busy \.brand-door,\s+\.brand-draw-band,\s+\.brand-draw-door,\s+\.access-logo \.brand-draw-door,\s+\.launch-mark \.brand-draw-door \{\s+animation: none;/);
   const html = read("apps/desktop/src/index.html");
-  assert.match(html, /<div class="launch-mark" role="status" aria-label="Starting Arca">/);
+  assert.match(html, /<div class="launch-mark" role="status" aria-label="Starting">/);
   assert.equal((html.match(/class="brand-draw-band"/g) || []).length, 2);
   const app = read("apps/desktop/src/app.js");
   assert.match(app, /await browserRequest\("\/auth\/login", \{ code \}\);[\s\S]{0,200}\$\("#content"\)\.innerHTML = launchMark\(\);/, "the web shows the launch arch after sign-in");
@@ -128,11 +128,11 @@ test("the busy mark keeps its drawing and breathes its door instead of the grid"
   const app = read("apps/desktop/src/app.js");
   const activity = app.slice(app.indexOf("function updateBrandActivity()"), app.indexOf("const api ="));
   assert.doesNotMatch(activity, /busyIcon|brand-busy/);
-  assert.match(activity, /mark\.setAttribute\("aria-label", visible \? "Arca: updating" : "Arca"\);/);
+  assert.match(activity, /mark\.setAttribute\("aria-label", visible \? "Updating" : "Arca"\);/);
   const components = read("apps/mobile/src/components.jsx");
   const brand = components.slice(components.indexOf("export function BrandActivity()"), components.indexOf("const AnimatedPath"));
   assert.match(brand, /<Logo size=\{g\.screenTitleLogo\} breathe=\{!!active\} \/>/);
-  assert.match(brand, /accessibilityLabel=\{active \? "Arca: updating" : undefined\}/);
+  assert.match(brand, /accessibilityLabel=\{active \? "Updating" : undefined\}/);
   assert.doesNotMatch(brand, /<Busy/);
   const logo = components.slice(components.indexOf("export function Logo("), components.indexOf("export function BrandActivity()"));
   assert.match(logo, /const door = useBreathe\(breathe\);/);

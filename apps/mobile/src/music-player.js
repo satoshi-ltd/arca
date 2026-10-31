@@ -17,6 +17,9 @@ export const player = {
     typeof native.musicOutbox === "function" ? { entries: JSON.parse(await native.musicOutbox(scope)) } : { entries: [] },
   acknowledge: (sent) => native.musicOutboxAck(JSON.stringify(sent)),
   renameHistory: (from, to) => native.musicRenameHistory(from, to),
+  hub: async (url, authorization) => {
+    if (typeof native.musicHub === "function") await native.musicHub(url || "", authorization || "");
+  },
 };
 
 export function usePlayingId(enabled) {

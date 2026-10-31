@@ -76,7 +76,7 @@ export function crashNotice(record) {
     id: "crash",
     kind: "error",
     icon: "circle-alert",
-    title: "Arca closed unexpectedly",
+    title: "The app closed unexpectedly",
     body: "Your files are safe. The error was saved on this phone.",
     details: `${record.name}: ${record.message} · ${when}`,
   };

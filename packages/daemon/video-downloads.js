@@ -3,10 +3,12 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as sleep } from "node:timers/promises";
-import { digest, fail, quickHashFile } from "./storage.js";
+import { digest, fail, hashFileAsync, quickHashFile } from "./storage.js";
 import { videoType } from "../core/video-names.js";
 import { VIDEO_OFFLINE, fileOf, forward, replicaLibrary } from "./video-routes.js";
 import { RESUME_HEAD_SECONDS, finishedAt } from "./video.js";
+import { audioType } from "./music.js";
+import { MUSIC_OFFLINE, streamedLibrary, trackOf } from "./music-routes.js";
 
 const CHUNK = 8 * 1024 * 1024;
 const POLL_MS = 3000;
@@ -15,11 +17,29 @@ const GONE = "This video is no longer on the hub";
 const MISMATCH = "The downloaded copy did not match the hub's file";
 const UPDATING = "The hub is updating this video";
 const UNSENT = "The hub could not send this video";
-const NO_SPACE = "Not enough free space on this computer to finish the download";
+const NO_SPACE = "Not enough free space on this device to finish the download";
 const MISSING = "The downloaded file is missing. Download it again.";
 const ACTIVE = ["queued", "downloading"];
+const KEEP_EVERY_MS = 60000;
+const KEEP_GONE_MS = 60000;
+const BUSY = "Close the video on this device so its new copy can replace the old one";
+const FLOOR_BYTES = 5 * 1024 ** 3;
+const FLOOR_SHARE = 0.1;
+const KINDS = ["video", "music"];
 
-const offline = () => Object.assign(new Error(VIDEO_OFFLINE), { status: 503 });
+const offline = (kind = "video") => Object.assign(new Error(kind === "music" ? MUSIC_OFFLINE : VIDEO_OFFLINE), { status: 503 });
+const complete = (library) =>
+  !!library && !library.offline && !library.indexing && [library.movies, library.shows, library.other, library.tracks].some((list) => Array.isArray(list) && list.length);
+const worded = (row, message) => (row.kind === "music" ? message.replace("video", "track") : message);
+export function keptTitles(library) {
+  const items = new Map();
+  for (const item of [...(library.movies || []), ...(library.other || [])]) items.set(item.id, item);
+  for (const show of library.shows || [])
+    for (const season of show.seasons || []) for (const episode of season.episodes || []) items.set(episode.id, episode);
+  const first = [...(library.continue || []), ...(library.nextUp || [])].map((id) => items.get(id)).filter(Boolean);
+  const rest = [...items.values()].sort((a, b) => String(b.added || "").localeCompare(String(a.added || "")) || (a.path < b.path ? -1 : 1));
+  return [...new Set([...first, ...rest])].filter((item) => typeof item.path === "string" && /^[a-f0-9]{64}$/.test(item.hash || ""));
+}
 const extension = (name) => {
   const ext = path.extname(name).toLowerCase();
   return /^\.[a-z0-9]{1,6}$/.test(ext) ? ext : "";
@@ -37,12 +57,21 @@ export class VideoDownloads {
     this.engine = engine;
     this.s = engine.store;
     this.dir = path.join(this.s.home, "video-downloads");
+    this.musicDir = path.join(this.s.home, "music-downloads");
     this.chunk = options.chunk || CHUNK;
     this.poll = options.poll ?? POLL_MS;
+    this.keepEvery = options.keepEvery ?? KEEP_EVERY_MS;
+    this.space = options.space || ((directory) => fs.statfsSync(directory));
+    this.platform = options.platform || process.platform;
+    this.keptAt = new Map();
     this.s.db.exec(`
-      CREATE TABLE IF NOT EXISTS video_downloads(hub TEXT NOT NULL,volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,state TEXT NOT NULL,error TEXT,file TEXT NOT NULL,item TEXT NOT NULL,show TEXT,subtitles TEXT NOT NULL DEFAULT '[]',art TEXT NOT NULL DEFAULT '{}',added INTEGER NOT NULL,PRIMARY KEY(hub,volume,path));
+      CREATE TABLE IF NOT EXISTS video_downloads(hub TEXT NOT NULL,volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,state TEXT NOT NULL,error TEXT,file TEXT NOT NULL,item TEXT NOT NULL,show TEXT,subtitles TEXT NOT NULL DEFAULT '[]',art TEXT NOT NULL DEFAULT '{}',added INTEGER NOT NULL,kind TEXT NOT NULL DEFAULT 'video',previous TEXT,PRIMARY KEY(hub,volume,path));
       CREATE TABLE IF NOT EXISTS video_outbox(hub TEXT NOT NULL,volume TEXT NOT NULL,path TEXT NOT NULL,route TEXT NOT NULL,body TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(hub,volume,path,route));
+      CREATE TABLE IF NOT EXISTS video_keep_missing(hub TEXT NOT NULL,volume TEXT NOT NULL,path TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(hub,volume,path));
     `);
+    const columns = this.s.db.prepare("PRAGMA table_info(video_downloads)").all().map((column) => column.name);
+    if (!columns.includes("kind")) this.s.db.exec("ALTER TABLE video_downloads ADD COLUMN kind TEXT NOT NULL DEFAULT 'video'");
+    if (!columns.includes("previous")) this.s.db.exec("ALTER TABLE video_downloads ADD COLUMN previous TEXT");
     this.s.db.prepare("UPDATE video_downloads SET state='queued' WHERE state='downloading'").run();
     this.current = null;
     this.running = null;
@@ -58,8 +87,11 @@ export class VideoDownloads {
   row(volume, name) {
     return this.s.db.prepare("SELECT * FROM video_downloads WHERE hub=? AND volume=? AND path=?").get(this.hub, volume, name);
   }
+  folder(row) {
+    return row.kind === "music" ? this.musicDir : this.dir;
+  }
   where(row, suffix = "") {
-    return path.join(this.dir, row.file + suffix);
+    return path.join(this.folder(row), row.file + suffix);
   }
   isCurrent(row) {
     const current = this.current?.row;
@@ -68,7 +100,7 @@ export class VideoDownloads {
   progress(row) {
     if (row.state === "done") return row.size;
     if (this.isCurrent(row)) return this.current.done;
-    if (fs.statSync(this.where(row), { throwIfNoEntry: false })?.size === row.size) return row.size;
+    if (!row.previous && fs.statSync(this.where(row), { throwIfNoEntry: false })?.size === row.size) return row.size;
     return fs.statSync(this.where(row, ".part"), { throwIfNoEntry: false })?.size || 0;
   }
   missing(row) {
@@ -76,8 +108,17 @@ export class VideoDownloads {
     this.update(row, { state: "failed", error: MISSING });
     return true;
   }
+  freeBytes() {
+    try {
+      const space = this.space(this.s.home);
+      return Number(space.bavail) * Number(space.bsize);
+    } catch {
+      return null;
+    }
+  }
   list(volume) {
     return {
+      freeBytes: this.freeBytes(),
       downloads: this.rows(volume).map((row) => {
         this.missing(row);
         const item = json(row.item, {});
@@ -100,6 +141,18 @@ export class VideoDownloads {
       return value;
     });
   }
+  musicLibrary(volume, stop = null) {
+    return streamedLibrary({ engine: this.engine, s: this.s }, volume, null, stop).then((value) => {
+      if (value.offline) throw offline("music");
+      return value;
+    });
+  }
+  libraryOf(row, stop = null) {
+    return row.kind === "music" ? this.musicLibrary(row.volume, stop) : this.library(row.volume, stop);
+  }
+  itemOf(row, library) {
+    return row.kind === "music" ? trackOf(library, row.path) : fileOf(library, row.path);
+  }
   showOf(library, item) {
     if (item.kind !== "episode") return null;
     const show = (library.shows || []).find((entry) => (entry.seasons || []).some((season) => (season.episodes || []).some((episode) => episode.path === item.path)));
@@ -107,30 +160,41 @@ export class VideoDownloads {
     const { seasons, episodes, ...rest } = show;
     return rest;
   }
-  async queue(volume, paths) {
+  async queue(volume, paths, kind = "video") {
     if (typeof volume !== "string" || !Array.isArray(paths) || !paths.length || paths.length > 1000 || paths.some((name) => typeof name !== "string"))
       fail("Invalid download");
-    if (!this.hub) fail(VIDEO_OFFLINE, 503);
-    const library = await this.library(volume);
-    const found = [...new Set(paths)].map((name) => fileOf(library, name)).filter((item) => item?.path && /^[a-f0-9]{64}$/.test(item.hash || ""));
-    if (!found.length) fail("This video is no longer available", 404);
-    const insert = this.s.db.prepare("INSERT INTO video_downloads(hub,volume,path,hash,size,state,file,item,show,added) VALUES(?,?,?,?,?,'queued',?,?,?,?)");
-    let added = Date.now();
-    for (const item of found) {
-      const known = this.row(volume, item.path);
-      if (known && ACTIVE.includes(known.state)) continue;
-      if (known && known.state === "done" && known.hash === item.hash && !this.missing(known)) continue;
-      if (known && known.state === "failed" && known.hash === item.hash) {
-        this.update(known, { state: "queued", error: null });
-        continue;
-      }
-      if (known) this.discard(known);
-      const file = digest(`${this.hub}\0${volume}\0${item.path}`).slice(0, 32) + extension(item.path);
-      const show = this.showOf(library, item);
-      insert.run(this.hub, volume, item.path, item.hash, Number(item.size) || 0, file, JSON.stringify(item), show ? JSON.stringify(show) : null, added++);
-    }
+    if (!this.hub) fail(kind === "music" ? MUSIC_OFFLINE : VIDEO_OFFLINE, 503);
+    const library = kind === "music" ? await this.musicLibrary(volume) : await this.library(volume);
+    const found = [...new Set(paths)]
+      .map((name) => (kind === "music" ? trackOf(library, name) : fileOf(library, name)))
+      .filter((item) => item?.path && /^[a-f0-9]{64}$/.test(item.hash || ""));
+    if (!found.length) fail(kind === "music" ? "This track is no longer available" : "This video is no longer available", 404);
+    for (const item of found) this.enqueue(volume, item, kind, kind === "music" ? null : this.showOf(library, item));
     void this.wake();
     return this.list(volume);
+  }
+  enqueue(volume, item, kind = "video", show = null, replace = false) {
+    const known = this.row(volume, item.path);
+    if (known && ACTIVE.includes(known.state)) return false;
+    if (known && known.state === "done" && known.hash === item.hash && !this.missing(known)) return false;
+    if (known && known.state === "failed" && known.hash === item.hash) {
+      if (replace && known.error !== MISSING) return false;
+      this.update(known, { state: "queued", error: null });
+      return true;
+    }
+    const added = Math.max(Date.now(), (this.s.db.prepare("SELECT max(added) AS added FROM video_downloads").get().added || 0) + 1);
+    if (known && replace && (known.state === "done" || known.previous)) {
+      const previous = known.previous || (this.missing(known) ? null : JSON.stringify({ hash: known.hash, size: known.size, item: json(known.item, null), show: json(known.show, null) }));
+      if (known.hash !== item.hash) fs.rmSync(this.where(known, ".part"), { force: true });
+      this.update(known, { state: "queued", error: null, hash: item.hash, size: Number(item.size) || 0, item: JSON.stringify(item), show: show ? JSON.stringify(show) : null, added, previous });
+      return true;
+    }
+    if (known) this.discard(known);
+    const file = digest(`${this.hub}\0${volume}\0${item.path}`).slice(0, 32) + extension(item.path);
+    this.s.db
+      .prepare("INSERT INTO video_downloads(hub,volume,path,hash,size,state,file,item,show,added,kind) VALUES(?,?,?,?,?,'queued',?,?,?,?,?)")
+      .run(this.hub, volume, item.path, item.hash, Number(item.size) || 0, file, JSON.stringify(item), show ? JSON.stringify(show) : null, added, kind);
+    return true;
   }
   drop(volume, paths, active) {
     if (typeof volume !== "string" || !Array.isArray(paths) || paths.some((name) => typeof name !== "string")) fail("Invalid download");
@@ -146,7 +210,11 @@ export class VideoDownloads {
   remove(volume, paths) {
     return this.drop(volume, paths, false);
   }
+  unmark(row) {
+    this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub=? AND volume=? AND path=?").run(row.hub, row.volume, row.path);
+  }
   discard(row) {
+    this.unmark(row);
     const remove = this.s.db.prepare("DELETE FROM video_downloads WHERE hub=? AND volume=? AND path=?");
     if (this.isCurrent(row)) {
       remove.run(row.hub, row.volume, row.path);
@@ -164,6 +232,7 @@ export class VideoDownloads {
     const remove = this.s.db.prepare("DELETE FROM video_downloads WHERE hub=? AND volume=? AND path=?");
     for (const row of rows) {
       remove.run(row.hub, row.volume, row.path);
+      this.unmark(row);
       if (this.isCurrent(row)) this.current.controller.abort();
       else
         try {
@@ -172,23 +241,92 @@ export class VideoDownloads {
     }
   }
   pruneLibrary(volume, library) {
-    if (!this.hub || typeof volume !== "string" || !library || library.offline || library.indexing) return;
-    if (![library.movies, library.shows, library.other].some((list) => Array.isArray(list) && list.length)) return;
-    this.forget(this.rows(volume).filter((row) => !fileOf(library, row.path)));
+    if (!this.hub || typeof volume !== "string" || !complete(library) || this.s.mediaMode(volume) === "keep") return;
+    this.forget(this.rows(volume).filter((row) => row.kind !== "music" && !fileOf(library, row.path)));
+  }
+  pruneMusic(volume, library) {
+    if (!this.hub || typeof volume !== "string" || !complete(library)) return;
+    this.forget(this.rows(volume).filter((row) => row.kind === "music" && !trackOf(library, row.path)));
   }
   pruneCatalog(volumes) {
     if (!this.hub || !Array.isArray(volumes) || !volumes.length) return;
-    const kept = new Set(volumes.filter((v) => v?.video).map((v) => v.id));
-    this.forget(this.s.db.prepare("SELECT * FROM video_downloads WHERE hub=?").all(this.hub).filter((row) => !kept.has(row.volume)));
+    const kinds = { video: new Set(volumes.filter((v) => v?.video).map((v) => v.id)), music: new Set(volumes.filter((v) => v?.music).map((v) => v.id)) };
+    this.forget(this.s.db.prepare("SELECT * FROM video_downloads WHERE hub=?").all(this.hub).filter((row) => !kinds[row.kind === "music" ? "music" : "video"].has(row.volume)));
+    for (const { volume } of this.s.db.prepare("SELECT DISTINCT volume FROM video_keep_missing WHERE hub=?").all(this.hub))
+      if (!kinds.video.has(volume)) this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub=? AND volume=?").run(this.hub, volume);
+    for (const [volume, mode] of Object.entries(this.s.mediaModes()))
+      if (!kinds.video.has(volume) && !(mode === "stream" && kinds.music.has(volume))) this.s.db.prepare("DELETE FROM media_modes WHERE volume=?").run(volume);
+  }
+  forgetVolume(volume, kind = null) {
+    const rows = this.rows(volume).filter((row) => !kind || (row.kind === "music") === (kind === "music"));
+    const held = rows.map((row) => (row.state === "done" ? row.size : row.previous ? json(row.previous, {}).size || 0 : null)).filter((size) => size !== null);
+    this.forget(rows);
+    this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub=? AND volume=?").run(this.hub, volume);
+    return { deleted: held.length, deletedBytes: held.reduce((total, size) => total + size, 0) };
+  }
+  floor() {
+    try {
+      const space = this.space(this.s.home);
+      const floor = Number(space.bavail) * Number(space.bsize) - Math.max(FLOOR_BYTES, FLOOR_SHARE * Number(space.blocks) * Number(space.bsize));
+      return Number.isFinite(floor) ? floor : null;
+    } catch {
+      return null;
+    }
+  }
+  reconcile(volume, library) {
+    if (!this.hub || this.engine.config.installation !== "desktop" || this.s.mediaMode(volume) !== "keep" || !complete(library)) return;
+    this.keptAt.set(volume, Date.now());
+    const missing = this.s.db.prepare("SELECT at FROM video_keep_missing WHERE hub=? AND volume=? AND path=?");
+    const clear = this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub=? AND volume=? AND path=?");
+    for (const row of this.rows(volume)) {
+      if (fileOf(library, row.path)) {
+        clear.run(this.hub, volume, row.path);
+        continue;
+      }
+      const since = missing.get(this.hub, volume, row.path)?.at;
+      if (since === undefined) this.s.db.prepare("INSERT INTO video_keep_missing(hub,volume,path,at) VALUES(?,?,?,?)").run(this.hub, volume, row.path, Date.now());
+      else if (Date.now() - since >= KEEP_GONE_MS) {
+        this.forget([row]);
+        clear.run(this.hub, volume, row.path);
+      }
+    }
+    let budget = this.floor();
+    if (budget === null) return;
+    for (const row of this.s.db.prepare("SELECT * FROM video_downloads WHERE hub=? AND state IN ('queued','downloading')").all(this.hub))
+      budget -= Math.max(0, row.size - this.progress(row));
+    let queued = false;
+    for (const item of keptTitles(library)) {
+      const known = this.row(volume, item.path);
+      if (known && (ACTIVE.includes(known.state) || (known.state === "failed" && known.hash === item.hash && known.error !== MISSING) || (known.state === "done" && known.hash === item.hash && !this.missing(known)))) continue;
+      const size = Number(item.size) || 0;
+      if (size > budget) break;
+      if (this.enqueue(volume, item, "video", this.showOf(library, item), true)) {
+        budget -= size;
+        queued = true;
+      }
+    }
+    if (queued) void this.wake();
+  }
+  async readKept(stop) {
+    if (this.engine.config.installation !== "desktop") return;
+    for (const [volume, mode] of Object.entries(this.s.mediaModes())) {
+      if (mode !== "keep" || stop.aborted || Date.now() - (this.keptAt.get(volume) || 0) < this.keepEvery) continue;
+      this.keptAt.set(volume, Date.now());
+      try {
+        await replicaLibrary({ engine: this.engine, s: this.s }, volume, null, stop);
+      } catch {}
+    }
   }
   pruneHubs() {
     if (!this.hub) return;
     this.forget(this.s.db.prepare("SELECT * FROM video_downloads WHERE hub<>?").all(this.hub));
+    this.s.db.prepare("DELETE FROM video_keep_missing WHERE hub<>?").run(this.hub);
   }
   erase(row) {
-    if (!fs.existsSync(this.dir)) return;
+    const folder = this.folder(row);
+    if (!fs.existsSync(folder)) return;
     const prefix = row.file.slice(0, 32);
-    for (const name of fs.readdirSync(this.dir)) if (name.startsWith(prefix)) fs.rmSync(path.join(this.dir, name), { force: true });
+    for (const name of fs.readdirSync(folder)) if (name.startsWith(prefix)) fs.rmSync(path.join(folder, name), { force: true });
   }
   update(row, fields) {
     const keys = Object.keys(fields);
@@ -229,20 +367,25 @@ export class VideoDownloads {
     }
   }
   sweep() {
-    if (!fs.existsSync(this.dir)) return;
     const kept = new Set(this.s.db.prepare("SELECT file FROM video_downloads").all().map((row) => row.file.slice(0, 32)));
-    for (const name of fs.readdirSync(this.dir))
-      if (!kept.has(name.slice(0, 32)))
-        try {
-          fs.rmSync(path.join(this.dir, name), { force: true });
-        } catch {}
+    for (const folder of [this.dir, this.musicDir]) {
+      if (!fs.existsSync(folder)) continue;
+      for (const name of fs.readdirSync(folder))
+        if (!kept.has(name.slice(0, 32)))
+          try {
+            fs.rmSync(path.join(folder, name), { force: true });
+          } catch {}
+    }
   }
   async run() {
     this.sweep();
+    await this.readKept(this.stopping.signal);
+    const busy = new Set();
     while (!this.closed && !this.halting) {
       const row = this.s.db
-        .prepare(`SELECT * FROM video_downloads WHERE hub=? AND state IN ('queued','downloading') ORDER BY added,path LIMIT 1`)
-        .get(this.hub);
+        .prepare(`SELECT * FROM video_downloads WHERE hub=? AND state IN ('queued','downloading') ORDER BY added,path`)
+        .all(this.hub)
+        .find((entry) => !busy.has(`${entry.volume}\0${entry.path}`));
       if (!row) return;
       const controller = new AbortController();
       this.current = { row, controller, done: this.progress(row) };
@@ -257,56 +400,70 @@ export class VideoDownloads {
           continue;
         }
         if (!this.row(row.volume, row.path)) continue;
+        if (error.message === BUSY) {
+          this.update(row, { state: "queued", error: BUSY });
+          busy.add(`${row.volume}\0${row.path}`);
+          continue;
+        }
         if (error.status === 503) {
-          this.update(row, { state: "queued", error: error.message || VIDEO_OFFLINE });
+          this.update(row, { state: "queued", error: error.message || offline(row.kind).message });
           return;
         }
         if (error.message === GONE) {
           this.forget([row]);
           continue;
         }
-        this.update(row, { state: "failed", error: error.code === "ENOSPC" ? NO_SPACE : error.message || "This video could not be downloaded" });
+        this.update(row, { state: "failed", error: worded(row, error.code === "ENOSPC" ? NO_SPACE : error.message || "This video could not be downloaded") });
       } finally {
         this.current = null;
       }
     }
   }
+  async identity(row, file) {
+    if (fs.statSync(file, { throwIfNoEntry: false })?.size !== row.size) return null;
+    return row.kind === "music" ? hashFileAsync(file) : quickHashFile(file);
+  }
   async download(row, signal) {
-    const library = await this.library(row.volume, signal);
-    const item = fileOf(library, row.path);
+    const library = await this.libraryOf(row, signal);
+    const item = this.itemOf(row, library);
     if (!item) fail(GONE, 404);
     if (signal.aborted) throw signal.reason;
-    const show = this.showOf(library, item);
+    const show = row.kind === "music" ? null : this.showOf(library, item);
     if (item.hash !== row.hash || Number(item.size) !== row.size) {
-      this.erase(row);
-      this.update(row, { hash: item.hash, size: Number(item.size) || 0, subtitles: "[]", art: "{}" });
+      fs.rmSync(this.where(row, ".part"), { force: true });
+      this.update(row, { hash: item.hash, size: Number(item.size) || 0, ...(row.previous ? {} : { subtitles: "[]", art: "{}" }) });
       this.current.done = 0;
     }
     this.update(row, { state: "downloading", error: null, item: JSON.stringify(item), show: show ? JSON.stringify(show) : null });
-    fs.mkdirSync(this.dir, { recursive: true });
+    fs.mkdirSync(this.folder(row), { recursive: true });
     const file = this.where(row);
     const part = this.where(row, ".part");
-    if (fs.statSync(file, { throwIfNoEntry: false })?.size !== row.size || quickHashFile(file) !== row.hash) {
-      fs.rmSync(file, { force: true });
+    if ((await this.identity(row, file)) !== row.hash) {
       try {
         await this.fetchMedia(row, part, signal);
       } catch (error) {
         if (signal.aborted || !error.stale) throw error;
         return this.restart(row, signal, error.status === 409 ? UPDATING : UNSENT);
       }
-      if (quickHashFile(part) !== row.hash) {
+      if ((await this.identity(row, part)) !== row.hash) {
         fs.rmSync(part, { force: true });
         return this.restart(row, signal, MISMATCH);
       }
-      fs.renameSync(part, file);
+      try {
+        fs.renameSync(part, file);
+      } catch (error) {
+        if (this.platform !== "win32" || !["EPERM", "EBUSY"].includes(error.code)) throw error;
+        throw new Error(BUSY);
+      }
     }
-    const subtitles = await this.subtitles(row, item, signal);
-    const art = await this.art(row, item, show, signal);
+    if (row.previous) this.update(row, { previous: null });
+    const subtitles = row.kind === "music" ? [] : await this.subtitles(row, item, signal);
+    const art = row.kind === "music" ? await this.covers(row, item, signal) : await this.art(row, item, show, signal);
     if (signal.aborted) throw signal.reason;
     this.update(row, { state: "done", error: null, subtitles: JSON.stringify(subtitles), art: JSON.stringify(art) });
   }
   async restart(row, signal, message) {
-    const item = fileOf(await this.library(row.volume, signal), row.path);
+    const item = this.itemOf(row, await this.libraryOf(row, signal));
     if (!item) fail(GONE, 409);
     if (item.hash === row.hash) fail(message, message === UPDATING ? 503 : 409);
     return this.download(row, signal);
@@ -320,7 +477,7 @@ export class VideoDownloads {
     while (done < row.size) {
       this.current.done = done;
       const hub = this.engine.config.hub;
-      if (!hub || this.engine.hubUnavailable) throw offline();
+      if (!hub || this.engine.hubUnavailable) throw offline(row.kind);
       const idle = new AbortController();
       let timer;
       const wait = () => {
@@ -332,19 +489,19 @@ export class VideoDownloads {
       try {
         let response;
         try {
-          response = await fetch(`${hub.url}/v1/video/media?${new URLSearchParams({ volume: row.volume, path: row.path, hash: row.hash })}`, {
+          response = await fetch(`${hub.url}/v1/${row.kind === "music" ? "music" : "video"}/media?${new URLSearchParams({ volume: row.volume, path: row.path, hash: row.hash })}`, {
             redirect: "error",
             headers: { Authorization: `Bearer ${hub.token}`, Range: `bytes=${done}-${Math.min(row.size, done + this.chunk) - 1}` },
             signal: chunkSignal,
           });
         } catch (error) {
           if (signal.aborted) throw error;
-          throw offline();
+          throw offline(row.kind);
         }
         const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get("content-range") || "");
         if (response.status !== 206 || !range || Number(range[1]) !== done || Number(range[3]) !== row.size) {
           await response.body?.cancel().catch(() => {});
-          if ([502, 503, 504].includes(response.status)) throw offline();
+          if ([502, 503, 504].includes(response.status)) throw offline(row.kind);
           if ([404, 409, 416].includes(response.status) || (range && Number(range[3]) !== row.size))
             throw Object.assign(new Error(GONE), { status: response.status === 409 ? 409 : 404, stale: true });
           fail("The hub answered the download unexpectedly", 502);
@@ -357,7 +514,7 @@ export class VideoDownloads {
           await pipeline(body, fs.createWriteStream(part, { flags: "a" }), { signal: chunkSignal });
         } catch (error) {
           if (signal.aborted || error.syscall) throw error;
-          throw offline();
+          throw offline(row.kind);
         }
       } finally {
         clearTimeout(timer);
@@ -399,6 +556,25 @@ export class VideoDownloads {
       await sleep(this.poll, undefined, { signal });
     }
   }
+  async covers(row, item, signal) {
+    const saved = {};
+    if (typeof item.cover !== "string" || !item.cover) return saved;
+    for (const size of ["small", "large"]) {
+      let answer;
+      try {
+        answer = await forward(this.engine, `/v1/music/cover?${new URLSearchParams({ volume: row.volume, key: item.cover, size })}`, undefined, undefined, signal);
+      } catch (error) {
+        if (signal.aborted || error.status === 503) throw offline("music");
+        continue;
+      }
+      if (signal.aborted) throw signal.reason;
+      if (typeof answer?.data !== "string") continue;
+      const file = `${row.file}.c-${size}.json`;
+      fs.writeFileSync(path.join(this.musicDir, file), JSON.stringify({ data: answer.data }));
+      saved[`${size}:${item.cover}`] = file;
+    }
+    return saved;
+  }
   async art(row, item, show, signal) {
     const wanted = [
       [item.poster, "small"],
@@ -425,17 +601,29 @@ export class VideoDownloads {
     }
     return saved;
   }
+  standIn(volume, name) {
+    if (typeof volume !== "string" || typeof name !== "string") return null;
+    const row = this.row(volume, name);
+    const previous = row?.previous ? json(row.previous, null) : null;
+    if (!previous?.item || fs.statSync(this.where(row), { throwIfNoEntry: false })?.size !== previous.size) return null;
+    return { file: this.where(row), size: previous.size, type: videoType(name) || "video/mp4", item: previous.item };
+  }
   local(volume, name, hash) {
     if (typeof volume !== "string" || typeof name !== "string") return null;
     const row = this.row(volume, name);
+    const previous = row?.previous ? json(row.previous, null) : null;
+    if (previous?.item && previous.hash === hash && row.hash !== hash && fs.statSync(this.where(row), { throwIfNoEntry: false })?.size === previous.size)
+      return { file: this.where(row), size: previous.size, type: videoType(name) || "video/mp4", item: previous.item };
     if (!row || row.state !== "done" || row.hash !== hash || this.missing(row)) return null;
     const file = this.where(row);
+    if (row.kind === "music") return { file, size: row.size, type: audioType(name) || "application/octet-stream" };
     return { file, size: row.size, type: videoType(name) || "video/mp4", item: json(row.item, null) };
   }
   subtitle(volume, name, embedded) {
     if (typeof volume !== "string" || typeof name !== "string") return null;
     for (const row of this.rows(volume)) {
-      if (row.state !== "done" || (embedded && (row.path !== name || row.hash !== embedded.hash))) continue;
+      const previous = row.previous ? json(row.previous, null) : null;
+      if ((row.state !== "done" && !previous) || (embedded && (row.path !== name || (row.hash !== embedded.hash && previous?.hash !== embedded.hash)))) continue;
       const hit = json(row.subtitles, []).find((sub) => (embedded ? sub.stream === embedded.stream : sub.path === name));
       if (!hit) continue;
       try {
@@ -446,21 +634,37 @@ export class VideoDownloads {
     }
     return null;
   }
+  coverData(volume, key, size) {
+    return this.artData(volume, key, size);
+  }
   artData(volume, key, size) {
     if (typeof volume !== "string" || typeof key !== "string") return null;
     for (const row of this.rows(volume)) {
-      const file = row.state === "done" && json(row.art, {})[`${size}:${key}`];
+      const file = (row.state === "done" || row.previous) && json(row.art, {})[`${size}:${key}`];
       if (!file) continue;
       let data;
       try {
-        data = JSON.parse(fs.readFileSync(path.join(this.dir, file), "utf8")).data;
+        data = JSON.parse(fs.readFileSync(path.join(this.folder(row), file), "utf8")).data;
       } catch {}
       if (typeof data === "string") return data;
     }
     return null;
   }
+  offlineMusic(volume) {
+    const rows = this.rows(volume).filter((row) => row.kind === "music" && row.state === "done");
+    if (!rows.length) return null;
+    return {
+      version: `downloads-${digest(rows.map((row) => `${row.path}:${row.hash}`).join("\n")).slice(0, 16)}`,
+      indexing: false,
+      tracks: rows.map((row) => json(row.item, null)).filter((item) => item?.path).sort((a, b) => (a.path < b.path ? -1 : 1)),
+      playlists: [],
+      offline: true,
+    };
+  }
   offlineLibrary(volume) {
-    const rows = this.rows(volume).filter((row) => row.state === "done");
+    const rows = this.rows(volume)
+      .filter((row) => row.kind !== "music" && (row.state === "done" || row.previous))
+      .map((row) => (row.state === "done" ? row : { ...row, item: JSON.stringify(json(row.previous, {}).item), show: JSON.stringify(json(row.previous, {}).show) }));
     if (!rows.length) return null;
     const movies = [];
     const other = [];

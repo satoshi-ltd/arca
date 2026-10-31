@@ -66,7 +66,7 @@ enum GalleryExport {
         state.append(data)
       }, completionHandler: { error in state.finish(error) })
       DispatchQueue.global().asyncAfter(deadline: .now() + 90) {
-        if state.finish(GalleryExportError(message: "Original download timed out. Keep Arca open and retry.")) {
+        if state.finish(GalleryExportError(message: "Original download timed out. Keep the app open and retry.")) {
           manager.cancelDataRequest(request)
         }
       }

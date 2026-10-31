@@ -16,6 +16,8 @@ import {
   isMusicFolder,
   publishMusic,
   refreshMusic,
+  streamedIds,
+  streamedKey,
 } from "./music-sync.js";
 import * as playlists from "../../../packages/core/playlist.js";
 import {
@@ -175,6 +177,7 @@ export class Replica {
     // Stop new publications and drain writers before removing their directory.
     this.scope = null;
     await this.videoDownloads?.stop().catch(() => {});
+    await this.audioDownloads?.stop().catch(() => {});
     await Promise.allSettled([...(this.videoWrites || [])]);
     await this.musicPublishing?.catch(() => {});
     await this.musicHistoryWriting?.catch(() => {});
@@ -299,6 +302,7 @@ export class Replica {
     try {
       await this.requireActiveReplica();
       if (!this.scope) throw new Error("Connect to a hub first");
+      if (this.removing) throw new Error("Wait for the current operation to finish.");
       if (volume.video) throw new Error(STREAM_ONLY);
       if (await this.store.get(`removing:${this.scope}:${volume.id}`, false))
         throw new Error(
@@ -318,11 +322,77 @@ export class Replica {
       await this.space(required);
       await this.files.mkdir(this.files.folder(this.scope, volume.id));
       await this.store.select(this.scope, volume);
+      if ((await streamedIds(this)).includes(volume.id)) {
+        await this.dropAudioDownloads(volume.id);
+        await this.store.set(
+          streamedKey(this.scope),
+          (await streamedIds(this)).filter((value) => value !== volume.id),
+        );
+      }
       this.changed();
     } finally {
       release();
       if (this.selecting === selection) this.selecting = null;
     }
+  }
+  async streamMusic(volume) {
+    await this.requireActiveReplica();
+    if (!this.scope) throw new Error("Connect to a hub first");
+    if (!isMusicFolder(this.client.state().catalog, volume.id))
+      throw new Error("Only Audio libraries stream from the hub.");
+    if ((await this.store.folder(this.scope, volume.id))?.selected)
+      throw new Error("This library is already kept on this phone.");
+    const ids = await streamedIds(this);
+    if (!ids.includes(volume.id))
+      await this.store.set(streamedKey(this.scope), [...ids, volume.id]);
+    this.changed();
+  }
+  async stopStreaming(id) {
+    await this.requireActiveReplica();
+    if (this.removing || this.importing)
+      throw new Error("Wait for the current operation to finish.");
+    const scope = this.scope;
+    if ((await this.store.folder(scope, id))?.selected)
+      throw new Error("This library is kept on this phone. Use Stop syncing to remove its copy.");
+    this.removing = true;
+    try {
+      await this.forgetStreamed(id);
+    } finally {
+      this.removing = false;
+      this.changed();
+    }
+  }
+  async forgetStreamed(id) {
+    const scope = this.scope;
+    if (!scope) return;
+    this.stop();
+    if (this.active) await this.active.catch(() => {});
+    if ((await this.store.folder(scope, id))?.selected)
+      throw new Error("This library is kept on this phone. Use Stop syncing to remove its copy.");
+    await this.dropAudioDownloads(id);
+    await this.store.forgetStreamedLibrary(scope, id);
+    await publishMusic(this).catch(() => {});
+    this.musicTick = (this.musicTick || 0) + 1;
+    await this.store.set(
+      streamedKey(scope),
+      (await streamedIds(this)).filter((value) => value !== id),
+    );
+  }
+  async dropAudioDownloads(id) {
+    const scope = this.scope;
+    const rows = (await this.store.audioDownloads(scope)).filter(
+      (row) => row.volume === id,
+    );
+    if (this.audioDownloads)
+      await this.audioDownloads.removeMany(id, rows.map((row) => row.path));
+    else
+      for (const row of rows) {
+        const file = this.files.audioDownload(scope, id, `${row.hash}.${row.ext}`);
+        await this.files.remove(`${file}.part`);
+        await this.files.remove(file);
+        await this.store.forgetAudioDownload(scope, id, row.path);
+      }
+    await this.files.removeAudioDownloads(scope, id);
   }
   async unselect(id) {
     await this.requireActiveReplica();

@@ -165,8 +165,8 @@ test("the phone has one search: the screen, a search button in every header and 
   assert.match(app, /folderLibrary\(r, v\.id\)/, "audio folders answer from their cached library");
   assert.match(app, /cachedGalleryItems\(r\.store, r\.scope, v\.id\)/, "dates match the gallery's cached metadata");
   assert.match(app, /name: "sync", label: "Sync now"/);
-  assert.match(app, /\{searchable && !folder && !detail && \(\s+<Button\s+iconOnly\s+ghost\s+label="Search Arca"\s+icon="search"\s+onPress=\{\(\) => setGlobalSearch\(true\)\}/, "Folders, Devices, History and Settings open the one search from a quiet header button");
-  assert.match(app, /\{searchable && \(\s+<Button\s+iconOnly\s+ghost\s+label="Search Arca"/, "a folder's header opens the same search");
+  assert.match(app, /\{searchable && !folder && !detail && \(\s+<Button\s+iconOnly\s+ghost\s+label="Search"\s+icon="search"\s+onPress=\{\(\) => setGlobalSearch\(true\)\}/, "Folders, Devices, History and Settings open the one search from a quiet header button");
+  assert.match(app, /\{searchable && \(\s+<Button\s+iconOnly\s+ghost\s+label="Search"/, "a folder's header opens the same search");
   for (const local of [/Search files/, /Search this folder/, /musicSearch/, /setMusicSearch/, /searchOpen/, /setSearch\(/]) assert.doesNotMatch(app, local);
   assert.doesNotMatch(library, /search/i, "the library has no search");
   assert.doesNotMatch(overlay, /SCOPES|"All"|"Music"/, "no scope segments");

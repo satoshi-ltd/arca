@@ -33,7 +33,8 @@ import {
   watchPrivateNetwork,
   withQueuedPositions,
 } from "./video-sync.js";
-import { createVideoDownloads, downloadKey, downloadable, itemDownload, playbackCues, playbackSource } from "./video-downloads.js";
+import { createVideoDownloads, downloadAction, downloadKey, downloadable, itemDownload, playbackCues, playbackSource } from "./video-downloads.js";
+import { audioActions, audioRows, audioTargets, createAudioDownloads } from "./audio-downloads.js";
 import {
   DISCOVERY_MS,
   FOREGROUND_DISCOVERY_MS,
@@ -179,6 +180,7 @@ import {
   librarySummary,
   librarySymbol,
   musicBackLabel,
+  musicMenu,
   musicPane,
   musicSheet,
   parseTrackNode,
@@ -187,6 +189,7 @@ import {
   plural,
   savedSymbol,
   spokenRepeat,
+  showSummary,
 } from "./music-library.js";
 import {
   folderLibrary,
@@ -196,7 +199,9 @@ import {
   publishSynced,
   readMusicHistory,
   recordMusicPlay,
+  refreshStreamed,
   renameMusicPlay,
+  streamedIds,
 } from "./music-sync.js";
 import {
   failedChange,
@@ -346,6 +351,8 @@ export default function App() {
   const videoArtLoader = useRef(null);
   const [videoDownloads, setVideoDownloads] = useState(() => new Map());
   const downloads = useRef(null);
+  const [audioDownloads, setAudioDownloads] = useState(() => new Map());
+  const audioManager = useRef(null);
   const videoBack = useRef(null);
   const [musicEdits, setMusicEdits] = useState(0);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -362,7 +369,7 @@ export default function App() {
   async function readSnapshot() {
     const r = engine.current;
     if (!r || !mounted.current) return;
-    const [folders, last, notifications, background, theme, free, textSize] =
+    const [folders, last, notifications, background, theme, free, textSize, streamed] =
       await Promise.all([
         r.scope ? r.store.folders(r.scope) : [],
         r.store.get(`lastSync:${r.scope}`),
@@ -376,6 +383,7 @@ export default function App() {
               return value;
             }),
         r.store.get("textSize", 1),
+        streamedIds(r),
       ]);
     if (!mounted.current) return;
     setState((old) => retainSnapshot(old, client.state()));
@@ -396,7 +404,7 @@ export default function App() {
     setLocals((old) => retainSnapshot(old, visibleFolders));
     if (r.scope)
       changeFavorites(
-        (value) => reconcileFavorites(value, folders.filter((f) => f.selected)),
+        (value) => reconcileFavorites(value, [...folders.filter((f) => f.selected), ...streamed.map((id) => ({ id }))]),
         r,
       );
     setStatus((old) =>
@@ -413,6 +421,7 @@ export default function App() {
         last,
         free,
         musicTick: r.musicTick || 0,
+        streamed: streamed.join("\n"),
       }),
     );
     const onboarding = await r.store.get("onboarding");
@@ -1004,18 +1013,19 @@ export default function App() {
       cancelled = true;
     };
   }, [folder?.id, screen, photoFolder, replica, status.last, status.offline]);
+  const musicOnline = !!connected && !status.offline;
   useEffect(() => {
     if (!musicFolder || !replica) return undefined;
     let active = true;
     const key = `${replica.scope}:${folder.id}`;
     (async () => {
-      const value = await folderLibrary(replica, folder.id);
+      const value = await folderLibrary(replica, folder.id, musicOnline);
       if (active) setMusicData({ key, ...value });
     })().catch(() => active && setMusicData(null));
     return () => {
       active = false;
     };
-  }, [musicFolder, folder?.id, replica, status.last, status.musicTick, musicEdits]);
+  }, [musicFolder, folder?.id, replica, status.last, status.musicTick, musicEdits, musicOnline, status.streamed]);
   const playingId = usePlayingId(musicFolder && screen === "Folders");
   useEffect(() => {
     if (replica && catalog)
@@ -1094,18 +1104,98 @@ export default function App() {
     };
   }, [replica, replica?.scope]);
   useEffect(() => {
-    if (catalog) downloads.current?.pruneVolumes(catalog).catch(() => {});
+    if (!replica?.scope) return undefined;
+    const manager = createAudioDownloads({ replica, client, onChange: setAudioDownloads });
+    audioManager.current = manager;
+    replica.audioDownloads = manager;
+    manager.load().catch(() => {});
+    return () => {
+      manager.stop().catch(() => {});
+      if (audioManager.current === manager) audioManager.current = null;
+      if (replica.audioDownloads === manager) replica.audioDownloads = null;
+    };
+  }, [replica, replica?.scope]);
+  useEffect(() => {
+    if (!catalog) return;
+    downloads.current?.pruneVolumes(catalog).catch(() => {});
+    audioManager.current?.pruneVolumes(catalog).catch(() => {});
   }, [catalog, replica, replica?.scope]);
   useEffect(() => {
     if (!connected || status.offline || !replica?.scope) return;
     downloads.current?.resume().catch(() => {});
+    audioManager.current?.resume().catch(() => {});
     flushPositions({ client, replica }).catch(() => {});
   }, [connected, status.offline, replica, replica?.scope]);
   useEffect(() => {
     const network = requireOptionalNativeModule("ExpoNetwork") ? require("expo-network") : null;
-    const subscription = network?.addNetworkStateListener(() => downloads.current?.resume().catch(() => {}));
+    const subscription = network?.addNetworkStateListener(() => {
+      downloads.current?.resume().catch(() => {});
+      audioManager.current?.resume().catch(() => {});
+    });
     return () => subscription?.remove?.();
   }, []);
+  const audioSaved = [...audioDownloads.values()]
+    .filter((row) => row.state === "done")
+    .map((row) => `${row.volume}:${row.path}:${row.hash}`)
+    .sort()
+    .join("\n");
+  useEffect(() => {
+    if (!replica?.scope) return;
+    publishMusic(replica).catch(() => {});
+    setMusicEdits((count) => count + 1);
+  }, [audioSaved]);
+  useEffect(() => {
+    if (!playerAvailable) return;
+    if (!replica?.scope || !musicOnline || !status.streamed) {
+      player.hub(null, null).catch(() => {});
+      return undefined;
+    }
+    let active = true;
+    client
+      .stream("/v1/music/media")
+      .then(({ uri, headers }) => active && player.hub(uri.slice(0, uri.indexOf("/v1/")), headers.Authorization))
+      .catch(() => active && player.hub(null, null).catch(() => {}));
+    return () => {
+      active = false;
+    };
+  }, [replica, replica?.scope, musicOnline, status.streamed, connection?.url]);
+  const streamedSet = new Set(status.streamed ? status.streamed.split("\n") : []);
+  const audioStreaming = musicFolder && streamedSet.has(folder?.id) && !locals.some((f) => f.id === folder.id);
+  const audioDownload = (track) => (folder && track?.path ? itemDownload(audioDownloads.get(downloadKey(folder.id, track.path)), track) : null);
+  const audioLocal = folder && audioStreaming ? [...audioDownloads.values()].filter((row) => row.volume === folder.id && row.state === "done") : [];
+  const audioDownloadActions = {
+    actions: (tracks, single = false) =>
+      single ? downloadAction(audioDownload(tracks[0])) : audioActions(audioRows(audioDownloads, folder.id, tracks)),
+    act(name, tracks) {
+      setSheet(null);
+      if (name === "download") audioManager.current?.add(folder.id, tracks.filter((track) => !["done", "queued", "waiting"].includes(audioDownload(track)?.state))).catch(() => {});
+      else {
+        const states = name === "cancel-download" ? ["queued", "waiting"] : ["done", "stale", "failed"];
+        const paths = tracks.filter((track) => states.includes(audioDownload(track)?.state)).map((track) => track.path);
+        audioManager.current?.removeMany(folder.id, paths).catch(() => {});
+      }
+    },
+  };
+  function musicCollectionSheet(target) {
+    const library = shownMusic?.library;
+    if (!library) return;
+    const album = target.kind === "album" ? library.albums.get(target.id) : null;
+    const show = target.kind === "show" ? library.shows.get(target.id) : null;
+    const artist = target.kind === "artist" ? library.artists.find((entry) => entry.id === target.id) : null;
+    setSheet({
+      kind: "music-actions",
+      target,
+      tracks: audioTargets(library, target.kind, target.id),
+      title: album?.title || show?.name || artist?.name || "",
+      subtitle: album
+        ? [album.artist, album.year].filter(Boolean).join(" · ")
+        : show
+          ? showSummary(show)
+          : artist
+            ? `${plural(artist.albums.length, "album", "albums")} · ${plural(artist.tracks, "track", "tracks")}`
+            : "",
+    });
+  }
   const videoDownload = (item) => (folder && item?.path ? itemDownload(videoDownloads.get(downloadKey(folder.id, item.path)), item) : null);
   function startDownload(items) {
     if (folder) downloads.current?.add(folder.id, items).catch(() => {});
@@ -1242,10 +1332,7 @@ export default function App() {
         : null
       : shownMusic?.library;
   const [audioSymbols, setAudioSymbols] = useState({});
-  const audioIds = locals
-    .filter((f) => isMusicFolder(catalog, f.id))
-    .map((f) => f.id)
-    .join("\n");
+  const audioIds = [...locals.filter((f) => isMusicFolder(catalog, f.id)).map((f) => f.id), ...(status.streamed ? status.streamed.split("\n") : [])].join("\n");
   useEffect(() => {
     if (!replica?.scope || !audioIds || screen !== "Folders" || folder) return undefined;
     let active = true;
@@ -1334,7 +1421,23 @@ export default function App() {
       if (at > 0) await player.command("seek", at * 1000);
     });
   }
-  function deleteTrack(track) {
+  function deleteTrack(track, streamed = false) {
+    if (streamed) {
+      confirm(confirmCopy.deleteTrack(track.title, false), () =>
+        run(
+          async () => {
+            await client.api("/v1/delete-file", { volume: track.folder, path: track.path, rev: track.rev });
+            if (parseTrackNode(playingId)?.track === track.id) await player.command("stop").catch(() => {});
+            await audioManager.current?.remove(track.folder, track.path);
+            await refreshStreamed(engine.current, track.folder).catch(() => {});
+            setSheet(null);
+            setMusicEdits((count) => count + 1);
+          },
+          { success: "Track deleted", hubOnly: true },
+        ),
+      );
+      return;
+    }
     confirm(
       confirmCopy.deleteTrack(track.title, !connected || status.paused),
       () =>
@@ -1632,15 +1735,22 @@ export default function App() {
     };
   };
   const folderKind = (f) => (galleryFolder(f) ? "photos" : isMusicFolder(catalog, f.id) ? "audio" : isVideoFolder(catalog, f.id) ? "video" : "folders");
-  const streamedVolumes = volumes.filter((v) => isVideoFolder(catalog, v.id) && !locals.some((f) => f.id === v.id));
+  const streamedVolumes = volumes.filter(
+    (v) => (isVideoFolder(catalog, v.id) || (isMusicFolder(catalog, v.id) && streamedSet.has(v.id))) && !locals.some((f) => f.id === v.id),
+  );
+  const streamedCaption = (v) => {
+    if (isVideoFolder(catalog, v.id)) return `${folderSize(v)} · Streams from hub`;
+    const saved = [...audioDownloads.values()].filter((row) => row.volume === v.id && row.state === "done");
+    return saved.length ? `${fileCount(saved.length)} · ${bytes(saved.reduce((total, row) => total + (row.size || 0), 0))} local` : "Streams from hub";
+  };
   const streamedRow = (v, index) => (
     <FolderRow
       key={v.id}
       grouped
       divider={index > 0}
       name={v.name}
-      icon="clapperboard"
-      description={`${folderSize(v)} · Streams from hub`}
+      icon={isVideoFolder(catalog, v.id) ? "clapperboard" : audioSymbols[v.id] || "music"}
+      description={unbroken(streamedCaption(v))}
       onPress={() => openFolder({ id: v.id, name: v.name, selected: 0 }).catch((e) => setError(e.message))}
     />
   );
@@ -1711,7 +1821,8 @@ export default function App() {
   const toggleFavoriteEntry = (entry) => changeFavorites((value) => toggleFavorite(value, entry)).catch((e) => setError(e.message));
   const favoriteSheet = (entry, extra = {}) => setSheet({ kind: "favorite", entry, ...extra });
   function openFavorite(entry) {
-    const target = locals.find((f) => f.id === entry.folder && f.selected);
+    const remote = streamedVolumes.find((v) => v.id === entry.folder);
+    const target = locals.find((f) => f.id === entry.folder && f.selected) || (remote && { id: remote.id, name: remote.name, selected: 0 });
     if (!target) {
       changeFavorites((value) => withoutFavorites(value, [favoriteKey(entry)])).catch(() => {});
       return;
@@ -2109,6 +2220,27 @@ export default function App() {
   }
   async function unlink() {
     const target = folder;
+    if (audioStreaming) {
+      confirm(
+        confirmCopy.stopStreaming({
+          name: target.name,
+          files: audioLocal.length,
+          size: audioLocal.reduce((total, row) => total + (row.size || 0), 0),
+        }),
+        () =>
+          run(
+            async () => {
+              if (playingFolder(playingId) === target.id) await player.command("stop").catch(() => {});
+              await engine.current.stopStreaming(target.id);
+              setSheet(null);
+              setFolder(null);
+              setView("Folders");
+            },
+            { label: "Stopping sync…" },
+          ),
+      );
+      return;
+    }
     const local = locals.find((f) => f.id === target.id);
     const sourceOnly = galleryConfig(local)?.mode === "source";
     confirm(
@@ -2201,11 +2333,12 @@ export default function App() {
     }),
     [entries],
   );
-  const folderSubtitle = unbroken(`${photoFolder ? (mediaCounts ? mediaSummary(mediaCounts.photos, mediaCounts.videos) : "— photos") : musicView && shownMusic ? librarySummary(shownMusic.library) : fileCount(entrySummary.files)} · ${bytes(entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`);
+  const folderSubtitle = unbroken(`${photoFolder ? (mediaCounts ? mediaSummary(mediaCounts.photos, mediaCounts.videos) : "— photos") : musicView && shownMusic ? librarySummary(shownMusic.library) : fileCount(entrySummary.files)} · ${bytes(audioStreaming ? audioLocal.reduce((total, row) => total + (row.size || 0), 0) : entrySummary.bytes)} local${status.paused ? " · Paused" : ""}`);
   const musicShown = musicView && shownMusic?.library?.tracks.size ? shownMusic.library : null;
   const searchable = !!connection && locals.some((f) => f.selected);
   const musicAt = musicShown ? musicPane(musicRoute, wide) : null;
   const musicDeep = !!musicAt && musicAt.level > 0;
+  const musicPageMenu = musicDeep && !wide ? musicMenu(musicRoute[musicAt.level], musicShown, audioStreaming) : null;
   const musicArtist =
     musicDeep && wide && musicRoute[musicAt.level].kind === "artist"
       ? musicShown.artists.find((item) => item.id === musicRoute[musicAt.level].id) || null
@@ -2673,7 +2806,7 @@ export default function App() {
             <Button
               iconOnly
               ghost
-              label="Search Arca"
+              label="Search"
               icon="search"
               onPress={() => setGlobalSearch(true)}
             />
@@ -2811,6 +2944,18 @@ export default function App() {
                               : setFolder(null)
                           }
                         />
+                        {!!musicPageMenu && (
+                          <Button
+                            iconOnly
+                            label={`${musicPageMenu.kind[0].toUpperCase()}${musicPageMenu.kind.slice(1)} actions`}
+                            icon="more"
+                            onPress={() =>
+                              musicPageMenu.kind === "playlist"
+                                ? setSheet({ kind: "playlist-actions", playlist: musicShown.playlists.get(musicPageMenu.id) })
+                                : musicCollectionSheet(musicPageMenu)
+                            }
+                          />
+                        )}
                         {stackedHeader && (
                           <View style={s.rowAction}>
                             {headerLead}
@@ -2874,7 +3019,7 @@ export default function App() {
                           <Button
                             iconOnly
                             ghost
-                            label="Search Arca"
+                            label="Search"
                             icon="search"
                             onPress={() => setGlobalSearch(true)}
                           />
@@ -3092,11 +3237,14 @@ export default function App() {
                             sync={() => startSync(true)}
                             reconnect={reconnect}
                             trackActions={(value) =>
-                              setSheet({ kind: "track-actions", ...value })
+                              setSheet({ kind: "track-actions", ...value, streamed: audioStreaming })
                             }
                             playlistActions={(playlist) =>
                               setSheet({ kind: "playlist-actions", playlist })
                             }
+                            collectionActions={musicCollectionSheet}
+                            streamed={audioStreaming}
+                            download={audioStreaming ? audioDownload : undefined}
                             resumeActions={(value) =>
                               setSheet({ kind: "resume-actions", ...value })
                             }
@@ -3398,35 +3546,36 @@ export default function App() {
                               changeFavorites((value) => withoutFavorites(value, [favoriteKey(entry)])).catch((e) => setError(e.message))
                             }
                           />
-                          {folderSections(folderRows.map((row) => row.item).filter((f) => !pinnedFolders.has(f.id)), folderKind).map((section) => (
+                          {folderSections(
+                            [
+                              ...folderRows.map((row) => row.item).filter((f) => !pinnedFolders.has(f.id)),
+                              ...streamedVolumes.map((v) => ({ ...v, streamed: true })),
+                            ],
+                            (f) => (f.streamed ? (isVideoFolder(catalog, f.id) ? "video" : "audio") : folderKind(f)),
+                          ).map((section) => (
                             <Section key={section.kind}>
                               <Eyebrow>{section.label}</Eyebrow>
                               <View style={s.group}>
-                                {section.folders.map((f, index) => (
-                                  <Rise
-                                    key={f.id}
-                                    tint={c.tint}
-                                    leaving={folderLeaving.has(f.id)}
-                                    onLeft={() => folderLeft(f.id)}
-                                    {...folderMotion(f.id)}
-                                  >
-                                    {folderRowFor(f, index)}
-                                  </Rise>
-                                ))}
-                                {section.kind === "video" &&
-                                  streamedVolumes.map((v, index) => streamedRow(v, section.folders.length + index))}
+                                {section.folders.map((f, index) =>
+                                  f.streamed ? (
+                                    streamedRow(f, index)
+                                  ) : (
+                                    <Rise
+                                      key={f.id}
+                                      tint={c.tint}
+                                      leaving={folderLeaving.has(f.id)}
+                                      onLeft={() => folderLeft(f.id)}
+                                      {...folderMotion(f.id)}
+                                    >
+                                      {folderRowFor(f, index)}
+                                    </Rise>
+                                  ),
+                                )}
                               </View>
                             </Section>
                           ))}
-                          {!!streamedVolumes.length &&
-                            !locals.some((f) => folderKind(f) === "video" && !pinnedFolders.has(f.id)) && (
-                              <Section>
-                                <Eyebrow>Movies & TV</Eyebrow>
-                                <View style={s.group}>{streamedVolumes.map(streamedRow)}</View>
-                              </Section>
-                            )}
                           {volumes.some(
-                            (v) => !locals.some((f) => f.id === v.id) && !isVideoFolder(catalog, v.id),
+                            (v) => !locals.some((f) => f.id === v.id) && !streamedVolumes.some((item) => item.id === v.id),
                           ) && (
                             <Section>
                               <Eyebrow>
@@ -3435,7 +3584,7 @@ export default function App() {
                               <View style={s.availableGroup}>
                                 {volumes
                                   .filter(
-                                    (v) => !locals.some((f) => f.id === v.id) && !isVideoFolder(catalog, v.id),
+                                    (v) => !locals.some((f) => f.id === v.id) && !streamedVolumes.some((item) => item.id === v.id),
                                   )
                                   .map((v, index) => (
                                     <FolderRow
@@ -3568,6 +3717,7 @@ export default function App() {
                             r,
                             client.state().catalog,
                             ids,
+                            (v) => playerAvailable && isMusicFolder(client.state().catalog, v.id),
                           );
                           setView("Folders");
                           r.sync();
@@ -3605,7 +3755,7 @@ export default function App() {
                       )}
                       {!connection && (
                         <Text style={[s.caption, s.centerText]}>
-                          No Arca account or password. Your connection
+                          No account or password. Your connection
                           credential is stored securely on this device.
                         </Text>
                       )}
@@ -3975,7 +4125,7 @@ export default function App() {
                         <Eyebrow>Service</Eyebrow>
                         <SettingsGroup>
                           <Card
-                            title={`Arca v${Application.nativeApplicationVersion || config.expo.version}`}
+                            title={`v${Application.nativeApplicationVersion || config.expo.version}`}
                             actions={
                               <Button
                                 label="Copy diagnostics"
@@ -4064,7 +4214,7 @@ export default function App() {
                             }
                           >
                             <Text style={s.caption}>
-                              Adjust text in Arca alongside your system text
+                              Adjust text in the app alongside your system text
                               size. Applies to phone and Fold layouts.
                             </Text>
                           </Card>
@@ -4428,6 +4578,7 @@ export default function App() {
                   change={changePlaylist}
                   remove={deletePlaylist}
                   removeTrack={deleteTrack}
+                  downloads={audioDownloadActions}
                   favorite={{
                     has: (entry) => isFavorite(favorites, entry),
                     toggle: toggleFavoriteEntry,
@@ -4491,6 +4642,7 @@ export default function App() {
               {shownSheet.kind === "folder-actions" &&
                 folder?.id === shownSheet.volume.id && (
                   <>
+                    {!audioStreaming && (
                     <View style={s.actionGroup}>
                       {writable && (
                         <ActionRow
@@ -4616,7 +4768,8 @@ export default function App() {
                         }}
                       />
                     </View>
-                    <View style={s.destructiveActionGroup}>
+                    )}
+                    <View style={audioStreaming ? s.actionGroup : s.destructiveActionGroup}>
                       <ActionRow
                         label="Stop syncing…"
                         icon="unlink"
@@ -4636,33 +4789,55 @@ export default function App() {
                   canDownload={(item) => downloadable(item, Platform.OS)}
                 />
               )}
-              {shownSheet.kind === "select" && (
-                <>
-                  <Card title="Start syncing">
-                    <Text style={s.text}>
-                      Download this folder and keep it in sync.
-                    </Text>
-                    <Text style={s.caption}>
-                      {Number.isFinite(shownSheet.volume.bytes)
-                        ? `Needs ${bytes(shownSheet.volume.bytes)} · `
-                        : ""}
-                      {bytes(status.free)} free
-                    </Text>
-                  </Card>
-                  <Button
-                    label="Start syncing"
-                    primary
-                    busy={busy}
-                    onPress={() =>
-                      run(async () => {
-                        await engine.current.select(shownSheet.volume);
-                        setSheet(null);
-                        startSync();
-                      })
-                    }
-                  />
-                </>
-              )}
+              {shownSheet.kind === "select" &&
+                (playerAvailable && isMusicFolder(catalog, shownSheet.volume.id) ? (
+                  <>
+                    <Card title="Stream from the hub">
+                      <Text style={s.text}>
+                        Download tracks or albums to listen offline.
+                      </Text>
+                    </Card>
+                    <Button
+                      label="Start streaming"
+                      icon="play"
+                      primary
+                      busy={busy}
+                      onPress={() =>
+                        run(async () => {
+                          await engine.current.streamMusic(shownSheet.volume);
+                          setSheet(null);
+                          startSync();
+                        })
+                      }
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Card title="Start syncing">
+                      <Text style={s.text}>
+                        Download this folder and keep it in sync.
+                      </Text>
+                      <Text style={s.caption}>
+                        {Number.isFinite(shownSheet.volume.bytes)
+                          ? `Needs ${bytes(shownSheet.volume.bytes)} · `
+                          : ""}
+                        {bytes(status.free)} free
+                      </Text>
+                    </Card>
+                    <Button
+                      label="Start syncing"
+                      primary
+                      busy={busy}
+                      onPress={() =>
+                        run(async () => {
+                          await engine.current.select(shownSheet.volume);
+                          setSheet(null);
+                          startSync();
+                        })
+                      }
+                    />
+                  </>
+                ))}
               {shownSheet.kind === "conflict" && (
                 <>
                   <Text style={s.text}>

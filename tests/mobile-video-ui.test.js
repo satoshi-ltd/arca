@@ -15,14 +15,14 @@ test("a video folder opens on its library with the clapperboard tile, even when 
   assert.match(app, /isVideoFolder\(catalog, f\.id\) && !galleryConfig\(f\)\s+\? "video"/, "opening a video folder starts on the library");
   const glyph = app.match(/const folderIcon = ([^;]+);/)[1];
   assert.equal(vm.runInNewContext(glyph, { photoFolder: false, musicFolder: false, videoFolder: true, librarySymbol: () => "music", shownMusic: null }), "clapperboard");
-  assert.match(app, /const streamedVolumes = volumes\.filter\(\(v\) => isVideoFolder\(catalog, v\.id\) && !locals\.some\(\(f\) => f\.id === v\.id\)\);/);
+  assert.match(app, /const streamedVolumes = volumes\.filter\(\s+\(v\) => \(isVideoFolder\(catalog, v\.id\) \|\| \(isMusicFolder\(catalog, v\.id\) && streamedSet\.has\(v\.id\)\)\) && !locals\.some\(\(f\) => f\.id === v\.id\),\s+\);/);
   assert.match(app, /onPress=\{\(\) => openFolder\(\{ id: v\.id, name: v\.name, selected: 0 \}\)\.catch/, "a video folder on the hub opens to stream instead of asking to sync");
   const streamed = app.slice(app.indexOf("const streamedRow"), app.indexOf("const streamedRow") + 600);
   assert.doesNotMatch(streamed, /disabled=/, "its cached list stays browsable offline");
-  const home = app.slice(app.indexOf("{folderSections(folderRows"), app.indexOf("Loading shared folders"));
-  assert.match(home, /\{section\.kind === "video" &&\s+streamedVolumes\.map\(\(v, index\) => streamedRow\(v, section\.folders\.length \+ index\)\)\}/, "streamed folders join the Movies & TV section");
-  assert.match(home, /<Eyebrow>Movies & TV<\/Eyebrow>\s+<View style=\{s\.group\}>\{streamedVolumes\.map\(streamedRow\)\}<\/View>/, "or form it when no selected video folder does");
-  assert.match(home, /!locals\.some\(\(f\) => f\.id === v\.id\) && !isVideoFolder\(catalog, v\.id\)/, "and never sit under On hub · not selected");
+  const home = app.slice(app.indexOf("{folderSections("), app.indexOf("Loading shared folders"));
+  assert.match(home, /\.\.\.streamedVolumes\.map\(\(v\) => \(\{ \.\.\.v, streamed: true \}\)\),/, "streamed folders join their kind's section, or form it when no selected folder does");
+  assert.match(home, /f\.streamed \? \(\s+streamedRow\(f, index\)/);
+  assert.match(home, /!locals\.some\(\(f\) => f\.id === v\.id\) && !streamedVolumes\.some\(\(item\) => item\.id === v\.id\)/, "and never sit under On hub · not selected");
   assert.match(read("home-data.js"), /\{ kind: "video", label: "MOVIES & TV" \}/);
   assert.match(app, /\{\(!videoStreaming \|\| !!currentFolder\?\.selected\) && \(\s+<Button\s+iconOnly\s+label="Folder actions"/, "a streamed folder offers no syncing; an old copy still has its actions so it can be removed");
   assert.doesNotMatch(app, /videoStreaming\s+\? volumes\.some/);
@@ -242,8 +242,10 @@ test("a movie page offers Download in its dock and every episode row shows only 
   assert.match(dock, /\{ring \? <Ring large value=\{value\} \/> : <Icon name=\{icon\} size=\{20\} color=\{c\.ink\} \/>\}/);
   assert.match(theme, /videoDockTile: \{\s+flex: 1,\s+minWidth: 0,/, "the tiles share the column equally");
   const episode = library.slice(library.indexOf("function EpisodeState("), library.indexOf("function VideoCard("));
-  assert.match(episode, /\{ep\.watched && <Icon name="check" size=\{20\} color=\{c\.accent\} \/>\}\s+\{chip && \(\s+<View accessible accessibilityLabel=\{downloadLabel\(row\)\}>\s+<Tag variant=\{chip\.variant\}>\{chip\.label\}<\/Tag>/, "the watched check stays beside the state tag in every state");
-  assert.doesNotMatch(episode, /Pressable|onPress|cancel|Ring|"download"/, "an episode row holds no download or cancel button");
+  assert.match(episode, /\{ep\.watched && <Icon name="check" size=\{20\} color=\{c\.accent\} \/>\}\s+<DownloadGlyph glyph=\{glyph\} \/>/, "the watched check stays beside one state glyph in every state");
+  assert.match(read("components.jsx"), /export function DownloadGlyph\(\{ glyph \}\) \{[\s\S]{0,120}if \(!glyph\) return null;\s+return \(\s+<View accessible accessibilityLabel=\{glyph\.label\} style=\{s\.videoGlyph\}>\s+\{glyph\.icon \? <Icon name=\{glyph\.icon\} size=\{20\} color=\{c\.mute\} \/> : <ProgressRing fraction=\{glyph\.ring\} size=\{17\} thickness=\{2\} \/>\}/);
+  assert.doesNotMatch(episode, /<Tag\b/, "no text tag for the download state");
+  assert.doesNotMatch(episode, /Pressable|onPress|cancel|<Ring\b|"download"/, "an episode row holds no download or cancel button");
   assert.match(library, /<EpisodeState ep=\{ep\} row=\{row\} \/>\s+\{!!more && \([\s\S]*?\)\}\s+<\/PressScale>/);
   assert.doesNotMatch(library, /Downloading season|seasonProgress|running\.active/, "the season has no progress line and no Cancel");
   assert.doesNotMatch(library, /Download season|missing\.length/, "the season picker has no general download; each episode downloads on its own");
@@ -252,7 +254,7 @@ test("a movie page offers Download in its dock and every episode row shows only 
   assert.match(library, /download: \[downloadTile\(row, true\)\.label, "download"\]/, "the sheet says Download, Download again or Try again like the tile");
   assert.match(library, /const actions = titleActions\(sheet\.item, saved\);/);
   assert.match(library, /\{card\.saved && <Saved \/>\}/);
-  assert.match(library, /<Icon name="arrow-down-to-line" size=\{14\} color=\{c\.onMedia\} \/>/, "posters carry a small download badge");
+  assert.match(library, /<Icon name="circle-arrow-down" size=\{14\} color=\{c\.onMedia\} \/>/, "posters carry a small download badge");
   assert.match(theme, /videoSaved: \{\s+position: "absolute",\s+top: 6,\s+left: 6,/);
 });
 
@@ -270,10 +272,10 @@ test("the app plays downloads without the hub, queues positions and resumes down
   assert.match(app, /playbackCues\(\{\s+downloads: downloads\.current,[\s\S]{0,200}load: \(\) => loadSubtitles\(/);
   assert.match(app, /const manager = createVideoDownloads\(\{ replica, client, onChange: setVideoDownloads \}\);/, "downloads run on any network that reaches the hub");
   assert.match(app, /const fresh = await refreshVideoLibrary\(replica, folder\.id, \{ signal: controller\.signal, downloads: downloads\.current \}\);/, "only a fresh library from the hub removes downloads");
-  assert.match(app, /if \(catalog\) downloads\.current\?\.pruneVolumes\(catalog\)\.catch\(\(\) => \{\}\);/);
+  assert.match(app, /if \(!catalog\) return;\s+downloads\.current\?\.pruneVolumes\(catalog\)\.catch\(\(\) => \{\}\);\s+audioManager\.current\?\.pruneVolumes\(catalog\)\.catch\(\(\) => \{\}\);/);
   assert.doesNotMatch(app, /cachedVideoLibrary\([^)]*downloads/);
-  assert.match(app, /if \(!connected \|\| status\.offline \|\| !replica\?\.scope\) return;\s+downloads\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+flushPositions\(\{ client, replica \}\)/);
-  assert.match(app, /network\?\.addNetworkStateListener\(\(\) => downloads\.current\?\.resume\(\)/);
+  assert.match(app, /if \(!connected \|\| status\.offline \|\| !replica\?\.scope\) return;\s+downloads\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+audioManager\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+flushPositions\(\{ client, replica \}\)/);
+  assert.match(app, /network\?\.addNetworkStateListener\(\(\) => \{\s+downloads\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+audioManager\.current\?\.resume\(\)/);
   const load = app.slice(app.indexOf("const cached = await cachedVideoLibrary(replica, folder.id);"), app.indexOf("const shownVideo ="));
   assert.match(load, /await withQueuedPositions\(replica, folder\.id, cached\);/, "offline, the list resumes from positions still queued");
   assert.ok(load.indexOf("flushPositions") < load.indexOf("refreshVideoLibrary"), "queued positions reach the hub before the list is read again");

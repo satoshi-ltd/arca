@@ -509,11 +509,12 @@ test("a HEIC the phone cannot decode goes straight to the hub preview: no JS fal
   assert.equal(isDecodeFailure(undefined), true);
   assert.equal(isDecodeFailure("boom"), true);
   assert.equal(isDecodeFailure(new Error("Call to function 'ArcaNetwork.thumbnail' has been rejected. Caused by: java.io.FileNotFoundException: /x.heic (No such file or directory)")), false);
+  assert.equal(isDecodeFailure(new Error("Thumbnail is outside the app cache")), false);
   assert.equal(isDecodeFailure(new Error("Thumbnail is outside Arca cache")), false);
   assert.equal(isDecodeFailure(new Error("Invalid thumbnail size")), false);
   assert.equal(isDecodeFailure(new Error("Could not encode the thumbnail")), false);
   assert.equal(isDecodeFailure(new Error("open failed: EACCES (Permission denied)")), false);
-  assert.equal(isDecodeFailure(new Error("File is outside Arca storage")), false);
+  assert.equal(isDecodeFailure(new Error("File is outside app storage")), false);
   assert.equal(isDecodeFailure(new Error("Could not save the thumbnail")), false);
   assert.equal(isDecodeFailure(new Error("/data/x.heic (No such file or directory)")), false);
 
@@ -548,7 +549,7 @@ test("a HEIC the phone cannot decode goes straight to the hub preview: no JS fal
   }
 
   calls.length = 0;
-  const outside = new Error("File is outside Arca storage");
+  const outside = new Error("File is outside app storage");
   assert.equal(await run(true, "b:1:1", outside), "js-uri");
   assert.equal(await run(true, "b:1:1", outside), "js-uri");
   assert.deepEqual(calls, ["native:b:1:1", "js:b:1:1", "native:b:1:1", "js:b:1:1"], "a non-decode error keeps the JS fallback and is not memoized");

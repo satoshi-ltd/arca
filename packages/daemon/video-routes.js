@@ -51,10 +51,10 @@ export async function forward(engine, route, body, timeout = body === undefined 
   }
 }
 
-async function proxy(context, route, { text = false, timeout = null } = {}) {
+export async function proxy(context, route, { text = false, timeout = null, offline = VIDEO_OFFLINE } = {}) {
   const { engine, req, res } = context;
   const hub = engine.config.hub;
-  if (!hub || engine.hubUnavailable) fail(VIDEO_OFFLINE, 503);
+  if (!hub || engine.hubUnavailable) fail(offline, 503);
   const controller = new AbortController();
   const close = () => controller.abort();
   res.once("close", close);
@@ -75,12 +75,12 @@ async function proxy(context, route, { text = false, timeout = null } = {}) {
   } catch {
     clearTimeout(idle);
     res.off("close", close);
-    fail(VIDEO_OFFLINE, 503);
+    fail(offline, 503);
   }
   if ([502, 503, 504].includes(response.status) && !(response.status === 502 && /json/.test(response.headers.get("content-type") || ""))) {
     clearTimeout(idle);
     res.off("close", close);
-    fail(VIDEO_OFFLINE, 503);
+    fail(offline, 503);
   }
   const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
   for (const name of PROXY_HEADERS) {
@@ -125,9 +125,16 @@ export async function streamVideo(context, volume, name, hash) {
     if (!req.headers.range || /^bytes=0-/.test(req.headers.range)) video.warmSubtitles(volume, name, hash);
     return streamGalleryMedia(req, res, media);
   }
-  const local = context.engine.videoDownloads?.local(volume, name, hash);
+  const downloads = context.engine.videoDownloads;
+  const local = downloads?.local(volume, name, hash);
   if (local) return streamGalleryMedia(req, res, local);
-  return proxy(context, `/v1/video/media?${new URLSearchParams({ volume, path: name, hash })}`);
+  try {
+    return await proxy(context, `/v1/video/media?${new URLSearchParams({ volume, path: name, hash })}`);
+  } catch (error) {
+    const standIn = error.status === 503 && !res.headersSent ? downloads?.standIn(volume, name) : null;
+    if (!standIn) throw error;
+    return streamGalleryMedia(req, res, standIn);
+  }
 }
 
 export async function sendSubtitles(context, volume, name, json = false, embedded = null) {
@@ -181,6 +188,7 @@ export async function replicaLibrary(context, volume, known, stop = null) {
     else if (answer.unchanged) value = await forward(engine, `/v1/video/library?${new URLSearchParams({ volume })}`, undefined, undefined, stop);
     else value = answer;
     engine.videoDownloads?.pruneLibrary(volume, value);
+    engine.videoDownloads?.reconcile(volume, value);
     if (!value.unchanged) {
       s.db.prepare("INSERT OR REPLACE INTO remote_views(key,value,used) VALUES(?,?,?)").run(key, JSON.stringify(value), Date.now());
       s.db.exec("DELETE FROM remote_views WHERE key NOT IN (SELECT key FROM remote_views ORDER BY used DESC LIMIT 64)");
@@ -294,7 +302,7 @@ async function compatible(context) {
     video.warmSubtitles(volume, name, hash);
     return launch(media.file, item);
   }
-  const local = engine.videoDownloads?.local(volume, name, hash);
+  const local = engine.videoDownloads?.local(volume, name, hash) || (engine.hubUnavailable ? engine.videoDownloads?.standIn(volume, name) : null);
   if (local?.item) return launch(local.file, local.item);
   const answer = await forward(engine, `/v1/video/compatible?${query}`);
   latest();
@@ -376,7 +384,7 @@ export async function videoRoute(context) {
         item = video.entry(volume, name);
       } else {
         const listed = await replicaLibrary(context, volume, null);
-        const local = engine.videoDownloads?.local(volume, name, hash);
+        const local = engine.videoDownloads?.local(volume, name, hash) || (listed.offline ? engine.videoDownloads?.standIn(volume, name) : null);
         item = fileOf(listed, name) || local?.item;
         if (listed.offline && item && !local) fail(VIDEO_OFFLINE, 503);
       }
@@ -448,7 +456,10 @@ export async function videoRoute(context) {
   if (DOWNLOAD_ROUTES.includes(route)) {
     requireDownloads();
     if (route === "/v1/video/download") return send(200, await engine.videoDownloads.queue(body.volume, body.paths));
+    if (s.mediaMode(body.volume) === "keep" && route === "/v1/video/download/cancel")
+      fail("This library is kept on this device. Stop syncing it to stop its downloads.", 409);
     if (route === "/v1/video/download/cancel") return send(200, engine.videoDownloads.cancel(body.volume, body.paths));
+    if (s.mediaMode(body.volume) === "keep") fail("This library is kept on this device. Stop syncing it to remove its titles.", 409);
     return send(200, engine.videoDownloads.remove(body.volume, body.paths));
   }
   if (MANAGED.includes(route)) {

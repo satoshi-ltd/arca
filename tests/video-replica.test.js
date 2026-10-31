@@ -112,7 +112,7 @@ test("a replica that has not selected a video folder browses, streams with range
   await assert.rejects(r.call(`/v1/video/library?volume=${f.v.id}`, undefined, phone.token), { status: 401 }, "only the replica's own administrator uses its video routes");
 });
 
-test("a replica never keeps a Movies & TV folder: selecting is refused and an earlier copy is forgotten with its files kept", async (t) => {
+test("a replica never syncs a Movies & TV folder: selecting streams it, a server never keeps it, and an earlier copy is forgotten with its files kept", async (t) => {
   const f = await hub(t);
   const film = clip({ seconds: 2, tone: 3000 });
   const hash = await f.propose("Heat (1995)/Heat (1995).mp4", film);
@@ -126,7 +126,12 @@ test("a replica never keeps a Movies & TV folder: selecting is refused and an ea
   await r.replica.engine.cycle();
   assert.equal(r.replica.engine.store.volumes().some((v) => v.id === f.v.id), false, "once it becomes a video library the replica lets it go");
   assert.ok(fs.existsSync(local), "and keeps every file it had");
-  await assert.rejects(r.call("/v1/select", { id: f.v.id }), { status: 409, message: "Movies & TV folders live only on the hub. Play them from the library." });
+  assert.deepEqual(await r.call("/v1/select", { id: f.v.id }), { id: f.v.id, name: "Videos", mode: "stream" }, "selecting streams it");
+  assert.equal(r.replica.engine.store.volumes().some((v) => v.id === f.v.id), false, "streaming makes no local folder");
+  await assert.rejects(r.call("/v1/select", { id: f.v.id, mode: "keep" }), { status: 409, message: "Stop syncing this library before choosing again." });
+  await r.call("/v1/unselect", { id: f.v.id });
+  await assert.rejects(r.call("/v1/select", { id: f.v.id, mode: "keep" }), { status: 409, message: "Keep Movies & TV on the desktop app. A server streams them from the hub." });
+  assert.deepEqual(r.replica.engine.store.mediaModes(), {});
   assert.equal(r.replica.engine.promotionPlan().catalog.some((v) => v.id === f.v.id), false, "a video folder never blocks promoting this replica");
   const listed = await r.call(`/v1/video/library?volume=${f.v.id}`);
   assert.equal(listed.movies[0].hash, hash, "the library still streams from the hub");

@@ -186,7 +186,7 @@ test("a newer index schema is refused and an extra column never breaks an insert
   const raw = new DatabaseSync(path.join(home, "index.sqlite"));
   raw.exec(`PRAGMA user_version=${SCHEMA_VERSION + 1}`);
   raw.close();
-  assert.throws(() => new Store(home), /newer Arca/);
+  assert.throws(() => new Store(home), /newer version/);
 });
 
 test("the Windows Recycle Bin batches stay under the environment limit", async () => {

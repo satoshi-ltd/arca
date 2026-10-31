@@ -388,7 +388,7 @@ test("retrying a failed download keeps its partial file, and a full disk says so
   };
   await r.downloads.wake();
   const [full] = await rows(r, f);
-  assert.deepEqual([full.state, full.error, full.done], ["failed", "Not enough free space on this computer to finish the download", kept]);
+  assert.deepEqual([full.state, full.error, full.done], ["failed", "Not enough free space on this device to finish the download", kept]);
   r.downloads.fetchMedia = fetchMedia;
   proxy.control.cut = null;
   proxy.control.ranges.length = 0;

@@ -83,7 +83,7 @@ test("the notice is the error notice drawn on the board, with the message and th
   assert.equal(notice.kind, "error");
   assert.equal(notice.id, "crash");
   assert.equal(notice.icon, "circle-alert");
-  assert.equal(notice.title, "Arca closed unexpectedly");
+  assert.equal(notice.title, "The app closed unexpectedly");
   assert.equal(notice.body, "Your files are safe. The error was saved on this phone.");
   assert.equal(notice.details, "TypeError: undefined is not an object · Sep 30, 21:14");
   assert.equal("action" in notice, false, "Dismiss, Details and Copy are the whole interface");

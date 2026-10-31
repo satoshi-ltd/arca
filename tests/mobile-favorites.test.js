@@ -93,11 +93,11 @@ test("the phone pins places in Favorites and the Fold opens them from a drawer",
   const components = read("components.jsx");
   const library = read("MusicLibrary.jsx");
   const root = app.slice(app.indexOf("<FavoritesSection"), app.indexOf("On hub · not selected"));
-  assert.match(root, /items=\{shownFavorites\}[\s\S]*\{folderSections\(folderRows\.map\(\(row\) => row\.item\)\.filter\(\(f\) => !pinnedFolders\.has\(f\.id\)\), folderKind\)/, "Favorites sits before the folder sections and holds every pinned entry");
+  assert.match(root, /items=\{shownFavorites\}[\s\S]*\{folderSections\(\s*\[\s*\.\.\.folderRows\.map\(\(row\) => row\.item\)\.filter\(\(f\) => !pinnedFolders\.has\(f\.id\)\),/, "Favorites sits before the folder sections and holds every pinned entry");
   assert.match(app, /const folderRowFor = \(f, index\) => \{[\s\S]*?<FolderRow[\s\S]*?onLongPress=\{\(\) =>\s+favoriteSheet\(\s+\{ folder: f\.id, kind: "folder", target: "", label: f\.name \},/, "a folder row pins on long press on phone and Fold alike");
   assert.match(app, /const key = `favorites:\$\{r\.scope\}`;/, "favorites live in the app's own storage");
   assert.doesNotMatch(app, /api\([^)]*favorites/i, "favorites are never sent to the hub");
-  assert.match(app, /reconcileFavorites\(value, folders\.filter\(\(f\) => f\.selected\)\)/);
+  assert.match(app, /reconcileFavorites\(value, \[\.\.\.folders\.filter\(\(f\) => f\.selected\), \.\.\.streamed\.map\(\(id\) => \(\{ id \}\)\)\]\)/);
   assert.doesNotMatch(app + favorites, /more on hub|openHub|seen/, "no row for the hub's other folders and no folder bookkeeping");
   assert.match(favorites, /if \(!rows\.length\) return null;/, "the phone section hides when empty");
   assert.match(favorites, /\{rows\.length > 0 && \(\s+<ScrollView[\s\S]*?<SectionHead/, "the drawer's Favorites list hides when empty");

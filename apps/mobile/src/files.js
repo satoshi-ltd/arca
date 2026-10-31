@@ -68,6 +68,11 @@ export const files = {
       throw new Error("Invalid download");
     return new File(root, id(scope), "video-downloads", id(volume), name).uri;
   },
+  audioDownload(scope, volume, name) {
+    if (!DOWNLOAD_NAME.test(name))
+      throw new Error("Invalid download");
+    return new File(root, id(scope), "audio-downloads", id(volume), name).uri;
+  },
 
   parent: (uri) => Paths.dirname(uri),
   async mkdir(uri) {
@@ -91,6 +96,10 @@ export const files = {
   },
   async free() {
     return Paths.availableDiskSpace;
+  },
+  async removeAudioDownloads(scope, volume) {
+    const directory = new Directory(root, id(scope), "audio-downloads", id(volume));
+    if (directory.exists) directory.delete();
   },
   async removeFolder(scope, volume) {
     this.clearGalleryCache();

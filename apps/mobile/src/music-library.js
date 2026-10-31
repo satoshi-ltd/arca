@@ -76,6 +76,8 @@ export function trackTitle(track) {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? name.slice(0, dot) : name;
 }
+export const musicMediaRoute = (volume, item) => `/v1/music/media?${new URLSearchParams({ volume, path: item.path, hash: item.hash })}`;
+
 export function trackId(folder, path) {
   return `${folder}:${path}`;
 }
@@ -195,7 +197,7 @@ function folderPlaylists(folder, tracks, pending) {
           ? source.name.trim()
           : parsePlaylist("", path).name,
       hash: typeof hub.get(path)?.hash === "string" ? hub.get(path).hash : null,
-      editable: isEditablePlaylist(path),
+      editable: !folder.readOnly && isEditablePlaylist(path),
       entries,
       tracks: ready,
       cover: tracks.get(ready[0])?.cover || null,
@@ -231,7 +233,10 @@ export function buildLibrary(folders) {
         folder: folder.id,
         path: item.path,
         hash: typeof item.hash === "string" ? item.hash : null,
-        uri: folder.uri?.(item.path) ?? null,
+        uri: folder.uri?.(item.path, item.hash) ?? null,
+        stream: !!folder.stream?.(item.path, item.hash),
+        size: Number.isFinite(item.size) ? item.size : null,
+        rev: Number.isSafeInteger(item.rev) ? item.rev : null,
         title: podcast ? episodeTitle(item, albumName) : trackTitle(item),
         artist: podcast ? albumName : item.artist || item.albumArtist || UNKNOWN_ARTIST,
         albumArtist: item.albumArtist || null,
@@ -408,6 +413,7 @@ export function nativeLibrary(library, scope) {
     tracks: [...library.tracks.values()].map((track) => ({
       id: track.id,
       uri: track.uri,
+      ...(track.stream && { stream: true }),
       title: track.title,
       artist: track.artist,
       album: track.album,
@@ -669,6 +675,13 @@ export function musicSheet(sheet) {
         : "Not in this folder",
       menu: true,
     };
+  if (sheet?.kind === "music-actions")
+    return {
+      title: sheet.title,
+      icon: sheet.target.kind === "show" ? "podcast" : sheet.target.kind,
+      subtitle: sheet.subtitle,
+      menu: true,
+    };
   if (sheet?.kind === "add-to-playlist")
     return {
       title: "Add to playlist",
@@ -695,6 +708,16 @@ export function musicSheet(sheet) {
     };
   if (sheet?.kind === "rename-playlist")
     return { title: "Rename playlist", icon: "edit", subtitle: sheet.playlist.name };
+  return null;
+}
+
+export function musicMenu(item, library, streamed) {
+  if (!item || !library) return null;
+  if (item.kind === "playlist") return library.playlists.get(item.id)?.editable ? item : null;
+  if (!streamed) return null;
+  if (item.kind === "album") return library.albums.has(item.id) ? item : null;
+  if (item.kind === "show") return library.shows.has(item.id) ? item : null;
+  if (item.kind === "artist") return library.artists.some((artist) => artist.id === item.id) ? item : null;
   return null;
 }
 

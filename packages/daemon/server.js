@@ -57,7 +57,8 @@ import {
 } from "./maintenance.js";
 import { snapshotCapacity, snapshotPage } from "./snapshots.js";
 import { Web, hostName } from "./web.js";
-import { Engine, HUB_UNAVAILABLE, STREAM_ONLY, STREAM_ONLY_EDIT } from "./engine.js";
+import { Engine, HUB_UNAVAILABLE, STREAM_ONLY, STREAM_ONLY_EDIT, STREAMED_EDIT } from "./engine.js";
+import { fromHub, streamedCover, streamedLibrary, streamedMedia, streamedTrack, trackOf } from "./music-routes.js";
 import {
   Network,
   verifiedTailnetURL,
@@ -100,6 +101,12 @@ function equal(a, b) {
   const y = Buffer.from(b);
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
+const MUSIC_DOWNLOAD_ROUTES = [
+  "/v1/music/downloads",
+  "/v1/music/download",
+  "/v1/music/download/cancel",
+  "/v1/music/download/remove",
+];
 const heldLocks = new Set();
 function releaseLock(lock) {
   heldLocks.delete(lock);
@@ -443,11 +450,13 @@ export async function start(home, options = {}) {
         if (ticket.preview)
           return await sendPreview(ticket.volume, ticket.name, ticket.hash);
         if (pathname === "/v1/music/media")
-          return streamGalleryMedia(
-            req,
-            res,
-            music().media(ticket.volume, ticket.name, ticket.hash),
-          );
+          return ticket.streamed
+            ? await streamedMedia({ engine, req, res }, ticket.volume, ticket.name, ticket.hash)
+            : streamGalleryMedia(
+                req,
+                res,
+                music().media(ticket.volume, ticket.name, ticket.hash),
+              );
         return streamGalleryMedia(
           req,
           res,
@@ -459,7 +468,7 @@ export async function start(home, options = {}) {
       if (req.method === "POST" && req.url === "/pair") {
         if (config.role !== "hub") fail("Pair with a hub", 409);
         requireLanAccess();
-        if (req.headers.origin) fail("Use the local Arca client to pair", 403);
+        if (req.headers.origin) fail("Use the local app to pair", 403);
         pairingAttempts.check(remote);
         let b;
         try {
@@ -676,6 +685,10 @@ export async function start(home, options = {}) {
       const requireAdmin = () => {
         if (!admin) fail("Local administrator credential required", 403);
       };
+      const streamedAudio = (id) =>
+        config.role !== "hub" &&
+        s.mediaMode(id) === "stream" &&
+        !!config.catalog?.find((row) => row.id === id)?.music;
       const requireHub = () => {
         if (config.role !== "hub") fail("This device is not the hub", 409);
       };
@@ -1015,6 +1028,28 @@ export async function start(home, options = {}) {
           ),
         );
       }
+      if (MUSIC_DOWNLOAD_ROUTES.includes(route)) {
+        requireAdmin();
+        if (config.role === "hub") fail("Only the desktop app downloads tracks", 403);
+        if (browserSession || !["127.0.0.1", "::1"].includes(remote))
+          fail("Use the local desktop application", 403);
+        const downloads = engine.videoDownloads;
+        if (route === "/v1/music/downloads") {
+          if (req.method !== "GET") fail("Method not allowed", 405);
+          return send(200, downloads.list(url.searchParams.get("volume")));
+        }
+        if (req.method !== "POST") fail("Method not allowed", 405);
+        const b = await jsonBody();
+        checkCredential();
+        if (route === "/v1/music/download") {
+          if (!streamedAudio(b.volume))
+            fail("Stream this library from the hub to download from it", 409);
+          return send(200, await downloads.queue(b.volume, b.paths, "music"));
+        }
+        if (route === "/v1/music/download/cancel")
+          return send(200, downloads.cancel(b.volume, b.paths));
+        return send(200, downloads.remove(b.volume, b.paths));
+      }
       if (
         req.method === "GET" &&
         ["/v1/music/library", "/v1/music/cover"].includes(route)
@@ -1022,6 +1057,23 @@ export async function start(home, options = {}) {
         const volume = url.searchParams.get("volume");
         if (config.role !== "hub") {
           requireAdmin();
+          if (s.mediaMode(volume) === "stream") {
+            const context = { engine, s };
+            if (route === "/v1/music/cover")
+              return send(
+                200,
+                await streamedCover(
+                  context,
+                  volume,
+                  url.searchParams.get("key"),
+                  url.searchParams.get("size") === "large" ? "large" : "small",
+                ),
+              );
+            return send(
+              200,
+              await streamedLibrary(context, volume, url.searchParams.get("version")),
+            );
+          }
           if (!s.volume(volume).selected) fail("Select this folder first", 403);
         }
         if (route === "/v1/music/cover") {
@@ -1041,13 +1093,24 @@ export async function start(home, options = {}) {
         return send(200, library);
       }
       if (["/v1/music/playback", "/v1/music/media"].includes(route)) {
-        requireAdmin();
+        if (
+          !(
+            config.role === "hub" &&
+            route === "/v1/music/media" &&
+            device.role === "replica"
+          )
+        )
+          requireAdmin();
         if (!["GET", "HEAD"].includes(req.method))
           fail("Method not allowed", 405);
         const volume = url.searchParams.get("volume"),
           name = url.searchParams.get("path"),
           hash = url.searchParams.get("hash");
-        const media = music().media(volume, name, hash);
+        const streamed = config.role !== "hub" && s.mediaMode(volume) === "stream";
+        if (streamed && route === "/v1/music/media")
+          return await streamedMedia({ engine, req, res }, volume, name, hash);
+        if (streamed) await streamedTrack({ engine, s }, volume, name, hash);
+        const media = streamed ? null : music().media(volume, name, hash);
         if (route === "/v1/music/media")
           return streamGalleryMedia(req, res, media);
         const query = new URLSearchParams({ volume, path: name, hash });
@@ -1065,6 +1128,7 @@ export async function start(home, options = {}) {
           name,
           hash,
           music: true,
+          streamed,
           owner: config.adminToken,
           expires: Date.now() + 2 * 3600000,
         });
@@ -1737,6 +1801,7 @@ export async function start(home, options = {}) {
         }
         if (route === "/v1/music/playlist") {
           requireAdmin();
+          if (streamedAudio(b.volume)) fail(STREAMED_EDIT, 409);
           music();
           const result = await authorizedWork(() => engine.editPlaylist(b));
           if (!engine.paused) setImmediate(() => tick());
@@ -1841,6 +1906,7 @@ export async function start(home, options = {}) {
         if (route === "/v1/rename-file") {
           requireAdmin();
           if (s.streamOnly(b.volume)) fail(STREAM_ONLY_EDIT, 409);
+          if (streamedAudio(b.volume)) fail(STREAMED_EDIT, 409);
           return send(
             200,
             await authorizedWork(() =>
@@ -1849,8 +1915,24 @@ export async function start(home, options = {}) {
           );
         }
         if (route === "/v1/delete-file") {
+          if (admin && streamedAudio(b.volume)) {
+            const rev =
+              b.rev ??
+              trackOf(await streamedLibrary({ engine, s }, b.volume, null), b.path)?.rev;
+            const deleted = await fromHub(engine, "/v1/delete-file", null, {
+              volume: b.volume,
+              path: b.path,
+              rev,
+            });
+            engine.videoDownloads.forget(
+              engine.videoDownloads.rows(b.volume).filter((row) => row.path === b.path),
+            );
+            return send(200, deleted);
+          }
           const linked =
-            device.role === "player" || (device.role === "replica" && video().isVideo(b.volume));
+            device.role === "player" ||
+            (device.role === "replica" &&
+              (video().isVideo(b.volume) || music().isMusic(b.volume)));
           if (linked) {
             requireHub();
             validPath(b.path);
@@ -2041,7 +2123,7 @@ export async function start(home, options = {}) {
                 insidePath(v.path, location) && insidePath(location, v.path)
                   ? fs.existsSync(location)
                     ? `Already linked to "${v.name}". Choose another folder.`
-                    : `The directory is missing, but "${v.name}" is still registered in Arca. Its catalog and history were retained. Deleting the directory does not remove the share.`
+                    : `The directory is missing, but "${v.name}" is still registered on the hub. Its catalog and history were retained. Deleting the directory does not remove the share.`
                   : `This folder overlaps "${v.name}" (${v.path}). Choose a folder outside that share; parent and child folders cannot be shared separately.`,
               );
           }
@@ -2057,7 +2139,7 @@ export async function start(home, options = {}) {
             fail(
               fs.existsSync("/.dockerenv")
                 ? `This folder is not accessible inside Docker. Mount the host folder at ${location} and allow the Arca user to read and write it.`
-                : `Arca cannot read or write ${location}. Check this folder’s permissions.`,
+                : `Cannot read or write ${location}. Check this folder’s permissions.`,
               403,
             );
           }
@@ -2097,7 +2179,7 @@ export async function start(home, options = {}) {
               : (await engine.hubAction("/v1/catalog")).volumes;
           return send(
             200,
-            await authorizedWork(() => engine.select(b.id, b.path, volumes)),
+            await authorizedWork(() => engine.select(b.id, b.path, volumes, b.mode)),
           );
         }
         if (route === "/v1/delete-share") {
@@ -2123,6 +2205,19 @@ export async function start(home, options = {}) {
           }
         }
         if (route === "/v1/unselect") {
+          if (b.deleteFiles !== undefined && typeof b.deleteFiles !== "boolean")
+            fail("Choose whether to delete local files");
+          if (config.role !== "hub" && s.mediaMode(b.id))
+            return send(
+              200,
+              await authorizedWork(() => {
+                const audio = streamedAudio(b.id);
+                s.db.prepare("DELETE FROM media_modes WHERE volume=?").run(b.id);
+                if (b.deleteFiles) return { ...engine.videoDownloads.forgetVolume(b.id), kept: 0 };
+                if (audio) engine.videoDownloads.forgetVolume(b.id, "music");
+                return { retained: true };
+              }),
+            );
           s.volume(b.id);
           if (s.streamOnly(b.id))
             fail(

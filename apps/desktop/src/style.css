@@ -6531,6 +6531,31 @@ label.toggle {
 .icon-button.video-check {
   color: var(--green);
 }
+.music-downloadable .music-track {
+  grid-template-columns: minmax(0, 1fr) var(--control-height) var(--control-height);
+}
+.download-state {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--control-height);
+  height: var(--control-height);
+  color: var(--mute);
+}
+.download-ring {
+  width: 16px;
+  height: 16px;
+  transform: rotate(-90deg);
+  fill: none;
+  stroke-width: 1.75;
+}
+.download-ring-track {
+  stroke: var(--track);
+}
+.download-ring-fill {
+  stroke: var(--green);
+  stroke-linecap: round;
+}
 .settings-card.video-settings-card {
   overflow: visible;
 }

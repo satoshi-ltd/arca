@@ -66,10 +66,10 @@ export class ErrorBoundary extends React.Component {
     return (
       <View style={s.root}>
         <Text accessibilityRole="header" style={s.title}>
-          Arca stopped unexpectedly
+          The app stopped unexpectedly
         </Text>
         <Text style={s.text}>
-          Your files on this device are kept. Reload Arca to continue syncing.
+          Your files on this device are kept. Reload to continue syncing.
         </Text>
         <ScrollView style={s.details}>
           <Text selectable style={s.trace}>

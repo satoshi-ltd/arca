@@ -22,8 +22,8 @@ test("covered and two-line music rows take the 74 row height, numbered album row
 
 test("Folders and Devices are grouped surfaces: sections for folders, one list with the hub first for devices", () => {
   const app = read("App.jsx");
-  const folders = app.slice(app.indexOf("folderSections(folderRows"), app.indexOf("On hub · not selected"));
-  assert.match(folders, /<View style=\{s\.group\}>\s+\{section\.folders\.map\(\(f, index\) =>/);
+  const folders = app.slice(app.indexOf("{folderSections("), app.indexOf("On hub · not selected"));
+  assert.match(folders, /<View style=\{s\.group\}>\s+\{section\.folders\.map\(\(f, index\) =>\s+f\.streamed \? \(/);
   assert.match(folders, /\{folderRowFor\(f, index\)\}/);
   assert.match(app, /const folderRowFor = \(f, index\) => \{[\s\S]*?<FolderRow\s+grouped\s+divider=\{index > 0\}/);
   assert.match(app, /<View style=\{s\.availableGroup\}>[\s\S]*?<FolderRow\s+key=\{v\.id\}\s+grouped\s+dashedDivider=\{index > 0\}/);

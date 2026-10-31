@@ -9,6 +9,7 @@ import {
   ActionRow,
   BrandArch,
   Button,
+  DownloadGlyph,
   EmptyState,
   Field,
   Icon,
@@ -49,6 +50,7 @@ import { motion } from "./design-tokens.js";
 import { fraction, resumeCandidate, savedPosition, timeLeft } from "./audio-positions.js";
 import { sleepLabel } from "./sleep-timer.js";
 import { useNow } from "./audio-session.js";
+import { downloadGlyph } from "./video-downloads.js";
 
 const PAGE = 120;
 
@@ -344,8 +346,8 @@ function AlbumGrid({ albums, cover, open, hold, memory }) {
   );
 }
 
-const notes = (offline) => ({
-  pending: offline ? "Not on this phone yet" : "Downloading",
+const notes = (offline, streamed) => ({
+  pending: streamed ? "Not on this phone" : offline ? "Not on this phone yet" : "Downloading",
   missing: "Not in this folder",
 });
 
@@ -419,12 +421,14 @@ function TrackList({
   withAlbum,
   offline,
   positions,
+  download,
+  streamed,
   compact = false,
   flat = false,
 }) {
   const { s, c } = useDesign();
   const [shown, showMore] = usePaged(`${context}:tracks`, PAGE, PAGE);
-  const NOTES = notes(offline);
+  const NOTES = notes(offline, streamed);
   return (
     <>
       <View style={flat ? s.musicPaneList : s.group}>
@@ -481,11 +485,12 @@ function TrackList({
           const { track } = row;
           const current = isCurrent(row);
           const saved = current ? null : savedPosition(positions, track);
+          const glyph = download ? downloadGlyph(download(track)) : null;
           return (
             <PressScale
               key={key}
               accessibilityRole="button"
-              accessibilityLabel={`${canPlay ? (saved ? "Resume" : "Play") : "Open"} ${track.title}, ${track.artist}${saved ? `, ${timeLeft(saved.duration - saved.position)}` : ""}`}
+              accessibilityLabel={`${canPlay ? (saved ? "Resume" : "Play") : "Open"} ${track.title}, ${track.artist}${saved ? `, ${timeLeft(saved.duration - saved.position)}` : ""}${glyph ? `, ${glyph.label}` : ""}`}
               accessibilityActions={
                 actions ? [{ name: "actions", label: "Track actions" }] : undefined
               }
@@ -519,6 +524,7 @@ function TrackList({
                   />
                 )}
               </View>
+              <DownloadGlyph glyph={glyph} />
               {!numbered && current && <NowGlyph />}
               {!track.podcast && !!track.duration && !saved && !current && (
                 <Text style={s.caption}>{formatDuration(track.duration)}</Text>
@@ -580,10 +586,14 @@ function Collection({
   positions,
   episodes = false,
   menu,
+  menuLabel,
+  download,
+  streamed,
   flat = false,
 }) {
   const { s, wide } = useDesign();
   const flight = useFlight("collection", true);
+  const shownMenu = wide ? menu : null;
   const first = library.tracks.get(tracks[0]);
   const shuffle = () => {
     const index = Math.floor(Math.random() * tracks.length);
@@ -600,7 +610,7 @@ function Collection({
             {title}
           </Text>
           {!!subtitle && <Text style={s.text}>{subtitle}</Text>}
-          {((canPlay && first) || menu) && (
+          {((canPlay && first) || shownMenu) && (
             <View style={s.musicActions}>
               {canPlay && first && (
                 <Button
@@ -615,7 +625,7 @@ function Collection({
               {canPlay && tracks.length > 1 && !episodes && (
                 <Button label="Shuffle" icon="shuffle" onPress={shuffle} />
               )}
-              {menu && <Button iconOnly label="Playlist actions" icon="more" onPress={menu} />}
+              {shownMenu && <Button iconOnly label={menuLabel} icon="more" onPress={shownMenu} />}
             </View>
           )}
         </View>
@@ -640,6 +650,8 @@ function Collection({
         withAlbum={withAlbum}
         offline={offline}
         positions={positions}
+        download={download}
+        streamed={streamed}
         flat={flat}
       />
     </>
@@ -769,6 +781,9 @@ export function MusicLibrary({
   reconnect,
   trackActions,
   playlistActions,
+  collectionActions,
+  streamed = false,
+  download,
   resumeActions,
   forgetResume,
   favorite,
@@ -813,7 +828,14 @@ export function MusicLibrary({
       </>
     );
   if (!library.tracks.size)
-    return (
+    return streamed && offline ? (
+      <OfflineEmpty
+        icon="music"
+        title="You are offline"
+        text="Connect to the hub to load this Audio library."
+        retry={reconnect}
+      />
+    ) : (
       <EmptyState
         icon="arca"
         title="No music on this phone yet"
@@ -985,13 +1007,18 @@ export function MusicLibrary({
               </View>
             </View>
           )}
-          {canPlay && ids.length > 1 && (
+          {((canPlay && ids.length > 1) || (wide && streamed)) && (
             <View style={s.musicActions}>
-              <Button
-                label="Shuffle"
-                icon="shuffle"
-                onPress={() => shuffle(artist.id, ids)}
-              />
+              {canPlay && ids.length > 1 && (
+                <Button
+                  label="Shuffle"
+                  icon="shuffle"
+                  onPress={() => shuffle(artist.id, ids)}
+                />
+              )}
+              {wide && streamed && (
+                <Button iconOnly label="Artist actions" icon="more" onPress={() => collectionActions({ kind: "artist", id: artist.id })} />
+              )}
             </View>
           )}
           {albums(
@@ -1098,6 +1125,10 @@ export function MusicLibrary({
           actions={(row) => trackActions({ track: row.track })}
           offline={offline}
           positions={positions}
+          download={download}
+          streamed={streamed}
+          menu={streamed ? () => collectionActions({ kind: "show", id: show.id }) : undefined}
+          menuLabel="Show actions"
           episodes
           flat={flat}
         />
@@ -1121,6 +1152,10 @@ export function MusicLibrary({
           actions={(row) => trackActions({ track: row.track })}
           offline={offline}
           positions={positions}
+          download={download}
+          streamed={streamed}
+          menu={streamed ? () => collectionActions({ kind: "album", id: album.id }) : undefined}
+          menuLabel="Album actions"
           flat={flat}
         />
       ) : null;
@@ -1157,7 +1192,10 @@ export function MusicLibrary({
         withAlbum
         offline={offline}
         positions={positions}
+        download={download}
+        streamed={streamed}
         menu={playlist.editable ? () => playlistActions(playlist) : undefined}
+        menuLabel="Playlist actions"
         flat={flat}
       />
     ) : null;
@@ -1215,13 +1253,39 @@ function PlaylistName({ name = "", label, locked, submit }) {
   );
 }
 
-export function MusicSheet({ sheet, library, cover, locked, open, change, remove, removeTrack, favorite }) {
+const DOWNLOAD_ACTIONS = {
+  download: ["Download", "download"],
+  "cancel-download": ["Cancel download", "x"],
+  "remove-download": ["Remove from this device", "phone"],
+};
+
+function DownloadActions({ names, act, divider }) {
+  return names.map((name, index) => (
+    <ActionRow
+      key={name}
+      label={DOWNLOAD_ACTIONS[name][0]}
+      icon={DOWNLOAD_ACTIONS[name][1]}
+      divider={divider || index > 0}
+      onPress={() => act(name)}
+    />
+  ));
+}
+
+export function MusicSheet({ sheet, library, cover, locked, open, change, remove, removeTrack, favorite, downloads }) {
   const { s } = useDesign();
-  if (sheet.kind === "track-actions")
+  if (sheet.kind === "music-actions")
+    return (
+      <View style={s.actionGroup}>
+        <DownloadActions names={downloads.actions(sheet.tracks)} act={(name) => downloads.act(name, sheet.tracks)} />
+      </View>
+    );
+  if (sheet.kind === "track-actions") {
+    const editing = sheet.track && !sheet.streamed;
+    const saving = sheet.track && sheet.streamed ? downloads.actions([sheet.track], true) : [];
     return (
       <>
         <View style={s.actionGroup}>
-          {sheet.track && (
+          {editing && (
             <ActionRow
               label="Add to playlist…"
               icon="list-plus"
@@ -1233,11 +1297,12 @@ export function MusicSheet({ sheet, library, cover, locked, open, change, remove
             <ActionRow
               label="Remove from playlist"
               icon="list-minus"
-              divider={!!sheet.track}
+              divider={!!editing}
               disabled={locked}
               onPress={() => change("remove", sheet)}
             />
           )}
+          <DownloadActions names={saving} act={(name) => downloads.act(name, [sheet.track])} divider={!!editing || !!sheet.playlist?.editable} />
         </View>
         {sheet.track && (
           <View style={s.destructiveActionGroup}>
@@ -1246,12 +1311,13 @@ export function MusicSheet({ sheet, library, cover, locked, open, change, remove
               icon="trash"
               danger
               disabled={locked}
-              onPress={() => removeTrack(sheet.track)}
+              onPress={() => removeTrack(sheet.track, sheet.streamed)}
             />
           </View>
         )}
       </>
     );
+  }
   if (sheet.kind === "add-to-playlist") {
     const lists = (library?.playlistOrder || [])
       .map((id) => library.playlists.get(id))

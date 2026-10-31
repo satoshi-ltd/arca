@@ -86,17 +86,27 @@ export const iconNames = {
   star: "Star",
   "star-off": "StarOff",
   "circle-minus": "CircleMinus",
-  cloud: "Cloud",
   "panel-left-open": "PanelLeftOpen",
   clapperboard: "Clapperboard",
   smile: "Smile",
-  "arrow-down-to-line": "ArrowDownToLine",
+  "circle-dashed": "CircleDashed",
+  "circle-arrow-down": "CircleArrowDown",
 };
 export const icons = {
-  "arrow-down-to-line": [
-    ["path", { d: "M12 17V3" }],
-    ["path", { d: "m6 11 6 6 6-6" }],
-    ["path", { d: "M19 21H5" }],
+  "circle-dashed": [
+    ["path", { d: "M10.1 2.182a10 10 0 0 1 3.8 0" }],
+    ["path", { d: "M13.9 21.818a10 10 0 0 1-3.8 0" }],
+    ["path", { d: "M17.609 3.721a10 10 0 0 1 2.69 2.7" }],
+    ["path", { d: "M2.182 13.9a10 10 0 0 1 0-3.8" }],
+    ["path", { d: "M20.279 17.609a10 10 0 0 1-2.7 2.69" }],
+    ["path", { d: "M21.818 10.1a10 10 0 0 1 0 3.8" }],
+    ["path", { d: "M3.721 6.391a10 10 0 0 1 2.7-2.69" }],
+    ["path", { d: "M6.391 20.279a10 10 0 0 1-2.69-2.7" }],
+  ],
+  "circle-arrow-down": [
+    ["circle", { cx: "12", cy: "12", r: "10" }],
+    ["path", { d: "M12 8v8" }],
+    ["path", { d: "m8 12 4 4 4-4" }],
   ],
   "circle-arrow-up": [
     ["circle", { cx: "12", cy: "12", r: "10" }],
@@ -1115,7 +1125,6 @@ export const icons = {
     ["circle", { cx: "12", cy: "12", r: "10" }],
     ["path", { d: "M8 12h8" }],
   ],
-  cloud: [["path", { d: "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" }]],
   "panel-left-open": [
     ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }],
     ["path", { d: "M9 3v18" }],

@@ -79,8 +79,8 @@ test("the library opens on the Artists tab, Recent lists this phone's plays, and
 
 test("a track still downloading stays in its album, dimmed, labelled and not playable", () => {
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
-  assert.match(library, /const notes = \(offline\) => \(\{\s+pending: offline \? "Not on this phone yet" : "Downloading",\s+missing: "Not in this folder",\s+\}\);/, "offline nothing is downloading, so the note says the track is not here yet");
-  assert.match(list, /const NOTES = notes\(offline\);/);
+  assert.match(library, /const notes = \(offline, streamed\) => \(\{\s+pending: streamed \? "Not on this phone" : offline \? "Not on this phone yet" : "Downloading",\s+missing: "Not in this folder",\s+\}\);/, "offline nothing is downloading, so the note says the track is not here yet; a streamed track not downloaded is simply not here");
+  assert.match(list, /const NOTES = notes\(offline, streamed\);/);
   assert.equal(library.match(/offline=\{offline\}/g).length, 4, "an album, a show, a playlist and the list inside them pass it on");
   const waiting = list.slice(list.indexOf('if (row.state !== "ready")'), list.indexOf("const { track } = row;"));
   assert.match(waiting, /<View\s+key=\{key\}\s+accessible\s+accessibilityLabel=\{`\$\{row\.title\}, \$\{NOTES\[row\.state\]\.toLowerCase\(\)\}`\}/, "read as “title, downloading”");
@@ -106,22 +106,26 @@ test("playlists get their tab, screen, search group and Recent rows, and every t
   assert.match(screen, /context=\{folderContext\(folderId, playlist\.id\)\}/);
   assert.match(screen, /baseContext\(node\.context\) === playlist\.id &&\s+\(node\.position === null \|\| node\.position === row\.position\)/, "only the appearance that plays carries the accent");
   assert.match(screen, /trackActions\(\{\s+track: row\.track,\s+title: row\.title,\s+path: row\.path,\s+playlist,\s+entry: row\.entry,\s+\}\)\s+\}\s+removable=\{playlist\.editable\}/, "a playlist row removes the entry it shows, playable or not");
-  assert.match(screen, /menu=\{playlist\.editable \? \(\) => playlistActions\(playlist\) : undefined\}/, "the playlist ⋯ sits in its head's actions");
-  assert.match(library, /\{menu && <Button iconOnly label="Playlist actions" icon="more" onPress=\{menu\} \/>\}/);
+  assert.match(screen, /menu=\{playlist\.editable \? \(\) => playlistActions\(playlist\) : undefined\}\s+menuLabel="Playlist actions"/, "the playlist ⋯ sits in its head's actions on the Fold");
+  assert.match(library, /const shownMenu = wide \? menu : null;/, "on the phone the ⋯ sits beside the back arrow instead");
+  assert.match(library, /\{shownMenu && <Button iconOnly label=\{menuLabel\} icon="more" onPress=\{shownMenu\} \/>\}/);
+  assert.match(app, /const musicPageMenu = musicDeep && !wide \? musicMenu\(musicRoute\[musicAt\.level\], musicShown, audioStreaming\) : null;/);
+  assert.match(app, /\{!!musicPageMenu && \(\s+<Button\s+iconOnly\s+label=\{`\$\{musicPageMenu\.kind\[0\]\.toUpperCase\(\)\}\$\{musicPageMenu\.kind\.slice\(1\)\} actions`\}\s+icon="more"\s+onPress=\{\(\) =>\s+musicPageMenu\.kind === "playlist"\s+\? setSheet\(\{ kind: "playlist-actions", playlist: musicShown\.playlists\.get\(musicPageMenu\.id\) \}\)\s+: musicCollectionSheet\(musicPageMenu\)/);
   assert.match(library, /actions=\{\(row\) => trackActions\(\{ track: row\.track \}\)\}/, "an album's tracks open the same sheet");
   const list = library.slice(library.indexOf("function TrackList("), library.indexOf("const readyRows"));
   assert.match(list, /\{actions && \(\s+<Pressable\s+accessibilityRole="button"\s+accessibilityLabel="Track actions"[\s\S]*?onPress=\{\(\) => actions\(row\)\}[\s\S]*?<Icon name="more"/);
   assert.match(list, /accessibilityActions=\{\s+actions \? \[\{ name: "actions", label: "Track actions" \}\] : undefined\s+\}/, "screen readers reach the ⋯ as a row action");
   assert.match(list, /play\(context, track, false, row\.position, current && track\.podcast \? null : saved\?\.position \|\| 0\)/);
   const sheet = library.slice(library.indexOf("export function MusicSheet("), library.indexOf("const playingTrack"));
-  assert.match(sheet, /\{sheet\.track && \(\s+<ActionRow\s+label="Add to playlist…"[\s\S]*?open\(\{ kind: "add-to-playlist", track: sheet\.track \}\)/, "an entry naming no track offers only Remove");
+  assert.match(sheet, /const editing = sheet\.track && !sheet\.streamed;/, "a streamed library's playlists are read-only");
+  assert.match(sheet, /\{editing && \(\s+<ActionRow\s+label="Add to playlist…"[\s\S]*?open\(\{ kind: "add-to-playlist", track: sheet\.track \}\)/, "an entry naming no track offers only Remove");
   assert.match(sheet, /\{sheet\.playlist\?\.editable && \(\s+<ActionRow\s+label="Remove from playlist"[\s\S]*?change\("remove", sheet\)/);
   assert.match(sheet, /\.filter\(\(playlist\) => playlist\.editable\)/, "only .m3u8 playlists take new tracks");
   assert.match(sheet, /title="New playlist…"\s+caption="Saved as a file in Playlists\/"/);
   assert.match(sheet, /change\("create", \{ name, track: sheet\.track \}\)/);
   assert.match(sheet, /change\("rename", \{ name, playlist: sheet\.playlist \}\)/);
   assert.match(sheet, /<View style=\{s\.destructiveActionGroup\}>\s+<ActionRow\s+label="Delete playlist…"\s+icon="trash"\s+danger/);
-  assert.match(app, /trackActions=\{\(value\) =>\s+setSheet\(\{ kind: "track-actions", \.\.\.value \}\)\s+\}\s+playlistActions=\{\(playlist\) =>\s+setSheet\(\{ kind: "playlist-actions", playlist \}\)/);
+  assert.match(app, /trackActions=\{\(value\) =>\s+setSheet\(\{ kind: "track-actions", \.\.\.value, streamed: audioStreaming \}\)\s+\}\s+playlistActions=\{\(playlist\) =>\s+setSheet\(\{ kind: "playlist-actions", playlist \}\)/);
   assert.match(app, /\{!!musicSheet\(shownSheet\) && \(\s+<MusicSheet/);
   const change = app.slice(app.indexOf("function changePlaylist("), app.indexOf("function deletePlaylist("));
   for (const call of ["r.addToPlaylist(folder.id, value.playlist.path, value.track.path)", "r.createPlaylist(folder.id, value.name, value.track.path)", "r.renamePlaylist(folder.id, value.playlist.path, value.name)"])
@@ -137,7 +141,7 @@ test("playlists get their tab, screen, search group and Recent rows, and every t
   assert.equal(copy.split("Its latest changes have not reached the hub, so this cannot be undone.").length, 3, "and so does a file");
   const changed = app.slice(app.indexOf("function musicChanged("), app.indexOf("function changePlaylist("));
   assert.match(changed, /setMusicEdits\(\(count\) => count \+ 1\);\s+publishMusic\(engine\.current\)\.catch\(\(\) => \{\}\);\s+if \(connected && !status\.paused\) startSync\(\);/, "an edit shows at once, reaches the car and syncs");
-  assert.match(app, /\[musicFolder, folder\?\.id, replica, status\.last, status\.musicTick, musicEdits\]/);
+  assert.match(app, /\[musicFolder, folder\?\.id, replica, status\.last, status\.musicTick, musicEdits, musicOnline, status\.streamed\]/);
 });
 
 test("the native module ships the media library service, cover provider and car metadata on Media3 1.9.0", () => {
@@ -259,7 +263,7 @@ test("a car that allows fewer root tabs than Arca has gets Recent as the first e
 test("the car names its queue and lists each track with its length, and a playlist's tracks with their album", () => {
   const service = read(`${native}/java/expo/modules/arcanetwork/MusicService.kt`);
   const tree = read(`${native}/java/expo/modules/arcanetwork/MusicLibrary.kt`);
-  assert.match(service, /node\.track\?\.let \{ return playable\(node\.id, it, false, subtitle = node\.subtitle, extras = completion\(node\.played, node\.percent\)\) \}/, "browse rows carry the tree's subtitle");
+  assert.match(service, /node\.track\?\.takeIf \{ node\.playable \}\?\.let \{ return playable\(node\.id, it, false, subtitle = node\.subtitle, extras = completion\(node\.played, node\.percent\)\) \}/, "browse rows carry the tree's subtitle");
   assert.match(service, /\.apply \{ if \(subtitle != null\) setDisplayTitle\(track\.title\)\.setSubtitle\(subtitle\) \}/, "a display title makes Media3 send the subtitle instead of the artist and album");
   assert.doesNotMatch(service.slice(service.indexOf("private fun queue("), service.indexOf("private inner class Callback")), /subtitle =/, "Now Playing keeps the artist and album");
   assert.match(service, /player\.playlistMetadata = MediaMetadata\.Builder\(\)\.setTitle\(context\?\.let\(tree::queueTitle\)\)\.build\(\)/, "the queue's name reaches Android Auto as the legacy queue title");
@@ -352,7 +356,7 @@ test("the library has one back, the header's, and draws tabs only when there are
   assert.match(header, /\{!onboarding && \(detail \|\| !\(musicDeep && !musicArtist\)\) && \(/, "a show, album or playlist page keeps only the back arrow");
   assert.match(header, /\) : musicArtist \? \(\s+<ScreenTitle\s+contentIcon="artist"/, "the Fold heads an artist level with the artist");
   assert.doesNotMatch(app, /musicHeaderSearch|musicSearchLabel|"Search files"|"Search this folder"/, "no folder or library header has a search of its own");
-  assert.match(app, /\{searchable && \(\s+<Button\s+iconOnly\s+ghost\s+label="Search Arca"\s+icon="search"\s+onPress=\{\(\) => setGlobalSearch\(true\)\}/, "a folder's header opens the one search");
+  assert.match(app, /\{searchable && \(\s+<Button\s+iconOnly\s+ghost\s+label="Search"\s+icon="search"\s+onPress=\{\(\) => setGlobalSearch\(true\)\}/, "a folder's header opens the one search");
   assert.match(app, /musicView && shownMusic \? librarySummary\(shownMusic\.library\) :/, "the header counts episodes and shows like desktop");
   assert.match(app, /musicFolder\s+\? librarySymbol\(shownMusic\?\.library\)/);
   assert.match(app, /go=\{setMusicRoute\}/);

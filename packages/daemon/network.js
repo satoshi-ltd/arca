@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { Tailscale, discoverPeers, tailAddress } from "./tailscale.js";
 import { fail } from "./storage.js";
 export const release = {
-  version: "0.8.19",
+  version: "0.8.20",
 };
 export function lanAddress(address) {
   if (isIP(address || "") !== 4) return false;
@@ -226,7 +226,7 @@ export class Network {
     } catch {
       server.close();
       this.issue =
-        "Cannot listen on the Tailscale address. Check the Arca port and the network interface.";
+        "Cannot listen on the Tailscale address. Check the port and the network interface.";
     }
   }
   async stopListener() {

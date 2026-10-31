@@ -273,7 +273,7 @@ export const runtimeInstallation =
     fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
   ).arcaInstallation || "server";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export function privateDirectory(directory) {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   if (process.platform !== "win32") {
@@ -331,7 +331,7 @@ export class Store {
     const schema = this.db.prepare("PRAGMA user_version").get().user_version;
     if (schema > SCHEMA_VERSION) {
       this.db.close();
-      fail("This index was written by a newer Arca. Update Arca before opening it.", 409);
+      fail("This index was written by a newer version. Update before opening it.", 409);
     }
     if (schema < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
     this.db
@@ -359,6 +359,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS accepted_proposals_volume ON accepted_proposals(volume);
       CREATE TABLE IF NOT EXISTS gallery_metadata(hash TEXT PRIMARY KEY,captured TEXT);
       CREATE TABLE IF NOT EXISTS volumes(id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, selected INTEGER NOT NULL DEFAULT 1,last_sync TEXT);
+      CREATE TABLE IF NOT EXISTS media_modes(volume TEXT PRIMARY KEY,mode TEXT NOT NULL CHECK(mode IN ('stream','keep')));
       CREATE TABLE IF NOT EXISTS revisions(rev INTEGER PRIMARY KEY AUTOINCREMENT, volume TEXT NOT NULL, path TEXT NOT NULL, hash TEXT, size INTEGER NOT NULL, deleted INTEGER NOT NULL, author TEXT NOT NULL, created TEXT NOT NULL,directory INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS files(volume TEXT NOT NULL,path TEXT NOT NULL,hash TEXT,size INTEGER NOT NULL,deleted INTEGER NOT NULL,rev INTEGER NOT NULL,directory INTEGER NOT NULL DEFAULT 0,path_key TEXT NOT NULL,PRIMARY KEY(volume,path));
       CREATE TABLE IF NOT EXISTS history_views(hub TEXT,volume TEXT,filter TEXT,version TEXT,updated INTEGER,value TEXT,PRIMARY KEY(hub,volume,filter));
@@ -520,6 +521,12 @@ export class Store {
   volumes() {
     return this.db.prepare("SELECT * FROM volumes ORDER BY name").all();
   }
+  mediaMode(id) {
+    return this.db.prepare("SELECT mode FROM media_modes WHERE volume=?").get(id)?.mode || null;
+  }
+  mediaModes() {
+    return Object.fromEntries(this.db.prepare("SELECT volume,mode FROM media_modes ORDER BY volume").all().map((row) => [row.volume, row.mode]));
+  }
   volume(id) {
     const v = this.db.prepare("SELECT * FROM volumes WHERE id=?").get(id);
     if (!v) fail("Unknown volume", 404);
@@ -593,6 +600,7 @@ export class Store {
         "video_positions",
         "video_watched",
         "video_hidden",
+        "media_modes",
       ])
         this.db.prepare(`DELETE FROM ${table} WHERE volume=?`).run(id);
       this.db

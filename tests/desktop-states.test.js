@@ -253,11 +253,11 @@ function stoppedBoot(t, { upAfter = Infinity, stopped = "", startError = "", hol
   return { w, tick, probes: () => probes, pendingTicks: () => ticks.length };
 }
 
-test("a launch with the service not yet answering shows the launch mark with Starting Arca… and no sidebar", async (t) => {
+test("a launch with the service not yet answering shows the launch mark with Starting… and no sidebar", async (t) => {
   const { w, probes } = stoppedBoot(t);
   const q = (selector) => w.document.querySelector(selector);
   await until(() => q("#content .launch-mark p"));
-  assert.equal(q("#content .launch-mark p").textContent, "Starting Arca…");
+  assert.equal(q("#content .launch-mark p").textContent, "Starting…");
   assert.ok(w.document.body.classList.contains("starting-mode"));
   assert.doesNotMatch(q("#content").textContent, /Service stopped/);
   assert.equal(q('#content [data-action="start"]'), null);
@@ -271,7 +271,7 @@ test("a service that starts listening within fifteen seconds replaces the starti
   await until(() => q("#content .launch-mark p"));
   for (let i = 0; i < 2; i++) {
     await tick();
-    assert.match(q("#content .launch-mark p").textContent, /Starting Arca/, `still starting after ${i + 1} s`);
+    assert.match(q("#content .launch-mark p").textContent, /Starting…/, `still starting after ${i + 1} s`);
   }
   await tick();
   await until(() => q('.folder-card[data-id="docs"]'));
@@ -302,7 +302,7 @@ test("pressing Start service shows the starting state, then the error line when 
   assert.ok(q('#content [data-action="start"]'));
 });
 
-test("pressing Start service shows Starting Arca… until the probe succeeds", async (t) => {
+test("pressing Start service shows Starting… until the probe succeeds", async (t) => {
   const { w, tick } = stoppedBoot(t, { stopped: "Stopped.", upAfter: 0, hold: true });
   const q = (selector) => w.document.querySelector(selector);
   await until(() => q('#content [data-action="start"]'));

@@ -64,7 +64,7 @@ if (Platform.OS === "android")
     };
     void transfer.end().catch(report);
     if (reason === "timeout")
-      report(new Error("Android stopped background synchronization after its time limit. Open Arca to continue."));
+      report(new Error("Android stopped background synchronization after its time limit. Open the app to continue."));
     if (reason === "paused") void currentReplica?.pause(true).catch(report);
   });
 export const BACKGROUND_TASK = "arca-sync";

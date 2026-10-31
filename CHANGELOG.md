@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.20 — 2026-10-31
+
+- A desktop starting to sync an Audio or Movies & TV library chooses Stream from the hub or Keep on this device: a streamed Audio library plays from the hub with nothing copied, and a kept Movies & TV library downloads every title and follows the hub, stopping before the disk runs low. To change mode, stop syncing and start again.
+- In a streamed Audio library the ⋯ of an album, artist or show and of each track downloads it for offline listening, cancels the download or removes the copy from this device, on the desktop and now on Android phones and the Fold, which stream every Audio library they start (one already kept on a phone stays a complete copy) through the lock screen, Bluetooth and Android Auto; replicas and phones also delete in Audio libraries through the hub.
+- Download states read as one quiet icon instead of a text tag, in Movies & TV on the desktop and the phone and in Audio on the desktop: a dashed circle while waiting, a ring that fills while downloading and an arrow once downloaded, with the words in the tooltip and the accessibility label.
+- On phones, a folder the hub offers is one row that opens Start syncing, so its name and size keep their line.
+- Messages and labels inside the desktop, phone and daemon stop naming the app they are shown in ("Search", "The app closed unexpectedly", "Could not read or write…"); the name stays in menus, notifications, system settings, the folder marker and where it names another device.
+
+Needs: Casa redeploy (first: older hubs refuse replica streaming) · desktop build · native build
+
 ## 0.8.19 — 2026-10-30
 
 - The sidebar update card puts its mark beside the text, as the tray does: the download icon beside "v0.8.19 is available", the busy dots beside "Updating to v0.8.19", with no second line in the card or the tray.

@@ -1,5 +1,7 @@
 import { parseGallery } from "./validation.js";
 
+const DOWNLOAD_TABLES = { video: "video_downloads", audio: "audio_downloads" };
+
 export class ReplicaStore {
   constructor(db) {
     this.writes = 0;
@@ -37,6 +39,7 @@ export class ReplicaStore {
       CREATE TABLE IF NOT EXISTS music_libraries (scope TEXT, volume TEXT, version TEXT NOT NULL, indexing INTEGER NOT NULL DEFAULT 0, value TEXT NOT NULL, PRIMARY KEY(scope,volume));
       CREATE TABLE IF NOT EXISTS video_libraries (scope TEXT, volume TEXT, version TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(scope,volume));
       CREATE TABLE IF NOT EXISTS video_downloads (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
+      CREATE TABLE IF NOT EXISTS audio_downloads (scope TEXT, volume TEXT, path TEXT, row TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
       CREATE TABLE IF NOT EXISTS video_positions (scope TEXT, volume TEXT, path TEXT, at INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(scope,volume,path));
 `);
   }
@@ -49,6 +52,7 @@ export class ReplicaStore {
         "music_libraries",
         "video_libraries",
         "video_downloads",
+        "audio_downloads",
         "video_positions",
         "gallery_assets",
         "gallery_corrupt",
@@ -234,20 +238,38 @@ export class ReplicaStore {
       volume.name,
     );
   }
+  async forgetViews(scope, id) {
+    const views = await this.db.getAllAsync(
+      "SELECT route FROM view_cache WHERE scope=?",
+      scope,
+    );
+    for (const view of views)
+      if (new URLSearchParams(view.route.split("?")[1]).get("volume") === id)
+        await this.db.runAsync(
+          "DELETE FROM view_cache WHERE scope=? AND route=?",
+          scope,
+          view.route,
+        );
+  }
+  async forgetStreamedLibrary(scope, id) {
+    await this.db.execAsync("BEGIN IMMEDIATE");
+    try {
+      await this.forgetViews(scope, id);
+      await this.db.runAsync(
+        "DELETE FROM music_libraries WHERE scope=? AND volume=?",
+        scope,
+        id,
+      );
+      await this.db.execAsync("COMMIT");
+    } catch (error) {
+      await this.db.execAsync("ROLLBACK");
+      throw error;
+    }
+  }
   async forgetFolder(scope, id) {
     await this.db.execAsync("BEGIN IMMEDIATE");
     try {
-      const views = await this.db.getAllAsync(
-        "SELECT route FROM view_cache WHERE scope=?",
-        scope,
-      );
-      for (const view of views)
-        if (new URLSearchParams(view.route.split("?")[1]).get("volume") === id)
-          await this.db.runAsync(
-            "DELETE FROM view_cache WHERE scope=? AND route=?",
-            scope,
-            view.route,
-          );
+      await this.forgetViews(scope, id);
       for (const table of [
         "files",
         "pending",
@@ -644,9 +666,9 @@ export class ReplicaStore {
           row.volume,
         );
   }
-  async videoDownloads(scope) {
+  async downloads(table, scope) {
     const rows = await this.db.getAllAsync(
-      "SELECT row FROM video_downloads WHERE scope=?",
+      `SELECT row FROM ${DOWNLOAD_TABLES[table]} WHERE scope=?`,
       scope,
     );
     const list = [];
@@ -658,18 +680,18 @@ export class ReplicaStore {
       }
     return list;
   }
-  async saveVideoDownload(scope, row) {
+  async saveDownload(table, scope, row) {
     await this.db.runAsync(
-      "INSERT OR REPLACE INTO video_downloads(scope,volume,path,row) VALUES(?,?,?,?)",
+      `INSERT OR REPLACE INTO ${DOWNLOAD_TABLES[table]}(scope,volume,path,row) VALUES(?,?,?,?)`,
       scope,
       row.volume,
       row.path,
       JSON.stringify(row),
     );
   }
-  async foreignVideoDownloads(scope) {
+  async foreignDownloads(table, scope) {
     const rows = await this.db.getAllAsync(
-      "SELECT scope,row FROM video_downloads WHERE scope IS NOT ?",
+      `SELECT scope,row FROM ${DOWNLOAD_TABLES[table]} WHERE scope IS NOT ?`,
       scope,
     );
     const list = [];
@@ -678,20 +700,44 @@ export class ReplicaStore {
         list.push({ scope: row.scope, row: JSON.parse(row.row) });
       } catch {
         await this.db.runAsync(
-          "DELETE FROM video_downloads WHERE scope IS ? AND row=?",
+          `DELETE FROM ${DOWNLOAD_TABLES[table]} WHERE scope IS ? AND row=?`,
           row.scope,
           row.row,
         );
       }
     return list;
   }
-  async forgetVideoDownload(scope, volume, path) {
+  async forgetDownload(table, scope, volume, path) {
     await this.db.runAsync(
-      "DELETE FROM video_downloads WHERE scope=? AND volume=? AND path=?",
+      `DELETE FROM ${DOWNLOAD_TABLES[table]} WHERE scope=? AND volume=? AND path=?`,
       scope,
       volume,
       path,
     );
+  }
+  videoDownloads(scope) {
+    return this.downloads("video", scope);
+  }
+  saveVideoDownload(scope, row) {
+    return this.saveDownload("video", scope, row);
+  }
+  foreignVideoDownloads(scope) {
+    return this.foreignDownloads("video", scope);
+  }
+  forgetVideoDownload(scope, volume, path) {
+    return this.forgetDownload("video", scope, volume, path);
+  }
+  audioDownloads(scope) {
+    return this.downloads("audio", scope);
+  }
+  saveAudioDownload(scope, row) {
+    return this.saveDownload("audio", scope, row);
+  }
+  foreignAudioDownloads(scope) {
+    return this.foreignDownloads("audio", scope);
+  }
+  forgetAudioDownload(scope, volume, path) {
+    return this.forgetDownload("audio", scope, volume, path);
   }
   async queueVideoPosition(scope, body, at) {
     await this.db.runAsync(

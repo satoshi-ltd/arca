@@ -196,7 +196,8 @@ test("a replica without a local copy forwards the request and proxies the hub's 
   const id = answer.url.split("/").at(-2);
   assert.equal((await fetch(`${base(f)}/v1/video/hls/${id}/index.m3u8`)).status, 401, "the hub's session needs the replica's credential");
 
-  await assert.rejects(call("/v1/select", { id: f.v.id }), { status: 409 }, "a replica never keeps a copy to convert on its own");
+  assert.equal((await call("/v1/select", { id: f.v.id })).mode, "stream", "selecting a library streams it");
+  assert.deepEqual(replica.engine.store.volumes(), [], "a replica never keeps a synced copy to convert on its own");
 });
 
 test("leftover conversion files are deleted when the daemon starts", async (t) => {

@@ -242,7 +242,7 @@ export function BrandActivity() {
       style={busyStyles.brandSlot}
       accessible={!!active}
       accessibilityRole={active ? "progressbar" : undefined}
-      accessibilityLabel={active ? "Arca: updating" : undefined}
+      accessibilityLabel={active ? "Updating" : undefined}
     >
       <Logo size={g.screenTitleLogo} breathe={!!active} />
     </View>
@@ -313,7 +313,7 @@ export function LaunchHold({ leaving = false, onLeft }) {
       accessible={!leaving}
       importantForAccessibility={leaving ? "no-hide-descendants" : "auto"}
       accessibilityRole="progressbar"
-      accessibilityLabel="Starting Arca"
+      accessibilityLabel="Starting"
       style={[busyStyles.launch, { backgroundColor: c.paper, opacity: fade }]}
     >
       <View style={{ width: 160, height: 160 }}>
@@ -1155,6 +1155,16 @@ export function StatusRow({
   );
 }
 
+export function DownloadGlyph({ glyph }) {
+  const { s, c } = useDesign();
+  if (!glyph) return null;
+  return (
+    <View accessible accessibilityLabel={glyph.label} style={s.videoGlyph}>
+      {glyph.icon ? <Icon name={glyph.icon} size={20} color={c.mute} /> : <ProgressRing fraction={glyph.ring} size={17} thickness={2} />}
+    </View>
+  );
+}
+
 export function ProgressRing({ fraction, size = 46, thickness = 2 }) {
   const { c } = useDesign();
   const { duration, easing } = useMotion();
@@ -1292,13 +1302,6 @@ export function FolderRow({
         ) : (
           <Icon name="circle" color={c.line} size={24} />
         )
-      ) : available ? (
-        <Button
-          label="Start syncing"
-          icon="refresh"
-          disabled={disabled}
-          onPress={onPress}
-        />
       ) : (
         <View style={s.rowAction}>
           <Icon name="chevron" color={c.mute} />
@@ -1307,15 +1310,20 @@ export function FolderRow({
     </>
   );
   return available ? (
-    <View
-      style={
-        grouped
-          ? [s.folderRow, s.availableRow, dashedDivider && s.dashedSeparator]
-          : [s.card, s.available, s.folderRow]
-      }
+    <PressScale
+      scale={!disabled}
+      accessibilityRole="button"
+      accessibilityLabel={`Start syncing ${name}${description ? `, ${description.replace(/ ·[ \u00a0]/g, ", ")}` : ""}`}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        ...(grouped ? [s.folderRow, s.availableRow, dashedDivider && s.dashedSeparator] : [s.card, s.available, s.folderRow]),
+        pressed && !disabled && s.pressed,
+      ]}
     >
       {contents}
-    </View>
+    </PressScale>
   ) : (
     <PressScale
       scale={!disabled}

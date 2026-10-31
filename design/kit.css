@@ -396,6 +396,10 @@ body.kit {
   position: static;
   margin-top: var(--space-2);
 }
+.kit-board-pair .music-view .details-menu[open] .menu-items {
+  position: absolute;
+  margin-top: 0;
+}
 .kit-wizard .onboarding {
   min-height: 0;
   height: 520px;
@@ -1521,3 +1525,17 @@ body.kit {
   height: var(--space-4);
 }
 
+
+.kit-dl-ring {
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), var(--ink) calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), var(--ink) calc(100% - 2px));
+}
+.m-video-dl > .kit-dl-ring.kit-dl-42 {
+  background: conic-gradient(var(--m-accent) 0 42%, var(--m-line) 0);
+}
+.m-video-dl > .kit-dl-ring.kit-dl-64 {
+  background: conic-gradient(var(--m-accent) 0 64%, var(--m-line) 0);
+}

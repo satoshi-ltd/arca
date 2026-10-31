@@ -7,13 +7,13 @@ import java.io.File
 
 internal fun receiveShared(context: Context, source: String, destination: String): Map<String, Any?> {
   val uri = Uri.parse(source)
-  check(uri.scheme != "file") { "Arca cannot read a file shared by path. Share it again from the app that holds it." }
+  check(uri.scheme != "file") { "Cannot read a file shared by path. Share it again from the app that holds it." }
   check(uri.scheme == "content") { "Share the exported file, rather than a link or text." }
   val authority = uri.host?.lowercase() ?: error("Share the exported file, rather than a link or text.")
   check(!authority.startsWith(context.packageName.lowercase()) && context.packageManager.resolveContentProvider(authority, 0)?.packageName != context.packageName) { "Arca cannot receive its own files." }
   val inbox = File(context.cacheDir, "arca-incoming").canonicalFile
   val target = File(java.net.URI(destination)).canonicalFile
-  check(target.path.startsWith(inbox.path + "/")) { "The shared file destination is outside Arca's inbox." }
+  check(target.path.startsWith(inbox.path + "/")) { "The shared file destination is outside the app's inbox." }
   var name: String? = null
   var size = -1L
   context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->

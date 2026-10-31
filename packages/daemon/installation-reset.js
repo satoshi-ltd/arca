@@ -26,7 +26,7 @@ export function resetTargets(store) {
       withinPath(store.home, target)
     )
       fail(
-        "Arca data overlaps the state directory; resolve its location before erasing",
+        "Folder data overlaps the state directory; resolve its location before erasing",
         409,
       );
     if (!fs.existsSync(target)) return { path: target, missing: true };
@@ -36,7 +36,7 @@ export function resetTargets(store) {
       stat.isSymbolicLink() ||
       fs.realpathSync(target) !== target
     )
-      fail(`Arca folder location changed: ${target}`, 409);
+      fail(`Folder location changed: ${target}`, 409);
     if (!owned(target, owner)) return { path: target, skipped: true };
     return { path: target, dev: stat.dev, ino: stat.ino, born: stat.birthtimeMs };
   });
@@ -58,7 +58,7 @@ export function finishInstallationReset(store) {
       (target.born && stat.birthtimeMs && stat.birthtimeMs !== target.born)
     )
       fail(
-        `Arca folder changed during destruction: ${target.path}. Restore its original location and retry.`,
+        `Folder changed during destruction: ${target.path}. Restore its original location and retry.`,
         409,
       );
     fs.rmSync(target.path, { recursive: true });
@@ -78,7 +78,7 @@ export function finishInstallationReset(store) {
       continue;
     }
     if (!stat.isFile() || stat.nlink !== 1)
-      fail(`Arca log location changed: ${location}`, 409);
+      fail(`Log location changed: ${location}`, 409);
     const fd = fs.openSync(
       location,
       fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW || 0),
@@ -86,7 +86,7 @@ export function finishInstallationReset(store) {
     try {
       const current = fs.fstatSync(fd);
       if (current.dev !== stat.dev || current.ino !== stat.ino || current.nlink !== 1)
-        fail(`Arca log location changed: ${location}`, 409);
+        fail(`Log location changed: ${location}`, 409);
       fs.ftruncateSync(fd, 0);
     } finally {
       fs.closeSync(fd);
@@ -102,6 +102,7 @@ export function finishInstallationReset(store) {
         "video-art",
         "video-subtitles",
         "video-downloads",
+        "music-downloads",
         "transcodes",
         "web-code.json",
         "promotion.json",

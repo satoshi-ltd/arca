@@ -218,7 +218,7 @@ export async function nativeFirst(native, fallback) {
 export const isHeic = (uri) => /\.(heic|heif)$/i.test(String(uri ?? "").split(/[?#]/)[0]);
 
 const NON_DECODE =
-  /outside arca|invalid thumbnail|could not (create|encode|save)|filenotfoundexception|no such file|enoent|eacces|permission denied/i;
+  /outside (arca|(the )?app)|invalid thumbnail|could not (create|encode|save)|filenotfoundexception|no such file|enoent|eacces|permission denied/i;
 
 export function isDecodeFailure(error) {
   const text = [error?.message, error?.code, error?.cause?.message, typeof error === "string" ? error : ""]

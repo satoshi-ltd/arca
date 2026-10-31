@@ -13,7 +13,7 @@ import {
   NOT_DOWNLOADABLE,
   downloadBlock,
   downloadCaution,
-  downloadChip,
+  downloadGlyph,
   downloadAction,
   downloadNote,
   downloadTile,
@@ -1090,13 +1090,13 @@ test("a Download that cannot be offered names its cause, the caution rides on fi
 });
 
 
-test("an episode's chip says Downloaded, Downloading with its percentage for the running row, or Waiting", () => {
-  assert.deepEqual(downloadChip({ state: "done", done: 10, size: 10 }), { label: "Downloaded", variant: "self" });
-  assert.deepEqual(downloadChip({ state: "queued", running: true, done: 640, size: 1000 }), { label: "Downloading 64%", variant: "hub" });
-  assert.deepEqual(downloadChip({ state: "queued", done: 0, size: 1000 }), { label: "Waiting", variant: undefined }, "queued behind the running one");
-  assert.deepEqual(downloadChip({ state: "waiting", running: false, done: 400, size: 1000 }), { label: "Waiting", variant: undefined }, "the hub is away");
-  assert.equal(downloadChip({ state: "failed" }), null);
-  assert.equal(downloadChip(null), null);
+test("an episode's glyph is circle-arrow-down when downloaded, a ring with its percentage for the running row, or circle-dashed while waiting", () => {
+  assert.deepEqual(downloadGlyph({ state: "done", done: 10, size: 10 }), { label: "Downloaded", icon: "circle-arrow-down" });
+  assert.deepEqual(downloadGlyph({ state: "queued", running: true, done: 640, size: 1000 }), { label: "Downloading 64%", ring: 0.64 });
+  assert.deepEqual(downloadGlyph({ state: "queued", done: 0, size: 1000 }), { label: "Waiting", icon: "circle-dashed" }, "queued behind the running one");
+  assert.deepEqual(downloadGlyph({ state: "waiting", running: false, done: 400, size: 1000 }), { label: "Waiting", icon: "circle-dashed" }, "the hub is away");
+  assert.equal(downloadGlyph({ state: "failed" }), null);
+  assert.equal(downloadGlyph(null), null);
 });
 
 test("an episode's or movie's sheet offers Download, Cancel download or Remove from this device by its download state", () => {

@@ -351,9 +351,9 @@ export function GlobalSearch({ visible, twoPane, search, recents, onForget, acti
               onKeyPress={(event) => {
                 if (event.nativeEvent.key === "Backspace" && !query && type) setType("");
               }}
-              placeholder="Search Arca"
+              placeholder="Search"
               placeholderTextColor={c.mute}
-              accessibilityLabel="Search Arca"
+              accessibilityLabel="Search"
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"

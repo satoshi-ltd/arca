@@ -9,9 +9,9 @@ import {
   Icon,
   PressScale,
   ProgressRing,
+  DownloadGlyph,
   Scaffold,
   SegmentedControl,
-  Tag,
   useDesign,
 } from "./components";
 import { ScrollPosition } from "./KeyboardPane";
@@ -46,7 +46,7 @@ import {
   videoTabs,
   watchedLine,
 } from "./video-library.js";
-import { OFFLINE_DOWNLOADS, downloadAction, downloadChip, downloadFraction, downloadLabel, downloadNote, downloadTile } from "./video-downloads.js";
+import { OFFLINE_DOWNLOADS, downloadAction, downloadFraction, downloadGlyph, downloadNote, downloadTile } from "./video-downloads.js";
 
 
 function Art({ uri, shape, icon }) {
@@ -77,7 +77,7 @@ function Saved() {
   const { s, c } = useDesign();
   return (
     <View style={s.videoSaved} pointerEvents="none">
-      <Icon name="arrow-down-to-line" size={14} color={c.onMedia} />
+      <Icon name="circle-arrow-down" size={14} color={c.onMedia} />
     </View>
   );
 }
@@ -127,16 +127,12 @@ function DockTile({ label, icon, ring, value, disabled, onPress, spoken }) {
 
 function EpisodeState({ ep, row }) {
   const { s, c } = useDesign();
-  const chip = downloadChip(row);
-  if (!ep.watched && !chip) return null;
+  const glyph = downloadGlyph(row);
+  if (!ep.watched && !glyph) return null;
   return (
     <View style={s.videoState}>
       {ep.watched && <Icon name="check" size={20} color={c.accent} />}
-      {chip && (
-        <View accessible accessibilityLabel={downloadLabel(row)}>
-          <Tag variant={chip.variant}>{chip.label}</Tag>
-        </View>
-      )}
+      <DownloadGlyph glyph={glyph} />
     </View>
   );
 }

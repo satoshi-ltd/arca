@@ -28,7 +28,7 @@ test("erase and stop syncing start with the real numbers and keep the safety sen
   assert.match(copy.eraseDevice({ folders: 1, size: 10, pending: 0 }).message, /^1 folder · 10 B .*Everything is on the hub\./);
   assert.match(copy.eraseDevice({ folders: 1, size: 10, pending: null }).message, /could not be counted/);
   const stop = copy.stopSyncing({ name: "docs", files: 12, size: 2048, pending: 1, sourceOnly: false });
-  assert.match(stop.message, /^12 files · 2\.0 KB on this phone will be deleted; 1 file not yet on the hub\. Removes this folder’s Arca copy/);
+  assert.match(stop.message, /^12 files · 2\.0 KB on this phone will be deleted; 1 file not yet on the hub\. Removes this folder’s copy from this phone/);
   assert.match(copy.stopSyncing({ name: "p", files: 1, size: 1, pending: 0, sourceOnly: true }).message, /album link/);
 });
 

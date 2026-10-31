@@ -8217,7 +8217,7 @@ test("Command-K opens one palette with typed groups and no scopes, walks results
   type("blue");
   await until(() => dialog.querySelector('[aria-label="Files"]'));
   assert.equal(dialog.querySelector(".pal-scopes, [data-pal-scope]"), null, "the groups separate the kinds; there are no scopes");
-  assert.equal(dialog.querySelector(".pal-input").placeholder, "Search Arca");
+  assert.equal(dialog.querySelector(".pal-input").placeholder, "Search");
   assert.deepEqual([...dialog.querySelectorAll(".pal-group")].map((g) => g.getAttribute("aria-label")), ["Folders", "Photos", "Files"]);
   assert.equal(dialog.querySelectorAll(".pal-thumbs .pal-cell").length, 1, "photos are a thumbnail row");
   await until(() => dialog.querySelector(".pal-thumb img"));
@@ -8971,7 +8971,7 @@ test("the Files list appends pages under one Show more files button, has no sear
     await until(() => rows() === rowsAfter && w.document.body.getAttribute("aria-busy") === "false");
   }
   assert.equal(more(), null, "the list stops growing at 500 rows");
-  assert.match([...w.document.querySelectorAll("#content .hint")].at(-1).textContent, /Showing the first 500 files\. Search Arca to find the rest\./);
+  assert.match([...w.document.querySelectorAll("#content .hint")].at(-1).textContent, /Showing the first 500 files\. Search to find the rest\./);
   assert.ok(browsed.every((request) => request.search === null), "the folder browser never filters by itself");
   assert.equal(w.document.querySelector('[data-action="folder-search-toggle"], #folder-search-input'), null, "the one search is the palette");
 });

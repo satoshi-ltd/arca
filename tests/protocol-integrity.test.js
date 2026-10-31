@@ -917,7 +917,7 @@ test("desktop erase refuses hardlinked logs without changing external files", as
   const logfile = path.join(home, "daemon.log");
   fs.writeFileSync(external, "keep outside Arca state");
   fs.linkSync(external, logfile);
-  await assert.rejects(replica.api("/v1/destroy-replica", { confirmed: true }), /log location changed/);
+  await assert.rejects(replica.api("/v1/destroy-replica", { confirmed: true }), /Log location changed/);
   assert.equal(fs.readFileSync(external, "utf8"), "keep outside Arca state");
   assert.ok(replica.engine.config.destroyPending);
   fs.unlinkSync(logfile);

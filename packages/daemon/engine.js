@@ -74,7 +74,10 @@ function fileDate(file) {
     : null;
 }
 export const STREAM_ONLY = "Movies & TV folders live only on the hub. Play them from the library.";
-export const STREAM_ONLY_EDIT = "Rename or move files of a Movies & TV folder on the hub's disk; Arca picks the change up.";
+export const MEDIA_MODES = ["stream", "keep"];
+export const MEDIA_SWITCH = "Stop syncing this library before choosing again.";
+export const STREAMED_EDIT = "Keep this folder on this device to edit it";
+export const STREAM_ONLY_EDIT = "Rename or move files of a Movies & TV folder on the hub's disk; the library picks the change up.";
 export class Engine {
   constructor(home) {
     this.store = new Store(home);
@@ -272,6 +275,7 @@ export class Engine {
                   ?.conflicts ?? s.unresolvedConflicts(v.id)),
         };
       }),
+      media: this.config.role === "hub" ? {} : s.mediaModes(),
       devices: s.db
         .prepare(
           "SELECT d.id,d.name,d.role,d.revoked,d.last_seen,d.last_address,a.enabled AS backup_enabled,a.revision AS backup_revision,a.updated AS backup_updated FROM devices d LEFT JOIN backup_ack a ON a.device=d.id",
@@ -2504,7 +2508,7 @@ export class Engine {
     ];
     this.store.saveConfig();
   }
-  async select(id, location, volumes = null) {
+  async select(id, location, volumes = null, mode = undefined) {
     const s = this.store;
     volumes ??=
       this.config.role === "hub"
@@ -2512,7 +2516,22 @@ export class Engine {
         : (await this.hubAction("/v1/catalog")).volumes;
     const v = volumes.find((v) => v.id === id);
     if (!v) fail("Unknown remote volume", 404);
-    if (v.video && this.config.role !== "hub") fail(STREAM_ONLY, 409);
+    if (mode !== undefined && !MEDIA_MODES.includes(mode)) fail("Choose Stream or Keep", 400);
+    if (this.config.role === "hub") {
+      if (mode !== undefined) fail("The hub holds every library; it never streams or keeps one", 403);
+    } else if (v.music || v.video) {
+      mode ??= v.video ? "stream" : "keep";
+      const chosen = s.mediaMode(id) || (s.volumes().find((row) => row.id === id)?.selected ? "keep" : null);
+      if (chosen && chosen !== mode) fail(MEDIA_SWITCH, 409);
+      if (v.video && mode === "keep" && this.config.installation !== "desktop")
+        fail("Keep Movies & TV on the desktop app. A server streams them from the hub.", 409);
+      if (v.video || mode === "stream") {
+        this.rememberCatalogVolume(v);
+        s.db.prepare("INSERT OR IGNORE INTO media_modes(volume,mode) VALUES(?,?)").run(id, mode);
+        if (v.video && mode === "keep") void this.videoDownloads?.wake();
+        return { id, name: v.name, mode };
+      }
+    } else if (mode === "stream") fail("Only Audio and Movies & TV libraries stream", 400);
     const existing = s.volumes().find((v) => v.id === id);
     if (
       existing?.path &&

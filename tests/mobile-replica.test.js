@@ -4048,7 +4048,7 @@ test("a photo export timeout fails that photo only and never marks the hub offli
   const exporter = f.media.export;
   f.media.export = async (id, ...args) => {
     if (id === "photo-1")
-      throw new Error("Original download timed out. Keep Arca open and retry.");
+      throw new Error("Original download timed out. Keep the app open and retry.");
     return exporter(id, ...args);
   };
   fs.writeFileSync(f.files.work(f.replica.scope, zeta.id, "z.txt"), "zeta");

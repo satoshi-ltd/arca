@@ -2,14 +2,14 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.8.19 · Functional, not release-qualified.**
+**v0.8.20 · Functional, not release-qualified.**
 
 ## How it works
 
 - The **hub** creates shared folders and owns their catalog and history. Every other device, a replica in the protocol, chooses its own local destinations and keeps complete copies of the folders it selects; edits synchronize in both directions and there are no placeholders. Phones are always replicas.
 - **Web** administers the server it connects to, **Tauri** manages its local daemon and the **CLI** is auxiliary. Pairing never grants hub administration.
 - Pause, Stop syncing, hub Stop syncing here and hub Delete share are different operations; conflicts preserve both versions; history retention is per folder; full backup is optional and only for desktop and server replicas.
-- Phones add photo-library uploads to a complete two-way copy, and hub folders can be opened as a gallery or an audio library. Movies & TV folders are an exception: their originals stay on the hub, clients stream them, and desktop and phone apps offer separate offline downloads.
+- Phones add photo-library uploads to a complete two-way copy, and hub folders can be opened as a gallery or an audio library. Movies & TV folders are an exception: their originals stay on the hub, clients stream them, and desktop and phone apps offer separate offline downloads. Audio libraries can stream the same way: a desktop or server replica chooses at Start syncing, and Android phones stream the ones they start, downloading albums, artists, shows or tracks for offline listening.
 - Shared folders honor a synchronized `.arcaignore`; a fixed list of OS metadata, temporaries and caches is always excluded.
 
 SPEC.md owns the contracts: [product decisions](SPEC.md#1-product-decisions), [synchronization](SPEC.md#3-synchronization), [desktop, server and web](SPEC.md#4-desktop-server-and-web) and [mobile](SPEC.md#5-mobile).

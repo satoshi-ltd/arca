@@ -13,7 +13,11 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaLibraryService
@@ -113,10 +117,14 @@ class MusicService : MediaLibraryService() {
     super.onCreate()
     instance = this
     shuffle = StartFirstShuffleOrder(Random())
+    val hub = ResolvingDataSource.Factory(DefaultDataSource.Factory(this, DefaultHttpDataSource.Factory())) { spec ->
+      MusicHub.headers(spec.uri.toString()).takeIf { it.isNotEmpty() }?.let(spec::withAdditionalHeaders) ?: spec
+    }
     player = ExoPlayer.Builder(this)
+      .setMediaSourceFactory(DefaultMediaSourceFactory(hub))
       .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
       .setHandleAudioBecomingNoisy(true)
-      .setWakeMode(C.WAKE_MODE_LOCAL)
+      .setWakeMode(C.WAKE_MODE_NETWORK)
       .build()
     player.setShuffleOrder(shuffle)
     player.addListener(object : Player.Listener {
@@ -190,16 +198,26 @@ class MusicService : MediaLibraryService() {
           tree = tree.reloaded(next)
           forgetStale()
           loaded.set(Unit)
-          val current = session ?: return@post
-          val browsing = browse()
-          current.notifyChildrenChanged(MusicTree.ROOT, browsing.roots.size, null)
-          for (root in browsing.roots) current.notifyChildrenChanged(root.id, browsing.children(root.id)?.size ?: 0, null)
+          notifyRoots()
         } finally {
           done()
         }
       }
     }
   }
+
+  fun hubChanged() {
+    main.post { if (loaded.isDone) notifyRoots() }
+  }
+
+  private fun notifyRoots() {
+    val current = session ?: return
+    val browsing = browse()
+    current.notifyChildrenChanged(MusicTree.ROOT, browsing.roots.size, null)
+    for (root in browsing.roots) current.notifyChildrenChanged(root.id, browsing.children(root.id)?.size ?: 0, null)
+  }
+
+  private fun playing() = tree.streaming(MusicHub.ready)
 
   fun applyRename(from: String, to: String, done: () -> Unit) {
     main.post {
@@ -299,7 +317,7 @@ class MusicService : MediaLibraryService() {
 
   private fun browse(): MusicTree {
     val file = File(root(this), "music-synced.json")
-    return tree.withProgress(syncedFile.progress(file.lastModified(), file.length(), tree.library.scope) { syncedText(file) })
+    return playing().withProgress(syncedFile.progress(file.lastModified(), file.length(), tree.library.scope) { syncedText(file) })
   }
 
   private fun syncedStart(track: String, positionMs: Long, active: Boolean): Long? {
@@ -358,14 +376,14 @@ class MusicService : MediaLibraryService() {
   }
 
   private fun browsable(node: MusicNode): MediaItem {
-    node.track?.let { return playable(node.id, it, false, subtitle = node.subtitle, extras = completion(node.played, node.percent)) }
+    node.track?.takeIf { node.playable }?.let { return playable(node.id, it, false, subtitle = node.subtitle, extras = completion(node.played, node.percent)) }
     val metadata = MediaMetadata.Builder()
       .setTitle(node.title)
       .setSubtitle(node.subtitle)
       .setArtworkUri(cover(node.cover, false))
-      .setIsBrowsable(true)
+      .setIsBrowsable(node.track == null)
       .setIsPlayable(false)
-      .setMediaType(type(node.id))
+      .setMediaType(if (node.track == null) type(node.id) else MediaMetadata.MEDIA_TYPE_MUSIC)
     if (node.grid || node.group != null)
       metadata.setExtras(Bundle().apply {
         if (node.grid) putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM)
@@ -376,7 +394,7 @@ class MusicService : MediaLibraryService() {
 
   private fun playable(id: String, track: MusicTrack, large: Boolean = true, seen: MutableMap<String, Uri?>? = null, subtitle: String? = null, extras: Bundle? = null): MediaItem = MediaItem.Builder()
     .setMediaId(id)
-    .setUri(Uri.fromFile(File(track.path)))
+    .setUri(if (track.stream) Uri.parse(track.path) else Uri.fromFile(File(track.path)))
     .setMediaMetadata(
       MediaMetadata.Builder()
         .setTitle(track.title)
@@ -399,6 +417,7 @@ class MusicService : MediaLibraryService() {
   }
 
   private fun queue(id: String, positionMs: Long): MediaSession.MediaItemsWithStartPosition? {
+    val tree = playing()
     val (tracks, index) = tree.expand(id) ?: return null
     val context = MusicTree.parseTrackNodeId(id)?.first?.takeIf { tree.queue(it) != null }
     val seen = HashMap<String, Uri?>()
@@ -462,7 +481,7 @@ class MusicService : MediaLibraryService() {
       controller: MediaSession.ControllerInfo,
       mediaItems: MutableList<MediaItem>,
     ): ListenableFuture<MutableList<MediaItem>> = whenLoaded {
-      mediaItems.mapNotNull { item -> MusicTree.resolveContinue(item.mediaId).let { id -> tree.expand(id)?.let { (tracks, index) -> playable(id, tracks[index]) } } }.toMutableList()
+      mediaItems.mapNotNull { item -> MusicTree.resolveContinue(item.mediaId).let { id -> playing().expand(id)?.let { (tracks, index) -> playable(id, tracks[index]) } } }.toMutableList()
     }
 
     override fun onSetMediaItems(
@@ -484,7 +503,7 @@ class MusicService : MediaLibraryService() {
         Futures.immediateFuture(single)
       }
       else {
-        val resolved = mediaItems.mapNotNull { item -> MusicTree.resolveContinue(item.mediaId).let { id -> tree.expand(id)?.let { (tracks, index) -> playable(id, tracks[index]) } } }
+        val resolved = mediaItems.mapNotNull { item -> MusicTree.resolveContinue(item.mediaId).let { id -> playing().expand(id)?.let { (tracks, index) -> playable(id, tracks[index]) } } }
         if (resolved.isEmpty()) Futures.immediateFailedFuture(IllegalArgumentException("This music is no longer on this phone."))
         else {
           nameQueue(null)

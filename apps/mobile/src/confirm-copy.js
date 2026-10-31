@@ -78,8 +78,16 @@ export const stopSyncing = ({ name, files, size, pending, sourceOnly }) => ({
     `${Number.isFinite(files) ? `${fileCount(files)} · ` : ""}${bytes(size)} on this phone will be deleted; ${hubLine(pending)} ` +
     (sourceOnly
       ? "Stops photo uploads and removes this folder’s Arca copy and album link. Originals in Photos, hub files and history are kept. Unsynced local changes will be lost; export the folder first to keep them."
-      : "Removes this folder’s Arca copy from this phone. Hub files and history are kept. Unsynced local changes will be lost; use Export folder first to keep them."),
+      : "Removes this folder’s copy from this phone. Hub files and history are kept. Unsynced local changes will be lost; use Export folder first to keep them."),
   label: "Stop syncing and delete",
+  icon: "unlink",
+  destructive: true,
+});
+
+export const stopStreaming = ({ name, files, size }) => ({
+  title: `Stop syncing “${name}”?`,
+  message: `${files ? `${fileCount(files)} · ${bytes(size)} downloaded on this phone will be deleted. ` : ""}Stops streaming it here. Hub files and history are kept.`,
+  label: files ? "Stop syncing and delete" : "Stop syncing",
   icon: "unlink",
   destructive: true,
 });

@@ -195,7 +195,7 @@ fn running_daemon(home: &Path) -> Result<Option<u32>, String> {
 }
 async fn stop_daemon(home: &Path, service: bool) -> Result<(), String> {
     if service && !launchctl(&["bootout", &format!("{}/{LAUNCH_AGENT}", launchd_domain()?)])? {
-        return Err("Could not stop the Arca login service before updating.".into());
+        return Err("Could not stop the login service before updating.".into());
     }
     if let Some(pid) = running_daemon(home)? {
         let pid = pid.to_string();
@@ -236,7 +236,7 @@ async fn resume_daemon(app: &tauri::AppHandle) -> Result<(), String> {
     if request("/v1/status", "GET", None).await.is_err() {
         if mode == "service" {
             if !launchctl(&["bootstrap", &launchd_domain()?, &launch_agent().to_string_lossy()])? {
-                return Err("Could not restart the Arca login service after the update.".into());
+                return Err("Could not restart the login service after the update.".into());
             }
         } else {
             spawn_daemon(app)?;
@@ -260,7 +260,7 @@ async fn initialize(
             request("/v1/setup", "POST", Some(json!({"name":name,"role":role,"root":root,"onboarding":true}))).await?;
             return Ok(());
         }
-        return Err("Arca is already configured".into());
+        return Err("This device is already configured".into());
     }
     if !["hub", "replica", "backup"].contains(&role.as_str()) {
         return Err("Invalid role".into());
@@ -386,7 +386,7 @@ fn desktop_preferences() -> Value {
 }
 #[tauri::command]
 async fn choose_folder() -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(|| rfd::FileDialog::new().set_title("Choose an Arca folder").pick_folder().map(|p|p.to_string_lossy().to_string())).await.map_err(|e|e.to_string())
+    tauri::async_runtime::spawn_blocking(|| rfd::FileDialog::new().set_title("Choose a folder").pick_folder().map(|p|p.to_string_lossy().to_string())).await.map_err(|e|e.to_string())
 }
 #[tauri::command]
 fn copy_text(text: String) -> Result<(), String> {
@@ -691,7 +691,7 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     let service = launch_agent_loaded()?;
     let running = running_daemon(&state)?.is_some();
     if !service && !running && request("/v1/status", "GET", None).await.is_ok() {
-        return Err("An Arca daemon this app did not start is serving this device. Stop it before updating.".into());
+        return Err("A daemon this app did not start is serving this device. Stop it before updating.".into());
     }
     // The daemon executes the runtime inside the installation being replaced.
     if service || running {

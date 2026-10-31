@@ -17,8 +17,8 @@ import kotlin.math.roundToInt
 internal fun writeThumbnail(context: Context, source: String, destination: String, size: Int, cover: Boolean, video: Boolean) {
   val input = File(java.net.URI(source)).canonicalFile
   val output = File(java.net.URI(destination)).canonicalFile
-  check(input.path.startsWith(context.filesDir.canonicalPath + "/")) { "File is outside Arca storage" }
-  check(output.path.startsWith(context.cacheDir.canonicalPath + "/")) { "Thumbnail is outside Arca cache" }
+  check(input.path.startsWith(context.filesDir.canonicalPath + "/")) { "File is outside app storage" }
+  check(output.path.startsWith(context.cacheDir.canonicalPath + "/")) { "Thumbnail is outside the app cache" }
   check(size in 32..4096) { "Invalid thumbnail size" }
   val bitmap = if (video) videoFrame(input, size, cover) else imageThumbnail(input, size, cover)
   try {

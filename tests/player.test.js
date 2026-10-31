@@ -227,7 +227,7 @@ test("a player's music library carries the rev a deletion needs", async (t) => {
   assert.equal((await call("/v1/delete-file", { body: { volume: volume.id, path: track.path, rev: track.rev }, token })).status, 200);
 });
 
-test("a linked phone or desktop replica deletes through the hub only in a video library", async (t) => {
+test("a linked phone or desktop replica deletes through the hub only in a video or audio library", async (t) => {
   const { d, call, pair } = await hub(t);
   const movies = await (await call("/v1/volumes", { body: { name: "Movies" } })).json();
   const songs = await (await call("/v1/volumes", { body: { name: "Songs" } })).json();
@@ -240,7 +240,9 @@ test("a linked phone or desktop replica deletes through the hub only in a video 
   const { id, token } = await (await pair({ name: "phone" })).json();
   const as = (volume, file, extra = {}) =>
     call("/v1/delete-file", { body: { volume: volume.id, path: file, rev: d.engine.store.current(volume.id, file)?.rev, ...extra }, token });
-  assert.equal((await as(songs, "song.mp3")).status, 403, "audio libraries stay with the administrator and TVs");
+  assert.equal((await as(songs, "song.mp3", { rev: 999 })).status, 409, "a stale rev deletes no track");
+  assert.equal((await as(songs, "song.mp3")).status, 200, "a replica that streams an audio library deletes through the hub");
+  assert.equal(d.engine.store.current(songs.id, "song.mp3").deleted, 1);
   assert.equal((await as(docs, "note.txt")).status, 403, "a synced folder deletes through sync");
   assert.equal((await as(movies, ".arcaignore")).status, 403);
   assert.equal((await as(movies, "Heat.mp4", { rev: 999 })).status, 409, "a stale rev deletes nothing");

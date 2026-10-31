@@ -109,11 +109,11 @@ export function itemDownload(row, item) {
 
 export const isDownloading = (row) => !!row && ACTIVE.has(row.state);
 
-export function downloadChip(row) {
-  if (row?.state === "done") return { label: "Downloaded", variant: "self" };
+export function downloadGlyph(row) {
+  if (row?.state === "done") return { label: "Downloaded", icon: "circle-arrow-down" };
   if (!isDownloading(row)) return null;
-  if (row.state === "queued" && row.running) return { label: `Downloading ${Math.floor(downloadFraction(row) * 100)}%`, variant: "hub" };
-  return { label: "Waiting", variant: undefined };
+  if (row.state === "queued" && row.running) return { label: `Downloading ${Math.floor(downloadFraction(row) * 100)}%`, ring: downloadFraction(row) };
+  return { label: "Waiting", icon: "circle-dashed" };
 }
 
 export function downloadAction(row) {
@@ -122,7 +122,29 @@ export function downloadAction(row) {
   return row ? ["download", "remove-download"] : ["download"];
 }
 
-export function createVideoDownloads({ replica, client, onChange = () => {}, chunk = DOWNLOAD_CHUNK, refresh = null, pause = null, retryDelay = RETRY_LATER, since = Date.now() }) {
+export const VIDEO_KIND = {
+  noun: "video",
+  syncing: HUB_SYNCING,
+  rows: "videoDownloads",
+  save: "saveVideoDownload",
+  foreign: "foreignVideoDownloads",
+  forget: "forgetVideoDownload",
+  file: "videoDownload",
+  route: mediaRoute,
+  subtitles: downloadSubtitles,
+  belongs: isVideoFolder,
+  async current(replica, volume, path) {
+    const { library } = await refreshVideoLibrary(replica, volume);
+    return [...library.items.values()].find((item) => item.kind !== "show" && item.path === path) || null;
+  },
+  paths(library) {
+    if (!library?.items || library.indexing || !(library.movies.length || library.shows.length || library.other.length)) return null;
+    return new Set([...library.items.values()].filter((item) => item.kind !== "show").map((item) => item.path));
+  },
+  verify: async (files, uri, row) => (await quickHash((at, length) => files.read(uri, at, length), row.size)) === row.hash,
+};
+
+export function createVideoDownloads({ replica, client, kind = VIDEO_KIND, onChange = () => {}, chunk = DOWNLOAD_CHUNK, refresh = null, pause = null, retryDelay = RETRY_LATER, since = Date.now() }) {
   const store = replica.store;
   const files = replica.files;
   const scope = replica.scope;
@@ -132,7 +154,7 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
   let loaded = null;
   let retry = null;
   const emit = () => onChange(new Map([...rows].map(([key, row]) => [key, key === running?.key && row.state === "queued" ? { ...row, running: true } : row])));
-  const uri = (row, name) => files.videoDownload(scope, row.volume, name);
+  const uri = (row, name) => files[kind.file](scope, row.volume, name);
   const mediaName = (row) => `${row.hash}.${row.ext}`;
   const cancelled = () => Object.assign(new Error("Download cancelled"), { code: "REQUEST_CANCELLED" });
   const sleeper = (signal) => (ms) =>
@@ -150,7 +172,7 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
     if (signal?.aborted) throw signal.reason || cancelled();
     if (!fresh && !rows.has(downloadKey(row.volume, row.path))) throw cancelled();
     rows.set(downloadKey(row.volume, row.path), row);
-    await store.saveVideoDownload(scope, row);
+    await store[kind.save](scope, row);
     if (!quiet) emit();
     return row;
   }
@@ -166,24 +188,23 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
   async function drop(row) {
     rows.delete(downloadKey(row.volume, row.path));
     emit();
-    await store.forgetVideoDownload(scope, row.volume, row.path);
+    await store[kind.forget](scope, row.volume, row.path);
     await discard(row);
     if (row.replaces) await discard({ ...row, ...row.replaces });
   }
   async function current(volume, path) {
     if (refresh) return refresh(volume, path);
-    const { library } = await refreshVideoLibrary({ scope, store, client }, volume);
-    return [...library.items.values()].find((item) => item.kind !== "show" && item.path === path) || null;
+    return kind.current({ scope, store, client }, volume, path);
   }
   async function changed(row, error, signal) {
     const item = await current(row.volume, row.path);
-    if (item && item.hash === row.hash) throw error?.status === 409 ? waiting(HUB_SYNCING) : error;
+    if (item && item.hash === row.hash) throw error?.status === 409 ? Object.assign(waiting(kind.syncing), { syncing: true }) : error;
     if (!item) {
       await drop(row);
       throw cancelled();
     }
     await discard(row);
-    return save({ ...row, id: item.id, hash: item.hash, size: item.size, ext: extension(item.path), subtitles: downloadSubtitles(item), saved: [], done: 0, error: "" }, false, signal);
+    return save({ ...row, id: item.id, hash: item.hash, size: item.size, ext: extension(item.path), subtitles: kind.subtitles(item), saved: [], done: 0, error: "" }, false, signal);
   }
   async function fetchCopy(start, signal, retried) {
     let row = start;
@@ -207,7 +228,7 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
       const range = `bytes ${offset}-${end}/${row.size}`;
       let response;
       try {
-        response = await client.raw(mediaRoute(row.volume, row), {
+        response = await client.raw(kind.route(row.volume, row), {
           signal,
           timeout: blockTimeout(end - offset + 1),
           headers: { Range: `bytes=${offset}-${end}` },
@@ -218,19 +239,19 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
         return { row: await changed(row, error, signal), restart: true };
       }
       if (response.status !== 206 || response.headers.get("content-range") !== range) {
-        const error = new Error("The hub did not return the requested part of this video.");
+        const error = new Error(`The hub did not return the requested part of this ${kind.noun}.`);
         if (retried) throw error;
         return { row: await changed(row, error, signal), restart: true };
       }
       const data = client.fileTransfers ? null : new Uint8Array(await response.arrayBuffer());
-      if ((data?.length ?? response.bytesWritten) !== end - offset + 1) throw new Error("The hub sent an incomplete part of this video.");
+      if ((data?.length ?? response.bytesWritten) !== end - offset + 1) throw new Error(`The hub sent an incomplete part of this ${kind.noun}.`);
       if (data) await files.write(partial, data, offset);
       const before = Math.floor((offset / row.size) * 100);
       offset = end + 1;
       row = await save({ ...row, done: offset }, Math.floor((offset / row.size) * 100) === before, signal);
     }
-    if ((await files.stat(partial))?.size !== row.size) throw new Error("The download is incomplete. It resumes on Wi-Fi.");
-    if ((await quickHash((at, length) => files.read(partial, at, length), row.size)) !== row.hash) {
+    if ((await files.stat(partial))?.size !== row.size) throw new Error("The download is incomplete. Download it again.");
+    if (!(await kind.verify(files, partial, row))) {
       await files.remove(partial);
       throw failure(MISMATCH);
     }
@@ -292,7 +313,7 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
         if (controller.signal.aborted || stopped || !row) return;
         if (error?.downloadWait || isHubUnreachable(error) || error?.code === "HUB_TIMEOUT") {
           await save({ ...row, state: "waiting", error: error?.downloadWait ? error.message : HUB_AWAY });
-          if (error?.message === HUB_SYNCING) later();
+          if (error?.syncing) later();
         } else await save({ ...row, state: "failed", error: error?.message || "This download failed." });
       })
       .catch(() => {})
@@ -304,19 +325,19 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
   const manager = {
     async load() {
       loaded ||= (async () => {
-        const foreign = await store.foreignVideoDownloads(scope).catch(() => []);
+        const foreign = await store[kind.foreign](scope).catch(() => []);
         for (const { scope: other, row } of foreign) {
           const media = `${row.hash}.${row.ext}`;
           const targets = [[media, ".part"], [media, ""], ...(row.subtitles || []).map((key) => [subtitleFile(row, key), ""])];
           for (const [name, suffix] of targets)
             try {
-              await files.remove(files.videoDownload(other, row.volume, name) + suffix);
+              await files.remove(files[kind.file](other, row.volume, name) + suffix);
             } catch {
               continue;
             }
-          await store.forgetVideoDownload(other, row.volume, row.path).catch(() => {});
+          await store[kind.forget](other, row.volume, row.path).catch(() => {});
         }
-        for (const row of await store.videoDownloads(scope)) rows.set(downloadKey(row.volume, row.path), row);
+        for (const row of await store[kind.rows](scope)) rows.set(downloadKey(row.volume, row.path), row);
         emit();
       })();
       await loaded;
@@ -325,14 +346,14 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
     snapshot: () => new Map(rows),
     async prune(volume, library) {
       await this.load();
-      if (!library?.items || library.indexing || !(library.movies.length || library.shows.length || library.other.length)) return;
-      const paths = new Set([...library.items.values()].filter((item) => item.kind !== "show").map((item) => item.path));
+      const paths = kind.paths(library);
+      if (!paths) return;
       for (const row of [...rows.values()]) if (row.volume === volume && !paths.has(row.path)) await this.remove(volume, row.path);
     },
     async pruneVolumes(catalog) {
       await this.load();
       if (!Array.isArray(catalog?.volumes) || !catalog.volumes.length || !(catalog.fetchedAt > since)) return;
-      for (const row of [...rows.values()]) if (!isVideoFolder(catalog, row.volume)) await this.remove(row.volume, row.path);
+      for (const row of [...rows.values()]) if (!kind.belongs(catalog, row.volume)) await this.remove(row.volume, row.path);
     },
     get(volume, path) {
       return rows.get(downloadKey(volume, path)) || null;
@@ -351,7 +372,7 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
           hash: item.hash,
           size: item.size,
           ext: extension(item.path),
-          subtitles: downloadSubtitles(item),
+          subtitles: kind.subtitles(item),
           saved: [],
           done: 0,
           state: "queued",
@@ -386,7 +407,7 @@ export function createVideoDownloads({ replica, client, onChange = () => {}, chu
       const active = removed.some(({ key }) => running?.key === key) ? running : null;
       active?.controller.abort(cancelled());
       emit();
-      for (const { path } of removed) await store.forgetVideoDownload(scope, volume, path);
+      for (const { path } of removed) await store[kind.forget](scope, volume, path);
       await active?.promise;
       for (const { row } of removed) {
         await discard(row);
