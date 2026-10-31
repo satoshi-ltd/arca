@@ -36,6 +36,14 @@ _None._
 
 ### Builds and deployments
 
+- **VERIFY-WINDOWS-CI** — Confirm the offline backup test on Windows CI
+  `verify · maintainer · high`
+  accept: after the candidate containing the test correction is committed and pushed, its exact SHA passes the Windows `publish` job and the downstream `publish-docker` and `publish-site` workflows complete successfully. The existing failed run on `main` remains red until a later candidate passes; local tests do not establish the Windows result.
+
+- **VERIFY-DOCKER-NET** — Network policy through Docker's published ports
+  `verify · maintainer · high`
+  accept: with a disposable candidate container, confirm first web login through the default localhost binding, then pairing and authenticated requests through Tailscale and LAN bindings with the LAN option on and off. Record the socket peer seen inside the container and verify a gateway address does not get mistaken for a verified tailnet peer. Check a configured HTTPS proxy and Umbrel separately; do not expose or alter the pilot.
+
 - **VERIFY-LOCAL-WATCHERS** — Native filesystem notifications on the maintainer Mac
   `verify · maintainer · high`
   accept: raw `fs.watch` delivers repeated changes in recursive and per-directory modes on this Mac, including after streams close and reopen, and the native watcher integration tests execute without capability skips. Identify the OS or resource cause if delivery stays silent; an independent probe reproduced the loss without loading Arca. The capability guard now checks sustained delivery and reopening, while deterministic tests cover the guard itself; passing source suites does not establish that this host's native notifications recovered.
@@ -45,6 +53,14 @@ _None._
   accept: shipped installers and Casa carry the production dependencies (Sharp, exifr) and the gallery opens on both.
 
 ### Device checks
+
+- **VERIFY-ANDROID-SECURITY** — Verify Android backup and permissions
+  `verify · maintainer · normal`
+  accept: inspect the merged manifest in a new Android build: cloud backup is disabled and the overlay permission is absent; on a disposable install check pairing, gallery, background sync, music notifications and Android Auto. Check whether the device manufacturer still transfers app data device-to-device. Source configuration alone does not establish the installed manifest or device behavior.
+
+- **VERIFY-PLAYER-SECURITY** — Player media after hub hardening
+  `verify · maintainer · normal`
+  accept: after deploying the candidate hub, arca TV plays gallery images and videos and Audio tracks, including seeks, and no longer opens removed or replaced media; record the hub and TV versions. Source tests do not establish behavior on the installed TV.
 
 - **VERIFY-DEV-PLAYER** — The TV pairs as a Player on Casa
   `verify · maintainer · normal`
@@ -229,26 +245,19 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
   `chore · agent · normal`
   accept: using read-only observations, identify the current hub and Casa roles, their published bind addresses, the TV's actual route and the candidate versions; correct SPEC's operational description without recording credentials. Distinguish what was observed from assumptions, and never restart or reconfigure a running service.
 
-- **DEC-PLAINTEXT-POLICY** — Which plaintext peers need the LAN HTTP opt-in?
-  `decision · maintainer · high`
-  Today `allowLanHttp` guards only private IPv4 peers (10/8, 172.16/12, 192.168/16): IPv6, link-local, CGNAT outside Tailscale mode and public addresses pass device authentication with the opt-in off, browser sign-in and sessions ignore it entirely, and the Docker image always binds `0.0.0.0 --private-network`. Proposal: every plaintext peer except loopback and verified tailnet peers needs the opt-in, browsers included. Behind the Umbrel access proxy every client shares the proxy's address, so the opt-in would become mandatory for Umbrel web access and per-address limits collapse into one bucket; decide whether a trusted-proxy setting (accept a peer header only when the socket peer is the configured proxy) is wanted or whether SPEC documents the limitation.
 - **DEC-ERASE-SCOPE** — What may Erase delete outside the state directory?
   `decision · maintainer · normal`
   `addVolume` accepts any existing non-empty directory (a mount point such as `/Volumes/Disk` or `~/Documents`), and Erase later removes it wholesale. Decide between refusing a non-empty directory without this volume's marker at registration, restricting Erase to files Arca knows (as `deleteSyncedCopy` does), or keeping today's contract with a mount-point refusal (`stat.dev` differs from the parent's).
 - **DEC-IOS-FILE-SHARING** — iOS exposes the whole Documents tree to Files and Finder
   `decision · maintainer · low`
   `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` let any edit made in Files enter sync like a user edit and show app-owned state JSON; keep and document, or disable.
+- **DEC-ANDROID-TRANSFER** — Exclude app data from Android device-to-device migration?
+  `decision · maintainer · normal`
+  Some manufacturers may transfer app data despite the cloud backup opt-out. Excluding it can protect private local content but may also leave unsynced work behind on the old device; decide the intended migration behavior before adding data extraction rules.
 
-- **SEC-LAN-POLICY** — The plaintext opt-in covers every untrusted peer
-  `bug · agent · high · depends: DEC-PLAINTEXT-POLICY`
-  accept: as decided, with tests for IPv6, a 100.64/10 peer in standalone mode, browser sign-in, and the selected proxy configuration; preserve intentional LAN access for the TV and verified Tailscale access. Document the Docker binding and the distinction between the listener flag and the LAN opt-in. The decision must address TLS termination at a proxy before requiring plaintext checks on its backend connection.
 - **SEC-RELEASE-PENTEST** — Exercise the security boundaries before distribution
   `verify · maintainer · high`
   accept: record the exact release candidate and isolated test environment; exercise unauthenticated, browser, replica and player access, code exhaustion and concurrent redemption, revocation during transfers, browser origin and host checks, LAN/IPv6/Tailscale and proxy paths, malicious paths and media, and resource limits. Test installed desktop and phone builds as well as the hub. Record evidence, impact and remediation for findings, retest fixes, and separate untested scenarios from passing results; never use real data or the live pilot for destructive tests.
-- **SEC-PLAYER-BLOBS** — Limit a player's object reads to playable content
-  `chore · agent · normal`
-  A player can currently read any stored object if it knows its SHA-256, including an unreferenced upload or a retained non-media revision; the existing range test demonstrates an unreferenced upload. Hashes are not authorization, though guessing an unknown high-entropy hash is impractical. Accept: player object reads require a current visible gallery or audio item that the player can play; replicas retain their existing sync and history access. Tests refuse an unreferenced object and a retained non-media revision, and cover current photo and audio playback, shared hashes and byte ranges. Check arca TV compatibility before changing the endpoint and update SPEC's player contract.
-
 - **SEC-FOLDER-SCOPE** — Guard replica actions against an unintended folder
   `chore · agent · normal`
   accept: on the hub `/v1/restore`, `/v1/gallery/delete`, `/v1/gallery/link` and `/v1/video/watch-next/remove|restore` from a replica require the folder in the device's latest `machine_reports.folderIds`, as `/v1/conflict-choice` and gallery uploads already do; the administrator keeps every folder and player operations remain available. Tests cover one refused replica call per route and the player paths; SPEC's API table says "linked replica, reported folder" on those rows.
@@ -256,9 +265,6 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
 - **SEC-OPEN-LAUNCHERS** — Open never launches a synced executable
   `bug · agent · normal`
   accept: the desktop `open_file` command refuses launcher and executable extensions (`app, command, tool, terminal, workflow, pkg, dmg, exe, lnk, scr, bat, cmd, ps1, hta, js, vbs, msi, desktop, sh, run, AppImage`) when not revealing and reveals the file instead, and the web UI mirrors the rule; a Rust test covers the list. Follow-up `verify` on macOS and Windows after a desktop build.
-- **SEC-COOKIE-HOST** — Harden the browser session cookie's host scope
-  `chore · agent · normal`
-  accept: under `ARCA_WEB_ORIGIN` the cookie is `__Host-arca_session` (Secure, Path=/, no Domain); over plain HTTP SPEC states that Arca needs a hostname of its own because another service on the same host and another port receives the cookie; a test checks the cookie name and attributes in both modes.
 - **SEC-SIGNING-STEP** — The updater key never enters the build graph
   `chore · agent · normal`
   accept: establish a supported Tauri build and separate signing sequence, then build without the updater key and sign the final artifacts in a separate step that only runs the signer with the key; the manifest step verifies the signatures. Tests or a local release-tooling check cover artifact names and signatures. Follow-up `verify` on the next real release; do not assume `createUpdaterArtifacts` succeeds without a key.
@@ -271,9 +277,9 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
 - **SEC-BACKUP-SCRUB** — Detect damaged objects without falsely acknowledging backup
   `bug · agent · normal`
   accept: detect and report corrupt objects by hash without logging contents, continue checking unrelated objects, and allow retry or repair. Never acknowledge a revision as backed up without its verified content, or release its retention hold; tests corrupt an object and verify both the error and the acknowledgement boundary. Hourly maintenance checks a bounded batch of stored objects and reports corruption.
-- **SEC-MOBILE-MANIFEST** — The Android manifest ships only what the app needs
+- **SEC-MOBILE-MANIFEST** — Limit Android cover-provider access without breaking external players
   `chore · agent · normal`
-  accept: `allowBackup` is off (or `databases/` and `files/arca` are excluded from cloud backup), `SYSTEM_ALERT_WINDOW` is removed like `CAMERA`, and `CoverProvider` is not exported or requires a permission; config-plugin tests cover the manifest. Needs a native build, so the device evidence is a follow-up `verify`.
+  accept: limit `CoverProvider` to authorized cover consumers with URI grants or another appropriate mechanism, while preserving Media3 notifications and Android Auto; tests exercise access and grants. A follow-up `verify` checks external controllers in a native build. The provider currently serves covers to other apps, so making it private without working grants is not sufficient.
 - **SEC-DEPS** — Dependency advisories are checked in CI
   `chore · agent · normal`
   accept: audit the locked root, mobile and Rust dependency graphs in CI; fix compatible advisories or document each remaining advisory's affected component, reachability, owner and review date. Verify changes against Expo compatibility and the mobile build-tooling tests; do not blindly apply `npm audit fix` or accept an automatic major downgrade. Distinguish build tooling from installed runtime and reconcile the lockfile with installed dependencies.

@@ -108,6 +108,10 @@ test("a player streams a blob with a range, as arca TV plays audio", async (t) =
     body: data,
   });
   assert.equal(put.status, 200);
+  const music = await (await call("/v1/volumes", { body: { name: "Audio" } })).json();
+  assert.equal((await call("/v1/music/mark", { body: { volume: music.id } })).status, 200);
+  fs.writeFileSync(path.join(d.engine.store.volume(music.id).path, "track.mp3"), data);
+  await d.engine.cycle();
   const r = await fetch(`http://127.0.0.1:${d.port}/v1/blobs/${hash}`, { headers: { Authorization: `Bearer ${player.token}`, Range: "bytes=5-" } });
   assert.equal(r.status, 206);
   assert.equal(await r.text(), "fghijklmnop");
@@ -126,7 +130,7 @@ test("a blob answers suffix and bounded ranges and refuses ones past its end", a
     headers: { Authorization: `Bearer ${replica.token}` },
     body: data,
   });
-  const get = (range) => fetch(`http://127.0.0.1:${d.port}/v1/blobs/${hash}`, { headers: { Authorization: `Bearer ${player.token}`, Range: range } });
+  const get = (range) => fetch(`http://127.0.0.1:${d.port}/v1/blobs/${hash}`, { headers: { Authorization: `Bearer ${replica.token}`, Range: range } });
   const tail = await get("bytes=-4");
   assert.equal(tail.status, 206);
   assert.equal(tail.headers.get("content-range"), "bytes 12-15/16");
@@ -137,7 +141,7 @@ test("a blob answers suffix and bounded ranges and refuses ones past its end", a
   assert.equal((await get("bytes=-")).status, 416);
 });
 
-test("a player reads an empty blob as an empty 200", async (t) => {
+test("an empty blob reads as an empty 200", async (t) => {
   const { d, pair } = await hub(t);
   const replica = await (await pair({ name: "phone" })).json();
   const player = await (await pair({ kind: "player", name: "salon-tv" })).json();
@@ -147,9 +151,52 @@ test("a player reads an empty blob as an empty 200", async (t) => {
     headers: { Authorization: `Bearer ${replica.token}` },
     body: Buffer.alloc(0),
   });
-  const r = await fetch(`http://127.0.0.1:${d.port}/v1/blobs/${hash}`, { headers: { Authorization: `Bearer ${player.token}` } });
+  const r = await fetch(`http://127.0.0.1:${d.port}/v1/blobs/${hash}`, { headers: { Authorization: `Bearer ${replica.token}` } });
   assert.equal(r.status, 200);
   assert.equal((await r.arrayBuffer()).byteLength, 0);
+});
+
+test("player object access requires current visible media", async (t) => {
+  const { d, call, pair } = await hub(t);
+  const photos = await (await call("/v1/volumes", { body: { name: "Photos" } })).json();
+  const docs = await (await call("/v1/volumes", { body: { name: "Documents" } })).json();
+  await call("/v1/gallery/link", { body: { volume: photos.id } });
+  const root = d.engine.store.volume(photos.id).path;
+  fs.writeFileSync(path.join(root, "video.mp4"), "video bytes");
+  fs.writeFileSync(path.join(root, "old.jpg"), "old image");
+  fs.writeFileSync(path.join(root, "hidden.jpg"), "hidden image");
+  fs.writeFileSync(path.join(d.engine.store.volume(docs.id).path, "secret.txt"), "secret bytes");
+  fs.writeFileSync(path.join(d.engine.store.volume(docs.id).path, "shared.txt"), "video bytes");
+  await d.engine.cycle();
+  const old = d.engine.store.current(photos.id, "old.jpg").hash;
+  const secret = d.engine.store.current(docs.id, "secret.txt").hash;
+  const video = d.engine.store.current(photos.id, "video.mp4").hash;
+  const oldRev = d.engine.store.current(photos.id, "old.jpg").rev;
+  const hidden = d.engine.store.current(photos.id, "hidden.jpg").hash;
+  fs.writeFileSync(path.join(root, ".arcaignore"), "hidden.jpg\n");
+  fs.writeFileSync(path.join(root, "old.jpg"), "new image");
+  await d.engine.cycle();
+  const currentImage = d.engine.store.current(photos.id, "old.jpg").hash;
+  const replica = await (await pair({ name: "phone" })).json();
+  const unreferenced = Buffer.from("unreferenced");
+  const unreferencedHash = digest(unreferenced);
+  assert.equal((await fetch(`http://127.0.0.1:${d.port}/v1/uploads/${unreferencedHash}?offset=0&size=${unreferenced.length}`, { method: "PUT", headers: { Authorization: `Bearer ${replica.token}` }, body: unreferenced })).status, 200);
+  const { token } = await (await pair({ kind: "player" })).json();
+  const read = (hash) => call(`/v1/blobs/${hash}`, { method: "GET", token });
+  assert.equal((await call(`/v1/gallery?volume=${docs.id}`, { method: "GET", token })).status, 404);
+  assert.equal((await call(`/v1/gallery/preview?volume=${photos.id}&path=old.jpg&hash=${old}&rev=${oldRev}`, { method: "GET", token })).status, 404);
+  assert.equal((await call(`/v1/gallery/preview?volume=${photos.id}&hash=${old}&rev=${oldRev}`, { method: "GET", token })).status, 404);
+  assert.equal((await call(`/v1/gallery?volume=${photos.id}`, { method: "GET", token })).status, 200);
+  assert.equal((await call(`/v1/gallery?volume=${docs.id}`, { method: "GET" })).status, 200);
+  assert.equal((await read(secret)).status, 404);
+  assert.equal((await read(old)).status, 404);
+  assert.equal((await read(hidden)).status, 404);
+  assert.equal((await read(unreferencedHash)).status, 404);
+  assert.equal((await read(video)).status, 200);
+  const ranged = await fetch(`http://127.0.0.1:${d.port}/v1/blobs/${video}`, { headers: { Authorization: `Bearer ${token}`, Range: "bytes=0-4" } });
+  assert.equal(ranged.status, 206);
+  assert.equal(await ranged.text(), "video");
+  assert.equal((await read(currentImage)).status, 200);
 });
 
 test("a device's last contact is written once per refresh window, not on every request", async (t) => {

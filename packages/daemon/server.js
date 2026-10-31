@@ -14,7 +14,7 @@ import {
 } from "./gallery-media.js";
 import { Gallery, mediaKind } from "./gallery.js";
 import { IGNORE_FILE } from "./exclusions.js";
-import { Music } from "./music.js";
+import { Music, audioType } from "./music.js";
 import { Video } from "./video.js";
 import {
   PLAYER_ORIGINS,
@@ -57,6 +57,7 @@ import {
 } from "./maintenance.js";
 import { snapshotCapacity, snapshotPage } from "./snapshots.js";
 import { Web, hostName } from "./web.js";
+import { tailAddress } from "./tailscale.js";
 import { Engine, HUB_UNAVAILABLE, STREAM_ONLY, STREAM_ONLY_EDIT, STREAMED_EDIT } from "./engine.js";
 import { fromHub, streamedCover, streamedLibrary, streamedMedia, streamedTrack, trackOf } from "./music-routes.js";
 import {
@@ -343,10 +344,19 @@ export async function start(home, options = {}) {
       const lanHttp = !req.socket.encrypted && lanAddress(remote);
       const lanAllowed =
         config.role === "hub" && config.network?.allowLanHttp === true;
+      const loopback = ["127.0.0.1", "::1"].includes(remote);
+      let tailnetPeer = false;
+      if (!req.socket.encrypted && !loopback && tailAddress(remote)) {
+        const state = await network.detector.read();
+        tailnetPeer = ["unavailable", "not-installed"].includes(state.state) ||
+          (state.state === "connected" &&
+            [state.self, ...(state.peers || [])].some((p) => p?.addresses?.includes(remote)));
+      }
+      const untrustedHttp = !req.socket.encrypted && !loopback && !tailnetPeer;
       const discovery =
         req.method === "GET" && pathname === "/.well-known/arca";
       const requireLanAccess = () => {
-        if (lanHttp && !lanAllowed)
+        if (untrustedHttp && !(config.role === "hub" && config.network?.allowLanHttp === true))
           fail(
             "Enable Allow HTTP on local network in the hub's Settings to connect from this address",
             412,
@@ -357,7 +367,7 @@ export async function start(home, options = {}) {
         !(lanHttp && (lanAllowed || discovery)) &&
         !["127.0.0.1", "::1"].includes(remote)
       ) {
-        requireLanAccess();
+        if (lanHttp) requireLanAccess();
         const state = await network.detector.read();
         if (state.state !== "connected")
           fail("Tailscale access unavailable", 503);
@@ -594,7 +604,7 @@ export async function start(home, options = {}) {
             .get(digest(credential));
       if (!device || (!admin && !["replica", "player"].includes(device.role)))
         fail("Unauthorized", 401);
-      if (!admin) requireLanAccess();
+      if (!browserSession) requireLanAccess();
       const address = req.socket.remoteAddress?.replace(/^::ffff:/, "") || null;
       if (
         !admin &&
@@ -967,6 +977,16 @@ export async function start(home, options = {}) {
         if (req.method !== "GET") fail("Method not allowed", 405);
         const volume = url.searchParams.get("volume");
         s.volume(volume);
+        if (device.role === "player") {
+          if (!s.db.prepare("SELECT 1 FROM gallery_folders WHERE volume=?").get(volume))
+            fail("Gallery not found", 404);
+          if (route.endsWith("/preview") && url.searchParams.has("rev")) {
+            const name = url.searchParams.get("path");
+            const row = typeof name === "string" && s.viewCurrent(volume, name);
+            if (!row || row.deleted || String(row.rev) !== url.searchParams.get("rev") || row.hash !== url.searchParams.get("hash"))
+              fail("This photo is no longer available", 404);
+          }
+        }
         if (config.role !== "hub") {
           requireAdmin();
           if (!s.volume(volume).selected) fail("Select this folder first", 403);
@@ -1253,7 +1273,7 @@ export async function start(home, options = {}) {
               .get(device.id, digest(credential))
           )
             fail("Unauthorized", 401);
-          if (!admin && lanHttp && config.network?.allowLanHttp !== true)
+          if (!browserSession && untrustedHttp && !(config.role === "hub" && config.network?.allowLanHttp === true))
             fail("LAN access disabled", 412);
           return send(200, { cursor });
         } finally {
@@ -1519,6 +1539,17 @@ export async function start(home, options = {}) {
         requireHub();
         const hash = route.split("/").at(-1);
         const file = s.blob(hash);
+        if (device.role === "player") {
+          const candidates = s.db.prepare(`SELECT f.volume, f.path,
+            EXISTS(SELECT 1 FROM gallery_folders g WHERE g.volume=f.volume) AS gallery,
+            EXISTS(SELECT 1 FROM music_folders m WHERE m.volume=f.volume) AS music
+            FROM files f WHERE f.hash=? AND f.deleted=0 AND f.directory=0`).all(hash);
+          const playable = candidates.some((row) =>
+            ((row.gallery && mediaKind(row.path)) || (row.music && audioType(row.path))) &&
+            !s.visibleRules(row.volume)(row.path, false),
+          );
+          if (!playable) fail("Object not found", 404);
+        }
         if (!fs.existsSync(file)) fail("Object not found", 404);
         const size = fs.statSync(file).size;
         const range = req.headers.range;

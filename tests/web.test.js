@@ -151,7 +151,20 @@ test("explicit HTTPS proxy origin accepts matching host, uses Secure cookies and
   );
   const response = await login("arca.example", "https://arca.example");
   assert.equal(response.status, 200);
-  assert.match(response.headers.get("set-cookie"), /; Secure/);
+  assert.match(response.headers.get("set-cookie"), /^__Host-arca_session=[a-f0-9]{64}; HttpOnly; SameSite=Strict; Path=\/; Max-Age=86400; Secure$/);
+  const cookie = response.headers.get("set-cookie").split(";")[0];
+  const request = (pathname, method = "GET") => new Promise((resolve, reject) => {
+    const req = http.request(url + pathname, { method, headers: { host: "arca.example", origin: "https://arca.example", cookie } }, (res) => {
+      res.resume();
+      res.on("end", () => resolve(res));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+  assert.equal((await request("/v1/status")).statusCode, 200);
+  const logout = await request("/auth/logout", "POST");
+  assert.match(logout.headers["set-cookie"][0], /^__Host-arca_session=;.*Path=\/; Max-Age=0; Secure$/);
+  assert.equal((await request("/v1/status")).statusCode, 401);
 });
 
 for (const role of ["hub", "replica"]) {

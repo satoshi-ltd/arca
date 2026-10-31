@@ -404,6 +404,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS forgotten(volume TEXT,path TEXT,at INTEGER NOT NULL,PRIMARY KEY(volume,path));
       CREATE INDEX IF NOT EXISTS files_volume_rev ON files(volume,rev);
       CREATE INDEX IF NOT EXISTS files_visible_totals ON files(volume,path,size) WHERE deleted=0 AND directory=0;
+      CREATE INDEX IF NOT EXISTS files_current_hash ON files(hash) WHERE deleted=0 AND directory=0;
       CREATE INDEX IF NOT EXISTS files_conflict_rev ON files(volume,rev) WHERE instr(path,'.conflict-')>0;
       CREATE TABLE IF NOT EXISTS scan_cache(path TEXT PRIMARY KEY,signature TEXT NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,verified INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS backup_history(rev INTEGER PRIMARY KEY,row TEXT NOT NULL);

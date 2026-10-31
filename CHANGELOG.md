@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.21 — 2026-10-31
+
+- Players can fetch only current visible gallery and audio content, so their credentials cannot retrieve unrelated stored objects by hash.
+- Browser sessions behind HTTPS use a host-only secure cookie, reducing the risk of cookie interference from other subdomains.
+- Android opts out of cloud backup of app data and removes the unused overlay permission.
+- HTTP pairing and bearer access now need the LAN setting from IPv6 and other untrusted peers. Tailscale peers keep working, including on a Docker hub that cannot read Tailscale status, and browser access is unchanged.
+
+Needs: native build · desktop build · hub redeploy
+
 ## 0.8.20 — 2026-10-31
 
 - A desktop starting to sync an Audio or Movies & TV library chooses Stream from the hub or Keep on this device: a streamed Audio library plays from the hub with nothing copied, and a kept Movies & TV library downloads every title and follows the hub, stopping before the disk runs low. To change mode, stop syncing and start again.

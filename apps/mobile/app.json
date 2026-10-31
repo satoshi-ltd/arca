@@ -2,7 +2,7 @@
   "expo": {
     "name": "arca",
     "slug": "arca",
-    "version": "0.8.20",
+    "version": "0.8.21",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -26,6 +26,8 @@
     "android": {
       "package": "com.satoshilimited.arca",
       "versionCode": 28,
+      "allowBackup": false,
+      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"],
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"

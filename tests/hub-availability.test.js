@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs";
 import os from "node:os";
 import net from "node:net";
@@ -151,7 +152,7 @@ const waitFor = async (condition, limit = 5000) => {
   }
 };
 
-test("hub-only actions answer at once while the hub is known to be unavailable", async (t) => {
+test("hub-only actions fail fast and backup enables locally while the hub is unavailable", async (t) => {
   const { root, hub, volume, connect } = await setup(t);
   write(hub, volume, "note.txt", "one");
   await hub.sync();
@@ -161,7 +162,21 @@ test("hub-only actions answer at once while the hub is known to be unavailable",
   replica.engine.config.hub.url = "http://127.0.0.1:1";
   await assert.rejects(replica.sync());
   assert.equal(replica.engine.hubUnavailable, true);
-  replica.engine.config.hub.url = (await silent(t)).url;
+  const unreachable = await silent(t);
+  replica.engine.config.hub.url = unreachable.url;
+  const requests = [];
+  const actionContext = new AsyncLocalStorage();
+  const hubAction = replica.engine.hubAction.bind(replica.engine);
+  replica.engine.hubAction = (...args) => actionContext.run(true, () => hubAction(...args));
+  const request = replica.engine.request.bind(replica.engine);
+  replica.engine.request = (route, ...args) => {
+    if (actionContext.getStore()) requests.push(route);
+    return request(route, ...args);
+  };
+  assert.throws(() => replica.engine.hubAction("/v1/backup-ack", { enabled: true, revision: 0 }), {
+    status: 503,
+    message: "Hub unavailable. Try again when it is reachable.",
+  });
   for (const [route, body] of [
     ["/v1/restore", { volume: volume.id, path: "note.txt", rev }],
     ["/v1/select", { id: volume.id }],
@@ -182,8 +197,8 @@ test("hub-only actions answer at once while the hub is known to be unavailable",
         message: "Hub unavailable. Try again when it is reachable.",
       }),
     );
-  await within(3000, () => replica.api("/v1/settings", { name: "Renamed" }));
-  const backup = await within(3000, () =>
+  await within(30000, () => replica.api("/v1/settings", { name: "Renamed" }));
+  const backup = await within(30000, () =>
     replica.api("/v1/backup", {
       enabled: true,
       path: path.join(root, "backup"),
@@ -195,6 +210,7 @@ test("hub-only actions answer at once while the hub is known to be unavailable",
     "Backup enabled; waiting for the hub to acknowledge",
   );
   assert.equal(replica.engine.config.backup.enabled, true);
+  assert.deepEqual(requests, [], "hubAction never sends a request while offline");
 });
 
 test("a replica relays live web-approval requests and never replays a saved one while the hub is unavailable", async (t) => {

@@ -3,9 +3,103 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import http from "node:http";
 import { lanAddress, verifiedLanURL } from "../packages/daemon/network.js";
 import { init } from "../packages/daemon/storage.js";
 import { start } from "../packages/daemon/server.js";
+import { issueWebCode } from "../packages/daemon/web.js";
+
+test("untrusted plaintext peers need the LAN option for pairing and bearer access", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-plain-"));
+  init(home, { port: 0 });
+  const detector = { read: async () => ({ state: "connected", self: { addresses: ["100.64.0.1"] }, peers: [{ addresses: ["100.64.0.2"] }] }) };
+  const daemon = await start(home, { timer: false, network: { detector } });
+  t.after(async () => { await daemon.close(); fs.rmSync(home, { recursive: true, force: true }); });
+  daemon.server.prependListener("request", (req) => Object.defineProperty(req.socket, "remoteAddress", { value: req.headers["x-test-peer"] || "127.0.0.1", configurable: true }));
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const admin = daemon.engine.config.adminToken;
+  const req = (route, peer, body, headers = {}) => fetch(base + route, { method: body ? "POST" : "GET", headers: { "content-type": "application/json", ...(peer ? { "x-test-peer": peer } : {}), ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const invitation = await (await req("/v1/pairing", null, { name: "device" }, { authorization: `Bearer ${admin}` })).json();
+  for (const peer of ["192.168.1.9", "2001:db8::5", "100.64.0.3"]) {
+    assert.equal((await req("/pair", peer, { code: invitation.code })).status, 412, peer);
+    assert.equal((await req("/v1/status", peer, null, { authorization: `Bearer ${admin}` })).status, 412, `admin ${peer}`);
+  }
+  const pair = await req("/pair", "100.64.0.2", { code: invitation.code });
+  assert.equal(pair.status, 201, "a verified Tailscale peer works with LAN off");
+  const webCode = issueWebCode(home).code;
+  const login = (peer) => req("/auth/login", peer, { code: webCode }, { origin: base });
+  const accepted = await login("192.168.1.9");
+  assert.equal(accepted.status, 200);
+  const cookie = accepted.headers.get("set-cookie").split(";")[0];
+  assert.equal((await req("/v1/status", "2001:db8::5", null, { cookie })).status, 200);
+  await req("/v1/network/lan", null, { enabled: true }, { authorization: `Bearer ${admin}` });
+  assert.equal((await req("/v1/status", "2001:db8::5", null, { authorization: `Bearer ${admin}` })).status, 200);
+});
+
+test("a hub that cannot read Tailscale status keeps tailnet-range peers working with the LAN option off", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-docker-tailnet-"));
+  init(home, { port: 0 });
+  const status = { state: "not-installed", peers: [] };
+  const daemon = await start(home, { timer: false, network: { detector: { read: async () => status } } });
+  t.after(async () => { await daemon.close(); fs.rmSync(home, { recursive: true, force: true }); });
+  daemon.server.prependListener("request", (req) => Object.defineProperty(req.socket, "remoteAddress", { value: req.headers["x-test-peer"], configurable: true }));
+  const admin = daemon.engine.config.adminToken;
+  const get = (peer) => fetch(`http://127.0.0.1:${daemon.port}/v1/status`, { headers: { "x-test-peer": peer, authorization: `Bearer ${admin}` } });
+  assert.equal((await get("100.101.1.2")).status, 200, "Docker without the status file");
+  status.state = "unavailable";
+  assert.equal((await get("fd7a:115c:a1e0::9")).status, 200, "stale status file");
+  assert.equal((await get("2001:db8::5")).status, 412, "IPv6 outside Tailscale still needs the option");
+  assert.equal((await get("192.168.1.9")).status, 412, "private IPv4 still needs the option");
+  status.state = "disconnected";
+  assert.equal((await get("100.101.1.2")).status, 412, "a readable status that is not connected proves no tailnet");
+});
+
+test("explicit HTTPS proxy mode permits web sessions but does not exempt pairing", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-proxy-policy-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false, webOrigin: "https://arca.example" });
+  t.after(async () => { await daemon.close(); fs.rmSync(home, { recursive: true, force: true }); });
+  daemon.server.prependListener("request", (req) => Object.defineProperty(req.socket, "remoteAddress", { value: "192.168.1.10", configurable: true }));
+  const call = (route, method = "GET", body, cookie) => new Promise((resolve, reject) => {
+    const req = http.request(`http://127.0.0.1:${daemon.port}${route}`, { method, headers: { host: "arca.example", origin: "https://arca.example", "content-type": "application/json", ...(cookie ? { cookie } : {}) } }, (res) => { res.resume(); res.on("end", () => resolve(res)); });
+    req.on("error", reject); req.end(body ? JSON.stringify(body) : undefined);
+  });
+  const login = await call("/auth/login", "POST", { code: issueWebCode(home).code });
+  assert.equal(login.statusCode, 200);
+  const cookie = login.headers["set-cookie"][0].split(";")[0];
+  assert.equal((await call("/v1/status", "GET", null, cookie)).statusCode, 200);
+  assert.equal((await call("/pair", "POST", { code: "000000" })).statusCode, 412);
+  daemon.engine.config.network = { ...daemon.engine.config.network, mode: "tailscale" };
+  assert.equal((await call("/v1/status", "GET", null, cookie)).statusCode, 412, "Tailscale mode still gates a private-address proxy socket");
+});
+
+test("Umbrel's access proxy can sign in without the LAN option", async (t) => {
+  const old = process.env.ARCA_SETUP_CODE_PATH;
+  process.env.ARCA_SETUP_CODE_PATH = "/umbrel";
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-umbrel-policy-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  t.after(async () => { await daemon.close(); fs.rmSync(home, { recursive: true, force: true }); if (old === undefined) delete process.env.ARCA_SETUP_CODE_PATH; else process.env.ARCA_SETUP_CODE_PATH = old; });
+  daemon.server.prependListener("request", (req) => Object.defineProperty(req.socket, "remoteAddress", { value: "192.168.1.10", configurable: true }));
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const login = await fetch(base + "/auth/login", { method: "POST", headers: { origin: base, "content-type": "application/json" }, body: JSON.stringify({ code: issueWebCode(home).code }) });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  assert.equal((await fetch(base + "/v1/status", { headers: { cookie } })).status, 200);
+});
+
+test("a server replica explicitly bound to a private network keeps web administration", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-replica-web-"));
+  init(home, { port: 0, role: "replica" });
+  const daemon = await start(home, { timer: false, privateNetwork: true });
+  t.after(async () => { await daemon.close(); fs.rmSync(home, { recursive: true, force: true }); });
+  daemon.server.prependListener("request", (req) => Object.defineProperty(req.socket, "remoteAddress", { value: "192.168.1.10", configurable: true }));
+  const base = `http://127.0.0.1:${daemon.port}`;
+  const login = await fetch(base + "/auth/login", { method: "POST", headers: { origin: base, "content-type": "application/json" }, body: JSON.stringify({ code: issueWebCode(home).code }) });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  assert.equal((await fetch(base + "/v1/status", { headers: { cookie } })).status, 200);
+});
 
 test("LAN addresses are bounded to literal RFC1918 IPv4 and require hub opt-in", async () => {
   for (const value of [

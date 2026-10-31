@@ -225,7 +225,7 @@ export const loopbackAllowed = (session, method, remote, origin) =>
   !!session?.loopback && ["GET", "HEAD"].includes(method) && LOOPBACK.includes(remote) && (!origin || PLAYER_ORIGINS.includes(origin));
 const ownerOf = (context) =>
   context.browserSession
-    ? `browser:${digest(/(?:^|;\s*)arca_session=([a-f0-9]{64})(?:;|$)/.exec(context.req.headers.cookie || "")?.[1] || "")}`
+    ? `browser:${context.browserSession}`
     : digest(context.credential || "");
 
 export const playlistFromStart = (text) =>

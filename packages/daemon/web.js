@@ -150,9 +150,16 @@ export class Web {
     res.writeHead(200, {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
-      "Set-Cookie": `arca_session=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${req.socket.encrypted || this.publicOrigin ? "; Secure" : ""}`,
+      "Set-Cookie": `${this.cookieName(req)}=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${req.socket.encrypted || this.publicOrigin ? "; Secure" : ""}`,
     });
     res.end('{"ok":true,"state":"approved"}');
+  }
+  cookieName(req) {
+    return req.socket.encrypted || this.publicOrigin ? "__Host-arca_session" : "arca_session";
+  }
+  cookie(req) {
+    const name = this.cookieName(req);
+    return new RegExp(`(?:^|;\\s*)${name}=([a-f0-9]{64})(?:;|$)`).exec(req.headers.cookie || "")?.[1];
   }
   hostAllowed(req) {
     if (this.publicOrigin) return req.headers.host === this.publicHost;
@@ -172,12 +179,11 @@ export class Web {
   }
   session(req) {
     if (!this.hostAllowed(req)) return false;
-    const cookie = /(?:^|;\s*)arca_session=([a-f0-9]{64})(?:;|$)/.exec(
-      req.headers.cookie || "",
-    )?.[1];
+    const cookie = this.cookie(req);
     for (const [key, entry] of this.sessions)
       if (entry.expiry < Date.now()) this.sessions.delete(key);
-    return cookie && this.sessions.has(digest(cookie));
+    const key = cookie && digest(cookie);
+    return key && this.sessions.has(key) ? key : false;
   }
   async handle(req, res, readBody) {
     const url = new URL(req.url, "http://localhost");
@@ -297,14 +303,12 @@ export class Web {
     }
     if (url.pathname === "/auth/logout" && req.method === "POST") {
       if (!this.sameOrigin(req)) fail("Invalid browser origin", 403);
-      const cookie = /(?:^|;\s*)arca_session=([a-f0-9]{64})/.exec(
-        req.headers.cookie || "",
-      )?.[1];
+      const cookie = this.cookie(req);
       if (cookie) this.sessions.delete(digest(cookie));
       res.writeHead(200, {
         "Content-Type": "application/json",
         "Set-Cookie":
-          "arca_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
+          `${this.cookieName(req)}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${req.socket.encrypted || this.publicOrigin ? "; Secure" : ""}`,
       });
       res.end('{"ok":true}');
       return true;

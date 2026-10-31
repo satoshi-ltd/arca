@@ -2,7 +2,7 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.8.20 · Functional, not release-qualified.**
+**v0.8.21 · Functional, not release-qualified.**
 
 ## How it works
 
@@ -55,7 +55,7 @@ The packaged desktop app checks for a signed update at startup, every six hours 
 
 ## Connect over the local network
 
-Enable the hub's **Settings → Local network → Allow HTTP connections**, then use its private IPv4 address; the listener and Docker binding must be reachable. This is unencrypted local traffic, not public hosting; Tailscale or HTTPS are the alternatives, and a Tailscale address needs Tailscale on the phone itself. Pairing and browser access use separate six-digit, single-use, ten-minute codes.
+Enable the hub's **Settings → Local network → Allow HTTP connections**, then use its private IPv4 address; the listener and Docker binding must be reachable. This is unencrypted local traffic, not public hosting; Tailscale or HTTPS are the alternatives, and a Tailscale address needs Tailscale on the phone itself. The LAN setting gates pairing and bearer credentials, not browser sign-in: restrict the published port and any proxy backend to trusted clients. Pairing and browser access use separate six-digit, single-use, ten-minute codes.
 
 ## Docker first run
 

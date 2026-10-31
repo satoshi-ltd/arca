@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import http from "node:http";
 import { execFileSync } from "node:child_process";
 import ffmpeg from "ffmpeg-static";
 import { init } from "../packages/daemon/storage.js";
@@ -36,8 +37,8 @@ function film(kind) {
   return made.get(kind);
 }
 
-async function library(t, options = {}) {
-  const f = await hub(t, { videoSessions: { sweepMs: 50, ...options } });
+async function library(t, options = {}, serverOptions = {}) {
+  const f = await hub(t, { videoSessions: { sweepMs: 50, ...options }, ...serverOptions });
   await f.call("/v1/video/mark", { volume: f.v.id });
   const hashes = {
     ac3: await f.propose("Heat (1995).mkv", film("ac3")),
@@ -383,6 +384,33 @@ test("two web viewers keep their own compatible streams and cannot read each oth
   assert.notEqual(first.url, second.url);
   assert.equal((await fetch(url + first.url, { headers: { Cookie: one } })).status, 200, "the second viewer did not end the first stream");
   assert.equal((await fetch(url + first.url, { headers: { Cookie: two } })).status, 404, "nor can read it");
+});
+
+test("HTTPS proxy sessions keep compatible streams private and logout revokes access", async (t) => {
+  const { issueWebCode } = await import("../packages/daemon/web.js");
+  const f = await library(t, {}, { webOrigin: "https://arca.example" });
+  const request = (route, { method = "GET", cookie, body } = {}) => new Promise((resolve, reject) => {
+    const req = http.request(base(f) + route, { method, headers: { host: "arca.example", origin: "https://arca.example", ...(cookie ? { cookie } : {}), ...(body ? { "content-type": "application/json" } : {}) } }, (res) => {
+      const parts = [];
+      res.on("data", (part) => parts.push(part));
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(parts).toString() }));
+    });
+    req.on("error", reject);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
+  const login = async () => {
+    const response = await request("/auth/login", { method: "POST", body: { code: issueWebCode(f.home).code } });
+    assert.equal(response.status, 200);
+    return response.headers["set-cookie"][0].split(";")[0];
+  };
+  const one = await login(), two = await login();
+  const query = new URLSearchParams({ volume: f.v.id, path: f.names.ac3, hash: f.hashes.ac3 });
+  const first = await request(`/v1/video/compatible?${query}`, { cookie: one });
+  const route = JSON.parse(first.body).url;
+  assert.equal((await request(route, { cookie: one })).status, 200);
+  assert.equal((await request(route, { cookie: two })).status, 404);
+  assert.equal((await request("/auth/logout", { method: "POST", cookie: one })).status, 200);
+  assert.equal((await request(route, { cookie: one })).status, 401);
 });
 
 test("a segment already pruned answers 404 at once instead of waiting for it", async (t) => {
