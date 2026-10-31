@@ -10,7 +10,7 @@ Every task is one entry that a single commit can finish, with fixed fields (deci
 
 - **ID** — stable, never reused. Keep an existing ID when SPEC or the changelog cites it.
 - **type** — `bug`, `feature`, `chore`, `ui` (a visual change whose proposal is a board on `design/proposals.html`), `verify` (evidence from a real device or environment), `deploy` (build, install or publish outside the repository) or `decision`.
-- **owner** — `agent` (Claude can finish it in the repository and prove it with tests) or `maintainer` (needs a device, a native build, Casa, credentials or a product choice).
+- **owner** — `agent` (Claude can finish it in the repository and prove it with tests) or `maintainer` (needs a device, a native build, Atlas or Casa, credentials or a product choice).
 - **priority** — `high`, `normal` or `low`. Within each section, order is priority, then position; Proposed sections follow the stabilization order below.
 - **depends** — IDs that must finish first.
 - **accept** — what proves it done. Agent tasks need evidence a test or command can show.
@@ -36,35 +36,28 @@ _None._
 
 ### Builds and deployments
 
-- **VERIFY-WINDOWS-CI** — Confirm the offline backup test on Windows CI
-  `verify · maintainer · high`
-  accept: after the candidate containing the test correction is committed and pushed, its exact SHA passes the Windows `publish` job and the downstream `publish-docker` and `publish-site` workflows complete successfully. The existing failed run on `main` remains red until a later candidate passes; local tests do not establish the Windows result.
-
 - **VERIFY-DOCKER-NET** — Network policy through Docker's published ports
   `verify · maintainer · high`
-  accept: with a disposable candidate container, confirm first web login through the default localhost binding, then pairing and authenticated requests through Tailscale and LAN bindings with the LAN option on and off. Record the socket peer seen inside the container and verify a gateway address does not get mistaken for a verified tailnet peer. Check a configured HTTPS proxy and Umbrel separately; do not expose or alter the pilot.
+  accept: with a disposable candidate container, confirm first web login through the default localhost binding, then pairing and authenticated requests through Tailscale and LAN bindings with the LAN option on and off. Record the socket peer seen inside the container and verify a gateway address does not get mistaken for a verified tailnet peer. Check a configured HTTPS proxy separately; do not expose or alter the production servers.
 
 - **VERIFY-LOCAL-WATCHERS** — Native filesystem notifications on the maintainer Mac
   `verify · maintainer · high`
   accept: raw `fs.watch` delivers repeated changes in recursive and per-directory modes on this Mac, including after streams close and reopen, and the native watcher integration tests execute without capability skips. Identify the OS or resource cause if delivery stays silent; an independent probe reproduced the loss without loading Arca. The capability guard now checks sustained delivery and reopening, while deterministic tests cover the guard itself; passing source suites does not establish that this host's native notifications recovered.
 
-- **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on Casa
+- **P2-GALLERY-VIEW** — Ship the desktop/web gallery in installers and on the hub
   `verify · maintainer · normal`
-  accept: shipped installers and Casa carry the production dependencies (Sharp, exifr) and the gallery opens on both.
+  accept: shipped installers and the hub carry the production dependencies (Sharp, exifr) and the gallery opens on both.
 
 ### Device checks
 
 - **VERIFY-ANDROID-SECURITY** — Verify Android backup and permissions
   `verify · maintainer · normal`
-  accept: inspect the merged manifest in a new Android build: cloud backup is disabled and the overlay permission is absent; on a disposable install check pairing, gallery, background sync, music notifications and Android Auto. Check whether the device manufacturer still transfers app data device-to-device. Source configuration alone does not establish the installed manifest or device behavior.
+  accept: inspect the merged manifest in a new Android build: cloud backup is disabled and the overlay permission is absent; on a disposable install check pairing, gallery, background sync, music notifications and Android Auto. Confirm that a phone migration still copies app data, as Android 12+ ignores `allowBackup` for device-to-device transfers. Source configuration alone does not establish the installed manifest or device behavior.
 
 - **VERIFY-PLAYER-SECURITY** — Player media after hub hardening
   `verify · maintainer · normal`
   accept: after deploying the candidate hub, arca TV plays gallery images and videos and Audio tracks, including seeks, and no longer opens removed or replaced media; record the hub and TV versions. Source tests do not establish behavior on the installed TV.
 
-- **VERIFY-DEV-PLAYER** — The TV pairs as a Player on Casa
-  `verify · maintainer · normal`
-  accept: after a Casa redeploy and an arca TV build, the TV removed and paired again with the hub shows as arca TV, Player, with its version and its folders in Devices and still streams photos and music.
 - **VERIFY-ERASE-PRIVACY** — Erase privacy on installed desktop and mobile clients
   `verify · maintainer · high`
   accept: identify the candidate SHA and installed binaries; using disposable Arca folders, erase online and with the hub unreachable on desktop, Android and iOS. Check unsynced local files, recent searches/listening history, thumbnails, catalog state and a playing track; interrupted cleanup resumes on launch; on Android and iOS, Arca's scheduled and delivered notifications and its background-sync registration are gone, and tapping an old notification during or after the erase does nothing. Photos originals, exports, detached folders, hub files and other devices remain. Source tests cover database free pages/WAL, configuration temporaries, open logs and late writes/reads; they do not establish the installed clients' OS storage and player behavior.
@@ -143,16 +136,13 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   accept: a 24-hour run on a disposable dataset of at least 100,000 entries with concurrent replicas, edits, reconnects and large transfers; record CPU/RSS/disk growth, HTTP and mutation latency, pause/unlink responsiveness and snapshot-lease cleanup. After activity settles, content hashes agree, queues drain and resource use returns to a bounded idle level. Workloads containing application state use safe test copies.
 - **P1-RECOVERY** — Recovery drill
   `verify · maintainer · high`
-  accept: on disposable state, interrupt a transfer and an acknowledged replacement with process termination and physical power loss, then restart and reconcile. Independently restore a full backup into a fresh isolated hub after the original hub is unavailable; compare current file hashes, retained history and deletions against the expected dataset, including after retention/GC. Record any lost acknowledgement or bytes; never reset the live pilot or enable its backup incidentally. A directory flush that fails after the rename is reported but not repeated on recovery (the file already matches, so `replaceFile` is not called again), and iOS `fsync` is not `F_FULLFSYNC`; decide whether the drill needs either.
+  accept: on disposable state, interrupt a transfer and an acknowledged replacement with process termination and physical power loss, then restart and reconcile. Independently restore a full backup into a fresh isolated hub after the original hub is unavailable; compare current file hashes, retained history and deletions against the expected dataset, including after retention/GC. Record any lost acknowledgement or bytes; never reset production state or enable its backup incidentally. A directory flush that fails after the rename is reported but not repeated on recovery (the file already matches, so `replaceFile` is not called again), and iOS `fsync` is not `F_FULLFSYNC`; decide whether the drill needs either.
 - **P1-RELEASE** — Installer acceptance
   `verify · maintainer · high`
   accept: the candidate's exact SHA has successful hosted `publish`, `publish-docker` and `publish-site` runs; its installers install and launch on each supported platform. Published assets, updater signatures and image tags identify that candidate; Docker amd64/arm64 smoke checks and the macOS installer retry pass. Record hosted evidence separately from `validate-local`.
 - **P1-UPDATER** — Real desktop update
   `verify · maintainer · high`
   accept: update to the candidate from a prior published version on macOS (with and without Launch at login), Windows NSIS and Linux AppImage/deb. Verify signatures, unchanged identity/selections/files, exactly one running daemon answering under the new version, and recovery after a failed install or spawn. Verify hosted `.deb.sig` generation; qualify Windows unattended recovery under WIN-UPDATE-WATCHER.
-- **P1-CASA-CPU** — Casa CPU stall
-  `verify · maintainer · high`
-  accept: obtain a bounded capture of the CPU stall with HTTP/discovery timeouts, identify the triggering workload and create an isolated reproducer before a fix. Validate the fix against that workload and record responsiveness and CPU afterwards; a version upgrade alone does not close this task. Do not repeat live evaluator-based profiling.
 - **P1-SCHEDULER** — Scheduler measurements
   `verify · maintainer · normal`
   accept: idle wakeups, CPU, disk reads, traffic, battery and recovery correctness measured before any timing default changes.
@@ -166,24 +156,6 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   `verify · maintainer · normal`
   accept: relinking a replica on a fixed Windows drive moves outdated files to the Recycle Bin, and a file larger than the bin or a disabled bin is refused rather than deleted (only a simulated PowerShell covers this today).
 
-### Distribution
-
-- **P1-UMBREL-IMAGE** — Choose the Umbrel release image
-  `decision · maintainer · normal`
-  accept: keep 0.4.1, or move all three image references and the manifest version to a newer image (0.4.1 lacks the onboarding fixes). Moving it also retires `deploy/umbrel/arca/server-setup.js.template`, a copy of `packages/daemon/setup.js` mounted over the pinned image.
-- **P1-UMBREL** — Umbrel submission
-  `deploy · maintainer · normal · depends: P1-UMBREL-IMAGE`
-  accept: ARM runtime and image-upgrade path qualified; real client addressing and `app_proxy` checked; public repository/support access resolved and the PolyForm Strict licence checked against Umbrel's App Store terms; checked screenshots and source logo attached; the real PR opened, its URL recorded in `submission`, and the full lint rerun. Keep the pilot icon override until the official gallery is published. The Umbrel update helper does not qualify arbitrary future schema upgrades or restores. See [Umbrel packaging](SPEC.md#umbrel-packaging-and-submission).
-- **P1-SITE** — Website domain
-  `verify · maintainer · low`
-  accept: `arca.satoshi-ltd.com` serves the candidate's Pages project and Git auto-deploys are off.
-- **P1-PUBLIC-ACCESS** — Store listings
-  `deploy · maintainer · low`
-  accept: `APP_STORE_URL` and `PLAY_STORE_URL` name real listings so the site's mobile card shows store buttons instead of saying the apps are not in the stores yet.
-- **P1-SIGNING** — Code signing
-  `decision · maintainer · low`
-  accept: a decision on Windows signing; optionally one signed macOS run with `sign_macos` checked and `publish` unchecked.
-
 ### Music
 
 - **MOB-SLEEP-FADE** — The phone's sleep timer fades out before pausing
@@ -195,12 +167,6 @@ Qualification evidence identifies one candidate version/SHA and the running buil
 - **DEC-VIDEO-INTEGRITY** — Require full-file integrity for Movies & TV?
   `decision · maintainer · high`
   accept: decide whether video identity and completed-download verification must cover every byte. The current quick identity hashes only the size and first/last 4 MiB, so a same-size change or download corruption confined to the middle is undetected; it also cannot distinguish those versions for resume. If full integrity is required, approve a bounded background full hash and a protocol field for clients to verify, with regression cases changing only the middle and measurements of hub I/O and phone verification cost. Keep this separate from the fast scan fingerprint.
-- **DEC-LAN-PERMISSION** — Cache LAN permission?
-  `decision · maintainer · normal`
-- **DEC-FIRST-PAGE** — Serve the first snapshot page without a hub scan?
-  `decision · maintainer · normal`
-- **DEC-BLOB-SIGNATURES** — Trust recorded blob signatures instead of re-hashing completed blobs?
-  `decision · maintainer · normal`
 - **DEC-CONVERTING-LEGACY** — Remove the legacy `converting` mode on phones?
   `decision · maintainer · normal`
   accept: a yes or no. `replica.js`, `App.jsx` and a test still recover a folder interrupted mid-way through the former upload-only-to-working-copy transition (`converting` mode, restoring missing indexed files before switching to `source`); AGENTS.md forbids legacy modes, yet a phone could still hold that state.
@@ -214,12 +180,6 @@ Qualification evidence identifies one candidate version/SHA and the running buil
   `decision · maintainer · low`
 - **DEC-LAST-CHANGE-SCOPE** — Should Last change count deletions and conflict copies, or be named "Last saved version"?
   `decision · maintainer · low`
-- **LOCAL-CLEANUP** — Old pre-SPEC documents
-  `decision · maintainer · low`
-  accept: keep, archive or delete `.cache/docs-before-consolidation` (PLAN, PROTOCOL, STATUS and the legacy Syncthing spec from before SPEC existed). APKs and the Cargo cache now prune themselves.
-- **P1-CASA-POLICIES** — Remove redundant Casa policy lines
-  `deploy · maintainer · low`
-  accept: after checking every running device's fixed exclusions and the current policy, remove only rules made redundant by that fixed list from Casa's `alpi-workspace`, `alpi-mirai-workspace` and `alpi-host` policies. Preserve intentional content rules; `cache/` is not a fixed exclusion. The `~/.alpi` policy continues to include `.env` and secrets as directed by the maintainer.
 
 ## Proposed
 
@@ -241,10 +201,6 @@ Suggested order for approval: exposed security boundaries and preservation of us
 
 Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects exposure and impact, not proof of exploitation. Decisions precede dependent work; security, data preservation and defense-in-depth are distinguished below.
 
-- **SEC-TOPOLOGY-DOCS** — Reconcile the pilot network and role documentation
-  `chore · agent · normal`
-  accept: using read-only observations, identify the current hub and Casa roles, their published bind addresses, the TV's actual route and the candidate versions; correct SPEC's operational description without recording credentials. Distinguish what was observed from assumptions, and never restart or reconfigure a running service.
-
 - **DEC-ERASE-SCOPE** — What may Erase delete outside the state directory?
   `decision · maintainer · normal`
   `addVolume` accepts any existing non-empty directory (a mount point such as `/Volumes/Disk` or `~/Documents`), and Erase later removes it wholesale. Decide between refusing a non-empty directory without this volume's marker at registration, restricting Erase to files Arca knows (as `deleteSyncedCopy` does), or keeping today's contract with a mount-point refusal (`stat.dev` differs from the parent's).
@@ -253,11 +209,11 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
   `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` let any edit made in Files enter sync like a user edit and show app-owned state JSON; keep and document, or disable.
 - **DEC-ANDROID-TRANSFER** — Exclude app data from Android device-to-device migration?
   `decision · maintainer · normal`
-  Some manufacturers may transfer app data despite the cloud backup opt-out. Excluding it can protect private local content but may also leave unsynced work behind on the old device; decide the intended migration behavior before adding data extraction rules.
+  Android 12+ copies app data in a phone-to-phone migration whatever `allowBackup` says (`IGNORE_ALLOW_BACKUP_IN_D2D`); only a `<device-transfer>` exclusion in `dataExtractionRules` stops it. Excluding it can protect private local content but may also leave unsynced work behind on the old device; decide the intended migration behavior before adding data extraction rules.
 
 - **SEC-RELEASE-PENTEST** — Exercise the security boundaries before distribution
   `verify · maintainer · high`
-  accept: record the exact release candidate and isolated test environment; exercise unauthenticated, browser, replica and player access, code exhaustion and concurrent redemption, revocation during transfers, browser origin and host checks, LAN/IPv6/Tailscale and proxy paths, malicious paths and media, and resource limits. Test installed desktop and phone builds as well as the hub. Record evidence, impact and remediation for findings, retest fixes, and separate untested scenarios from passing results; never use real data or the live pilot for destructive tests.
+  accept: record the exact release candidate and isolated test environment; exercise unauthenticated, browser, replica and player access, code exhaustion and concurrent redemption, revocation during transfers, browser origin and host checks, LAN/IPv6/Tailscale and proxy paths, malicious paths and media, and resource limits. Test installed desktop and phone builds as well as the hub. Record evidence, impact and remediation for findings, retest fixes, and separate untested scenarios from passing results; never use real data or production servers for destructive tests.
 - **SEC-FOLDER-SCOPE** — Guard replica actions against an unintended folder
   `chore · agent · normal`
   accept: on the hub `/v1/restore`, `/v1/gallery/delete`, `/v1/gallery/link` and `/v1/video/watch-next/remove|restore` from a replica require the folder in the device's latest `machine_reports.folderIds`, as `/v1/conflict-choice` and gallery uploads already do; the administrator keeps every folder and player operations remain available. Tests cover one refused replica call per route and the player paths; SPEC's API table says "linked replica, reported folder" on those rows.
@@ -288,7 +244,7 @@ Findings from source audits of 2026-10-29 and 2026-10-31. Priority reflects expo
   accept: on the hub, deleting a file that a stream, HLS session or probe holds open answers 409 "This file is in use" without recording a tombstone the cycle then fails to apply, proven by a Windows-shaped test that holds the file open; the daemon's `umask` stays as it is (a tight umask would also restrict files written into shared folders).
 - **SEC-DOCKER-HYGIENE** — The image is reproducible and attested
   `chore · agent · low`
-  accept: the Dockerfile pins the base image by digest and ffmpeg by version, adds a `HEALTHCHECK` on `arca.js status`, and `publish-docker.yml` publishes provenance and an SBOM; `SHA256SUMS` in `publish.yml` is signed. Needs a Casa redeploy to verify.
+  accept: the Dockerfile pins the base image by digest and ffmpeg by version, adds a `HEALTHCHECK` on `arca.js status`, and `publish-docker.yml` publishes provenance and an SBOM; `SHA256SUMS` in `publish.yml` is signed. Needs a hub redeploy to verify.
 - **SEC-INDEX-SNAPSHOT** — The hub keeps a nightly copy of its index
   `feature · agent · low`
   accept: daily maintenance writes `VACUUM INTO index.backup.sqlite` beside the index (keeping one), so a corrupt index without a backup replica is recoverable; the CLI documents how to restore it.
@@ -379,7 +335,7 @@ Desktop and server replicas choose **Stream from the hub** or **Keep on this dev
 
 - **VERIFY-MEDIA-MODE** — Stream and Keep on real devices
   `verify · maintainer · normal`
-  accept: after a Casa redeploy, a desktop build and an Android build: a desktop replica starts an Audio library as Stream, downloads an album and plays it with the hub away, then Stop syncing and again as Keep; the Fold streams an Audio library with the screen off, over Bluetooth and in Android Auto, downloads an album, an artist and a show and plays them in airplane mode, and a library it kept before stays untouched; desktop Keep on a Movies & TV library fills, survives a restart, stops at the space floor and follows a title added and one deleted on the hub.
+  accept: after a hub redeploy, a desktop build and an Android build: a desktop replica starts an Audio library as Stream, downloads an album and plays it with the hub away, then Stop syncing and again as Keep; the Fold streams an Audio library with the screen off, over Bluetooth and in Android Auto, downloads an album, an artist and a show and plays them in airplane mode, and a library it kept before stays untouched; desktop Keep on a Movies & TV library fills, survives a restart, stops at the space floor and follows a title added and one deleted on the hub.
 
 ## Later phases
 

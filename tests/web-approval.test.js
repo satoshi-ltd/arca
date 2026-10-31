@@ -284,7 +284,7 @@ test("the hub's Tailscale name and ARCA_WEB_HOSTS are trusted, and a session coo
 
 test("trusted hosts are IP literals, single labels, .local names and the configured list", async () => {
   const { trustedHost } = await import("../packages/daemon/web.js");
-  for (const host of ["127.0.0.1:17831", "[fe80::1]:17831", "100.64.0.9", "localhost:17831", "casa", "umbrel.local", "Casa.Local.", "2130706433"])
+  for (const host of ["127.0.0.1:17831", "[fe80::1]:17831", "100.64.0.9", "localhost:17831", "casa", "nas.local", "Casa.Local.", "2130706433"])
     assert.equal(trustedHost(host), true, host);
   for (const host of ["evil.test", "evil.test:17831", "casa.tail1234.ts.net", "", "a b", "127.0.0.1.nip.io", undefined, "evil.test:80@127.0.0.1", "127.0.0.1/x"])
     assert.equal(trustedHost(host), false, host);

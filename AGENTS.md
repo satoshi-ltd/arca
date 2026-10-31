@@ -8,7 +8,7 @@ Five documents, each answering one question. Put information in the one that own
 
 | File | Question | Never contains |
 | --- | --- | --- |
-| `README.md` | What is Arca, and how do I install, run and develop it? (for humans) | Status beyond its one-line version banner, history, pilot operations |
+| `README.md` | What is Arca, and how do I install, run and develop it? (for humans) | Status beyond its one-line version banner, history, server operations |
 | `AGENTS.md` | Which rules apply when working here? | Status, tasks, history |
 | `ROADMAP.md` | What is left to do? (its header defines fields and lanes) | Shipped work |
 | `SPEC.md` | How does Arca work today? The contracts code must keep: product decisions, protocol, data and state, operations, design system | Dates, statuses beyond its one-line version banner, test counts, investigation logs |
@@ -24,7 +24,7 @@ Five documents, each answering one question. Put information in the one that own
   - What changed for someone using or running Arca, then why when it is not obvious. One or two sentences.
   - At most five bullets; merge related changes, drop internal-only details.
 
-  Needs: native build · desktop build · Casa redeploy   (only when true)
+  Needs: native build · desktop build · hub redeploy   (only when true)
   ```
 
   Name files or functions only when the maintainer must act on them.
@@ -47,7 +47,7 @@ Rules of the loop:
 - Invoking `/next-task` or `/loop /next-task` is the maintainer's explicit request to commit and push each finished task once review and validation pass. Outside the loop, commit only when asked. When the maintainer says not to commit, prepare and validate but leave changes uncommitted until told otherwise.
 - Adversarial review before every commit; a second pass on the deltas when fixes were substantive. The reviewer reads and reasons: it does not rerun the suites the author ran, only the single test file it needs to reproduce a claim.
 - Interruptions: triage before continuing, and say where each item went. A bug the maintainer reports goes to the top of Queue; a requested feature goes to Queue; ideas, including your own, go to Proposed; questions get answered.
-- Anything needing a native build, an installer, Casa, credentials, a physical device or a product choice becomes a `Needs maintainer` task.
+- Anything needing a native build, an installer, Atlas or Casa, credentials, a physical device or a product choice becomes a `Needs maintainer` task.
 - Stop and report when Queue is empty or everything is blocked on the maintainer.
 
 ## Engineering rules
@@ -84,7 +84,7 @@ Rules of the loop:
 
 - Metro is the maintainer's: never start or restart it; ask when configuration changes need a restart.
 - Native builds and installs are the maintainer's unless explicitly requested in the turn. Source changes and reviews do not authorize them.
-- Casa (SSH `casa`, Docker container `arca`, state under `/home/atlas/arca`) is the maintainer's: never update or restart its container unless explicitly requested in the turn. Prepare and validate locally, then report deployment and client-compatibility requirements; operational details live in SPEC.
+- Atlas, the hub, and Casa, a server replica (SSH `atlas` and `casa`, Docker container `arca`, state under `/home/atlas/arca`), are the maintainer's: never update or restart their containers unless explicitly requested in the turn. Prepare and validate locally, then report deployment and client-compatibility requirements; operational details live in SPEC.
 - Development uses the real `~/.arca` in `/Users/javi/git/arca`; tests use isolated state.
 - Never reset live state, delete user files, enable backup or resume a user pause as incidental cleanup. Nothing relocates or deletes existing copies automatically, including code you write.
 - Native changes need the running binary rebuilt and daemon changes need the service restarted; a built bundle is not the running process.

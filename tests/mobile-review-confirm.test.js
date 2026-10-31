@@ -139,19 +139,31 @@ test("section labels are one component that uppercases through style and carries
   }
 });
 
-test("onboarding never offers to download zero folders and tells a video-only hub its folders stream", async () => {
-  const { downloadLabel, onlyVideoFolders } = await import("../apps/mobile/src/onboarding.js");
-  assert.equal(downloadLabel(0), "Choose folders to download");
-  assert.equal(downloadLabel(1), "Download 1 folder");
-  assert.equal(downloadLabel(3), "Download 3 folders");
-  assert.equal(onlyVideoFolders({ volumes: [{ id: "a", video: true }] }), true);
-  assert.equal(onlyVideoFolders({ volumes: [{ id: "a", video: true }, { id: "b" }] }), false);
-  assert.equal(onlyVideoFolders({ volumes: [] }), false);
-  assert.equal(onlyVideoFolders(null), false);
+test("onboarding offers Stream or Keep for media, sizes only what downloads and names the action by what starts", async () => {
+  const { defaultMode, downloadBytes, mediaKind, startLabel } = await import("../apps/mobile/src/onboarding.js");
+  const catalog = { music: true, video: true, volumes: [{ id: "a", music: true }, { id: "v", video: true }, { id: "d" }] };
+  assert.equal(mediaKind(catalog, { id: "a" }, true), "audio");
+  assert.equal(mediaKind(catalog, { id: "a" }, false), null, "the iPhone only keeps an Audio library");
+  assert.equal(mediaKind(catalog, { id: "v" }, false), "video");
+  assert.equal(mediaKind(catalog, { id: "d" }, true), null);
+  assert.equal(defaultMode("audio"), "keep");
+  assert.equal(defaultMode("video"), "stream");
+  const folders = [{ id: "a", bytes: 10 }, { id: "v", bytes: 100 }, { id: "d", bytes: 5 }];
+  assert.equal(downloadBytes(folders, { a: "stream", v: "stream", d: "keep" }), 5);
+  assert.equal(downloadBytes(folders, { a: "keep", v: "keep", d: "keep" }), 115);
+  assert.equal(downloadBytes(folders, { a: "keep", v: "keep", d: "keep" }, { v: 60 }), 75, "a known playable size replaces the folder size");
+  assert.deepEqual(startLabel([], {}), { label: "Choose folders", icon: null });
+  assert.deepEqual(startLabel(folders.slice(0, 2), { a: "stream", v: "stream" }), { label: "Start streaming", icon: "play" });
+  assert.deepEqual(startLabel(folders, { a: "stream", v: "stream", d: "keep" }), { label: "Start syncing 3 folders", icon: "refresh" });
   const screen = read("Onboarding.jsx");
-  assert.match(screen, /label=\{downloadLabel\(chosen\.length\)\}[\s\S]*?disabled=\{!chosen\.length\}/);
-  assert.match(screen, /They stream from the hub and are not kept on this phone\./);
-  assert.match(screen, /primary=\{streamOnly\}\s+quiet=\{!streamOnly\}/);
+  assert.match(screen, /Folders are kept on this \{device\}; music and movies can stream instead\. Add more any time\./);
+  assert.match(screen, /const folders = catalog\?\.volumes \|\| \[\];/, "Movies & TV libraries are offered too");
+  assert.match(screen, /description=\{folder\.policyError \|\| \(modes\[folder\.id\] === "stream" \? "Streams from hub" : folderSize\(folder\)\)\}/);
+  assert.match(screen, /\{!!kinds\[folder\.id\] && selected\.includes\(folder\.id\) && \(\s+<SegmentedControl/);
+  assert.match(screen, /\{bytes\(downloadBytes\(chosen, modes, sizes\)\)\} to download ·/);
+  assert.match(screen, /label=\{action\.label\}\s+icon=\{action\.icon\}\s+primary\s+disabled=\{!chosen\.length\}[\s\S]{0,60}onPress=\{\(\) => download\(chosen\.map\(\(folder\) => folder\.id\), modes\)\}/);
+  assert.match(read("App.jsx"), /audioStreams=\{playerAvailable\}\s+sizes=\{keptSizes\}/);
+  assert.match(read("App.jsx"), /download=\{\(ids, modes\) =>[\s\S]{0,600}await selectFirstFolders\(r, client\.state\(\)\.catalog, ids, modes, Platform\.OS\);/);
 });
 
 test("tapping the scrim or dragging the grabber down dismisses a sheet unless it is busy", async () => {

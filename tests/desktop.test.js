@@ -2003,7 +2003,7 @@ test("a paused replica's Devices rows carry roles and full backup, never sync, p
           return { ...daemon.engine.status(), role: "replica", phase, hubUnavailable: true, hubName: "Casa", hub: "http://127.0.0.1:49999" };
         if (args.route === "/v1/remote") return { name: "Casa", volumes: [] };
         if (args.route === "/v1/machines")
-          return { machines: [{ name: "phone-fold", role: "replica", platform: "android", machineId: "fold", lastAddress: "192.168.1.144", isHub: false }, { name: "umbrel", role: "replica", platform: "linux", machineId: "umbrel", lastAddress: "192.168.1.150", isHub: false, backup: { enabled: true } }] };
+          return { machines: [{ name: "phone-fold", role: "replica", platform: "android", machineId: "fold", lastAddress: "192.168.1.144", isHub: false }, { name: "nas", role: "replica", platform: "linux", machineId: "nas", lastAddress: "192.168.1.150", isHub: false, backup: { enabled: true } }] };
         return {};
       },
     },
@@ -2019,8 +2019,8 @@ test("a paused replica's Devices rows carry roles and full backup, never sync, p
   assert.doesNotMatch(other.querySelector(".connection-line").textContent, /last known/);
   assert.equal(other.querySelector(".tag.full-backup"), null, "a device that is not a backup has no full-backup segment");
   assert.equal(other.querySelector(".row-end > .role-set").textContent, "Replica");
-  const umbrel = rows.find((row) => /umbrel/.test(row.textContent));
-  assert.equal(umbrel.querySelector(".role-set .tag.full-backup").textContent, "Full backup", "the hub's backup server carries the full-backup segment");
+  const nas = rows.find((row) => /nas/.test(row.textContent));
+  assert.equal(nas.querySelector(".role-set .tag.full-backup").textContent, "Full backup", "the hub's backup server carries the full-backup segment");
   assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Backs up hub|Linked/);
 });
 
@@ -2179,7 +2179,7 @@ test("a replica's device rows read the OS under the name, then version, folders 
     machines: [
       { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 9, indexedBytes: 412 * GB, reportedAt: at(0) },
       { name: "Local Mac", role: "replica", platform: process.platform, machineId: "mac", version: "0.7.30", selectedFolders: 2, indexedBytes: 3 * GB, lastContact: at(5000) },
-      { name: "umbrel", role: "replica", platform: "linux", machineId: "umbrel", version: "0.7.38-beta.12+build.2026", selectedFolders: 9, indexedBytes: 401 * GB, backup: { enabled: true }, lastContact: at(119), reportedAt: at(900) },
+      { name: "nas", role: "replica", platform: "linux", machineId: "nas", version: "0.7.38-beta.12+build.2026", selectedFolders: 9, indexedBytes: 401 * GB, backup: { enabled: true }, lastContact: at(119), reportedAt: at(900) },
       { name: "Yuri", role: "replica", platform: "android", machineId: "yuri", version: "0.7.35", selectedFolders: 2, indexedBytes: 3 * GB, lastContact: at(4000), reportedAt: at(121) },
       { name: "Fresh", role: "replica", platform: "ios", machineId: "fresh" },
       { name: "Tablet", role: "replica", platform: "android", machineId: "tablet", version: "0.6.99", selectedFolders: 3, indexedBytes: 5 * GB, revoked: true, lastContact: at(90) },
@@ -2210,14 +2210,14 @@ test("a replica's device rows read the OS under the name, then version, folders 
   const running = /const APP_VERSION = "([^"]+)";/.exec(fs.readFileSync(new URL("../apps/desktop/src/app.js", import.meta.url), "utf8"))[1];
   assert.deepEqual(cells(own), [`v${running}`, ["2 folders", "3.0 GB"], "Connected"], "only selected folders count, this device runs its own version and is always Connected");
   assert.equal(own.querySelector(".role-set").textContent, "Replica");
-  assert.deepEqual(segments(named("umbrel")), ["Linux"]);
-  assert.deepEqual(cells(named("umbrel")), ["v0.7.38", ["9 folders", "401.0 GB"], "Connected"], "the freshest of last contact and report decides, within two minutes of the hub's clock");
-  assert.equal(named("umbrel").querySelector(".device-older"), null, "a current version is shown without the warning");
-  const suffixed = named("umbrel").querySelector(".device-version > span");
+  assert.deepEqual(segments(named("nas")), ["Linux"]);
+  assert.deepEqual(cells(named("nas")), ["v0.7.38", ["9 folders", "401.0 GB"], "Connected"], "the freshest of last contact and report decides, within two minutes of the hub's clock");
+  assert.equal(named("nas").querySelector(".device-older"), null, "a current version is shown without the warning");
+  const suffixed = named("nas").querySelector(".device-version > span");
   assert.equal(suffixed.dataset.tooltip, "v0.7.38-beta.12+build.2026", "the cell shows the x.y.z core and keeps the full version in its tooltip");
   assert.equal(suffixed.getAttribute("aria-label"), "v0.7.38-beta.12+build.2026");
-  assert.equal(named("umbrel").querySelector(".role-set").textContent, "ReplicaFull backup");
-  assert.ok(named("umbrel").querySelector('.tag.full-backup [data-icon="shield-check"], .tag.full-backup svg'));
+  assert.equal(named("nas").querySelector(".role-set").textContent, "ReplicaFull backup");
+  assert.ok(named("nas").querySelector('.tag.full-backup [data-icon="shield-check"], .tag.full-backup svg'));
   const yuri = named("Yuri");
   assert.deepEqual(segments(yuri), ["Android"]);
   assert.deepEqual(cells(yuri), ["v0.7.35, older than the hub’s v0.7.38", ["2 folders", "3.0 GB"], seenAt(at(121))]);
@@ -2250,12 +2250,12 @@ test("with the hub unreachable a replica's saved rows never read Connected, and 
     machines: [
       { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 1024, reportedAt: at(30) },
       { name: "Local Mac", role: "replica", platform: process.platform, machineId: "mac", lastContact: at(0) },
-      { name: "umbrel", role: "replica", platform: "linux", machineId: "umbrel", version: "0.7.38", lastContact: at(5) },
+      { name: "nas", role: "replica", platform: "linux", machineId: "nas", version: "0.7.38", lastContact: at(5) },
     ],
-    ready: (text) => text.includes("umbrel") && text.includes("1.0 KB"),
+    ready: (text) => text.includes("nas") && text.includes("1.0 KB"),
   });
   assert.equal(cells(named("casa"))[2], seenAt(at(0)), "the replica's own last contact is its last successful hub request");
-  assert.equal(cells(named("umbrel"))[2], seenAt(at(5)));
+  assert.equal(cells(named("nas"))[2], seenAt(at(5)));
   assert.equal(cells(named("Local Mac"))[2], "Connected", "this device is always Connected");
 });
 
@@ -2535,7 +2535,7 @@ test("the hub's own Devices page draws its row like the others, keeps ⋯ before
       volumes: [{ id: "a", name: "a", selected: 1, bytes: 4 * GB, files: 1 }],
       devices: [
         { id: "mac", name: "macbook-pro", role: "replica", last_seen: now, last_address: "100.84.10.2", backup_enabled: null, revoked: 0 },
-        { id: "umbrel", name: "umbrel", role: "replica", last_seen: at(600), last_address: "100.70.3.9", backup_enabled: 1, revoked: 0 },
+        { id: "nas", name: "nas", role: "replica", last_seen: at(600), last_address: "100.70.3.9", backup_enabled: 1, revoked: 0 },
         { id: "tablet", name: "Tablet", role: "replica", last_seen: at(7200), last_address: "100.88.7.30", backup_enabled: null, revoked: 1 },
         { id: "new", name: "new-laptop", role: "replica", last_seen: null, last_address: null, backup_enabled: null, revoked: 0 },
       ],
@@ -2543,7 +2543,7 @@ test("the hub's own Devices page draws its row like the others, keeps ⋯ before
     machines: [
       { isHub: true, name: "casa", role: "hub", platform: "linux", version: "0.7.38", selectedFolders: 1, indexedBytes: 4 * GB, reportedAt: at(0) },
       { credentialId: "mac", name: "macbook-pro", platform: "darwin", version: "0.7.36", selectedFolders: 9, indexedBytes: 36 * GB },
-      { credentialId: "umbrel", name: "umbrel", platform: "linux", version: "0.7.38", selectedFolders: 9, indexedBytes: 401 * GB },
+      { credentialId: "nas", name: "nas", platform: "linux", version: "0.7.38", selectedFolders: 9, indexedBytes: 401 * GB },
       { credentialId: "tablet", name: "Tablet", platform: "android" },
     ],
     ready: (text) => text.includes("100.99.29.84") && text.includes("v0.7.36"),
@@ -2562,13 +2562,13 @@ test("the hub's own Devices page draws its row like the others, keeps ⋯ before
   assert.deepEqual(segments(mac), ["macOS"]);
   assert.deepEqual(cells(mac), ["v0.7.36, older than the hub’s v0.7.38", ["9 folders", "36.0 GB"], "Connected"]);
   assert.ok(mac.querySelector(".device-version .device-older"));
-  assert.deepEqual(cells(named("umbrel")), ["v0.7.38", ["9 folders", "401.0 GB"], seenAt(at(600))]);
+  assert.deepEqual(cells(named("nas")), ["v0.7.38", ["9 folders", "401.0 GB"], seenAt(at(600))]);
   assert.deepEqual(cells(named("Tablet")), ["", "", seenAt(at(7200))], "a removed device keeps when it was last seen");
   assert.deepEqual(cells(named("new-laptop")), ["", "", ""], "an invitation never seen leaves its cells empty");
   assert.deepEqual([...named("new-laptop").querySelector(".row-end").children].map((el) => el.className), ["pill wa", "details-menu file-actions-menu", "role-set"]);
   assert.deepEqual([...mac.querySelector(".row-end").children].map((el) => el.className), ["details-menu file-actions-menu", "role-set"], "⋯ sits just before the chip");
   assert.equal(mac.querySelector(".pill"), null, "a peer Tailscale reports down shows no Offline pill");
-  assert.equal(named("umbrel").querySelector(".role-set").textContent, "ReplicaFull backup");
+  assert.equal(named("nas").querySelector(".role-set").textContent, "ReplicaFull backup");
   assert.deepEqual([...named("Tablet").querySelector(".row-end").children].map((el) => el.className), ["pill er", "role-set"]);
   assert.doesNotMatch(w.document.querySelector("#devices-list").textContent, /Linked|Backs up hub|Running|Offline|100\.84\.10\.2/);
 });
@@ -8678,58 +8678,240 @@ test("the wizard sets up name and role on one page, says who each role is for an
   }
 });
 
-for (const umbrel of [false, true]) {
-  test("the server access step " + (umbrel ? "keeps the Umbrel link and shows no command" : "shows the documented command with Copy and where the code is"), async (t) => {
-    const { initializeServer } = await import("../packages/daemon/setup.js");
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-access-command-"));
-    initializeServer(home, { port: 0 });
-    const previous = process.env.ARCA_SETUP_CODE_PATH;
-    if (umbrel) process.env.ARCA_SETUP_CODE_PATH = "/umbrel";
-    else delete process.env.ARCA_SETUP_CODE_PATH;
-    const daemon = await start(home, { timer: false });
-    const base = "http://127.0.0.1:" + daemon.port;
-    const w = new JSDOM(html, { runScripts: "outside-only", url: base }).window;
-    w.setInterval = () => 0;
-    w.fetch = async (route, options = {}) =>
-      fetch(new URL(route, base), { ...nodeInit(options), headers: { ...options.headers, Origin: base } });
-    let copied = null;
-    Object.defineProperty(w.navigator, "clipboard", { value: { writeText: async (value) => (copied = value) } });
-    t.after(async () => {
-      w.close();
-      await daemon.close();
-      fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-      if (previous === undefined) delete process.env.ARCA_SETUP_CODE_PATH;
-      else process.env.ARCA_SETUP_CODE_PATH = previous;
-    });
-    await w.eval(`(async()=>{${script}\n})()`);
-    const submit = () => w.document.querySelector("#setup-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
-    const waitFor = (selector) => until(() => w.document.querySelector(selector) && w.document.body.getAttribute("aria-busy") === "false");
-    await waitFor("#setup-form");
-    submit();
-    await waitFor('[name="name"]');
-    w.document.querySelector('[name="name"]').value = "Server";
-    submit();
-    await waitFor('[data-code="setup-access"]');
-    const page = w.document.querySelector("#content");
-    const command = "docker exec <container> node packages/cli/arca.js web-code";
-    if (umbrel) {
-      assert.ok(page.querySelector('a[href="/umbrel"]'));
-      assert.doesNotMatch(page.textContent, /docker exec/);
-      assert.equal(page.querySelector('[data-action="copy"]'), null);
-      return;
+async function folderStep({ web = false, folders, setupFailures = 0, refuse = [] }) {
+  const gb = 1024 ** 3;
+  const url = web ? "http://localhost" : "http://tauri.localhost";
+  const w = new JSDOM(html, { runScripts: "outside-only", url }).window;
+  w.setInterval = () => 0;
+  const selected = [];
+  let set = false;
+  let paired = false;
+  let failures = setupFailures;
+  const answer = async (route, body) => {
+    if (route === "/v1/status") return { id: "mac", name: "studio", role: "replica", root: path.join("tmp", "arca"), hub: paired ? "http://casa" : null, needsSetup: !set, volumes: [] };
+    if (route === "/v1/connect") return (paired = true);
+    if (route === "/v1/remote") return { name: "Casa", volumes: folders };
+    if (route.startsWith("/v1/setup-info")) return { root: path.join("tmp", "arca"), freeBytes: 30 * gb };
+    if (route === "/v1/setup" && body?.onboarding) return {};
+    if (route === "/v1/setup") {
+      if (failures-- > 0) throw new Error("The hub is busy. Try again.");
+      return (set = true);
     }
-    assert.equal(page.querySelector('a[href="/umbrel"]'), null);
-    assert.match(page.textContent, /On the server, run:/);
-    assert.ok(page.textContent.includes(command));
-    assert.match(page.textContent, /The command prints a result that includes a six-digit code\. Enter that code below\./);
-    assert.doesNotMatch(page.textContent, /run arca web-code/);
-    const copy = page.querySelector('[data-action="copy"]');
-    assert.equal(copy.dataset.id, command);
-    copy.click();
-    await until(() => copied !== null);
-    assert.equal(copied, command);
-  });
+    if (route === "/v1/select") {
+      if (refuse.includes(body.id)) throw new Error("Folder policy is invalid");
+      return selected.push(body);
+    }
+    if (route === "/v1/sync") return {};
+    throw new Error(route);
+  };
+  if (web)
+    w.fetch = async (route, options = {}) => {
+      try {
+        return new Response(JSON.stringify(await answer(String(route), options.body ? JSON.parse(options.body) : undefined)), { status: 200 });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 400 });
+      }
+    };
+  else
+    w.__TAURI__ = {
+      core: {
+        invoke: async (command, args) => {
+          if (command === "bootstrap") return { setup: true, root: path.join("tmp", "arca"), name: "studio", platform: "macos", arch: "arm64" };
+          if (command === "setup_info") return { root: args.root, freeBytes: 30 * gb };
+          if (command === "initialize") return {};
+          if (command !== "api") throw new Error(command);
+          return answer(args.route, args.body ?? undefined);
+        },
+      },
+    };
+  const idle = () => w.document.body.getAttribute("aria-busy") === "false";
+  const submit = () => w.document.querySelector("#setup-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  await w.eval(`(async()=>{${script}\n})()`);
+  await until(() => w.document.querySelector("#setup-form") && idle());
+  submit();
+  await until(() => w.document.querySelector('[name="name"]') && idle());
+  w.document.querySelector('[name="name"]').value = "studio";
+  submit();
+  await until(() => w.document.querySelector('[name="url"]') && idle());
+  w.document.querySelector('[name="url"]').value = "http://casa";
+  [..."123456"].forEach((digit, i) => (w.document.querySelector(`[data-code="onboarding"][data-digit="${i}"]`).value = digit));
+  submit();
+  await until(() => w.document.querySelector("#setup-folders") && /free/.test(w.document.querySelector("#setup-space").textContent) && idle());
+  const rows = () => [...w.document.querySelectorAll("#setup-folders .setting-row")];
+  return {
+    w,
+    selected,
+    idle,
+    gb,
+    rows,
+    named: (name) => rows().find((row) => row.querySelector("strong").textContent === name),
+    action: () => w.document.querySelector("#setup-form .dialog-actions .primary"),
+    line: () => w.document.querySelector("#setup-space").textContent,
+    plain: () => JSON.parse(JSON.stringify(selected)),
+  };
 }
+const hubFolders = (gb) => [
+  { id: "vid", name: "videos", video: true, files: 318, bytes: 900 * gb },
+  { id: "aud", name: "music", music: true, files: 1284, bytes: 9.6 * gb },
+  { id: "pho", name: "photos", gallery: true, files: 3598, bytes: 13.4 * gb },
+  { id: "doc", name: "documents", files: 183, bytes: 0.2 * gb },
+];
+
+test("a replica's Folders step lists the hub's folders by kind, Audio kept and Movies & TV streamed by default, and starts the chosen ones", async () => {
+  const ui = await folderStep({ folders: hubFolders(1024 ** 3) });
+  const { w, named, action, rows } = ui;
+  try {
+    assert.deepEqual(rows().map((row) => row.querySelector("strong").textContent), ["documents", "photos", "music", "videos"]);
+    assert.ok(rows().every((row) => row.querySelector('input[type="checkbox"]').checked), "every folder starts on");
+    assert.equal(named("documents").querySelector(".segmented"), null);
+    assert.equal(named("music").querySelector(".segmented .active").textContent, "Keep");
+    assert.equal(named("videos").querySelector(".segmented .active").textContent, "Stream");
+    assert.match(named("music").textContent, /1,284 files · 9\.6 GB/);
+    assert.match(named("videos").textContent, /Streams from hub/);
+    assert.equal(ui.line(), "4 folders · 23.2 GB to download · 30.0 GB free");
+    assert.equal(action().textContent, "Start syncing 4 folders");
+    assert.equal(w.document.querySelector("#setup-skip").textContent, "Skip for now");
+    named("videos").querySelector('[data-mode="keep"]').click();
+    assert.match(ui.line(), /^Not enough space/);
+    assert.equal(action().disabled, true, "what does not fit cannot start");
+    named("videos").querySelector('[data-mode="stream"]').click();
+    for (const name of ["documents", "photos"]) named(name).querySelector('input[type="checkbox"]').click();
+    named("music").querySelector('[data-mode="stream"]').click();
+    assert.equal(action().textContent, "Start streaming");
+    named("music").querySelector('input[type="checkbox"]').click();
+    named("videos").querySelector('input[type="checkbox"]').click();
+    assert.equal(action().textContent, "Choose folders");
+    assert.equal(action().disabled, true);
+    for (const name of ["documents", "music", "videos"]) named(name).querySelector('input[type="checkbox"]').click();
+    named("music").querySelector('[data-mode="keep"]').click();
+    action().click();
+    await until(() => ui.selected.length === 3);
+    const base = path.join("tmp", "arca");
+    assert.deepEqual(ui.plain(), [
+      { id: "doc", path: `${base}/documents` },
+      { id: "aud", mode: "keep", path: `${base}/music` },
+      { id: "vid", mode: "stream" },
+    ]);
+  } finally {
+    w.close();
+  }
+});
+
+test("Skip for now that fails leaves the next Start syncing selecting the chosen folders", async () => {
+  const ui = await folderStep({ folders: hubFolders(1024 ** 3), setupFailures: 1 });
+  try {
+    ui.w.document.querySelector("#setup-skip").click();
+    await until(() => !ui.w.document.querySelector("#setup-error").hidden && ui.idle());
+    assert.equal(ui.selected.length, 0);
+    ui.named("videos").querySelector('input[type="checkbox"]').click();
+    ui.action().click();
+    await until(() => ui.selected.length === 3);
+    assert.deepEqual(ui.plain().map((row) => row.id), ["doc", "pho", "aud"]);
+  } finally {
+    ui.w.close();
+  }
+});
+
+test("submitting the Folders step without a submitter, as Enter does, starts the chosen folders and never skips", async () => {
+  const ui = await folderStep({ folders: hubFolders(1024 ** 3) });
+  try {
+    assert.equal(ui.w.document.querySelector("#setup-skip").type, "button", "Enter never reaches Skip for now");
+    for (const name of ["documents", "photos", "music", "videos"]) ui.named(name).querySelector('input[type="checkbox"]').click();
+    ui.w.document.querySelector("#setup-form").requestSubmit();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(ui.selected.length, 0, "with nothing chosen the disabled action does not finish setup");
+    assert.ok(ui.w.document.querySelector("#setup-folders"), "the step stays open");
+    for (const name of ["documents", "music"]) ui.named(name).querySelector('input[type="checkbox"]').click();
+    ui.w.document.querySelector("#setup-form").requestSubmit();
+    await until(() => ui.selected.length === 2);
+    assert.deepEqual(ui.plain().map((row) => row.id), ["doc", "aud"]);
+  } finally {
+    ui.w.close();
+  }
+});
+
+test("the Folders step says what it has not counted, starts a folder with a policy error off, and names a refused folder in one notice", async () => {
+  const gb = 1024 ** 3;
+  const ui = await folderStep({
+    folders: [
+      { id: "doc", name: "documents", files: 183, bytes: 0.2 * gb },
+      { id: "new", name: "scans", files: null, bytes: null },
+      { id: "bad", name: "broken", files: null, bytes: null, policyError: "Invalid .arcaignore rule on line 2" },
+      { id: "pho", name: "photos", gallery: true, files: 3598, bytes: 13.4 * gb },
+    ],
+    refuse: ["pho"],
+  });
+  try {
+    const broken = ui.named("broken").querySelector('input[type="checkbox"]');
+    assert.equal(broken.checked, false, "a folder whose policy fails starts off");
+    assert.equal(broken.disabled, true);
+    assert.match(ui.named("broken").textContent, /Invalid \.arcaignore rule on line 2/);
+    assert.match(ui.named("scans").textContent, /Not counted yet/);
+    assert.equal(ui.line(), "3 folders · 13.6 GB to download · 1 folder not counted yet · 30.0 GB free");
+    assert.equal(ui.action().disabled, false, "an uncounted folder never blocks");
+    ui.action().click();
+    await until(() => ui.selected.length === 2 && ui.w.document.querySelector(".notice-card"));
+    assert.deepEqual(ui.plain().map((row) => row.id), ["doc", "new"]);
+    const notices = [...ui.w.document.querySelectorAll(".notice-card")].map((el) => el.textContent);
+    assert.equal(notices.filter((text) => /Could not start syncing/.test(text)).length, 1);
+    assert.match(notices.join(" "), /“photos”: Folder policy is invalid/);
+  } finally {
+    ui.w.close();
+  }
+});
+
+test("a server's Folders step streams Movies & TV with no Keep to choose", async () => {
+  const ui = await folderStep({ web: true, folders: hubFolders(1024 ** 3) });
+  try {
+    assert.equal(ui.named("videos").querySelector(".segmented"), null, "a server cannot keep Movies & TV");
+    assert.match(ui.named("videos").textContent, /Streams from hub/);
+    assert.equal(ui.named("music").querySelector(".segmented .active").textContent, "Keep");
+    ui.action().click();
+    await until(() => ui.selected.length === 4);
+    assert.deepEqual(ui.plain().at(-1), { id: "vid", mode: "stream" });
+  } finally {
+    ui.w.close();
+  }
+});
+
+test("the server access step shows the documented command with Copy and where the code is", async (t) => {
+  const { initializeServer } = await import("../packages/daemon/setup.js");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-access-command-"));
+  initializeServer(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  const base = "http://127.0.0.1:" + daemon.port;
+  const w = new JSDOM(html, { runScripts: "outside-only", url: base }).window;
+  w.setInterval = () => 0;
+  w.fetch = async (route, options = {}) =>
+    fetch(new URL(route, base), { ...nodeInit(options), headers: { ...options.headers, Origin: base } });
+  let copied = null;
+  Object.defineProperty(w.navigator, "clipboard", { value: { writeText: async (value) => (copied = value) } });
+  t.after(async () => {
+    w.close();
+    await daemon.close();
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+  await w.eval(`(async()=>{${script}\n})()`);
+  const submit = () => w.document.querySelector("#setup-form").dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
+  const waitFor = (selector) => until(() => w.document.querySelector(selector) && w.document.body.getAttribute("aria-busy") === "false");
+  await waitFor("#setup-form");
+  submit();
+  await waitFor('[name="name"]');
+  w.document.querySelector('[name="name"]').value = "Server";
+  submit();
+  await waitFor('[data-code="setup-access"]');
+  const page = w.document.querySelector("#content");
+  const command = "docker exec <container> node packages/cli/arca.js web-code";
+  assert.match(page.textContent, /On the server, run:/);
+  assert.ok(page.textContent.includes(command));
+  assert.match(page.textContent, /The command prints a result that includes a six-digit code\. Enter that code below\./);
+  assert.doesNotMatch(page.textContent, /run arca web-code/);
+  const copy = page.querySelector('[data-action="copy"]');
+  assert.equal(copy.dataset.id, command);
+  copy.click();
+  await until(() => copied !== null);
+  assert.equal(copied, command);
+});
 
 test("a server replica's web file detail downloads the file from its own copy, the hub from its store", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "arca-replica-download-"));

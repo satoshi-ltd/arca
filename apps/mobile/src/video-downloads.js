@@ -17,6 +17,7 @@ export const MISMATCH = "The download did not match the hub’s copy. Download i
 export const HUB_SYNCING = "Waiting for the hub to finish syncing this video.";
 export const NOT_DOWNLOADABLE = "This file needs the hub to play, so it can’t be downloaded to this phone.";
 export const RETRY_LATER = 60 * 1000;
+export const KEPT_LIBRARY = "This library is kept on this phone. Stop syncing it to remove its titles.";
 const IOS_CONTAINERS = new Set(["mp4", "m4v", "mov"]);
 const ACTIVE = new Set(["queued", "waiting"]);
 
@@ -66,6 +67,11 @@ export function downloadLabel(row) {
 export function downloadable(item, platform) {
   if (!item?.path || item.kind === "show") return false;
   return platform !== "ios" || IOS_CONTAINERS.has(extension(item.path));
+}
+
+export function playableBytes(library, platform) {
+  if (!library?.items) return null;
+  return [...library.items.values()].filter((item) => downloadable(item, platform)).reduce((sum, item) => sum + (item.size || 0), 0);
 }
 
 const CODEC_NAMES = { ac3: "AC3", eac3: "E-AC3", dts: "DTS", dca: "DTS", truehd: "TrueHD", mlp: "TrueHD" };
@@ -153,6 +159,7 @@ export function createVideoDownloads({ replica, client, kind = VIDEO_KIND, onCha
   let stopped = false;
   let loaded = null;
   let retry = null;
+  let keeping = Promise.resolve();
   const emit = () => onChange(new Map([...rows].map(([key, row]) => [key, key === running?.key && row.state === "queued" ? { ...row, running: true } : row])));
   const uri = (row, name) => files[kind.file](scope, row.volume, name);
   const mediaName = (row) => `${row.hash}.${row.ext}`;
@@ -382,6 +389,24 @@ export function createVideoDownloads({ replica, client, kind = VIDEO_KIND, onCha
         }, false, null, true);
       }
       pump();
+    },
+    keep(volume, library, platform, kept = async () => true) {
+      const started = (item) => !!item.position && !item.watched;
+      const run = keeping.then(async () => {
+        await this.load();
+        if (!kind.paths(library)) return;
+        const items = [...library.items.values()]
+          .filter((item) => downloadable(item, platform) && rows.get(downloadKey(volume, item.path))?.hash !== item.hash)
+          .sort((a, b) => started(b) - started(a) || b.added - a.added);
+        if (items.length && (await kept())) await this.add(volume, items);
+      });
+      keeping = run.catch(() => {});
+      return run;
+    },
+    async removeVolume(volume) {
+      await keeping;
+      await this.load();
+      await this.removeMany(volume, [...rows.values()].filter((row) => row.volume === volume).map((row) => row.path));
     },
     async resume() {
       await this.load();

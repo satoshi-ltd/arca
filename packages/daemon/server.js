@@ -578,8 +578,6 @@ export async function start(home, options = {}) {
             networkMode: config.network?.mode || "standalone",
             allowLanHttp: lanAllowed,
             setupRequired: Boolean(config.needsSetup || config.onboarding),
-            setupCodePath:
-              process.env.ARCA_SETUP_CODE_PATH === "/umbrel" ? "/umbrel" : null,
             machineApproval: Boolean(
               !config.needsSetup && !config.onboarding && web?.hasApprovers?.(),
             ),

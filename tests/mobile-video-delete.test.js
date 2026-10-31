@@ -137,5 +137,5 @@ test("an episode's sheet orders watched, its download action and Delete episodeâ
   assert.deepEqual(sheet({ state: "done", done: 2, size: 2 }), ["watched", "remove-download", "delete-episode"]);
   assert.deepEqual(sheet({ state: "stale", done: 2, size: 2 }), ["watched", "download", "remove-download", "delete-episode"], "an outdated copy downloads again or leaves the phone");
   assert.deepEqual(sheet({ state: "failed", done: 1, size: 2 }), ["watched", "download", "remove-download", "delete-episode"], "a failed partial retries or leaves the phone");
-  assert.match(app, /if \(name === "remove-download" \|\| name === "cancel-download"\) \{\s+removeDownloads\(volume, downloadTargets\(item\)\);/);
+  assert.match(app, /if \(name === "remove-download" \|\| name === "cancel-download"\) \{\s+dropDownloads\(volume, downloadTargets\(item\)\);/);
 });

@@ -2,7 +2,7 @@
 
 A personal drive for your own devices: complete files on disk, bidirectional sync, version history and a hub you control. No external account, public relay or telemetry. Free for personal and non-commercial use under the [PolyForm Strict License](LICENSE).
 
-**v0.8.21 · Functional, not release-qualified.**
+**v0.8.22 · Functional, not release-qualified.**
 
 ## How it works
 
@@ -65,10 +65,6 @@ docker compose exec arca node packages/cli/arca.js web-code
 ```
 
 Open `http://localhost:17831` and follow the wizard: this machine, server access (paste the code), pairing for replicas, folder root. `ARCA_FILES` names the persistent files mount inside a custom container and `ARCA_PORT` the published port. Details: [fresh Docker server](SPEC.md#fresh-docker-server).
-
-## Umbrel package
-
-`deploy/umbrel/arca/` is the Umbrel App Store package; see [Umbrel packaging and submission](SPEC.md#umbrel-packaging-and-submission).
 
 ## Release
 

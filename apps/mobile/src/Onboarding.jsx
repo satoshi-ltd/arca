@@ -10,10 +10,11 @@ import {
   Button,
   FolderRow,
   Icon,
+  SegmentedControl,
 } from "./components";
 import { PairingForm } from "./PairingForm";
 import { bytes, count, folderSize } from "./format";
-import { downloadLabel, onlyVideoFolders } from "./onboarding";
+import { defaultMode, downloadBytes, mediaKind, startLabel } from "./onboarding";
 export function Onboarding({
   step,
   name,
@@ -32,10 +33,13 @@ export function Onboarding({
   download,
   skip,
   retry,
+  audioStreams,
+  sizes,
 }) {
   const { s } = useDesign();
   const device = Platform.OS === "ios" ? "iPhone" : "phone";
   const [selected, setSelected] = useState([]);
+  const [chosenModes, setChosenModes] = useState({});
   if (step === "welcome")
     return (
       <>
@@ -100,10 +104,11 @@ export function Onboarding({
         <StepIndicator step={1} />
       </>
     );
-  const folders = (catalog?.volumes || []).filter((v) => !v.video);
+  const folders = catalog?.volumes || [];
+  const kinds = Object.fromEntries(folders.map((folder) => [folder.id, mediaKind(catalog, folder, audioStreams)]));
+  const modes = Object.fromEntries(folders.map((folder) => [folder.id, kinds[folder.id] ? chosenModes[folder.id] || defaultMode(kinds[folder.id]) : "keep"]));
   const chosen = folders.filter((folder) => selected.includes(folder.id));
-  const streamOnly = onlyVideoFolders(catalog);
-  const size = chosen.reduce((total, folder) => total + (folder.bytes || 0), 0);
+  const action = startLabel(chosen, modes);
   return (
     <>
       <View style={s.section}>
@@ -117,7 +122,7 @@ export function Onboarding({
           Make room for what matters
         </Text>
         <Text style={s.text}>
-          Whole folders, kept on this {device}. Add more any time.
+          Folders are kept on this {device}; music and movies can stream instead. Add more any time.
         </Text>
       </View>
       {!catalog ? (
@@ -125,55 +130,62 @@ export function Onboarding({
       ) : !folders.length ? (
         <Card>
           <Text style={s.text}>
-            {streamOnly
-              ? "Your hub shares only Movies & TV folders. They stream from the hub and are not kept on this phone."
-              : "Your hub has no shared folders yet. Add one on the hub, then choose it here."}
+            Your hub has no shared folders yet. Add one on the hub, then choose it here.
           </Text>
         </Card>
       ) : null}
       <View style={s.folderList}>
         {folders.map((folder) => (
-          <FolderRow
-            key={folder.id}
-            name={folder.name}
-            description={folder.policyError || folderSize(folder)}
-            selectable
-            selected={selected.includes(folder.id)}
-            disabled={
-              busy || !!folder.policyError || !Number.isFinite(folder.bytes)
-            }
-            onPress={() =>
-              setSelected((previous) =>
-                previous.includes(folder.id)
-                  ? previous.filter((id) => id !== folder.id)
-                  : [...previous, folder.id],
-              )
-            }
-          />
+          <React.Fragment key={folder.id}>
+            <FolderRow
+              name={folder.name}
+              description={folder.policyError || (modes[folder.id] === "stream" ? "Streams from hub" : folderSize(folder))}
+              selectable
+              selected={selected.includes(folder.id)}
+              disabled={
+                busy || !!folder.policyError || !Number.isFinite(folder.bytes)
+              }
+              onPress={() =>
+                setSelected((previous) =>
+                  previous.includes(folder.id)
+                    ? previous.filter((id) => id !== folder.id)
+                    : [...previous, folder.id],
+                )
+              }
+            />
+            {!!kinds[folder.id] && selected.includes(folder.id) && (
+              <SegmentedControl
+                fit
+                options={[
+                  { value: "stream", label: "Stream" },
+                  { value: "keep", label: "Keep" },
+                ]}
+                value={modes[folder.id]}
+                onChange={(value) => setChosenModes((previous) => ({ ...previous, [folder.id]: value }))}
+              />
+            )}
+          </React.Fragment>
         ))}
       </View>
       <Text style={[s.caption, s.centerText]}>
         {chosen.length === 1 ? chosen[0].name : count(chosen.length, "folder", "folders")} ·{" "}
-        {bytes(size)} ·{" "}
+        {bytes(downloadBytes(chosen, modes, sizes))} to download ·{" "}
         {Number.isFinite(free)
-          ? `${bytes(free)} free on this ${device}`
+          ? `${bytes(free)} free`
           : "Checking available space"}
       </Text>
       <View style={s.flex} />
-      {!streamOnly && (
-        <Button
-          label={downloadLabel(chosen.length)}
-          icon="download"
-          primary
-          disabled={!chosen.length}
-          busy={busy}
-          onPress={() => download(chosen.map((folder) => folder.id))}
-        />
-      )}
+      <Button
+        label={action.label}
+        icon={action.icon}
+        primary
+        disabled={!chosen.length}
+        busy={busy}
+        onPress={() => download(chosen.map((folder) => folder.id), modes)}
+      />
       <Button
         label="Skip for now"
-        primary={streamOnly}
-        quiet={!streamOnly}
+        quiet
         busy={busy}
         onPress={skip}
       />

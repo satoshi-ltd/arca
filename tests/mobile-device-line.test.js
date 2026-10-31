@@ -37,8 +37,8 @@ test("segments wrap only between each other, never inside one and never with a l
   assert.match(components, /<View style=\{s\.deviceLine\}>\s+<View style=\{s\.deviceSegs\}>[\s\S]{0,120}<View key=\{segment\.parts\.join\(\)\} style=\{s\.deviceSeg\}>\s+\{segment\.parts\.map\(\(part\) => \(\s+<React\.Fragment key=\{part\}>\s+<Text style=\{\[s\.caption, s\.deviceSep\]\}>·<\/Text>/, "every part, folders and size included, carries the same separator box inside one unbreakable segment");
   assert.match(read("theme.js"), /deviceLine: \{ overflow: "hidden" \},\s+deviceSegs: \{ flexDirection: "row", flexWrap: "wrap", marginLeft: -12 \},\s+deviceSeg: \{ flexDirection: "row" \},\s+deviceSep: \{ width: 12, textAlign: "center" \},/, "a wrapped line's first separator sits in the clipped margin");
   assert.equal(
-    machineLabel({ name: "umbrel", role: "Replica", backup: true, segments: deviceSegments({ platform: "android", version: "0.7.35", hubVersion: "0.7.38" }) }),
-    "umbrel, Replica, Full backup, Android, v0.7.35, older than the hub’s v0.7.38",
+    machineLabel({ name: "nas", role: "Replica", backup: true, segments: deviceSegments({ platform: "android", version: "0.7.35", hubVersion: "0.7.38" }) }),
+    "nas, Replica, Full backup, Android, v0.7.35, older than the hub’s v0.7.38",
   );
 });
 
@@ -129,8 +129,8 @@ test("Fold cells always show the version, flag an older one unless removed, and 
     "Yuri, Replica, Seen Oct 7, 10:01",
   );
   assert.equal(
-    machineLabel({ name: "umbrel", role: "Replica", segments: [{ parts: ["Linux"] }], version: "v0.7.39" }),
-    "umbrel, Replica, Linux, v0.7.39",
+    machineLabel({ name: "nas", role: "Replica", segments: [{ parts: ["Linux"] }], version: "v0.7.39" }),
+    "nas, Replica, Linux, v0.7.39",
   );
 });
 

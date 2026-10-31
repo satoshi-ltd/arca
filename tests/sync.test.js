@@ -879,8 +879,8 @@ test("backup starts in an empty mounted folder and restarts there after its data
 test("a backup in Docker must live on a mounted folder", () => {
   const mountinfo = [
     "636 541 0:52 / / rw,relatime - overlay overlay rw",
-    "645 636 259:4 /umbrel/app-data/arca/data/state /data/state rw,relatime - ext4 /dev/nvme0n1p4 rw",
-    "646 636 259:4 /umbrel/app-data/arca/data/files /data/files rw,relatime - ext4 /dev/nvme0n1p4 rw",
+    "645 636 259:4 /srv/arca/data/state /data/state rw,relatime - ext4 /dev/nvme0n1p4 rw",
+    "646 636 259:4 /srv/arca/data/files /data/files rw,relatime - ext4 /dev/nvme0n1p4 rw",
     "647 636 259:4 /mnt/disk /data/my\\040backup rw,relatime - ext4 /dev/sda1 rw",
   ].join("\n");
   assert.equal(onContainerMount("/data/backup", mountinfo), false);

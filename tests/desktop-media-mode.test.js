@@ -177,15 +177,20 @@ const section = (ui, name) => ui.$$("#content section").find((el) => el.querySel
 const shown = (el) => !!el && !el.closest("[hidden]");
 const submit = (ui) => ui.$("#submit-dialog");
 
-test("Folders on a replica list streamed and kept libraries in their kind, and offer Start syncing on a Movies & TV row as on an Audio row", async (t) => {
+test("Folders on a replica list only started libraries in their kind, and a Movies & TV library not started waits under On hub · not selected like an Audio one", async (t) => {
   const ui = await boot(t, { status: replicaStatus({ pod: "stream", kep: "keep" }) });
   await until(() => row(ui, "films"));
   assert.ok(section(ui, "Audio").contains(row(ui, "podcasts")));
   assert.match(row(ui, "podcasts").textContent, /Streams from hub/);
   assert.match(row(ui, "films").textContent, /Kept on this device/);
   assert.equal(row(ui, "podcasts").querySelector('[data-action="add"]'), null, "a streamed library is already chosen");
-  assert.ok(section(ui, "Movies & TV").contains(row(ui, "videos")), "an unchosen Movies & TV library keeps its place");
-  assert.ok(row(ui, "videos").querySelector('[data-action="add"]'), "and offers Start syncing");
+  assert.equal(row(ui, "films").querySelector('[data-action="add"]'), null, "a kept library is already chosen");
+  assert.equal(section(ui, "Movies & TV").contains(row(ui, "videos")), false, "a Movies & TV library not started stays out of its kind");
+  assert.ok(section(ui, "On hub · not selected").contains(row(ui, "videos")), "and waits with the folders not selected");
+  assert.ok(row(ui, "videos").classList.contains("unselected"));
+  assert.ok(row(ui, "videos").querySelector('[data-action="add"]'), "it offers Start syncing");
+  assert.match(row(ui, "videos").textContent, /^videos1,284 files · 9\.6 GB/);
+  assert.doesNotMatch(row(ui, "videos").textContent, /Streams from hub/);
   assert.ok(row(ui, "videos").querySelector('.row-main[data-action="folder-detail"]'), "while the row still opens the library");
   assert.ok(section(ui, "On hub · not selected").contains(row(ui, "music")));
   assert.ok(row(ui, "music").querySelector('[data-action="add"]'));

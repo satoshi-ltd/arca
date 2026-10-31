@@ -33,6 +33,8 @@ import {
 import ignore from "../../../packages/vendor/ignore/index.cjs";
 import { validateIgnore } from "../../../packages/core/ignore-limits.js";
 import { REPORTABLE_VERSION } from "./device-line.js";
+import { isVideoFolder, refreshVideoLibrary, videoModes, videoModesKey } from "./video-sync.js";
+import { playableBytes, subtitleFile } from "./video-downloads.js";
 export const CHUNK = 1024 * 1024;
 export const HEADROOM = 256 * 1024 * 1024;
 export { validPath, validRow } from "./validation.js";
@@ -346,6 +348,49 @@ export class Replica {
     if (!ids.includes(volume.id))
       await this.store.set(streamedKey(this.scope), [...ids, volume.id]);
     this.changed();
+  }
+  async startVideo(volume, mode, platform = null) {
+    await this.requireActiveReplica();
+    if (!this.scope) throw new Error("Connect to a hub first");
+    if (this.removing) throw new Error("Wait for the current operation to finish.");
+    if (!isVideoFolder(this.client.state().catalog, volume.id))
+      throw new Error("Only Movies & TV libraries stream or keep from the hub.");
+    if (mode === "keep") await this.space(await this.keptBytes(volume, platform));
+    await this.store.set(videoModesKey(this.scope), {
+      ...(await videoModes(this)),
+      [volume.id]: mode === "keep" ? "keep" : "stream",
+    });
+    this.changed();
+  }
+  async keptBytes(volume, platform) {
+    if (!platform) return volume.bytes || 0;
+    const library = await refreshVideoLibrary(this, volume.id).then((fresh) => fresh.library, () => null);
+    return playableBytes(library, platform) ?? (volume.bytes || 0);
+  }
+  async stopVideo(id) {
+    await this.requireActiveReplica();
+    if (this.removing || this.importing)
+      throw new Error("Wait for the current operation to finish.");
+    const scope = this.scope;
+    this.removing = true;
+    try {
+      const modes = await videoModes(this);
+      delete modes[id];
+      await this.store.set(videoModesKey(scope), modes);
+      if (this.videoDownloads) await this.videoDownloads.removeVolume(id);
+      else
+        for (const row of (await this.store.videoDownloads(scope)).filter((item) => item.volume === id)) {
+          const media = this.files.videoDownload(scope, id, `${row.hash}.${row.ext}`);
+          await this.files.remove(`${media}.part`);
+          await this.files.remove(media);
+          for (const key of row.subtitles || [])
+            await this.files.remove(this.files.videoDownload(scope, id, subtitleFile(row, key)));
+          await this.store.forgetVideoDownload(scope, id, row.path);
+        }
+    } finally {
+      this.removing = false;
+      this.changed();
+    }
   }
   async stopStreaming(id) {
     await this.requireActiveReplica();

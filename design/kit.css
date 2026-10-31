@@ -404,6 +404,9 @@ body.kit {
   min-height: 0;
   height: 520px;
 }
+.kit-wizard.kit-wizard-tall .onboarding {
+  height: 680px;
+}
 .kit-wizard + .kit-caption {
   margin-bottom: var(--space-5);
 }

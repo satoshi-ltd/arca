@@ -73,21 +73,6 @@ test("explicit HTTPS proxy mode permits web sessions but does not exempt pairing
   assert.equal((await call("/v1/status", "GET", null, cookie)).statusCode, 412, "Tailscale mode still gates a private-address proxy socket");
 });
 
-test("Umbrel's access proxy can sign in without the LAN option", async (t) => {
-  const old = process.env.ARCA_SETUP_CODE_PATH;
-  process.env.ARCA_SETUP_CODE_PATH = "/umbrel";
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-umbrel-policy-"));
-  init(home, { port: 0 });
-  const daemon = await start(home, { timer: false });
-  t.after(async () => { await daemon.close(); fs.rmSync(home, { recursive: true, force: true }); if (old === undefined) delete process.env.ARCA_SETUP_CODE_PATH; else process.env.ARCA_SETUP_CODE_PATH = old; });
-  daemon.server.prependListener("request", (req) => Object.defineProperty(req.socket, "remoteAddress", { value: "192.168.1.10", configurable: true }));
-  const base = `http://127.0.0.1:${daemon.port}`;
-  const login = await fetch(base + "/auth/login", { method: "POST", headers: { origin: base, "content-type": "application/json" }, body: JSON.stringify({ code: issueWebCode(home).code }) });
-  assert.equal(login.status, 200);
-  const cookie = login.headers.get("set-cookie").split(";")[0];
-  assert.equal((await fetch(base + "/v1/status", { headers: { cookie } })).status, 200);
-});
-
 test("a server replica explicitly bound to a private network keeps web administration", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-replica-web-"));
   init(home, { port: 0, role: "replica" });
@@ -387,4 +372,14 @@ test("mobile Tailscale route failures are coded connection outages", async () =>
       return true;
     },
   );
+});
+
+test("discovery names no separate code page", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "arca-discovery-access-"));
+  init(home, { port: 0 });
+  const daemon = await start(home, { timer: false });
+  t.after(async () => { await daemon.close(); fs.rmSync(home, { recursive: true, force: true }); });
+  const info = await (await fetch(`http://127.0.0.1:${daemon.port}/.well-known/arca`)).json();
+  assert.equal(info.access.codeDigits, 6);
+  assert.equal("setupCodePath" in info.access, false);
 });

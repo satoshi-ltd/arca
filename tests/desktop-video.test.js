@@ -730,11 +730,9 @@ test("a desktop replica opens an unselected video folder on its library through 
   });
   await until(() => ui.$('.folder-card[data-id="vid"]') && ui.idle());
   const card = ui.$('.folder-card[data-id="vid"]');
-  assert.equal(card.classList.contains("unselected"), false, "a hub-only video folder is not an unselected folder waiting to sync");
-  assert.match(card.textContent, /Streams from hub/);
+  assert.ok(card.classList.contains("unselected"), "a video folder not started waits to be started");
   const sections = ui.$$(".page section, .page .section").map((el) => el.textContent);
-  assert.ok(sections.some((text) => /Movies & TV/.test(text) && /Streams from hub/.test(text)), "it sits in Movies & TV");
-  assert.ok(sections.some((text) => /On hub · not selected/.test(text) && /documents/.test(text) && !/Streams from hub/.test(text)), "only syncable folders stay under On hub · not selected");
+  assert.ok(sections.some((text) => /On hub · not selected/.test(text) && /documents/.test(text) && /video/.test(text)), "it waits under On hub · not selected");
   assert.ok(card.querySelector('[data-action="add"]'), "it offers Start syncing beside the row");
   await ui.click('.folder-card[data-id="vid"] .row-main', () => ui.$(".video-page .music-card") && ui.idle());
   assert.ok(ui.routes.some((route) => route === "/v1/video/library?volume=vid"));

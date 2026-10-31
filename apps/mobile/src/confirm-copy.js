@@ -92,6 +92,14 @@ export const stopStreaming = ({ name, files, size }) => ({
   destructive: true,
 });
 
+export const stopVideo = ({ name, files, size, kept }) => ({
+  title: `Stop syncing “${name}”?`,
+  message: `${files ? `${fileCount(files)} · ${bytes(size)} downloaded on this phone will be deleted. ` : ""}${kept ? "Stops keeping it on this phone" : "Stops streaming it here"}. Hub files and history are kept.`,
+  label: files ? "Stop syncing and delete" : "Stop syncing",
+  icon: "unlink",
+  destructive: true,
+});
+
 export const eraseDevice = ({ folders, size, pending }) => ({
   title: "Erase this device?",
   message:

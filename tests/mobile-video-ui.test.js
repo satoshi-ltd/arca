@@ -9,25 +9,35 @@ const library = read("VideoLibrary.jsx");
 const player = read("VideoPlayer.jsx");
 const theme = read("theme.js");
 
-test("a video folder opens on its library with the clapperboard tile, even when it is not selected", () => {
+test("a Movies & TV library waits under On hub · not selected until it is started, then joins its section with its mode", () => {
   assert.match(app, /const videoFolder =\s+!!folder && !photoFolder && !musicFolder && isVideoFolder\(catalog, folder\.id\);/);
-  assert.match(app, /const videoStreaming = videoFolder;/, "a Movies & TV folder always streams: the phone never keeps it");
+  assert.match(app, /const videoModeOf = status\.videos \? JSON\.parse\(status\.videos\) : \{\};/);
   assert.match(app, /isVideoFolder\(catalog, f\.id\) && !galleryConfig\(f\)\s+\? "video"/, "opening a video folder starts on the library");
   const glyph = app.match(/const folderIcon = ([^;]+);/)[1];
   assert.equal(vm.runInNewContext(glyph, { photoFolder: false, musicFolder: false, videoFolder: true, librarySymbol: () => "music", shownMusic: null }), "clapperboard");
-  assert.match(app, /const streamedVolumes = volumes\.filter\(\s+\(v\) => \(isVideoFolder\(catalog, v\.id\) \|\| \(isMusicFolder\(catalog, v\.id\) && streamedSet\.has\(v\.id\)\)\) && !locals\.some\(\(f\) => f\.id === v\.id\),\s+\);/);
-  assert.match(app, /onPress=\{\(\) => openFolder\(\{ id: v\.id, name: v\.name, selected: 0 \}\)\.catch/, "a video folder on the hub opens to stream instead of asking to sync");
+  assert.match(app, /const streamedVolumes = volumes\.filter\(\s+\(v\) => \(\(isVideoFolder\(catalog, v\.id\) && videoHeld\(v\.id\)\) \|\| \(isMusicFolder\(catalog, v\.id\) && streamedSet\.has\(v\.id\)\)\) && !locals\.some\(\(f\) => f\.id === v\.id\),\s+\);/, "only a started library joins its section");
+  assert.match(app, /if \(isVideoFolder\(catalog, v\.id\)\) return `\$\{folderSize\(v\)\} · \$\{videoModeOf\[v\.id\] === "keep" \? "Kept on this phone" : "Streams from hub"\}`;/);
+  assert.match(app, /onPress=\{\(\) => openFolder\(\{ id: v\.id, name: v\.name, selected: 0 \}\)\.catch/, "a started library opens on its library");
   const streamed = app.slice(app.indexOf("const streamedRow"), app.indexOf("const streamedRow") + 600);
   assert.doesNotMatch(streamed, /disabled=/, "its cached list stays browsable offline");
   const home = app.slice(app.indexOf("{folderSections("), app.indexOf("Loading shared folders"));
-  assert.match(home, /\.\.\.streamedVolumes\.map\(\(v\) => \(\{ \.\.\.v, streamed: true \}\)\),/, "streamed folders join their kind's section, or form it when no selected folder does");
-  assert.match(home, /f\.streamed \? \(\s+streamedRow\(f, index\)/);
-  assert.match(home, /!locals\.some\(\(f\) => f\.id === v\.id\) && !streamedVolumes\.some\(\(item\) => item\.id === v\.id\)/, "and never sit under On hub · not selected");
+  assert.match(home, /\.\.\.streamedVolumes\.map\(\(v\) => \(\{ \.\.\.v, streamed: true \}\)\),/);
+  assert.match(home, /!locals\.some\(\(f\) => f\.id === v\.id\) && !streamedVolumes\.some\(\(item\) => item\.id === v\.id\)/, "a library not started sits under On hub · not selected");
+  assert.match(home, /onPress=\{\(\) => choose\(v\)\}/, "and its row opens Start syncing");
   assert.match(read("home-data.js"), /\{ kind: "video", label: "MOVIES & TV" \}/);
-  assert.match(app, /\{\(!videoStreaming \|\| !!currentFolder\?\.selected\) && \(\s+<Button\s+iconOnly\s+label="Folder actions"/, "a streamed folder offers no syncing; an old copy still has its actions so it can be removed");
-  assert.doesNotMatch(app, /videoStreaming\s+\? volumes\.some/);
+  assert.match(app, /\{\(!videoFolder \|\| videoStarted \|\| !!currentFolder\?\.selected\) && \(\s+<Button\s+iconOnly\s+label="Folder actions"/, "a started library and an old copy have the ⋯");
+  assert.match(app, /\{!audioStreaming && !videoStarted && \(\s+<View style=\{s\.actionGroup\}>/, "a started library's ⋯ holds only Stop syncing…");
+  assert.match(app, /if \(videoStarted\) \{\s+const saved = \[\.\.\.videoDownloads\.values\(\)\]\.filter\(\(row\) => row\.volume === target\.id\);\s+confirm\(\s+confirmCopy\.stopVideo\(\{[\s\S]{0,200}size: saved\.reduce\(\(total, row\) => total \+ \(row\.state === "done" \? row\.size \|\| 0 : row\.done \|\| 0\), 0\),\s+kept: videoModeOf\[target\.id\] === "keep",[\s\S]{0,200}if \(videoSession\?\.volume === target\.id\) closeVideo\(\);\s+await engine\.current\.stopVideo\(target\.id\);/, "queued and partial downloads count, and a title playing from the library closes first");
+  assert.match(app, /const videoHeld = \(id\) => !!videoModeOf\[id\] \|\| \[\.\.\.videoDownloads\.values\(\)\]\.some\(\(row\) => row\.volume === id\);/, "a library with downloads but no mode stays visible so Stop syncing can remove them");
+  assert.match(app, /const videoStarted = videoFolder && videoHeld\(folder\.id\) && !currentFolder\?\.selected;/);
+  assert.match(app, /filter\(\(entry\) => isVideoFolder\(catalog, entry\.id\) && videoHeld\(entry\.id\)\)/, "Search Arca reaches only started libraries");
+  const action = app.slice(app.indexOf("function videoAction("), app.indexOf("\n  }\n", app.indexOf("function videoAction(")));
+  assert.match(app, /function dropDownloads\(volume, items\) \{\s+if \(videoModeOf\[volume\] === "keep"\) \{\s+setError\(KEPT_LIBRARY\);\s+return Promise\.resolve\(\);\s+\}\s+return removeDownloads\(volume, items\);/, "a kept library refuses to drop single titles that Keep would download again");
+  assert.match(action, /if \(name === "remove-download" \|\| name === "cancel-download"\) \{\s+dropDownloads\(volume, downloadTargets\(item\)\);/, "from the sheet");
+  assert.match(app, /cancelDownload=\{\(items\) => dropDownloads\(folder\.id, items\)\}/, "and from the title page's Download tile");
+  assert.match(app, /deleteVideos\(\{ client, volume, items: choice\.items, removeDownloads: \(rows\) => removeDownloads\(volume, rows\) \}\)/, "titles deleted on the hub still lose their copies");
   assert.match(app, /\{videoFolder && !!folder\.selected && \(\s+<ActionRow\s+label=\{videoView \? "View files" : "View library"\}/);
-  assert.match(app, /if \(folder && !folder\.selected && currentFolder\?\.selected\) setFolder\(currentFolder\);/, "starting to sync a streamed folder turns it into the selected folder");
+  assert.match(app, /if \(folder && !folder\.selected && currentFolder\?\.selected\) setFolder\(currentFolder\);/);
   assert.match(app, /const writable = acceptsWrites\(catalog, folder\);/);
   assert.match(app, /\{writable && \(\s+<ActionRow\s+label="Add files…"/, "an old copy of a Movies & TV folder takes no new files");
   assert.match(app, /\{writable && !musicFolder && \(\s+<ActionRow\s+label="Add photos…"/);
@@ -81,7 +91,6 @@ test("the ⋯ sheet holds watched marks, Remove from this device and the destruc
 test("the player streams with the token in a header, saves positions and plays Up next in landscape", () => {
   assert.match(app, /<VideoPlayer\s+session=\{videoSession\}/);
   assert.match(app, /videoSource\(\{\s+client,\s+volume: session\.volume,\s+item: session\.item,\s+networkType,/);
-  assert.doesNotMatch(app, /selected: !videoStreaming|selected: session\.selected/, "the phone never plays a local copy");
   assert.match(app, /sendPosition\(\{ client, replica: engine\.current, volume: session\.volume, item: session\.item, position, duration \}\)\.catch\(\(\) => \{\}\)/);
   assert.match(app, /nextOf=\{\(item\) => \(videoSession \? followingEpisode\(videoSession\.library, item\) : null\)\}/);
   assert.match(app, /requireOptionalNativeModule\("ExpoNetwork"\) \? require\("expo-network"\) : null/);
@@ -271,7 +280,7 @@ test("the app plays downloads without the hub, queues positions and resumes down
   assert.match(app, /playbackSource\(\{\s+downloads: downloads\.current,\s+volume: session\.volume,\s+item: session\.item,\s+mode: session\.mode \|\| "auto",\s+audio: session\.audio \?\? null,\s+stream: \(\) =>\s+videoSource\(/);
   assert.match(app, /playbackCues\(\{\s+downloads: downloads\.current,[\s\S]{0,200}load: \(\) => loadSubtitles\(/);
   assert.match(app, /const manager = createVideoDownloads\(\{ replica, client, onChange: setVideoDownloads \}\);/, "downloads run on any network that reaches the hub");
-  assert.match(app, /const fresh = await refreshVideoLibrary\(replica, folder\.id, \{ signal: controller\.signal, downloads: downloads\.current \}\);/, "only a fresh library from the hub removes downloads");
+  assert.match(app, /const fresh = await refreshVideoLibrary\(replica, folder\.id, \{ signal: controller\.signal, downloads: downloads\.current, platform: Platform\.OS \}\);/, "only a fresh library from the hub removes downloads or queues a kept library's titles");
   assert.match(app, /if \(!catalog\) return;\s+downloads\.current\?\.pruneVolumes\(catalog\)\.catch\(\(\) => \{\}\);\s+audioManager\.current\?\.pruneVolumes\(catalog\)\.catch\(\(\) => \{\}\);/);
   assert.doesNotMatch(app, /cachedVideoLibrary\([^)]*downloads/);
   assert.match(app, /if \(!connected \|\| status\.offline \|\| !replica\?\.scope\) return;\s+downloads\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+audioManager\.current\?\.resume\(\)\.catch\(\(\) => \{\}\);\s+flushPositions\(\{ client, replica \}\)/);
@@ -281,7 +290,7 @@ test("the app plays downloads without the hub, queues positions and resumes down
   assert.ok(load.indexOf("flushPositions") < load.indexOf("refreshVideoLibrary"), "queued positions reach the hub before the list is read again");
   const action = app.slice(app.indexOf("function videoAction("), app.indexOf("\n  }\n", app.indexOf("function videoAction(")));
   assert.match(action, /if \(name === "download"\) \{\s+startDownload\(\[item\]\);\s+return;\s+\}/);
-  assert.match(action, /if \(name === "remove-download" \|\| name === "cancel-download"\) \{\s+removeDownloads\(volume, downloadTargets\(item\)\);/);
+  assert.match(action, /if \(name === "remove-download" \|\| name === "cancel-download"\) \{\s+dropDownloads\(volume, downloadTargets\(item\)\);/);
   assert.match(app, /<VideoSheet\s+sheet=\{shownSheet\}\s+locked=\{actionLocked\}\s+act=\{\(name\) => videoAction\(name, shownSheet\)\}\s+download=\{videoDownload\}\s+canDownload=\{\(item\) => downloadable\(item, Platform\.OS\)\}/, "the sheet reads the live download state");
   assert.doesNotMatch(app, /downloaded: downloadTargets/);
 });

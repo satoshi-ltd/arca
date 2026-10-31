@@ -15,20 +15,7 @@ import { issueWebCode } from "../packages/daemon/web.js";
 const temporary = () =>
   fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "arca-server-setup-")));
 
-test("Umbrel ships the same setup module as Docker; persistent roots reject escapes and existing content", () => {
-  assert.equal(
-    fs.readFileSync(
-      new URL(
-        "../deploy/umbrel/arca/server-setup.js.template",
-        import.meta.url,
-      ),
-      "utf8",
-    ),
-    fs.readFileSync(
-      new URL("../packages/daemon/setup.js", import.meta.url),
-      "utf8",
-    ),
-  );
+test("persistent roots reject escapes and existing content", () => {
   const root = temporary();
   const previous = process.env.ARCA_FILES;
   try {

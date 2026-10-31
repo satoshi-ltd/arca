@@ -35,10 +35,3 @@ test("the Docker image carries the license label and copies only files the deplo
   assert.match(dockerfile, new RegExp(`org\\.opencontainers\\.image\\.licenses="${REF}"`));
   assert.doesNotMatch(dockerfile, /^COPY LICENSE/m);
 });
-
-test("the Umbrel listing names the license", () => {
-  assert.match(
-    read("deploy/umbrel/arca/umbrel-app.yml").replace(/\s+/g, " "),
-    /PolyForm Strict License 1\.0\.0/,
-  );
-});

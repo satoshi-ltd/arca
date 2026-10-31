@@ -248,17 +248,26 @@ test("Stop syncing a streamed library asks only about what this phone downloaded
   assert.equal(stopStreaming({ name: "music", files: 12, size: 1 }).label, "Stop syncing and delete");
 });
 
-test("onboarding streams the Audio libraries the phone can play and selects the rest", async () => {
+test("onboarding starts each folder in its chosen mode and counts only what downloads", async () => {
   const done = [];
   const replica = {
     space: async (bytes) => done.push(`space ${bytes}`),
     select: async (volume) => done.push(`select ${volume.id}`),
     streamMusic: async (volume) => done.push(`stream ${volume.id}`),
+    startVideo: async (volume, mode, platform) => done.push(`${mode} video ${volume.id}${platform ? ` ${platform}` : ""}`),
+    keptBytes: async (volume) => volume.bytes - 15,
     store: { set: async () => {} },
   };
-  const catalog = { volumes: [{ id: "a", bytes: 10, music: true }, { id: "b", bytes: 5 }] };
-  await selectFirstFolders(replica, catalog, ["a", "b"], (v) => !!v.music);
-  assert.deepEqual(done, ["space 5", "stream a", "select b"]);
+  const catalog = {
+    music: true,
+    video: true,
+    volumes: [{ id: "a", bytes: 10, music: true }, { id: "b", bytes: 5 }, { id: "c", bytes: 7, music: true }, { id: "m", bytes: 100, video: true }, { id: "k", bytes: 40, video: true }],
+  };
+  await selectFirstFolders(replica, catalog, ["a", "b", "c", "m", "k"], { a: "stream", b: "keep", c: "keep", m: "stream", k: "keep" }, "ios");
+  assert.deepEqual(done, ["space 37", "stream a", "select b", "select c", "stream video m ios", "keep video k ios"], "a kept Movies & TV library counts only what this phone can play");
+  done.length = 0;
+  await selectFirstFolders(replica, catalog, ["c", "b"]);
+  assert.deepEqual(done, ["space 12", "select c", "select b"], "without a choice every folder is kept");
 });
 
 test("album, artist and show actions offer each download action their tracks need", () => {
@@ -291,9 +300,15 @@ test("album, artist and show actions offer each download action their tracks nee
 test("streamed library screens: Start streaming, the downloaded-only caption, the page ⋯ and the row glyph", () => {
   const app = read("src/App.jsx");
   const library = read("src/MusicLibrary.jsx");
-  assert.match(app, /playerAvailable && isMusicFolder\(catalog, shownSheet\.volume\.id\) \? \([\s\S]{0,300}<Card title="Stream from the hub">[\s\S]{0,300}Download tracks or albums to listen offline\.[\s\S]{0,300}label="Start streaming"[\s\S]{0,400}engine\.current\.streamMusic\(shownSheet\.volume\)/, "Android streams a library it starts; the iPhone keeps a complete copy");
+  assert.match(app, /const selectMedia = shownSheet\?\.kind === "select" \? mediaKind\(catalog, shownSheet\.volume, playerAvailable\) : null;/, "the iPhone, without the player, keeps an Audio library");
+  assert.match(app, /const selectMode = shownSheet\?\.mode \|\| \(selectMedia \? defaultMode\(selectMedia\) : "keep"\);/);
+  const select = app.slice(app.indexOf('{shownSheet.kind === "select" && ('), app.indexOf('{shownSheet.kind === "conflict" && ('));
+  assert.match(select, /\{!!selectMedia && \(\s+<SegmentedControl\s+fit\s+options=\{\[\s+\{ value: "stream", label: "Stream" \},\s+\{ value: "keep", label: "Keep" \},\s+\]\}\s+value=\{selectMode\}\s+onChange=\{\(value\) => setSheet\(\{ \.\.\.shownSheet, mode: value \}\)\}/);
+  assert.match(select, /<Card title="Stream from the hub">[\s\S]{0,200}"Download titles to watch offline\."\s+: "Download tracks or albums to listen offline\."[\s\S]{0,200}label="Start streaming"\s+icon="play"[\s\S]{0,300}if \(selectMedia === "video"\) await engine\.current\.startVideo\(shownSheet\.volume, "stream", Platform\.OS\);\s+else await engine\.current\.streamMusic\(shownSheet\.volume\);/);
+  assert.match(select, /<Card title=\{selectMedia \? "Keep on this phone" : "Start syncing"\}>[\s\S]{0,200}"Every movie and episode, new ones too\."[\s\S]{0,120}"A full copy that syncs both ways\."[\s\S]{0,120}"Download this folder and keep it in sync\."[\s\S]{0,300}`Needs \$\{bytes\(selectNeeds\)\} · `/);
+  assert.match(select, /label="Start syncing"\s+icon="refresh"[\s\S]{0,200}if \(selectMedia === "video"\) await engine\.current\.startVideo\(shownSheet\.volume, "keep", Platform\.OS\);\s+else await engine\.current\.select\(shownSheet\.volume\);/);
   assert.match(app, /saved\.length \? `\$\{fileCount\(saved\.length\)\} · \$\{bytes\(saved\.reduce\(\(total, row\) => total \+ \(row\.size \|\| 0\), 0\)\)\} local` : "Streams from hub"/, "its Folders caption counts only what is downloaded");
-  assert.match(app, /\{!audioStreaming && \(\s+<View style=\{s\.actionGroup\}>/, "its folder ⋯ holds only Stop syncing…");
+  assert.match(app, /\{!audioStreaming && !videoStarted && \(\s+<View style=\{s\.actionGroup\}>/, "its folder ⋯ holds only Stop syncing…");
   assert.match(app, /if \(audioStreaming\) \{\s+confirm\(\s+confirmCopy\.stopStreaming\(/);
   assert.match(app, /await client\.api\("\/v1\/delete-file", \{ volume: track\.folder, path: track\.path, rev: track\.rev \}\);/, "Delete… goes to the hub with the library row's revision");
   assert.match(app, /collectionActions=\{musicCollectionSheet\}\s+streamed=\{audioStreaming\}\s+download=\{audioStreaming \? audioDownload : undefined\}/);

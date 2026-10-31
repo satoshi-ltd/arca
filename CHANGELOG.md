@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.22 — 2026-10-31
+
+- The Umbrel package is gone: Arca ships for servers as the Docker image only, and the server sign-in and setup screens always show the Docker web-code command.
+- Docs stop describing Arca as a pilot: the maintainer's servers are named as such, Atlas as the hub and Casa as a replica.
+- Audio and Movies & TV libraries you have not started wait under On hub · not selected on desktop and phones alike, and Start syncing asks Stream or Keep (Keep by default for Audio, Stream for Movies & TV). Libraries that streamed without a choice show there once; their downloads stay.
+- Phones can keep again: an Audio library as a full two-way copy, and a Movies & TV library by downloading every movie and episode, new ones too.
+- The last setup step on a desktop or server replica lists the hub's folders with a switch each, and Stream or Keep for media; phone setup offers the same choice and counts only what downloads.
+
+Needs: native build · desktop build
+
 ## 0.8.21 — 2026-10-31
 
 - Players can fetch only current visible gallery and audio content, so their credentials cannot retrieve unrelated stored objects by hash.

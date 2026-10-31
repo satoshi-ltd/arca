@@ -152,7 +152,7 @@ function clearGalleryPages() {
     .catch(() => {});
 }
 const native = Boolean(window.__TAURI__?.core.invoke);
-const APP_VERSION = "0.8.21";
+const APP_VERSION = "0.8.22";
 // Keep native zoom bounded and persistent, matching Alpi's desktop shortcuts.
 function installDesktopZoom() {
   const webview = window.__TAURI__?.webview?.getCurrentWebview();
@@ -2481,15 +2481,15 @@ function folderRow(v, available = false) {
     : homeLead(v, state, p);
   const open = `data-action="folder-detail" data-id="${escape(v.id)}"`;
   const label = `aria-label="Open ${escape(v.name)} details${word ? `, ${escape(word)}` : ""}"`;
-  const offered = available === "streamed" && !v.mode;
+  const offered = available === true && videoAvailable(v);
   const inline = (!available && Boolean(problemAction || v.conflicts)) || offered;
   const trailing = available
-    ? available === "streamed" && v.mode
+    ? available === "streamed"
       ? icon("chevron-right")
       : selectFolderButton(v.id)
     : `${problemAction || (v.conflicts ? button("Review", "folder-conflicts", v.id, "secondary small-button") : "")}${icon("chevron-right")}`;
   if (inline)
-    return `<article class="folder-card" data-id="${escape(v.id)}">${lead.replace('class="home-lead"', `class="home-lead" ${open}`)}<div class="row-main" ${open} tabindex="0" role="button" ${label}><strong>${escape(v.name)}</strong><p class="meta" data-tooltip="${escape(folderMetaText(v, state, p))}">${meta}</p></div>${trailing}</article>`;
+    return `<article class="folder-card${offered ? " unselected" : ""}" data-id="${escape(v.id)}">${lead.replace('class="home-lead"', `class="home-lead" ${open}`)}<div class="row-main" ${open} tabindex="0" role="button" ${label}><strong>${escape(v.name)}</strong><p class="meta" data-tooltip="${escape(folderMetaText(v, state, p))}">${meta}</p></div>${trailing}</article>`;
   return `<article class="folder-card ${available && available !== "streamed" ? "unselected" : ""}" ${available === true || (available && !videoAvailable(v) && !musicAvailable(v)) ? "" : `${open} tabindex="0" role="button" ${label}`}>${lead}<div class="row-main"><strong>${escape(v.name)}</strong><p class="meta"${available ? "" : ` data-tooltip="${escape(folderMetaText(v, state, p))}"`}>${meta}</p></div>${trailing}</article>`;
 }
 async function loadCatalog() {
@@ -3066,7 +3066,7 @@ async function renderView(
     html += '<div class="page">';
     if (status.role !== "hub" && !status.hub)
       html += hubConnectionSection();
-    const streamed = status.role === "hub" ? [] : available.filter((v) => v.video || status.media?.[v.id]).map((v) => ({ ...v, mode: status.media?.[v.id] || null }));
+    const streamed = status.role === "hub" ? [] : available.filter((v) => status.media?.[v.id]).map((v) => ({ ...v, mode: status.media[v.id] }));
     const syncable = available.filter((v) => !streamed.some((x) => x.id === v.id));
     const shown = [...(status.role === "hub" ? status.volumes : [...selected, ...streamed])].sort((a, b) => nameOrder(a.name, b.name));
     const kinds = [
@@ -11918,7 +11918,6 @@ async function showLogin(message = "") {
       url: "",
       code: "",
       serverAccessRequired: true,
-      setupCodePath: info.access?.setupCodePath === "/umbrel" ? "/umbrel" : "",
     };
     renderOnboarding();
     return;
@@ -11943,9 +11942,6 @@ async function showLogin(message = "") {
     $("#access-role").textContent = info.role;
     $("#access-role").hidden = false;
     $("#access-methods").hidden = !approvalAvailable;
-    if (info.access?.setupCodePath === "/umbrel")
-      $(".access-help").innerHTML =
-        '<h3>Get a code</h3><p><a href="/umbrel" target="_blank" rel="noopener">Open Umbrel code access</a>, then return here.</p>';
   }
   let cancelApproval = () => {};
   const chooseMethod = (approval) => {
@@ -12061,6 +12057,67 @@ async function showLogin(message = "") {
   };
   $('[data-code="web"]')?.focus();
 }
+const setupKinds = (v) => (v.gallery ? 1 : v.music ? 2 : v.video ? 3 : 0);
+const setupMedia = (v) => !v.gallery && (v.music || v.video);
+const setupOrder = (o) => [...o.volumes].sort((a, b) => setupKinds(a) - setupKinds(b) || nameOrder(a.name, b.name));
+function setupChosen(o) {
+  return setupOrder(o).filter((v) => o.picks.get(v.id).on).map((v) => ({ ...v, mode: o.picks.get(v.id).mode }));
+}
+function setupFolders(o) {
+  return setupOrder(o)
+    .map((v) => {
+      const pick = o.picks.get(v.id);
+      const modes = setupMedia(v) && (v.music || native)
+        ? `<div class="segmented" role="group" aria-label="${escape(v.name)} mode">${[["stream", "Stream"], ["keep", "Keep"]].map(([mode, label]) => `<button type="button" data-setup-mode="${escape(v.id)}" data-mode="${mode}" class="${pick.mode === mode ? "active" : ""}" aria-pressed="${pick.mode === mode}">${label}</button>`).join("")}</div>`
+        : "";
+      const meta = v.policyError ? escape(v.policyError) : pick.mode === "stream" ? "Streams from hub" : Number.isFinite(v.files) ? `${countLabel(v.files, "file")} · ${bytes(v.bytes)}` : "Not counted yet";
+      return setting(escape(v.name), meta, `${modes}${toggleControl(`setup-folder-${v.id}`, `Sync ${v.name}`, pick.on, `data-setup-folder="${escape(v.id)}"${v.policyError ? " disabled" : ""}`)}`, icon(v.gallery ? "images" : v.music ? "music" : v.video ? "clapperboard" : "folder"));
+    })
+    .join("");
+}
+function setupTotals(o) {
+  const chosen = setupChosen(o);
+  const downloads = chosen.filter((v) => v.mode !== "stream");
+  const download = downloads.reduce((sum, v) => sum + (Number.isFinite(v.bytes) ? v.bytes : 0), 0);
+  const uncounted = downloads.filter((v) => !Number.isFinite(v.bytes)).length;
+  const short = Number.isFinite(o.freeBytes) && download > o.freeBytes;
+  const line = $("#setup-space");
+  if (line) {
+    line.textContent = short
+      ? `Not enough space: ${bytes(download)} to download · ${bytes(o.freeBytes)} free`
+      : [countLabel(chosen.length, "folder"), download ? `${bytes(download)} to download` : null, uncounted ? `${countLabel(uncounted, "folder")} not counted yet` : null, Number.isFinite(o.freeBytes) ? `${bytes(o.freeBytes)} free` : null].filter(Boolean).join(" · ");
+    line.classList.toggle("dialog-error", short);
+  }
+  const submit = $("#setup-form .dialog-actions .primary");
+  if (!submit) return;
+  submit.disabled = short || !chosen.length;
+  submit.innerHTML = !chosen.length
+    ? "Choose folders"
+    : chosen.every((v) => v.mode === "stream")
+      ? `${icon("play")}Start streaming`
+      : `${icon("refresh-cw")}Start syncing ${countLabel(chosen.length, "folder")}`;
+  icons();
+}
+async function startSetupFolders(root, chosen) {
+  const base = root.replace(/[\\/]$/, "");
+  const failed = [];
+  for (const v of chosen) {
+    try {
+      await api(
+        "/v1/select",
+        setupMedia(v)
+          ? v.mode === "keep" && v.music
+            ? { id: v.id, mode: "keep", path: `${base}/${v.name}` }
+            : { id: v.id, mode: v.mode }
+          : { id: v.id, path: `${base}/${v.name}` },
+      );
+    } catch (error) {
+      failed.push(`“${v.name}”: ${error.message}`);
+    }
+  }
+  if (chosen.some((v) => v.mode !== "stream")) await api("/v1/sync", { background: true }).catch(() => {});
+  if (failed.length) notice(`Could not start syncing ${failed.join("; ")}`, true);
+}
 function renderOnboarding() {
   ready = false;
   stopMusic();
@@ -12115,15 +12172,16 @@ function renderOnboarding() {
       )
       .join("")}</div>`;
   if (o.step === "access")
-    body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p>${o.setupCodePath ? '<p><a href="/umbrel" target="_blank" rel="noopener">Get a code from Umbrel</a>, then return here.</p>' : `<p>On the server, run:</p><div class="settings-card">${setting("Command", `<span class="mono">${escape(WEB_CODE_DOCKER)}</span>`, button("Copy", "copy", WEB_CODE_DOCKER, "secondary small-button", "copy"))}</div><p class="hint">The command prints a result that includes a six-digit code. Enter that code below.</p>`}<label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
+    body = `<h1>Confirm server access</h1><p>Enter a web access code to save this server's configuration.</p><p>On the server, run:</p><div class="settings-card">${setting("Command", `<span class="mono">${escape(WEB_CODE_DOCKER)}</span>`, button("Copy", "copy", WEB_CODE_DOCKER, "secondary small-button", "copy"))}</div><p class="hint">The command prints a result that includes a six-digit code. Enter that code below.</p><label>Web access code</label>${codeFields("setup-access")}<p class="hint">Single use · valid ten minutes. This is not a hub pairing code.</p>`;
   if (o.step === 2 && !o.paired)
     body = `<h1>Pair with your hub</h1><p>Connect with a single-use code from your hub.</p>${textField("Hub address", "url", o.url, "server", true, "https://arca.your-network")}<label>Pairing code</label>${codeFields("onboarding")}<p class="hint">${icon("clock")}Single use · valid ten minutes.</p>`;
   if (o.step === 2 && o.paired)
     body = `<h1>Finish setup</h1><p>Paired with ${escape(o.hubName || "your hub")}. Your connection is saved.</p><p>No folders have been downloaded. Choose them after setup.</p>`;
+  const choosing = o.step === 3 && o.role === "replica" && !!o.volumes?.length;
   if (o.step === 3)
-    body = `<h1>A home for your folders</h1><p>${o.role === "replica" ? "Folders you select from the hub live here, as ordinary folders." : "Choose a default location for the folders you share."}</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${native ? button("Change…", "pick-path", "root", "secondary small-button", "folder-input") : ""}</div><div id="setup-space"></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p>${native ? "" : '<p class="hint">This path is on the server. In Docker or Umbrel, use persistent mounted storage; the default is /data/files.</p>'}`;
+    body = `<h1>A home for your folders</h1><p>${choosing ? "Folders are kept here as ordinary folders; music and movies stream or stay here, as you choose." : o.role === "replica" ? "Folders you select from the hub live here, as ordinary folders." : "Choose a default location for the folders you share."}</p><div class="root-selection"><div class="tile large">${icon("folder")}</div><div class="row-main"><strong>Folder root</strong><input aria-label="Folder root" class="mono" name="root" value="${escape(o.root)}" required></div>${native ? button("Change…", "pick-path", "root", "secondary small-button", "folder-input") : ""}</div>${choosing ? `<label>On the hub</label><div class="settings-card" id="setup-folders">${setupFolders(o)}</div><p class="hint" id="setup-space" role="status"></p><p class="hint">Must be empty or new.</p>` : '<div id="setup-space"></div><p class="hint">Must be empty or new. Nothing is downloaded until you select folders.</p>'}${native ? "" : '<p class="hint">This path is on the server. In Docker, use persistent mounted storage; the default is /data/files.</p>'}`;
   $("#content").innerHTML =
-    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon-small.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${activeStep === i ? "current" : activeStep > i && !(connectSkipped && i === 1) ? "done" : ""}" ${activeStep === i ? 'aria-current="step"' : ""}><span>${activeStep > i && !(connectSkipped && i === 1) ? icon("check") : i + 1}</span>${label}${i === 1 && connectSkipped ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button><button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button></div></form></div>`;
+    `<div class="onboarding"><div class="onboarding-rail"><div class="brand"><img src="assets/arca-icon-small.svg" width="28" height="28" alt="Arca"><b>arca</b></div><div class="steps">${steps.map((label, i) => `<div class="step ${activeStep === i ? "current" : activeStep > i && !(connectSkipped && i === 1) ? "done" : ""}" ${activeStep === i ? 'aria-current="step"' : ""}><span>${activeStep > i && !(connectSkipped && i === 1) ? icon("check") : i + 1}</span>${label}${i === 1 && connectSkipped ? " · Not needed" : ""}</div>`).join("")}</div></div><form id="setup-form" class="onboarding-body">${body}<p id="setup-error" class="dialog-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="setup-back" class="ghost" ${o.step < 0 || o.initialized ? "disabled" : ""}>${icon("chevron-left")}Back</button>${choosing ? '<button type="button" id="setup-skip" class="secondary">Skip for now</button><button type="submit" class="primary"></button>' : `<button type="submit" class="primary">${o.step < 0 ? "Get started" : o.step === 3 ? "Finish" : "Continue"}${icon("chevron-right")}</button>`}</div></form></div>`;
   $("#setup-back").onclick = () => {
     o.step =
       o.step === "access" || o.step === 2 || (o.step === 3 && o.role === "hub")
@@ -12155,28 +12213,45 @@ function renderOnboarding() {
     const result = await (native
       ? invoke("setup_info", { root })
       : api(`/v1/setup-info?root=${encodeURIComponent(root)}`));
-    if (onboarding === o && o.step === 3 && $("[name=root]")?.value === root)
+    if (onboarding === o && o.step === 3 && $("[name=root]")?.value === root && choosing) {
+      o.freeBytes = result.freeBytes;
+      setupTotals(o);
+    } else if (onboarding === o && o.step === 3 && $("[name=root]")?.value === root)
       $("#setup-space").innerHTML =
         `<div class="stats"><div class="stat"><span>Available space</span><strong>${bytes(result.freeBytes)}</strong></div>${o.totalBytes !== undefined ? `<div class="stat"><span>On the hub</span><strong>${bytes(o.totalBytes)}</strong><p>${countLabel(o.folderCount, "folder")}</p></div>` : ""}</div>`;
     return result;
   };
+  if (choosing) {
+    setupTotals(o);
+    $("#setup-folders").onclick = (event) => {
+      const control = event.target.closest("[data-setup-mode], [data-setup-folder]");
+      if (!control) return;
+      const pick = o.picks.get(control.dataset.setupMode || control.dataset.setupFolder);
+      if (control.dataset.setupMode) pick.mode = control.dataset.mode;
+      else pick.on = control.checked;
+      $("#setup-folders").innerHTML = setupFolders(o);
+      setupTotals(o);
+    };
+  }
   if (o.step === 3) {
     inspectRoot().catch(showError);
     $("[name=root]").onchange = () => inspectRoot().catch(showError);
   }
-  $("#setup-form").onsubmit = (event) => {
-    event.preventDefault();
+  const submitSetup = (skip) => {
+    const form = $("#setup-form");
+    const trigger = skip ? $("#setup-skip") : form.querySelector(".dialog-actions .primary");
+    if (trigger.disabled) return;
     clearError();
     const slow = ["access", 2, 3].includes(o.step);
     const restore = slow
       ? working(
-          event.target.querySelector('button[type="submit"]'),
+          trigger,
           o.step === 2 && !o.paired ? "Pairing…" : o.step === 3 ? "Finishing…" : "Checking…",
         )
       : () => {};
     action(async () => {
       try {
-        const f = new FormData(event.target);
+        const f = new FormData(form);
         if (o.step === -1) {
           o.step = 0;
           renderOnboarding();
@@ -12255,12 +12330,16 @@ function renderOnboarding() {
             ? catalog.volumes.reduce((sum, v) => sum + v.bytes, 0)
             : undefined;
           o.folderCount = catalog.volumes.length;
+          o.volumes = catalog.volumes;
+          o.picks = new Map(catalog.volumes.map((v) => [v.id, { on: !v.policyError, mode: setupMedia(v) ? (v.music ? "keep" : "stream") : undefined }]));
           o.step = 3;
           renderOnboarding();
           return;
         }
         await api("/v1/setup", { name: o.name, role: o.role, root: o.root });
+        const chosen = choosing && !skip ? setupChosen(o) : [];
         onboarding = null;
+        await startSetupFolders(o.root, chosen);
         await refresh();
       } catch (error) {
         showError(error);
@@ -12269,6 +12348,11 @@ function renderOnboarding() {
       }
     });
   };
+  $("#setup-form").onsubmit = (event) => {
+    event.preventDefault();
+    submitSetup(false);
+  };
+  if (choosing) $("#setup-skip").onclick = () => submitSetup(true);
   icons();
   const first = $("#setup-form input:checked, #setup-form input:not([type=radio]):not([type=hidden])") || $("#setup-form h1");
   if (first) {

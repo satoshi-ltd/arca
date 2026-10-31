@@ -33,10 +33,25 @@ export function videoWrite(replica, scope, write) {
 
 const ERASED = "This device was erased.";
 
-export async function refreshVideoLibrary(replica, volume, { signal, downloads = null } = {}) {
+export const videoModesKey = (scope) => `video-modes:${scope}`;
+
+export async function videoModes(replica) {
+  if (!replica?.scope) return {};
+  const value = await replica.store.get(videoModesKey(replica.scope), {});
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+export async function refreshVideoLibrary(replica, volume, { signal, downloads = null, platform = null } = {}) {
   const fresh = await readVideoLibrary(replica, volume, { signal });
   await downloads?.prune(volume, fresh.library);
+  const kept = async () => !replica.removing && (await videoModes(replica))[volume] === "keep";
+  if (downloads && platform && (await kept())) await downloads.keep(volume, fresh.library, platform, kept);
   return fresh;
+}
+
+export async function keepVideoLibraries(replica, downloads, platform) {
+  for (const [volume, mode] of Object.entries(await videoModes(replica)))
+    if (mode === "keep" && !replica.removing) await refreshVideoLibrary(replica, volume, { downloads, platform }).catch(() => null);
 }
 
 async function readVideoLibrary(replica, volume, { signal } = {}) {
@@ -56,12 +71,15 @@ async function readVideoLibrary(replica, volume, { signal } = {}) {
   return { changed: true, library: normalizeLibrary(value) };
 }
 
-export function pruneVideoLibraries(replica, catalog) {
-  if (!replica?.scope || !catalog?.volumes) return Promise.resolve();
-  return replica.store.pruneVideoLibraries(
-    replica.scope,
-    catalog.volumes.filter((v) => isVideoFolder(catalog, v.id)).map((v) => v.id),
-  );
+export async function pruneVideoLibraries(replica, catalog) {
+  if (!replica?.scope || !catalog?.volumes) return;
+  const scope = replica.scope;
+  const kept = catalog.volumes.filter((v) => isVideoFolder(catalog, v.id)).map((v) => v.id);
+  await replica.store.pruneVideoLibraries(scope, kept);
+  if (!catalog.volumes.length) return;
+  const modes = await videoModes(replica);
+  const gone = Object.keys(modes).filter((id) => !kept.includes(id));
+  if (gone.length) await replica.store.set(videoModesKey(scope), Object.fromEntries(Object.entries(modes).filter(([id]) => !gone.includes(id))));
 }
 
 export async function pruneVideoArt(replica, now = Date.now()) {
